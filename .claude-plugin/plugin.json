@@ -1,0 +1,17 @@
+{
+  "name": "thoth",
+  "version": "0.1.0",
+  "description": "Dashboard-centered research & engineering project management. Audit system for humans, execution system for AI agents.",
+  "author": {
+    "name": "Royalvice"
+  },
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "project-management",
+    "dashboard",
+    "autonomous",
+    "audit",
+    "execution"
+  ]
+}
