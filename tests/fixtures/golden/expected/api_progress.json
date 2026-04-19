@@ -1,0 +1,65 @@
+{
+  "project": "TestProject",
+  "timestamp": "2026-04-19T12:00:00Z",
+  "overall_progress": 25.0,
+  "directions": [
+    {
+      "id": "frontend",
+      "label": "Frontend",
+      "color": "#CC8B3A",
+      "total_tasks": 3,
+      "completed_tasks": 1,
+      "progress": 33.3,
+      "tasks": [
+        {
+          "id": "f1-h1-auth-flow",
+          "title": "Implement Authentication Flow",
+          "phase": null,
+          "phase_progress": 0.0,
+          "overall_progress": 0.0,
+          "status": "pending"
+        },
+        {
+          "id": "f1-h2-oauth-integration",
+          "title": "OAuth 2.0 Provider Integration",
+          "phase": "conclusion",
+          "phase_progress": 100.0,
+          "overall_progress": 100.0,
+          "status": "completed"
+        },
+        {
+          "id": "f1-h3-caching-layer",
+          "title": "Client-Side Caching Strategy",
+          "phase": "experiment",
+          "phase_progress": 100.0,
+          "overall_progress": 80.0,
+          "status": "in_progress"
+        }
+      ]
+    },
+    {
+      "id": "backend",
+      "label": "Backend",
+      "color": "#8BA870",
+      "total_tasks": 1,
+      "completed_tasks": 0,
+      "progress": 0.0,
+      "tasks": [
+        {
+          "id": "b1-h1-api-design",
+          "title": "RESTful API Design with Rate Limiting",
+          "phase": null,
+          "phase_progress": 0.0,
+          "overall_progress": 0.0,
+          "status": "blocked"
+        }
+      ]
+    }
+  ],
+  "phase_weights": {
+    "survey": 20,
+    "method_design": 20,
+    "experiment": 40,
+    "conclusion": 20
+  }
+}

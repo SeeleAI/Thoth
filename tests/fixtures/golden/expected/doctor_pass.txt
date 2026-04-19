@@ -1,0 +1,13 @@
+═══ Thoth Doctor: TestProject ═══
+
+  ✓ Schema validation ......... PASS (4 tasks, 1 module)
+  ✓ Consistency check ......... PASS
+  ✓ Todo sync freshness ....... PASS
+  ✓ Required files ............ PASS (9/9)
+  ✓ ID integrity .............. PASS
+  ✓ Milestone references ...... PASS (2 milestones)
+  ✓ SQLite integrity .......... PASS
+  ✓ Project tests ............. PASS (8 tests)
+
+  Result: 0 issue(s) found
+  All checks passed.

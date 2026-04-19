@@ -1,0 +1,88 @@
+# Invalid: experiment phase is "completed" but criteria.current is null
+# This should fail verify_completion checks
+id: f1-h3-caching-layer
+title: Client-Side Caching Strategy
+module: f1
+direction: frontend
+type: hypothesis
+hypothesis: >
+  An aggressive client-side caching layer using service workers can
+  reduce API calls by 40% and improve perceived load time by 300ms.
+null_hypothesis: >
+  Client-side caching introduces stale data issues that outweigh
+  performance benefits, or cache invalidation complexity makes the
+  approach unmaintainable.
+phases:
+  survey:
+    status: completed
+    started_at: "2026-02-01T09:00:00Z"
+    completed_at: "2026-02-05T17:00:00Z"
+    criteria:
+      metric: papers_reviewed
+      threshold: 4
+      current: 5
+      unit: number of papers on client-side caching
+    deliverables:
+      - path: reports/f1-h3-survey.md
+        type: report
+        description: Survey of caching strategies
+  method_design:
+    status: completed
+    started_at: "2026-02-06T09:00:00Z"
+    completed_at: "2026-02-10T17:00:00Z"
+    criteria:
+      metric: design_completeness
+      threshold: 1
+      current: 1
+      unit: "binary: full design covering cache policy + invalidation + storage limits"
+    deliverables:
+      - path: reports/f1-h3-method.md
+        type: report
+        description: Caching strategy design document
+  experiment:
+    status: completed
+    started_at: "2026-02-11T09:00:00Z"
+    completed_at: "2026-02-25T17:00:00Z"
+    criteria:
+      metric: api_call_reduction
+      threshold: 40
+      current: null
+      direction: higher_is_better
+      unit: percent reduction in API calls
+    sub_experiments: []
+    deliverables:
+      - path: reports/f1-h3-experiment.md
+        type: report
+        description: Caching experiment results
+  conclusion:
+    status: pending
+    started_at: null
+    completed_at: null
+    criteria:
+      metric: verdict_with_evidence
+      threshold: 1
+      current: null
+      unit: confirmed/rejected with artifact path
+    deliverables:
+      - path: reports/f1-h3-conclusion.md
+        type: report
+        description: Final verdict
+depends_on: []
+data_requirements:
+  dataset: api-traffic
+  min_assets: 200
+  min_views_per_asset: 1
+  format: request logs with cache hit/miss annotations
+results:
+  verdict: null
+  evidence_paths: []
+  metrics: {}
+  conclusion_text: null
+  failure_analysis: null
+created_at: "2026-02-01T10:00:00Z"
+estimated_total_hours: 35
+time_spent_hours: 28
+tags:
+  - caching
+  - service-worker
+  - performance

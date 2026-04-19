@@ -1,0 +1,31 @@
+# Invalid config: missing required project.name field
+project:
+  description: "This config is missing the project name"
+  language: "en"
+  version: "0.1.0"
+
+research:
+  directions:
+    - id: "frontend"
+      label_zh: "前端"
+      label_en: "Frontend"
+      color: "#CC8B3A"
+  phases:
+    - id: "survey"
+      label_zh: "调研"
+      label_en: "Survey"
+      weight: 20
+    - id: "method_design"
+      label_zh: "方案设计"
+      label_en: "Method Design"
+      weight: 20
+    - id: "experiment"
+      label_zh: "实验"
+      label_en: "Experiment"
+      weight: 40
+    - id: "conclusion"
+      label_zh: "结论"
+      label_en: "Conclusion"
+      weight: 20
+  deliverable_types:
+    - "report"

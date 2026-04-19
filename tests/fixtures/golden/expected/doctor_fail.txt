@@ -1,0 +1,19 @@
+═══ Thoth Doctor: TestProject ═══
+
+  ✓ Schema validation ......... PASS (4 tasks, 1 module)
+  ✗ Consistency check ......... FAIL
+      cycle_a <-> cycle_b: circular dependency detected
+  ✗ Todo sync freshness ....... FAIL (stale by 3 commits)
+  ✓ Required files ............ PASS (9/9)
+  ✓ ID integrity .............. PASS
+  ✗ Milestone references ...... FAIL
+      M0: unknown task_id "f1-h99-does-not-exist"
+      M1: unknown task_id "x9-h1-phantom-task"
+      M1: unknown task_id "z0-h3-also-missing"
+  ✓ SQLite integrity .......... PASS
+  ✓ Project tests ............. PASS (8 tests)
+
+  Result: 3 issue(s) found
+  Fix: Run /thoth:sync to update todo.md
+  Fix: Remove broken milestone references or create missing tasks
+  Fix: Resolve circular module dependencies

@@ -1,0 +1,12 @@
+milestones:
+  - id: "M0"
+    name: "MVP"
+    description: "Basic authentication working"
+    tasks:
+      - "f1-h1-auth-flow"
+  - id: "M1"
+    name: "Beta"
+    description: "Full feature set"
+    tasks:
+      - "f1-h2-oauth-integration"
+      - "b1-h1-api-design"

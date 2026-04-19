@@ -1,0 +1,87 @@
+id: f1-h1-auth-flow
+title: Implement Authentication Flow
+module: f1
+direction: frontend
+type: hypothesis
+hypothesis: >
+  A JWT-based authentication flow with refresh token rotation can achieve
+  sub-200ms login latency while maintaining session security, without
+  requiring server-side session storage.
+null_hypothesis: >
+  JWT-based stateless authentication cannot meet the sub-200ms latency
+  target due to token validation overhead, or refresh token rotation
+  introduces race conditions that compromise session security.
+phases:
+  survey:
+    status: pending
+    started_at: null
+    completed_at: null
+    criteria:
+      metric: papers_reviewed
+      threshold: 5
+      current: null
+      unit: number of papers on auth flow performance
+    deliverables:
+      - path: reports/f1-h1-survey.md
+        type: report
+        description: Survey of authentication flow approaches
+  method_design:
+    status: pending
+    started_at: null
+    completed_at: null
+    criteria:
+      metric: design_completeness
+      threshold: 1
+      current: null
+      unit: "binary: full design doc covering token flow + refresh strategy"
+    deliverables:
+      - path: reports/f1-h1-method.md
+        type: report
+        description: Authentication flow design document
+  experiment:
+    status: pending
+    started_at: null
+    completed_at: null
+    criteria:
+      metric: login_latency_p95
+      threshold: 200
+      current: null
+      direction: lower_is_better
+      unit: ms
+    sub_experiments: []
+    deliverables:
+      - path: reports/f1-h1-experiment.md
+        type: report
+        description: Experiment results and latency measurements
+  conclusion:
+    status: pending
+    started_at: null
+    completed_at: null
+    criteria:
+      metric: verdict_with_evidence
+      threshold: 1
+      current: null
+      unit: confirmed/rejected with artifact path
+    deliverables:
+      - path: reports/f1-h1-conclusion.md
+        type: report
+        description: Final verdict and evidence summary
+depends_on: []
+data_requirements:
+  dataset: user-sessions
+  min_assets: 100
+  min_views_per_asset: 1
+  format: HTTP request logs with timing data
+results:
+  verdict: null
+  evidence_paths: []
+  metrics: {}
+  conclusion_text: null
+  failure_analysis: null
+created_at: "2026-01-15T10:00:00Z"
+estimated_total_hours: 40
+time_spent_hours: 0
+tags:
+  - authentication
+  - jwt
+  - latency

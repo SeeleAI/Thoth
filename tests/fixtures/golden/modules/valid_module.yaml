@@ -1,0 +1,12 @@
+id: "f1"
+name: "Authentication Module"
+direction: "frontend"
+scientific_question: "Can we implement secure SSO with minimal latency?"
+dev_research_ratio: "70/30"
+design_decisions:
+  - "Use JWT for stateless auth"
+  - "Session timeout: 24h"
+related_modules:
+  upstream: []
+  downstream: ["b1"]
+seed_hypothesis_count: 3

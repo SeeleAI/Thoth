@@ -1,0 +1,28 @@
+# Invalid schema: missing 'id' field, wrong type for 'type' field,
+# wrong type for phases (should be object, given as array),
+# extra unknown field, and missing 'tags' field.
+# This must fail validation under any resolution strategy.
+title: Orphan Task Without ID
+module: f1
+direction: frontend
+type: 999
+hypothesis: This task has no id field and should fail schema validation.
+null_hypothesis: This will pass validation.
+phases:
+  - survey
+  - method_design
+  - experiment
+  - conclusion
+depends_on: []
+data_requirements:
+  dataset: none
+  min_assets: 0
+  min_views_per_asset: 0
+  format: none
+results:
+  verdict: null
+  evidence_paths: []
+  metrics: {}
+estimated_total_hours: 10
+time_spent_hours: 0
+unknown_extra_field: "should not be here"

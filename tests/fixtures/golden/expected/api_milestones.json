@@ -1,0 +1,44 @@
+{
+  "project": "TestProject",
+  "timestamp": "2026-04-19T12:00:00Z",
+  "milestones": [
+    {
+      "id": "M0",
+      "name": "MVP",
+      "description": "Basic authentication working",
+      "total_tasks": 1,
+      "completed_tasks": 0,
+      "progress": 0.0,
+      "tasks": [
+        {
+          "id": "f1-h1-auth-flow",
+          "title": "Implement Authentication Flow",
+          "status": "pending",
+          "verdict": null
+        }
+      ]
+    },
+    {
+      "id": "M1",
+      "name": "Beta",
+      "description": "Full feature set",
+      "total_tasks": 2,
+      "completed_tasks": 1,
+      "progress": 50.0,
+      "tasks": [
+        {
+          "id": "f1-h2-oauth-integration",
+          "title": "OAuth 2.0 Provider Integration",
+          "status": "completed",
+          "verdict": "confirmed"
+        },
+        {
+          "id": "b1-h1-api-design",
+          "title": "RESTful API Design with Rate Limiting",
+          "status": "blocked",
+          "verdict": null
+        }
+      ]
+    }
+  ]
+}

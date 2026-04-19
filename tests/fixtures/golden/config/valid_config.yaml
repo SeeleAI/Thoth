@@ -1,0 +1,45 @@
+project:
+  name: "TestProject"
+  description: "A test project for golden data"
+  language: "en"
+  version: "0.1.0"
+
+research:
+  directions:
+    - id: "frontend"
+      label_zh: "前端"
+      label_en: "Frontend"
+      color: "#CC8B3A"
+    - id: "backend"
+      label_zh: "后端"
+      label_en: "Backend"
+      color: "#8BA870"
+  phases:
+    - id: "survey"
+      label_zh: "调研"
+      label_en: "Survey"
+      weight: 20
+    - id: "method_design"
+      label_zh: "方案设计"
+      label_en: "Method Design"
+      weight: 20
+    - id: "experiment"
+      label_zh: "实验"
+      label_en: "Experiment"
+      weight: 40
+    - id: "conclusion"
+      label_zh: "结论"
+      label_en: "Conclusion"
+      weight: 20
+  deliverable_types:
+    - "report"
+    - "code"
+    - "test"
+
+dashboard:
+  port: 8501
+  theme: "warm-bear"
+
+toolchain:
+  python: "python"
+  pre_commit: true

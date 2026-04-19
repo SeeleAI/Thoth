@@ -1,0 +1,66 @@
+# Circular dependency scenario for testing.
+#
+# This file documents a cycle: module_a -> module_b -> module_a.
+# Test code should create two temporary _module.yaml files to reproduce
+# the actual cycle, since the fixture directory is flat.
+#
+# Module A definition:
+#   id: "cycle_a"
+#   name: "Cycle Module A"
+#   direction: "frontend"
+#   scientific_question: "Does A depend on B?"
+#   dev_research_ratio: "50/50"
+#   design_decisions:
+#     - "Depends on cycle_b output"
+#   related_modules:
+#     upstream: ["cycle_b"]
+#     downstream: ["cycle_b"]
+#   seed_hypothesis_count: 1
+#
+# Module B definition:
+#   id: "cycle_b"
+#   name: "Cycle Module B"
+#   direction: "backend"
+#   scientific_question: "Does B depend on A?"
+#   dev_research_ratio: "50/50"
+#   design_decisions:
+#     - "Depends on cycle_a output"
+#   related_modules:
+#     upstream: ["cycle_a"]
+#     downstream: ["cycle_a"]
+#   seed_hypothesis_count: 1
+#
+# When both modules are loaded, the dependency graph forms a cycle:
+#   cycle_a.upstream = [cycle_b]
+#   cycle_b.upstream = [cycle_a]
+#
+# Expected behavior: check_consistency.py should detect and report this cycle.
+
+# Below are the two module definitions as YAML documents for programmatic use.
+# Test code can split on the document separator (---) to load each module.
+
+---
+id: "cycle_a"
+name: "Cycle Module A"
+direction: "frontend"
+scientific_question: "Does A depend on B?"
+dev_research_ratio: "50/50"
+design_decisions:
+  - "Depends on cycle_b output"
+related_modules:
+  upstream: ["cycle_b"]
+  downstream: ["cycle_b"]
+seed_hypothesis_count: 1
+
+---
+id: "cycle_b"
+name: "Cycle Module B"
+direction: "backend"
+scientific_question: "Does B depend on A?"
+dev_research_ratio: "50/50"
+design_decisions:
+  - "Depends on cycle_a output"
+related_modules:
+  upstream: ["cycle_a"]
+  downstream: ["cycle_a"]
+seed_hypothesis_count: 1

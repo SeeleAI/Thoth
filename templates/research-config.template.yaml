@@ -1,0 +1,29 @@
+project:
+  name: "{{PROJECT_NAME}}"
+  description: "{{PROJECT_DESCRIPTION}}"
+  language: "{{LANGUAGE}}"
+  version: "0.1.0"
+
+research:
+  directions:
+{{DIRECTIONS_YAML}}
+
+  phases:
+{{PHASES_YAML}}
+
+  deliverable_types:
+    - "report"
+    - "model"
+    - "checkpoint"
+    - "data"
+    - "script"
+    - "config"
+
+dashboard:
+  port: {{DASHBOARD_PORT}}
+  theme: "{{DASHBOARD_THEME}}"
+
+toolchain:
+  python: "python"
+  pre_commit: true
+  git_hooks: true

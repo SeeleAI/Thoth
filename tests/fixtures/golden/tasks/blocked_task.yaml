@@ -1,0 +1,90 @@
+id: b1-h1-api-design
+title: RESTful API Design with Rate Limiting
+module: b1
+direction: backend
+type: hypothesis
+hypothesis: >
+  A RESTful API with token-bucket rate limiting at 1000 req/min per user
+  can maintain sub-50ms p99 response latency under sustained load,
+  without degrading throughput for well-behaved clients.
+null_hypothesis: >
+  Token-bucket rate limiting introduces per-request overhead that pushes
+  p99 latency above 50ms under load, or the 1000 req/min limit is too
+  restrictive for legitimate power users, causing false-positive throttling.
+phases:
+  survey:
+    status: pending
+    started_at: null
+    completed_at: null
+    criteria:
+      metric: papers_reviewed
+      threshold: 4
+      current: null
+      unit: number of papers on API rate limiting strategies
+    deliverables:
+      - path: reports/b1-h1-survey.md
+        type: report
+        description: Survey of rate limiting approaches
+  method_design:
+    status: pending
+    started_at: null
+    completed_at: null
+    criteria:
+      metric: design_completeness
+      threshold: 1
+      current: null
+      unit: "binary: full design covering rate limit algorithm + storage + response codes"
+    deliverables:
+      - path: reports/b1-h1-method.md
+        type: report
+        description: API rate limiting design document
+  experiment:
+    status: pending
+    started_at: null
+    completed_at: null
+    criteria:
+      metric: p99_latency
+      threshold: 50
+      current: null
+      direction: lower_is_better
+      unit: ms
+    sub_experiments: []
+    deliverables:
+      - path: reports/b1-h1-experiment.md
+        type: report
+        description: Load test results
+  conclusion:
+    status: pending
+    started_at: null
+    completed_at: null
+    criteria:
+      metric: verdict_with_evidence
+      threshold: 1
+      current: null
+      unit: confirmed/rejected with artifact path
+    deliverables:
+      - path: reports/b1-h1-conclusion.md
+        type: report
+        description: Final verdict
+depends_on:
+  - task_id: f1-h1-auth-flow
+    type: hard
+    reason: API endpoints require authentication middleware from auth-flow
+data_requirements:
+  dataset: api-logs
+  min_assets: 50
+  min_views_per_asset: 1
+  format: HTTP request/response pairs with timing
+results:
+  verdict: null
+  evidence_paths: []
+  metrics: {}
+  conclusion_text: null
+  failure_analysis: null
+created_at: "2026-01-20T10:00:00Z"
+estimated_total_hours: 50
+time_spent_hours: 0
+tags:
+  - api
+  - rate-limiting
+  - performance

@@ -1,0 +1,14 @@
+# Milestones referencing non-existent task IDs
+milestones:
+  - id: "M0"
+    name: "MVP"
+    description: "Basic authentication working"
+    tasks:
+      - "f1-h1-auth-flow"
+      - "f1-h99-does-not-exist"
+  - id: "M1"
+    name: "Beta"
+    description: "Full feature set"
+    tasks:
+      - "x9-h1-phantom-task"
+      - "z0-h3-also-missing"

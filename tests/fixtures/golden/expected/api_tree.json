@@ -1,0 +1,82 @@
+{
+  "project": "TestProject",
+  "timestamp": "2026-04-19T12:00:00Z",
+  "modules": [
+    {
+      "id": "f1",
+      "name": "Authentication Module",
+      "direction": "frontend",
+      "scientific_question": "Can we implement secure SSO with minimal latency?",
+      "dev_research_ratio": "70/30",
+      "tasks": [
+        {
+          "id": "f1-h1-auth-flow",
+          "title": "Implement Authentication Flow",
+          "type": "hypothesis",
+          "phases": {
+            "survey": "pending",
+            "method_design": "pending",
+            "experiment": "pending",
+            "conclusion": "pending"
+          },
+          "verdict": null,
+          "depends_on": [],
+          "tags": ["authentication", "jwt", "latency"]
+        },
+        {
+          "id": "f1-h2-oauth-integration",
+          "title": "OAuth 2.0 Provider Integration",
+          "type": "hypothesis",
+          "phases": {
+            "survey": "completed",
+            "method_design": "completed",
+            "experiment": "completed",
+            "conclusion": "completed"
+          },
+          "verdict": "confirmed",
+          "depends_on": ["f1-h1-auth-flow"],
+          "tags": ["oauth", "registration", "user-experience"]
+        },
+        {
+          "id": "f1-h3-caching-layer",
+          "title": "Client-Side Caching Strategy",
+          "type": "hypothesis",
+          "phases": {
+            "survey": "completed",
+            "method_design": "completed",
+            "experiment": "completed",
+            "conclusion": "pending"
+          },
+          "verdict": null,
+          "depends_on": [],
+          "tags": ["caching", "service-worker", "performance"]
+        }
+      ],
+      "downstream": ["b1"]
+    },
+    {
+      "id": "b1",
+      "name": "(no module file)",
+      "direction": "backend",
+      "scientific_question": null,
+      "dev_research_ratio": null,
+      "tasks": [
+        {
+          "id": "b1-h1-api-design",
+          "title": "RESTful API Design with Rate Limiting",
+          "type": "hypothesis",
+          "phases": {
+            "survey": "pending",
+            "method_design": "pending",
+            "experiment": "pending",
+            "conclusion": "pending"
+          },
+          "verdict": null,
+          "depends_on": ["f1-h1-auth-flow"],
+          "tags": ["api", "rate-limiting", "performance"]
+        }
+      ],
+      "downstream": []
+    }
+  ]
+}

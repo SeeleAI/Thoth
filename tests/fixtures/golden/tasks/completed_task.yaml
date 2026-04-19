@@ -1,0 +1,128 @@
+id: f1-h2-oauth-integration
+title: OAuth 2.0 Provider Integration
+module: f1
+direction: frontend
+type: hypothesis
+hypothesis: >
+  Integrating OAuth 2.0 with Google and GitHub as identity providers
+  can reduce user registration friction by 60% compared to email-password
+  signup, while maintaining equivalent security guarantees.
+null_hypothesis: >
+  OAuth 2.0 integration does not meaningfully reduce registration friction
+  due to user distrust of third-party auth, or introduces security
+  vulnerabilities through token exchange that offset usability gains.
+phases:
+  survey:
+    status: completed
+    started_at: "2026-01-20T09:00:00Z"
+    completed_at: "2026-01-25T17:00:00Z"
+    criteria:
+      metric: papers_reviewed
+      threshold: 5
+      current: 7
+      unit: number of papers on OAuth adoption and security
+    papers:
+      - id: oauth-security-2024
+        parsed_file: paper/references/parsed/oauth_security.md
+        relevance: high
+        contribution: Token exchange vulnerability taxonomy
+    deliverables:
+      - path: reports/f1-h2-survey.md
+        type: report
+        description: Survey of OAuth 2.0 integration patterns
+  method_design:
+    status: completed
+    started_at: "2026-01-26T09:00:00Z"
+    completed_at: "2026-02-01T17:00:00Z"
+    criteria:
+      metric: design_completeness
+      threshold: 1
+      current: 1
+      unit: "binary: full design covering provider config + token exchange + account linking"
+    deliverables:
+      - path: reports/f1-h2-method.md
+        type: report
+        description: OAuth integration design document
+  experiment:
+    status: completed
+    started_at: "2026-02-03T09:00:00Z"
+    completed_at: "2026-02-20T17:00:00Z"
+    criteria:
+      metric: registration_friction_reduction
+      threshold: 60
+      current: 72
+      direction: higher_is_better
+      unit: percent reduction in registration abandonment
+    sub_experiments:
+      - name: google-oauth-flow
+        status: completed
+        started_at: "2026-02-03T09:00:00Z"
+        completed_at: "2026-02-10T17:00:00Z"
+        criteria:
+          metric: registration_friction_reduction
+          threshold: 60
+          current: 75
+          direction: higher_is_better
+          unit: percent reduction in registration abandonment
+      - name: github-oauth-flow
+        status: completed
+        started_at: "2026-02-10T09:00:00Z"
+        completed_at: "2026-02-20T17:00:00Z"
+        criteria:
+          metric: registration_friction_reduction
+          threshold: 60
+          current: 68
+          direction: higher_is_better
+          unit: percent reduction in registration abandonment
+    deliverables:
+      - path: reports/f1-h2-experiment.md
+        type: report
+        description: A/B test results for OAuth vs email signup
+      - path: reports/f1-h2-metrics.json
+        type: data
+        description: Raw metrics from registration funnel analysis
+  conclusion:
+    status: completed
+    started_at: "2026-02-21T09:00:00Z"
+    completed_at: "2026-02-22T17:00:00Z"
+    criteria:
+      metric: verdict_with_evidence
+      threshold: 1
+      current: 1
+      unit: confirmed/rejected with artifact path
+    deliverables:
+      - path: reports/f1-h2-conclusion.md
+        type: report
+        description: Final verdict and evidence summary
+depends_on:
+  - task_id: f1-h1-auth-flow
+    type: soft
+    reason: OAuth flow reuses JWT infrastructure from auth-flow task
+data_requirements:
+  dataset: user-sessions
+  min_assets: 500
+  min_views_per_asset: 1
+  format: registration funnel event logs
+results:
+  verdict: confirmed
+  evidence_paths:
+    - reports/f1-h2-experiment.md
+    - reports/f1-h2-metrics.json
+  metrics:
+    google_friction_reduction: 75
+    github_friction_reduction: 68
+    avg_friction_reduction: 72
+    security_incidents: 0
+  conclusion_text: >
+    OAuth 2.0 integration with Google and GitHub reduced registration
+    abandonment by 72% on average (75% Google, 68% GitHub), exceeding
+    the 60% threshold. Zero security incidents observed during 30-day
+    evaluation period with 2,847 OAuth signups.
+  failure_analysis: null
+created_at: "2026-01-15T10:00:00Z"
+estimated_total_hours: 60
+time_spent_hours: 52
+tags:
+  - oauth
+  - registration
+  - user-experience
