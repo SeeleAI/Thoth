@@ -110,9 +110,17 @@ def generate_research_config(config: Dict[str, Any], project_dir: Path) -> None:
     lines.append('  directions:')
     for i, d in enumerate(config["directions"]):
         color = DIRECTION_COLORS[i % len(DIRECTION_COLORS)]
-        label_en = d.replace('_', ' ').title()
-        lines.append(f'    - id: "{d}"')
-        lines.append(f'      label_zh: "{d}"')
+        if isinstance(d, dict):
+            d_id = d["id"]
+            label_en = d.get("label_en", d_id.replace('_', ' ').title())
+            label_zh = d.get("label_zh", d_id)
+            color = d.get("color", color)
+        else:
+            d_id = d
+            label_en = d.replace('_', ' ').title()
+            label_zh = d
+        lines.append(f'    - id: "{d_id}"')
+        lines.append(f'      label_zh: "{label_zh}"')
         lines.append(f'      label_en: "{label_en}"')
         lines.append(f'      color: "{color}"')
     lines.append('')
@@ -317,7 +325,8 @@ papers: []
 
     # Create direction subdirectories
     for d in config.get("directions", []):
-        (tasks_dir / d).mkdir(exist_ok=True)
+        d_id = d["id"] if isinstance(d, dict) else d
+        (tasks_dir / d_id).mkdir(exist_ok=True)
 
 
 def generate_dashboard(config: Dict[str, Any], project_dir: Path) -> None:
@@ -849,7 +858,8 @@ def main() -> int:
 
     # Create direction subdirectories
     for d in config.get("directions", []):
-        ddir = project_dir / ".agent-os" / "research-tasks" / d
+        d_id = d["id"] if isinstance(d, dict) else d
+        ddir = project_dir / ".agent-os" / "research-tasks" / d_id
         ddir.mkdir(exist_ok=True)
 
     # Summary

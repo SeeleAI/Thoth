@@ -1,0 +1,294 @@
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
+import { api } from '@/api/client'
+import type { ProgressData } from '@/types'
+
+const progress = ref<ProgressData | null>(null)
+const loading = ref(true)
+const error = ref('')
+
+onMounted(async () => {
+  try {
+    progress.value = await api.getProgress()
+  } catch (e) {
+    error.value = String(e)
+  } finally {
+    loading.value = false
+  }
+})
+
+function statusLabel(key: string): string {
+  const map: Record<string, string> = {
+    total: 'Total',
+    pending: 'Pending',
+    in_progress: 'In Progress',
+    completed: 'Completed',
+    blocked: 'Blocked',
+  }
+  return map[key] ?? key
+}
+
+const directionEntries = computed(() => {
+  if (!progress.value) return []
+  return Object.entries(progress.value.by_direction).map(([dir, pct]) => ({
+    direction: dir,
+    progress: pct,
+  }))
+})
+</script>
+
+<template>
+  <div class="panel">
+    <h2 class="panel-title">总览</h2>
+
+    <div v-if="loading" class="loading-state">Loading...</div>
+    <div v-else-if="error" class="error-state">{{ error }}</div>
+
+    <template v-else-if="progress">
+      <!-- Overall progress -->
+      <section class="card progress-overview">
+        <h3>Overall Progress</h3>
+        <div class="progress-bar-wrapper">
+          <div class="progress-bar" :style="{ width: progress.overall_progress + '%' }">
+            {{ progress.overall_progress.toFixed(1) }}%
+          </div>
+        </div>
+      </section>
+
+      <!-- Status counts -->
+      <section class="card status-grid">
+        <h3>Task Status</h3>
+        <div class="status-items">
+          <div
+            v-for="(count, key) in progress.status_counts"
+            :key="key"
+            class="status-item"
+          >
+            <span class="status-count">{{ count }}</span>
+            <span class="status-label">{{ statusLabel(String(key)) }}</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Direction breakdown -->
+      <section class="card">
+        <h3>By Direction</h3>
+        <div class="direction-list">
+          <div v-for="d in directionEntries" :key="d.direction" class="direction-row">
+            <span class="direction-label">{{ d.direction }}</span>
+            <div class="progress-bar-wrapper small">
+              <div class="progress-bar" :style="{ width: d.progress + '%' }">
+                {{ d.progress.toFixed(0) }}%
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Blocked tasks -->
+      <section v-if="progress.blocked_tasks.length > 0" class="card blocked-section">
+        <h3>Blocked Tasks</h3>
+        <ul class="blocked-list">
+          <li v-for="bt in progress.blocked_tasks" :key="bt.id">
+            <strong>{{ bt.title }}</strong>
+            <span class="blocked-reason">Blocked by: {{ bt.blocked_by.join(', ') }}</span>
+          </li>
+        </ul>
+      </section>
+
+      <!-- Estimation -->
+      <section v-if="progress.estimation" class="card">
+        <h3>Estimation</h3>
+        <div class="estimation-grid">
+          <div class="est-item">
+            <span class="est-value">{{ progress.estimation.completed_tasks }}/{{ progress.estimation.total_tasks }}</span>
+            <span class="est-label">Tasks Completed</span>
+          </div>
+          <div class="est-item">
+            <span class="est-value">{{ progress.estimation.elapsed_days }}d</span>
+            <span class="est-label">Elapsed</span>
+          </div>
+          <div v-if="progress.estimation.estimated_days_remaining !== null" class="est-item">
+            <span class="est-value">{{ progress.estimation.estimated_days_remaining }}d</span>
+            <span class="est-label">Est. Remaining</span>
+          </div>
+        </div>
+        <p v-if="progress.estimation.message" class="est-message">{{ progress.estimation.message }}</p>
+      </section>
+    </template>
+  </div>
+</template>
+
+<style scoped>
+.panel {
+  max-width: 960px;
+}
+
+.panel-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 20px;
+}
+
+.loading-state,
+.error-state {
+  padding: 32px;
+  text-align: center;
+  color: var(--color-accent);
+}
+
+.error-state {
+  color: #c0392b;
+}
+
+.card {
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px var(--color-card-shadow);
+}
+
+.card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--color-text);
+}
+
+/* Progress bars */
+.progress-bar-wrapper {
+  background: var(--color-border);
+  border-radius: 6px;
+  height: 28px;
+  overflow: hidden;
+}
+
+.progress-bar-wrapper.small {
+  height: 20px;
+  flex: 1;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  min-width: fit-content;
+  padding: 0 8px;
+  transition: width 0.4s ease;
+}
+
+/* Status grid */
+.status-items {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.status-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+  padding: 12px 16px;
+  background: var(--color-bg);
+  border-radius: 8px;
+}
+
+.status-count {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.status-label {
+  font-size: 12px;
+  color: var(--color-text);
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
+/* Direction list */
+.direction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.direction-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.direction-label {
+  font-weight: 600;
+  min-width: 140px;
+}
+
+/* Blocked */
+.blocked-list {
+  list-style: none;
+}
+
+.blocked-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.blocked-list li:last-child {
+  border-bottom: none;
+}
+
+.blocked-reason {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+/* Estimation */
+.estimation-grid {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.est-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+  padding: 12px 16px;
+  background: var(--color-bg);
+  border-radius: 8px;
+}
+
+.est-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.est-label {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
+.est-message {
+  margin-top: 12px;
+  font-size: 14px;
+  opacity: 0.8;
+  font-style: italic;
+}
+</style>
