@@ -15,6 +15,10 @@ Persistent truth + validation scripts + autonomous execution loops = agent work 
 
 <br>
 
+![Thoth teaser figure](assets/thoth-teaser-figure.png)
+
+*Thoth bridges a human-facing audit dashboard with an AI execution engine through shared persistent project state.*
+
 Thoth is an **Agent Project OS** for research and engineering workflows. It
 does not stop at prompting conventions: it installs a persistent project layer
 with state documents, validation scripts, generated structure, and a dashboard
