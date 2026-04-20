@@ -1,54 +1,65 @@
 # Thoth
 
-**An Agent Project OS for auditable, recoverable AI work.**  
-**一个面向 AI Agent 的项目操作系统，让执行可追溯、可恢复、可验证。**
+**Turn [Claude Code](https://docs.anthropic.com/en/docs/claude-code) into an auditable project operating system with persistent state, mechanical verification, dashboard visibility, and [OpenAI Codex](https://developers.openai.com/codex) delegation.**
 
-Thoth turns agent-driven research and engineering into a real operating system:
-not just prompts, but a persistent project layer with audit trails, validation
-scripts, generated state documents, and a dashboard humans can trust.
+Persistent truth + validation scripts + autonomous execution loops = agent work you can actually inspect, recover, and trust.
 
-Named after the god of writing and wisdom, Thoth is built around two connected
-systems:
+[![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-blue?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
+[![Codex](https://img.shields.io/badge/OpenAI_Codex-Delegation-green?logo=openai&logoColor=white)](https://developers.openai.com/codex)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/Royalvice/Thoth)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+[![Project OS](https://img.shields.io/badge/Agent_Project_OS-Audit_%2B_Execution-black)](https://github.com/Royalvice/Thoth)
+[![Dashboard](https://img.shields.io/badge/Human_Visibility-Dashboard-8A6A3A)](https://github.com/Royalvice/Thoth)
+[![Runtime](https://img.shields.io/badge/Runtime-Claude_today%2C_Codex_next-5B8DEF)](https://github.com/Royalvice/Thoth)
+
+<br>
+
+Thoth is an **Agent Project OS** for research and engineering workflows. It
+does not stop at prompting conventions: it installs a persistent project layer
+with state documents, validation scripts, generated structure, and a dashboard
+humans can use to see what is actually true.
+
+At the center of Thoth are two connected systems:
 
 - **Audit System**: truth, evidence, decisions, recoverability
 - **Execution System**: tasks, loops, verification, delegation
 
-Today, Thoth runs as a **Claude Code plugin** with **Codex delegation support**.
-Its longer-term direction is a more **host-agnostic, Codex-native runtime**.
+Today, Thoth runs as a **Claude Code plugin** and already supports **Codex
+delegation** through `:codex` variants. The longer-term direction is a more
+host-agnostic, Codex-native runtime.
 
-> Hero visual coming soon.  
-> The art direction is intentionally centered on the "dual systems" model:
-> one side for audit and visibility, one side for execution and automation.
-
-## Why Thoth / 为什么需要 Thoth
+## Why Thoth
 
 Most agent workflows disappear into chat history:
 
 - plans drift
-- decisions are not recorded
+- decisions are lost
 - evidence is hard to recover
-- execution and review live in different places
-- humans cannot easily see what is true right now
+- execution and review happen in different places
+- humans cannot easily see current project truth
 
-Thoth solves that by materializing project state into files, scripts, and
-interfaces that survive the conversation.
+Thoth solves that by materializing agent work into a real operating layer:
 
-Thoth 不是一个“给 Agent 多几条 prompt”的工具。  
-它会把项目状态真正落到仓库里，让人和 Agent 看到的是同一套系统事实。
+- persistent project state in files
+- mechanical validation and consistency checks
+- explicit execution and governance modes
+- dashboard-visible progress and health
+- recoverable project memory outside the chat window
 
-## Quick Start / 快速开始
+## Quick Start
 
 ### 1. Clone and install the plugin
 
 ```bash
-git clone https://github.com/Royalvice/thoth.git
-cd thoth
+git clone https://github.com/Royalvice/Thoth.git
+cd Thoth
 claude plugin add "$(pwd)"
 ```
 
 ### 2. Initialize a target project
 
-Open the project you want to manage with Thoth, then run:
+Open the repository you want to manage with Thoth and run:
 
 ```text
 /thoth:init
@@ -58,11 +69,11 @@ This scaffolds the project operating layer, including:
 
 - `.research-config.yaml`
 - `.agent-os/` state and governance documents
-- research-task validation scripts
+- research-task validation and consistency scripts
 - `tools/dashboard/` backend and frontend
 - project-local helper scripts and tests
 
-### 3. Start using the system
+### 3. Start operating the project
 
 Typical first actions:
 
@@ -73,32 +84,19 @@ Typical first actions:
 /thoth:dashboard
 ```
 
-## What Thoth Is / Thoth 是什么
-
-Thoth is an **Agent Project OS** for research and engineering teams who want:
-
-- persistent project truth instead of chat-only context
-- execution loops with mechanical verification
-- decision records and evidence trails
-- dashboard visibility for humans
-- a clean bridge between planning, doing, reviewing, and reporting
-
-It is especially suited to workflows where agents are already doing meaningful
-work, but the project still needs governance, memory, and acceptance discipline.
-
-## Core Capabilities / 核心能力
+## Core Capabilities
 
 | Capability | Commands | What it does |
 | --- | --- | --- |
-| Bootstrap | `/thoth:init` | Create the project operating layer in a fresh repo |
-| Single-task execution | `/thoth:run` | Execute one focused task with validation, sync, and commit discipline |
-| Autonomous iteration | `/thoth:loop` | Run task-mode or metric-mode loops with verification and rollback logic |
-| Discussion and governance | `/thoth:discuss`, `/thoth:review` | Separate planning/review from code execution, and preserve conclusions |
-| Visibility | `/thoth:status`, `/thoth:dashboard`, `/thoth:report` | Surface current truth through structured output, dashboard views, and progress reports |
-| Integrity checks | `/thoth:doctor`, `/thoth:sync` | Audit project persistence, required files, reference health, and synchronization |
-| Plugin evolution | `/thoth:extend` | Safely evolve the plugin itself under test gates |
+| Bootstrap | `/thoth:init` | Creates the project operating layer inside a fresh repository |
+| Single-task execution | `/thoth:run` | Executes one focused task with validation, sync, and commit discipline |
+| Autonomous iteration | `/thoth:loop` | Runs task-mode or metric-mode loops with verification and rollback logic |
+| Governance | `/thoth:discuss`, `/thoth:review` | Separates planning and review from code execution while preserving conclusions |
+| Visibility | `/thoth:status`, `/thoth:dashboard`, `/thoth:report` | Surfaces current truth through structured output, dashboard views, and reports |
+| Integrity checks | `/thoth:doctor`, `/thoth:sync` | Audits project persistence, reference health, and synchronization |
+| Plugin evolution | `/thoth:extend` | Safely evolves the plugin itself under test gates |
 
-### Codex Delegation / Codex 委派
+### Codex Delegation
 
 Thoth already exposes Codex-enabled variants:
 
@@ -106,15 +104,16 @@ Thoth already exposes Codex-enabled variants:
 - `/thoth:loop:codex`
 - `/thoth:review:codex`
 
-Current meaning:
+This is real support today:
 
 - Thoth remains the project operating layer
 - Claude Code is the current host runtime
-- Codex can already be delegated specific execution or review work
+- Codex can already handle delegated execution or review steps
 
-This is **real support today**, but it is **not yet** the final runtime model.
+This is **not yet** the final runtime model. It is the bridge toward a more
+host-agnostic architecture.
 
-## How It Works / 工作方式
+## How It Works
 
 Thoth operates in two layers.
 
@@ -122,61 +121,62 @@ Thoth operates in two layers.
 
 The Thoth repository provides:
 
-- command contracts under `.claude/commands/`
-- behavioral skills under `skills/`
-- automation hooks under `hooks/`
-- management scripts under `scripts/`
-- deployable project templates under `templates/`
+- command contracts in `.claude/commands/`
+- behavioral skills in `skills/`
+- automation hooks in `hooks/`
+- management scripts in `scripts/`
+- deployable project templates in `templates/`
 
 This layer defines how the operating system behaves.
 
 ### 2. Project Layer
 
-When you run `/thoth:init` in a target repo, Thoth generates a persistent
+When you run `/thoth:init` in a target repository, Thoth generates a persistent
 project layer with:
 
 - config: `.research-config.yaml`
 - state docs: `.agent-os/`
 - task validation and consistency tooling
-- dashboard backend/frontend
+- dashboard backend and frontend
 - project-local scripts and tests
 
-This is the critical idea: **Thoth does not only tell the agent what to do; it
+That is the core idea: **Thoth does not only tell the agent what to do; it
 installs the project substrate that makes the work inspectable and recoverable.**
 
-## Command Model / 命令模型
+## Command Model
 
-Thoth is designed around distinct modes rather than one overloaded assistant.
+Thoth is designed around distinct operating modes rather than one overloaded
+assistant surface.
 
 ### Execution
 
-- `/thoth:run`: do one thing well
-- `/thoth:loop`: iterate with verification and decision logic
-- `*:codex`: delegate selected work to Codex while preserving Thoth control
+- `/thoth:run` for one focused change
+- `/thoth:loop` for iterative execution with decision logic
+- `*:codex` for delegated Codex work under Thoth control
 
 ### Governance
 
-- `/thoth:discuss`: change docs, config, and task state without touching code
-- `/thoth:review`: step outside the current solution and critique it from first principles
+- `/thoth:discuss` for docs, config, and task-state changes without touching code
+- `/thoth:review` for first-principles critique outside the active implementation path
 
 ### Visibility and Health
 
-- `/thoth:status`: print a structured snapshot of the current project state
-- `/thoth:dashboard`: start the dashboard for human-facing visibility
-- `/thoth:doctor`: audit whether the project state is healthy and internally consistent
-- `/thoth:sync`: align generated views and references
-- `/thoth:report`: build a progress report from the recorded project state
+- `/thoth:status` prints a structured project snapshot
+- `/thoth:dashboard` starts the human-facing dashboard
+- `/thoth:doctor` audits project health and consistency
+- `/thoth:sync` aligns generated views and references
+- `/thoth:report` builds progress reports from recorded state
 
-## Design Principles / 设计原则
+## Design Principles
 
 - **Audit-first**: no silent completion claims without evidence
 - **Execution with verification**: loops must validate, not just act
 - **Recoverable state**: important truth must live in files, not only in chat
 - **Dashboard visibility**: humans need an operating view, not raw agent traces
-- **Script-backed behavior**: the system relies on scripts and contracts, not pure improvisation
+- **Script-backed behavior**: the system relies on contracts and scripts, not pure improvisation
 - **Tested infrastructure**: golden-data-driven tests protect the operating layer
 
-## Current Runtime and Future Direction / 当前运行时与未来方向
+## Runtime Today, Direction Tomorrow
 
 ### Today
 
@@ -185,21 +185,17 @@ Thoth is currently:
 - hosted through **Claude Code**
 - installed as a local plugin
 - backed by generated project files and scripts
-- capable of **delegating work to Codex** through `:codex` command variants
+- capable of delegating work to **OpenAI Codex**
 
 ### Next
 
-The intended direction is to make Thoth less dependent on Claude Code as the
-only host. That means:
+The direction is to make Thoth less dependent on Claude Code as the only host:
 
 - deeper Codex integration
 - cleaner host/runtime abstraction
-- eventually running the operating model in a more host-agnostic way
+- eventual movement toward a more host-agnostic operating model
 
-README 中的 Codex 表述代表的是：
-现在已经有委派能力；未来会继续往脱离单一宿主、走向更原生的运行时架构推进。
-
-## Local Development / 本地开发
+## Local Development
 
 Run the test suite from the repository root:
 
@@ -216,15 +212,15 @@ Current repository contents include:
 - dashboard and project templates in `templates/`
 - unit and integration tests in `tests/`
 
-## Contributing / 贡献
+## Contributing
 
 Thoth is now a standalone open-source project. Contributions that improve the
 operating model, validation logic, dashboard experience, runtime abstractions,
 or documentation are welcome.
 
-When changing behavior, prefer updating tests and contracts together so the
-system remains trustworthy as it evolves.
+When changing behavior, update tests and contracts together so the system stays
+trustworthy as it evolves.
 
-## License / 许可证
+## License
 
 MIT. See [LICENSE](LICENSE).
