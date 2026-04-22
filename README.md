@@ -125,7 +125,7 @@ Thoth operates in two layers.
 
 The Thoth repository provides:
 
-- command contracts in `.claude/commands/`
+- command contracts in `commands/`
 - behavioral skills in `skills/`
 - automation hooks in `hooks/`
 - management scripts in `scripts/`
@@ -210,7 +210,7 @@ pytest -q
 Current repository contents include:
 
 - plugin metadata in `.claude-plugin/`
-- command definitions in `.claude/commands/`
+- command definitions in `commands/`
 - skills in `skills/`
 - scripts in `scripts/`
 - dashboard and project templates in `templates/`

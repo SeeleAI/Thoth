@@ -1,12 +1,25 @@
 {
-  "hooks": [
-    {
-      "event": "SessionStart",
-      "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.py\" start"
-    },
-    {
-      "event": "SessionEnd",
-      "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.py\" end"
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.py\" start"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.py\" end"
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -1,10 +1,14 @@
 {
   "name": "thoth",
-  "version": "0.1.0",
-  "description": "Dashboard-centered research & engineering project management. Audit system for humans, execution system for AI agents.",
+  "version": "0.1.1",
+  "description": "Dashboard-centric Agent Project OS for auditable AI execution, persistent project state, and human-visible workflow orchestration.",
   "author": {
-    "name": "Royalvice"
+    "name": "Royalvice",
+    "email": "viceyzy@foxmail.com",
+    "url": "https://github.com/Royalvice"
   },
+  "homepage": "https://github.com/Royalvice/Thoth",
+  "repository": "https://github.com/Royalvice/Thoth",
   "license": "MIT",
   "keywords": [
     "research",
