@@ -6,7 +6,7 @@ Persistent truth + validation scripts + autonomous execution loops = agent work 
 
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-blue?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
 [![Codex](https://img.shields.io/badge/OpenAI_Codex-Delegation-green?logo=openai&logoColor=white)](https://developers.openai.com/codex)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/Royalvice/Thoth)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/Royalvice/Thoth)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 [![Project OS](https://img.shields.io/badge/Agent_Project_OS-Audit_%2B_Execution-black)](https://github.com/Royalvice/Thoth)
@@ -53,7 +53,18 @@ Thoth solves that by materializing agent work into a real operating layer:
 
 ## Quick Start
 
-### 1. Clone and install the plugin
+### 1. Install from a marketplace
+
+Add the Thoth marketplace and install the plugin:
+
+```bash
+claude plugin marketplace add Royalvice/Thoth --scope user
+claude plugin install thoth@thoth --scope user
+```
+
+Use `project` or `local` scope instead of `user` if you want a narrower install.
+
+### 2. Install directly from the repository
 
 ```bash
 git clone https://github.com/Royalvice/Thoth.git
@@ -61,7 +72,7 @@ cd Thoth
 claude plugin add "$(pwd)"
 ```
 
-### 2. Initialize a target project
+### 3. Initialize a target project
 
 Open the repository you want to manage with Thoth and run:
 
@@ -77,7 +88,7 @@ This scaffolds the project operating layer, including:
 - `tools/dashboard/` backend and frontend
 - project-local helper scripts and tests
 
-### 3. Start operating the project
+### 4. Start operating the project
 
 Typical first actions:
 
