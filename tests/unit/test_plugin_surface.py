@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import re
 
+import yaml
+
 
 ROOT = Path(__file__).parent.parent.parent
 
@@ -64,5 +66,15 @@ def test_single_official_codex_skill_and_plugin_manifest():
     assert plugin_path.exists()
     manifest = json.loads(plugin_path.read_text(encoding="utf-8"))
     assert manifest["name"] == "thoth"
-    assert manifest["entrypoint"] == "$thoth"
-    assert manifest["public_skill_path"] == ".agents/skills/thoth/SKILL.md"
+    assert manifest["skills"] == "./.agents/skills"
+    assert manifest["interface"]["displayName"] == "Thoth"
+    assert "entrypoint" not in manifest
+    assert "public_skill_path" not in manifest
+
+
+def test_codex_agent_metadata_exists():
+    """Skill-local OpenAI metadata should exist for the single public skill."""
+    metadata_path = ROOT / ".agents" / "skills" / "thoth" / "agents" / "openai.yaml"
+    assert metadata_path.exists()
+    metadata = yaml.safe_load(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["interface"]["display_name"] == "thoth"
