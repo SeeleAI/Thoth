@@ -2,14 +2,14 @@
 
 ## Purpose
 
-本文件综合解析 OpenAI 官方关于 `Background mode`、`Webhooks`、`Codex web/cloud`、`Subagents`、`Subagent concepts`、`Hooks`、`Automations`、`Local environments` 的当前公开说明。
+本文件综合解析 OpenAI 官方关于 `Background mode`、`Webhooks`、`Codex web/cloud`、`Subagents`、`Subagent concepts`、`Hooks`、`Automations`、`Local environments`、`Skills`、`Plugins build/install` 的当前公开说明。
 
 authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 
 ## Verification Snapshot
 
-- `last_verified_utc`: `2026-04-23T04:04:51Z`
-- `sources`: `SRC-OAI-001` ~ `SRC-OAI-008`
+- `last_verified_utc`: `2026-04-23T14:55:53Z`
+- `sources`: `SRC-OAI-001` ~ `SRC-OAI-011`
 
 ## 1. OpenAI API primitives
 
@@ -137,6 +137,35 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
   - local environment 提供执行与上下文接近性
   - `.thoth` 提供项目级 authority 与 recovery
 
+### Skills
+
+本轮围绕 Thoth 的 Codex public surface 重核后，官方 `Codex Skills` 页对我们最关键的信号有三个：
+
+- `SKILL.md` 仍是公开 skill 的核心入口文件。
+- `agents/openai.yaml` 属于官方 metadata 层，可用于 skill 展示与默认提示。
+- skill 名称与展示元数据属于宿主呈现层，不应被误当成 runtime authority。
+
+对 Thoth 的设计含义：
+
+- Thoth 的 Codex public surface 可以继续保持单一 skill。
+- `.agents/skills/thoth/` 这层是 Codex-facing projection，不是 `.thoth` authority。
+- `openai.yaml` 应进入生成链路与测试护栏，避免手工漂移。
+
+### Plugins build / install
+
+本轮围绕 Codex 官方 plugin 对齐重核后，官方 `Plugins build` / `Install plugins` 页对我们最关键的信号有四个：
+
+- `.codex-plugin/plugin.json` 是官方 plugin manifest。
+- plugin `name` 是 manifest identity，同时也是 component namespace 的关键部分。
+- manifest 采用标准 metadata 字段和 `interface` 展示层，而不是仓库自定义字段。
+- Codex 当前 CLI 的安装/更新主路径是 marketplace source：`marketplace add` / `marketplace upgrade`。
+
+对 Thoth 的设计含义：
+
+- README 里的 Codex 安装说明必须写成 marketplace source 安装，而不能照搬 Claude 的 `install` 子命令叙事。
+- Thoth 的 plugin manifest 应尽量收敛到官方 schema，减少 repo 自定义字段。
+- 即使 plugin / skill 展示层做了 UI metadata 收敛，也不能把它们当成 authority；真正 authority 仍是 `.thoth`。
+
 ## 3. Cross-cutting distinctions
 
 ### API primitive vs product runtime
@@ -144,7 +173,7 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 - `Background mode` / `Webhooks`:
   - API primitive
   - 服务于异步执行与回调
-- `Codex cloud / subagents / hooks / automations / local environments`:
+- `Codex cloud / subagents / hooks / automations / local environments / skills / plugins`:
   - 产品/宿主运行面
   - 服务于 Codex 的任务执行形态与扩展机制
 
@@ -157,6 +186,7 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 - automations
 - local environments
 - subagent operational details
+- skills / plugin presentation metadata
 
 相对更稳的内容：
 

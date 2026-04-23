@@ -17,7 +17,7 @@
 
 ## Verification Snapshot
 
-- `verified_at_utc`: `2026-04-23T04:04:51Z`
+- `verified_at_utc`: `2026-04-23T14:55:53Z`
 - `verified_by`: `Codex`
 - `policy`: `high-volatility 30 days / concept-and-best-practice 60 days`
 
@@ -33,6 +33,9 @@
 | `SRC-OAI-006` | OpenAI | Codex Hooks | https://developers.openai.com/codex/hooks | `openai-codex-and-api.md` | `experimental` | `high` | `30` | `2026-04-23T04:04:51Z` | 任何 hooks 支持矩阵、配置方式、平台兼容性判断时 | 当前页面标记为 `Experimental`，且需 feature flag；平台支持信息高波动 |
 | `SRC-OAI-007` | OpenAI | Codex Automations | https://developers.openai.com/codex/app/automations | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于自动化触发、GitHub 集成、计划任务判断时 | 产品工作流可能快速变化 |
 | `SRC-OAI-008` | OpenAI | Codex Local environments | https://developers.openai.com/codex/app/local-environments | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于本地环境接入、权限/连接方式、宿主边界判断时 | 与 cloud/web/codex app 的边界要最新核对 |
+| `SRC-OAI-009` | OpenAI | Codex Skills | https://developers.openai.com/codex/skills | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T14:55:53Z` | 用于 skills 目录、`SKILL.md`、`agents/openai.yaml`、skill 命名与公开 surface 判断时 | 直接影响 Thoth 的 Codex public skill 投影 |
+| `SRC-OAI-010` | OpenAI | Codex Plugins Build | https://developers.openai.com/codex/plugins/build | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T14:55:53Z` | 用于 `.codex-plugin/plugin.json` schema、component namespace、plugin metadata 判断时 | 直接影响 Thoth 的官方 plugin manifest 对齐 |
+| `SRC-OAI-011` | OpenAI | Codex Plugins Install | https://developers.openai.com/codex/plugins/install-plugins | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T14:55:53Z` | 用于 marketplace 安装/升级路径、GitHub source 安装行为判断时 | 直接影响 README 安装与更新文案 |
 | `SRC-ANT-001` | Anthropic | How Claude Code works | https://code.claude.com/docs/en/how-claude-code-works | `claude-code-runtime-and-platforms.md` | `active` | `medium` | `60` | `2026-04-23T04:04:51Z` | 用于 Claude Code 运行原理、agent loop、tooling model 判断时 | 原理页相对稳，但仍需回源确认 |
 | `SRC-ANT-002` | Anthropic | Claude Code on the web | https://code.claude.com/docs/en/claude-code-on-the-web | `claude-code-runtime-and-platforms.md` | `research-preview` | `high` | `30` | `2026-04-23T04:04:51Z` | 任何 web 端能力、限制、远程执行流程判断时 | 当前文档明确为 `research preview` |
 | `SRC-ANT-003` | Anthropic | Remote Control | https://code.claude.com/docs/en/remote-control | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于远程接管、终端/浏览器衔接、认证前提判断时 | 交互路径和账号前提属于高波动产品行为 |
