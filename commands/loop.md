@@ -1,7 +1,7 @@
 ---
-name: thoth:loop
+name: loop
 description: Autonomous long-running execution loop with goal and iteration control
-argument-hint: "--mode=task|metric [--iterations=N] [--goal <text>] [--verify <cmd>] [--guard <cmd>]"
+argument-hint: "--mode=task|metric [--executor claude|codex] [--iterations=N] [--goal <text>] [--verify <cmd>] [--guard <cmd>] [--model <model>] [--effort <level>]"
 ---
 
 # /thoth:loop — 轮回
@@ -30,6 +30,10 @@ argument-hint: "--mode=task|metric [--iterations=N] [--goal <text>] [--verify <c
 
 ### Step 1: Parse Configuration
 Required: `--mode=task` or `--mode=metric`
+
+Optional:
+- `--executor claude|codex` (default: `claude`)
+- `--model <model>` and `--effort <level>` when `--executor codex`
 
 For metric mode, also required:
 - `--goal <description>`
@@ -72,6 +76,9 @@ Read YAML state (task mode) or analyze patterns (metric mode).
 **Phase 3: Modify**
 ONE atomic change. Self-check: if >5 files, validate intent.
 
+If `--executor codex`, delegate only Phase 3 to the internal `codex-worker`
+agent and then resume loop control in Thoth.
+
 **Phase 4: Commit**
 ```bash
 git add <specific-files>
@@ -86,7 +93,7 @@ git commit -m "experiment(<scope>): <description>"
 If --guard provided: run guard command. Pass/fail or metric-valued.
 
 **Phase 6: Decide**
-Apply decision logic from thoth-exec skill.
+Apply decision logic from `contracts/exec.md`.
 - keep → move to next iteration
 - discard → `git revert HEAD --no-edit`
 - rework → retry Phase 3 with constraint (max 2 attempts)

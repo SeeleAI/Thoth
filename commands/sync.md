@@ -1,5 +1,5 @@
 ---
-name: thoth:sync
+name: sync
 description: Synchronize all persistence data, IDs, and submodule states
 argument-hint: "[--submodules]"
 ---

@@ -1,5 +1,5 @@
 ---
-name: thoth:extend
+name: extend
 description: Safely add or modify plugin skills, commands, and scripts
 argument-hint: "<what to add or modify>"
 ---
@@ -36,7 +36,7 @@ What to add or modify from `$ARGUMENTS`.
 
 ### Step 2: Impact Analysis
 1. List all files that will be created or modified
-2. Check for naming conflicts with existing commands/skills
+2. Check for naming conflicts with existing public commands and internal agents
 3. Identify affected test suites
 4. Check for scope overlaps with existing commands
 

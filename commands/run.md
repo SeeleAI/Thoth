@@ -1,7 +1,7 @@
 ---
-name: thoth:run
+name: run
 description: Execute a single task (foreground), with verification and commit
-argument-hint: "<task description or task_id>"
+argument-hint: "[--executor claude|codex] [--model <model>] [--effort <level>] <task description or task_id>"
 ---
 
 # /thoth:run — 施法
@@ -34,6 +34,10 @@ Parse task from `$ARGUMENTS`. Can be:
 - Free text: "fix the auth bug in login.py"
 - Task ID: "e2-h1" (looks up YAML task file)
 
+Optional executor flags:
+- `--executor claude|codex` (default: `claude`)
+- `--model <model>` and `--effort <level>` when `--executor codex`
+
 ### Step 2: Precondition
 ```bash
 python "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py" --quick
@@ -41,22 +45,26 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py" --quick
 Must pass. If not: report issues, suggest /thoth:doctor.
 
 ### Step 3: Execute
-1. Make the code changes (ONE focused change)
-2. Run validation:
+1. Read the internal contracts in `contracts/core.md`, `contracts/audit.md`,
+   `contracts/exec.md`, `contracts/memory.md`, and `contracts/codex.md`.
+2. If `--executor codex`, delegate implementation to the internal `codex-worker`
+   agent and wait for the result.
+3. Otherwise make the code changes directly (ONE focused change).
+4. Run validation:
    ```bash
    python .agent-os/research-tasks/validate.py
    ```
-3. If task has completed phases, verify:
+5. If task has completed phases, verify:
    ```bash
    python .agent-os/research-tasks/verify_completion.py <task_id>
    ```
-4. Git commit:
+6. Git commit:
    ```bash
    git add <specific-files>
    git commit -m "experiment(<scope>): <description>"
    ```
-5. Update YAML task file (status, criteria.current, deliverables)
-6. Sync:
+7. Update YAML task file (status, criteria.current, deliverables)
+8. Sync:
    ```bash
    python .agent-os/research-tasks/sync_todo.py
    ```

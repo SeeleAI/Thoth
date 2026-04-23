@@ -1,5 +1,5 @@
 ---
-name: thoth:dashboard
+name: dashboard
 description: Start, stop, or rebuild the project dashboard
 argument-hint: "[start|stop|rebuild]"
 ---

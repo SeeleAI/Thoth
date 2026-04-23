@@ -1,5 +1,5 @@
 ---
-name: thoth:discuss
+name: discuss
 description: Discussion mode — update docs/YAML/config/DB, strictly NO code modification
 argument-hint: "<topic or question>"
 ---

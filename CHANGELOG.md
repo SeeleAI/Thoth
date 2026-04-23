@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.3] - 2026-04-23
+
+### Changed
+- Switched public command frontmatter names to bare command ids so plugin namespace is provided by Claude Code rather than duplicated in-file
+
+## [0.1.2] - 2026-04-23
+
+### Changed
+- Collapsed Codex delegation into `--executor codex` on the main public commands
+- Moved internal behavioral contracts out of the public plugin `skills/` surface into `contracts/`
+- Added internal `thoth-main` and `codex-worker` agents plus plugin `settings.json`
+
+### Fixed
+- Removed internal Thoth helper modules and dedicated Codex variants from the public slash-command surface
+
 ## [0.1.1] - 2026-04-22
 
 ### Changed

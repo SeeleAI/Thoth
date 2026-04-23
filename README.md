@@ -29,9 +29,9 @@ At the center of Thoth are two connected systems:
 - **Audit System**: truth, evidence, decisions, recoverability
 - **Execution System**: tasks, loops, verification, delegation
 
-Today, Thoth runs as a **Claude Code plugin** and already supports **Codex
-delegation** through `:codex` variants. The longer-term direction is a more
-host-agnostic, Codex-native runtime.
+Today, Thoth runs as a **Claude Code plugin** and supports **Codex
+delegation** as an executor mode on the main public commands. The longer-term
+direction is a more host-agnostic, Codex-native runtime.
 
 ## Why Thoth
 
@@ -113,11 +113,11 @@ Typical first actions:
 
 ### Codex Delegation
 
-Thoth already exposes Codex-enabled variants:
+Codex is available as an executor mode on the main public commands:
 
-- `/thoth:run:codex`
-- `/thoth:loop:codex`
-- `/thoth:review:codex`
+- `/thoth:run --executor codex ...`
+- `/thoth:loop --executor codex ...`
+- `/thoth:review --executor codex ...`
 
 This is real support today:
 
@@ -136,8 +136,9 @@ Thoth operates in two layers.
 
 The Thoth repository provides:
 
-- command contracts in `commands/`
-- behavioral skills in `skills/`
+- public command definitions in `commands/`
+- internal contracts in `contracts/`
+- internal agents in `agents/`
 - automation hooks in `hooks/`
 - management scripts in `scripts/`
 - deployable project templates in `templates/`
@@ -167,7 +168,7 @@ assistant surface.
 
 - `/thoth:run` for one focused change
 - `/thoth:loop` for iterative execution with decision logic
-- `*:codex` for delegated Codex work under Thoth control
+- `--executor codex` for delegated Codex work under Thoth control
 
 ### Governance
 
@@ -200,7 +201,7 @@ Thoth is currently:
 - hosted through **Claude Code**
 - installed as a local plugin
 - backed by generated project files and scripts
-- capable of delegating work to **OpenAI Codex**
+- capable of delegating work to **OpenAI Codex** through executor-mode routing
 
 ### Next
 
@@ -221,8 +222,9 @@ pytest -q
 Current repository contents include:
 
 - plugin metadata in `.claude-plugin/`
-- command definitions in `commands/`
-- skills in `skills/`
+- public commands in `commands/`
+- internal contracts in `contracts/`
+- internal agents in `agents/`
 - scripts in `scripts/`
 - dashboard and project templates in `templates/`
 - unit and integration tests in `tests/`
