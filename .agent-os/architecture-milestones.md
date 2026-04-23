@@ -58,6 +58,10 @@
   - 目标：把 `.thoth` authority、durable runtime、adopt/init、merge stage、dashboard contract 做成真实系统
   - 当前状态：设计高信息量材料已被吸收进 `.agent-os/planning/`，但代码仍未落地
 
+- `WS-004` `[active]`: 外部平台知识真源治理
+  - 目标：把 `Codex` / `Claude Code` 官方资料、刷新阈值和 authority 规则固化进 `.agent-os/official-sources/` 与根合同
+  - 当前状态：基础治理层已落地，后续只需按 freshness policy 持续维护
+
 ## Milestones
 
 - `MS-001` `[ready]`: `dev` 控制平面文档系统落地
@@ -82,3 +86,4 @@
 - 2026-04-23: 当前 repo 明确采用 `dev` 控制平面 / `main` 发布面的双分支职责模型
 - 2026-04-23: 当前插件产品面以显式 `/thoth:*` 和 executor-mode Codex 为准，不再使用公开内部模块或公开 `:codex` 变体
 - 2026-04-23: 早期完整插件蓝图、逐轮决策轨迹、V2 目标架构摘要与开放协议问题均已迁入 `.agent-os/planning/`
+- 2026-04-23: `Codex` / `Claude Code` 官方资料被纳入 `.agent-os/official-sources/`，并受 authority / freshness 规则治理

@@ -4,7 +4,7 @@
 
 - Objective: `OBJ-001`
 - Top next action: `TD-001`
-- Active workstreams: `WS-001`, `WS-003`, `WS-002`
+- Active workstreams: `WS-001`, `WS-003`, `WS-002`, `WS-004`
 - Active blockers: `none`
 
 ## Objective Summary
@@ -16,6 +16,7 @@
 - `WS-001` `[active]`: 分支治理与 `main` 隔离。把 `dev` 作为开发控制平面，把 `main` 作为稳定发布面，并将 `cherry-pick` 作为默认集成策略。
 - `WS-003` `[active]`: 当前插件产品稳定化。围绕 `/thoth:*` 命令面、安装行为、surface clean-up、README 与测试护栏继续收敛现有实现。
 - `WS-002` `[planned]`: Thoth V2 架构收敛。把 `.thoth` 作为机器权威层、把 durable runtime 和 adoption/migration 协议落成真实系统。
+- `WS-004` `[active]`: 外部平台知识真源治理。把 `Codex` / `Claude Code` 官方资料解析、刷新策略与 authority 边界固化进 `.agent-os/official-sources/` 与 `AGENTS.md`。
 
 ## Top Next Action
 
@@ -34,6 +35,8 @@
 - 2026-04-23: 创建 `dev` 分支并发布到 `origin/dev`，作为后续开发控制平面分支。
 - 2026-04-23: 基于 `agent-project-system` 初始化本仓库的 `dev` 状态文档系统，并将当前实现事实与 V2 规划材料重新对齐。
 - 2026-04-23: 已把外部 5 份 Thoth 规划文档完整吸收进 `.agent-os/planning/`，形成 repo-local 的蓝图、决策轨迹、目标架构与开放问题文档。
+- 2026-04-23: 新增 `.agent-os/official-sources/`，用于承载 `Codex` / `Claude Code` 官方资料解析、刷新阈值与真源治理规则。
+- 2026-04-23: 已完成 15 个官方来源的登记与综合解析，并把 authority / freshness 规则写入 `AGENTS.md`。
 
 ## Read Next
 
@@ -42,3 +45,4 @@
 - [todo.md](todo.md)
 - [run-log.md](run-log.md)
 - [planning/source-register.md](planning/source-register.md)
+- [official-sources/source-governance.md](official-sources/source-governance.md)

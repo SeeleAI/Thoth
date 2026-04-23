@@ -23,6 +23,11 @@
    - [`.agent-os/change-decisions.md`](.agent-os/change-decisions.md)
    - [`.agent-os/acceptance-report.md`](.agent-os/acceptance-report.md)
    - [`.agent-os/lessons-learned.md`](.agent-os/lessons-learned.md)
+6. 若任务涉及 `Codex` / `Claude Code` 的平台能力、实现原理、hooks、subagents、background、web、remote、automations、GitHub Actions 或 local environments：
+   - 先读 [`.agent-os/official-sources/source-governance.md`](.agent-os/official-sources/source-governance.md)
+   - 再读 [`.agent-os/official-sources/platform-index.md`](.agent-os/official-sources/platform-index.md)
+   - 再读对应综合解析
+   - 若超过 freshness 阈值，先回官方 latest 页面，再给结论
 
 ## 3. 文档职责
 
@@ -36,6 +41,12 @@
 - `acceptance-report.md`: 已通过与未通过的证据账本
 - `lessons-learned.md`: 失败探索、被否决方案、重试条件
 - `run-log.md`: 最近工作会话的轻量时间序列记录
+
+官方平台知识目录固定为 `.agent-os/official-sources/`，用于治理：
+
+- `Codex`
+- `Claude Code`
+- 以及与其直接相关的 OpenAI / Anthropic 官方平台资料
 
 根目录还必须包含：
 
@@ -63,6 +74,11 @@
 5. 失败探索必须保留在 `lessons-learned.md`，不能为保持“整洁”而删除。
 6. `project-index.md` 中必须始终只有一个全局 top next action。
 7. 项目状态文档主语言为中文；代码注释与脚本 `print` 输出保持英文。
+8. 涉及 `Codex` / `Claude Code` 自身特性、执行机制、实现原理或产品限制时，官方文档是唯一 authority；仓库内总结只能作为缓存综合层。
+9. 对外部官方资料的 repo-local 结论必须遵守 freshness policy：
+   - 高波动页 `30` 天
+   - 概念 / best-practice 页 `60` 天
+10. 页面若带 `preview` / `research preview` / `experimental` 标签，则即使未过 freshness 阈值，只要用于能力或限制判断，也必须先回官方 latest 页面核验。
 
 ## 5. 分支治理与集成规则
 
@@ -112,3 +128,4 @@
 - 工作会话结束前更新 `run-log.md`
 - 若 top next action 改变，则同时更新 `project-index.md`
 - 若用户拍板改变解释边界，则同时更新 `change-decisions.md`
+- 若新增或重核外部官方资料，则同时更新 `.agent-os/official-sources/platform-index.md`

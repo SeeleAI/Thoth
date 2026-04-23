@@ -50,6 +50,10 @@
   - Related items: `WS-002`, `REQ-007`, `REQ-012`, `AC-006`
   - Definition of done: 5 份外部规划文档被拆分承载到 repo-local `.agent-os/planning/`，并在核心状态文档中建立可恢复引用关系
 
+- `TD-010` `[verified]`: 建立 `Codex` / `Claude Code` 官方资料解析与真源治理层
+  - Related items: `WS-004`, `REQ-013`, `AC-007`, `CD-007`
+  - Definition of done: 15 个官方来源入表；建立 OpenAI / Claude Code 综合解析、跨平台对照与真源治理合同；并在 `AGENTS.md` 写入 freshness / authority 规则
+
 ## Abandoned
 
 - `TD-008` `[abandoned]`: 把 bare command 名作为公共命令前缀策略

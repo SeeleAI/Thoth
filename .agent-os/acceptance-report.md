@@ -22,6 +22,11 @@
   - Evidence: 已新增 `planning/source-register.md`、`planning/legacy-plugin-blueprint.md`、`planning/decision-trace.md`、`planning/target-architecture.md`、`planning/open-questions.md`，并在 `project-index.md`、`requirements.md`、`architecture-milestones.md` 中建立恢复引用
   - Conclusion: 当前仓库已经具备不依赖原始外部路径来恢复规划背景的本地承载层
 
+- `EV-009` related to `TD-010`: `Codex` / `Claude Code` 官方资料解析与真源治理层已建立
+  - Evidence: 已新增 `official-sources/platform-index.md`、`official-sources/source-governance.md`、`official-sources/openai-codex-and-api.md`、`official-sources/claude-code-runtime-and-platforms.md`、`official-sources/codex-vs-claude-code.md`；`AGENTS.md` 已加入 authority 与 freshness 规则
+  - Conclusion: 当前仓库已具备 repo-local 的外部平台知识治理层，且恢复路径已明确要求在超 freshness 阈值时回官方 latest 页面核验
+  - Validation: `python /root/.codex/skills/agent-project-system/scripts/validate_project_system.py /mnt/cfs/5vr0p6/yzy/thoth --state-dir .agent-os` 返回 `[OK] Project state document system is valid`
+
 ## Failed Or Pending Checks
 
 - `EV-005` related to `WS-002`: `.thoth` authority runtime 尚未在当前 checkout 中实现

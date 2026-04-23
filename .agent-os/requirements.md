@@ -15,6 +15,7 @@
 - `REQ-005`: `dev -> main` 的默认集成策略是 `cherry-pick` 代码提交，而不是直接 merge 整个 `dev` 分支。
 - `REQ-006`: 当前插件的公开 surface 必须保持干净：只暴露真正的 `/thoth:*` 公共命令，不暴露内部协议层或公开 `:codex` 变体。
 - `REQ-007`: 项目必须对失败探索、架构转向和用户后续拍板保持可追踪，不允许静默丢失信息量。
+- `REQ-013`: 对 `Codex` / `Claude Code` 自身特性、运行机制、实现原理与产品限制的长期文档化，必须以官方 docs 为 authority，并受 freshness policy 约束。
 
 ## Acceptance Criteria
 
@@ -27,6 +28,7 @@
   - 当前 Codex 为 executor-mode
   - 当前尚未实现 `.thoth` authority runtime
 - `AC-006`: `architecture-milestones.md` 中明确分开“当前实现结构”与“目标 V2 架构”。
+- `AC-007`: `.agent-os/official-sources/` 中存在完整的平台真源治理文档，并覆盖用户指定的全部官方来源。
 
 ## Non-Goals
 
@@ -56,6 +58,12 @@
   - `planning/target-architecture.md`
   - `planning/open-questions.md`
 - 这些文档的职责是吸收原始外部路径中的设计信息量，使仓库恢复不再依赖外部临时文件路径。
+- `REQ-013` 当前通过以下目录承载：
+  - `official-sources/platform-index.md`
+  - `official-sources/source-governance.md`
+  - `official-sources/openai-codex-and-api.md`
+  - `official-sources/claude-code-runtime-and-platforms.md`
+  - `official-sources/codex-vs-claude-code.md`
 
 ## Source Note
 

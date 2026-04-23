@@ -35,3 +35,8 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
   - Related items: `REQ-006`, `WS-003`
   - Human rationale: 宿主体验必须干净，不能把内部模块暴露给用户
   - Effect on project: 公开 `:codex` 变体和内部 skill 外露已被视为 rejected 路径
+
+- `CD-007` `2026-04-23` `[accepted]`: `Codex` / `Claude Code` 外部平台知识采用“官方 docs 为 authority，`.agent-os/official-sources/` 为缓存综合层”的治理模型
+  - Related items: `REQ-013`, `WS-004`
+  - Human rationale: 涉及平台能力与实现原理时不能依赖陈旧认知，必须有 latest-first 的真源规则
+  - Effect on project: 后续所有平台知识都必须遵守 freshness policy 与 live-check 规则
