@@ -182,6 +182,7 @@ def test_generates_scripts(base_config, project_dir):
         "check-required-files.sh",
         "session-end-check.sh",
         "validate-all.sh",
+        "thoth-codex-hook.sh",
     ]
     for script in expected_scripts:
         spath = scripts_dir / script
@@ -207,7 +208,7 @@ def test_generates_codex_project_layer(base_config, project_dir):
     generate_codex_project_layer(base_config, project_dir)
     assert (project_dir / ".codex" / "config.json").exists()
     assert (project_dir / ".codex" / "setup.sh").exists()
-    assert (project_dir / ".codex" / "hooks" / "hooks.json").exists()
+    assert (project_dir / ".codex" / "hooks.json").exists()
 
 
 def test_generates_thoth_authority_project_files(base_config, project_dir):

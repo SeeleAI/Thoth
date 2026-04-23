@@ -114,7 +114,7 @@ class TestInitWorkflow:
 
     def test_creates_scripts(self, init_project):
         project_dir, _ = init_project
-        scripts = ["install-hooks.sh", "session-end-check.sh", "validate-all.sh", "check-required-files.sh"]
+        scripts = ["install-hooks.sh", "session-end-check.sh", "validate-all.sh", "check-required-files.sh", "thoth-codex-hook.sh"]
         for fname in scripts:
             assert (project_dir / "scripts" / fname).exists(), f"Missing: scripts/{fname}"
 
@@ -134,7 +134,7 @@ class TestInitWorkflow:
         for rel in [
             ".codex/config.json",
             ".codex/setup.sh",
-            ".codex/hooks/hooks.json",
+            ".codex/hooks.json",
         ]:
             assert (project_dir / rel).exists(), f"Missing: {rel}"
 

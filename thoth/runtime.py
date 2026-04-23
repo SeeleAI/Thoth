@@ -433,6 +433,10 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
     review = sub.add_parser("review")
     review.add_argument("rest", nargs="*")
 
+    hook = sub.add_parser("hook")
+    hook.add_argument("--host", required=True, choices=("claude", "codex"))
+    hook.add_argument("--event", required=True, choices=("start", "end", "stop"))
+
     supervise = sub.add_parser("supervise")
     supervise.add_argument("--project-root", required=True)
     supervise.add_argument("--run-id", required=True)

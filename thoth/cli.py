@@ -9,6 +9,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .host_hooks import run_host_hook
 from .project_init import initialize_project, parse_config, sync_project_layer
 from .runtime import (
     attach_run,
@@ -103,6 +104,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "sync":
         sync_project_layer(project_root)
         return _run_legacy_script("sync.py", [], cwd=project_root)
+
+    if args.command == "hook":
+        result = run_host_hook(host=args.host, event=args.event, project_root=project_root)
+        if result.stdout:
+            print(result.stdout, end="")
+        return result.exit_code
 
     if args.command == "report":
         end = datetime.now(timezone.utc).date()
