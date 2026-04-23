@@ -1,0 +1,37 @@
+# Change Decisions
+
+## Purpose
+
+Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `requirements.md` 来掩盖方向变化。
+
+## Entries
+
+- `CD-001` `2026-04-22` `[accepted]`: Thoth V2 的控制平面采用 `Thoth 主控`，外部 Codex 仅作每轮或显式子任务 worker
+  - Related items: `REQ-003`, `WS-002`
+  - Human rationale: 需要稳定、可控、可追踪、跨 session 恢复的 runtime，而不是把控制权交给外部 worker
+  - Effect on project: 未来目标架构以 `.thoth` authority + durable runtime 为中心
+
+- `CD-002` `2026-04-22` `[accepted]`: 运行时真相模型为“repo ledger 为权威，SQLite 仅为派生索引/缓存”
+  - Related items: `REQ-003`, `WS-002`
+  - Human rationale: 最大化可追踪性、Git 友好性与宿主解耦
+  - Effect on project: 当前文档必须把 SQLite 视为派生层，不能把数据库写成最终 authority
+
+- `CD-003` `2026-04-22` `[accepted]`: `/thoth:init` 的未来目标语义是“先审计，再 preview，再询问，再 apply”，而不是盲目 scaffold
+  - Related items: `REQ-003`, `WS-002`, `TD-005`
+  - Human rationale: 现有项目接管不能破坏已有仓库信息
+  - Effect on project: 当前 init 脚手架能力与目标 adoption 语义之间的差距必须被明确记录
+
+- `CD-004` `2026-04-23` `[accepted]`: `dev` 分支保留开发态文档系统，`main` 完全不保留 `AGENTS.md`、`CLAUDE.md`、`.agent-os/`
+  - Related items: `REQ-001`, `REQ-004`, `WS-001`
+  - Human rationale: `dev` 作为开发控制平面，`main` 作为发布面，两者职责要彻底分离
+  - Effect on project: 当前初始化的根文档与状态目录只服务于 `dev`
+
+- `CD-005` `2026-04-23` `[accepted]`: `dev -> main` 的默认集成策略为 `cherry-pick` 代码提交
+  - Related items: `REQ-005`, `WS-001`
+  - Human rationale: 避免把 `dev` 动态状态文档和控制平面信息带入 `main`
+  - Effect on project: 后续治理机制、脚本与文档都必须围绕 `cherry-pick` 作为默认路径
+
+- `CD-006` `2026-04-23` `[accepted]`: 当前公开命令面保持显式 `/thoth:*`，内部协议层与内部 worker 不暴露为公开 slash surface
+  - Related items: `REQ-006`, `WS-003`
+  - Human rationale: 宿主体验必须干净，不能把内部模块暴露给用户
+  - Effect on project: 公开 `:codex` 变体和内部 skill 外露已被视为 rejected 路径
