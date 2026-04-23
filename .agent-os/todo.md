@@ -46,6 +46,10 @@
   - Related items: `MS-001`, `REQ-001`, `REQ-002`, `AC-001`, `AC-002`, `AC-003`
   - Definition of done: 基于现有 repo 与规划材料建立根入口和 `.agent-os/` 文档系统，并通过项目状态校验
 
+- `TD-009` `[verified]`: 将外部 Thoth 规划材料完整吸收进 `.agent-os/`
+  - Related items: `WS-002`, `REQ-007`, `REQ-012`, `AC-006`
+  - Definition of done: 5 份外部规划文档被拆分承载到 repo-local `.agent-os/planning/`，并在核心状态文档中建立可恢复引用关系
+
 ## Abandoned
 
 - `TD-008` `[abandoned]`: 把 bare command 名作为公共命令前缀策略

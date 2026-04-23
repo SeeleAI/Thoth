@@ -47,6 +47,16 @@
   - `/tmp/thoth-planning-20260422T152336Z/02-synthesized-architecture.md`
   - `/tmp/thoth-planning-20260422T152336Z/03-open-schema-questions.md`
 
+## Preservation Status
+
+- `REQ-012` 当前已通过 repo-local 重组承载：
+  - `planning/source-register.md`
+  - `planning/legacy-plugin-blueprint.md`
+  - `planning/decision-trace.md`
+  - `planning/target-architecture.md`
+  - `planning/open-questions.md`
+- 这些文档的职责是吸收原始外部路径中的设计信息量，使仓库恢复不再依赖外部临时文件路径。
+
 ## Source Note
 
 本文件保存用户定义的目标、治理边界和验收语义。允许清理表述，但不允许代理私自改变含义。

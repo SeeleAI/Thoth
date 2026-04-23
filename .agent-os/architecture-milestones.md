@@ -37,6 +37,13 @@
 
 两者不能混淆。
 
+详细承载文档：
+
+- `planning/legacy-plugin-blueprint.md`
+- `planning/decision-trace.md`
+- `planning/target-architecture.md`
+- `planning/open-questions.md`
+
 ## Workstreams
 
 - `WS-001` `[active]`: 分支治理与 `main` 隔离
@@ -49,7 +56,7 @@
 
 - `WS-002` `[planned]`: Thoth V2 架构收敛
   - 目标：把 `.thoth` authority、durable runtime、adopt/init、merge stage、dashboard contract 做成真实系统
-  - 当前状态：设计高信息量材料已存在，代码未落地
+  - 当前状态：设计高信息量材料已被吸收进 `.agent-os/planning/`，但代码仍未落地
 
 ## Milestones
 
@@ -74,3 +81,4 @@
 - 2026-04-22: 目标架构从“更完整的 Claude plugin 蓝图”收敛到“Thoth 主控 + `.thoth` authority + durable runtime”
 - 2026-04-23: 当前 repo 明确采用 `dev` 控制平面 / `main` 发布面的双分支职责模型
 - 2026-04-23: 当前插件产品面以显式 `/thoth:*` 和 executor-mode Codex 为准，不再使用公开内部模块或公开 `:codex` 变体
+- 2026-04-23: 早期完整插件蓝图、逐轮决策轨迹、V2 目标架构摘要与开放协议问题均已迁入 `.agent-os/planning/`

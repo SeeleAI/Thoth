@@ -18,6 +18,10 @@
   - Evidence: 本轮执行 `python /root/.codex/skills/agent-project-system/scripts/validate_project_system.py /mnt/cfs/5vr0p6/yzy/thoth --state-dir .agent-os`，结果为 `[OK] Project state document system is valid`
   - Conclusion: 根文档、状态目录、typed IDs、top next action 与 link integrity 当前满足项目状态系统最低要求
 
+- `EV-008` related to `TD-009`: 外部 5 份 Thoth 规划文档已被 repo-local `.agent-os/` 文档系统吸收
+  - Evidence: 已新增 `planning/source-register.md`、`planning/legacy-plugin-blueprint.md`、`planning/decision-trace.md`、`planning/target-architecture.md`、`planning/open-questions.md`，并在 `project-index.md`、`requirements.md`、`architecture-milestones.md` 中建立恢复引用
+  - Conclusion: 当前仓库已经具备不依赖原始外部路径来恢复规划背景的本地承载层
+
 ## Failed Or Pending Checks
 
 - `EV-005` related to `WS-002`: `.thoth` authority runtime 尚未在当前 checkout 中实现

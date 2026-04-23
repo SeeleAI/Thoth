@@ -33,6 +33,7 @@
 - 2026-04-23: 审查并收敛了公开命令面，移除了公开内部 skills 与独立公开 `:codex` 变体，并恢复了显式 `/thoth:*` 公共命令名。
 - 2026-04-23: 创建 `dev` 分支并发布到 `origin/dev`，作为后续开发控制平面分支。
 - 2026-04-23: 基于 `agent-project-system` 初始化本仓库的 `dev` 状态文档系统，并将当前实现事实与 V2 规划材料重新对齐。
+- 2026-04-23: 已把外部 5 份 Thoth 规划文档完整吸收进 `.agent-os/planning/`，形成 repo-local 的蓝图、决策轨迹、目标架构与开放问题文档。
 
 ## Read Next
 
@@ -40,3 +41,4 @@
 - [architecture-milestones.md](architecture-milestones.md)
 - [todo.md](todo.md)
 - [run-log.md](run-log.md)
+- [planning/source-register.md](planning/source-register.md)
