@@ -106,6 +106,7 @@ def list_runs(project_root: Path) -> list[dict[str, Any]]:
         state_data = _read_json(run_dir / "state.json")
         heartbeat_data = _read_json(run_dir / "heartbeat.json")
         artifacts_data = _read_json(run_dir / "artifacts.json")
+        supervisor_data = _read_json(run_dir / "supervisor.json")
         events = [_normalize_event(event) for event in _read_jsonl(run_dir / "events.jsonl")]
         events.sort(key=lambda item: item["seq"])
 
@@ -139,10 +140,12 @@ def list_runs(project_root: Path) -> list[dict[str, Any]]:
             "run_id": run_id,
             "task_id": task_id,
             "title": run_data.get("title") or run_id,
+            "host": run_data.get("host"),
             "status": status,
             "phase": state_data.get("phase") or run_data.get("phase"),
             "progress_pct": progress_pct,
             "executor": run_data.get("executor"),
+            "attachable": bool(run_data.get("attachable", True)),
             "created_at": run_data.get("created_at"),
             "started_at": run_data.get("started_at") or run_data.get("created_at"),
             "last_updated_at": last_updated_at,
@@ -150,6 +153,8 @@ def list_runs(project_root: Path) -> list[dict[str, Any]]:
             "last_event_seq": state_data.get("last_event_seq") if isinstance(state_data.get("last_event_seq"), int) else (last_event["seq"] if last_event else 0),
             "is_active": is_active,
             "is_stale": is_stale,
+            "stale": is_stale,
+            "supervisor_state": state_data.get("supervisor_state") or supervisor_data.get("state"),
             "latest_message": last_event.get("message") if last_event else "",
             "artifact_count": len(artifacts_data.get("artifacts", [])) if isinstance(artifacts_data.get("artifacts"), list) else 0,
             "events_path": str((run_dir / "events.jsonl").relative_to(project_root)) if (run_dir / "events.jsonl").exists() else None,
@@ -223,4 +228,5 @@ def runtime_overview(project_root: Path) -> dict[str, Any]:
         "active_runs": active_runs[:10],
         "last_runtime_update": runs[0].get("last_updated_at") if runs else None,
         "progress_source": "task_yaml_plus_run_ledger",
+        "host_breakdown": sorted({run.get("host") for run in runs if run.get("host")}),
     }

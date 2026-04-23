@@ -1,66 +1,38 @@
 ---
 name: thoth:extend
-description: Safely add or modify plugin skills, commands, and scripts
-argument-hint: "<what to add or modify>"
+description: Evolve Thoth itself under the generated test gates.
+argument-hint: "<change request>"
 ---
 
-# /thoth:extend — 铸符
+# /thoth:extend
+
+## Generated Surface
+
+This file is generated from `thoth.command_specs.COMMAND_SPECS`. Do not hand edit.
 
 ## Scope Guard
 
 **CAN:**
-- Add new command files to the thoth plugin
-- Add new skill files to the thoth plugin
-- Modify existing command/skill files
-- Add new scripts to the thoth plugin
-- Create corresponding unit tests
+- Modify this repository
+- Run repository tests
 
 **CANNOT:**
-- Modify target project files (use /thoth:run)
-- Delete existing commands or skills without user confirmation
-- Bypass the test gate
-- Skip version bump
+- Bypass generated surface parity
 
-## Plan Mode (REQUIRED)
+## Runtime Contract
 
-This command ALWAYS uses plan mode:
-1. Analyze what needs to change
-2. Draft plan with exact file diffs
-3. User reviews and approves
-4. Execute exactly as planned
+- Durable: no
+- Codex executor allowed: no
+- Hooks required for correctness: no
+- Subagents required for correctness: no
+- Lifecycle: plan -> change -> verify
+- Acceptance: Extension work respects the generated surface contract and test gates.
 
-## Workflow
+## Interaction Gaps
 
-### Step 1: Parse Request
-What to add or modify from `$ARGUMENTS`.
+- (none)
 
-### Step 2: Impact Analysis
-1. List all files that will be created or modified
-2. Check for naming conflicts with existing public commands and internal agents
-3. Identify affected test suites
-4. Check for scope overlaps with existing commands
+## Shared Authority
 
-### Step 3: Conflict Check
-If ANY potential conflict detected:
-- STOP immediately
-- Present the conflict to user
-- Wait for user decision before proceeding
-
-### Step 4: Execute (after plan approval)
-1. Create/modify command, skill, or script files
-2. Create corresponding unit tests (REQUIRED for new functionality)
-3. Run full test suite:
-   ```bash
-   cd "${CLAUDE_PLUGIN_ROOT}" && pytest tests/ -v
-   ```
-4. **If ANY test fails → revert ALL changes, report failure**
-
-### Step 5: Finalize
-1. Bump version in `.claude-plugin/plugin.json` (patch increment)
-2. Update `CHANGELOG.md`
-3. Report success with summary of changes
-
-## Error Handling
-- Test failure → revert all changes, show which test failed
-- Name conflict → stop, present conflict, ask user
-- Scope overlap → stop, present overlap, ask user
+Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
+Host differences are interaction-only and must not change ledger shape.

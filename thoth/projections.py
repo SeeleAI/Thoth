@@ -1,0 +1,119 @@
+"""Render host-specific projections from the host-neutral Thoth command specs."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from .command_specs import COMMAND_SPECS, CommandSpec, PUBLIC_CODEX_COMMANDS
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _bullet_lines(items: tuple[str, ...]) -> str:
+    if not items:
+        return "- (none)\n"
+    return "".join(f"- {item}\n" for item in items)
+
+
+def render_claude_command(spec: CommandSpec) -> str:
+    lifecycle = " -> ".join(spec.lifecycle) if spec.lifecycle else "n/a"
+    return f"""---
+name: thoth:{spec.command_id}
+description: {spec.summary}
+argument-hint: "{spec.argument_hint}"
+---
+
+# /thoth:{spec.command_id}
+
+## Generated Surface
+
+This file is generated from `thoth.command_specs.COMMAND_SPECS`. Do not hand edit.
+
+## Scope Guard
+
+**CAN:**
+{_bullet_lines(spec.scope_can)}
+**CANNOT:**
+{_bullet_lines(spec.scope_cannot)}
+## Runtime Contract
+
+- Durable: {"yes" if spec.durable else "no"}
+- Codex executor allowed: {"yes" if spec.supports_codex_executor else "no"}
+- Hooks required for correctness: {"no" if not spec.needs_hooks else "hooks may enhance but are not correctness-critical"}
+- Subagents required for correctness: no
+- Lifecycle: {lifecycle}
+- Acceptance: {spec.acceptance}
+
+## Interaction Gaps
+
+{_bullet_lines(spec.interaction_gaps)}
+## Shared Authority
+
+Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
+Host differences are interaction-only and must not change ledger shape.
+"""
+
+
+def render_codex_skill() -> str:
+    command_lines = "\n".join(
+        f"- `$thoth {spec.command_id}`: {spec.summary}" for spec in COMMAND_SPECS
+    )
+    return f"""# Thoth
+
+Official Codex public surface for Thoth. This skill is generated from the same host-neutral command specification that renders the Claude `/thoth:*` commands.
+
+## Public Entry
+
+Use the single public entrypoint:
+
+- `$thoth <command>`
+
+Supported commands:
+{command_lines}
+
+## Runtime Rules
+
+- `.thoth` is the only runtime authority.
+- `run` and `loop` are durable by default and support attach/watch/stop semantics.
+- Host hooks and subagents may enhance throughput but are never correctness requirements.
+- Do not create alternative public Codex skill variants such as `run:codex` or `loop:codex`.
+"""
+
+
+def render_plugin_manifest() -> dict:
+    return {
+        "schema_version": 1,
+        "name": "thoth",
+        "display_name": "Thoth",
+        "version": "0.2.0",
+        "description": "Official Codex-native public surface for the Thoth authority runtime.",
+        "entrypoint": "$thoth",
+        "public_skill_path": ".agents/skills/thoth/SKILL.md",
+        "commands": list(PUBLIC_CODEX_COMMANDS),
+    }
+
+
+def sync_repository_surfaces(root: Path | None = None) -> list[Path]:
+    """Render all generated repository surfaces from the canonical spec."""
+    repo_root = (root or ROOT).resolve()
+    written: list[Path] = []
+
+    commands_dir = repo_root / "commands"
+    commands_dir.mkdir(parents=True, exist_ok=True)
+    for spec in COMMAND_SPECS:
+        path = commands_dir / f"{spec.command_id}.md"
+        path.write_text(render_claude_command(spec), encoding="utf-8")
+        written.append(path)
+
+    skill_path = repo_root / ".agents" / "skills" / "thoth" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True, exist_ok=True)
+    skill_path.write_text(render_codex_skill(), encoding="utf-8")
+    written.append(skill_path)
+
+    plugin_path = repo_root / ".codex-plugin" / "plugin.json"
+    plugin_path.parent.mkdir(parents=True, exist_ok=True)
+    plugin_path.write_text(json.dumps(render_plugin_manifest(), indent=2) + "\n", encoding="utf-8")
+    written.append(plugin_path)
+    return written

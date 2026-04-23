@@ -10,6 +10,9 @@ dependencies = [
     "uvicorn>=0.23.0",
 ]
 
+[project.scripts]
+thoth = "thoth.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",

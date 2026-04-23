@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "name": "thoth",
+  "display_name": "Thoth",
+  "version": "0.2.0",
+  "description": "Official Codex-native public surface for the Thoth authority runtime.",
+  "entrypoint": "$thoth",
+  "public_skill_path": ".agents/skills/thoth/SKILL.md",
+  "commands": [
+    "init",
+    "run",
+    "loop",
+    "review",
+    "status",
+    "doctor",
+    "dashboard",
+    "sync",
+    "report",
+    "discuss",
+    "extend"
+  ]
+}

@@ -71,8 +71,8 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
     )
 
     runs_dir = tmp_path / ".thoth" / "runs"
-    _write_json(runs_dir / "run-1" / "run.json", {"run_id": "run-1", "task_id": "task-1", "executor": "claude", "created_at": "2026-04-23T01:00:00Z"})
-    _write_json(runs_dir / "run-1" / "state.json", {"status": "running", "phase": "experiment", "progress_pct": 61, "last_event_seq": 2, "updated_at": "2026-04-23T01:10:00Z"})
+    _write_json(runs_dir / "run-1" / "run.json", {"run_id": "run-1", "task_id": "task-1", "host": "codex", "executor": "claude", "attachable": True, "created_at": "2026-04-23T01:00:00Z"})
+    _write_json(runs_dir / "run-1" / "state.json", {"status": "running", "phase": "experiment", "progress_pct": 61, "last_event_seq": 2, "updated_at": "2026-04-23T01:10:00Z", "supervisor_state": "running"})
     _write_json(runs_dir / "run-1" / "heartbeat.json", {"last_heartbeat_at": "2026-04-23T01:11:00Z"})
     _write_jsonl(runs_dir / "run-1" / "events.jsonl", [
         {"seq": 1, "ts": "2026-04-23T01:01:00Z", "kind": "log", "message": "started"},
@@ -90,6 +90,8 @@ def test_task_endpoint_includes_active_run(monkeypatch, tmp_path):
     body = response.json()
     assert body["tasks"][0]["active_run"]["run_id"] == "run-1"
     assert body["tasks"][0]["run_count"] == 1
+    assert body["tasks"][0]["active_run"]["host"] == "codex"
+    assert body["tasks"][0]["active_run"]["attachable"] is True
 
 
 def test_runtime_progress_and_event_endpoints(monkeypatch, tmp_path):
@@ -100,10 +102,12 @@ def test_runtime_progress_and_event_endpoints(monkeypatch, tmp_path):
     progress = client.get("/api/progress")
     assert progress.status_code == 200
     assert progress.json()["runtime"]["active_run_count"] == 1
+    assert progress.json()["runtime"]["host_breakdown"] == ["codex"]
 
     active = client.get("/api/tasks/task-1/active-run")
     assert active.status_code == 200
     assert active.json()["status"] == "running"
+    assert active.json()["supervisor_state"] == "running"
 
     history = client.get("/api/tasks/task-1/runs")
     assert history.status_code == 200

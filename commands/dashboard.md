@@ -1,53 +1,38 @@
 ---
 name: thoth:dashboard
-description: Start, stop, or rebuild the project dashboard
-argument-hint: "[start|stop|rebuild]"
+description: Start or describe the task-first dashboard backed by .thoth ledgers.
+argument-hint: "[--port <port>]"
 ---
 
-# /thoth:dashboard — 神殿
+# /thoth:dashboard
+
+## Generated Surface
+
+This file is generated from `thoth.command_specs.COMMAND_SPECS`. Do not hand edit.
 
 ## Scope Guard
 
 **CAN:**
-- Start/stop the dashboard server
-- Rebuild the frontend
-- Print dashboard URL
+- Start the dashboard
+- Report dashboard endpoints
 
 **CANNOT:**
-- Modify dashboard code (use /thoth:extend for plugin, /thoth:run for project)
-- Modify any project files
+- Read host session state as runtime truth
 
-## Workflow
+## Runtime Contract
 
-### Default (start)
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/dashboard.sh" start
-```
+- Durable: no
+- Codex executor allowed: no
+- Hooks required for correctness: no
+- Subagents required for correctness: no
+- Lifecycle: serve
+- Acceptance: Dashboard reads .thoth/runs data only and renders host/executor/runtime distinctions explicitly.
 
-### Arguments
+## Interaction Gaps
 
-**start** (default):
-1. Check if dashboard is already running → print URL if so
-2. Check if frontend dist exists → build if not:
-   ```bash
-   cd tools/dashboard/frontend && npm run build
-   ```
-3. Start uvicorn:
-   ```bash
-   cd tools/dashboard/backend && python -m uvicorn app:app --host 0.0.0.0 --port ${PORT} &
-   ```
-4. Print: "Dashboard running at http://localhost:{port}"
+- (none)
 
-**stop**:
-1. Find running uvicorn process
-2. Kill it gracefully
-3. Print: "Dashboard stopped"
+## Shared Authority
 
-**rebuild**:
-1. Stop dashboard if running
-2. Rebuild frontend:
-   ```bash
-   cd tools/dashboard/frontend && npm run build
-   ```
-3. Restart dashboard
-4. Print: "Dashboard rebuilt and restarted"
+Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
+Host differences are interaction-only and must not change ledger shape.

@@ -1,73 +1,37 @@
 ---
 name: thoth:report
-description: Auto-generate progress report for a date range
-argument-hint: "--from YYYY-MM-DD --to YYYY-MM-DD [--output <path>]"
+description: Build a structured report from the current authority state.
+argument-hint: "[--format md|json]"
 ---
 
-# /thoth:report — 谶纬
+# /thoth:report
+
+## Generated Surface
+
+This file is generated from `thoth.command_specs.COMMAND_SPECS`. Do not hand edit.
 
 ## Scope Guard
 
 **CAN:**
-- Read all project files
-- Generate markdown report file
-- Reference media (images, videos) via markdown links
+- Read project authority and ledgers
 
 **CANNOT:**
-- Modify any existing files
-- Execute experiments or builds
+- Invent missing evidence
 
-## Workflow
+## Runtime Contract
 
-### Step 1: Parse Date Range
-From `$ARGUMENTS`:
-- `--from YYYY-MM-DD` (required)
-- `--to YYYY-MM-DD` (required)
-- `--output <path>` (default: `reports/{to_date}-report.md`)
+- Durable: no
+- Codex executor allowed: no
+- Hooks required for correctness: no
+- Subagents required for correctness: no
+- Lifecycle: collect -> render
+- Acceptance: Report is derived from current ledgers and project docs rather than session memory.
 
-### Step 2: Run Report Script
-```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/report.py" --from $FROM --to $TO --output $OUTPUT
-```
+## Interaction Gaps
 
-### Step 3: Collection
+- (none)
 
-The script collects:
-1. **Completed tasks** in date range (from run-log.md timestamps)
-2. **Progress on active tasks** (from YAML current state)
-3. **New tasks created** in range
-4. **Evidence and deliverables** (scan deliverable paths)
-5. **Media references** (images, videos found in deliverables)
+## Shared Authority
 
-### Step 4: Generate Report
-
-Output format:
-```markdown
-# Progress Report: {from} — {to}
-
-## Summary
-- Tasks completed: N
-- Tasks in progress: N
-- Overall progress: X%
-
-## Completed
-### [task-id] Task Title
-- Phase: conclusion → completed
-- Verdict: confirmed/rejected
-- Evidence: [link](path)
-- ![screenshot](path/to/image.png)
-
-## In Progress
-### [task-id] Task Title
-- Current phase: experiment (65%)
-- Next: ...
-
-## Blockers & Risks
-- [task-id] blocked by [dep-id]: reason
-
-## Media
-- [video](path/to/demo.mp4)
-```
-
-### Step 5: Report Location
-Print: "Report generated: {output_path}"
+Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
+Host differences are interaction-only and must not change ledger shape.
