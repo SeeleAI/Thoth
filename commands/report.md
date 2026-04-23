@@ -1,5 +1,5 @@
 ---
-name: report
+name: thoth:report
 description: Auto-generate progress report for a date range
 argument-hint: "--from YYYY-MM-DD --to YYYY-MM-DD [--output <path>]"
 ---

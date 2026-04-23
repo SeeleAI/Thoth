@@ -1,5 +1,5 @@
 ---
-name: doctor
+name: thoth:doctor
 description: Audit local persistence data for drift, conflicts, and alignment
 argument-hint: "[--quick] [--fix]"
 ---

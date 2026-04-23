@@ -1,5 +1,5 @@
 ---
-name: review
+name: thoth:review
 description: First-principles review — step outside the project and critique from expert perspective
 argument-hint: "[--executor claude|codex] [--model <model>] [--effort <level>] <what to review: code, idea, architecture, approach>"
 ---

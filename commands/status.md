@@ -1,5 +1,5 @@
 ---
-name: status
+name: thoth:status
 description: Script-controlled structured print of current project state
 argument-hint: "[--full]"
 ---

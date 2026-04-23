@@ -1,9 +1,9 @@
 # Changelog
 
-## [0.1.3] - 2026-04-23
+## [0.1.4] - 2026-04-23
 
-### Changed
-- Switched public command frontmatter names to bare command ids so plugin namespace is provided by Claude Code rather than duplicated in-file
+### Fixed
+- Restored explicit `thoth:*` public command names so installed plugin commands render as `/thoth:*` instead of bare command names
 
 ## [0.1.2] - 2026-04-23
 

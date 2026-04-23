@@ -1,5 +1,5 @@
 ---
-name: run
+name: thoth:run
 description: Execute a single task (foreground), with verification and commit
 argument-hint: "[--executor claude|codex] [--model <model>] [--effort <level>] <task description or task_id>"
 ---

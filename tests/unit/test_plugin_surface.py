@@ -46,10 +46,10 @@ def test_internal_agents_and_settings_exist():
 
 
 def test_public_command_names_are_bare():
-    """Command files should rely on plugin namespace, not repeat it in frontmatter."""
+    """Public command names should stay explicitly namespaced under Thoth."""
     for path in sorted((ROOT / "commands").glob("*.md")):
         content = path.read_text(encoding="utf-8")
         match = re.search(r"^name:\s*(.+)$", content, re.MULTILINE)
         assert match, path
         name = match.group(1).strip()
-        assert not name.startswith("thoth:"), (path, name)
+        assert name.startswith("thoth:"), (path, name)

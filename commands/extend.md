@@ -1,5 +1,5 @@
 ---
-name: extend
+name: thoth:extend
 description: Safely add or modify plugin skills, commands, and scripts
 argument-hint: "<what to add or modify>"
 ---

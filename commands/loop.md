@@ -1,5 +1,5 @@
 ---
-name: loop
+name: thoth:loop
 description: Autonomous long-running execution loop with goal and iteration control
 argument-hint: "--mode=task|metric [--executor claude|codex] [--iterations=N] [--goal <text>] [--verify <cmd>] [--guard <cmd>] [--model <model>] [--effort <level>]"
 ---

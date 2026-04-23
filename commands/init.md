@@ -1,5 +1,5 @@
 ---
-name: init
+name: thoth:init
 description: Initialize a new project with full Thoth infrastructure
 argument-hint: "[project-name]"
 ---
