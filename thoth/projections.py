@@ -9,6 +9,10 @@ from .command_specs import COMMAND_SPECS, CommandSpec, PUBLIC_CODEX_COMMANDS
 
 
 ROOT = Path(__file__).resolve().parent.parent
+PLUGIN_NAME = "thoth"
+PLUGIN_VERSION = "0.1.4"
+PLUGIN_REPOSITORY = "https://github.com/Royalvice/Thoth"
+PLUGIN_SKILLS_PATH = "./.agents/skills"
 
 
 def _bullet_lines(items: tuple[str, ...]) -> str:
@@ -93,16 +97,51 @@ Supported commands:
 """
 
 
+def render_codex_agent_metadata() -> str:
+    return """interface:
+  display_name: "thoth"
+  short_description: "Official Codex public surface for the Thoth authority runtime."
+  default_prompt: "Use $thoth as the single public entrypoint for Thoth and operate the shared .thoth runtime through $thoth <command>."
+"""
+
+
 def render_plugin_manifest() -> dict:
     return {
-        "schema_version": 1,
-        "name": "thoth",
-        "display_name": "Thoth",
-        "version": "0.2.0",
+        "name": PLUGIN_NAME,
+        "version": PLUGIN_VERSION,
         "description": "Official Codex-native public surface for the Thoth authority runtime.",
-        "entrypoint": "$thoth",
-        "public_skill_path": ".agents/skills/thoth/SKILL.md",
-        "commands": list(PUBLIC_CODEX_COMMANDS),
+        "author": {
+            "name": "Royalvice",
+            "email": "viceyzy@foxmail.com",
+            "url": "https://github.com/Royalvice",
+        },
+        "homepage": f"{PLUGIN_REPOSITORY}#readme",
+        "repository": PLUGIN_REPOSITORY,
+        "license": "MIT",
+        "keywords": [
+            "thoth",
+            "codex",
+            "claude-code",
+            "agent",
+            "runtime",
+            "dashboard",
+        ],
+        "skills": PLUGIN_SKILLS_PATH,
+        "interface": {
+            "displayName": "Thoth",
+            "shortDescription": "Single Codex entrypoint for the shared Thoth runtime.",
+            "longDescription": "Operate Thoth through one $thoth command surface backed by the shared .thoth authority, durable run ledger, and dashboard-visible project state.",
+            "developerName": "Royalvice",
+            "category": "Productivity",
+            "capabilities": ["Read", "Write", "Execute"],
+            "websiteURL": PLUGIN_REPOSITORY,
+            "defaultPrompt": [
+                "Show the current Thoth project status and active runs.",
+                "Initialize Thoth in this repository and render project layers.",
+                "Start a durable Thoth run for the current task.",
+            ],
+            "brandColor": "#3B82F6",
+        },
     }
 
 
@@ -122,6 +161,11 @@ def sync_repository_surfaces(root: Path | None = None) -> list[Path]:
     skill_path.parent.mkdir(parents=True, exist_ok=True)
     skill_path.write_text(render_codex_skill(), encoding="utf-8")
     written.append(skill_path)
+
+    agent_metadata_path = repo_root / ".agents" / "skills" / "thoth" / "agents" / "openai.yaml"
+    agent_metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    agent_metadata_path.write_text(render_codex_agent_metadata(), encoding="utf-8")
+    written.append(agent_metadata_path)
 
     plugin_path = repo_root / ".codex-plugin" / "plugin.json"
     plugin_path.parent.mkdir(parents=True, exist_ok=True)

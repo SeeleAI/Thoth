@@ -5,13 +5,13 @@
 Persistent truth + validation scripts + autonomous execution loops = agent work you can actually inspect, recover, and trust.
 
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-blue?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
-[![Codex](https://img.shields.io/badge/OpenAI_Codex-Delegation-green?logo=openai&logoColor=white)](https://developers.openai.com/codex)
-[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/Royalvice/Thoth)
+[![Codex](https://img.shields.io/badge/OpenAI_Codex-Plugin-green?logo=openai&logoColor=white)](https://developers.openai.com/codex)
+[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](https://github.com/Royalvice/Thoth)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 [![Project OS](https://img.shields.io/badge/Agent_Project_OS-Audit_%2B_Execution-black)](https://github.com/Royalvice/Thoth)
 [![Dashboard](https://img.shields.io/badge/Human_Visibility-Dashboard-8A6A3A)](https://github.com/Royalvice/Thoth)
-[![Runtime](https://img.shields.io/badge/Runtime-Claude_today%2C_Codex_next-5B8DEF)](https://github.com/Royalvice/Thoth)
+[![Runtime](https://img.shields.io/badge/Runtime-Claude_%2B_Codex-5B8DEF)](https://github.com/Royalvice/Thoth)
 
 <br>
 
@@ -58,7 +58,7 @@ Thoth solves that by materializing agent work into a real operating layer:
 
 ## Quick Start
 
-### 1. Install from a marketplace
+### 1. Install in Claude Code
 
 Add the Thoth marketplace and install the plugin:
 
@@ -69,20 +69,36 @@ claude plugin install thoth@thoth --scope user
 
 Use `project` or `local` scope instead of `user` if you want a narrower install.
 
-### 2. Install directly from the repository
+### 2. Install in Codex
+
+Codex uses the marketplace source as the install and enable step:
+
+```bash
+codex plugin marketplace add Royalvice/Thoth
+```
+
+Update an existing Codex install:
+
+```bash
+codex plugin marketplace upgrade thoth
+```
+
+### 3. Install from a local checkout
 
 ```bash
 git clone https://github.com/Royalvice/Thoth.git
 cd Thoth
 claude plugin add "$(pwd)"
+codex plugin marketplace add "$(pwd)"
 ```
 
-### 3. Initialize a target project
+### 4. Initialize a target project
 
 Open the repository you want to manage with Thoth and run:
 
 ```text
 /thoth:init
+$thoth init
 ```
 
 This scaffolds the project operating layer, including:
@@ -94,7 +110,10 @@ This scaffolds the project operating layer, including:
 - `tools/dashboard/` backend and frontend
 - project-local helper scripts and tests
 
-### 4. Start operating the project
+Use `/thoth:init` inside Claude Code and `$thoth init` inside Codex. Both routes
+write the same `.thoth` authority tree.
+
+### 5. Start operating the project
 
 Typical first actions:
 
@@ -103,6 +122,11 @@ Typical first actions:
 /thoth:run <task>
 /thoth:loop --mode=task
 /thoth:dashboard
+
+$thoth status
+$thoth run <task>
+$thoth loop <goal>
+$thoth dashboard
 ```
 
 ## Core Capabilities
@@ -127,13 +151,16 @@ Claude still supports Codex delegation on the main public commands:
 
 Codex also has its own official single-entry public surface:
 
-```bash
+```text
 $thoth init
 $thoth run
 $thoth loop
 $thoth review
 $thoth status
 ```
+
+The Codex plugin is packaged through `.codex-plugin/plugin.json` and exposes one
+public skill bundle rooted at `.agents/skills/thoth/`.
 
 Both surfaces share the same runtime rules:
 
@@ -235,7 +262,7 @@ transcripts, ledger snapshots, dashboard payloads, and browser traces.
 Thoth is currently:
 
 - generated from a host-neutral public command spec
-- published as both a Claude plugin surface and a Codex plugin/skill surface
+- published as both a Claude plugin surface and an official Codex plugin surface
 - backed by a durable `.thoth/runs/*` ledger plus machine-local supervisor registry
 - observable in the dashboard through shared runtime summaries
 
@@ -253,10 +280,13 @@ Branch policy:
 - Treat `main` as the stable integration and release branch
 - Do not directly modify `main` for normal feature or code development
 - Promote changes from `dev` into `main` deliberately, with `cherry-pick` as the default path
+- Do not commit normal development work straight onto `main`; land it on `dev` first and promote reviewed code later
 
 Current repository contents include:
 
+- plugin metadata in `.codex-plugin/`
 - plugin metadata in `.claude-plugin/`
+- Codex skill metadata in `.agents/skills/`
 - public commands in `commands/`
 - internal contracts in `contracts/`
 - internal agents in `agents/`
