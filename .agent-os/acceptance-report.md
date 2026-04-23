@@ -46,6 +46,17 @@
     - `python scripts/selftest.py --tier heavy --hosts auto --keep-workdir` -> `overall_status=degraded`，其中 `dashboard.browser_realtime=passed`、`host.codex=passed`、`host.claude=degraded`
   - Residual risk: 当前机器上的 Claude host 仍可能因宿主上游 `503` 或类似瞬时服务问题降级，因此 `heavy` 默认路径在本机仍可能表现为 `degraded` 而非纯 `passed`
 
+- `EV-013` related to `TD-002`: Codex plugin 公开 surface、README 与实际安装行为已重新对齐
+  - Evidence: `.codex-plugin/plugin.json` 已切换到官方 metadata + `interface` 形状；`.agents/skills/thoth/agents/openai.yaml` 已由 `thoth.projections.sync_repository_surfaces()` 生成；`README.md` 已新增 Codex GitHub marketplace 安装/升级说明并保留 Claude 流程；`main` 已接收代码提交 `3894507`
+  - Conclusion: 当前仓库的 Codex plugin 分发面、README 文案、GitHub 安装结果与单一 `$thoth <command>` public surface 已达成一致，且未回归 Claude Code
+  - Validation:
+    - `pytest -q tests/unit/test_command_spec_generation.py tests/unit/test_plugin_surface.py` -> `12 passed in 0.24s`
+    - `pytest -q` -> `139 passed in 113.87s`
+    - `python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
+    - `npm run build` in `templates/dashboard/frontend` -> passed
+    - `codex plugin marketplace remove thoth && codex plugin marketplace add Royalvice/Thoth` 后，`codex exec -C /tmp --skip-git-repo-check 'Use the installed $thoth skill. Run $thoth status for the current directory and return the raw result only.'` 返回 `Project: /tmp` / `Active runs: 0`
+    - `claude plugin uninstall thoth --scope user` 后，`claude plugin marketplace add https://github.com/Royalvice/Thoth.git` 与 `claude plugin install thoth@thoth --scope user` 通过；`claude plugin list` 显示 `thoth@thoth 0.1.4 user enabled`
+
 ## Failed Or Pending Checks
 
 - `EV-005` related to `WS-002`: 完整 `.thoth` durable runtime 仍未在当前 checkout 中实现

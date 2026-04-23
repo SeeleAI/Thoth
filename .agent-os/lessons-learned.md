@@ -29,3 +29,10 @@
   - Result: 与当前 repo 实现状态及后续 V2 规划发生错位
   - Why not selected: 当前 repo 必须以代码事实为准，规划材料只能作为目标架构与设计依据
   - Retry condition: 无；这是长期 truthfulness guardrail
+
+- `EXP-005` `[rejected]`: 在当前机器上使用 Claude marketplace 的 GitHub shorthand `Royalvice/Thoth`
+  - Motivation: 希望让 Claude 与 Codex 都统一用简短的 GitHub repo 形式安装 marketplace
+  - Method: 执行 `claude plugin marketplace add Royalvice/Thoth`
+  - Result: 本机 Claude CLI 在 clone 到 `/root/.claude/plugins/marketplaces/Royalvice-Thoth` 时失败；随后改用完整 Git URL 成功
+  - Why not selected: 当前这台机器上的 Claude marketplace 对 shorthand 路径处理存在实际失败；完整 Git URL 更稳
+  - Retry condition: 若后续 Claude CLI 修复该路径处理或在其他机器上验证 shorthand 稳定，可重新评估 README 是否补充 shorthand 形式

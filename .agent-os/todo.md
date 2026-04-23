@@ -20,10 +20,6 @@
   - Related items: `WS-001`, `MS-002`, `REQ-004`, `REQ-005`, `CD-004`, `CD-005`
   - Definition of done: 至少明确 dev-only 文档路径、`cherry-pick` 默认集成流程、以及面向 `main` 的检查或保护方案
 
-- `TD-002` `[ready]`: 审核当前插件公开 surface、README 与安装行为之间是否仍有漂移
-  - Related items: `WS-003`, `MS-003`, `REQ-006`
-  - Definition of done: 当前公开命令面、README 叙事、安装后预期行为之间达成一致，并记录剩余问题
-
 - `TD-003` `[ready]`: 把 V2 规划材料整理成 decision-complete 的迁移主线
   - Related items: `WS-002`, `MS-004`, `REQ-003`, `REQ-012`
   - Definition of done: 未来 `.thoth` authority runtime 的关键未决点被整理成明确可实施的问题序列
@@ -41,6 +37,10 @@
 - None
 
 ## Verified
+
+- `TD-002` `[verified]`: 审核当前插件公开 surface、README 与安装行为之间是否仍有漂移
+  - Related items: `WS-003`, `MS-003`, `REQ-006`, `CD-011`
+  - Definition of done: 当前公开命令面、README 叙事、安装后预期行为之间达成一致，并记录剩余问题
 
 - `TD-012` `[verified]`: 落地双层重型自测试系统
   - Related items: `WS-003`, `REQ-017`, `AC-009`, `CD-010`

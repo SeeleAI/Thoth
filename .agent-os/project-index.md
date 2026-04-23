@@ -31,6 +31,9 @@
 
 ## Recent Important Changes
 
+- 2026-04-23: `.codex-plugin/plugin.json` 已对齐到官方 Codex plugin manifest 形状，并把 `.agents/skills/thoth/agents/openai.yaml` 纳入生成链路与测试护栏。
+- 2026-04-23: `README.md` 已补齐 Codex native 的 GitHub marketplace 安装/升级路径；`dev` 已提交、`main` 已通过 `cherry-pick` 同步并 push。
+- 2026-04-23: 已在当前机器上完成 Codex marketplace 卸载重装 + GitHub source 验证，并把 Claude marketplace 切回 GitHub source 后重新安装 `thoth@thoth`。
 - 2026-04-23: 审查并收敛了公开命令面，移除了公开内部 skills 与独立公开 `:codex` 变体，并恢复了显式 `/thoth:*` 公共命令名。
 - 2026-04-23: 创建 `dev` 分支并发布到 `origin/dev`，作为后续开发控制平面分支。
 - 2026-04-23: 基于 `agent-project-system` 初始化本仓库的 `dev` 状态文档系统，并将当前实现事实与 V2 规划材料重新对齐。
@@ -39,7 +42,7 @@
 - 2026-04-23: 已完成 15 个官方来源的登记与综合解析，并把 authority / freshness 规则写入 `AGENTS.md`。
 - 2026-04-23: `/thoth:init` 已开始生成最小 `.thoth/` authority tree；dashboard 模板已支持 task 绑定 active run、history run 和 run logs，并采用 10 分钟 smart polling。
 - 2026-04-23: 新增 `scripts/selftest.py` / `thoth.selftest` 双层自测试系统；默认 `hard` 档已能真实验证 temp repo、run/loop 生命周期、dashboard backend、hooks、lease conflict、stale heartbeat、resume 与 restart。
-- 2026-04-23: 当前全量回归已扩展到 `136 passed`，并新增 process-real integration tests 覆盖 dashboard 真实进程与 runtime 生命周期。
+- 2026-04-23: 当前全量回归已扩展到 `139 passed`，并新增 process-real integration tests 覆盖 dashboard 真实进程与 runtime 生命周期。
 
 ## Read Next
 

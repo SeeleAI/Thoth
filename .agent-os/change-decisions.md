@@ -55,3 +55,8 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
   - Related items: `REQ-017`, `AC-009`, `WS-003`
   - Human rationale: 当前测试过于接口化，必须把真实工作目录、真实进程、真实 dashboard、故障注入和宿主能力纳入主验证路径，同时避免日常开发完全被超重回归拖慢
   - Effect on project: 新增 `scripts/selftest.py` / `thoth.selftest` 作为官方入口；`hard` 档成为默认重型 gate；`heavy` 档承载浏览器层与宿主真实矩阵
+
+- `CD-011` `2026-04-23` `[accepted]`: Codex 分发面按官方 plugin manifest/schema 对齐，但不改动 Claude Code 公开 surface 与 `.thoth` authority 边界
+  - Related items: `REQ-006`, `WS-003`, `TD-002`
+  - Human rationale: 用户要求把 Thoth 收敛为官方标准 Codex plugin，同时不能伤到现有 Claude 使用方式
+  - Effect on project: `.codex-plugin/plugin.json` 需使用官方 metadata + `interface` 形状；Codex 安装说明以 GitHub marketplace source 为准；`.agents/skills/thoth/agents/openai.yaml` 必须进入生成与测试链路
