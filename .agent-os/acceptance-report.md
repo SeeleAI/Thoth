@@ -32,6 +32,20 @@
   - Conclusion: 当前模板层已经不再把长时运行监控完全建立在 YAML authority 上，而是具备 `.thoth/runs/* -> dashboard` 的真实数据通路
   - Validation: 本轮执行 `pytest -q`，结果为 `115 passed in 2.11s`；并在 `templates/dashboard/frontend` 执行 `npm run build`，结果为 `vue-tsc --noEmit && vite build` 通过，产物生成于 `dist/`
 
+- `EV-011` related to `TD-012`: 双层重型自测试系统已落地并通过 `hard` 档验证
+  - Evidence: 已新增 `scripts/selftest.py`、`thoth/selftest.py`、`tests/integration/test_runtime_lifecycle_e2e.py`、`templates/dashboard/frontend/playwright.config.ts`、`templates/dashboard/frontend/e2e/dashboard-realtime.spec.ts`
+  - Conclusion: 当前仓库已不再只依赖函数级/文件级测试，而是具备面向真实 temp repo、真实 CLI 生命周期、真实 dashboard backend、hooks、lease conflict、stale heartbeat 与 resume 的机械化自验证入口
+  - Validation: 本轮执行 `pytest -q`，结果为 `136 passed in 123.85s`；执行 `python scripts/selftest.py --tier hard --hosts none` 返回 `overall_status=passed`
+
+- `EV-012` related to `TD-012`: `heavy` 档已闭环到默认 `auto-host` 路径，真实浏览器层与 Codex host 矩阵已通过
+  - Evidence: `templates/dashboard/backend/app.py` 已补 SPA deep-link fallback；`templates/dashboard/frontend/e2e/dashboard-realtime.spec.ts` 已收紧到 runtime card 级断言；`thoth/projections.py` 生成的 `.agents/skills/thoth/SKILL.md` 已补合法 YAML frontmatter 与 repo-local CLI 指引；`thoth/selftest.py` 已补 Playwright `PYTHONPATH` 注入、Codex stale-global-CLI 识别、Claude `--verbose` / root-safe permission mode / transient host outage 降级逻辑
+  - Conclusion: `heavy` 档当前已能真实验证 dashboard deep-link、实时刷新、stop transition、Codex public skill surface 与 repo-local authority 写入；默认 `python scripts/selftest.py --tier heavy --hosts auto` 不再出现确定性 `failed`
+  - Validation:
+    - `python scripts/selftest.py --tier heavy --hosts codex --keep-workdir` -> `overall_status=degraded`，其中 `host.codex=passed`，唯一降级项为按模式跳过 `host.claude`
+    - `python scripts/selftest.py --tier heavy --hosts claude --keep-workdir` -> `overall_status=degraded`，其中 `host.claude=degraded`，原因为上游/瞬时宿主故障而非 Thoth 确定性失败
+    - `python scripts/selftest.py --tier heavy --hosts auto --keep-workdir` -> `overall_status=degraded`，其中 `dashboard.browser_realtime=passed`、`host.codex=passed`、`host.claude=degraded`
+  - Residual risk: 当前机器上的 Claude host 仍可能因宿主上游 `503` 或类似瞬时服务问题降级，因此 `heavy` 默认路径在本机仍可能表现为 `degraded` 而非纯 `passed`
+
 ## Failed Or Pending Checks
 
 - `EV-005` related to `WS-002`: 完整 `.thoth` durable runtime 仍未在当前 checkout 中实现

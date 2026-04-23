@@ -19,6 +19,7 @@
 - `REQ-007`: 项目必须对失败探索、架构转向和用户后续拍板保持可追踪，不允许静默丢失信息量。
 - `REQ-013`: 对 `Codex` / `Claude Code` 自身特性、运行机制、实现原理与产品限制的长期文档化，必须以官方 docs 为 authority，并受 freshness policy 约束。
 - `REQ-014`: dashboard 监控长时 Agent 运行时，必须采用 `task-first UI + run-ledger truth` 模型：`task` 为主入口，`run` 强绑定到 `task`，运行日志与心跳从 `.thoth/runs/*` 读取，不再把高频运行时事实写成 YAML authority。
+- `REQ-017`: 仓库必须具备可机械化执行的重型自测试系统，默认覆盖真实临时工作目录、真实 CLI 生命周期、真实 dashboard 后端、故障注入，以及在宿主可用时追加真实 `Codex` / `Claude Code` 矩阵。
 
 ## Acceptance Criteria
 
@@ -33,6 +34,10 @@
 - `AC-006`: `architecture-milestones.md` 中明确分开“当前实现结构”与“目标 V2 架构”。
 - `AC-007`: `.agent-os/official-sources/` 中存在完整的平台真源治理文档，并覆盖用户指定的全部官方来源。
 - `AC-008`: `/thoth:init` 生成的项目包含最小 `.thoth/` authority tree；dashboard backend 能读取 `.thoth/runs/*` 并把 active run、history run 和 run log 绑定到 task 详情。
+- `AC-009`: 仓库提供单一自测试入口并形成双层门槛：
+  - `hard` 档默认覆盖真实 `run` / `loop` / `dashboard` / hooks / stale / lease conflict / resume 闭环
+  - `heavy` 档在此基础上追加 Playwright 浏览器层与宿主真实矩阵
+  - 自测试结果以机器可读 summary 与 artifacts 为准，而不是口头说明
 
 ## Non-Goals
 

@@ -42,6 +42,10 @@
 
 ## Verified
 
+- `TD-012` `[verified]`: 落地双层重型自测试系统
+  - Related items: `WS-003`, `REQ-017`, `AC-009`, `CD-010`
+  - Definition of done: 仓库存在单一自测试入口；`hard` 档真实覆盖 temp repo / run / loop / dashboard / hooks / fault injection；`heavy` 档具备 Playwright 与宿主矩阵能力；并有通过证据
+
 - `TD-011` `[verified]`: 落地 task-first 的 run-ledger dashboard contract
   - Related items: `WS-002`, `WS-003`, `REQ-014`, `AC-008`, `CD-008`
   - Definition of done: `.thoth/` 最小 authority tree 可由 `/thoth:init` 生成；dashboard backend 可读取 `.thoth/runs/*`；task 页面可展示 active run、history run 和 run logs；相关测试通过

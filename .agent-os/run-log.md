@@ -37,3 +37,15 @@
   - State changes: 当前未提交的 host-neutral runtime / Codex surface 改造已先在 `main` 提交，再 merge 到 `dev`；仓库治理从“`dev` 是控制平面”强化为“所有默认开发都必须在 `dev`，未经批准不得直接修改 `main`”
   - Evidence produced: `main` commit `a93b12b`, `dev` merge commit `de6db3f`, updated root `AGENTS.md`, `CLAUDE.md`, `.agent-os/requirements.md`, `.agent-os/change-decisions.md`, `README.md`
   - Next likely action: 继续在 `dev` 上推进后续 Thoth runtime 与治理工作，并把面向 `main` 的集成保持为精选进入
+
+- 2026-04-23 09:00 UTC [heavy selftest system hardening]
+  - Worked on: `OBJ-001`, `WS-003`, `TD-012`
+  - State changes: 测试面从偏函数/接口断言 -> 新增双层自测试系统；runtime 增加 `--task-id` 与 `loop --resume` 真生命周期支点；dashboard 与 frontend 增加 process-real / browser-real 验证注入点
+  - Evidence produced: `scripts/selftest.py`, `thoth/selftest.py`, `tests/integration/test_runtime_lifecycle_e2e.py`, `templates/dashboard/frontend/playwright.config.ts`, `templates/dashboard/frontend/e2e/dashboard-realtime.spec.ts`, `pytest -q` -> `136 passed in 123.85s`, `python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`, `npm run build` passed
+  - Next likely action: 完成 Chromium 浏览器缓存预热并再次执行 `python scripts/selftest.py --tier heavy --hosts auto`，补齐 `heavy` 档全绿证据
+
+- 2026-04-23 10:04 UTC [heavy selftest host-real closure]
+  - Worked on: `OBJ-001`, `WS-003`, `TD-012`
+  - State changes: `heavy` 档从“浏览器层仍有 deep-link / Playwright / host harness 漂移” -> “dashboard.browser_realtime passed, host.codex passed, host.claude only degrades on transient upstream outage”; Codex public skill 生成物补齐 YAML frontmatter 与 repo-local CLI guidance；Claude host harness 改为 root-safe permission mode + `--verbose`
+  - Evidence produced: `templates/dashboard/backend/app.py`, `templates/dashboard/frontend/e2e/dashboard-realtime.spec.ts`, `thoth/projections.py`, `.agents/skills/thoth/SKILL.md`, `thoth/selftest.py`, `tests/unit/test_command_spec_generation.py`, `tests/unit/test_plugin_surface.py`; `pytest -q tests/unit/test_command_spec_generation.py tests/unit/test_plugin_surface.py tests/unit/test_dashboard_runtime_api.py` -> `13 passed in 0.64s`; `python scripts/selftest.py --tier heavy --hosts codex --keep-workdir` -> `overall_status=degraded` with `host.codex=passed`; `python scripts/selftest.py --tier heavy --hosts claude --keep-workdir` -> `overall_status=degraded` with transient `host.claude=degraded`; `python scripts/selftest.py --tier heavy --hosts auto --keep-workdir` -> `overall_status=degraded` with `dashboard.browser_realtime=passed`, `host.codex=passed`, `host.claude=degraded`
+  - Next likely action: 若后续需要把 `heavy` 默认路径提升到纯 `passed`，重点不在 Thoth 本身，而在当前机器上的 Claude host 上游可用性恢复后重跑验证

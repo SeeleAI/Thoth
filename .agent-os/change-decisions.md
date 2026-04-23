@@ -50,3 +50,8 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
   - Related items: `REQ-015`, `REQ-016`, `WS-001`
   - Human rationale: 需要把开发控制平面和稳定发布面彻底分开，避免代理在 `main` 上继续积累未审查改动
   - Effect on project: `main` 只作为稳定集成入口；代理若位于 `main` 必须先切回 `dev` 或其他获批开发分支，再继续修改 repo-tracked 文件
+
+- `CD-010` `2026-04-23` `[accepted]`: Thoth 的验证体系采用“双层门槛 + repo-real 默认 + host-real 自动追加”模型
+  - Related items: `REQ-017`, `AC-009`, `WS-003`
+  - Human rationale: 当前测试过于接口化，必须把真实工作目录、真实进程、真实 dashboard、故障注入和宿主能力纳入主验证路径，同时避免日常开发完全被超重回归拖慢
+  - Effect on project: 新增 `scripts/selftest.py` / `thoth.selftest` 作为官方入口；`hard` 档成为默认重型 gate；`heavy` 档承载浏览器层与宿主真实矩阵

@@ -38,6 +38,8 @@
 - 2026-04-23: 新增 `.agent-os/official-sources/`，用于承载 `Codex` / `Claude Code` 官方资料解析、刷新阈值与真源治理规则。
 - 2026-04-23: 已完成 15 个官方来源的登记与综合解析，并把 authority / freshness 规则写入 `AGENTS.md`。
 - 2026-04-23: `/thoth:init` 已开始生成最小 `.thoth/` authority tree；dashboard 模板已支持 task 绑定 active run、history run 和 run logs，并采用 10 分钟 smart polling。
+- 2026-04-23: 新增 `scripts/selftest.py` / `thoth.selftest` 双层自测试系统；默认 `hard` 档已能真实验证 temp repo、run/loop 生命周期、dashboard backend、hooks、lease conflict、stale heartbeat、resume 与 restart。
+- 2026-04-23: 当前全量回归已扩展到 `136 passed`，并新增 process-real integration tests 覆盖 dashboard 真实进程与 runtime 生命周期。
 
 ## Read Next
 

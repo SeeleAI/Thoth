@@ -19,7 +19,10 @@
 - 内部公开 skills 与独立公开 `:codex` 变体已经被收敛掉
 - `/thoth:init` 现在会生成最小 `.thoth/` authority tree：`project/`、`runs/`、`migrations/`、`derived/`
 - dashboard 模板现在可以把 `.thoth/runs/*` 里的 active run、history run 和事件日志绑定回 task 视图
-- 当前 repo 仍然没有完整 `.thoth` durable supervisor、lease registry、attach/takeover lifecycle
+- 当前 repo 已有基础 durable supervisor / lease conflict / resume / stale heartbeat / dashboard restart 验证闭环，但完整 adopt/init audit-first 语义仍未实现
+- 当前 repo 新增了仓库级双层自测试系统：
+  - `hard` 档覆盖真实 temp repo、真实 CLI 生命周期、真实 dashboard backend、hooks、stale、lease conflict、resume
+  - `heavy` 档追加 Playwright 浏览器层和宿主真实矩阵
 
 ## Target Architecture
 
@@ -54,7 +57,7 @@
 
 - `WS-003` `[active]`: 当前插件产品稳定化
   - 目标：稳定 `/thoth:*` 命令面、安装面、README、测试护栏与内部 surface clean-up
-  - 当前状态：已有一轮收敛落地，但仍需持续验证与打磨
+  - 当前状态：已有一轮收敛落地，并已新增 process-real 自测试 gate；后续重点转为宿主矩阵与安装路径持续验证
 
 - `WS-002` `[planned]`: Thoth V2 架构收敛
   - 目标：把 `.thoth` authority、durable runtime、adopt/init、merge stage、dashboard contract 做成真实系统
