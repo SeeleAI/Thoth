@@ -55,3 +55,15 @@
   - State changes: Codex plugin manifest 从 repo 自定义字段 -> 官方 metadata + `interface` schema；README 从“Claude 为主、Codex 文案不足” -> Claude/Codex 双宿主安装说明一致；`TD-002` ready -> verified
   - Evidence produced: `dev` commit `8584783`, `main` cherry-pick commit `3894507`, generated `.agents/skills/thoth/agents/openai.yaml`, updated `README.md`; `pytest -q tests/unit/test_command_spec_generation.py tests/unit/test_plugin_surface.py` -> `12 passed in 0.24s`; `pytest -q` -> `139 passed in 113.87s`; `python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`; `npm run build` passed; `codex plugin marketplace remove thoth && codex plugin marketplace add Royalvice/Thoth` passed and `codex exec` in `/tmp` returned `Project: /tmp` / `Active runs: 0`; `claude plugin marketplace add https://github.com/Royalvice/Thoth.git` + `claude plugin install thoth@thoth --scope user` passed
   - Next likely action: 回到 `TD-001`，继续把 `dev` / `main` 分流规则从文档约束推进到可执行保护机制
+
+- 2026-04-23 15:12 UTC [legacy Codex rescue note folded into changelog]
+  - Worked on: `OBJ-001`, `WS-003`
+  - State changes: 历史遗留 `docs/legacy-codex-rescue.md` 从独立留档 -> 合并进 `CHANGELOG.md` 的 0.1.2 迁移说明；孤立 `docs/` 文档目录被清空
+  - Evidence produced: `CHANGELOG.md` 已补充“专用 Codex 变体命令 + rescue agent 已退役、由更小的 `/thoth:*` + --executor codex 替代”的迁移说明；`docs/legacy-codex-rescue.md` 已删除
+  - Next likely action: 继续保持历史迁移说明尽量收敛在 changelog 或权威状态文档中，避免新的孤立遗留说明文件
+
+- 2026-04-23 15:35 UTC [advisory host hook upgrade for Claude and Codex]
+  - Worked on: `OBJ-001`, `WS-003`
+  - State changes: Claude 插件级 hook 从“仅打印 project detected / check summary” -> “SessionStart/SessionEnd 追加标准化 hook note、active-run hook event、heartbeat 刷新与 advisory context”；Codex project hook 从“仅生成一个 session-end check 配置” -> “官方 `.codex/hooks.json` 下的 SessionStart/Stop 轻量观测层 + project-local `thoth-codex-hook.sh` 包装”
+  - Evidence produced: 新增 `thoth/host_hooks.py` 与 `thoth hook` 子命令；更新 `scripts/session-hook.py`、`hooks/hooks.json`、`thoth/project_init.py`、`thoth/selftest.py`；`pytest -q tests/unit/test_host_hooks.py tests/unit/test_init.py tests/integration/test_init_workflow.py tests/integration/test_runtime_lifecycle_e2e.py` -> `31 passed in 81.26s`；`pytest -q` -> `141 passed in 107.59s`；`python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
+  - Next likely action: 若后续继续加重 hook，只允许增强宿主感知和观测，不允许让 hooks 取代 `.thoth` authority 或 supervisor lifecycle
