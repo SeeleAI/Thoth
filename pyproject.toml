@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 thoth = "thoth.cli:main"
+thoth-selftest = "thoth.selftest:main"
 
 [project.optional-dependencies]
 dev = [

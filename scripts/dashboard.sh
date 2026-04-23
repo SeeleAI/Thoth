@@ -19,8 +19,18 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
+PYTHON_BIN=$(python -c "
+import yaml
+try:
+    with open('$CONFIG_FILE') as f:
+        c = yaml.safe_load(f) or {}
+    print(c.get('toolchain', {}).get('python', 'python'))
+except Exception:
+    print('python')
+" 2>/dev/null || echo python)
+
 # Read port from config (default 8501)
-PORT=$(python3 -c "
+PORT=$("$PYTHON_BIN" -c "
 import yaml, sys
 try:
     with open('$CONFIG_FILE') as f:
@@ -32,6 +42,8 @@ except Exception:
 
 DASHBOARD_BACKEND="tools/dashboard/backend"
 DASHBOARD_FRONTEND="tools/dashboard/frontend"
+LOG_DIR=".thoth/derived"
+LOG_FILE="${LOG_DIR}/dashboard.log"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -75,9 +87,10 @@ do_start() {
 
     # Start uvicorn in background
     echo "Starting dashboard on port ${PORT}..."
+    mkdir -p "$LOG_DIR"
     cd "$DASHBOARD_BACKEND"
-    python3 -m uvicorn app:app --host 0.0.0.0 --port "${PORT}" \
-        > /dev/null 2>&1 &
+    "$PYTHON_BIN" -m uvicorn app:app --host 0.0.0.0 --port "${PORT}" \
+        > "${OLDPWD}/${LOG_FILE}" 2>&1 &
     local pid=$!
     cd - > /dev/null
 
@@ -86,7 +99,7 @@ do_start() {
     if kill -0 "$pid" 2>/dev/null; then
         echo "Dashboard running at http://localhost:${PORT} (PID: ${pid})"
     else
-        echo "Error: Dashboard failed to start. Check logs."
+        echo "Error: Dashboard failed to start. Check logs at ${LOG_FILE}."
         exit 1
     fi
 }

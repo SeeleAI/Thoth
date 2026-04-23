@@ -207,6 +207,27 @@ assistant surface.
 - **Script-backed behavior**: the system relies on contracts and scripts, not pure improvisation
 - **Tested infrastructure**: golden-data-driven tests protect the operating layer
 
+## Self-Test Gates
+
+Thoth now ships a heavy self-test orchestration entrypoint that exercises the
+real CLI, real temporary repositories, real dashboard processes, fault
+injection, and optional host-native Codex / Claude matrices.
+
+Run the daily process-real gate:
+
+```bash
+python scripts/selftest.py --tier hard
+```
+
+Run the heavy gate with dashboard browser validation and host-real matrices:
+
+```bash
+python scripts/selftest.py --tier heavy --hosts auto
+```
+
+The runner writes a machine-readable summary plus artifacts for command
+transcripts, ledger snapshots, dashboard payloads, and browser traces.
+
 ## Runtime Today, Direction Tomorrow
 
 ### Today

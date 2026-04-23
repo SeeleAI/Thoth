@@ -131,10 +131,12 @@ export interface RunSummary {
   run_id: string
   task_id: string | null
   title: string
+  host?: string | null
   status: string
   phase?: string | null
   progress_pct: number
   executor?: string | null
+  attachable?: boolean
   created_at?: string | null
   started_at?: string | null
   last_updated_at?: string | null
@@ -142,6 +144,8 @@ export interface RunSummary {
   last_event_seq: number
   is_active: boolean
   is_stale: boolean
+  stale?: boolean
+  supervisor_state?: string | null
   latest_message?: string
   artifact_count: number
   events_path?: string | null

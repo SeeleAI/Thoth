@@ -72,7 +72,7 @@ def _load_milestones() -> list:
 
 
 _RESEARCH_CONFIG = _load_research_config()
-_DIRECTIONS_CONFIG = _RESEARCH_CONFIG.get("research", {}).get("directions", [])
+_DIRECTIONS_CONFIG = _RESEARCH_CONFIG.get("research", {}).get("directions") or []
 _PROJECT_NAME = _RESEARCH_CONFIG.get("project", {}).get("name", "Thoth Project")
 
 logging.basicConfig(level=logging.INFO)
@@ -81,6 +81,16 @@ logger.info("Research tasks directory: %s", RESEARCH_TASKS_DIR)
 
 app = FastAPI(title=f"{_PROJECT_NAME} Dashboard", version="1.0.0")
 init_db()
+
+SPA_ENTRY_ROUTES = (
+    "/overview",
+    "/tasks",
+    "/milestones",
+    "/dag",
+    "/timeline",
+    "/todo",
+    "/activity",
+)
 
 
 def _start_yaml_watcher():
@@ -120,6 +130,13 @@ _start_yaml_watcher()
 
 def _error_response(status_code: int, error: str, detail: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"error": error, "detail": detail})
+
+
+def _frontend_index_response() -> HTMLResponse:
+    vue_index = DASHBOARD_DIR / "frontend" / "dist" / "index.html"
+    if vue_index.exists():
+        return HTMLResponse(content=vue_index.read_text(encoding="utf-8"), status_code=200)
+    return HTMLResponse(content=f"<h1>{_PROJECT_NAME} Dashboard</h1><p>Run: npm run build in tools/dashboard/frontend/</p>")
 
 
 DIRECTION_LABELS = {
@@ -203,10 +220,11 @@ def _attach_runtime(task: dict) -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    vue_index = DASHBOARD_DIR / "frontend" / "dist" / "index.html"
-    if vue_index.exists():
-        return HTMLResponse(content=vue_index.read_text(encoding="utf-8"), status_code=200)
-    return HTMLResponse(content=f"<h1>{_PROJECT_NAME} Dashboard</h1><p>Run: npm run build in tools/dashboard/frontend/</p>")
+    return _frontend_index_response()
+
+
+for _spa_route in SPA_ENTRY_ROUTES:
+    app.add_api_route(_spa_route, index, methods=["GET"], response_class=HTMLResponse)
 
 
 @app.get("/api/config")

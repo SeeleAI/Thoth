@@ -57,6 +57,7 @@ def test_single_official_codex_skill_and_plugin_manifest():
     skill_path = ROOT / ".agents" / "skills" / "thoth" / "SKILL.md"
     assert skill_path.exists()
     content = skill_path.read_text(encoding="utf-8")
+    assert content.startswith("---\nname: thoth\n")
     assert "$thoth <command>" in content
 
     plugin_path = ROOT / ".codex-plugin" / "plugin.json"

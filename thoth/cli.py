@@ -14,6 +14,7 @@ from .runtime import (
     attach_run,
     build_status_payload,
     create_run,
+    resume_run,
     runtime_arg_parser,
     spawn_supervisor,
     stop_run,
@@ -133,13 +134,20 @@ def main(argv: list[str] | None = None) -> int:
             stop_run(project_root, args.stop)
             print(f"Stop requested for {args.stop}")
             return 0
+        if args.command == "loop" and getattr(args, "resume", None):
+            handle = resume_run(project_root, args.resume)
+            if args.detach:
+                print(handle.run_id)
+                return 0
+            print(attach_run(project_root, handle.run_id, watch=True))
+            return 0
 
         title = args.task if args.command == "run" else args.goal
         handle = create_run(
             project_root,
             kind=args.command,
             title=title,
-            task_id=None,
+            task_id=getattr(args, "task_id", None),
             host=args.host,
             executor=args.executor,
         )

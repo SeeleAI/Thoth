@@ -30,6 +30,7 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("THOTH_RUNS_DIR", str(tmp_path / ".thoth" / "runs"))
     monkeypatch.setenv("THOTH_HEARTBEAT_STALE_MINUTES", "100000")
     monkeypatch.setattr(dashboard_app, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(dashboard_app, "DASHBOARD_DIR", tmp_path / "tools" / "dashboard")
     monkeypatch.setattr(dashboard_app, "RESEARCH_TASKS_DIR", tmp_path / ".agent-os" / "research-tasks")
     monkeypatch.setattr(dashboard_app, "THOTH_RUNS_DIR", tmp_path / ".thoth" / "runs")
     monkeypatch.setattr(dashboard_app, "DIRECTIONS", ("frontend",))
@@ -37,6 +38,11 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
 
     (tmp_path / ".agent-os" / "research-tasks" / "frontend" / "f1").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".agent-os" / "milestones.yaml").write_text("milestones: []\n", encoding="utf-8")
+    (tmp_path / "tools" / "dashboard" / "frontend" / "dist").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "tools" / "dashboard" / "frontend" / "dist" / "index.html").write_text(
+        "<!doctype html><html><body><div id='app'>dashboard shell</div></body></html>",
+        encoding="utf-8",
+    )
     (tmp_path / ".research-config.yaml").write_text(
         yaml.safe_dump(
             {
@@ -118,3 +124,14 @@ def test_runtime_progress_and_event_endpoints(monkeypatch, tmp_path):
     payload = events.json()
     assert payload["events"][0]["seq"] == 2
     assert payload["next_after_seq"] == 2
+
+
+def test_spa_entry_routes_return_frontend_shell(monkeypatch, tmp_path):
+    _setup_project(tmp_path, monkeypatch)
+    dashboard_app.invalidate_cache()
+    client = TestClient(dashboard_app.app)
+
+    for route in ("/", "/overview", "/tasks"):
+        response = client.get(route)
+        assert response.status_code == 200
+        assert "dashboard shell" in response.text
