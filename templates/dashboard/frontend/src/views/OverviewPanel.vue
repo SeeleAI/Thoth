@@ -7,6 +7,9 @@ const progress = ref<ProgressData | null>(null)
 const loading = ref(true)
 const error = ref('')
 let pollHandle: number | null = null
+const DEFAULT_POLL_MS = 10 * 60 * 1000
+const parsedPollMs = Number(import.meta.env.VITE_THOTH_DASHBOARD_POLL_MS ?? DEFAULT_POLL_MS)
+const pollMs = Number.isFinite(parsedPollMs) && parsedPollMs >= 250 ? parsedPollMs : DEFAULT_POLL_MS
 
 async function loadProgress() {
   try {
@@ -20,7 +23,7 @@ async function loadProgress() {
 
 onMounted(async () => {
   await loadProgress()
-  pollHandle = window.setInterval(loadProgress, 10 * 60 * 1000)
+  pollHandle = window.setInterval(loadProgress, pollMs)
 })
 
 onBeforeUnmount(() => {
@@ -104,7 +107,10 @@ const directionEntries = computed(() => {
         <div v-if="progress.runtime.active_runs.length" class="active-run-list">
           <div v-for="run in progress.runtime.active_runs" :key="run.run_id" class="active-run-row">
             <strong>{{ run.task_id }}</strong>
+            <span>{{ run.host || 'unknown-host' }}</span>
+            <span>{{ run.executor || 'unknown-executor' }}</span>
             <span>{{ run.status }}</span>
+            <span>{{ run.supervisor_state || 'unknown-supervisor' }}</span>
             <span>{{ run.progress_pct.toFixed(0) }}%</span>
             <span>{{ run.latest_message || run.phase || 'No recent message' }}</span>
           </div>

@@ -91,11 +91,46 @@ def ensure_runtime_tree(project_root: Path) -> None:
         (project_root / rel).mkdir(parents=True, exist_ok=True)
 
 
+def _process_alive(pid: int | None) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _supervisor_payload(project_root: Path, run_id: str) -> dict[str, Any]:
+    local_dir = local_registry_root(project_root) / "runs" / run_id
+    return _read_json(local_dir / "supervisor.json")
+
+
+def _lease_holder_is_stale(project_root: Path, lease_payload: dict[str, Any]) -> bool:
+    if not lease_payload:
+        return False
+    if lease_payload.get("status") not in ACTIVE_STATUSES:
+        return False
+    run_id = lease_payload.get("run_id")
+    if not isinstance(run_id, str) or not run_id:
+        return True
+    supervisor = _supervisor_payload(project_root, run_id)
+    return not _process_alive(supervisor.get("pid"))
+
+
 def acquire_repo_lease(project_root: Path, run_id: str, host: str, executor: str) -> Path:
     lease_path = local_registry_root(project_root) / "lease.json"
     current = _read_json(lease_path)
     if current and current.get("run_id") != run_id and current.get("status") in ACTIVE_STATUSES:
-        raise RuntimeError(f"Active lease already held by {current.get('run_id')}")
+        if _lease_holder_is_stale(project_root, current):
+            current["status"] = "released"
+            current["released_reason"] = "stale_supervisor"
+            current["updated_at"] = utc_now()
+            _write_json(lease_path, current)
+        else:
+            raise RuntimeError(f"Active lease already held by {current.get('run_id')}")
     payload = {
         "run_id": run_id,
         "host": host,
@@ -269,6 +304,27 @@ def stop_run(project_root: Path, run_id: str) -> None:
             pass
 
 
+def resume_run(project_root: Path, run_id: str) -> RunHandle:
+    handle = RunHandle(project_root=project_root.resolve(), run_id=run_id)
+    run_payload = handle.run_json()
+    if not run_payload:
+        raise FileNotFoundError(f"Run {run_id} not found")
+
+    state = handle.state_json()
+    supervisor = _read_json(handle.local_dir / "supervisor.json")
+    supervisor_alive = _process_alive(supervisor.get("pid"))
+    if state.get("status") in ACTIVE_STATUSES and supervisor_alive:
+        return handle
+
+    if state.get("status") in ACTIVE_STATUSES and not supervisor_alive:
+        _append_event(handle, "stale supervisor detected; takeover requested", kind="warning", level="warning")
+
+    _append_event(handle, "resume requested")
+    _update_state(handle, status="queued", phase="resume_requested", supervisor_state="spawning")
+    spawn_supervisor(handle)
+    return handle
+
+
 def attach_run(project_root: Path, run_id: str, *, watch: bool = False, timeout_seconds: float = 5.0) -> str:
     handle = RunHandle(project_root=project_root.resolve(), run_id=run_id)
     deadline = time.time() + timeout_seconds
@@ -332,6 +388,7 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
 
     run_parser = sub.add_parser("run")
     run_parser.add_argument("task", nargs="?", default="ad-hoc task")
+    run_parser.add_argument("--task-id")
     run_parser.add_argument("--host", default="codex")
     run_parser.add_argument("--executor", default="codex")
     run_parser.add_argument("--detach", action="store_true")
@@ -341,6 +398,7 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
 
     loop_parser = sub.add_parser("loop")
     loop_parser.add_argument("--goal", default="loop")
+    loop_parser.add_argument("--task-id")
     loop_parser.add_argument("--host", default="codex")
     loop_parser.add_argument("--executor", default="codex")
     loop_parser.add_argument("--detach", action="store_true")

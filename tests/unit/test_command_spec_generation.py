@@ -27,7 +27,9 @@ def test_claude_surface_renders_from_spec():
 
 def test_codex_skill_lists_single_public_entry():
     content = render_codex_skill()
+    assert content.startswith("---\nname: thoth\n")
     assert "$thoth <command>" in content
+    assert "python -m thoth.cli <command>" in content
     for command in PUBLIC_CODEX_COMMANDS:
         assert f"$thoth {command}" in content
 

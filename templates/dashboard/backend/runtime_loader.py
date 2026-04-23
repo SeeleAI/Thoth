@@ -90,6 +90,7 @@ def _runs_dir(project_root: Path) -> Path:
 
 
 def list_runs(project_root: Path) -> list[dict[str, Any]]:
+    project_root = project_root.resolve()
     runs_dir = _runs_dir(project_root)
     if not runs_dir.is_dir():
         return []
@@ -157,7 +158,7 @@ def list_runs(project_root: Path) -> list[dict[str, Any]]:
             "supervisor_state": state_data.get("supervisor_state") or supervisor_data.get("state"),
             "latest_message": last_event.get("message") if last_event else "",
             "artifact_count": len(artifacts_data.get("artifacts", [])) if isinstance(artifacts_data.get("artifacts"), list) else 0,
-            "events_path": str((run_dir / "events.jsonl").relative_to(project_root)) if (run_dir / "events.jsonl").exists() else None,
+            "events_path": str((run_dir / "events.jsonl").resolve().relative_to(project_root)) if (run_dir / "events.jsonl").exists() else None,
         })
 
     runs.sort(

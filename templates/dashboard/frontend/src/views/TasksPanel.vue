@@ -18,6 +18,9 @@ const runEvents = ref<Record<string, RunEvent[]>>({})
 const runEventCursor = ref<Record<string, number | null>>({})
 const detailLoading = ref<Record<string, boolean>>({})
 let pollHandle: number | null = null
+const DEFAULT_POLL_MS = 10 * 60 * 1000
+const parsedPollMs = Number(import.meta.env.VITE_THOTH_DASHBOARD_POLL_MS ?? DEFAULT_POLL_MS)
+const pollMs = Number.isFinite(parsedPollMs) && parsedPollMs >= 250 ? parsedPollMs : DEFAULT_POLL_MS
 
 async function loadTasks() {
   loading.value = true
@@ -126,7 +129,7 @@ onMounted(async () => {
   pollHandle = window.setInterval(async () => {
     await loadTasks()
     await refreshExpandedTaskRuntime()
-  }, 10 * 60 * 1000)
+  }, pollMs)
 })
 
 onBeforeUnmount(() => {
@@ -188,8 +191,11 @@ onBeforeUnmount(() => {
               </div>
               <div class="runtime-meta">
                 <span>Run: {{ activeRuns[task.id]?.run_id }}</span>
+                <span>Host: {{ activeRuns[task.id]?.host || 'unknown' }}</span>
                 <span>Executor: {{ activeRuns[task.id]?.executor || 'unknown' }}</span>
                 <span>Phase: {{ activeRuns[task.id]?.phase || 'unknown' }}</span>
+                <span>Supervisor: {{ activeRuns[task.id]?.supervisor_state || 'unknown' }}</span>
+                <span>Freshness: {{ activeRuns[task.id]?.is_stale ? 'stale' : 'fresh' }}</span>
                 <span>Runtime Progress: {{ activeRuns[task.id]?.progress_pct.toFixed(0) }}%</span>
               </div>
               <div class="runtime-message">
