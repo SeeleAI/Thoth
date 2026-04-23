@@ -255,6 +255,7 @@ def generate_scripts(config: dict[str, Any], project_dir: Path) -> None:
         "check-required-files.sh": "#!/usr/bin/env bash\nset -e\nfor f in project-index.md requirements.md architecture-milestones.md todo.md cross-repo-mapping.md acceptance-report.md lessons-learned.md run-log.md change-decisions.md; do test -f \".agent-os/$f\" || { echo \"MISSING: .agent-os/$f\"; exit 1; }; done\n",
         "session-end-check.sh": "#!/usr/bin/env bash\nset -e\npython .agent-os/research-tasks/validate.py\npython .agent-os/research-tasks/check_consistency.py\npython .agent-os/research-tasks/sync_todo.py --check-only || python .agent-os/research-tasks/sync_todo.py\nbash scripts/check-required-files.sh\n",
         "validate-all.sh": "#!/usr/bin/env bash\nset -e\npython .agent-os/research-tasks/validate.py\npython .agent-os/research-tasks/check_consistency.py\npython .agent-os/research-tasks/sync_todo.py --check-only\nbash scripts/check-required-files.sh\n",
+        "thoth-codex-hook.sh": "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"\ncd \"$ROOT\"\nEVENT=\"${1:-}\"\nif [ -z \"$EVENT\" ]; then\n  echo \"Usage: thoth-codex-hook.sh <start|stop>\" >&2\n  exit 0\nfi\nif command -v thoth >/dev/null 2>&1; then\n  exec thoth hook --host codex --event \"$EVENT\"\nfi\nif [ -n \"${THOTH_SOURCE_ROOT:-}\" ]; then\n  export PYTHONPATH=\"${THOTH_SOURCE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}\"\n  exec python -m thoth.cli hook --host codex --event \"$EVENT\"\nfi\nexit 0\n",
     }
     for filename, content in scripts.items():
         path = scripts_dir / filename
@@ -304,8 +305,7 @@ def generate_host_projections(config: dict[str, Any], project_dir: Path) -> None
 
 def generate_codex_project_layer(config: dict[str, Any], project_dir: Path) -> None:
     codex_dir = project_dir / ".codex"
-    hooks_dir = codex_dir / "hooks"
-    hooks_dir.mkdir(parents=True, exist_ok=True)
+    codex_dir.mkdir(parents=True, exist_ok=True)
     (codex_dir / "config.json").write_text(json.dumps({
         "schema_version": 1,
         "project_layer": "enabled",
@@ -315,9 +315,32 @@ def generate_codex_project_layer(config: dict[str, Any], project_dir: Path) -> N
     setup_path = codex_dir / "setup.sh"
     setup_path.write_text("#!/usr/bin/env bash\nset -e\npython --version\n", encoding="utf-8")
     setup_path.chmod(0o755)
-    (hooks_dir / "hooks.json").write_text(json.dumps({
-        "enabled": True,
-        "hooks": [{"id": "thoth-session-end", "command": "bash scripts/session-end-check.sh"}],
+    (codex_dir / "hooks.json").write_text(json.dumps({
+        "hooks": {
+            "SessionStart": [
+                {
+                    "matcher": "startup|resume",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/thoth-codex-hook.sh\" start",
+                            "statusMessage": "Loading Thoth runtime context",
+                        }
+                    ],
+                }
+            ],
+            "Stop": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/thoth-codex-hook.sh\" stop",
+                            "statusMessage": "Recording Thoth runtime summary",
+                        }
+                    ],
+                }
+            ],
+        }
     }, indent=2) + "\n", encoding="utf-8")
 
 

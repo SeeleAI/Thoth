@@ -245,9 +245,42 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
         stale_run = json.loads(response.read().decode("utf-8"))
     assert stale_run["is_stale"] is True
 
-    hooks_json = json.loads((thoth_project / ".codex" / "hooks" / "hooks.json").read_text(encoding="utf-8"))
-    assert hooks_json["enabled"] is True
-    assert hooks_json["hooks"][0]["command"] == "bash scripts/session-end-check.sh"
+    hooks_json = json.loads((thoth_project / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+    start_hook = hooks_json["hooks"]["SessionStart"][0]["hooks"][0]
+    stop_hook = hooks_json["hooks"]["Stop"][0]["hooks"][0]
+    assert "thoth-codex-hook.sh\" start" in start_hook["command"]
+    assert "thoth-codex-hook.sh\" stop" in stop_hook["command"]
+
+    hook_env = dict(os.environ)
+    hook_env["THOTH_SOURCE_ROOT"] = str(ROOT)
+    hook_start = subprocess.run(
+        ["bash", "scripts/thoth-codex-hook.sh", "start"],
+        cwd=str(thoth_project),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=hook_env,
+        input=json.dumps({"source": "resume", "session_id": "codex-test-session"}),
+    )
+    assert hook_start.returncode == 0
+    hook_start_payload = json.loads(hook_start.stdout)
+    assert "additionalContext" in hook_start_payload["hookSpecificOutput"]
+    assert "Active durable runs" in hook_start_payload["hookSpecificOutput"]["additionalContext"]
+
+    hook_stop = subprocess.run(
+        ["bash", "scripts/thoth-codex-hook.sh", "stop"],
+        cwd=str(thoth_project),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=hook_env,
+        input=json.dumps({"last_assistant_message": "runtime summary"}),
+    )
+    assert hook_stop.returncode == 0
+
+    events_payload = (thoth_project / ".thoth" / "runs" / run_id / "events.jsonl").read_text(encoding="utf-8")
+    assert "codex session_start hook observed" in events_payload
+    assert "codex stop hook observed" in events_payload
 
     hook_end = subprocess.run(
         ["bash", "scripts/session-end-check.sh"],

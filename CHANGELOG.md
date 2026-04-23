@@ -2,6 +2,9 @@
 
 ## [0.1.4] - 2026-04-23
 
+### Changed
+- Upgraded host hook behavior so Claude and Codex hooks now inject advisory runtime context, append standardized hook events, and refresh active-run heartbeat without becoming runtime authority
+
 ### Fixed
 - Restored explicit `thoth:*` public command names so installed plugin commands render as `/thoth:*` instead of bare command names
 
@@ -11,6 +14,7 @@
 - Collapsed Codex delegation into `--executor codex` on the main public commands
 - Moved internal behavioral contracts out of the public plugin `skills/` surface into `contracts/`
 - Added internal `thoth-main` and `codex-worker` agents plus plugin `settings.json`
+- Retired the earlier shape that exposed dedicated public Codex command variants plus a matching rescue agent; the supported replacement is the smaller `/thoth:*` surface together with `--executor codex` on `run`, `loop`, and `review`
 
 ### Fixed
 - Removed internal Thoth helper modules and dedicated Codex variants from the public slash-command surface

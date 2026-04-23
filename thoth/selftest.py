@@ -556,14 +556,31 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
         restart_artifacts + restarted_artifacts,
     )
 
-    hooks_config = json.loads((project_dir / ".codex" / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    hooks_config = json.loads((project_dir / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+    hook_env = {"THOTH_SOURCE_ROOT": str(ROOT)}
+    hook_start = _run_command(
+        ["bash", "scripts/thoth-codex-hook.sh", "start"],
+        cwd=project_dir,
+        env=hook_env,
+        timeout=60,
+    )
+    start_hook_payload: dict[str, Any] = {}
+    if hook_start.stdout.strip():
+        try:
+            start_hook_payload = json.loads(hook_start.stdout)
+        except json.JSONDecodeError:
+            start_hook_payload = {}
     hook_end = _run_command(["bash", "scripts/session-end-check.sh"], cwd=project_dir, timeout=60)
     hook_artifacts = [
         recorder.write_json("hooks/hooks.json", hooks_config),
+        recorder.write_json("hooks/start-hook.json", start_hook_payload),
+        *_save_command(recorder, "hook-start", hook_start),
         *_save_command(recorder, "hook-end", hook_end),
     ]
-    hook_ok = hooks_config.get("enabled") is True and hook_end.returncode == 0
-    recorder.add("hooks.local_success", "passed" if hook_ok else "failed", "Generated project hook configuration and session-end script completed.", hook_artifacts)
+    session_start_hooks = hooks_config.get("hooks", {}).get("SessionStart", [])
+    start_context = start_hook_payload.get("hookSpecificOutput", {}).get("additionalContext", "") if isinstance(start_hook_payload, dict) else ""
+    hook_ok = bool(session_start_hooks) and hook_start.returncode == 0 and "Thoth project detected" in start_context and hook_end.returncode == 0
+    recorder.add("hooks.local_success", "passed" if hook_ok else "failed", "Generated project hook configuration, start context injection, and session-end script completed.", hook_artifacts)
     if not hook_ok:
         raise RuntimeError("local session hook success path failed")
 
