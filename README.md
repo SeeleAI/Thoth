@@ -1,6 +1,6 @@
 # Thoth
 
-**Turn [Claude Code](https://docs.anthropic.com/en/docs/claude-code) into an auditable project operating system with persistent state, mechanical verification, dashboard visibility, and [OpenAI Codex](https://developers.openai.com/codex) delegation.**
+**Turn Claude Code and OpenAI Codex into two host surfaces over one auditable Thoth runtime with persistent state, mechanical verification, and dashboard visibility.**
 
 Persistent truth + validation scripts + autonomous execution loops = agent work you can actually inspect, recover, and trust.
 
@@ -29,9 +29,14 @@ At the center of Thoth are two connected systems:
 - **Audit System**: truth, evidence, decisions, recoverability
 - **Execution System**: tasks, loops, verification, delegation
 
-Today, Thoth runs as a **Claude Code plugin** and supports **Codex
-delegation** as an executor mode on the main public commands. The longer-term
-direction is a more host-agnostic, Codex-native runtime.
+Thoth now treats **`.thoth` as the only runtime authority** and exposes two
+official host surfaces:
+
+- **Claude**: `/thoth:*`
+- **Codex**: `$thoth <command>`
+
+Both surfaces project from the same host-neutral command specification and
+write through the same runtime ledger shape.
 
 ## Why Thoth
 
@@ -112,22 +117,30 @@ Typical first actions:
 | Integrity checks | `/thoth:doctor`, `/thoth:sync` | Audits project persistence, reference health, and synchronization |
 | Plugin evolution | `/thoth:extend` | Safely evolves the plugin itself under test gates |
 
-### Codex Delegation
+### Codex Native And Delegation
 
-Codex is available as an executor mode on the main public commands:
+Claude still supports Codex delegation on the main public commands:
 
 - `/thoth:run --executor codex ...`
 - `/thoth:loop --executor codex ...`
 - `/thoth:review --executor codex ...`
 
-This is real support today:
+Codex also has its own official single-entry public surface:
 
-- Thoth remains the project operating layer
-- Claude Code is the current host runtime
-- Codex can already handle delegated execution or review steps
+```bash
+$thoth init
+$thoth run
+$thoth loop
+$thoth review
+$thoth status
+```
 
-This is **not yet** the final runtime model. It is the bridge toward a more
-host-agnostic architecture.
+Both surfaces share the same runtime rules:
+
+- `.thoth` is the only authority
+- `run` and `loop` are durable by default
+- attach / resume / watch / stop operate on the same run ledger
+- dashboard reads `.thoth/runs/*`, not host session state
 
 ## How It Works
 
@@ -200,21 +213,10 @@ assistant surface.
 
 Thoth is currently:
 
-- hosted through **Claude Code**
-- installed as a local plugin
-- backed by generated project files and scripts
-- able to seed a minimal `.thoth/` runtime authority tree during `/thoth:init`
-- able to bind task dashboard views to `.thoth/runs/*` ledgers when runs exist
-- capable of delegating work to **OpenAI Codex** through executor-mode routing
-
-### Next
-
-The direction is to make Thoth less dependent on Claude Code as the only host:
-
-- deeper Codex integration
-- cleaner host/runtime abstraction
-- durable supervisor and lease registry
-- eventual movement toward a more host-agnostic operating model
+- generated from a host-neutral public command spec
+- published as both a Claude plugin surface and a Codex plugin/skill surface
+- backed by a durable `.thoth/runs/*` ledger plus machine-local supervisor registry
+- observable in the dashboard through shared runtime summaries
 
 ## Local Development
 
@@ -223,6 +225,13 @@ Run the test suite from the repository root:
 ```bash
 pytest -q
 ```
+
+Branch policy:
+
+- Do day-to-day development on `dev`
+- Treat `main` as the stable integration and release branch
+- Do not directly modify `main` for normal feature or code development
+- Promote changes from `dev` into `main` deliberately, with `cherry-pick` as the default path
 
 Current repository contents include:
 

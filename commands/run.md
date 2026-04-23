@@ -1,78 +1,41 @@
 ---
 name: thoth:run
-description: Execute a single task (foreground), with verification and commit
-argument-hint: "[--executor claude|codex] [--model <model>] [--effort <level>] <task description or task_id>"
+description: Create one durable run under the shared runtime and attach in the foreground by default.
+argument-hint: "[--executor claude|codex] [--host claude|codex] [--detach] [--attach <run_id>] [--watch <run_id>] [--stop <run_id>] <task>"
 ---
 
-# /thoth:run — 施法
+# /thoth:run
+
+## Generated Surface
+
+This file is generated from `thoth.command_specs.COMMAND_SPECS`. Do not hand edit.
 
 ## Scope Guard
 
 **CAN:**
-- Modify source code files
-- Run build/test commands
-- Create git commits
-- Update YAML task state
-- Run validation and sync scripts
+- Create a durable run and attach to it
+- Delegate execution to Codex through the shared runtime path
+- Write run/state/events/acceptance/artifacts ledgers
+- Stop or watch an existing run
 
 **CANNOT:**
-- Start long-running loops (use /thoth:loop)
-- Modify .research-config.yaml (use /thoth:discuss)
-- Modify plugin files (use /thoth:extend)
-- Discuss without executing (use /thoth:discuss)
+- Use host session state as runtime truth
+- Create a non-durable foreground-only pseudo run
 
-## Plan Mode
+## Runtime Contract
 
-1. Read: current task state, git status, relevant code
-2. Draft: specific changes planned, files to modify
-3. Approve → execute exactly as planned
+- Durable: yes
+- Codex executor allowed: yes
+- Hooks required for correctness: no
+- Subagents required for correctness: no
+- Lifecycle: create -> lease -> supervise -> attach/watch/stop -> acceptance
+- Acceptance: A durable run ledger exists under .thoth/runs/<run_id> with machine-local supervisor state and mechanical acceptance placeholders.
 
-## Workflow
+## Interaction Gaps
 
-### Step 1: Parse
-Parse task from `$ARGUMENTS`. Can be:
-- Free text: "fix the auth bug in login.py"
-- Task ID: "e2-h1" (looks up YAML task file)
+- Task text or task id
 
-Optional executor flags:
-- `--executor claude|codex` (default: `claude`)
-- `--model <model>` and `--effort <level>` when `--executor codex`
+## Shared Authority
 
-### Step 2: Precondition
-```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py" --quick
-```
-Must pass. If not: report issues, suggest /thoth:doctor.
-
-### Step 3: Execute
-1. Read the internal contracts in `contracts/core.md`, `contracts/audit.md`,
-   `contracts/exec.md`, `contracts/memory.md`, and `contracts/codex.md`.
-2. If `--executor codex`, delegate implementation to the internal `codex-worker`
-   agent and wait for the result.
-3. Otherwise make the code changes directly (ONE focused change).
-4. Run validation:
-   ```bash
-   python .agent-os/research-tasks/validate.py
-   ```
-5. If task has completed phases, verify:
-   ```bash
-   python .agent-os/research-tasks/verify_completion.py <task_id>
-   ```
-6. Git commit:
-   ```bash
-   git add <specific-files>
-   git commit -m "experiment(<scope>): <description>"
-   ```
-7. Update YAML task file (status, criteria.current, deliverables)
-8. Sync:
-   ```bash
-   python .agent-os/research-tasks/sync_todo.py
-   ```
-
-### Step 4: Report
-Print structured result: what changed, validation status, commit hash.
-
-## Error Handling
-- Validation fails → report specific errors, do NOT commit
-- verify_completion fails → report what's missing, do NOT mark completed
-- Git commit blocked by hooks → fix issues, retry
+Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
+Host differences are interaction-only and must not change ledger shape.

@@ -1,45 +1,37 @@
 ---
 name: thoth:status
-description: Script-controlled structured print of current project state
-argument-hint: "[--full]"
+description: Show repo status and active durable runs from the shared ledger.
+argument-hint: "[--json]"
 ---
 
-# /thoth:status — 卦象
+# /thoth:status
+
+## Generated Surface
+
+This file is generated from `thoth.command_specs.COMMAND_SPECS`. Do not hand edit.
 
 ## Scope Guard
 
-**CAN:** Read files and run status script (read-only)
-**CANNOT:** Modify any files
+**CAN:**
+- Read .thoth authority and machine-local registry
 
-## Workflow
+**CANNOT:**
+- Infer runtime state from chat history
 
-### Step 1: Run Status Script
-```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/status.py"
-```
+## Runtime Contract
 
-### Step 2: Present Output
-Display the script's output verbatim. Do NOT paraphrase or restructure.
+- Durable: no
+- Codex executor allowed: no
+- Hooks required for correctness: no
+- Subagents required for correctness: no
+- Lifecycle: read -> summarize
+- Acceptance: Status reports repo health plus active/stale run summaries without replacing attach/watch.
 
-The script outputs:
-```
-═══ Thoth Status: {project_name} ═══
+## Interaction Gaps
 
-▸ Running:
-  [■■■■□□□□□□] 42%  e2-h1 Phase1 Joint Training (experiment)
+- (none)
 
-▸ Recent:
-  ✓ e3-h2 Gradient Stability — completed 2h ago
-  ✗ e5-h1 GBuffer Packing — reverted (guard failed)
+## Shared Authority
 
-▸ Next:
-  → e2-h2 Per-Asset Fitting (ready, no blockers)
-  → e5-h2 Mask Consistency (blocked by e5-h1)
-
-▸ Health: ● ALL CHECKS PASSED | Last sync: 3min ago
-```
-
-With `--full` flag, also shows:
-- Direction-level progress
-- Milestone progress summary
-- Recent activity log entries
+Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
+Host differences are interaction-only and must not change ledger shape.

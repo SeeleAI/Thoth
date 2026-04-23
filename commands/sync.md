@@ -1,46 +1,38 @@
 ---
 name: thoth:sync
-description: Synchronize all persistence data, IDs, and submodule states
-argument-hint: "[--submodules]"
+description: Synchronize generated surfaces and project projections from their canonical sources.
+argument-hint: ""
 ---
 
-# /thoth:sync — 归位
+# /thoth:sync
+
+## Generated Surface
+
+This file is generated from `thoth.command_specs.COMMAND_SPECS`. Do not hand edit.
 
 ## Scope Guard
 
 **CAN:**
-- Run sync_todo.py (YAML → todo.md)
-- Validate ID sequences
-- Check submodule states
-- Update cross-repo mappings
+- Regenerate projections
+- Run TODO sync
 
 **CANNOT:**
-- Modify source code
-- Modify YAML task content (only generates todo.md from YAML)
-- Make git commits
+- Hand-edit generated public surfaces
 
-## Workflow
+## Runtime Contract
 
-### Step 1: Run Sync Script
-```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/sync.py" $ARGUMENTS
-```
+- Durable: no
+- Codex executor allowed: no
+- Hooks required for correctness: no
+- Subagents required for correctness: no
+- Lifecycle: render -> validate
+- Acceptance: Generated Claude commands, Codex skill, plugin manifest, and project instructions match the host-neutral source of truth.
 
-### Step 2: Operations
+## Interaction Gaps
 
-1. **YAML → todo.md**: `python .agent-os/research-tasks/sync_todo.py`
-2. **ID validation**: Check ID sequences across all .agent-os/ docs
-3. **Submodule sync** (if --submodules or submodules exist):
-   - `git submodule status`
-   - Check cross-repo-mapping.md alignment
-   - Report any drift
-4. **Timestamp update**: Update sync timestamp
+- (none)
 
-### Step 3: Report
-```
-═══ Thoth Sync ═══
-  ✓ todo.md synced (12 tasks)
-  ✓ IDs aligned
-  ✓ Submodules in sync (2 modules)
-  Last sync: just now
-```
+## Shared Authority
+
+Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
+Host differences are interaction-only and must not change ledger shape.

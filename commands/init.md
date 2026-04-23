@@ -1,90 +1,43 @@
 ---
 name: thoth:init
-description: Initialize a new project with full Thoth infrastructure
+description: Initialize canonical .thoth authority and render both Claude/Codex project layers.
 argument-hint: "[project-name]"
 ---
 
-# /thoth:init — 创世
+# /thoth:init
+
+## Generated Surface
+
+This file is generated from `thoth.command_specs.COMMAND_SPECS`. Do not hand edit.
 
 ## Scope Guard
 
 **CAN:**
-- Create new files in current directory
-- Install Python/Node dependencies
-- Initialize SQLite database
-- Set up git hooks
-- Run validation scripts
+- Create canonical .thoth project authority files
+- Generate AGENTS.md and CLAUDE.md from the same renderer
+- Generate .codex local environment, setup script, and hooks config
+- Generate dashboard, tests, helper scripts, and config
 
 **CANNOT:**
-- Modify existing project files (refuses if .research-config.yaml exists)
-- Push to remote
-- Modify files outside current directory
+- Silently delete existing project files
+- Treat hooks as correctness-critical runtime dependencies
 
-## Plan Mode
+## Runtime Contract
 
-1. Read current directory state
-2. Draft: list all files to be created, deps to install
-3. Approve → generate everything
+- Durable: no
+- Codex executor allowed: no
+- Hooks required for correctness: hooks may enhance but are not correctness-critical
+- Subagents required for correctness: no
+- Lifecycle: preview -> render-authority -> render-projections -> verify
+- Acceptance: Authority tree, host projections, Codex project layer, dashboard, scripts, and tests are generated from one canonical source.
 
-## Workflow
+## Interaction Gaps
 
-### Step 1: Preconditions
-```bash
-git rev-parse --show-toplevel  # Must be in a git repo
-test ! -f .research-config.yaml  # Must not already be initialized
-```
-If `.research-config.yaml` exists: "Project already initialized. Use /thoth:doctor to check health."
+- Project description
+- Directions/phases
+- Dashboard port/theme
 
-### Step 2: Interactive Questionnaire
-Use AskUserQuestion in 3 batches:
+## Shared Authority
 
-**Batch 1 — Project Basics:**
-- Project name? (default: directory name)
-- Description?
-- Language? (zh / en)
-
-**Batch 2 — Research Structure:**
-- Research directions? (comma-separated IDs, e.g. "frontend,backend,data")
-- Phase pipeline? (defaults: survey, method_design, experiment, conclusion)
-
-**Batch 3 — Dashboard:**
-- Dashboard port? (default: 8501)
-- Theme? (warm-bear / dark / light)
-
-### Step 3: Generate Files
-Run: `python "${CLAUDE_PLUGIN_ROOT}/scripts/init.py" --config <answers_json>`
-
-This generates:
-- `.research-config.yaml`
-- `.thoth/` runtime authority tree
-- `.agent-os/milestones.yaml`
-- `.agent-os/` (9 documents + research-tasks/ with schema + scripts)
-- `tools/dashboard/` (backend + frontend)
-- `.pre-commit-config.yaml`
-- `scripts/` (install-hooks.sh, session-end-check.sh, validate-all.sh, check-required-files.sh)
-- `CLAUDE.md`
-- `tests/` (project-level test suite)
-
-### Step 4: Setup
-```bash
-pip install pre-commit pyyaml jsonschema
-bash scripts/install-hooks.sh
-cd tools/dashboard/frontend && npm install && npm run build
-python .agent-os/research-tasks/validate.py
-python tools/dashboard/backend/database.py  # init SQLite
-```
-
-### Step 5: Verify & Report
-```
-✓ Thoth initialized: {project_name}
-  - {N} research directions configured
-  - Runtime authority seeded under .thoth/
-  - Dashboard ready at http://localhost:{port}
-  - Run /thoth:dashboard to start
-  - Run /thoth:status for current state
-```
-
-## Error Handling
-- pip install fails → report specific package, suggest manual install
-- npm install fails → check Node.js version, suggest nvm
-- validate.py fails → should never happen on fresh init, report bug
+Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
+Host differences are interaction-only and must not change ledger shape.

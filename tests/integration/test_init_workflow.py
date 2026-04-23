@@ -106,6 +106,12 @@ class TestInitWorkflow:
         content = claude_md.read_text()
         assert "TestProject" in content or "Thoth" in content
 
+    def test_creates_agents_md(self, init_project):
+        project_dir, _ = init_project
+        agents_md = project_dir / "AGENTS.md"
+        assert agents_md.exists(), "Should create AGENTS.md"
+        assert agents_md.read_text() == (project_dir / "CLAUDE.md").read_text()
+
     def test_creates_scripts(self, init_project):
         project_dir, _ = init_project
         scripts = ["install-hooks.sh", "session-end-check.sh", "validate-all.sh", "check-required-files.sh"]
@@ -116,9 +122,19 @@ class TestInitWorkflow:
         project_dir, _ = init_project
         for rel in [
             ".thoth/project/project.json",
+            ".thoth/project/instructions.md",
             ".thoth/runs/.gitkeep",
             ".thoth/migrations/.gitkeep",
             ".thoth/derived/.gitkeep",
+        ]:
+            assert (project_dir / rel).exists(), f"Missing: {rel}"
+
+    def test_creates_codex_project_layer(self, init_project):
+        project_dir, _ = init_project
+        for rel in [
+            ".codex/config.json",
+            ".codex/setup.sh",
+            ".codex/hooks/hooks.json",
         ]:
             assert (project_dir / rel).exists(), f"Missing: {rel}"
 
