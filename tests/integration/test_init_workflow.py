@@ -112,6 +112,16 @@ class TestInitWorkflow:
         for fname in scripts:
             assert (project_dir / "scripts" / fname).exists(), f"Missing: scripts/{fname}"
 
+    def test_creates_thoth_runtime_tree(self, init_project):
+        project_dir, _ = init_project
+        for rel in [
+            ".thoth/project/project.json",
+            ".thoth/runs/.gitkeep",
+            ".thoth/migrations/.gitkeep",
+            ".thoth/derived/.gitkeep",
+        ]:
+            assert (project_dir / rel).exists(), f"Missing: {rel}"
+
     def test_validation_passes(self, init_project):
         project_dir, _ = init_project
         validate_script = project_dir / ".agent-os" / "research-tasks" / "validate.py"

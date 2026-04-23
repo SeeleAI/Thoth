@@ -40,3 +40,8 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
   - Related items: `REQ-013`, `WS-004`
   - Human rationale: 涉及平台能力与实现原理时不能依赖陈旧认知，必须有 latest-first 的真源规则
   - Effect on project: 后续所有平台知识都必须遵守 freshness policy 与 live-check 规则
+
+- `CD-008` `2026-04-23` `[accepted]`: dashboard 的长时运行真相采用 `task-first UI + run-ledger truth + smart polling` 模型
+  - Related items: `REQ-014`, `WS-002`, `WS-003`
+  - Human rationale: 前端必须稳定展示后端 Agent 长时进度，运行日志不能再依赖 YAML 或宿主会话拼装
+  - Effect on project: `.thoth/runs/*` 成为运行事实层；task 页面必须展示 active run、history run 与 run logs；默认轮询周期锁定为 `10` 分钟

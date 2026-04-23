@@ -19,3 +19,15 @@
   - State changes: 无外部平台真源层 -> 新增 `.agent-os/official-sources/`；`TD-010` -> verified；`project-index` top next action 切回 `TD-001`
   - Evidence produced: `official-sources/platform-index.md`, `official-sources/source-governance.md`, `official-sources/openai-codex-and-api.md`, `official-sources/claude-code-runtime-and-platforms.md`, `official-sources/codex-vs-claude-code.md`, updated `AGENTS.md`
   - Next likely action: 验证结构校验通过，并继续推进 `TD-001` 与 `TD-003`
+
+- 2026-04-23 00:00 UTC [task-first run ledger dashboard contract]
+  - Worked on: `OBJ-001`, `WS-002`, `WS-003`, `TD-011`
+  - State changes: dashboard 从纯 YAML 现算视图 -> 新增 `.thoth/runs/*` 运行事实读取；`/thoth:init` 开始生成最小 `.thoth/` authority tree；`TD-011` -> verified
+  - Evidence produced: `templates/dashboard/backend/runtime_loader.py`, updated dashboard APIs and frontend task view, updated `scripts/init.py`, new runtime API tests, `pytest -q` passed (`115 passed in 2.11s`)
+  - Next likely action: 继续推进 `TD-001`，并把当前最小 run-ledger contract 向完整 durable supervisor / lease protocol 收敛
+
+- 2026-04-23 00:00 UTC [frontend dashboard build validation]
+  - Worked on: `OBJ-001`, `WS-003`, `TD-011`
+  - State changes: dashboard 前端从“已改代码但未完成构建验证” -> `vue-tsc` 与 `vite build` 均通过；补齐 task-first runtime UI 的前端可构建证据
+  - Evidence produced: fixed `templates/dashboard/frontend/src/components/charts/DagChart.vue` event typing drift; `npm run build` passed in `templates/dashboard/frontend`; generated production bundle under `templates/dashboard/frontend/dist/`
+  - Next likely action: 回到 `TD-001` 推进 `dev` / `main` 分流机制化，并继续把当前最小 runtime contract 向 durable supervisor / lease protocol 收敛

@@ -17,7 +17,9 @@
 - 公开命令面是 `/thoth:*`
 - Codex 以 executor-mode 进入 `run` / `loop` / `review`
 - 内部公开 skills 与独立公开 `:codex` 变体已经被收敛掉
-- 当前 repo 还没有 `.thoth/` authority runtime、durable supervisor、run ledger、lease registry
+- `/thoth:init` 现在会生成最小 `.thoth/` authority tree：`project/`、`runs/`、`migrations/`、`derived/`
+- dashboard 模板现在可以把 `.thoth/runs/*` 里的 active run、history run 和事件日志绑定回 task 视图
+- 当前 repo 仍然没有完整 `.thoth` durable supervisor、lease registry、attach/takeover lifecycle
 
 ## Target Architecture
 
@@ -56,7 +58,7 @@
 
 - `WS-002` `[planned]`: Thoth V2 架构收敛
   - 目标：把 `.thoth` authority、durable runtime、adopt/init、merge stage、dashboard contract 做成真实系统
-  - 当前状态：设计高信息量材料已被吸收进 `.agent-os/planning/`，但代码仍未落地
+  - 当前状态：最小 `.thoth/` authority tree 与 task-bound run ledger dashboard contract 已落地；durable supervisor / lease registry / adopt protocol 仍未实现
 
 - `WS-004` `[active]`: 外部平台知识真源治理
   - 目标：把 `Codex` / `Claude Code` 官方资料、刷新阈值和 authority 规则固化进 `.agent-os/official-sources/` 与根合同

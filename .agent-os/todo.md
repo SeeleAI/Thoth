@@ -42,6 +42,10 @@
 
 ## Verified
 
+- `TD-011` `[verified]`: 落地 task-first 的 run-ledger dashboard contract
+  - Related items: `WS-002`, `WS-003`, `REQ-014`, `AC-008`, `CD-008`
+  - Definition of done: `.thoth/` 最小 authority tree 可由 `/thoth:init` 生成；dashboard backend 可读取 `.thoth/runs/*`；task 页面可展示 active run、history run 和 run logs；相关测试通过
+
 - `TD-007` `[verified]`: 初始化 `dev` 分支项目状态文档系统
   - Related items: `MS-001`, `REQ-001`, `REQ-002`, `AC-001`, `AC-002`, `AC-003`
   - Definition of done: 基于现有 repo 与规划材料建立根入口和 `.agent-os/` 文档系统，并通过项目状态校验

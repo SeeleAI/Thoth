@@ -16,6 +16,7 @@
 - `REQ-006`: 当前插件的公开 surface 必须保持干净：只暴露真正的 `/thoth:*` 公共命令，不暴露内部协议层或公开 `:codex` 变体。
 - `REQ-007`: 项目必须对失败探索、架构转向和用户后续拍板保持可追踪，不允许静默丢失信息量。
 - `REQ-013`: 对 `Codex` / `Claude Code` 自身特性、运行机制、实现原理与产品限制的长期文档化，必须以官方 docs 为 authority，并受 freshness policy 约束。
+- `REQ-014`: dashboard 监控长时 Agent 运行时，必须采用 `task-first UI + run-ledger truth` 模型：`task` 为主入口，`run` 强绑定到 `task`，运行日志与心跳从 `.thoth/runs/*` 读取，不再把高频运行时事实写成 YAML authority。
 
 ## Acceptance Criteria
 
@@ -29,10 +30,11 @@
   - 当前尚未实现 `.thoth` authority runtime
 - `AC-006`: `architecture-milestones.md` 中明确分开“当前实现结构”与“目标 V2 架构”。
 - `AC-007`: `.agent-os/official-sources/` 中存在完整的平台真源治理文档，并覆盖用户指定的全部官方来源。
+- `AC-008`: `/thoth:init` 生成的项目包含最小 `.thoth/` authority tree；dashboard backend 能读取 `.thoth/runs/*` 并把 active run、history run 和 run log 绑定到 task 详情。
 
 ## Non-Goals
 
-- 不在本次初始化中实现 `.thoth/` durable runtime、lease registry、run ledger 或 supervisor。
+- 不在当前阶段实现完整 `.thoth/` durable runtime、lease registry、supervisor 或 adopt/init audit-first 协议；本轮只落最小 `.thoth/` authority tree 和 task-bound run ledger dashboard contract。
 - 不在本次初始化中把 `main` 的文档过滤机制直接实现为最终 Git/CI 机制；本次先把治理规则和后续工作项落盘。
 - 不在本次初始化中改写当前插件代码架构，只为后续开发提供真实、可恢复的控制平面。
 

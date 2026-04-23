@@ -84,6 +84,7 @@ This scaffolds the project operating layer, including:
 
 - `.research-config.yaml`
 - `.agent-os/` state and governance documents
+- `.thoth/` runtime authority tree
 - research-task validation and consistency scripts
 - `tools/dashboard/` backend and frontend
 - project-local helper scripts and tests
@@ -152,6 +153,7 @@ project layer with:
 
 - config: `.research-config.yaml`
 - state docs: `.agent-os/`
+- runtime authority: `.thoth/`
 - task validation and consistency tooling
 - dashboard backend and frontend
 - project-local scripts and tests
@@ -201,6 +203,8 @@ Thoth is currently:
 - hosted through **Claude Code**
 - installed as a local plugin
 - backed by generated project files and scripts
+- able to seed a minimal `.thoth/` runtime authority tree during `/thoth:init`
+- able to bind task dashboard views to `.thoth/runs/*` ledgers when runs exist
 - capable of delegating work to **OpenAI Codex** through executor-mode routing
 
 ### Next
@@ -209,6 +213,7 @@ The direction is to make Thoth less dependent on Claude Code as the only host:
 
 - deeper Codex integration
 - cleaner host/runtime abstraction
+- durable supervisor and lease registry
 - eventual movement toward a more host-agnostic operating model
 
 ## Local Development

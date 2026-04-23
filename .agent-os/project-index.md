@@ -37,6 +37,7 @@
 - 2026-04-23: 已把外部 5 份 Thoth 规划文档完整吸收进 `.agent-os/planning/`，形成 repo-local 的蓝图、决策轨迹、目标架构与开放问题文档。
 - 2026-04-23: 新增 `.agent-os/official-sources/`，用于承载 `Codex` / `Claude Code` 官方资料解析、刷新阈值与真源治理规则。
 - 2026-04-23: 已完成 15 个官方来源的登记与综合解析，并把 authority / freshness 规则写入 `AGENTS.md`。
+- 2026-04-23: `/thoth:init` 已开始生成最小 `.thoth/` authority tree；dashboard 模板已支持 task 绑定 active run、history run 和 run logs，并采用 10 分钟 smart polling。
 
 ## Read Next
 

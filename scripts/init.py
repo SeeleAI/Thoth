@@ -345,6 +345,41 @@ def generate_dashboard(config: Dict[str, Any], project_dir: Path) -> None:
         (dest / "frontend" / "src").mkdir(parents=True, exist_ok=True)
 
 
+def generate_thoth_runtime(config: Dict[str, Any], project_dir: Path) -> None:
+    """Generate the minimal `.thoth/` runtime authority tree."""
+    thoth_dir = project_dir / ".thoth"
+    for rel in ("project", "runs", "migrations", "derived"):
+        (thoth_dir / rel).mkdir(parents=True, exist_ok=True)
+
+    project_manifest = {
+        "schema_version": 1,
+        "project": {
+            "name": config["name"],
+            "description": config.get("description", ""),
+            "language": config.get("language", "zh"),
+        },
+        "runtime": {
+            "authority": ".thoth",
+            "runs_dir": ".thoth/runs",
+            "derived_dir": ".thoth/derived",
+            "dashboard_mode": "task_first_with_run_binding",
+            "polling_interval_seconds": 600,
+        },
+        "research": {
+            "directions": [
+                d["id"] if isinstance(d, dict) else d for d in config.get("directions", [])
+            ],
+            "phases": [p["id"] for p in config.get("phases", [])],
+        },
+    }
+    (thoth_dir / "project" / "project.json").write_text(
+        json.dumps(project_manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    for rel in ("runs/.gitkeep", "migrations/.gitkeep", "derived/.gitkeep"):
+        (thoth_dir / rel).write_text("", encoding="utf-8")
+
+
 def generate_pre_commit_config(config: Dict[str, Any], project_dir: Path) -> None:
     """Generate .pre-commit-config.yaml."""
     content = textwrap.dedent("""\
@@ -840,6 +875,9 @@ def main() -> int:
 
     print("  Generating .agent-os/research-tasks/ (schema + scripts)...")
     generate_research_tasks(config, project_dir)
+
+    print("  Generating .thoth/ runtime authority tree...")
+    generate_thoth_runtime(config, project_dir)
 
     print("  Generating tools/dashboard/...")
     generate_dashboard(config, project_dir)

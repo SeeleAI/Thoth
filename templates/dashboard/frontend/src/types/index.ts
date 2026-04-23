@@ -52,6 +52,8 @@ export interface Task {
   time_spent_hours?: number
   computed_status: TaskStatus
   computed_progress: number
+  active_run?: RunSummary | null
+  run_count?: number
 }
 
 export interface TaskListResponse {
@@ -122,6 +124,64 @@ export interface ProgressData {
   blocked_tasks: BlockedTask[]
   module_count: number
   estimation: Estimation | null
+  runtime: RuntimeOverview
+}
+
+export interface RunSummary {
+  run_id: string
+  task_id: string | null
+  title: string
+  status: string
+  phase?: string | null
+  progress_pct: number
+  executor?: string | null
+  created_at?: string | null
+  started_at?: string | null
+  last_updated_at?: string | null
+  last_heartbeat_at?: string | null
+  last_event_seq: number
+  is_active: boolean
+  is_stale: boolean
+  latest_message?: string
+  artifact_count: number
+  events_path?: string | null
+}
+
+export interface RunEvent {
+  seq: number
+  ts?: string | null
+  kind: string
+  level: string
+  message: string
+  data?: Record<string, unknown>
+}
+
+export interface RunEventPage {
+  run_id: string
+  events: RunEvent[]
+  next_after_seq?: number | null
+  has_more: boolean
+}
+
+export interface RunDetail extends RunSummary {
+  run: Record<string, unknown>
+  state: Record<string, unknown>
+  heartbeat: Record<string, unknown>
+  artifacts: Record<string, unknown>
+  acceptance: Record<string, unknown>
+}
+
+export interface TaskRunsResponse {
+  task_id: string
+  runs: RunSummary[]
+}
+
+export interface RuntimeOverview {
+  active_run_count: number
+  stale_run_count: number
+  active_runs: RunSummary[]
+  last_runtime_update?: string | null
+  progress_source: string
 }
 
 // ─── DAG ────────────────────────────────────────────────────
@@ -211,10 +271,11 @@ export interface TodoProject {
 // ─── System ─────────────────────────────────────────────────
 
 export interface SystemStatus {
-  last_updated: number
+  last_updated: number | string
   task_count: number
   module_count: number
   cache_info: Record<string, unknown>
+  runtime?: RuntimeOverview
 }
 
 export interface ResearchConfig {

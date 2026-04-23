@@ -26,6 +26,13 @@ from data_loader import (
     load_all_tasks, load_modules, load_task, get_paper_mapping,
     invalidate_cache, get_cache_info, DIRECTIONS,
 )
+from runtime_loader import (
+    get_active_run_for_task,
+    get_run_detail,
+    get_run_events,
+    get_task_runs,
+    runtime_overview,
+)
 from progress_calculator import (
     calculate_task_progress, calculate_module_progress,
     calculate_direction_progress, calculate_global_progress,
@@ -41,6 +48,9 @@ DASHBOARD_DIR = APP_DIR.parent
 PROJECT_ROOT = DASHBOARD_DIR / ".." / ".."
 RESEARCH_TASKS_DIR = Path(
     os.environ.get("RESEARCH_TASKS_DIR", str(PROJECT_ROOT / ".agent-os" / "research-tasks"))
+).resolve()
+THOTH_RUNS_DIR = Path(
+    os.environ.get("THOTH_RUNS_DIR", str(PROJECT_ROOT / ".thoth" / "runs"))
 ).resolve()
 
 
@@ -183,6 +193,14 @@ def _summarize_phases(task: dict) -> dict:
     return summary
 
 
+def _attach_runtime(task: dict) -> dict:
+    payload = dict(task)
+    task_id = str(task.get("id", ""))
+    payload["active_run"] = get_active_run_for_task(PROJECT_ROOT, task_id)
+    payload["run_count"] = len(get_task_runs(PROJECT_ROOT, task_id))
+    return payload
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     vue_index = DASHBOARD_DIR / "frontend" / "dist" / "index.html"
@@ -231,7 +249,7 @@ async def api_tasks(
             if direction and t.get("direction") != direction:
                 continue
             result.append({
-                **{k: v for k, v in t.items() if not k.startswith("_")},
+                **_attach_runtime({k: v for k, v in t.items() if not k.startswith("_")}),
                 "computed_status": t_status,
                 "computed_progress": calculate_task_progress(t),
             })
@@ -249,7 +267,7 @@ async def api_task_detail(task_id: str):
         for t in tasks:
             if t.get("id") == task_id:
                 return {
-                    **{k: v for k, v in t.items() if not k.startswith("_")},
+                    **_attach_runtime({k: v for k, v in t.items() if not k.startswith("_")}),
                     "computed_status": get_task_status(t),
                     "computed_progress": calculate_task_progress(t),
                 }
@@ -356,6 +374,7 @@ async def api_progress():
             "overall_progress": overall_pct, "by_direction": by_direction,
             "status_counts": counts, "blocked_tasks": blocked_list,
             "module_count": len(modules), "estimation": est,
+            "runtime": runtime_overview(PROJECT_ROOT),
         }
     except Exception as exc:
         logger.error("Error in /api/progress: %s", traceback.format_exc())
@@ -403,12 +422,60 @@ async def api_system_status():
     try:
         tasks = load_all_tasks(RESEARCH_TASKS_DIR)
         modules = load_modules(RESEARCH_TASKS_DIR)
+        runtime = runtime_overview(PROJECT_ROOT)
         return {
-            "last_updated": time.time(),
+            "last_updated": runtime.get("last_runtime_update") or time.time(),
             "task_count": len(tasks), "module_count": len(modules),
             "cache_info": get_cache_info(),
+            "runtime": runtime,
         }
     except Exception as exc:
+        return _error_response(500, "InternalError", str(exc))
+
+
+@app.get("/api/tasks/{task_id}/active-run")
+async def api_task_active_run(task_id: str):
+    try:
+        return get_active_run_for_task(PROJECT_ROOT, task_id)
+    except Exception as exc:
+        logger.error("Error in /api/tasks/%s/active-run: %s", task_id, traceback.format_exc())
+        return _error_response(500, "InternalError", str(exc))
+
+
+@app.get("/api/tasks/{task_id}/runs")
+async def api_task_runs(task_id: str):
+    try:
+        return {"task_id": task_id, "runs": get_task_runs(PROJECT_ROOT, task_id)}
+    except Exception as exc:
+        logger.error("Error in /api/tasks/%s/runs: %s", task_id, traceback.format_exc())
+        return _error_response(500, "InternalError", str(exc))
+
+
+@app.get("/api/runs/{run_id}")
+async def api_run_detail(run_id: str):
+    try:
+        detail = get_run_detail(PROJECT_ROOT, run_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+        return detail
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error in /api/runs/%s: %s", run_id, traceback.format_exc())
+        return _error_response(500, "InternalError", str(exc))
+
+
+@app.get("/api/runs/{run_id}/events")
+async def api_run_events(run_id: str, after_seq: Optional[int] = Query(None), limit: int = Query(100, ge=1, le=1000)):
+    try:
+        payload = get_run_events(PROJECT_ROOT, run_id, after_seq=after_seq, limit=limit)
+        if payload is None:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+        return payload
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error in /api/runs/%s/events: %s", run_id, traceback.format_exc())
         return _error_response(500, "InternalError", str(exc))
 
 

@@ -27,11 +27,16 @@
   - Conclusion: 当前仓库已具备 repo-local 的外部平台知识治理层，且恢复路径已明确要求在超 freshness 阈值时回官方 latest 页面核验
   - Validation: `python /root/.codex/skills/agent-project-system/scripts/validate_project_system.py /mnt/cfs/5vr0p6/yzy/thoth --state-dir .agent-os` 返回 `[OK] Project state document system is valid`
 
+- `EV-010` related to `TD-011`: task-first 的 run-ledger dashboard contract 已落地
+  - Evidence: 新增 `templates/dashboard/backend/runtime_loader.py`；`templates/dashboard/backend/app.py` 暴露 task-bound run APIs；`templates/dashboard/frontend/src/views/TasksPanel.vue` 展示 active run、history run 与 log；`scripts/init.py` 会生成最小 `.thoth/` authority tree
+  - Conclusion: 当前模板层已经不再把长时运行监控完全建立在 YAML authority 上，而是具备 `.thoth/runs/* -> dashboard` 的真实数据通路
+  - Validation: 本轮执行 `pytest -q`，结果为 `115 passed in 2.11s`；并在 `templates/dashboard/frontend` 执行 `npm run build`，结果为 `vue-tsc --noEmit && vite build` 通过，产物生成于 `dist/`
+
 ## Failed Or Pending Checks
 
-- `EV-005` related to `WS-002`: `.thoth` authority runtime 尚未在当前 checkout 中实现
-  - Evidence: 当前树中不存在 `.thoth/` 运行时布局；现有代码面集中在 `commands/`、`contracts/`、`agents/`、`scripts/`、`templates/`
-  - Conclusion: `Thoth V2` 仍是目标架构，不是当前实现事实
+- `EV-005` related to `WS-002`: 完整 `.thoth` durable runtime 仍未在当前 checkout 中实现
+  - Evidence: 虽然当前已落最小 `.thoth/` authority tree 与 run-ledger dashboard contract，但仍没有 durable supervisor、lease registry、attach/takeover lifecycle
+  - Conclusion: `Thoth V2` 已有局部落地，但完整 runtime 仍未实现
   - Next action: 按 `TD-003`、`TD-005`、`TD-006` 整理迁移主线与差距清单
 
 - `EV-006` related to `WS-001`: `main` 对开发态文档的拒收机制尚未机制化
