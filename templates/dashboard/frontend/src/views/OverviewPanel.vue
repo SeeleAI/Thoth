@@ -1,19 +1,31 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
 import { api } from '@/api/client'
 import type { ProgressData } from '@/types'
 
 const progress = ref<ProgressData | null>(null)
 const loading = ref(true)
 const error = ref('')
+let pollHandle: number | null = null
 
-onMounted(async () => {
+async function loadProgress() {
   try {
     progress.value = await api.getProgress()
   } catch (e) {
     error.value = String(e)
   } finally {
     loading.value = false
+  }
+}
+
+onMounted(async () => {
+  await loadProgress()
+  pollHandle = window.setInterval(loadProgress, 10 * 60 * 1000)
+})
+
+onBeforeUnmount(() => {
+  if (pollHandle != null) {
+    window.clearInterval(pollHandle)
   }
 })
 
@@ -66,6 +78,35 @@ const directionEntries = computed(() => {
           >
             <span class="status-count">{{ count }}</span>
             <span class="status-label">{{ statusLabel(String(key)) }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>Runtime Overview</h3>
+        <div class="estimation-grid">
+          <div class="est-item">
+            <span class="est-value">{{ progress.runtime.active_run_count }}</span>
+            <span class="est-label">Active Runs</span>
+          </div>
+          <div class="est-item">
+            <span class="est-value">{{ progress.runtime.stale_run_count }}</span>
+            <span class="est-label">Stale Runs</span>
+          </div>
+          <div class="est-item">
+            <span class="est-value">{{ progress.runtime.progress_source }}</span>
+            <span class="est-label">Progress Source</span>
+          </div>
+        </div>
+        <p v-if="progress.runtime.last_runtime_update" class="est-message">
+          Last runtime update: {{ progress.runtime.last_runtime_update }}
+        </p>
+        <div v-if="progress.runtime.active_runs.length" class="active-run-list">
+          <div v-for="run in progress.runtime.active_runs" :key="run.run_id" class="active-run-row">
+            <strong>{{ run.task_id }}</strong>
+            <span>{{ run.status }}</span>
+            <span>{{ run.progress_pct.toFixed(0) }}%</span>
+            <span>{{ run.latest_message || run.phase || 'No recent message' }}</span>
           </div>
         </div>
       </section>
@@ -290,5 +331,22 @@ const directionEntries = computed(() => {
   font-size: 14px;
   opacity: 0.8;
   font-style: italic;
+}
+
+.active-run-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.active-run-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 120px 80px 2fr;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-bg);
+  font-size: 13px;
 }
 </style>

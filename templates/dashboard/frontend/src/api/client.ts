@@ -12,6 +12,10 @@ import type {
   TodoProject,
   TaskFilters,
   SystemStatus,
+  RunSummary,
+  TaskRunsResponse,
+  RunDetail,
+  RunEventPage,
 } from '@/types/index'
 
 const BASE = '/api'
@@ -48,6 +52,17 @@ export const api = {
     return request<TaskListResponse>(`/tasks${qs ? `?${qs}` : ''}`)
   },
   getTask: (id: string) => request<Task>(`/tasks/${id}`),
+  getTaskActiveRun: (taskId: string) =>
+    request<RunSummary | null>(`/tasks/${taskId}/active-run`),
+  getTaskRuns: (taskId: string) =>
+    request<TaskRunsResponse>(`/tasks/${taskId}/runs`),
+  getRun: (runId: string) => request<RunDetail>(`/runs/${runId}`),
+  getRunEvents: (runId: string, afterSeq?: number | null, limit = 100) => {
+    const params = new URLSearchParams()
+    if (afterSeq != null) params.set('after_seq', String(afterSeq))
+    params.set('limit', String(limit))
+    return request<RunEventPage>(`/runs/${runId}/events?${params.toString()}`)
+  },
 
   /* ── DAG ─────────────────────────────────── */
   getDag: () => request<DagData>('/dag'),

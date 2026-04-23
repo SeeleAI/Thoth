@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { api } from '@/api/client'
-import type { Task, TaskListResponse, TaskFilters, TaskStatus } from '@/types'
+import type { RunEvent, RunSummary, Task, TaskListResponse, TaskFilters, TaskStatus } from '@/types'
 
 const tasks = ref<Task[]>([])
 const total = ref(0)
@@ -11,6 +11,13 @@ const filterDirection = ref('')
 const filterStatus = ref<TaskStatus | ''>('')
 const loading = ref(true)
 const error = ref('')
+const expandedId = ref<string | null>(null)
+const taskRuns = ref<Record<string, RunSummary[]>>({})
+const activeRuns = ref<Record<string, RunSummary | null>>({})
+const runEvents = ref<Record<string, RunEvent[]>>({})
+const runEventCursor = ref<Record<string, number | null>>({})
+const detailLoading = ref<Record<string, boolean>>({})
+let pollHandle: number | null = null
 
 async function loadTasks() {
   loading.value = true
@@ -25,10 +32,53 @@ async function loadTasks() {
     const res: TaskListResponse = await api.getTasks(filters)
     tasks.value = res.tasks
     total.value = res.total
+    for (const task of res.tasks) {
+      activeRuns.value[task.id] = task.active_run ?? null
+    }
   } catch (e) {
     error.value = String(e)
   } finally {
     loading.value = false
+  }
+}
+
+async function loadTaskRuntime(taskId: string) {
+  detailLoading.value[taskId] = true
+  try {
+    const [activeRun, runsPayload] = await Promise.all([
+      api.getTaskActiveRun(taskId),
+      api.getTaskRuns(taskId),
+    ])
+    activeRuns.value[taskId] = activeRun
+    taskRuns.value[taskId] = runsPayload.runs
+
+    const displayRunId = activeRun?.run_id ?? runsPayload.runs[0]?.run_id
+    if (!displayRunId) {
+      runEvents.value[taskId] = []
+      runEventCursor.value[taskId] = null
+      return
+    }
+    const eventsPayload = await api.getRunEvents(displayRunId, null, 50)
+    runEvents.value[taskId] = eventsPayload.events
+    runEventCursor.value[taskId] = eventsPayload.next_after_seq ?? null
+  } catch (e) {
+    error.value = String(e)
+  } finally {
+    detailLoading.value[taskId] = false
+  }
+}
+
+async function refreshExpandedTaskRuntime() {
+  if (!expandedId.value) return
+  const taskId = expandedId.value
+  await loadTaskRuntime(taskId)
+  const runId = activeRuns.value[taskId]?.run_id
+  const afterSeq = runEventCursor.value[taskId]
+  if (!runId || afterSeq == null) return
+  const delta = await api.getRunEvents(runId, afterSeq, 100)
+  if (delta.events.length) {
+    runEvents.value[taskId] = [...(runEvents.value[taskId] ?? []), ...delta.events].slice(-200)
+    runEventCursor.value[taskId] = delta.next_after_seq ?? runEventCursor.value[taskId]
   }
 }
 
@@ -51,18 +101,45 @@ function applyFilters() {
   loadTasks()
 }
 
+async function toggleExpand(taskId: string) {
+  expandedId.value = expandedId.value === taskId ? null : taskId
+  if (expandedId.value === taskId) {
+    await loadTaskRuntime(taskId)
+  }
+}
+
 function statusClass(status: string): string {
   return 'status-badge status-' + status.replace(/_/g, '-')
 }
 
-onMounted(loadTasks)
+function runtimeStatusClass(status?: string | null): string {
+  return 'runtime-status runtime-' + (status || 'unknown').replace(/_/g, '-')
+}
+
+function formatTime(value?: string | null): string {
+  if (!value) return 'N/A'
+  return new Date(value).toLocaleString('zh-CN')
+}
+
+onMounted(async () => {
+  await loadTasks()
+  pollHandle = window.setInterval(async () => {
+    await loadTasks()
+    await refreshExpandedTaskRuntime()
+  }, 10 * 60 * 1000)
+})
+
+onBeforeUnmount(() => {
+  if (pollHandle != null) {
+    window.clearInterval(pollHandle)
+  }
+})
 </script>
 
 <template>
   <div class="panel">
     <h2 class="panel-title">任务</h2>
 
-    <!-- Filters -->
     <div class="filters card">
       <input
         v-model="filterDirection"
@@ -88,7 +165,7 @@ onMounted(loadTasks)
 
       <div class="task-list">
         <div v-for="task in tasks" :key="task.id" class="card task-card">
-          <div class="task-header">
+          <div class="task-header" @click="toggleExpand(task.id)">
             <span class="task-id">{{ task.id }}</span>
             <span :class="statusClass(task.computed_status)">{{ task.computed_status }}</span>
           </div>
@@ -97,12 +174,66 @@ onMounted(loadTasks)
             <span>Module: {{ task.module }}</span>
             <span>Direction: {{ task.direction }}</span>
             <span>Progress: {{ task.computed_progress.toFixed(0) }}%</span>
+            <span>Runs: {{ task.run_count ?? 0 }}</span>
           </div>
           <p v-if="task.hypothesis" class="task-hypothesis">{{ task.hypothesis }}</p>
+
+          <div class="runtime-card">
+            <template v-if="activeRuns[task.id]">
+              <div class="runtime-head">
+                <strong>Active Run</strong>
+                <span :class="runtimeStatusClass(activeRuns[task.id]?.status)">
+                  {{ activeRuns[task.id]?.status }}
+                </span>
+              </div>
+              <div class="runtime-meta">
+                <span>Run: {{ activeRuns[task.id]?.run_id }}</span>
+                <span>Executor: {{ activeRuns[task.id]?.executor || 'unknown' }}</span>
+                <span>Phase: {{ activeRuns[task.id]?.phase || 'unknown' }}</span>
+                <span>Runtime Progress: {{ activeRuns[task.id]?.progress_pct.toFixed(0) }}%</span>
+              </div>
+              <div class="runtime-message">
+                {{ activeRuns[task.id]?.latest_message || 'No recent runtime message.' }}
+              </div>
+            </template>
+            <template v-else>
+              <div class="runtime-empty">No bound runs yet.</div>
+            </template>
+          </div>
+
+          <div v-if="expandedId === task.id" class="runtime-detail">
+            <div v-if="detailLoading[task.id]" class="loading-state compact">Loading runtime details...</div>
+            <template v-else>
+              <div class="history-section">
+                <h5>Run History</h5>
+                <div v-if="(taskRuns[task.id] || []).length" class="history-list">
+                  <div v-for="run in taskRuns[task.id]" :key="run.run_id" class="history-row">
+                    <span>{{ run.run_id }}</span>
+                    <span>{{ run.status }}</span>
+                    <span>{{ run.progress_pct.toFixed(0) }}%</span>
+                    <span>{{ formatTime(run.last_updated_at) }}</span>
+                  </div>
+                </div>
+                <div v-else class="runtime-empty">No run history available.</div>
+              </div>
+
+              <div class="history-section">
+                <h5>Recent Logs</h5>
+                <div v-if="(runEvents[task.id] || []).length" class="log-list">
+                  <div v-for="event in runEvents[task.id]" :key="`${task.id}-${event.seq}`" class="log-row">
+                    <span class="log-seq">#{{ event.seq }}</span>
+                    <span class="log-kind">{{ event.kind }}</span>
+                    <span class="log-ts">{{ formatTime(event.ts) }}</span>
+                    <span class="log-msg">{{ event.message || '(empty event)' }}</span>
+                  </div>
+                </div>
+                <div v-else class="runtime-empty">No runtime events yet.</div>
+              </div>
+            </template>
+          </div>
         </div>
       </div>
 
-      <!-- Pagination -->
       <div class="pagination">
         <button :disabled="offset === 0" @click="prevPage" class="page-btn">Previous</button>
         <span class="page-info">{{ offset + 1 }}-{{ Math.min(offset + limit, total) }} of {{ total }}</span>
@@ -178,10 +309,6 @@ onMounted(loadTasks)
   font-size: 14px;
 }
 
-.filter-btn:hover {
-  opacity: 0.9;
-}
-
 .task-count {
   font-size: 14px;
   opacity: 0.6;
@@ -201,6 +328,7 @@ onMounted(loadTasks)
   justify-content: space-between;
   align-items: center;
   margin-bottom: 6px;
+  cursor: pointer;
 }
 
 .task-id {
@@ -243,6 +371,103 @@ onMounted(loadTasks)
   opacity: 0.8;
 }
 
+.runtime-card {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--color-bg);
+}
+
+.runtime-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.runtime-meta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  opacity: 0.76;
+}
+
+.runtime-message,
+.runtime-empty {
+  margin-top: 8px;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.runtime-status {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.runtime-running,
+.runtime-queued,
+.runtime-waiting-input,
+.runtime-paused {
+  color: #856404;
+}
+
+.runtime-completed {
+  color: #155724;
+}
+
+.runtime-failed,
+.runtime-cancelled,
+.runtime-stopped {
+  color: #721c24;
+}
+
+.runtime-detail {
+  margin-top: 12px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+}
+
+.history-section {
+  margin-top: 10px;
+}
+
+.history-section h5 {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.history-list,
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-row,
+.log-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.log-seq,
+.log-kind,
+.log-ts {
+  white-space: nowrap;
+  color: #6b5b4e;
+}
+
+.compact {
+  padding: 16px 0;
+}
+
 .pagination {
   display: flex;
   align-items: center;
@@ -258,15 +483,5 @@ onMounted(loadTasks)
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
-}
-
-.page-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.page-info {
-  font-size: 14px;
-  opacity: 0.7;
 }
 </style>

@@ -111,9 +111,19 @@ const chartOption = computed(() => {
   }
 })
 
-function onChartClick(params: { data?: { _raw?: DagNode } }) {
-  if (params.data?._raw) {
-    selectedNode.value = params.data._raw
+function onChartClick(params: unknown) {
+  const data =
+    params && typeof params === 'object' && 'data' in params
+      ? (params as { data?: unknown }).data
+      : undefined
+
+  const raw =
+    data && typeof data === 'object' && '_raw' in data
+      ? (data as { _raw?: unknown })._raw
+      : undefined
+
+  if (raw && typeof raw === 'object' && 'id' in raw && 'label' in raw) {
+    selectedNode.value = raw as DagNode
   }
 }
 

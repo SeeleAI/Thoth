@@ -56,6 +56,7 @@ Run: `python "${CLAUDE_PLUGIN_ROOT}/scripts/init.py" --config <answers_json>`
 
 This generates:
 - `.research-config.yaml`
+- `.thoth/` runtime authority tree
 - `.agent-os/milestones.yaml`
 - `.agent-os/` (9 documents + research-tasks/ with schema + scripts)
 - `tools/dashboard/` (backend + frontend)
@@ -77,6 +78,7 @@ python tools/dashboard/backend/database.py  # init SQLite
 ```
 ✓ Thoth initialized: {project_name}
   - {N} research directions configured
+  - Runtime authority seeded under .thoth/
   - Dashboard ready at http://localhost:{port}
   - Run /thoth:dashboard to start
   - Run /thoth:status for current state
