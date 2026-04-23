@@ -13,6 +13,8 @@
 - `REQ-003`: 当前 checkout 的实现事实必须与未来目标架构清晰区分，不能把未实现的 V2 能力写成当前事实。
 - `REQ-004`: `main` 分支不保留 `AGENTS.md`、`CLAUDE.md`、`.agent-os/` 等动态开发态文档。
 - `REQ-005`: `dev -> main` 的默认集成策略是 `cherry-pick` 代码提交，而不是直接 merge 整个 `dev` 分支。
+- `REQ-015`: 所有默认开发工作必须在 `dev` 分支进行；`dev` 是唯一日常开发分支。
+- `REQ-016`: 未经用户明确批准，不允许直接修改 `main` 分支上的 repo-tracked 代码或文档。
 - `REQ-006`: 当前插件的公开 surface 必须保持干净：只暴露真正的 `/thoth:*` 公共命令，不暴露内部协议层或公开 `:codex` 变体。
 - `REQ-007`: 项目必须对失败探索、架构转向和用户后续拍板保持可追踪，不允许静默丢失信息量。
 - `REQ-013`: 对 `Codex` / `Claude Code` 自身特性、运行机制、实现原理与产品限制的长期文档化，必须以官方 docs 为 authority，并受 freshness policy 约束。
@@ -23,11 +25,11 @@
 - `AC-001`: 仓库根存在 `AGENTS.md` 与 `CLAUDE.md`，且 `CLAUDE.md` 在文件系统允许时与 `AGENTS.md` 为同一文件。
 - `AC-002`: `.agent-os/` 中存在完整状态文档集，并通过 `agent-project-system` 的验证脚本。
 - `AC-003`: `project-index.md` 中存在唯一 top next action，且引用真实 `TD-*`。
-- `AC-004`: 文档中明确记录 `dev` 与 `main` 的边界，以及 `cherry-pick` 为默认集成策略。
+- `AC-004`: 文档中明确记录 `dev` 与 `main` 的边界、所有默认开发都在 `dev`、以及 `cherry-pick` 为默认集成策略。
 - `AC-005`: 文档准确描述当前插件代码面：
-  - 当前公开命令是 `/thoth:*`
-  - 当前 Codex 为 executor-mode
-  - 当前尚未实现 `.thoth` authority runtime
+  - 当前公开命令同时包括 Claude `/thoth:*` 与 Codex `$thoth <command>`
+  - Claude 侧 `--executor codex` 继续存在
+  - 当前已实现 `.thoth` authority tree 与基础 durable runtime / dashboard run-ledger 读面
 - `AC-006`: `architecture-milestones.md` 中明确分开“当前实现结构”与“目标 V2 架构”。
 - `AC-007`: `.agent-os/official-sources/` 中存在完整的平台真源治理文档，并覆盖用户指定的全部官方来源。
 - `AC-008`: `/thoth:init` 生成的项目包含最小 `.thoth/` authority tree；dashboard backend 能读取 `.thoth/runs/*` 并把 active run、history run 和 run log 绑定到 task 详情。

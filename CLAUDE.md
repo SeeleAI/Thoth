@@ -82,22 +82,24 @@
 
 ## 5. 分支治理与集成规则
 
-1. `dev` 是本仓库的开发控制平面分支。
-2. `main` 是发布/稳定集成分支。
-3. 以下动态开发态文档允许存在于 `dev`，但默认不进入 `main`：
+1. `dev` 是本仓库唯一的日常开发控制平面分支。
+2. 所有默认开发工作都必须在 `dev` 上进行，包括代码、测试、生成物、治理文档与代理操作合同的修改。
+3. `main` 是发布/稳定集成分支。
+4. 未经用户明确批准，不允许直接修改 `main` 上的 repo-tracked 代码或文档；若当前工作树位于 `main`，应先切回 `dev` 或其他获批开发分支，再继续编辑。
+5. 以下动态开发态文档允许存在于 `dev`，但默认不进入 `main`：
    - `AGENTS.md`
    - `CLAUDE.md`
    - `.agent-os/`
-4. `dev -> main` 的默认代码集成策略是 `cherry-pick`，而不是直接 `merge dev`。
-5. 面向 `main` 的代码提交必须尽量与开发态文档变更分开，避免把控制平面状态带入发布面。
-6. 若后续需要在仓库机制层进一步硬化 `main` 的排斥策略，应将其视为 `WS-001` 下的正式工作项，而不是口头约定。
+6. `dev -> main` 的默认代码集成策略是 `cherry-pick`，而不是直接 `merge dev`。
+7. 面向 `main` 的代码提交必须尽量与开发态文档变更分开，避免把控制平面状态带入发布面。
+8. 若后续需要在仓库机制层进一步硬化 `main` 的排斥策略，应将其视为 `WS-001` 下的正式工作项，而不是口头约定。
 
 ## 6. 当前项目真相边界
 
-1. 当前 checkout 是一个已经可以运行测试的 Claude-hosted plugin 代码仓。
-2. 当前公开命令面已经收敛为 `/thoth:*`，并去除了公开内部 skill 与公开 `:codex` 变体。
-3. Codex 当前以 executor-mode 方式进入 `run` / `loop` / `review`。
-4. 当前仓库尚未落成 `.thoth/` authority、durable supervisor runtime、run ledger、lease registry 等 `Thoth V2` 能力。
+1. 当前 checkout 已包含 host-neutral command spec，并从同一主源投影 Claude `/thoth:*` 与 Codex `$thoth <command>` public surface。
+2. Claude 侧 `--executor codex` 继续保留；Codex 侧公开面收敛为单一 `$thoth` 入口。
+3. 当前仓库已落成 repo-local `thoth` Python 包、`.thoth` authority tree、基础 durable run ledger / supervisor runtime，以及 Codex 官方 plugin/skill surface。
+4. dashboard runtime 读面以 `.thoth/runs/*` 为准，并显式展示 host、executor、attachable、stale、supervisor_state 等字段。
 5. 文档中必须明确区分：
    - 当前已实现事实
    - 已锁定但尚未实现的目标架构

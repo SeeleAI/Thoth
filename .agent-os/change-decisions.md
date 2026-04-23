@@ -45,3 +45,8 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
   - Related items: `REQ-014`, `WS-002`, `WS-003`
   - Human rationale: 前端必须稳定展示后端 Agent 长时进度，运行日志不能再依赖 YAML 或宿主会话拼装
   - Effect on project: `.thoth/runs/*` 成为运行事实层；task 页面必须展示 active run、history run 与 run logs；默认轮询周期锁定为 `10` 分钟
+
+- `CD-009` `2026-04-23` `[accepted]`: 所有默认开发工作都在 `dev` 分支进行，未经用户明确批准不得直接修改 `main`
+  - Related items: `REQ-015`, `REQ-016`, `WS-001`
+  - Human rationale: 需要把开发控制平面和稳定发布面彻底分开，避免代理在 `main` 上继续积累未审查改动
+  - Effect on project: `main` 只作为稳定集成入口；代理若位于 `main` 必须先切回 `dev` 或其他获批开发分支，再继续修改 repo-tracked 文件

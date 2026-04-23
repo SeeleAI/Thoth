@@ -31,3 +31,9 @@
   - State changes: dashboard 前端从“已改代码但未完成构建验证” -> `vue-tsc` 与 `vite build` 均通过；补齐 task-first runtime UI 的前端可构建证据
   - Evidence produced: fixed `templates/dashboard/frontend/src/components/charts/DagChart.vue` event typing drift; `npm run build` passed in `templates/dashboard/frontend`; generated production bundle under `templates/dashboard/frontend/dist/`
   - Next likely action: 回到 `TD-001` 推进 `dev` / `main` 分流机制化，并继续把当前最小 runtime contract 向 durable supervisor / lease protocol 收敛
+
+- 2026-04-23 08:03 UTC [branch governance cutover to dev]
+  - Worked on: `OBJ-001`, `WS-001`
+  - State changes: 当前未提交的 host-neutral runtime / Codex surface 改造已先在 `main` 提交，再 merge 到 `dev`；仓库治理从“`dev` 是控制平面”强化为“所有默认开发都必须在 `dev`，未经批准不得直接修改 `main`”
+  - Evidence produced: `main` commit `a93b12b`, `dev` merge commit `de6db3f`, updated root `AGENTS.md`, `CLAUDE.md`, `.agent-os/requirements.md`, `.agent-os/change-decisions.md`, `README.md`
+  - Next likely action: 继续在 `dev` 上推进后续 Thoth runtime 与治理工作，并把面向 `main` 的集成保持为精选进入
