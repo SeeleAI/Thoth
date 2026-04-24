@@ -16,4 +16,4 @@ else
   PYTHON_BIN="python"
 fi
 
-"${PYTHON_BIN}" -m thoth.claude_bridge "$@"
+"${PYTHON_BIN}" "${PLUGIN_ROOT}/thoth/claude_bridge.py" "$@"

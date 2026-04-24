@@ -71,8 +71,10 @@ Use `project` or `local` scope instead of `user` if you want a narrower install.
 
 Claude `/thoth:*` commands execute the repo-local Thoth CLI through the plugin
 bridge before Claude summarizes the result. On the first run, Claude may ask
-you to approve `scripts/thoth-claude-command.sh`; approving it once or adding a
-project-local allow rule in `.claude/settings.local.json` is the intended path.
+you to approve `scripts/thoth-claude-command.sh`; you can either approve it
+once, add a project-local allow rule in `.claude/settings.local.json`, or set a
+global allow rule in `~/.claude/settings.json` if you want Thoth to work
+without approval prompts across all projects.
 
 ### 2. Install in Codex
 
