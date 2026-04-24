@@ -133,7 +133,6 @@ def render_plugin_manifest() -> dict:
         "description": "Official Codex-native public surface for the Thoth authority runtime.",
         "author": {
             "name": "SeeleAI",
-            "email": "viceyzy@foxmail.com",
             "url": "https://github.com/SeeleAI",
         },
         "homepage": f"{PLUGIN_REPOSITORY}#readme",

@@ -1,8 +1,8 @@
 {
   "name": "thoth",
   "owner": {
-    "name": "Royalvice",
-    "url": "https://github.com/Royalvice"
+    "name": "SeeleAI",
+    "url": "https://github.com/SeeleAI"
   },
   "plugins": [
     {
@@ -10,8 +10,8 @@
       "description": "Dashboard-centric Agent Project OS with project bootstrap, execution loops, audit visibility, validation, reporting, and executor-mode Codex delegation.",
       "version": "0.1.4",
       "author": {
-        "name": "Royalvice",
-        "url": "https://github.com/Royalvice"
+        "name": "SeeleAI",
+        "url": "https://github.com/SeeleAI"
       },
       "source": "./",
       "category": "productivity"

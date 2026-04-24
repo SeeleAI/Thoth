@@ -3,12 +3,11 @@
   "version": "0.1.4",
   "description": "Dashboard-centric Agent Project OS for auditable AI execution, persistent project state, and human-visible workflow orchestration.",
   "author": {
-    "name": "Royalvice",
-    "email": "viceyzy@foxmail.com",
-    "url": "https://github.com/Royalvice"
+    "name": "SeeleAI",
+    "url": "https://github.com/SeeleAI"
   },
-  "homepage": "https://github.com/Royalvice/Thoth",
-  "repository": "https://github.com/Royalvice/Thoth",
+  "homepage": "https://github.com/SeeleAI/Thoth",
+  "repository": "https://github.com/SeeleAI/Thoth",
   "license": "MIT",
   "keywords": [
     "research",
