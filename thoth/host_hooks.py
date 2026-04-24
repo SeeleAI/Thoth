@@ -13,8 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from .runtime import (
     RunHandle,
     _append_event,
@@ -23,9 +21,6 @@ from .runtime import (
     list_active_runs,
     utc_now,
 )
-
-
-CONFIG_FILE = ".research-config.yaml"
 
 
 @dataclass
@@ -48,7 +43,7 @@ def _read_hook_input() -> dict[str, Any]:
 
 
 def _is_thoth_project(project_root: Path) -> bool:
-    return (project_root / ".thoth" / "project" / "project.json").exists() or (project_root / CONFIG_FILE).exists()
+    return (project_root / ".thoth" / "project" / "project.json").exists()
 
 
 def _load_project_name(project_root: Path) -> str:
@@ -56,17 +51,7 @@ def _load_project_name(project_root: Path) -> str:
     name = manifest.get("project", {}).get("name")
     if isinstance(name, str) and name.strip():
         return name.strip()
-
-    config_path = project_root / CONFIG_FILE
-    if not config_path.exists():
-        return ""
-    try:
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return ""
-    if not isinstance(data, dict):
-        return ""
-    return str(data.get("project", {}).get("name", "")).strip()
+    return ""
 
 
 def _append_project_note(project_root: Path, payload: dict[str, Any]) -> None:

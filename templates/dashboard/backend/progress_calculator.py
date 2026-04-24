@@ -44,6 +44,8 @@ def _strict_task_progress(task: dict[str, Any]) -> float:
     ready_state = str(task.get("ready_state") or "blocked")
     if verdict.get("updated_at"):
         return 100.0
+    if ready_state == "imported_resolved":
+        return 100.0
     if ready_state == "ready":
         return 15.0
     if ready_state == "blocked":
@@ -74,6 +76,8 @@ def get_task_status(task: dict) -> str:
         ready_state = str(task.get("ready_state") or "blocked")
         if ready_state == "ready":
             return "ready"
+        if ready_state == "imported_resolved":
+            return "completed"
         if ready_state == "invalid":
             return "invalid"
         return "blocked"

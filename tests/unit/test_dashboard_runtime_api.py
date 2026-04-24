@@ -6,7 +6,6 @@ import json
 import sys
 from pathlib import Path
 
-import yaml
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).parent.parent.parent
@@ -31,7 +30,6 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("THOTH_HEARTBEAT_STALE_MINUTES", "100000")
     monkeypatch.setattr(dashboard_app, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(dashboard_app, "DASHBOARD_DIR", tmp_path / "tools" / "dashboard")
-    monkeypatch.setattr(dashboard_app, "RESEARCH_TASKS_DIR", tmp_path / ".agent-os" / "research-tasks")
     monkeypatch.setattr(dashboard_app, "THOTH_RUNS_DIR", tmp_path / ".thoth" / "runs")
     monkeypatch.setattr(dashboard_app, "DIRECTIONS", ("frontend",))
     monkeypatch.setattr(dashboard_data_loader, "DIRECTIONS", ("frontend",))
@@ -39,6 +37,7 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / ".thoth" / "project" / "tasks").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".thoth" / "project" / "decisions").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".thoth" / "project" / "contracts").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".thoth" / "project" / "verdicts").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".agent-os").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".agent-os" / "milestones.yaml").write_text("milestones: []\n", encoding="utf-8")
     (tmp_path / "tools" / "dashboard" / "frontend" / "dist").mkdir(parents=True, exist_ok=True)
@@ -46,15 +45,17 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
         "<!doctype html><html><body><div id='app'>dashboard shell</div></body></html>",
         encoding="utf-8",
     )
-    (tmp_path / ".research-config.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "project": {"name": "RuntimeDemo"},
-                "research": {"directions": [{"id": "frontend", "label_en": "Frontend"}]},
+    _write_json(
+        tmp_path / ".thoth" / "project" / "project.json",
+        {
+            "schema_version": 2,
+            "project": {
+                "name": "RuntimeDemo",
+                "directions": [{"id": "frontend", "label_en": "Frontend"}],
+                "phases": [],
             },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
+            "dashboard": {"port": 8501},
+        },
     )
 
     task = {
@@ -75,7 +76,6 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
         "eval_entrypoint": {"command": "pytest"},
         "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
         "failure_classes": ["runtime_drift"],
-        "verdict": {"usable": None, "meets_goal": None, "failure_class": None, "reasons": [], "conclusion": None, "updated_at": None},
     }
     _write_json(
         tmp_path / ".thoth" / "project" / "tasks" / "task-1.json",

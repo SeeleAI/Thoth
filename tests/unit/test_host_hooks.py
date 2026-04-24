@@ -22,10 +22,6 @@ def hook_project(tmp_path, monkeypatch):
         json.dumps({"project": {"name": "Hook Test"}}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    (project_dir / ".research-config.yaml").write_text(
-        "project:\n  name: Hook Test\n",
-        encoding="utf-8",
-    )
     return project_dir
 
 

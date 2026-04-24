@@ -7,7 +7,6 @@ import pytest
 import yaml
 
 # Add source paths
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "templates" / "agent-os" / "research-tasks"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "templates" / "dashboard" / "backend"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 

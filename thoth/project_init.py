@@ -15,10 +15,15 @@ from typing import Any
 import yaml
 
 from .command_specs import COMMAND_SPECS
-from .task_contracts import compile_task_authority, ensure_task_authority_tree
+from .task_contracts import (
+    compile_task_authority,
+    ensure_task_authority_tree,
+    import_legacy_tasks,
+    load_project_manifest,
+)
 
 
-CONFIG_FILE = ".research-config.yaml"
+LEGACY_CONFIG_FILE = ".research-config.yaml"
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = ROOT / "templates"
 
@@ -28,8 +33,6 @@ DEFAULT_PHASES = [
     {"id": "experiment", "label_zh": "实验", "label_en": "Experiment", "weight": 40},
     {"id": "conclusion", "label_zh": "结论", "label_en": "Conclusion", "weight": 20},
 ]
-
-DEFAULT_DELIVERABLE_TYPES = ["report", "model", "checkpoint", "data", "script", "config"]
 
 DIRECTION_COLORS = [
     "#CC8B3A", "#8BA870", "#D4907A", "#9B7CB5",
@@ -48,19 +51,7 @@ REQUIRED_AGENT_OS_FILES = [
     "change-decisions.md",
 ]
 
-OPTIONAL_AGENT_OS_FILES = [
-    "milestones.yaml",
-]
-
-GENERATED_RESEARCH_TASK_FILES = [
-    "validate.py",
-    "sync_todo.py",
-    "check_consistency.py",
-    "verify_completion.py",
-    "verify_on_complete.py",
-    "schema.json",
-    "paper-module-mapping.yaml",
-]
+OPTIONAL_AGENT_OS_FILES = ["milestones.yaml"]
 
 GENERATED_SCRIPT_FILES = [
     "install-hooks.sh",
@@ -70,9 +61,15 @@ GENERATED_SCRIPT_FILES = [
     "thoth-codex-hook.sh",
 ]
 
-GENERATED_TEST_FILES = [
-    "tests/conftest.py",
-    "tests/test_structure.py",
+GENERATED_TEST_FILES = ["tests/conftest.py", "tests/test_structure.py"]
+
+LEGACY_REMOVE_PATHS = [
+    LEGACY_CONFIG_FILE,
+    ".agent-os/research-tasks",
+    "tests/test_validate.py",
+    "tests/test_check_consistency.py",
+    "tests/test_sync_todo.py",
+    "tests/test_verify_completion.py",
 ]
 
 DISCOVERY_CODE_SUFFIXES = {
@@ -193,8 +190,11 @@ def _read_readme_summary(project_dir: Path) -> tuple[str, str]:
     return "", ""
 
 
-def _detect_language(project_dir: Path, existing_config: dict[str, Any]) -> str:
-    language = existing_config.get("project", {}).get("language")
+def _detect_language(project_dir: Path, legacy_config: dict[str, Any], manifest: dict[str, Any]) -> str:
+    language = manifest.get("project", {}).get("language")
+    if isinstance(language, str) and language.strip():
+        return language.strip()
+    language = legacy_config.get("project", {}).get("language")
     if isinstance(language, str) and language.strip():
         return language.strip()
 
@@ -213,8 +213,11 @@ def _detect_language(project_dir: Path, existing_config: dict[str, Any]) -> str:
     return "en"
 
 
-def _discover_directions(project_dir: Path, existing_config: dict[str, Any]) -> list[Any]:
-    configured = existing_config.get("research", {}).get("directions")
+def _discover_directions(project_dir: Path, legacy_config: dict[str, Any], manifest: dict[str, Any]) -> list[Any]:
+    configured = manifest.get("project", {}).get("directions")
+    if isinstance(configured, list) and configured:
+        return configured
+    configured = legacy_config.get("research", {}).get("directions")
     if isinstance(configured, list) and configured:
         return configured
 
@@ -232,7 +235,6 @@ def _discover_directions(project_dir: Path, existing_config: dict[str, Any]) -> 
 
 def _managed_path_list() -> list[str]:
     base = [
-        CONFIG_FILE,
         ".pre-commit-config.yaml",
         "AGENTS.md",
         "CLAUDE.md",
@@ -244,6 +246,7 @@ def _managed_path_list() -> list[str]:
         ".thoth/project/source-map.json",
         ".thoth/project/compiler-state.json",
         ".thoth/project/legacy-audit.json",
+        ".thoth/project/verdicts/.gitkeep",
         ".thoth/runs/.gitkeep",
         ".thoth/migrations/.gitkeep",
         ".thoth/derived/.gitkeep",
@@ -251,7 +254,6 @@ def _managed_path_list() -> list[str]:
     base.extend(f"scripts/{name}" for name in GENERATED_SCRIPT_FILES)
     base.extend(f".agent-os/{name}" for name in REQUIRED_AGENT_OS_FILES)
     base.extend(f".agent-os/{name}" for name in OPTIONAL_AGENT_OS_FILES)
-    base.extend(f".agent-os/research-tasks/{name}" for name in GENERATED_RESEARCH_TASK_FILES)
     base.extend(GENERATED_TEST_FILES)
     return base
 
@@ -310,7 +312,8 @@ def _git_status_summary(project_dir: Path) -> dict[str, Any]:
 
 def audit_repository_state(project_dir: Path) -> dict[str, Any]:
     project_dir = project_dir.resolve()
-    existing_config = _read_yaml(project_dir / CONFIG_FILE)
+    legacy_config = _read_yaml(project_dir / LEGACY_CONFIG_FILE)
+    manifest = load_project_manifest(project_dir)
     readme_title, readme_summary = _read_readme_summary(project_dir)
 
     docs_files: list[str] = []
@@ -360,7 +363,7 @@ def audit_repository_state(project_dir: Path) -> dict[str, Any]:
         "project_root": str(project_dir),
         "git": _git_status_summary(project_dir),
         "existing": {
-            "research_config": (project_dir / CONFIG_FILE).exists(),
+            "research_config": (project_dir / LEGACY_CONFIG_FILE).exists(),
             "thoth_authority": (project_dir / ".thoth").exists(),
             "agent_os": agent_os_dir.exists(),
             "legacy_agentos_alias": legacy_agentos_dir.exists(),
@@ -380,26 +383,34 @@ def audit_repository_state(project_dir: Path) -> dict[str, Any]:
             "summary": readme_summary,
         },
         "inferred": {
-            "language": _detect_language(project_dir, existing_config),
-            "directions": _discover_directions(project_dir, existing_config),
+            "language": _detect_language(project_dir, legacy_config, manifest),
+            "directions": _discover_directions(project_dir, legacy_config, manifest),
         },
+        "legacy_research_task_files": sorted(
+            str(path.relative_to(project_dir))
+            for path in (project_dir / ".agent-os" / "research-tasks").rglob("*.y*ml")
+            if path.is_file()
+        ) if (project_dir / ".agent-os" / "research-tasks").is_dir() else [],
     }
 
 
 def _normalize_config(requested: dict[str, Any], project_dir: Path, audit: dict[str, Any]) -> dict[str, Any]:
-    existing_config = _read_yaml(project_dir / CONFIG_FILE)
-    project_config = existing_config.get("project", {})
-    dashboard_config = existing_config.get("dashboard", {})
-    research_config = existing_config.get("research", {})
+    legacy_config = _read_yaml(project_dir / LEGACY_CONFIG_FILE)
+    manifest = load_project_manifest(project_dir)
+    project_config = manifest.get("project", {})
+    dashboard_config = manifest.get("dashboard", {})
+    research_config = legacy_config.get("research", {})
+    legacy_project_config = legacy_config.get("project", {})
+    legacy_dashboard_config = legacy_config.get("dashboard", {})
 
     config = dict(requested)
-    config.setdefault("name", project_config.get("name") or audit.get("readme", {}).get("title") or project_dir.name)
-    config.setdefault("description", project_config.get("description") or audit.get("readme", {}).get("summary") or "")
-    config.setdefault("language", project_config.get("language") or audit.get("inferred", {}).get("language") or "zh")
-    config.setdefault("directions", research_config.get("directions") or audit.get("inferred", {}).get("directions") or [])
-    config.setdefault("phases", research_config.get("phases") or DEFAULT_PHASES)
-    config.setdefault("port", dashboard_config.get("port", 8501))
-    config.setdefault("theme", dashboard_config.get("theme", "warm-bear"))
+    config.setdefault("name", project_config.get("name") or legacy_project_config.get("name") or audit.get("readme", {}).get("title") or project_dir.name)
+    config.setdefault("description", project_config.get("description") or legacy_project_config.get("description") or audit.get("readme", {}).get("summary") or "")
+    config.setdefault("language", project_config.get("language") or legacy_project_config.get("language") or audit.get("inferred", {}).get("language") or "zh")
+    config.setdefault("directions", project_config.get("directions") or research_config.get("directions") or audit.get("inferred", {}).get("directions") or [])
+    config.setdefault("phases", project_config.get("phases") or research_config.get("phases") or DEFAULT_PHASES)
+    config.setdefault("port", dashboard_config.get("port", legacy_dashboard_config.get("port", 8501)))
+    config.setdefault("theme", dashboard_config.get("theme", legacy_dashboard_config.get("theme", "warm-bear")))
 
     directions = config["directions"]
     if isinstance(directions, str):
@@ -417,10 +428,10 @@ def build_init_preview(project_dir: Path, audit: dict[str, Any]) -> dict[str, An
         "create": [],
         "update": [],
         "preserve": [],
+        "remove": [],
     }
 
     managed_update_targets = {
-        CONFIG_FILE,
         ".pre-commit-config.yaml",
         "AGENTS.md",
         "CLAUDE.md",
@@ -430,13 +441,13 @@ def build_init_preview(project_dir: Path, audit: dict[str, Any]) -> dict[str, An
         "tools/dashboard",
     }
     managed_update_targets.update(f"scripts/{name}" for name in GENERATED_SCRIPT_FILES)
-    managed_update_targets.update(f".agent-os/research-tasks/{name}" for name in GENERATED_RESEARCH_TASK_FILES)
     managed_update_targets.update(GENERATED_TEST_FILES)
 
     managed_create_if_missing = {
         ".thoth/project/project.json",
         ".thoth/project/instructions.md",
         ".thoth/project/source-map.json",
+        ".thoth/project/verdicts/.gitkeep",
         ".thoth/runs/.gitkeep",
         ".thoth/migrations/.gitkeep",
         ".thoth/derived/.gitkeep",
@@ -460,6 +471,7 @@ def build_init_preview(project_dir: Path, audit: dict[str, Any]) -> dict[str, An
     preserve_paths.update(audit.get("legacy_agentos_files", []))
     preserve_paths.update(audit.get("root_markdown_files", []))
     preview["preserve"] = sorted(preserve_paths)
+    preview["remove"] = sorted(rel for rel in LEGACY_REMOVE_PATHS if (project_dir / rel).exists())
     return preview
 
 
@@ -477,6 +489,16 @@ def _backup_existing_path(project_dir: Path, migration_dir: Path, relpath: str) 
         shutil.copy2(source, target)
 
 
+def _remove_existing_path(project_dir: Path, relpath: str) -> None:
+    target = project_dir / relpath
+    if not target.exists():
+        return
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+
+
 def _write_source_map(project_dir: Path, audit: dict[str, Any], preview: dict[str, Any]) -> None:
     payload = {
         "schema_version": 1,
@@ -492,6 +514,7 @@ def _write_source_map(project_dir: Path, audit: dict[str, Any], preview: dict[st
             "codex_project_layer": ".codex/",
         },
         "managed_paths": sorted(set(preview["create"] + preview["update"] + preview["preserve"])),
+        "removed_legacy_paths": preview.get("remove", []),
         "preserved_docs": audit.get("docs_files", []),
         "preserved_root_markdown": audit.get("root_markdown_files", []),
         "preserved_agent_os_files": audit.get("agent_os_files", []),
@@ -521,66 +544,30 @@ def parse_config(config_json: str) -> dict[str, Any]:
     return config
 
 
-def generate_research_config(config: dict[str, Any], project_dir: Path) -> None:
-    lines: list[str] = []
-    lines.append("project:")
-    lines.append(f'  name: "{config["name"]}"')
-    lines.append(f'  description: "{config.get("description", "")}"')
-    lines.append(f'  language: "{config["language"]}"')
-    lines.append('  version: "0.2.0"')
-    lines.append("")
-    lines.append("research:")
-    lines.append("  directions:")
-    for i, direction in enumerate(config["directions"]):
-        color = DIRECTION_COLORS[i % len(DIRECTION_COLORS)]
-        if isinstance(direction, dict):
-            d_id = direction["id"]
-            label_en = direction.get("label_en", d_id.title())
-            label_zh = direction.get("label_zh", d_id)
-            color = direction.get("color", color)
-        else:
-            d_id = str(direction)
-            label_en = d_id.title()
-            label_zh = d_id
-        lines.extend([
-            f'    - id: "{d_id}"',
-            f'      label_zh: "{label_zh}"',
-            f'      label_en: "{label_en}"',
-            f'      color: "{color}"',
-        ])
-    lines.append("")
-    lines.append("  phases:")
-    for phase in config["phases"]:
-        lines.extend([
-            f'    - id: "{phase["id"]}"',
-            f'      label_zh: "{phase.get("label_zh", phase["id"])}"',
-            f'      label_en: "{phase.get("label_en", phase["id"])}"',
-            f'      weight: {phase.get("weight", 25)}',
-        ])
-    lines.append("")
-    lines.append("  deliverable_types:")
-    for item in DEFAULT_DELIVERABLE_TYPES:
-        lines.append(f'    - "{item}"')
-    lines.extend([
-        "",
-        "dashboard:",
-        f'  port: {config["port"]}',
-        f'  theme: "{config["theme"]}"',
-        "",
-        "toolchain:",
-        '  python: "python"',
-        "  pre_commit: true",
-        "  git_hooks: true",
-        "  codex_project_layer: true",
-        "",
-    ])
-    (project_dir / CONFIG_FILE).write_text("\n".join(lines), encoding="utf-8")
+def _normalize_direction_entry(direction: Any, index: int) -> dict[str, Any]:
+    color = DIRECTION_COLORS[index % len(DIRECTION_COLORS)]
+    if isinstance(direction, dict):
+        direction_id = str(direction.get("id") or f"direction-{index + 1}").strip()
+        return {
+            "id": direction_id,
+            "label_zh": direction.get("label_zh", direction_id),
+            "label_en": direction.get("label_en", direction_id.title()),
+            "color": direction.get("color", color),
+        }
+    direction_id = str(direction).strip() or f"direction-{index + 1}"
+    return {
+        "id": direction_id,
+        "label_zh": direction_id,
+        "label_en": direction_id.title(),
+        "color": color,
+    }
 
 
 def generate_milestones(config: dict[str, Any], project_dir: Path) -> None:
     path = project_dir / ".agent-os" / "milestones.yaml"
     if path.exists():
         return
+    path.parent.mkdir(parents=True, exist_ok=True)
     content = textwrap.dedent(f"""\
 # Milestones for {config['name']}
 milestones: []
@@ -594,7 +581,7 @@ def generate_agent_os_docs(config: dict[str, Any], project_dir: Path) -> None:
         "project-index.md": f"# Project Index\n\n- Project: {name}\n- Status: Initialized\n",
         "requirements.md": "# Requirements\n\n## User Goals\n- (Define goals here)\n",
         "architecture-milestones.md": "# Architecture & Milestones\n\n## Current Architecture\n- (Describe architecture)\n",
-        "todo.md": "# TODO\n\n## Backlog\n\n## Ready\n\n## Doing\n\n## Blocked\n\n## Done\n\n## Verified\n\n## Abandoned\n\n<!-- RESEARCH-TASKS-AUTO-START -->\n\n_No research task YAML files found._\n\n<!-- RESEARCH-TASKS-AUTO-END -->\n",
+        "todo.md": "# TODO\n\n## Backlog\n\n## Ready\n\n## Doing\n\n## Blocked\n\n## Done\n\n## Verified\n\n## Abandoned\n",
         "cross-repo-mapping.md": "# Cross-Repo Mapping\n\n| Main ID | Local ID | Repo | Status |\n|---------|----------|------|--------|\n| (none) | | | |\n",
         "acceptance-report.md": "# Acceptance Report\n\n- No conclusions yet.\n",
         "lessons-learned.md": "# Lessons Learned\n\n- No failed explorations recorded yet.\n",
@@ -608,21 +595,6 @@ def generate_agent_os_docs(config: dict[str, Any], project_dir: Path) -> None:
         if path.exists():
             continue
         path.write_text(content, encoding="utf-8")
-
-
-def generate_research_tasks(config: dict[str, Any], project_dir: Path) -> None:
-    tasks_dir = project_dir / ".agent-os" / "research-tasks"
-    tasks_dir.mkdir(parents=True, exist_ok=True)
-    for script_name in ("validate.py", "sync_todo.py", "check_consistency.py", "verify_completion.py", "verify_on_complete.py", "schema.json"):
-        src = TEMPLATES_DIR / "agent-os" / "research-tasks" / script_name
-        if src.exists():
-            shutil.copy2(src, tasks_dir / script_name)
-    mapping_path = tasks_dir / "paper-module-mapping.yaml"
-    if not mapping_path.exists():
-        mapping_path.write_text("# Paper-Module Mapping\npapers: []\n", encoding="utf-8")
-    for direction in config.get("directions", []):
-        d_id = direction["id"] if isinstance(direction, dict) else direction
-        (tasks_dir / d_id).mkdir(exist_ok=True)
 
 
 def generate_dashboard(config: dict[str, Any], project_dir: Path) -> None:
@@ -642,6 +614,7 @@ This document is the canonical human-readable project instruction source for `{c
 
 - `.thoth` is the only runtime authority.
 - Execution planning is compiler-driven: `Decision -> Contract -> generated Task`.
+- Repo-level conclusions live in `.thoth/project/verdicts/*.json`; generated tasks are read-only projections.
 - `run` and `loop` only execute generated tasks from `.thoth/project/tasks/*.json`.
 - Free-form execution is forbidden; ambiguous work must go back through `discuss`.
 - `init` must audit the current repository before it standardizes any Thoth-managed surface.
@@ -667,12 +640,19 @@ def generate_thoth_runtime(config: dict[str, Any], project_dir: Path) -> None:
     for rel in ("project", "runs", "migrations", "derived"):
         (thoth_dir / rel).mkdir(parents=True, exist_ok=True)
     ensure_task_authority_tree(project_dir)
+    directions = [_normalize_direction_entry(direction, index) for index, direction in enumerate(config.get("directions", []))]
     manifest = {
         "schema_version": 2,
         "project": {
             "name": config["name"],
             "description": config.get("description", ""),
             "language": config.get("language", "zh"),
+            "directions": directions,
+            "phases": config.get("phases", DEFAULT_PHASES),
+        },
+        "dashboard": {
+            "port": config.get("port", 8501),
+            "theme": config.get("theme", "warm-bear"),
         },
         "runtime": {
             "authority": ".thoth",
@@ -682,6 +662,7 @@ def generate_thoth_runtime(config: dict[str, Any], project_dir: Path) -> None:
             "decision_dir": ".thoth/project/decisions",
             "contract_dir": ".thoth/project/contracts",
             "task_dir": ".thoth/project/tasks",
+            "verdict_dir": ".thoth/project/verdicts",
             "compiler_state": ".thoth/project/compiler-state.json",
             "legacy_audit": ".thoth/project/legacy-audit.json",
             "execution_policy": {
@@ -697,7 +678,7 @@ def generate_thoth_runtime(config: dict[str, Any], project_dir: Path) -> None:
     }
     (thoth_dir / "project" / "project.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (thoth_dir / "project" / "instructions.md").write_text(render_project_instructions(config), encoding="utf-8")
-    for rel in ("runs/.gitkeep", "migrations/.gitkeep", "derived/.gitkeep"):
+    for rel in ("project/verdicts/.gitkeep", "runs/.gitkeep", "migrations/.gitkeep", "derived/.gitkeep"):
         (thoth_dir / rel).write_text("", encoding="utf-8")
     compile_task_authority(project_dir)
 
@@ -707,19 +688,15 @@ def generate_pre_commit_config(config: dict[str, Any], project_dir: Path) -> Non
 repos:
   - repo: local
     hooks:
-      - id: research-tasks-schema
-        name: Validate research task YAML schema
-        entry: python .agent-os/research-tasks/validate.py
+      - id: thoth-doctor
+        name: Validate strict Thoth authority
+        entry: python -m thoth.cli doctor --json
         language: python
-        files: '\\.agent-os/research-tasks/.*\\.ya?ml$'
-        additional_dependencies: ['pyyaml', 'jsonschema']
         pass_filenames: false
-      - id: sync-todo-freshness
-        name: Check todo.md sync freshness
-        entry: python .agent-os/research-tasks/sync_todo.py --check-only
+      - id: thoth-sync
+        name: Refresh generated Thoth projections
+        entry: python -m thoth.cli sync
         language: python
-        files: '\\.agent-os/research-tasks/.*\\.ya?ml$'
-        additional_dependencies: ['pyyaml']
         pass_filenames: false
 """)
     (project_dir / ".pre-commit-config.yaml").write_text(content, encoding="utf-8")
@@ -731,8 +708,8 @@ def generate_scripts(config: dict[str, Any], project_dir: Path) -> None:
     scripts = {
         "install-hooks.sh": "#!/usr/bin/env bash\nset -e\npre-commit install\n",
         "check-required-files.sh": "#!/usr/bin/env bash\nset -e\nfor f in project-index.md requirements.md architecture-milestones.md todo.md cross-repo-mapping.md acceptance-report.md lessons-learned.md run-log.md change-decisions.md; do test -f \".agent-os/$f\" || { echo \"MISSING: .agent-os/$f\"; exit 1; }; done\n",
-        "session-end-check.sh": "#!/usr/bin/env bash\nset -e\npython .agent-os/research-tasks/validate.py\npython .agent-os/research-tasks/check_consistency.py\npython .agent-os/research-tasks/sync_todo.py --check-only || python .agent-os/research-tasks/sync_todo.py\npython -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
-        "validate-all.sh": "#!/usr/bin/env bash\nset -e\npython .agent-os/research-tasks/validate.py\npython .agent-os/research-tasks/check_consistency.py\npython .agent-os/research-tasks/sync_todo.py --check-only\npython -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
+        "session-end-check.sh": "#!/usr/bin/env bash\nset -e\npython -m thoth.cli sync\npython -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
+        "validate-all.sh": "#!/usr/bin/env bash\nset -e\npython -m thoth.cli sync\npython -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
         "thoth-codex-hook.sh": "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"\ncd \"$ROOT\"\nEVENT=\"${1:-}\"\nif [ -z \"$EVENT\" ]; then\n  echo \"Usage: thoth-codex-hook.sh <start|stop>\" >&2\n  exit 0\nfi\nif command -v thoth >/dev/null 2>&1; then\n  exec thoth hook --host codex --event \"$EVENT\"\nfi\nif [ -n \"${THOTH_SOURCE_ROOT:-}\" ]; then\n  export PYTHONPATH=\"${THOTH_SOURCE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}\"\n  exec python -m thoth.cli hook --host codex --event \"$EVENT\"\nfi\nexit 0\n",
     }
     for filename, content in scripts.items():
@@ -763,6 +740,7 @@ This file is generated from `.thoth/project/instructions.md` for `{config["name"
 ## Runtime Rules
 
 - Planning authority lives in `.thoth/project/decisions`, `.thoth/project/contracts`, and generated `.thoth/project/tasks`.
+- Repo-level verdict authority lives in `.thoth/project/verdicts`.
 - `run` and `loop` execute by `--task-id` only; free-form goals belong in `discuss`.
 - `run` and `loop` are durable by default and support attach/watch/stop lifecycle.
 - Hooks and subagents may enhance throughput but are never correctness dependencies.
@@ -836,11 +814,11 @@ from pathlib import Path
 REQUIRED_FILES = [
     "AGENTS.md",
     "CLAUDE.md",
-    ".research-config.yaml",
     ".thoth/project/project.json",
     ".thoth/project/instructions.md",
     ".thoth/project/compiler-state.json",
     ".thoth/project/legacy-audit.json",
+    ".thoth/project/verdicts/.gitkeep",
     ".codex/config.json",
 ]
 
@@ -875,7 +853,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
     )
 
     backups: list[dict[str, Any]] = []
-    for relpath in preview["update"]:
+    for relpath in sorted(set(preview["update"] + preview.get("remove", []))):
         source = project_dir / relpath
         if not source.exists():
             continue
@@ -887,20 +865,23 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
             }
         )
 
-    (project_dir / ".agent-os" / "research-tasks").mkdir(parents=True, exist_ok=True)
     (project_dir / "reports").mkdir(exist_ok=True)
-    generate_research_config(normalized, project_dir)
-    generate_milestones(normalized, project_dir)
     generate_agent_os_docs(normalized, project_dir)
-    generate_research_tasks(normalized, project_dir)
+    generate_milestones(normalized, project_dir)
     generate_thoth_runtime(normalized, project_dir)
+    legacy_import = import_legacy_tasks(project_dir, migration_dir)
     generate_dashboard(normalized, project_dir)
     generate_pre_commit_config(normalized, project_dir)
     generate_scripts(normalized, project_dir)
     generate_host_projections(normalized, project_dir)
     generate_codex_project_layer(normalized, project_dir)
     generate_tests(normalized, project_dir)
+
+    for relpath in preview.get("remove", []):
+        _remove_existing_path(project_dir, relpath)
+
     _write_source_map(project_dir, audit, preview)
+    compile_task_authority(project_dir)
 
     rollback_payload = {
         "schema_version": 1,
@@ -908,6 +889,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
         "created_at": preview["generated_at"],
         "mode": preview["mode"],
         "created_paths": preview["create"],
+        "removed_paths": preview.get("remove", []),
         "backup_targets": backups,
     }
     (migration_dir / "rollback.json").write_text(
@@ -924,6 +906,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
         "created_count": len(preview["create"]),
         "updated_count": len(preview["update"]),
         "preserved_count": len(preview["preserve"]),
+        "removed_count": len(preview.get("remove", [])),
     }
     (migration_dir / "apply.json").write_text(
         json.dumps(apply_payload, ensure_ascii=False, indent=2) + "\n",
@@ -936,29 +919,26 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
         "audit": audit,
         "preview": preview,
         "apply": apply_payload,
+        "legacy_import": legacy_import,
         "claude_permissions": detect_claude_bridge_permission(project_dir),
     }
 
 
 def sync_project_layer(project_dir: Path) -> None:
     """Regenerate project-local projections from canonical authority/config."""
-    config_path = project_dir / CONFIG_FILE
-    if not config_path.exists():
+    manifest = load_project_manifest(project_dir)
+    project = manifest.get("project", {}) if isinstance(manifest, dict) else {}
+    dashboard = manifest.get("dashboard", {}) if isinstance(manifest, dict) else {}
+    if not project:
         return
-    try:
-        import yaml
-    except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("pyyaml is required to sync a project layer") from exc
-
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     normalized = {
-        "name": config.get("project", {}).get("name", project_dir.name),
-        "description": config.get("project", {}).get("description", ""),
-        "language": config.get("project", {}).get("language", "zh"),
-        "directions": config.get("research", {}).get("directions", []),
-        "phases": config.get("research", {}).get("phases", DEFAULT_PHASES),
-        "port": config.get("dashboard", {}).get("port", 8501),
-        "theme": config.get("dashboard", {}).get("theme", "warm-bear"),
+        "name": project.get("name", project_dir.name),
+        "description": project.get("description", ""),
+        "language": project.get("language", "zh"),
+        "directions": project.get("directions", []),
+        "phases": project.get("phases", DEFAULT_PHASES),
+        "port": dashboard.get("port", 8501),
+        "theme": dashboard.get("theme", "warm-bear"),
     }
     generate_thoth_runtime(normalized, project_dir)
     generate_host_projections(normalized, project_dir)

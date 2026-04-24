@@ -12,7 +12,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from thoth.project_init import (
-    CONFIG_FILE,
     DEFAULT_PHASES,
     REQUIRED_AGENT_OS_FILES,
     audit_repository_state,
@@ -20,8 +19,6 @@ from thoth.project_init import (
     generate_agent_os_docs,
     generate_dashboard,
     generate_milestones,
-    generate_research_config,
-    generate_research_tasks,
     generate_scripts,
     generate_tests,
     generate_thoth_runtime,

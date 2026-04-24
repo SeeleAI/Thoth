@@ -25,7 +25,7 @@ from starlette.requests import Request
 from data_loader import (
     load_all_tasks, load_modules, load_task, get_paper_mapping,
     invalidate_cache, get_cache_info, DIRECTIONS, load_compiler_state,
-    load_decisions, load_contracts,
+    load_decisions, load_contracts, load_project_config,
 )
 from runtime_loader import (
     get_active_run_for_task,
@@ -42,43 +42,31 @@ from progress_calculator import (
 from trigger_runner import run_validate, run_sync, run_verify, run_health_check
 from database import init_db, get_conn
 
-import yaml as _yaml
-
 APP_DIR = Path(__file__).resolve().parent
 DASHBOARD_DIR = APP_DIR.parent
 PROJECT_ROOT = DASHBOARD_DIR / ".." / ".."
-RESEARCH_TASKS_DIR = Path(
-    os.environ.get("RESEARCH_TASKS_DIR", str(PROJECT_ROOT / ".agent-os" / "research-tasks"))
-).resolve()
 THOTH_RUNS_DIR = Path(
     os.environ.get("THOTH_RUNS_DIR", str(PROJECT_ROOT / ".thoth" / "runs"))
 ).resolve()
 
 
-def _load_research_config() -> dict:
-    config_path = (PROJECT_ROOT / ".research-config.yaml").resolve()
-    if config_path.exists():
-        with open(config_path, encoding="utf-8") as f:
-            return _yaml.safe_load(f) or {}
-    return {}
-
-
 def _load_milestones() -> list:
     ms_path = (PROJECT_ROOT / ".agent-os" / "milestones.yaml").resolve()
     if ms_path.exists():
+        import yaml as _yaml
+
         with open(ms_path, encoding="utf-8") as f:
             data = _yaml.safe_load(f) or {}
             return data.get("milestones", [])
     return []
 
-
-_RESEARCH_CONFIG = _load_research_config()
+_RESEARCH_CONFIG = load_project_config(PROJECT_ROOT)
 _DIRECTIONS_CONFIG = _RESEARCH_CONFIG.get("research", {}).get("directions") or []
 _PROJECT_NAME = _RESEARCH_CONFIG.get("project", {}).get("name", "Thoth Project")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard")
-logger.info("Research tasks directory: %s", RESEARCH_TASKS_DIR)
+logger.info("Thoth project root: %s", PROJECT_ROOT)
 
 app = FastAPI(title=f"{_PROJECT_NAME} Dashboard", version="1.0.0")
 init_db()
@@ -92,41 +80,6 @@ SPA_ENTRY_ROUTES = (
     "/todo",
     "/activity",
 )
-
-
-def _start_yaml_watcher():
-    try:
-        from watchdog.observers import Observer
-        from watchdog.events import FileSystemEventHandler
-        import subprocess as _subprocess
-
-        class _YamlChangeHandler(FileSystemEventHandler):
-            def on_modified(self, event):
-                if not event.is_directory and event.src_path.endswith((".yaml", ".yml")):
-                    logger.info("YAML changed, syncing: %s", event.src_path)
-                    invalidate_cache()
-                    try:
-                        sync_script = RESEARCH_TASKS_DIR / "sync_todo.py"
-                        _subprocess.run(
-                            [sys.executable, str(sync_script)],
-                            cwd=str(RESEARCH_TASKS_DIR.parent.parent),
-                            capture_output=True, timeout=10,
-                        )
-                    except Exception as e:
-                        logger.warning("Auto-sync failed: %s", e)
-
-        observer = Observer()
-        observer.schedule(_YamlChangeHandler(), str(RESEARCH_TASKS_DIR), recursive=True)
-        observer.daemon = True
-        observer.start()
-        logger.info("YAML watcher started on %s", RESEARCH_TASKS_DIR)
-    except ImportError:
-        logger.info("watchdog not installed; YAML auto-sync disabled")
-    except Exception as e:
-        logger.warning("Could not start YAML watcher: %s", e)
-
-
-_start_yaml_watcher()
 
 
 def _error_response(status_code: int, error: str, detail: str) -> JSONResponse:
@@ -233,7 +186,7 @@ for _spa_route in SPA_ENTRY_ROUTES:
 @app.get("/api/config")
 async def api_config():
     try:
-        return _load_research_config()
+        return load_project_config(PROJECT_ROOT)
     except Exception as exc:
         return _error_response(500, "InternalError", str(exc))
 

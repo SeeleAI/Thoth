@@ -13,8 +13,6 @@ from pathlib import Path
 from urllib.request import urlopen
 
 import pytest
-import yaml
-
 from thoth.runtime import local_registry_root
 from thoth.task_contracts import compile_task_authority
 
@@ -203,11 +201,11 @@ def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
 
 @pytest.mark.integration
 def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
-    config_path = thoth_project / ".research-config.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config_path = thoth_project / ".thoth" / "project" / "project.json"
+    config = _read_json(config_path)
     port = _free_port()
     config["dashboard"]["port"] = port
-    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     run_result = _run_cli(thoth_project, "run", "--task-id", "task-1", "--detach")
     assert run_result.returncode == 0
@@ -294,9 +292,29 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     assert hook_end.returncode == 0
     assert "PASS" in hook_end.stdout or hook_end.stdout == ""
 
-    broken_task = thoth_project / ".agent-os" / "research-tasks" / "frontend" / "f1" / "broken.yaml"
-    broken_task.parent.mkdir(parents=True, exist_ok=True)
-    broken_task.write_text("id: broken\nphases: [\n", encoding="utf-8")
+    broken_task = thoth_project / ".thoth" / "project" / "contracts" / "CTR-broken.json"
+    broken_task.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "contract",
+                "contract_id": "CTR-broken",
+                "task_id": "task-broken",
+                "scope_id": "broken",
+                "direction": "frontend",
+                "module": "f1",
+                "title": "Broken contract",
+                "decision_ids": ["DEC-missing"],
+                "candidate_method_id": "broken",
+                "status": "frozen",
+                "blocking_gaps": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     broken_hook = subprocess.run(
         ["bash", "scripts/session-end-check.sh"],
         cwd=str(thoth_project),
@@ -305,6 +323,7 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
         timeout=60,
     )
     assert broken_hook.returncode != 0
+    broken_task.unlink(missing_ok=True)
 
     stop = _run_cli(thoth_project, "dashboard", "stop", timeout=30)
     assert stop.returncode == 0

@@ -23,7 +23,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = [".", "templates/dashboard/backend", "templates/agent-os/research-tasks"]
+pythonpath = [".", "templates/dashboard/backend"]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
 ]

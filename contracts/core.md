@@ -10,8 +10,8 @@ These rules govern every public Thoth command.
 
 ## Session Awareness
 
-- For every command except `init`, require `.research-config.yaml` in the current working directory.
-- Read project name and language from config before producing user-facing output.
+- For every command except `init`, require `.thoth/project/project.json` in the current working directory.
+- Read project identity and dashboard/runtime settings from canonical `.thoth` authority before producing user-facing output.
 
 ## Error Routing
 

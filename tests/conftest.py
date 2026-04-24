@@ -1,4 +1,5 @@
 """Shared pytest fixtures for Thoth plugin tests."""
+import json
 import os
 import tempfile
 import shutil
@@ -90,13 +91,16 @@ def golden_milestones_broken():
 
 @pytest.fixture
 def tmp_project(tmp_path):
-    """Create a temporary project directory with minimal Thoth structure."""
+    """Create a temporary project directory with minimal strict Thoth structure."""
     project = tmp_path / "test-project"
     project.mkdir()
 
     agent_os = project / ".agent-os"
     agent_os.mkdir()
-    (agent_os / "research-tasks").mkdir()
+    (project / ".thoth" / "project").mkdir(parents=True)
+    (project / ".thoth" / "runs").mkdir(parents=True)
+    (project / ".thoth" / "migrations").mkdir(parents=True)
+    (project / ".thoth" / "derived").mkdir(parents=True)
 
     (project / "tools" / "dashboard" / "backend").mkdir(parents=True)
     (project / "tools" / "dashboard" / "frontend" / "dist").mkdir(parents=True)
@@ -108,14 +112,18 @@ def tmp_project(tmp_path):
 
 @pytest.fixture
 def tmp_project_with_config(tmp_project, golden_config_valid):
-    """Temporary project with a valid .research-config.yaml."""
+    """Temporary project seeded through canonical `.thoth` manifest files."""
     import yaml
 
     with open(golden_config_valid) as f:
         config = yaml.safe_load(f)
 
-    config_path = tmp_project / ".research-config.yaml"
-    with open(config_path, "w") as f:
-        yaml.dump(config, f)
+    manifest = {
+        "schema_version": 2,
+        "project": config.get("project", {}),
+        "dashboard": config.get("dashboard", {}),
+        "runtime": {"authority": ".thoth"},
+    }
+    (tmp_project / ".thoth" / "project" / "project.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     return tmp_project

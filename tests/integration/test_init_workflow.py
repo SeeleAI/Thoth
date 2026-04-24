@@ -1,8 +1,11 @@
-"""Integration test: init workflow end-to-end."""
+"""Integration test: strict init workflow end-to-end."""
+
+from __future__ import annotations
+
 import json
+import os
 import subprocess
 import sys
-import os
 from pathlib import Path
 
 import pytest
@@ -12,22 +15,24 @@ THOTH_ROOT = Path(__file__).parent.parent.parent
 INIT_SCRIPT = THOTH_ROOT / "scripts" / "init.py"
 
 
+def _run_init(project_dir: Path, config: dict) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(INIT_SCRIPT), "--config", json.dumps(config)],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "THOTH_PLUGIN_ROOT": str(THOTH_ROOT)},
+    )
+
+
 @pytest.fixture
 def init_project(tmp_path):
-    """Run init.py in a temp git repo with a test config."""
     project_dir = tmp_path / "test-project"
     project_dir.mkdir()
-
-    subprocess.run(["git", "init"], cwd=str(project_dir), capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@test.com"],
-        cwd=str(project_dir), capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test"],
-        cwd=str(project_dir), capture_output=True,
-    )
-
+    subprocess.run(["git", "init"], cwd=str(project_dir), capture_output=True, check=False)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(project_dir), capture_output=True, check=False)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(project_dir), capture_output=True, check=False)
     config = {
         "name": "TestProject",
         "description": "A test project",
@@ -45,136 +50,122 @@ def init_project(tmp_path):
         "port": 8501,
         "theme": "warm-bear",
     }
-
-    result = subprocess.run(
-        [sys.executable, str(INIT_SCRIPT), "--config", json.dumps(config)],
-        cwd=str(project_dir),
-        capture_output=True, text=True, timeout=60,
-        env={**os.environ, "THOTH_PLUGIN_ROOT": str(THOTH_ROOT)},
-    )
-
+    result = _run_init(project_dir, config)
     return project_dir, result
 
 
 @pytest.mark.integration
 class TestInitWorkflow:
-
     def test_init_exits_zero(self, init_project):
-        project_dir, result = init_project
+        _, result = init_project
         assert result.returncode == 0, f"init failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
 
-    def test_creates_research_config(self, init_project):
-        project_dir, _ = init_project
-        config_path = project_dir / ".research-config.yaml"
-        assert config_path.exists(), "Should create .research-config.yaml"
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-        assert config["project"]["name"] == "TestProject"
-        assert len(config["research"]["directions"]) == 2
-
-    def test_creates_agent_os_docs(self, init_project):
-        project_dir, _ = init_project
-        required = [
-            "project-index.md", "requirements.md", "architecture-milestones.md",
-            "todo.md", "change-decisions.md", "acceptance-report.md",
-            "lessons-learned.md", "run-log.md",
-        ]
-        for fname in required:
-            assert (project_dir / ".agent-os" / fname).exists(), f"Missing: .agent-os/{fname}"
-
-    def test_creates_research_tasks_scripts(self, init_project):
-        project_dir, _ = init_project
-        scripts = ["validate.py", "verify_completion.py", "check_consistency.py", "sync_todo.py", "schema.json"]
-        for fname in scripts:
-            path = project_dir / ".agent-os" / "research-tasks" / fname
-            assert path.exists(), f"Missing: {fname}"
-
-    def test_creates_direction_dirs(self, init_project):
-        project_dir, _ = init_project
-        for d in ["frontend", "backend"]:
-            assert (project_dir / ".agent-os" / "research-tasks" / d).is_dir(), f"Missing direction dir: {d}"
-
-    def test_creates_milestones(self, init_project):
-        project_dir, _ = init_project
-        ms_path = project_dir / ".agent-os" / "milestones.yaml"
-        assert ms_path.exists(), "Should create milestones.yaml"
-
-    def test_creates_claude_md(self, init_project):
-        project_dir, _ = init_project
-        claude_md = project_dir / "CLAUDE.md"
-        assert claude_md.exists(), "Should create CLAUDE.md"
-        content = claude_md.read_text()
-        assert "TestProject" in content or "Thoth" in content
-
-    def test_creates_agents_md(self, init_project):
-        project_dir, _ = init_project
-        agents_md = project_dir / "AGENTS.md"
-        assert agents_md.exists(), "Should create AGENTS.md"
-        assert agents_md.read_text() == (project_dir / "CLAUDE.md").read_text()
-
-    def test_creates_scripts(self, init_project):
-        project_dir, _ = init_project
-        scripts = ["install-hooks.sh", "session-end-check.sh", "validate-all.sh", "check-required-files.sh", "thoth-codex-hook.sh"]
-        for fname in scripts:
-            assert (project_dir / "scripts" / fname).exists(), f"Missing: scripts/{fname}"
-
-    def test_creates_thoth_runtime_tree(self, init_project):
+    def test_creates_strict_project_surface(self, init_project):
         project_dir, _ = init_project
         for rel in [
+            "AGENTS.md",
+            "CLAUDE.md",
             ".thoth/project/project.json",
             ".thoth/project/instructions.md",
             ".thoth/project/source-map.json",
-            ".thoth/runs/.gitkeep",
-            ".thoth/migrations/.gitkeep",
-            ".thoth/derived/.gitkeep",
-        ]:
-            assert (project_dir / rel).exists(), f"Missing: {rel}"
-
-    def test_creates_codex_project_layer(self, init_project):
-        project_dir, _ = init_project
-        for rel in [
+            ".thoth/project/compiler-state.json",
+            ".thoth/project/verdicts/.gitkeep",
             ".codex/config.json",
             ".codex/setup.sh",
             ".codex/hooks.json",
+            "tools/dashboard/backend/app.py",
         ]:
             assert (project_dir / rel).exists(), f"Missing: {rel}"
 
-    def test_validation_passes(self, init_project):
+    def test_project_manifest_is_canonical(self, init_project):
         project_dir, _ = init_project
-        validate_script = project_dir / ".agent-os" / "research-tasks" / "validate.py"
-        if validate_script.exists():
-            result = subprocess.run(
-                [sys.executable, str(validate_script)],
-                cwd=str(project_dir), capture_output=True, text=True, timeout=30,
-            )
-            assert result.returncode == 0, f"Validation failed: {result.stdout}"
+        manifest = json.loads((project_dir / ".thoth" / "project" / "project.json").read_text(encoding="utf-8"))
+        assert manifest["project"]["name"] == "TestProject"
+        assert len(manifest["project"]["directions"]) == 2
+        assert manifest["dashboard"]["port"] == 8501
+        assert not (project_dir / ".research-config.yaml").exists()
+
+    def test_agent_os_docs_exist(self, init_project):
+        project_dir, _ = init_project
+        required = [
+            "project-index.md",
+            "requirements.md",
+            "architecture-milestones.md",
+            "todo.md",
+            "change-decisions.md",
+            "acceptance-report.md",
+            "lessons-learned.md",
+            "run-log.md",
+        ]
+        for fname in required:
+            assert (project_dir / ".agent-os" / fname).exists()
+
+    def test_validation_scripts_are_strict_only(self, init_project):
+        project_dir, _ = init_project
+        session_end = (project_dir / "scripts" / "session-end-check.sh").read_text(encoding="utf-8")
+        assert "python -m thoth.cli sync" in session_end
+        assert "python -m thoth.cli doctor" in session_end
+        assert "research-tasks" not in session_end
 
     def test_creates_migration_bundle(self, init_project):
         project_dir, _ = init_project
         migration_dirs = sorted((project_dir / ".thoth" / "migrations").glob("mig-*"))
-        assert migration_dirs, "Expected at least one migration bundle"
+        assert migration_dirs
         latest = migration_dirs[-1]
         for rel in ("audit.json", "preview.json", "rollback.json", "apply.json"):
-            assert (latest / rel).exists(), f"Missing migration file: {rel}"
+            assert (latest / rel).exists()
 
-    def test_reinit_existing_repo_adopts_without_failing(self, init_project):
+    def test_reinit_imports_legacy_and_cuts_old_surface(self, init_project):
         project_dir, _ = init_project
-        (project_dir / "docs").mkdir(exist_ok=True)
-        preserved = project_dir / "docs" / "keep.md"
-        preserved.write_text("# Keep\n", encoding="utf-8")
-        custom_index = project_dir / ".agent-os" / "project-index.md"
-        custom_index.write_text("# Custom Index\n\nPreserve this.\n", encoding="utf-8")
-
-        result = subprocess.run(
-            [sys.executable, str(INIT_SCRIPT), "--config", json.dumps({"name": "ReInitProject", "directions": []})],
-            cwd=str(project_dir),
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env={**os.environ, "THOTH_PLUGIN_ROOT": str(THOTH_ROOT)},
+        (project_dir / ".research-config.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "project": {"name": "Legacy Project"},
+                    "dashboard": {"port": 8520},
+                    "research": {"directions": [{"id": "frontend"}]},
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
         )
-
+        legacy_task_dir = project_dir / ".agent-os" / "research-tasks" / "frontend" / "f1"
+        legacy_task_dir.mkdir(parents=True)
+        (legacy_task_dir / "legacy.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "id": "legacy-task",
+                    "title": "Legacy Task",
+                    "module": "f1",
+                    "direction": "frontend",
+                    "hypothesis": "Legacy result can be imported.",
+                    "phases": {
+                        "experiment": {
+                            "status": "completed",
+                            "criteria": {
+                                "metric": "score",
+                                "threshold": 0.7,
+                                "current": 0.9,
+                                "direction": "higher_is_better",
+                                "unit": "score",
+                            },
+                            "deliverables": [{"path": "reports/legacy.md", "type": "report", "description": "legacy"}],
+                        }
+                    },
+                    "results": {
+                        "verdict": "confirmed",
+                        "evidence_paths": ["reports/legacy.md"],
+                        "metrics": {"score": 0.9},
+                        "conclusion_text": "Imported from legacy.",
+                        "failure_analysis": None,
+                    },
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        result = _run_init(project_dir, {"name": "ReInitProject", "directions": []})
         assert result.returncode == 0, f"re-init failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
-        assert "Migration:" in result.stdout
-        assert preserved.exists()
-        assert custom_index.read_text(encoding="utf-8") == "# Custom Index\n\nPreserve this.\n"
+        assert not (project_dir / ".research-config.yaml").exists()
+        assert not (project_dir / ".agent-os" / "research-tasks").exists()
+        assert (project_dir / ".thoth" / "project" / "tasks" / "legacy-task.json").exists()
+        assert (project_dir / ".thoth" / "project" / "verdicts" / "legacy-task.json").exists()
