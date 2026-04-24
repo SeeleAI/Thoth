@@ -11,8 +11,10 @@ from thoth.task_contracts import (
     create_discussion_placeholder,
     ensure_task_authority_tree,
     load_task_for_execution,
+    load_task_verdict,
     upsert_contract,
     upsert_decision,
+    upsert_verdict,
 )
 
 
@@ -94,20 +96,21 @@ def test_doctor_fails_when_legacy_yaml_exists(tmp_path):
     assert payload["summary"]["legacy_task_count"] == 1
 
 
-def test_compile_preserves_existing_verdict(tmp_path):
+def test_compile_uses_external_verdict_ledger(tmp_path):
     ensure_task_authority_tree(tmp_path)
-    _write_json(
-        tmp_path / ".thoth" / "project" / "tasks" / "task-1.json",
+    upsert_verdict(
+        tmp_path,
+        "task-1",
         {
-            "task_id": "task-1",
-            "verdict": {
-                "usable": True,
-                "meets_goal": False,
-                "failure_class": "metric_shortfall",
-                "reasons": ["baseline stronger"],
-                "conclusion": "No ship",
-                "updated_at": "2026-04-24T00:00:00Z",
-            },
+            "source": "legacy_import",
+            "usable": True,
+            "meets_goal": False,
+            "failure_class": "metric_shortfall",
+            "reasons": ["baseline stronger"],
+            "conclusion": "No ship",
+            "evidence_paths": ["reports/demo.md"],
+            "metrics": {},
+            "updated_at": "2026-04-24T00:00:00Z",
         },
     )
     upsert_decision(
@@ -145,5 +148,7 @@ def test_compile_preserves_existing_verdict(tmp_path):
     )
     compile_task_authority(tmp_path)
     task = load_task_for_execution(tmp_path, "task-1")
-    assert task["verdict"]["failure_class"] == "metric_shortfall"
-    assert task["verdict"]["updated_at"] == "2026-04-24T00:00:00Z"
+    assert task["verdict_ref"] == ".thoth/project/verdicts/task-1.json"
+    verdict = load_task_verdict(tmp_path, "task-1")
+    assert verdict["failure_class"] == "metric_shortfall"
+    assert verdict["updated_at"] == "2026-04-24T00:00:00Z"

@@ -113,10 +113,11 @@ operating layer with a recorded migration bundle. It can start from a blank
 repository or an already-drifted repo that already contains docs, `.agent-os/`,
 or partial Thoth state. The managed layer includes:
 
-- `.research-config.yaml`
 - `.agent-os/` state and governance documents
 - `.thoth/` runtime authority tree
-- research-task validation and consistency scripts
+- strict `Decision -> Contract -> generated Task` planning authority
+- repo-level verdict ledger under `.thoth/project/verdicts/`
+- strict sync / doctor validation scripts
 - `tools/dashboard/` backend and frontend
 - project-local helper scripts and tests
 
@@ -203,10 +204,11 @@ This layer defines how the operating system behaves.
 When you run `/thoth:init` in a target repository, Thoth generates a persistent
 project layer with:
 
-- config: `.research-config.yaml`
 - state docs: `.agent-os/`
 - runtime authority: `.thoth/`
-- task validation and consistency tooling
+- planning authority: `.thoth/project/decisions`, `.thoth/project/contracts`, `.thoth/project/tasks`
+- repo-level verdict authority: `.thoth/project/verdicts`
+- strict sync / doctor validation tooling
 - dashboard backend and frontend
 - project-local scripts and tests
 

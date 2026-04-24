@@ -10,18 +10,19 @@ These rules govern validation and evidence collection.
 
 ## Verification Gate
 
-Before marking a task phase as completed:
+Before treating a strict task as execution-ready or resolved:
 
 ```bash
-python .agent-os/research-tasks/verify_completion.py <task_id>
+python -m thoth.cli doctor --quick
+python -m thoth.cli sync
 ```
 
-Only proceed on `PASS`.
+Only proceed on `PASS`, and only if the canonical `.thoth` task/verdict ledger stays consistent.
 
 ## State Updates
 
-When task state changes, update all required persistence surfaces together:
+When planning or execution state changes, update all required persistence surfaces together:
 
-1. YAML task file
+1. Canonical `.thoth/project/decisions`, `.thoth/project/contracts`, `.thoth/project/tasks`, or `.thoth/project/verdicts`
 2. `.agent-os/run-log.md`
-3. `.agent-os/research-tasks/sync_todo.py`
+3. Generated projections refreshed through `python -m thoth.cli sync`

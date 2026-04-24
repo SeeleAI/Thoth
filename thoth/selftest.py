@@ -311,11 +311,11 @@ def _seed_task(project_dir: Path, *, task_id: str = "task-1") -> None:
 
 
 def _set_dashboard_port(project_dir: Path, port: int) -> None:
-    config_path = project_dir / ".research-config.yaml"
-    config = _load_yaml(config_path)
-    config.setdefault("dashboard", {})
-    config["dashboard"]["port"] = port
-    _dump_yaml(config_path, config)
+    manifest_path = project_dir / ".thoth" / "project" / "project.json"
+    manifest = _read_json(manifest_path)
+    manifest.setdefault("dashboard", {})
+    manifest["dashboard"]["port"] = port
+    _write_json(manifest_path, manifest)
 
 
 def _snapshot_runtime(recorder: Recorder, project_dir: Path, label: str) -> list[str]:
@@ -377,8 +377,8 @@ def _start_dashboard(project_dir: Path, *, recorder: Recorder, rebuild: bool = F
     artifacts = _save_command(recorder, f"dashboard-{action}", result)
     if result.returncode != 0:
         raise RuntimeError(f"dashboard {action} failed")
-    config = _load_yaml(project_dir / ".research-config.yaml")
-    port = int(config.get("dashboard", {}).get("port", 8501))
+    manifest = _read_json(project_dir / ".thoth" / "project" / "project.json")
+    port = int(manifest.get("dashboard", {}).get("port", 8501))
 
     def _dashboard_ready() -> bool:
         try:
@@ -603,17 +603,32 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
     if not hook_ok:
         raise RuntimeError("local session hook success path failed")
 
-    bad_task = project_dir / ".agent-os" / "research-tasks" / "frontend" / "f1" / "broken.yaml"
-    bad_task.parent.mkdir(parents=True, exist_ok=True)
-    bad_task.write_text("id: broken\nphases: [\n", encoding="utf-8")
+    broken_contract = project_dir / ".thoth" / "project" / "contracts" / "CTR-broken-selftest.json"
+    _write_json(
+        broken_contract,
+        {
+            "schema_version": 1,
+            "kind": "contract",
+            "contract_id": "CTR-broken-selftest",
+            "task_id": "task-broken",
+            "scope_id": "broken",
+            "direction": "frontend",
+            "module": "f1",
+            "title": "Broken contract",
+            "decision_ids": ["DEC-missing"],
+            "candidate_method_id": "broken",
+            "status": "frozen",
+            "blocking_gaps": [],
+        },
+    )
     broken_hook = _run_command(["bash", "scripts/session-end-check.sh"], cwd=project_dir, timeout=60)
     broken_artifacts = _save_command(recorder, "hook-broken", broken_hook)
-    bad_task.unlink(missing_ok=True)
+    broken_contract.unlink(missing_ok=True)
     degraded = broken_hook.returncode != 0
     recorder.add(
         "hooks.local_failure_observable",
         "passed" if degraded else "failed",
-        "Broken task YAML caused the generated session-end hook script to fail observably.",
+        "Broken strict contract file caused the generated session-end hook script to fail observably.",
         broken_artifacts,
     )
     if not degraded:
@@ -658,8 +673,8 @@ def _run_playwright(project_dir: Path, recorder: Recorder, *, run_id: str) -> li
     if browsers.returncode != 0:
         raise RuntimeError("playwright browser install failed")
 
-    config = _load_yaml(project_dir / ".research-config.yaml")
-    port = int(config.get("dashboard", {}).get("port", 8501))
+    manifest = _read_json(project_dir / ".thoth" / "project" / "project.json")
+    port = int(manifest.get("dashboard", {}).get("port", 8501))
     env = {
         "THOTH_DASHBOARD_URL": f"http://127.0.0.1:{port}",
         "THOTH_SELFTEST_RUN_ID": run_id,

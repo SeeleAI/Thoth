@@ -13,28 +13,28 @@ ACTION="${1:-start}"
 # Detect project
 # ---------------------------------------------------------------------------
 
-CONFIG_FILE=".research-config.yaml"
-if [ ! -f "$CONFIG_FILE" ]; then
+MANIFEST_FILE=".thoth/project/project.json"
+if [ ! -f "$MANIFEST_FILE" ]; then
     echo "Not a Thoth project. Run /thoth:init to set up."
     exit 1
 fi
 
 PYTHON_BIN=$(python -c "
-import yaml
+import json
 try:
-    with open('$CONFIG_FILE') as f:
-        c = yaml.safe_load(f) or {}
-    print(c.get('toolchain', {}).get('python', 'python'))
+    with open('$MANIFEST_FILE') as f:
+        c = json.load(f) or {}
+    print(c.get('runtime', {}).get('python_bin', 'python'))
 except Exception:
     print('python')
 " 2>/dev/null || echo python)
 
 # Read port from config (default 8501)
 PORT=$("$PYTHON_BIN" -c "
-import yaml, sys
+import json
 try:
-    with open('$CONFIG_FILE') as f:
-        c = yaml.safe_load(f)
+    with open('$MANIFEST_FILE') as f:
+        c = json.load(f)
     print(c.get('dashboard', {}).get('port', 8501))
 except Exception:
     print(8501)

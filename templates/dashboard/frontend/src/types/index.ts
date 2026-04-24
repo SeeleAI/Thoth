@@ -48,7 +48,7 @@ export interface Task {
   phases?: Phases
   depends_on?: Dependency[]
   deliverables?: Deliverable[]
-  ready_state?: 'ready' | 'blocked' | 'invalid'
+  ready_state?: 'ready' | 'blocked' | 'invalid' | 'imported_resolved'
   blocking_reason?: string
   decision_ids?: string[]
   contract_id?: string
@@ -301,6 +301,7 @@ export interface SystemStatus {
 export interface ResearchConfig {
   project?: { name?: string }
   research?: { directions?: { id: string; label_en?: string }[] }
+  dashboard?: { port?: number; theme?: string }
   [key: string]: unknown
 }
 
