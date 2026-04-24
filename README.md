@@ -6,12 +6,12 @@ Persistent truth + validation scripts + autonomous execution loops = agent work 
 
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-blue?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
 [![Codex](https://img.shields.io/badge/OpenAI_Codex-Plugin-green?logo=openai&logoColor=white)](https://developers.openai.com/codex)
-[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](https://github.com/SeeleAI/thoth)
+[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](https://github.com/SeeleAI/Thoth)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-[![Project OS](https://img.shields.io/badge/Agent_Project_OS-Audit_%2B_Execution-black)](https://github.com/SeeleAI/thoth)
-[![Dashboard](https://img.shields.io/badge/Human_Visibility-Dashboard-8A6A3A)](https://github.com/SeeleAI/thoth)
-[![Runtime](https://img.shields.io/badge/Runtime-Claude_%2B_Codex-5B8DEF)](https://github.com/SeeleAI/thoth)
+[![Project OS](https://img.shields.io/badge/Agent_Project_OS-Audit_%2B_Execution-black)](https://github.com/SeeleAI/Thoth)
+[![Dashboard](https://img.shields.io/badge/Human_Visibility-Dashboard-8A6A3A)](https://github.com/SeeleAI/Thoth)
+[![Runtime](https://img.shields.io/badge/Runtime-Claude_%2B_Codex-5B8DEF)](https://github.com/SeeleAI/Thoth)
 
 <br>
 
@@ -63,7 +63,7 @@ Thoth solves that by materializing agent work into a real operating layer:
 Add the Thoth marketplace and install the plugin:
 
 ```bash
-claude plugin marketplace add SeeleAI/thoth --scope user
+claude plugin marketplace add SeeleAI/Thoth --scope user
 claude plugin install thoth@thoth --scope user
 ```
 
@@ -81,7 +81,7 @@ without approval prompts across all projects.
 Codex uses the marketplace source as the install and enable step:
 
 ```bash
-codex plugin marketplace add SeeleAI/thoth
+codex plugin marketplace add SeeleAI/Thoth
 ```
 
 Update an existing Codex install:
@@ -93,7 +93,7 @@ codex plugin marketplace upgrade thoth
 ### 3. Install from a local checkout
 
 ```bash
-git clone https://github.com/SeeleAI/thoth.git
+git clone https://github.com/SeeleAI/Thoth.git
 cd Thoth
 claude plugin add "$(pwd)"
 codex plugin marketplace add "$(pwd)"
