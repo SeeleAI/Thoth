@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- Removed Claude plugin default-agent activation so public `/thoth:*` commands no longer get hijacked into the internal `thoth-main` agent path
+- Reworked generated Claude command surfaces to execute the repo-local Thoth CLI through a plugin bridge before Claude summarizes the result
+
+### Fixed
+- Hardened the Claude selftest gate to require real bridge events from `/thoth:init` and `/thoth:status`, instead of accepting prompt-only fake project initialization
+
 ## [0.1.4] - 2026-04-23
 
 ### Changed

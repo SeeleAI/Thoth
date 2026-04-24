@@ -1,0 +1,134 @@
+"""Claude custom-command bridge for executing the repo-local Thoth CLI.
+
+This bridge is used by generated Claude `/thoth:*` command surfaces. The
+plugin executes it via skill shell preprocessing so the real repo-local CLI
+runs before Claude sees the command body. Claude then summarizes the structured
+result instead of improvising a parallel implementation.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _trim(text: str, *, limit: int = 4000) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - 15] + "\n...[truncated]\n"
+
+
+def _event_log_path(project_root: Path) -> Path:
+    return project_root / ".thoth" / "derived" / "host-bridges" / "claude-command-events.jsonl"
+
+
+def _append_event(project_root: Path, payload: dict[str, Any]) -> None:
+    if not (project_root / ".thoth").exists():
+        return
+    path = _event_log_path(project_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _canonical_checks(project_root: Path, command_id: str, command_args: list[str], stdout: str) -> dict[str, Any]:
+    project_manifest = project_root / ".thoth" / "project" / "project.json"
+    instructions = project_root / ".thoth" / "project" / "instructions.md"
+    source_map = project_root / ".thoth" / "project" / "source-map.json"
+
+    checks: dict[str, Any] = {
+        "project_manifest_exists": project_manifest.exists(),
+        "instructions_exists": instructions.exists(),
+        "source_map_exists": source_map.exists(),
+    }
+
+    if command_id in {"run", "loop"} and not any(flag in command_args for flag in ("--attach", "--watch", "--stop")):
+        candidate = stdout.strip().splitlines()[-1].strip() if stdout.strip() else ""
+        checks["run_id"] = candidate
+        checks["run_ledger_exists"] = bool(candidate) and (project_root / ".thoth" / "runs" / candidate / "run.json").exists()
+
+    return checks
+
+
+def _bridge_success(command_id: str, returncode: int, checks: dict[str, Any]) -> bool:
+    if returncode != 0:
+        return False
+    if command_id in {"init", "sync"}:
+        return bool(
+            checks.get("project_manifest_exists")
+            and checks.get("instructions_exists")
+            and checks.get("source_map_exists")
+        )
+    if command_id == "status":
+        return bool(checks.get("project_manifest_exists"))
+    if command_id in {"run", "loop"} and "run_ledger_exists" in checks:
+        return bool(checks.get("run_ledger_exists"))
+    return True
+
+
+def run_bridge(command_id: str, command_args: list[str], *, project_root: Path | None = None) -> dict[str, Any]:
+    project_root = (project_root or Path.cwd()).resolve()
+    plugin_root = Path(os.environ.get("THOTH_CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parent.parent).resolve()
+
+    env = dict(os.environ)
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(plugin_root) if not existing_pythonpath else f"{plugin_root}:{existing_pythonpath}"
+    env["THOTH_CLAUDE_BRIDGE"] = "1"
+
+    argv = [sys.executable, "-m", "thoth.cli", command_id, *command_args]
+    started = time.time()
+    result = subprocess.run(
+        argv,
+        cwd=str(project_root),
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    duration = round(time.time() - started, 3)
+
+    checks = _canonical_checks(project_root, command_id, command_args, result.stdout)
+    payload = {
+        "schema_version": 1,
+        "bridge": "claude-command",
+        "executed_at": utc_now(),
+        "project_root": str(project_root),
+        "plugin_root": str(plugin_root),
+        "command_id": command_id,
+        "arguments": command_args,
+        "argv": argv,
+        "returncode": result.returncode,
+        "duration_seconds": duration,
+        "bridge_success": _bridge_success(command_id, result.returncode, checks),
+        "checks": checks,
+        "stdout": _trim(result.stdout.strip()),
+        "stderr": _trim(result.stderr.strip()),
+    }
+    _append_event(project_root, payload)
+    return payload
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Execute the repo-local Thoth CLI for Claude command surfaces.")
+    parser.add_argument("command_id")
+    parser.add_argument("args", nargs=argparse.REMAINDER)
+    ns = parser.parse_args(argv)
+    payload = run_bridge(ns.command_id, list(ns.args))
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    # Always exit 0 so Claude can read the structured failure payload instead of
+    # losing the skill body on preprocessing failure.
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
