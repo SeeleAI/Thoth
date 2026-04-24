@@ -239,6 +239,8 @@ def test_generates_thoth_authority_project_files(base_config, project_dir):
     generate_thoth_runtime(base_config, project_dir)
     assert (project_dir / ".thoth" / "project" / "project.json").exists()
     assert (project_dir / ".thoth" / "project" / "instructions.md").exists()
+    assert (project_dir / ".thoth" / "project" / "compiler-state.json").exists()
+    assert (project_dir / ".thoth" / "project" / "legacy-audit.json").exists()
 
 
 def test_generates_pre_commit_config(base_config, project_dir):

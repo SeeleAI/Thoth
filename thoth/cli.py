@@ -21,6 +21,15 @@ from .runtime import (
     stop_run,
     supervisor_main,
 )
+from .task_contracts import (
+    build_doctor_payload,
+    compile_task_authority,
+    create_discussion_placeholder,
+    load_task_for_execution,
+    render_doctor_text,
+    upsert_contract,
+    upsert_decision,
+)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -126,15 +135,27 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"Project: {payload['project_root']}")
             print(f"Active runs: {payload['active_run_count']}")
+            compiler = payload.get("compiler", {})
+            print(
+                "Compiler: ready={ready} blocked={blocked} invalid={invalid} open_decisions={open_count} legacy={legacy}".format(
+                    ready=int(compiler.get("task_counts", {}).get("ready", 0)),
+                    blocked=int(compiler.get("task_counts", {}).get("blocked", 0)),
+                    invalid=int(compiler.get("task_counts", {}).get("invalid", 0)),
+                    open_count=int(compiler.get("decision_counts", {}).get("open", 0)),
+                    legacy=int(compiler.get("legacy_task_count", 0)),
+                )
+            )
             for run in payload["active_runs"]:
                 print(f"- {run['run_id']} [{run['kind']}] {run['host']}/{run['executor']} {run['status']} {run['progress_pct']}%")
         return 0
 
     if args.command == "doctor":
-        legacy_args = ["--quick"] if getattr(args, "quick", False) else []
-        if getattr(args, "fix", False):
-            legacy_args.append("--fix")
-        return _run_legacy_script("doctor.py", legacy_args, cwd=project_root)
+        payload = build_doctor_payload(project_root)
+        if args.json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(render_doctor_text(payload), end="")
+        return 0 if payload.get("overall_ok") else 1
 
     if args.command == "dashboard":
         action = getattr(args, "action", "start")
@@ -166,7 +187,36 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in {"review", "discuss"}:
         content = (getattr(args, "goal", None) or " ".join(getattr(args, "rest", []) or [])).strip()
         note_path = _append_project_note(project_root, args.command, content)
+        compiler = None
+        if args.command == "discuss":
+            if getattr(args, "decision_json", None):
+                payload = json.loads(args.decision_json)
+                if not isinstance(payload, dict):
+                    raise ValueError("--decision-json must decode to an object")
+                decision = upsert_decision(project_root, payload)
+                print(f"Upserted decision {decision['decision_id']}")
+            elif getattr(args, "contract_json", None):
+                payload = json.loads(args.contract_json)
+                if not isinstance(payload, dict):
+                    raise ValueError("--contract-json must decode to an object")
+                contract = upsert_contract(project_root, payload)
+                print(f"Upserted contract {contract['contract_id']}")
+            else:
+                decision = create_discussion_placeholder(project_root, content, host="codex")
+                print(f"Created open decision {decision['decision_id']}")
+            compiler = compile_task_authority(project_root)
         print(f"Recorded {args.command} note in {note_path}")
+        if compiler:
+            summary = compiler.get("summary", {})
+            print(
+                "Compiler summary: ready={ready} blocked={blocked} invalid={invalid} open_decisions={open_count} legacy={legacy}".format(
+                    ready=int(summary.get("task_counts", {}).get("ready", 0)),
+                    blocked=int(summary.get("task_counts", {}).get("blocked", 0)),
+                    invalid=int(summary.get("task_counts", {}).get("invalid", 0)),
+                    open_count=int(summary.get("decision_counts", {}).get("open", 0)),
+                    legacy=int(summary.get("legacy_task_count", 0)),
+                )
+            )
         return 0
 
     if args.command in {"run", "loop"}:
@@ -188,12 +238,27 @@ def main(argv: list[str] | None = None) -> int:
             print(attach_run(project_root, handle.run_id, watch=True))
             return 0
 
-        title = args.task if args.command == "run" else args.goal
+        if not getattr(args, "task_id", None):
+            print("Strict task execution requires --task-id. Free-form run/loop entry is disabled.", file=sys.stderr)
+            return 2
+        if getattr(args, "legacy_task_text", None):
+            print("Free-form run text is disabled. Compile a strict task and use --task-id only.", file=sys.stderr)
+            return 2
+        if getattr(args, "legacy_goal_text", None):
+            print("Free-form loop goal text is disabled. Compile a strict task and use --task-id only.", file=sys.stderr)
+            return 2
+        try:
+            task = load_task_for_execution(project_root, args.task_id, require_ready=True)
+        except (FileNotFoundError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+
+        title = str(task.get("title") or args.task_id)
         handle = create_run(
             project_root,
             kind=args.command,
             title=title,
-            task_id=getattr(args, "task_id", None),
+            task_id=args.task_id,
             host=args.host,
             executor=args.executor,
         )

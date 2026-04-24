@@ -16,6 +16,7 @@ import pytest
 import yaml
 
 from thoth.runtime import local_registry_root
+from thoth.task_contracts import compile_task_authority
 
 
 ROOT = Path(__file__).parent.parent.parent
@@ -57,64 +58,65 @@ def _free_port() -> int:
 
 
 def _write_task(project_dir: Path, task_id: str = "task-1") -> None:
-    task_dir = project_dir / ".agent-os" / "research-tasks" / "frontend" / "f1"
-    task_dir.mkdir(parents=True, exist_ok=True)
-    (task_dir / "_module.yaml").write_text(
-        yaml.safe_dump(
+    decisions = project_dir / ".thoth" / "project" / "decisions"
+    contracts = project_dir / ".thoth" / "project" / "contracts"
+    decisions.mkdir(parents=True, exist_ok=True)
+    contracts.mkdir(parents=True, exist_ok=True)
+    (decisions / "DEC-test-runtime.json").write_text(
+        json.dumps(
             {
-                "id": "f1",
-                "name": "Frontend Runtime Validation",
-                "direction": "frontend",
-                "scientific_question": "Can runtime state be observed under real execution?",
-                "dev_research_ratio": "60/40",
-                "design_decisions": ["Use ledger-backed runtime observation", "Prefer real process tests over mocks"],
-                "related_modules": {"upstream": [], "downstream": []},
-                "seed_hypothesis_count": 1,
+                "schema_version": 1,
+                "kind": "decision",
+                "decision_id": "DEC-test-runtime",
+                "scope_id": "frontend-runtime",
+                "question": "Which runtime validation method should be executed?",
+                "candidate_method_ids": ["real-process-lifecycle"],
+                "selected_values": {"candidate_method_id": "real-process-lifecycle"},
+                "status": "frozen",
+                "unresolved_gaps": [],
+                "created_at": "2026-04-24T00:00:00Z",
+                "updated_at": "2026-04-24T00:00:00Z",
             },
-            sort_keys=False,
-        ),
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
-    (task_dir / f"{task_id}.yaml").write_text(
-        yaml.safe_dump(
+    (contracts / "CTR-test-runtime.json").write_text(
+        json.dumps(
             {
-                "id": task_id,
-                "title": "Lifecycle Validation",
+                "schema_version": 1,
+                "kind": "contract",
+                "contract_id": "CTR-test-runtime",
+                "task_id": task_id,
+                "scope_id": "frontend-runtime",
+                "direction": "frontend",
                 "module": "f1",
-                "direction": "frontend",
-                "type": "hypothesis",
-                "hypothesis": "State stays inspectable under real execution.",
-                "null_hypothesis": "State drifts.",
-                "depends_on": [],
-                "data_requirements": {
-                    "dataset": "selftest-artifacts",
-                    "min_assets": 1,
-                    "min_views_per_asset": 1,
-                    "format": "Generated temporary project files",
-                },
-                "phases": {
-                    "survey": {"status": "completed"},
-                    "method_design": {"status": "completed"},
-                    "experiment": {"status": "in_progress"},
-                    "conclusion": {"status": "pending"},
-                },
-                "results": {"verdict": None, "evidence_paths": [], "metrics": {}},
-                "estimated_total_hours": 4,
-                "time_spent_hours": 1,
-                "tags": ["runtime", "dashboard", "selftest"],
+                "title": "Lifecycle Validation",
+                "decision_ids": ["DEC-test-runtime"],
+                "candidate_method_id": "real-process-lifecycle",
+                "goal_statement": "State stays inspectable under real execution.",
+                "implementation_recipe": [
+                    "Create detached runtime.",
+                    "Observe attach/watch/stop/resume.",
+                ],
+                "baseline_ids": ["temp-project"],
+                "eval_entrypoint": {"command": "pytest -q tests/integration/test_runtime_lifecycle_e2e.py"},
+                "primary_metric": {"name": "lifecycle_checks", "direction": "gte", "threshold": 1},
+                "failure_classes": ["runtime_drift", "lease_conflict_failure"],
+                "status": "frozen",
+                "blocking_gaps": [],
+                "created_at": "2026-04-24T00:00:00Z",
+                "updated_at": "2026-04-24T00:00:00Z",
             },
-            sort_keys=False,
-        ),
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
-    subprocess.run(
-        [sys.executable, str(project_dir / ".agent-os" / "research-tasks" / "sync_todo.py")],
-        cwd=str(project_dir),
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
+    compile_task_authority(project_dir)
 
 
 @pytest.fixture
@@ -134,7 +136,7 @@ def thoth_project(tmp_path, monkeypatch):
 
 @pytest.mark.integration
 def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
-    run_result = _run_cli(thoth_project, "run", "--task-id", "task-1", "--detach", "integration run")
+    run_result = _run_cli(thoth_project, "run", "--task-id", "task-1", "--detach")
     assert run_result.returncode == 0, run_result.stderr
     run_id = run_result.stdout.strip().splitlines()[-1]
 
@@ -158,7 +160,7 @@ def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
         description="detached run to stop",
     )
 
-    loop_result = _run_cli(thoth_project, "loop", "--task-id", "task-1", "--detach", "--goal", "integration loop")
+    loop_result = _run_cli(thoth_project, "loop", "--task-id", "task-1", "--detach")
     assert loop_result.returncode == 0, loop_result.stderr
     loop_id = loop_result.stdout.strip().splitlines()[-1]
     _wait_until(
@@ -179,7 +181,7 @@ def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
         description="loop resume after supervisor kill",
     )
 
-    conflict_result = _run_cli(thoth_project, "run", "--task-id", "task-1", "--detach", "conflict probe")
+    conflict_result = _run_cli(thoth_project, "run", "--task-id", "task-1", "--detach")
     assert conflict_result.returncode == 0, conflict_result.stderr
     conflict_id = conflict_result.stdout.strip().splitlines()[-1]
     _wait_until(
@@ -207,7 +209,7 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     config["dashboard"]["port"] = port
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
-    run_result = _run_cli(thoth_project, "run", "--task-id", "task-1", "--detach", "dashboard integration")
+    run_result = _run_cli(thoth_project, "run", "--task-id", "task-1", "--detach")
     assert run_result.returncode == 0
     run_id = run_result.stdout.strip().splitlines()[-1]
     _wait_until(
@@ -293,6 +295,7 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     assert "PASS" in hook_end.stdout or hook_end.stdout == ""
 
     broken_task = thoth_project / ".agent-os" / "research-tasks" / "frontend" / "f1" / "broken.yaml"
+    broken_task.parent.mkdir(parents=True, exist_ok=True)
     broken_task.write_text("id: broken\nphases: [\n", encoding="utf-8")
     broken_hook = subprocess.run(
         ["bash", "scripts/session-end-check.sh"],

@@ -24,7 +24,8 @@ from starlette.requests import Request
 
 from data_loader import (
     load_all_tasks, load_modules, load_task, get_paper_mapping,
-    invalidate_cache, get_cache_info, DIRECTIONS,
+    invalidate_cache, get_cache_info, DIRECTIONS, load_compiler_state,
+    load_decisions, load_contracts,
 )
 from runtime_loader import (
     get_active_run_for_task,
@@ -145,8 +146,8 @@ DIRECTION_LABELS = {
 
 
 def _build_tree() -> list[dict]:
-    modules = load_modules(RESEARCH_TASKS_DIR)
-    all_tasks = load_all_tasks(RESEARCH_TASKS_DIR)
+    modules = load_modules(PROJECT_ROOT)
+    all_tasks = load_all_tasks(PROJECT_ROOT)
     tasks_by_module: dict[str, list[dict]] = {}
     for t in all_tasks:
         tasks_by_module.setdefault(t.get("module", ""), []).append(t)
@@ -164,12 +165,12 @@ def _build_tree() -> list[dict]:
             task_nodes = []
             for task in mod_tasks:
                 task_nodes.append({
-                    "id": task.get("id", ""),
+                    "id": task.get("id", "") or task.get("task_id", ""),
                     "title": task.get("title", ""),
                     "type": task.get("type", "hypothesis"),
                     "status": get_task_status(task),
                     "progress": calculate_task_progress(task),
-                    "hypothesis": task.get("hypothesis", ""),
+                    "hypothesis": task.get("hypothesis") or task.get("goal_statement", ""),
                     "phases": _summarize_phases(task),
                 })
             module_nodes.append({
@@ -196,6 +197,8 @@ def _build_tree() -> list[dict]:
 
 
 def _summarize_phases(task: dict) -> dict:
+    if "phases" not in task:
+        return {}
     phases = task.get("phases", {})
     summary = {}
     for pname in ("survey", "method_design", "experiment", "conclusion"):
@@ -212,7 +215,7 @@ def _summarize_phases(task: dict) -> dict:
 
 def _attach_runtime(task: dict) -> dict:
     payload = dict(task)
-    task_id = str(task.get("id", ""))
+    task_id = str(task.get("id", "") or task.get("task_id", ""))
     payload["active_run"] = get_active_run_for_task(PROJECT_ROOT, task_id)
     payload["run_count"] = len(get_task_runs(PROJECT_ROOT, task_id))
     return payload
@@ -253,12 +256,13 @@ async def api_tasks(
     offset: int = Query(0, ge=0),
 ):
     try:
-        tasks = load_all_tasks(RESEARCH_TASKS_DIR)
-        blocked_ids = {t.get("id") for t in find_blocked_tasks(tasks)}
+        tasks = load_all_tasks(PROJECT_ROOT)
+        blocked_ids = {t.get("id") or t.get("task_id") for t in find_blocked_tasks(tasks)}
         result = []
         for t in tasks:
             t_status = get_task_status(t)
-            if t.get("id") in blocked_ids:
+            task_id = t.get("id") or t.get("task_id")
+            if task_id in blocked_ids and t_status not in {"invalid", "failed"}:
                 t_status = "blocked"
             if status and t_status != status:
                 continue
@@ -281,9 +285,9 @@ async def api_tasks(
 @app.get("/api/tasks/{task_id}")
 async def api_task_detail(task_id: str):
     try:
-        tasks = load_all_tasks(RESEARCH_TASKS_DIR)
+        tasks = load_all_tasks(PROJECT_ROOT)
         for t in tasks:
-            if t.get("id") == task_id:
+            if t.get("id") == task_id or t.get("task_id") == task_id:
                 return {
                     **_attach_runtime({k: v for k, v in t.items() if not k.startswith("_")}),
                     "computed_status": get_task_status(t),
@@ -299,8 +303,8 @@ async def api_task_detail(task_id: str):
 @app.get("/api/dag")
 async def api_dag():
     try:
-        modules = load_modules(RESEARCH_TASKS_DIR)
-        tasks = load_all_tasks(RESEARCH_TASKS_DIR)
+        modules = load_modules(PROJECT_ROOT)
+        tasks = load_all_tasks(PROJECT_ROOT)
         tasks_by_module: dict[str, list[dict]] = {}
         for t in tasks:
             tasks_by_module.setdefault(t.get("module", ""), []).append(t)
@@ -318,7 +322,7 @@ async def api_dag():
             for ds in mod.get("related_modules", {}).get("downstream", []):
                 edges.append({"source": mid, "target": ds, "type": "hard", "level": "module"})
         for task in tasks:
-            tid = task.get("id", "")
+            tid = task.get("id", "") or task.get("task_id", "")
             nodes.append({
                 "id": tid, "label": task.get("title", tid), "type": "task",
                 "direction": task.get("direction", ""), "module": task.get("module", ""),
@@ -330,6 +334,14 @@ async def api_dag():
                     "type": dep.get("type", "soft"), "level": "task",
                     "reason": dep.get("reason", ""),
                 })
+            if task.get("ready_state") in {"blocked", "invalid"} and task.get("blocking_reason"):
+                edges.append({
+                    "source": f"reason:{tid}",
+                    "target": tid,
+                    "type": "hard",
+                    "level": "task",
+                    "reason": str(task.get("blocking_reason")),
+                })
         return {"nodes": nodes, "edges": edges}
     except Exception as exc:
         logger.error("Error in /api/dag: %s", traceback.format_exc())
@@ -339,7 +351,7 @@ async def api_dag():
 @app.get("/api/timeline")
 async def api_timeline():
     try:
-        tasks = load_all_tasks(RESEARCH_TASKS_DIR)
+        tasks = load_all_tasks(PROJECT_ROOT)
         items = []
         for task in tasks:
             phases = task.get("phases", {})
@@ -352,10 +364,10 @@ async def api_timeline():
                     ends.append(str(p["completed_at"]))
             created = task.get("created_at")
             items.append({
-                "id": task.get("id", ""), "title": task.get("title", ""),
+                "id": task.get("id", "") or task.get("task_id", ""), "title": task.get("title", ""),
                 "module": task.get("module", ""), "direction": task.get("direction", ""),
                 "status": get_task_status(task), "progress": calculate_task_progress(task),
-                "start_date": min(starts) if starts else (str(created) if created else None),
+                "start_date": min(starts) if starts else (str(created) if created else str(task.get("generated_at")) if task.get("generated_at") else None),
                 "end_date": max(ends) if ends else None,
                 "estimated_hours": task.get("estimated_total_hours", 0),
                 "spent_hours": task.get("time_spent_hours", 0),
@@ -369,8 +381,9 @@ async def api_timeline():
 @app.get("/api/progress")
 async def api_progress():
     try:
-        tasks = load_all_tasks(RESEARCH_TASKS_DIR)
-        modules = load_modules(RESEARCH_TASKS_DIR)
+        tasks = load_all_tasks(PROJECT_ROOT)
+        modules = load_modules(PROJECT_ROOT)
+        compiler_state = load_compiler_state(PROJECT_ROOT)
         counts = status_counts(tasks)
         overall_pct = calculate_global_progress(tasks)
         est = estimate_completion(tasks)
@@ -386,13 +399,16 @@ async def api_progress():
         blocked_list = []
         for bt in blocked:
             deps = [d.get("task_id", "") for d in bt.get("depends_on", []) if d.get("type") == "hard"]
-            blocked_list.append({"id": bt.get("id", ""), "title": bt.get("title", ""), "blocked_by": deps})
+            if bt.get("blocking_reason"):
+                deps = [str(bt.get("blocking_reason"))]
+            blocked_list.append({"id": bt.get("id", "") or bt.get("task_id", ""), "title": bt.get("title", ""), "blocked_by": deps})
 
         return {
             "overall_progress": overall_pct, "by_direction": by_direction,
             "status_counts": counts, "blocked_tasks": blocked_list,
             "module_count": len(modules), "estimation": est,
             "runtime": runtime_overview(PROJECT_ROOT),
+            "compiler": compiler_state,
         }
     except Exception as exc:
         logger.error("Error in /api/progress: %s", traceback.format_exc())
@@ -403,7 +419,7 @@ async def api_progress():
 async def api_milestones():
     try:
         milestone_map = _load_milestones()
-        tasks = load_all_tasks(RESEARCH_TASKS_DIR)
+        tasks = load_all_tasks(PROJECT_ROOT)
         tasks_by_id = {t.get("id", ""): t for t in tasks}
         result = []
         for ms in milestone_map:
@@ -438,14 +454,15 @@ async def api_activity(limit: int = Query(20, ge=1, le=100)):
 @app.get("/api/status")
 async def api_system_status():
     try:
-        tasks = load_all_tasks(RESEARCH_TASKS_DIR)
-        modules = load_modules(RESEARCH_TASKS_DIR)
+        tasks = load_all_tasks(PROJECT_ROOT)
+        modules = load_modules(PROJECT_ROOT)
         runtime = runtime_overview(PROJECT_ROOT)
         return {
             "last_updated": runtime.get("last_runtime_update") or time.time(),
             "task_count": len(tasks), "module_count": len(modules),
             "cache_info": get_cache_info(),
             "runtime": runtime,
+            "compiler": load_compiler_state(PROJECT_ROOT),
         }
     except Exception as exc:
         return _error_response(500, "InternalError", str(exc))
@@ -618,6 +635,33 @@ async def api_todo_update(task_id: int, body: dict):
     except HTTPException:
         raise
     except Exception as exc:
+        return _error_response(500, "InternalError", str(exc))
+
+
+@app.get("/api/decisions")
+async def api_decisions():
+    try:
+        return {"decisions": load_decisions(PROJECT_ROOT)}
+    except Exception as exc:
+        logger.error("Error in /api/decisions: %s", traceback.format_exc())
+        return _error_response(500, "InternalError", str(exc))
+
+
+@app.get("/api/contracts")
+async def api_contracts():
+    try:
+        return {"contracts": load_contracts(PROJECT_ROOT)}
+    except Exception as exc:
+        logger.error("Error in /api/contracts: %s", traceback.format_exc())
+        return _error_response(500, "InternalError", str(exc))
+
+
+@app.get("/api/compiler-state")
+async def api_compiler_state():
+    try:
+        return load_compiler_state(PROJECT_ROOT)
+    except Exception as exc:
+        logger.error("Error in /api/compiler-state: %s", traceback.format_exc())
         return _error_response(500, "InternalError", str(exc))
 
 

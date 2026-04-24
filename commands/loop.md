@@ -1,7 +1,7 @@
 ---
 name: thoth:loop
 description: Create one durable autonomous loop under the shared runtime and attach in the foreground by default.
-argument-hint: "[--executor claude|codex] [--host claude|codex] [--detach] [--attach <run_id>] [--resume <run_id>] [--watch <run_id>] [--stop <run_id>] [--goal <text>]"
+argument-hint: "[--executor claude|codex] [--host claude|codex] [--detach] [--attach <run_id>] [--resume <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>"
 disable-model-invocation: true
 ---
 
@@ -46,11 +46,11 @@ executed before Claude sees this prompt.
 - Hooks required for correctness: no
 - Subagents required for correctness: no
 - Lifecycle: create -> lease -> supervise -> attach/resume/watch/stop -> acceptance
-- Acceptance: Loop lifecycle is durable and recoverable through attach/resume/watch/stop backed by the same run ledger shape as run.
+- Acceptance: Loop lifecycle is durable and recoverable through attach/resume/watch/stop, and loop creation only starts from a compiler-generated strict task.
 
 ## Interaction Gaps
 
-- Goal or mode details
+- Strict task id
 
 ## Shared Authority
 

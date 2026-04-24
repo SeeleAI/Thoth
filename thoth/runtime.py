@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .task_contracts import compile_task_authority
+
 
 ACTIVE_STATUSES = {"queued", "running", "paused", "waiting_input", "stopping"}
 TERMINAL_STATUSES = {"completed", "failed", "stopped"}
@@ -379,6 +381,7 @@ def build_status_payload(project_root: Path) -> dict[str, Any]:
         "active_run_count": len(active_runs),
         "active_runs": active_runs,
         "local_registry": str(local_registry_root(project_root)),
+        "compiler": compile_task_authority(project_root).get("summary", {}),
     }
 
 
@@ -387,8 +390,8 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     run_parser = sub.add_parser("run")
-    run_parser.add_argument("task", nargs="?", default="ad-hoc task")
     run_parser.add_argument("--task-id")
+    run_parser.add_argument("legacy_task_text", nargs="*")
     run_parser.add_argument("--host", default="codex")
     run_parser.add_argument("--executor", default="codex")
     run_parser.add_argument("--detach", action="store_true")
@@ -399,6 +402,7 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
     loop_parser = sub.add_parser("loop")
     loop_parser.add_argument("--goal", default="loop")
     loop_parser.add_argument("--task-id")
+    loop_parser.add_argument("legacy_goal_text", nargs="*")
     loop_parser.add_argument("--host", default="codex")
     loop_parser.add_argument("--executor", default="codex")
     loop_parser.add_argument("--detach", action="store_true")
@@ -416,6 +420,7 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor")
     doctor.add_argument("--quick", action="store_true")
     doctor.add_argument("--fix", action="store_true")
+    doctor.add_argument("--json", action="store_true")
 
     dashboard = sub.add_parser("dashboard")
     dashboard.add_argument("action", nargs="?", default="start", choices=("start", "stop", "rebuild"))
@@ -427,6 +432,8 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
 
     discuss = sub.add_parser("discuss")
     discuss.add_argument("--goal")
+    discuss.add_argument("--decision-json")
+    discuss.add_argument("--contract-json")
     discuss.add_argument("rest", nargs="*")
 
     extend = sub.add_parser("extend")

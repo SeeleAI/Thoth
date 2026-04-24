@@ -27,6 +27,8 @@ from urllib.request import urlopen
 
 import yaml
 
+from .task_contracts import compile_task_authority
+
 
 ROOT = Path(__file__).resolve().parent.parent
 PYTHON = sys.executable
@@ -252,56 +254,60 @@ def _init_git_repo(project_dir: Path) -> None:
 
 
 def _seed_task(project_dir: Path, *, task_id: str = "task-1") -> None:
-    tasks_dir = project_dir / ".agent-os" / "research-tasks" / "frontend" / "f1"
-    tasks_dir.mkdir(parents=True, exist_ok=True)
-    _dump_yaml(
-        tasks_dir / "_module.yaml",
+    decision_dir = project_dir / ".thoth" / "project" / "decisions"
+    contract_dir = project_dir / ".thoth" / "project" / "contracts"
+    decision_dir.mkdir(parents=True, exist_ok=True)
+    contract_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        decision_dir / "DEC-selftest-runtime.json",
         {
-            "id": "f1",
-            "name": "Frontend Runtime Validation",
-            "direction": "frontend",
-            "scientific_question": "Can dashboard and runtime stay consistent under stress?",
-            "dev_research_ratio": "60/40",
-            "design_decisions": [
-                "Use real CLI-driven runtime checks",
-                "Prefer dashboard evidence over synthetic mocks",
-            ],
-            "related_modules": {"upstream": [], "downstream": []},
-            "seed_hypothesis_count": 1,
+            "schema_version": 1,
+            "kind": "decision",
+            "decision_id": "DEC-selftest-runtime",
+            "scope_id": "frontend-runtime",
+            "question": "Which runtime validation method should be executed for selftest?",
+            "candidate_method_ids": ["real-cli-runtime-check"],
+            "selected_values": {"candidate_method_id": "real-cli-runtime-check"},
+            "status": "frozen",
+            "unresolved_gaps": [],
+            "created_at": utc_now(),
+            "updated_at": utc_now(),
         },
     )
-    _dump_yaml(
-        tasks_dir / f"{task_id}.yaml",
+    _write_json(
+        contract_dir / "CTR-selftest-runtime.json",
         {
-            "id": task_id,
-            "title": "Dashboard lifecycle validation",
+            "schema_version": 1,
+            "kind": "contract",
+            "contract_id": "CTR-selftest-runtime",
+            "task_id": task_id,
+            "scope_id": "frontend-runtime",
+            "direction": "frontend",
             "module": "f1",
-            "direction": "frontend",
-            "type": "hypothesis",
-            "hypothesis": "Runtime state should remain inspectable under real process execution.",
-            "null_hypothesis": "Dashboard drifts from runtime state.",
-            "depends_on": [],
-            "data_requirements": {
-                "dataset": "selftest-artifacts",
-                "min_assets": 1,
-                "min_views_per_asset": 1,
-                "format": "Generated temporary repository files",
+            "title": "Dashboard lifecycle validation",
+            "decision_ids": ["DEC-selftest-runtime"],
+            "candidate_method_id": "real-cli-runtime-check",
+            "goal_statement": "Verify that runtime state remains inspectable under real process execution.",
+            "implementation_recipe": [
+                "Initialize a temp Thoth project.",
+                "Start detached run and loop lifecycles.",
+                "Observe dashboard runtime freshness and hook behavior.",
+            ],
+            "baseline_ids": ["selftest-temp-project"],
+            "eval_entrypoint": {"command": "python scripts/selftest.py --tier hard --hosts none"},
+            "primary_metric": {"name": "selftest_checks_passed", "direction": "gte", "threshold": 1},
+            "failure_classes": ["runtime_unstable", "dashboard_drift", "hook_failure"],
+            "acceptance_contract": {
+                "usable_question": "Does the lifecycle remain attachable and observable?",
+                "goal_question": "Do hard selftest checks pass without ambiguity?",
             },
-            "phases": {
-                "survey": {"status": "completed"},
-                "method_design": {"status": "completed"},
-                "experiment": {"status": "in_progress"},
-                "conclusion": {"status": "pending"},
-            },
-            "results": {"verdict": None, "evidence_paths": [], "metrics": {}},
-            "estimated_total_hours": 4,
-            "time_spent_hours": 1,
-            "tags": ["selftest", "runtime", "dashboard"],
+            "status": "frozen",
+            "blocking_gaps": [],
+            "created_at": utc_now(),
+            "updated_at": utc_now(),
         },
     )
-    sync_script = project_dir / ".agent-os" / "research-tasks" / "sync_todo.py"
-    if sync_script.exists():
-        _run_command([PYTHON, str(sync_script)], cwd=project_dir, timeout=60)
+    compile_task_authority(project_dir)
 
 
 def _set_dashboard_port(project_dir: Path, port: int) -> None:
@@ -412,11 +418,24 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
     _set_dashboard_port(project_dir, port)
     _seed_task(project_dir)
 
+    discuss_payload = json.dumps(
+        {
+            "decision_id": "DEC-selftest-runtime",
+            "scope_id": "frontend-runtime",
+            "question": "Which runtime validation method should be executed for selftest?",
+            "candidate_method_ids": ["real-cli-runtime-check"],
+            "selected_values": {"candidate_method_id": "real-cli-runtime-check"},
+            "status": "frozen",
+            "unresolved_gaps": [],
+        },
+        ensure_ascii=False,
+    )
+
     for name, argv in (
         ("repo.status_json", ["status", "--json"]),
         ("repo.doctor_quick", ["doctor", "--quick"]),
         ("repo.sync", ["sync"]),
-        ("repo.discuss", ["discuss", "selftest", "discussion"]),
+        ("repo.discuss", ["discuss", "--decision-json", discuss_payload]),
         ("repo.review", ["review", "selftest", "review"]),
         ("repo.report", ["report"]),
     ):
@@ -430,7 +449,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
         if result.returncode != 0:
             raise RuntimeError(f"{name} failed")
 
-    run_result = _run_thoth(project_dir, "run", "--task-id", "task-1", "--detach", "hard gate runtime", timeout=60)
+    run_result = _run_thoth(project_dir, "run", "--task-id", "task-1", "--detach", timeout=60)
     run_artifacts = _save_command(recorder, "run-detach", run_result)
     if run_result.returncode != 0:
         recorder.add("runtime.run_detach", "failed", "Detached run creation failed.", run_artifacts)
@@ -454,7 +473,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
     stop_artifacts = _save_command(recorder, "run-stop", stop_result)
     recorder.add("runtime.run_stop", "passed", f"Stopped detached run {run_id}.", stop_artifacts)
 
-    loop_result = _run_thoth(project_dir, "loop", "--task-id", "task-1", "--detach", "--goal", "selftest loop", timeout=60)
+    loop_result = _run_thoth(project_dir, "loop", "--task-id", "task-1", "--detach", timeout=60)
     loop_artifacts = _save_command(recorder, "loop-detach", loop_result)
     if loop_result.returncode != 0:
         recorder.add("runtime.loop_detach", "failed", "Detached loop creation failed.", loop_artifacts)
@@ -466,7 +485,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
         description=f"loop {loop_id} to become running",
     )
 
-    conflict_result = _run_thoth(project_dir, "run", "--task-id", "task-1", "--detach", "lease conflict probe", timeout=60)
+    conflict_result = _run_thoth(project_dir, "run", "--task-id", "task-1", "--detach", timeout=60)
     conflict_artifacts = _save_command(recorder, "lease-conflict-probe", conflict_result)
     if conflict_result.returncode != 0:
         recorder.add("runtime.lease_conflict", "failed", "Conflict probe command itself failed.", conflict_artifacts)
@@ -585,6 +604,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
         raise RuntimeError("local session hook success path failed")
 
     bad_task = project_dir / ".agent-os" / "research-tasks" / "frontend" / "f1" / "broken.yaml"
+    bad_task.parent.mkdir(parents=True, exist_ok=True)
     bad_task.write_text("id: broken\nphases: [\n", encoding="utf-8")
     broken_hook = _run_command(["bash", "scripts/session-end-check.sh"], cwd=project_dir, timeout=60)
     broken_artifacts = _save_command(recorder, "hook-broken", broken_hook)
@@ -900,7 +920,7 @@ def run_selftest(
                     "VITE_THOTH_DASHBOARD_POLL_MS": "1000",
                 },
             )[1]
-            fresh_run = _run_thoth(heavy_project, "run", "--task-id", "task-1", "--detach", "browser gate runtime", timeout=60)
+            fresh_run = _run_thoth(heavy_project, "run", "--task-id", "task-1", "--detach", timeout=60)
             fresh_artifacts = _save_command(recorder, "browser-run-detach", fresh_run)
             if fresh_run.returncode != 0:
                 raise RuntimeError("heavy gate browser run creation failed")

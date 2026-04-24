@@ -42,6 +42,8 @@ def test_cli_discuss_records_note(tmp_path):
     payload = json.loads(note_path.read_text(encoding="utf-8").splitlines()[-1])
     assert payload["type"] == "discuss"
     assert payload["content"] == "planning note"
+    decisions = list((tmp_path / ".thoth" / "project" / "decisions").glob("*.json"))
+    assert decisions, "Discuss should materialize an open decision placeholder"
 
 
 def test_cli_review_records_note(tmp_path):
@@ -68,10 +70,18 @@ def test_cli_status_json(tmp_path):
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["active_run_count"] == 0
+    assert payload["compiler"]["task_counts"]["total"] == 0
 
 
 def test_cli_doctor_quick(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
-    result = _run_cli(tmp_path, "doctor", "--quick", "--fix")
+    result = _run_cli(tmp_path, "doctor", "--quick")
     assert result.returncode == 0
     assert "Thoth Doctor" in result.stdout
+
+
+def test_cli_run_rejects_free_form_execution(tmp_path):
+    assert _run_cli(tmp_path, "init").returncode == 0
+    result = _run_cli(tmp_path, "run", "legacy free text")
+    assert result.returncode == 2
+    assert "--task-id" in result.stderr

@@ -15,6 +15,7 @@ from typing import Any
 import yaml
 
 from .command_specs import COMMAND_SPECS
+from .task_contracts import compile_task_authority, ensure_task_authority_tree
 
 
 CONFIG_FILE = ".research-config.yaml"
@@ -241,6 +242,8 @@ def _managed_path_list() -> list[str]:
         ".thoth/project/project.json",
         ".thoth/project/instructions.md",
         ".thoth/project/source-map.json",
+        ".thoth/project/compiler-state.json",
+        ".thoth/project/legacy-audit.json",
         ".thoth/runs/.gitkeep",
         ".thoth/migrations/.gitkeep",
         ".thoth/derived/.gitkeep",
@@ -638,6 +641,9 @@ This document is the canonical human-readable project instruction source for `{c
 ## Runtime Authority
 
 - `.thoth` is the only runtime authority.
+- Execution planning is compiler-driven: `Decision -> Contract -> generated Task`.
+- `run` and `loop` only execute generated tasks from `.thoth/project/tasks/*.json`.
+- Free-form execution is forbidden; ambiguous work must go back through `discuss`.
 - `init` must audit the current repository before it standardizes any Thoth-managed surface.
 - `run` and `loop` are durable by default and support attach/watch/stop lifecycle.
 - Hooks and subagents may enhance throughput but are never correctness requirements.
@@ -660,6 +666,7 @@ def generate_thoth_runtime(config: dict[str, Any], project_dir: Path) -> None:
     thoth_dir = project_dir / ".thoth"
     for rel in ("project", "runs", "migrations", "derived"):
         (thoth_dir / rel).mkdir(parents=True, exist_ok=True)
+    ensure_task_authority_tree(project_dir)
     manifest = {
         "schema_version": 2,
         "project": {
@@ -672,6 +679,16 @@ def generate_thoth_runtime(config: dict[str, Any], project_dir: Path) -> None:
             "runs_dir": ".thoth/runs",
             "project_manifest": ".thoth/project/project.json",
             "project_instructions": ".thoth/project/instructions.md",
+            "decision_dir": ".thoth/project/decisions",
+            "contract_dir": ".thoth/project/contracts",
+            "task_dir": ".thoth/project/tasks",
+            "compiler_state": ".thoth/project/compiler-state.json",
+            "legacy_audit": ".thoth/project/legacy-audit.json",
+            "execution_policy": {
+                "mode": "strict-task-only",
+                "free_form_execution": False,
+                "task_source": ".thoth/project/tasks",
+            },
         },
         "hosts": {
             "claude": {"projection": "CLAUDE.md"},
@@ -682,6 +699,7 @@ def generate_thoth_runtime(config: dict[str, Any], project_dir: Path) -> None:
     (thoth_dir / "project" / "instructions.md").write_text(render_project_instructions(config), encoding="utf-8")
     for rel in ("runs/.gitkeep", "migrations/.gitkeep", "derived/.gitkeep"):
         (thoth_dir / rel).write_text("", encoding="utf-8")
+    compile_task_authority(project_dir)
 
 
 def generate_pre_commit_config(config: dict[str, Any], project_dir: Path) -> None:
@@ -713,8 +731,8 @@ def generate_scripts(config: dict[str, Any], project_dir: Path) -> None:
     scripts = {
         "install-hooks.sh": "#!/usr/bin/env bash\nset -e\npre-commit install\n",
         "check-required-files.sh": "#!/usr/bin/env bash\nset -e\nfor f in project-index.md requirements.md architecture-milestones.md todo.md cross-repo-mapping.md acceptance-report.md lessons-learned.md run-log.md change-decisions.md; do test -f \".agent-os/$f\" || { echo \"MISSING: .agent-os/$f\"; exit 1; }; done\n",
-        "session-end-check.sh": "#!/usr/bin/env bash\nset -e\npython .agent-os/research-tasks/validate.py\npython .agent-os/research-tasks/check_consistency.py\npython .agent-os/research-tasks/sync_todo.py --check-only || python .agent-os/research-tasks/sync_todo.py\nbash scripts/check-required-files.sh\n",
-        "validate-all.sh": "#!/usr/bin/env bash\nset -e\npython .agent-os/research-tasks/validate.py\npython .agent-os/research-tasks/check_consistency.py\npython .agent-os/research-tasks/sync_todo.py --check-only\nbash scripts/check-required-files.sh\n",
+        "session-end-check.sh": "#!/usr/bin/env bash\nset -e\npython .agent-os/research-tasks/validate.py\npython .agent-os/research-tasks/check_consistency.py\npython .agent-os/research-tasks/sync_todo.py --check-only || python .agent-os/research-tasks/sync_todo.py\npython -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
+        "validate-all.sh": "#!/usr/bin/env bash\nset -e\npython .agent-os/research-tasks/validate.py\npython .agent-os/research-tasks/check_consistency.py\npython .agent-os/research-tasks/sync_todo.py --check-only\npython -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
         "thoth-codex-hook.sh": "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"\ncd \"$ROOT\"\nEVENT=\"${1:-}\"\nif [ -z \"$EVENT\" ]; then\n  echo \"Usage: thoth-codex-hook.sh <start|stop>\" >&2\n  exit 0\nfi\nif command -v thoth >/dev/null 2>&1; then\n  exec thoth hook --host codex --event \"$EVENT\"\nfi\nif [ -n \"${THOTH_SOURCE_ROOT:-}\" ]; then\n  export PYTHONPATH=\"${THOTH_SOURCE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}\"\n  exec python -m thoth.cli hook --host codex --event \"$EVENT\"\nfi\nexit 0\n",
     }
     for filename, content in scripts.items():
@@ -744,6 +762,8 @@ This file is generated from `.thoth/project/instructions.md` for `{config["name"
 
 ## Runtime Rules
 
+- Planning authority lives in `.thoth/project/decisions`, `.thoth/project/contracts`, and generated `.thoth/project/tasks`.
+- `run` and `loop` execute by `--task-id` only; free-form goals belong in `discuss`.
 - `run` and `loop` are durable by default and support attach/watch/stop lifecycle.
 - Hooks and subagents may enhance throughput but are never correctness dependencies.
 - Dashboard truth comes from `.thoth/runs/*`, not host session state.
@@ -819,6 +839,8 @@ REQUIRED_FILES = [
     ".research-config.yaml",
     ".thoth/project/project.json",
     ".thoth/project/instructions.md",
+    ".thoth/project/compiler-state.json",
+    ".thoth/project/legacy-audit.json",
     ".codex/config.json",
 ]
 
@@ -944,3 +966,4 @@ def sync_project_layer(project_dir: Path) -> None:
     audit = audit_repository_state(project_dir)
     preview = build_init_preview(project_dir, audit)
     _write_source_map(project_dir, audit, preview)
+    compile_task_authority(project_dir)
