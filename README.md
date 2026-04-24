@@ -320,3 +320,8 @@ trustworthy as it evolves.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## References
+
+- [karpathy/autoresearch](https://github.com/karpathy/autoresearch)
+- [uditgoenka/autoresearch](https://github.com/uditgoenka/autoresearch)
