@@ -86,6 +86,9 @@ const phaseLabels: Record<string, string> = {
         <option value="in_progress">进行中</option>
         <option value="completed">已完成</option>
         <option value="blocked">已阻塞</option>
+        <option value="ready">可执行</option>
+        <option value="invalid">无效</option>
+        <option value="failed">失败</option>
       </select>
       <input
         v-model="filterModule"
@@ -123,8 +126,8 @@ const phaseLabels: Record<string, string> = {
 
           <!-- Expanded detail -->
           <div v-if="expandedId === task.id" class="task-detail" @click.stop>
-            <div v-if="task.hypothesis" class="detail-section">
-              <strong>假设：</strong>{{ task.hypothesis }}
+            <div v-if="task.hypothesis || task.goal_statement" class="detail-section">
+              <strong>{{ task.hypothesis ? '假设' : '目标' }}：</strong>{{ task.hypothesis ?? task.goal_statement }}
             </div>
 
             <div v-if="task.phases" class="detail-section">
@@ -155,6 +158,22 @@ const phaseLabels: Record<string, string> = {
               <span v-for="dep in task.depends_on" :key="dep.task_id" class="dep-chip">
                 {{ dep.task_id }} ({{ dep.type }})
               </span>
+            </div>
+
+            <div v-if="task.ready_state" class="detail-section">
+              <strong>严格任务状态：</strong>{{ task.ready_state }}
+              <span v-if="task.blocking_reason"> - {{ task.blocking_reason }}</span>
+            </div>
+
+            <div v-if="task.candidate_method_id" class="detail-section">
+              <strong>冻结方法：</strong><code>{{ task.candidate_method_id }}</code>
+            </div>
+
+            <div v-if="task.implementation_recipe?.length" class="detail-section">
+              <strong>执行配方：</strong>
+              <ul class="deliverable-list">
+                <li v-for="(step, i) in task.implementation_recipe" :key="i">{{ step }}</li>
+              </ul>
             </div>
           </div>
         </div>

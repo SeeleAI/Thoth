@@ -1,8 +1,7 @@
 """
-progress_calculator.py — Progress engine for Thoth Research Dashboard.
+progress_calculator.py — Progress engine for the strict-task dashboard.
 
-Calculates completion percentages at task, module, direction, and global levels.
-Also identifies blocked tasks and estimates remaining time.
+Supports both legacy YAML tasks and new compiler-generated strict tasks.
 """
 
 from __future__ import annotations
@@ -36,7 +35,25 @@ def _phase_progress(phase: dict | None) -> float:
     return 0.0
 
 
+def _has_strict_shape(task: dict[str, Any]) -> bool:
+    return "ready_state" in task or "contract_id" in task or "task_id" in task
+
+
+def _strict_task_progress(task: dict[str, Any]) -> float:
+    verdict = task.get("verdict") if isinstance(task.get("verdict"), dict) else {}
+    ready_state = str(task.get("ready_state") or "blocked")
+    if verdict.get("updated_at"):
+        return 100.0
+    if ready_state == "ready":
+        return 15.0
+    if ready_state == "blocked":
+        return 5.0
+    return 0.0
+
+
 def calculate_task_progress(task: dict) -> float:
+    if _has_strict_shape(task):
+        return _strict_task_progress(task)
     phases = task.get("phases")
     if not phases or not isinstance(phases, dict):
         return 0.0
@@ -48,6 +65,19 @@ def calculate_task_progress(task: dict) -> float:
 
 
 def get_task_status(task: dict) -> str:
+    if _has_strict_shape(task):
+        verdict = task.get("verdict") if isinstance(task.get("verdict"), dict) else {}
+        if verdict.get("updated_at"):
+            if verdict.get("usable") is True and verdict.get("meets_goal") is True:
+                return "completed"
+            return "failed"
+        ready_state = str(task.get("ready_state") or "blocked")
+        if ready_state == "ready":
+            return "ready"
+        if ready_state == "invalid":
+            return "invalid"
+        return "blocked"
+
     phases = task.get("phases")
     if not phases or not isinstance(phases, dict):
         return "pending"
@@ -91,15 +121,17 @@ def calculate_global_progress(all_tasks: list[dict]) -> float:
 
 
 def find_blocked_tasks(all_tasks: list[dict]) -> list[dict]:
-    completed_ids = set()
-    for task in all_tasks:
-        if get_task_status(task) == "completed":
-            completed_ids.add(task.get("id", ""))
-    blocked = []
+    blocked: list[dict] = []
     seen_ids: set[str] = set()
+    completed_ids = {task.get("id") or task.get("task_id") for task in all_tasks if get_task_status(task) == "completed"}
     for task in all_tasks:
-        tid = task.get("id", "")
-        if tid in seen_ids:
+        tid = str(task.get("id") or task.get("task_id") or "")
+        if not tid or tid in seen_ids:
+            continue
+        if _has_strict_shape(task):
+            if get_task_status(task) in {"blocked", "invalid"}:
+                blocked.append(task)
+                seen_ids.add(tid)
             continue
         deps = task.get("depends_on", [])
         if not deps:
@@ -119,14 +151,14 @@ def estimate_completion(all_tasks: list[dict]) -> Optional[dict]:
     completed_count = 0
     total_count = len(all_tasks)
     for task in all_tasks:
-        created = task.get("created_at")
+        created = task.get("created_at") or task.get("generated_at")
         if created:
             try:
                 if isinstance(created, str):
                     created = created.replace(" ", "T")
                     if "+" not in created and "Z" not in created:
                         created += "+00:00"
-                    dt = datetime.fromisoformat(created)
+                    dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
                 else:
                     dt = created
                 if earliest is None or dt < earliest:
@@ -160,14 +192,23 @@ def estimate_completion(all_tasks: list[dict]) -> Optional[dict]:
 
 
 def status_counts(tasks: list[dict]) -> dict[str, int]:
-    counts = {"total": 0, "pending": 0, "in_progress": 0, "completed": 0, "blocked": 0}
-    blocked_ids = {t.get("id") for t in find_blocked_tasks(tasks)}
+    counts = {
+        "total": 0,
+        "pending": 0,
+        "in_progress": 0,
+        "completed": 0,
+        "blocked": 0,
+        "ready": 0,
+        "invalid": 0,
+        "failed": 0,
+    }
+    blocked_ids = {task.get("id") or task.get("task_id") for task in find_blocked_tasks(tasks)}
     for task in tasks:
         counts["total"] += 1
-        tid = task.get("id", "")
-        if tid in blocked_ids:
+        tid = task.get("id") or task.get("task_id")
+        if tid in blocked_ids and not _has_strict_shape(task):
             counts["blocked"] += 1
-        else:
-            st = get_task_status(task)
-            counts[st] = counts.get(st, 0) + 1
+            continue
+        status = get_task_status(task)
+        counts[status] = counts.get(status, 0) + 1
     return counts

@@ -129,13 +129,13 @@ Typical first actions:
 
 ```text
 /thoth:status
-/thoth:run <task>
-/thoth:loop --mode=task
+/thoth:run --task-id <task_id>
+/thoth:loop --task-id <task_id>
 /thoth:dashboard
 
 $thoth status
-$thoth run <task>
-$thoth loop <goal>
+$thoth run --task-id <task_id>
+$thoth loop --task-id <task_id>
 $thoth dashboard
 ```
 
@@ -175,6 +175,8 @@ public skill bundle rooted at `.agents/skills/thoth/`.
 Both surfaces share the same runtime rules:
 
 - `.thoth` is the only authority
+- execution planning is strict: `Decision -> Contract -> compiler-generated Task`
+- `run` and `loop` execute only by `--task-id`; free-form execution is intentionally rejected
 - `run` and `loop` are durable by default
 - attach / resume / watch / stop operate on the same run ledger
 - dashboard reads `.thoth/runs/*`, not host session state

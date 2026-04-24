@@ -1,7 +1,7 @@
 ---
 name: thoth:run
 description: Create one durable run under the shared runtime and attach in the foreground by default.
-argument-hint: "[--executor claude|codex] [--host claude|codex] [--detach] [--attach <run_id>] [--watch <run_id>] [--stop <run_id>] <task>"
+argument-hint: "[--executor claude|codex] [--host claude|codex] [--detach] [--attach <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>"
 disable-model-invocation: true
 ---
 
@@ -47,11 +47,11 @@ executed before Claude sees this prompt.
 - Hooks required for correctness: no
 - Subagents required for correctness: no
 - Lifecycle: create -> lease -> supervise -> attach/watch/stop -> acceptance
-- Acceptance: A durable run ledger exists under .thoth/runs/<run_id> with machine-local supervisor state and mechanical acceptance placeholders.
+- Acceptance: A durable run ledger exists under .thoth/runs/<run_id>, and execution only starts from a compiler-generated strict task.
 
 ## Interaction Gaps
 
-- Task text or task id
+- Strict task id
 
 ## Shared Authority
 

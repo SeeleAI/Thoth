@@ -3,7 +3,7 @@
 // ─── Task & Phase ───────────────────────────────────────────
 
 export type PhaseStatus = 'pending' | 'in_progress' | 'completed' | 'skipped'
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'blocked'
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'ready' | 'invalid' | 'failed'
 
 export interface PhaseCriteria {
   metric: string
@@ -44,10 +44,22 @@ export interface Task {
   direction: string
   module: string
   hypothesis?: string
+  goal_statement?: string
   phases?: Phases
   depends_on?: Dependency[]
   deliverables?: Deliverable[]
+  ready_state?: 'ready' | 'blocked' | 'invalid'
+  blocking_reason?: string
+  decision_ids?: string[]
+  contract_id?: string
+  candidate_method_id?: string
+  implementation_recipe?: string[]
+  failure_classes?: string[]
+  eval_entrypoint?: Record<string, unknown>
+  primary_metric?: Record<string, unknown>
+  verdict?: Record<string, unknown>
   created_at?: string
+  generated_at?: string
   estimated_total_hours?: number
   time_spent_hours?: number
   computed_status: TaskStatus
@@ -120,11 +132,15 @@ export interface ProgressData {
     in_progress: number
     completed: number
     blocked: number
+    ready?: number
+    invalid?: number
+    failed?: number
   }
   blocked_tasks: BlockedTask[]
   module_count: number
   estimation: Estimation | null
   runtime: RuntimeOverview
+  compiler?: Record<string, unknown>
 }
 
 export interface RunSummary {

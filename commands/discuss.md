@@ -31,10 +31,12 @@ executed before Claude sees this prompt.
 ## Scope Guard
 
 **CAN:**
-- Update docs and plans
+- Update decisions and contracts
+- Trigger the strict task compiler
 
 **CANNOT:**
 - Modify source code
+- Create ready execution tasks without a frozen contract
 
 ## Runtime Contract
 
@@ -42,8 +44,8 @@ executed before Claude sees this prompt.
 - Codex executor allowed: no
 - Hooks required for correctness: no
 - Subagents required for correctness: no
-- Lifecycle: discuss -> record
-- Acceptance: Planning output is recorded into the project authority without mutating code.
+- Lifecycle: discuss -> record -> compile
+- Acceptance: Planning output is recorded into the decision/contract authority and recompiled into executable task state without mutating code.
 
 ## Interaction Gaps
 

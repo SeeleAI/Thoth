@@ -36,7 +36,10 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(dashboard_app, "DIRECTIONS", ("frontend",))
     monkeypatch.setattr(dashboard_data_loader, "DIRECTIONS", ("frontend",))
 
-    (tmp_path / ".agent-os" / "research-tasks" / "frontend" / "f1").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".thoth" / "project" / "tasks").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".thoth" / "project" / "decisions").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".thoth" / "project" / "contracts").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".agent-os").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".agent-os" / "milestones.yaml").write_text("milestones: []\n", encoding="utf-8")
     (tmp_path / "tools" / "dashboard" / "frontend" / "dist").mkdir(parents=True, exist_ok=True)
     (tmp_path / "tools" / "dashboard" / "frontend" / "dist" / "index.html").write_text(
@@ -55,25 +58,46 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
     )
 
     task = {
+        "schema_version": 1,
+        "kind": "task",
+        "task_id": "task-1",
         "id": "task-1",
         "title": "Long running task",
         "module": "f1",
         "direction": "frontend",
-        "type": "hypothesis",
-        "hypothesis": "Test runtime binding",
-        "null_hypothesis": "None",
-        "phases": {
-            "survey": {"status": "completed"},
-            "method_design": {"status": "in_progress"},
-            "experiment": {"status": "pending"},
-            "conclusion": {"status": "pending"},
-        },
-        "depends_on": [],
-        "results": {"verdict": None, "evidence_paths": [], "metrics": {}},
+        "contract_id": "CTR-runtime",
+        "decision_ids": ["DEC-runtime"],
+        "candidate_method_id": "real-process-lifecycle",
+        "ready_state": "ready",
+        "blocking_reason": "",
+        "goal_statement": "Test runtime binding",
+        "implementation_recipe": ["Run lifecycle integration"],
+        "eval_entrypoint": {"command": "pytest"},
+        "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
+        "failure_classes": ["runtime_drift"],
+        "verdict": {"usable": None, "meets_goal": None, "failure_class": None, "reasons": [], "conclusion": None, "updated_at": None},
     }
-    (tmp_path / ".agent-os" / "research-tasks" / "frontend" / "f1" / "task-1.yaml").write_text(
-        yaml.safe_dump(task, sort_keys=False),
-        encoding="utf-8",
+    _write_json(
+        tmp_path / ".thoth" / "project" / "tasks" / "task-1.json",
+        task,
+    )
+    _write_json(
+        tmp_path / ".thoth" / "project" / "compiler-state.json",
+        {
+            "schema_version": 1,
+            "generated_at": "2026-04-23T01:00:00Z",
+            "summary": {
+                "decision_counts": {"open": 0, "frozen": 1},
+                "contract_counts": {"draft": 0, "frozen": 1},
+                "task_counts": {"ready": 1, "blocked": 0, "invalid": 0, "total": 1},
+                "legacy_task_count": 0,
+                "decision_queue_count": 0,
+            },
+            "decision_queue": [],
+            "blocked_task_ids": [],
+            "invalid_task_ids": [],
+            "problems": [],
+        },
     )
 
     runs_dir = tmp_path / ".thoth" / "runs"

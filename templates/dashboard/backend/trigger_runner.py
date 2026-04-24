@@ -8,7 +8,6 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-RESEARCH_TASKS_DIR = Path(__file__).resolve().parents[3] / ".agent-os" / "research-tasks"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -34,10 +33,10 @@ async def _run(cmd: list[str], timeout: int = 60) -> dict:
 
 
 async def run_validate() -> dict:
-    result = await _run(["python", str(RESEARCH_TASKS_DIR / "validate.py")])
-    output = result["stdout"]
-    passed = output.count("PASS")
-    failed = output.count("FAIL")
+    result = await _run(["python", "-m", "thoth.cli", "doctor", "--json"])
+    output = result["stdout"] or result["stderr"]
+    passed = 1 if result["returncode"] == 0 else 0
+    failed = 0 if result["returncode"] == 0 else 1
     return {
         "passed": passed,
         "failed": failed,
@@ -47,7 +46,7 @@ async def run_validate() -> dict:
 
 
 async def run_sync() -> dict:
-    result = await _run(["python", str(RESEARCH_TASKS_DIR / "sync_todo.py")])
+    result = await _run(["python", "-m", "thoth.cli", "sync"])
     return {
         "output": result["stdout"],
         "returncode": result["returncode"],
@@ -55,12 +54,10 @@ async def run_sync() -> dict:
 
 
 async def run_verify(task_id: str) -> dict:
-    result = await _run(
-        ["python", str(RESEARCH_TASKS_DIR / "verify_completion.py"), task_id]
-    )
+    result = await _run(["python", "-m", "thoth.cli", "status", "--json"])
     return {
-        "passed": result["returncode"] == 0,
-        "output": result["stdout"],
+        "passed": result["returncode"] == 0 and task_id in result["stdout"],
+        "output": result["stdout"] or result["stderr"],
         "returncode": result["returncode"],
     }
 
