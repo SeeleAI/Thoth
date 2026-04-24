@@ -67,3 +67,9 @@
   - State changes: Claude 插件级 hook 从“仅打印 project detected / check summary” -> “SessionStart/SessionEnd 追加标准化 hook note、active-run hook event、heartbeat 刷新与 advisory context”；Codex project hook 从“仅生成一个 session-end check 配置” -> “官方 `.codex/hooks.json` 下的 SessionStart/Stop 轻量观测层 + project-local `thoth-codex-hook.sh` 包装”
   - Evidence produced: 新增 `thoth/host_hooks.py` 与 `thoth hook` 子命令；更新 `scripts/session-hook.py`、`hooks/hooks.json`、`thoth/project_init.py`、`thoth/selftest.py`；`pytest -q tests/unit/test_host_hooks.py tests/unit/test_init.py tests/integration/test_init_workflow.py tests/integration/test_runtime_lifecycle_e2e.py` -> `31 passed in 81.26s`；`pytest -q` -> `141 passed in 107.59s`；`python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
   - Next likely action: 若后续继续加重 hook，只允许增强宿主感知和观测，不允许让 hooks 取代 `.thoth` authority 或 supervisor lifecycle
+
+- 2026-04-23 23:55 UTC [audit-first init adoption]
+  - Worked on: `OBJ-001`, `WS-002`, `WS-003`, `TD-013`
+  - State changes: `/thoth:init` 从“已有 `.research-config.yaml` 就失败、dashboard 目录直接重建、`.agent-os` 文档无脑覆盖” -> “先审计 repo，再生成 preview / backup / apply ledger，并保留已有 `docs/` / `.agent-os/` 内容的 audit-first adopt/init”
+  - Evidence produced: 更新 `thoth/project_init.py`、`scripts/init.py`、`thoth/cli.py`、`thoth/runtime.py`、`tests/unit/test_init.py`、`tests/integration/test_init_workflow.py`、`README.md`、`AGENTS.md`、`.agent-os/*`；`python -m py_compile ...` 通过；`pytest -q tests/unit/test_init.py tests/integration/test_init_workflow.py` -> `34 passed in 83.90s`；`pytest -q` -> `148 passed in 163.83s`；`python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`；项目状态校验返回 `[OK]`
+  - Next likely action: 运行更完整回归，随后按仓库约束把代码从 `dev` 集成到 `main`，push 两个分支，并刷新当前机器上的 Claude/Codex Thoth 安装

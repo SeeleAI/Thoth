@@ -60,3 +60,13 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
   - Related items: `REQ-006`, `WS-003`, `TD-002`
   - Human rationale: 用户要求把 Thoth 收敛为官方标准 Codex plugin，同时不能伤到现有 Claude 使用方式
   - Effect on project: `.codex-plugin/plugin.json` 需使用官方 metadata + `interface` 形状；Codex 安装说明以 GitHub marketplace source 为准；`.agents/skills/thoth/agents/openai.yaml` 必须进入生成与测试链路
+
+- `CD-012` `2026-04-23` `[accepted]`: `/thoth:init` 必须升级为 audit-first adopt/init，而不是假设目标 repo 为空或在已有控制平面时直接失败
+  - Related items: `REQ-018`, `WS-002`
+  - Human rationale: 目标仓库可能是空白、漂移、部分接管或已有 `.agent-os` / `docs` / `.thoth` 的混合状态，接管必须先审计再标准化
+  - Effect on project: init 实现必须产出 migration ledger 与 source map，并保留非 Thoth 管理内容；测试必须覆盖 re-init / adopt 场景
+
+- `CD-013` `2026-04-23` `[accepted]`: Thoth 仓库后续每次新功能开发都必须同步兼顾 Claude Code 与 Codex，且开发完成后必须完成 `dev -> main -> push both -> update local installs` 收尾
+  - Related items: `REQ-019`, `REQ-020`, `WS-001`, `WS-003`
+  - Human rationale: 用户要求双宿主长期同步，且当前机器上的本地安装不能长期落后于仓库状态
+  - Effect on project: `AGENTS.md`、状态文档和实际收尾流程都必须显式执行这套约束

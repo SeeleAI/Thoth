@@ -57,6 +57,16 @@
     - `codex plugin marketplace remove thoth && codex plugin marketplace add Royalvice/Thoth` 后，`codex exec -C /tmp --skip-git-repo-check 'Use the installed $thoth skill. Run $thoth status for the current directory and return the raw result only.'` 返回 `Project: /tmp` / `Active runs: 0`
     - `claude plugin uninstall thoth --scope user` 后，`claude plugin marketplace add https://github.com/Royalvice/Thoth.git` 与 `claude plugin install thoth@thoth --scope user` 通过；`claude plugin list` 显示 `thoth@thoth 0.1.4 user enabled`
 
+- `EV-014` related to `TD-013`: `/thoth:init` 已升级为 audit-first adopt/init，而不是空仓库假设式脚手架
+  - Evidence: `thoth/project_init.py` 新增 `audit_repository_state()`、`build_init_preview()`、migration backup/source-map 写入与 `initialize_project()` 的 audit/preview/apply 主流程；`scripts/init.py` 与 `$thoth init` 已改为输出审计/迁移摘要；新增 `tests/unit/test_init.py` 与 `tests/integration/test_init_workflow.py` 的 adopt/re-init 覆盖
+  - Conclusion: 当前 init 入口已经能先审计 repo 现状，再以 migration ledger 驱动受管更新，并保留已有 `docs/` 与 `.agent-os/` 内容
+  - Validation:
+    - `python -m py_compile thoth/project_init.py thoth/cli.py thoth/runtime.py scripts/init.py tests/unit/test_init.py tests/integration/test_init_workflow.py` -> passed
+    - `pytest -q tests/unit/test_init.py tests/integration/test_init_workflow.py` -> `34 passed in 83.90s`
+    - `pytest -q` -> `148 passed in 163.83s`
+    - `python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
+    - `python /root/.codex/skills/agent-project-system/scripts/validate_project_system.py /mnt/cfs/5vr0p6/yzy/thoth --state-dir .agent-os` -> `[OK] Project state document system is valid`
+
 ## Failed Or Pending Checks
 
 - `EV-005` related to `WS-002`: 完整 `.thoth` durable runtime 仍未在当前 checkout 中实现
@@ -68,8 +78,3 @@
   - Evidence: 当前只锁定了规则和默认集成策略，尚未实现 path guard / CI / merge helper 等仓库机制
   - Conclusion: `dev` / `main` 分离已经被决策锁定，但仍未完成可执行保护
   - Next action: 推进 `TD-001` 与 `TD-004`
-
-- `EV-007` related to `WS-002`: 当前 `scripts/init.py` 与目标 audit-first adopt/init 语义尚未对齐
-  - Evidence: 规划材料明确要求 audit-first preview/apply，而当前实现仍以现有 scaffold/初始化语义为主
-  - Conclusion: 当前 init 行为与 V2 adoption/init 目标之间存在真实差距
-  - Next action: 推进 `TD-005`

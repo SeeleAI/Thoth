@@ -38,6 +38,10 @@
 
 ## Verified
 
+- `TD-013` `[verified]`: 实现 `/thoth:init` 的 audit-first adopt/init 主流程
+  - Related items: `WS-002`, `REQ-018`, `AC-010`, `AC-011`, `CD-012`
+  - Definition of done: `init` 先审计 repo 当前状态，再写 migration ledger / source map，并在保留已有 docs / `.agent-os` 内容的前提下补齐 Thoth 架构；相关单元与集成测试通过
+
 - `TD-002` `[verified]`: 审核当前插件公开 surface、README 与安装行为之间是否仍有漂移
   - Related items: `WS-003`, `MS-003`, `REQ-006`, `CD-011`
   - Definition of done: 当前公开命令面、README 叙事、安装后预期行为之间达成一致，并记录剩余问题

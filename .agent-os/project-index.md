@@ -31,6 +31,8 @@
 
 ## Recent Important Changes
 
+- 2026-04-23: `/thoth:init` 已升级为 audit-first adopt/init：会先审计 repo 现状，再写 `.thoth/migrations/<migration_id>/audit.json|preview.json|rollback.json|apply.json` 与 `.thoth/project/source-map.json`，并保留已有 `docs/` 与 `.agent-os/` 内容。
+- 2026-04-23: 根 `AGENTS.md` 已写明双宿主同步开发与固定收尾流程：新功能必须同时兼顾 Claude Code / Codex；每次开发完成都要 `dev -> main -> push both -> update local installs`。
 - 2026-04-23: `.codex-plugin/plugin.json` 已对齐到官方 Codex plugin manifest 形状，并把 `.agents/skills/thoth/agents/openai.yaml` 纳入生成链路与测试护栏。
 - 2026-04-23: `README.md` 已补齐 Codex native 的 GitHub marketplace 安装/升级路径；`dev` 已提交、`main` 已通过 `cherry-pick` 同步并 push。
 - 2026-04-23: 已在当前机器上完成 Codex marketplace 卸载重装 + GitHub source 验证，并把 Claude marketplace 切回 GitHub source 后重新安装 `thoth@thoth`。

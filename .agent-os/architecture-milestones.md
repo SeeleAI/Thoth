@@ -17,12 +17,13 @@
 - 公开命令面是 `/thoth:*`
 - Codex 以 executor-mode 进入 `run` / `loop` / `review`
 - 内部公开 skills 与独立公开 `:codex` 变体已经被收敛掉
-- `/thoth:init` 现在会生成最小 `.thoth/` authority tree：`project/`、`runs/`、`migrations/`、`derived/`
+- `/thoth:init` 现在会先审计当前 repo 状态，再以 migration ledger 驱动 adopt/init，并生成最小 `.thoth/` authority tree：`project/`、`runs/`、`migrations/`、`derived/`
 - dashboard 模板现在可以把 `.thoth/runs/*` 里的 active run、history run 和事件日志绑定回 task 视图
-- 当前 repo 已有基础 durable supervisor / lease conflict / resume / stale heartbeat / dashboard restart 验证闭环，但完整 adopt/init audit-first 语义仍未实现
+- 当前 repo 已有基础 durable supervisor / lease conflict / resume / stale heartbeat / dashboard restart 验证闭环，并已落成基线版 audit-first adopt/init；更强的交互式接管协议仍未实现
 - 当前 repo 新增了仓库级双层自测试系统：
   - `hard` 档覆盖真实 temp repo、真实 CLI 生命周期、真实 dashboard backend、hooks、stale、lease conflict、resume
   - `heavy` 档追加 Playwright 浏览器层和宿主真实矩阵
+- 新功能治理上，当前仓库已明确要求 Claude Code 与 Codex 双宿主同步演进，不允许默认只修单侧 surface
 
 ## Target Architecture
 
@@ -59,9 +60,9 @@
   - 目标：稳定 `/thoth:*` 命令面、安装面、README、测试护栏与内部 surface clean-up
   - 当前状态：已有一轮收敛落地，并已新增 process-real 自测试 gate；后续重点转为宿主矩阵与安装路径持续验证
 
-- `WS-002` `[planned]`: Thoth V2 架构收敛
+- `WS-002` `[active]`: Thoth V2 架构收敛
   - 目标：把 `.thoth` authority、durable runtime、adopt/init、merge stage、dashboard contract 做成真实系统
-  - 当前状态：最小 `.thoth/` authority tree 与 task-bound run ledger dashboard contract 已落地；durable supervisor / lease registry / adopt protocol 仍未实现
+  - 当前状态：最小 `.thoth/` authority tree、task-bound run ledger dashboard contract、基线版 audit-first adopt/init 已落地；durable runtime 其他环节仍在继续收敛
 
 - `WS-004` `[active]`: 外部平台知识真源治理
   - 目标：把 `Codex` / `Claude Code` 官方资料、刷新阈值和 authority 规则固化进 `.agent-os/official-sources/` 与根合同

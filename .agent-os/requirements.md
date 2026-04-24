@@ -20,6 +20,9 @@
 - `REQ-013`: 对 `Codex` / `Claude Code` 自身特性、运行机制、实现原理与产品限制的长期文档化，必须以官方 docs 为 authority，并受 freshness policy 约束。
 - `REQ-014`: dashboard 监控长时 Agent 运行时，必须采用 `task-first UI + run-ledger truth` 模型：`task` 为主入口，`run` 强绑定到 `task`，运行日志与心跳从 `.thoth/runs/*` 读取，不再把高频运行时事实写成 YAML authority。
 - `REQ-017`: 仓库必须具备可机械化执行的重型自测试系统，默认覆盖真实临时工作目录、真实 CLI 生命周期、真实 dashboard 后端、故障注入，以及在宿主可用时追加真实 `Codex` / `Claude Code` 矩阵。
+- `REQ-018`: `/thoth:init` 不能假设目标仓库为空；必须先审计当前 repo 的代码、文档、已有 `.agent-os` / `docs` / `.thoth` / `.codex` 等状态，再以 audit-first adopt/init 流程补齐 Thoth 架构。
+- `REQ-019`: Thoth 的任何新功能开发都必须同时兼顾 `Claude Code` 与 `Codex` 两个宿主面，不允许默认只修一侧而让另一侧漂移。
+- `REQ-020`: 每次开发完成后，必须按仓库治理约束完成：`dev` 完成验证、将应发布代码集成到 `main`、push `dev` 与 `main`、并更新当前机器上的本地 Claude/Codex Thoth 安装。
 
 ## Acceptance Criteria
 
@@ -38,10 +41,15 @@
   - `hard` 档默认覆盖真实 `run` / `loop` / `dashboard` / hooks / stale / lease conflict / resume 闭环
   - `heavy` 档在此基础上追加 Playwright 浏览器层与宿主真实矩阵
   - 自测试结果以机器可读 summary 与 artifacts 为准，而不是口头说明
+- `AC-010`: `/thoth:init` 能在空白 repo、已存在 `.research-config.yaml` 的 repo、已有 `.agent-os` / `docs` 的 repo、以及已有 `.thoth` 的 repo 上执行 audit-first adopt/init，而不是直接失败或盲删内容。
+- `AC-011`: `/thoth:init` 每次执行都会写出 migration ledger，至少包含 `.thoth/migrations/<migration_id>/audit.json`、`preview.json`、`rollback.json`、`apply.json`，并维护 `.thoth/project/source-map.json`。
+- `AC-012`: `AGENTS.md` 中明确要求：
+  - 新功能必须同步兼顾 Claude Code 与 Codex
+  - 每次开发完成都必须按 `dev -> main -> push both -> update local installs` 的流程收尾
 
 ## Non-Goals
 
-- 不在当前阶段实现完整 `.thoth/` durable runtime、lease registry、supervisor 或 adopt/init audit-first 协议；本轮只落最小 `.thoth/` authority tree 和 task-bound run ledger dashboard contract。
+- 不在当前阶段宣称完整 `Thoth V2` 已闭环；即使 `/thoth:init` 已升级为 audit-first adopt/init，完整 runtime、lease registry、merge stage 和更强交互式接管协议仍需继续收敛。
 - 不在本次初始化中把 `main` 的文档过滤机制直接实现为最终 Git/CI 机制；本次先把治理规则和后续工作项落盘。
 - 不在本次初始化中改写当前插件代码架构，只为后续开发提供真实、可恢复的控制平面。
 
