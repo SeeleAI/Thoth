@@ -410,7 +410,8 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
     status_parser = sub.add_parser("status")
     status_parser.add_argument("--json", action="store_true")
 
-    sub.add_parser("init")
+    init_parser = sub.add_parser("init")
+    init_parser.add_argument("--config-json")
 
     doctor = sub.add_parser("doctor")
     doctor.add_argument("--quick", action="store_true")

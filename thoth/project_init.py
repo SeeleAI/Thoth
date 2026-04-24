@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import subprocess
 import textwrap
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from .command_specs import COMMAND_SPECS
 
@@ -42,10 +47,395 @@ REQUIRED_AGENT_OS_FILES = [
     "change-decisions.md",
 ]
 
+OPTIONAL_AGENT_OS_FILES = [
+    "milestones.yaml",
+]
+
+GENERATED_RESEARCH_TASK_FILES = [
+    "validate.py",
+    "sync_todo.py",
+    "check_consistency.py",
+    "verify_completion.py",
+    "verify_on_complete.py",
+    "schema.json",
+    "paper-module-mapping.yaml",
+]
+
+GENERATED_SCRIPT_FILES = [
+    "install-hooks.sh",
+    "check-required-files.sh",
+    "session-end-check.sh",
+    "validate-all.sh",
+    "thoth-codex-hook.sh",
+]
+
+GENERATED_TEST_FILES = [
+    "tests/conftest.py",
+    "tests/test_structure.py",
+]
+
+DISCOVERY_CODE_SUFFIXES = {
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".vue",
+    ".sh",
+    ".rs",
+    ".go",
+    ".java",
+    ".c",
+    ".cc",
+    ".cpp",
+    ".h",
+    ".hpp",
+}
+
 
 def _now_str() -> str:
-    from datetime import datetime, timezone
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _utc_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _read_yaml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _read_readme_summary(project_dir: Path) -> tuple[str, str]:
+    for candidate in ("README.md", "readme.md"):
+        path = project_dir / candidate
+        if not path.exists():
+            continue
+        lines = path.read_text(encoding="utf-8").splitlines()
+        title = ""
+        summary = ""
+        for raw in lines:
+            line = raw.strip()
+            if not title and line.startswith("#"):
+                title = line.lstrip("#").strip()
+                continue
+            if not summary and line and not line.startswith("#"):
+                summary = line
+                break
+        return title, summary
+    return "", ""
+
+
+def _detect_language(project_dir: Path, existing_config: dict[str, Any]) -> str:
+    language = existing_config.get("project", {}).get("language")
+    if isinstance(language, str) and language.strip():
+        return language.strip()
+
+    sample_paths = [
+        project_dir / "AGENTS.md",
+        project_dir / "CLAUDE.md",
+        project_dir / "README.md",
+        project_dir / ".agent-os" / "project-index.md",
+    ]
+    for path in sample_paths:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if re.search(r"[\u4e00-\u9fff]", text):
+            return "zh"
+    return "en"
+
+
+def _discover_directions(project_dir: Path, existing_config: dict[str, Any]) -> list[Any]:
+    configured = existing_config.get("research", {}).get("directions")
+    if isinstance(configured, list) and configured:
+        return configured
+
+    task_root = project_dir / ".agent-os" / "research-tasks"
+    discovered: list[str] = []
+    if task_root.is_dir():
+        for entry in sorted(task_root.iterdir()):
+            if not entry.is_dir():
+                continue
+            if entry.name.startswith(".") or entry.name.startswith("_"):
+                continue
+            discovered.append(entry.name)
+    return discovered
+
+
+def _managed_path_list() -> list[str]:
+    base = [
+        CONFIG_FILE,
+        ".pre-commit-config.yaml",
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".codex/config.json",
+        ".codex/setup.sh",
+        ".codex/hooks.json",
+        ".thoth/project/project.json",
+        ".thoth/project/instructions.md",
+        ".thoth/project/source-map.json",
+        ".thoth/runs/.gitkeep",
+        ".thoth/migrations/.gitkeep",
+        ".thoth/derived/.gitkeep",
+    ]
+    base.extend(f"scripts/{name}" for name in GENERATED_SCRIPT_FILES)
+    base.extend(f".agent-os/{name}" for name in REQUIRED_AGENT_OS_FILES)
+    base.extend(f".agent-os/{name}" for name in OPTIONAL_AGENT_OS_FILES)
+    base.extend(f".agent-os/research-tasks/{name}" for name in GENERATED_RESEARCH_TASK_FILES)
+    base.extend(GENERATED_TEST_FILES)
+    return base
+
+
+def _detect_init_mode(audit: dict[str, Any]) -> str:
+    existing = audit.get("existing", {})
+    if existing.get("thoth_authority"):
+        return "resume"
+    if existing.get("research_config"):
+        return "adopt"
+    if existing.get("agent_os") or existing.get("legacy_agentos_alias"):
+        return "adopt"
+    if existing.get("docs") or existing.get("dashboard") or existing.get("codex_project_layer"):
+        return "adopt"
+    if audit.get("top_level_entries"):
+        return "adopt"
+    return "init"
+
+
+def _git_status_summary(project_dir: Path) -> dict[str, Any]:
+    git_dir = project_dir / ".git"
+    if not git_dir.exists():
+        return {"present": False}
+
+    branch = ""
+    porcelain_lines: list[str] = []
+    try:
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        ).stdout.strip()
+        porcelain = subprocess.run(
+            ["git", "status", "--short", "--branch"],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        ).stdout
+        porcelain_lines = [line.rstrip() for line in porcelain.splitlines()]
+    except Exception:
+        return {"present": True, "branch": "", "dirty": None, "entries": []}
+
+    dirty_entries = [line for line in porcelain_lines if not line.startswith("##")]
+    return {
+        "present": True,
+        "branch": branch,
+        "dirty": bool(dirty_entries),
+        "entries": dirty_entries,
+    }
+
+
+def audit_repository_state(project_dir: Path) -> dict[str, Any]:
+    project_dir = project_dir.resolve()
+    existing_config = _read_yaml(project_dir / CONFIG_FILE)
+    readme_title, readme_summary = _read_readme_summary(project_dir)
+
+    docs_files: list[str] = []
+    docs_dir = project_dir / "docs"
+    if docs_dir.is_dir():
+        docs_files = sorted(str(path.relative_to(project_dir)) for path in docs_dir.rglob("*") if path.is_file())
+
+    agent_os_files: list[str] = []
+    agent_os_dir = project_dir / ".agent-os"
+    if agent_os_dir.is_dir():
+        agent_os_files = sorted(str(path.relative_to(project_dir)) for path in agent_os_dir.rglob("*") if path.is_file())
+
+    legacy_agentos_files: list[str] = []
+    legacy_agentos_dir = project_dir / ".agentos"
+    if legacy_agentos_dir.is_dir():
+        legacy_agentos_files = sorted(
+            str(path.relative_to(project_dir)) for path in legacy_agentos_dir.rglob("*") if path.is_file()
+        )
+
+    root_markdown_files = sorted(
+        entry.name
+        for entry in project_dir.iterdir()
+        if entry.is_file() and entry.suffix.lower() == ".md" and entry.name not in {"AGENTS.md", "CLAUDE.md"}
+    )
+
+    code_roots: set[str] = set()
+    for path in project_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if ".git" in path.parts or ".thoth" in path.parts:
+            continue
+        if path.suffix in DISCOVERY_CODE_SUFFIXES:
+            rel = path.relative_to(project_dir)
+            root = rel.parts[0] if len(rel.parts) > 1 else "."
+            code_roots.add(root)
+
+    managed_paths = _managed_path_list()
+    managed_existing = sorted(rel for rel in managed_paths if (project_dir / rel).exists())
+
+    top_level_entries = sorted(
+        entry.name for entry in project_dir.iterdir() if entry.name not in {".git", "__pycache__"}
+    )
+
+    return {
+        "schema_version": 1,
+        "audited_at": _utc_iso(),
+        "project_root": str(project_dir),
+        "git": _git_status_summary(project_dir),
+        "existing": {
+            "research_config": (project_dir / CONFIG_FILE).exists(),
+            "thoth_authority": (project_dir / ".thoth").exists(),
+            "agent_os": agent_os_dir.exists(),
+            "legacy_agentos_alias": legacy_agentos_dir.exists(),
+            "docs": docs_dir.exists(),
+            "codex_project_layer": (project_dir / ".codex").exists(),
+            "dashboard": (project_dir / "tools" / "dashboard").exists(),
+        },
+        "top_level_entries": top_level_entries,
+        "root_markdown_files": root_markdown_files,
+        "docs_files": docs_files,
+        "agent_os_files": agent_os_files,
+        "legacy_agentos_files": legacy_agentos_files,
+        "managed_existing": managed_existing,
+        "code_roots": sorted(code_roots),
+        "readme": {
+            "title": readme_title,
+            "summary": readme_summary,
+        },
+        "inferred": {
+            "language": _detect_language(project_dir, existing_config),
+            "directions": _discover_directions(project_dir, existing_config),
+        },
+    }
+
+
+def _normalize_config(requested: dict[str, Any], project_dir: Path, audit: dict[str, Any]) -> dict[str, Any]:
+    existing_config = _read_yaml(project_dir / CONFIG_FILE)
+    project_config = existing_config.get("project", {})
+    dashboard_config = existing_config.get("dashboard", {})
+    research_config = existing_config.get("research", {})
+
+    config = dict(requested)
+    config.setdefault("name", project_config.get("name") or audit.get("readme", {}).get("title") or project_dir.name)
+    config.setdefault("description", project_config.get("description") or audit.get("readme", {}).get("summary") or "")
+    config.setdefault("language", project_config.get("language") or audit.get("inferred", {}).get("language") or "zh")
+    config.setdefault("directions", research_config.get("directions") or audit.get("inferred", {}).get("directions") or [])
+    config.setdefault("phases", research_config.get("phases") or DEFAULT_PHASES)
+    config.setdefault("port", dashboard_config.get("port", 8501))
+    config.setdefault("theme", dashboard_config.get("theme", "warm-bear"))
+
+    directions = config["directions"]
+    if isinstance(directions, str):
+        directions = [d.strip() for d in directions.split(",") if d.strip()]
+    config["directions"] = directions
+    return config
+
+
+def build_init_preview(project_dir: Path, audit: dict[str, Any]) -> dict[str, Any]:
+    project_dir = project_dir.resolve()
+    preview = {
+        "schema_version": 1,
+        "generated_at": _utc_iso(),
+        "mode": _detect_init_mode(audit),
+        "create": [],
+        "update": [],
+        "preserve": [],
+    }
+
+    managed_update_targets = {
+        CONFIG_FILE,
+        ".pre-commit-config.yaml",
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".codex/config.json",
+        ".codex/setup.sh",
+        ".codex/hooks.json",
+        "tools/dashboard",
+    }
+    managed_update_targets.update(f"scripts/{name}" for name in GENERATED_SCRIPT_FILES)
+    managed_update_targets.update(f".agent-os/research-tasks/{name}" for name in GENERATED_RESEARCH_TASK_FILES)
+    managed_update_targets.update(GENERATED_TEST_FILES)
+
+    managed_create_if_missing = {
+        ".thoth/project/project.json",
+        ".thoth/project/instructions.md",
+        ".thoth/project/source-map.json",
+        ".thoth/runs/.gitkeep",
+        ".thoth/migrations/.gitkeep",
+        ".thoth/derived/.gitkeep",
+    }
+    managed_create_if_missing.update(f".agent-os/{name}" for name in REQUIRED_AGENT_OS_FILES)
+    managed_create_if_missing.update(f".agent-os/{name}" for name in OPTIONAL_AGENT_OS_FILES)
+
+    for rel in sorted(managed_update_targets | managed_create_if_missing):
+        path = project_dir / rel
+        if rel in managed_update_targets:
+            (preview["update"] if path.exists() else preview["create"]).append(rel)
+            continue
+        if path.exists():
+            preview["preserve"].append(rel)
+        else:
+            preview["create"].append(rel)
+
+    preserve_paths = set(preview["preserve"])
+    preserve_paths.update(audit.get("docs_files", []))
+    preserve_paths.update(audit.get("agent_os_files", []))
+    preserve_paths.update(audit.get("legacy_agentos_files", []))
+    preserve_paths.update(audit.get("root_markdown_files", []))
+    preview["preserve"] = sorted(preserve_paths)
+    return preview
+
+
+def _backup_existing_path(project_dir: Path, migration_dir: Path, relpath: str) -> None:
+    source = project_dir / relpath
+    if not source.exists():
+        return
+    target = migration_dir / "backup" / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_dir():
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(source, target, dirs_exist_ok=True)
+    else:
+        shutil.copy2(source, target)
+
+
+def _write_source_map(project_dir: Path, audit: dict[str, Any], preview: dict[str, Any]) -> None:
+    payload = {
+        "schema_version": 1,
+        "generated_at": _utc_iso(),
+        "mode": preview.get("mode", _detect_init_mode(audit)),
+        "authority": {
+            "project_manifest": ".thoth/project/project.json",
+            "instructions": ".thoth/project/instructions.md",
+        },
+        "projections": {
+            "claude": "CLAUDE.md",
+            "codex": "AGENTS.md",
+            "codex_project_layer": ".codex/",
+        },
+        "managed_paths": sorted(set(preview["create"] + preview["update"] + preview["preserve"])),
+        "preserved_docs": audit.get("docs_files", []),
+        "preserved_root_markdown": audit.get("root_markdown_files", []),
+        "preserved_agent_os_files": audit.get("agent_os_files", []),
+        "legacy_agentos_files": audit.get("legacy_agentos_files", []),
+        "code_roots": audit.get("code_roots", []),
+    }
+    path = project_dir / ".thoth" / "project" / "source-map.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def parse_config(config_json: str) -> dict[str, Any]:
@@ -123,11 +513,14 @@ def generate_research_config(config: dict[str, Any], project_dir: Path) -> None:
 
 
 def generate_milestones(config: dict[str, Any], project_dir: Path) -> None:
+    path = project_dir / ".agent-os" / "milestones.yaml"
+    if path.exists():
+        return
     content = textwrap.dedent(f"""\
 # Milestones for {config['name']}
 milestones: []
 """)
-    (project_dir / ".agent-os" / "milestones.yaml").write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8")
 
 
 def generate_agent_os_docs(config: dict[str, Any], project_dir: Path) -> None:
@@ -146,7 +539,10 @@ def generate_agent_os_docs(config: dict[str, Any], project_dir: Path) -> None:
     agent_os = project_dir / ".agent-os"
     agent_os.mkdir(parents=True, exist_ok=True)
     for filename, content in templates.items():
-        (agent_os / filename).write_text(content, encoding="utf-8")
+        path = agent_os / filename
+        if path.exists():
+            continue
+        path.write_text(content, encoding="utf-8")
 
 
 def generate_research_tasks(config: dict[str, Any], project_dir: Path) -> None:
@@ -156,7 +552,9 @@ def generate_research_tasks(config: dict[str, Any], project_dir: Path) -> None:
         src = TEMPLATES_DIR / "agent-os" / "research-tasks" / script_name
         if src.exists():
             shutil.copy2(src, tasks_dir / script_name)
-    (tasks_dir / "paper-module-mapping.yaml").write_text("# Paper-Module Mapping\npapers: []\n", encoding="utf-8")
+    mapping_path = tasks_dir / "paper-module-mapping.yaml"
+    if not mapping_path.exists():
+        mapping_path.write_text("# Paper-Module Mapping\npapers: []\n", encoding="utf-8")
     for direction in config.get("directions", []):
         d_id = direction["id"] if isinstance(direction, dict) else direction
         (tasks_dir / d_id).mkdir(exist_ok=True)
@@ -165,8 +563,6 @@ def generate_research_tasks(config: dict[str, Any], project_dir: Path) -> None:
 def generate_dashboard(config: dict[str, Any], project_dir: Path) -> None:
     src = TEMPLATES_DIR / "dashboard"
     dest = project_dir / "tools" / "dashboard"
-    if dest.exists():
-        shutil.rmtree(dest)
     shutil.copytree(src, dest, dirs_exist_ok=True)
 
 
@@ -180,8 +576,10 @@ This document is the canonical human-readable project instruction source for `{c
 ## Runtime Authority
 
 - `.thoth` is the only runtime authority.
+- `init` must audit the current repository before it standardizes any Thoth-managed surface.
 - `run` and `loop` are durable by default and support attach/watch/stop lifecycle.
 - Hooks and subagents may enhance throughput but are never correctness requirements.
+- Claude Code and Codex project surfaces must stay aligned when new features are introduced.
 
 ## Recovery Order
 
@@ -287,6 +685,7 @@ This file is generated from `.thoth/project/instructions.md` for `{config["name"
 - `run` and `loop` are durable by default and support attach/watch/stop lifecycle.
 - Hooks and subagents may enhance throughput but are never correctness dependencies.
 - Dashboard truth comes from `.thoth/runs/*`, not host session state.
+- New feature work must keep Claude Code and Codex project surfaces in sync.
 """)
 
 
@@ -369,20 +768,91 @@ def test_required_files_exist():
 """), encoding="utf-8")
 
 
-def initialize_project(config: dict[str, Any], project_dir: Path) -> None:
+def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, Any]:
+    project_dir = project_dir.resolve()
+    audit = audit_repository_state(project_dir)
+    normalized = _normalize_config(config or {}, project_dir, audit)
+    preview = build_init_preview(project_dir, audit)
+    migration_id = f"mig-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    preview["migration_id"] = migration_id
+
+    migrations_root = project_dir / ".thoth" / "migrations"
+    migrations_root.mkdir(parents=True, exist_ok=True)
+    migration_dir = migrations_root / migration_id
+    migration_dir.mkdir(parents=True, exist_ok=True)
+
+    (migration_dir / "audit.json").write_text(
+        json.dumps(audit, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (migration_dir / "preview.json").write_text(
+        json.dumps(preview, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    backups: list[dict[str, Any]] = []
+    for relpath in preview["update"]:
+        source = project_dir / relpath
+        if not source.exists():
+            continue
+        _backup_existing_path(project_dir, migration_dir, relpath)
+        backups.append(
+            {
+                "relative_path": relpath,
+                "backup_path": str((Path("backup") / relpath).as_posix()),
+            }
+        )
+
     (project_dir / ".agent-os" / "research-tasks").mkdir(parents=True, exist_ok=True)
     (project_dir / "reports").mkdir(exist_ok=True)
-    generate_research_config(config, project_dir)
-    generate_milestones(config, project_dir)
-    generate_agent_os_docs(config, project_dir)
-    generate_research_tasks(config, project_dir)
-    generate_thoth_runtime(config, project_dir)
-    generate_dashboard(config, project_dir)
-    generate_pre_commit_config(config, project_dir)
-    generate_scripts(config, project_dir)
-    generate_host_projections(config, project_dir)
-    generate_codex_project_layer(config, project_dir)
-    generate_tests(config, project_dir)
+    generate_research_config(normalized, project_dir)
+    generate_milestones(normalized, project_dir)
+    generate_agent_os_docs(normalized, project_dir)
+    generate_research_tasks(normalized, project_dir)
+    generate_thoth_runtime(normalized, project_dir)
+    generate_dashboard(normalized, project_dir)
+    generate_pre_commit_config(normalized, project_dir)
+    generate_scripts(normalized, project_dir)
+    generate_host_projections(normalized, project_dir)
+    generate_codex_project_layer(normalized, project_dir)
+    generate_tests(normalized, project_dir)
+    _write_source_map(project_dir, audit, preview)
+
+    rollback_payload = {
+        "schema_version": 1,
+        "migration_id": migration_id,
+        "created_at": preview["generated_at"],
+        "mode": preview["mode"],
+        "created_paths": preview["create"],
+        "backup_targets": backups,
+    }
+    (migration_dir / "rollback.json").write_text(
+        json.dumps(rollback_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    apply_payload = {
+        "schema_version": 1,
+        "migration_id": migration_id,
+        "applied_at": _utc_iso(),
+        "mode": preview["mode"],
+        "status": "applied",
+        "created_count": len(preview["create"]),
+        "updated_count": len(preview["update"]),
+        "preserved_count": len(preview["preserve"]),
+    }
+    (migration_dir / "apply.json").write_text(
+        json.dumps(apply_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "migration_id": migration_id,
+        "mode": preview["mode"],
+        "config": normalized,
+        "audit": audit,
+        "preview": preview,
+        "apply": apply_payload,
+    }
 
 
 def sync_project_layer(project_dir: Path) -> None:
@@ -408,3 +878,6 @@ def sync_project_layer(project_dir: Path) -> None:
     generate_thoth_runtime(normalized, project_dir)
     generate_host_projections(normalized, project_dir)
     generate_codex_project_layer(normalized, project_dir)
+    audit = audit_repository_state(project_dir)
+    preview = build_init_preview(project_dir, audit)
+    _write_source_map(project_dir, audit, preview)

@@ -15,6 +15,8 @@ from thoth.project_init import (
     CONFIG_FILE,
     DEFAULT_PHASES,
     REQUIRED_AGENT_OS_FILES,
+    audit_repository_state,
+    build_init_preview,
     generate_agent_os_docs,
     generate_dashboard,
     generate_milestones,
@@ -37,17 +39,28 @@ def main() -> int:
     args = parser.parse_args()
 
     project_dir = Path.cwd()
-    if (project_dir / CONFIG_FILE).exists():
-        print("Project already initialized. Use /thoth:doctor to check health.")
-        return 1
-
     config = parse_config(args.config)
-    initialize_project(config, project_dir)
+    result = initialize_project(config, project_dir)
+    audit = result["audit"]
+    preview = result["preview"]
+    final_config = result["config"]
 
-    print(f"Thoth initialized: {config['name']}")
-    print(f"- {len(config.get('directions', []))} research direction(s) configured")
+    print(f"Thoth {result['mode']} completed: {final_config['name']}")
+    print(f"- Migration: {result['migration_id']}")
+    print(
+        f"- Audit: {len(audit.get('top_level_entries', []))} top-level entries, "
+        f"{len(audit.get('docs_files', []))} docs files, "
+        f"{len(audit.get('agent_os_files', []))} .agent-os files, "
+        f"{len(audit.get('code_roots', []))} code roots"
+    )
+    print(
+        f"- Managed paths: {len(preview.get('create', []))} create, "
+        f"{len(preview.get('update', []))} update, "
+        f"{len(preview.get('preserve', []))} preserve"
+    )
+    print(f"- {len(final_config.get('directions', []))} research direction(s) configured")
     print(f"- Runtime authority seeded under .thoth/")
-    print(f"- Dashboard ready at http://localhost:{config.get('port', 8501)}")
+    print(f"- Dashboard ready at http://localhost:{final_config.get('port', 8501)}")
     print("- Run /thoth:dashboard to start")
     print("- Run /thoth:status for current state")
     return 0
