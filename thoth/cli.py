@@ -66,6 +66,28 @@ def _print_generic(command: str, args) -> int:
     return 0
 
 
+def _print_init_result(result: dict[str, object], project_root: Path) -> None:
+    audit = result.get("audit", {}) if isinstance(result, dict) else {}
+    preview = result.get("preview", {}) if isinstance(result, dict) else {}
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    print(f"Initialized Thoth project at {project_root}")
+    print(f"- Mode: {result.get('mode', 'init')}")
+    print(f"- Migration: {result.get('migration_id', 'unknown')}")
+    print(
+        f"- Audit: {len(audit.get('top_level_entries', []))} top-level entries, "
+        f"{len(audit.get('docs_files', []))} docs files, "
+        f"{len(audit.get('agent_os_files', []))} .agent-os files, "
+        f"{len(audit.get('code_roots', []))} code roots"
+    )
+    print(
+        f"- Managed paths: {len(preview.get('create', []))} create, "
+        f"{len(preview.get('update', []))} update, "
+        f"{len(preview.get('preserve', []))} preserve"
+    )
+    if isinstance(config, dict):
+        print(f"- Dashboard: http://localhost:{config.get('port', 8501)}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = runtime_arg_parser()
     args = parser.parse_args(argv)
@@ -75,9 +97,9 @@ def main(argv: list[str] | None = None) -> int:
         return supervisor_main(Path(args.project_root), args.run_id)
 
     if args.command == "init":
-        config = parse_config(json.dumps({"name": project_root.name, "directions": []}))
-        initialize_project(config, project_root)
-        print(f"Initialized Thoth project at {project_root}")
+        config = parse_config(args.config_json) if getattr(args, "config_json", None) else {}
+        result = initialize_project(config, project_root)
+        _print_init_result(result, project_root)
         return 0
 
     if args.command == "status":

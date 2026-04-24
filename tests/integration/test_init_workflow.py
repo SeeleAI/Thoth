@@ -123,6 +123,7 @@ class TestInitWorkflow:
         for rel in [
             ".thoth/project/project.json",
             ".thoth/project/instructions.md",
+            ".thoth/project/source-map.json",
             ".thoth/runs/.gitkeep",
             ".thoth/migrations/.gitkeep",
             ".thoth/derived/.gitkeep",
@@ -147,3 +148,33 @@ class TestInitWorkflow:
                 cwd=str(project_dir), capture_output=True, text=True, timeout=30,
             )
             assert result.returncode == 0, f"Validation failed: {result.stdout}"
+
+    def test_creates_migration_bundle(self, init_project):
+        project_dir, _ = init_project
+        migration_dirs = sorted((project_dir / ".thoth" / "migrations").glob("mig-*"))
+        assert migration_dirs, "Expected at least one migration bundle"
+        latest = migration_dirs[-1]
+        for rel in ("audit.json", "preview.json", "rollback.json", "apply.json"):
+            assert (latest / rel).exists(), f"Missing migration file: {rel}"
+
+    def test_reinit_existing_repo_adopts_without_failing(self, init_project):
+        project_dir, _ = init_project
+        (project_dir / "docs").mkdir(exist_ok=True)
+        preserved = project_dir / "docs" / "keep.md"
+        preserved.write_text("# Keep\n", encoding="utf-8")
+        custom_index = project_dir / ".agent-os" / "project-index.md"
+        custom_index.write_text("# Custom Index\n\nPreserve this.\n", encoding="utf-8")
+
+        result = subprocess.run(
+            [sys.executable, str(INIT_SCRIPT), "--config", json.dumps({"name": "ReInitProject", "directions": []})],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env={**os.environ, "THOTH_PLUGIN_ROOT": str(THOTH_ROOT)},
+        )
+
+        assert result.returncode == 0, f"re-init failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+        assert "Migration:" in result.stdout
+        assert preserved.exists()
+        assert custom_index.read_text(encoding="utf-8") == "# Custom Index\n\nPreserve this.\n"

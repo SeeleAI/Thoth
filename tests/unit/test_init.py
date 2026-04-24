@@ -14,6 +14,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 
 from init import (
     parse_config,
+    audit_repository_state,
+    build_init_preview,
     generate_research_config,
     generate_agent_os_docs,
     generate_milestones,
@@ -24,6 +26,7 @@ from init import (
     generate_codex_project_layer,
     generate_pre_commit_config,
     generate_thoth_runtime,
+    initialize_project,
     REQUIRED_AGENT_OS_FILES,
     DEFAULT_PHASES,
 )
@@ -119,6 +122,15 @@ def test_generates_agent_os_docs(base_config, project_dir):
         )
 
 
+def test_generate_agent_os_docs_preserves_existing_content(base_config, project_dir):
+    custom = project_dir / ".agent-os" / "project-index.md"
+    custom.write_text("# Custom Index\n\nDo not overwrite.\n", encoding="utf-8")
+
+    generate_agent_os_docs(base_config, project_dir)
+
+    assert custom.read_text(encoding="utf-8") == "# Custom Index\n\nDo not overwrite.\n"
+
+
 def test_generates_milestones(base_config, project_dir):
     """milestones.yaml should be created with correct structure."""
     generate_milestones(base_config, project_dir)
@@ -170,6 +182,17 @@ def test_generates_dashboard(base_config, project_dir):
     # Backend should exist
     backend_dir = dashboard_dir / "backend"
     assert backend_dir.exists(), "Expected tools/dashboard/backend directory"
+
+
+def test_generate_dashboard_preserves_existing_unknown_files(base_config, project_dir):
+    dashboard_dir = project_dir / "tools" / "dashboard"
+    custom_file = dashboard_dir / "custom.txt"
+    custom_file.write_text("keep me\n", encoding="utf-8")
+
+    generate_dashboard(base_config, project_dir)
+
+    assert custom_file.exists()
+    assert custom_file.read_text(encoding="utf-8") == "keep me\n"
 
 
 def test_generates_scripts(base_config, project_dir):
@@ -262,3 +285,67 @@ def test_parse_config_directions_from_list():
     })
     config = parse_config(config_json)
     assert config["directions"] == ["a", "b", "c"]
+
+
+def test_audit_repository_state_discovers_existing_repo_shape(tmp_path):
+    (tmp_path / "README.md").write_text("# Audit Test\n\nExisting summary.\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "notes.md").write_text("# Notes\n", encoding="utf-8")
+    (tmp_path / ".agent-os").mkdir()
+    (tmp_path / ".agent-os" / "project-index.md").write_text("# Existing Index\n", encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+    audit = audit_repository_state(tmp_path)
+
+    assert audit["existing"]["docs"] is True
+    assert audit["existing"]["agent_os"] is True
+    assert "docs/notes.md" in audit["docs_files"]
+    assert ".agent-os/project-index.md" in audit["agent_os_files"]
+    assert "src" in audit["code_roots"]
+    assert "README.md" in audit["root_markdown_files"]
+
+
+def test_build_init_preview_preserves_existing_docs_and_agent_os(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "notes.md").write_text("# Notes\n", encoding="utf-8")
+    (tmp_path / ".agent-os").mkdir()
+    (tmp_path / ".agent-os" / "project-index.md").write_text("# Existing Index\n", encoding="utf-8")
+
+    audit = audit_repository_state(tmp_path)
+    preview = build_init_preview(tmp_path, audit)
+
+    assert preview["mode"] == "adopt"
+    assert "docs/notes.md" in preview["preserve"]
+    assert ".agent-os/project-index.md" in preview["preserve"]
+    assert ".thoth/project/project.json" in preview["create"]
+
+
+def test_initialize_project_adopts_existing_repo_and_writes_migration_bundle(base_config, tmp_path):
+    (tmp_path / ".agent-os").mkdir(parents=True)
+    existing_project_index = tmp_path / ".agent-os" / "project-index.md"
+    existing_project_index.write_text("# Existing Index\n\nPreserve me.\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "notes.md").write_text("# Notes\n", encoding="utf-8")
+    (tmp_path / "tools" / "dashboard").mkdir(parents=True)
+    dashboard_custom = tmp_path / "tools" / "dashboard" / "custom.txt"
+    dashboard_custom.write_text("keep me\n", encoding="utf-8")
+
+    result = initialize_project(base_config, tmp_path)
+
+    assert result["mode"] == "adopt"
+    assert (tmp_path / ".thoth" / "project" / "source-map.json").exists()
+    assert existing_project_index.read_text(encoding="utf-8") == "# Existing Index\n\nPreserve me.\n"
+    assert dashboard_custom.exists()
+    assert dashboard_custom.read_text(encoding="utf-8") == "keep me\n"
+
+    migration_dir = tmp_path / ".thoth" / "migrations" / result["migration_id"]
+    assert migration_dir.exists()
+    for rel in ("audit.json", "preview.json", "rollback.json", "apply.json"):
+        assert (migration_dir / rel).exists(), f"Missing migration ledger file: {rel}"
+
+    preview = json.loads((migration_dir / "preview.json").read_text(encoding="utf-8"))
+    assert "docs/notes.md" in preview["preserve"]
+
+    source_map = json.loads((tmp_path / ".thoth" / "project" / "source-map.json").read_text(encoding="utf-8"))
+    assert "docs/notes.md" in source_map["preserved_docs"]

@@ -101,7 +101,10 @@ Open the repository you want to manage with Thoth and run:
 $thoth init
 ```
 
-This scaffolds the project operating layer, including:
+This audits the current repository first, then adopts or scaffolds the project
+operating layer with a recorded migration bundle. It can start from a blank
+repository or an already-drifted repo that already contains docs, `.agent-os/`,
+or partial Thoth state. The managed layer includes:
 
 - `.research-config.yaml`
 - `.agent-os/` state and governance documents
@@ -133,7 +136,7 @@ $thoth dashboard
 
 | Capability | Commands | What it does |
 | --- | --- | --- |
-| Bootstrap | `/thoth:init` | Creates the project operating layer inside a fresh repository |
+| Bootstrap | `/thoth:init` | Audits the current repository and adopts/scaffolds the managed Thoth project layer |
 | Single-task execution | `/thoth:run` | Executes one focused task with validation, sync, and commit discipline |
 | Autonomous iteration | `/thoth:loop` | Runs task-mode or metric-mode loops with verification and rollback logic |
 | Governance | `/thoth:discuss`, `/thoth:review` | Separates planning and review from code execution while preserving conclusions |
