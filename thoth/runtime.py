@@ -426,12 +426,14 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
     report.add_argument("--format", choices=("md", "json"), default="md")
 
     discuss = sub.add_parser("discuss")
+    discuss.add_argument("--goal")
     discuss.add_argument("rest", nargs="*")
 
     extend = sub.add_parser("extend")
     extend.add_argument("changed", nargs="*")
 
     review = sub.add_parser("review")
+    review.add_argument("--goal")
     review.add_argument("rest", nargs="*")
 
     hook = sub.add_parser("hook")

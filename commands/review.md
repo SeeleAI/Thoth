@@ -17,7 +17,7 @@ The repo-local Thoth runtime command for this slash command has already been
 executed before Claude sees this prompt.
 
 ```!
-"${CLAUDE_PLUGIN_ROOT}/scripts/thoth-claude-command.sh" review $ARGUMENTS
+"${CLAUDE_PLUGIN_ROOT}/scripts/thoth-claude-command.sh" review --goal "$ARGUMENTS"
 ```
 
 ## Response Contract

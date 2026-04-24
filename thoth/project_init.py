@@ -91,6 +91,8 @@ DISCOVERY_CODE_SUFFIXES = {
     ".hpp",
 }
 
+THOTH_CLAUDE_BASH_ALLOW_PATTERN = "Bash(*thoth-claude-command.sh*)"
+
 
 def _now_str() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -108,6 +110,66 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _read_json_dict(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _claude_config_dir() -> Path:
+    override = os.environ.get("THOTH_CLAUDE_CONFIG_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path.home() / ".claude"
+
+
+def _claude_permissions_allow_bridge(payload: dict[str, Any]) -> bool:
+    permissions = payload.get("permissions")
+    if not isinstance(permissions, dict):
+        return False
+    allow = permissions.get("allow")
+    if not isinstance(allow, list):
+        return False
+    for item in allow:
+        if not isinstance(item, str):
+            continue
+        if "thoth-claude-command.sh" in item:
+            return True
+    return False
+
+
+def detect_claude_bridge_permission(project_dir: Path) -> dict[str, Any]:
+    config_dir = _claude_config_dir()
+    global_path = config_dir / "settings.json"
+    project_shared_path = project_dir / ".claude" / "settings.json"
+    project_local_path = project_dir / ".claude" / "settings.local.json"
+
+    global_allowed = _claude_permissions_allow_bridge(_read_json_dict(global_path))
+    project_shared_allowed = _claude_permissions_allow_bridge(_read_json_dict(project_shared_path))
+    project_local_allowed = _claude_permissions_allow_bridge(_read_json_dict(project_local_path))
+
+    sources: list[str] = []
+    if global_allowed:
+        sources.append("global")
+    if project_shared_allowed:
+        sources.append("project")
+    if project_local_allowed:
+        sources.append("local")
+
+    return {
+        "effective_allowed": bool(sources),
+        "sources": sources,
+        "global_path": str(global_path),
+        "project_shared_path": str(project_shared_path),
+        "project_local_path": str(project_local_path),
+        "allow_pattern": THOTH_CLAUDE_BASH_ALLOW_PATTERN,
+    }
 
 
 def _read_readme_summary(project_dir: Path) -> tuple[str, str]:
@@ -852,6 +914,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
         "audit": audit,
         "preview": preview,
         "apply": apply_payload,
+        "claude_permissions": detect_claude_bridge_permission(project_dir),
     }
 
 

@@ -80,13 +80,14 @@ def _bridge_success(command_id: str, returncode: int, checks: dict[str, Any]) ->
 def run_bridge(command_id: str, command_args: list[str], *, project_root: Path | None = None) -> dict[str, Any]:
     project_root = (project_root or Path.cwd()).resolve()
     plugin_root = Path(os.environ.get("THOTH_CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parent.parent).resolve()
+    cli_entry = plugin_root / "scripts" / "thoth-cli-entry.py"
 
     env = dict(os.environ)
     existing_pythonpath = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = str(plugin_root) if not existing_pythonpath else f"{plugin_root}:{existing_pythonpath}"
     env["THOTH_CLAUDE_BRIDGE"] = "1"
 
-    argv = [sys.executable, "-m", "thoth.cli", command_id, *command_args]
+    argv = [sys.executable, str(cli_entry), command_id, *command_args]
     started = time.time()
     result = subprocess.run(
         argv,

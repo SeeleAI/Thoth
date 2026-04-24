@@ -18,7 +18,7 @@ def _run_bridge(tmp_path: Path, command_id: str, *args: str) -> subprocess.Compl
     env["PYTHONPATH"] = str(ROOT) if not existing else f"{ROOT}:{existing}"
     env["THOTH_CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     return subprocess.run(
-        [sys.executable, "-m", "thoth.claude_bridge", command_id, *args],
+        [sys.executable, str(ROOT / "thoth" / "claude_bridge.py"), command_id, *args],
         cwd=str(tmp_path),
         text=True,
         capture_output=True,
@@ -54,3 +54,19 @@ def test_bridge_records_status_after_init(tmp_path):
         if line.strip()
     ]
     assert [event["command_id"] for event in events][-2:] == ["init", "status"]
+
+
+def test_bridge_uses_plugin_cli_even_if_project_has_shadow_thoth_package(tmp_path):
+    shadow_pkg = tmp_path / "thoth"
+    shadow_pkg.mkdir()
+    (shadow_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (shadow_pkg / "cli.py").write_text(
+        "raise SystemExit('shadow-cli-should-not-run')\n",
+        encoding="utf-8",
+    )
+
+    result = _run_bridge(tmp_path, "init")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["bridge_success"] is True
+    assert "shadow-cli-should-not-run" not in payload["stderr"]

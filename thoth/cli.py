@@ -70,6 +70,7 @@ def _print_init_result(result: dict[str, object], project_root: Path) -> None:
     audit = result.get("audit", {}) if isinstance(result, dict) else {}
     preview = result.get("preview", {}) if isinstance(result, dict) else {}
     config = result.get("config", {}) if isinstance(result, dict) else {}
+    claude_permissions = result.get("claude_permissions", {}) if isinstance(result, dict) else {}
     print(f"Initialized Thoth project at {project_root}")
     print(f"- Mode: {result.get('mode', 'init')}")
     print(f"- Migration: {result.get('migration_id', 'unknown')}")
@@ -86,6 +87,22 @@ def _print_init_result(result: dict[str, object], project_root: Path) -> None:
     )
     if isinstance(config, dict):
         print(f"- Dashboard: http://localhost:{config.get('port', 8501)}")
+    if isinstance(claude_permissions, dict):
+        if claude_permissions.get("effective_allowed"):
+            sources = ", ".join(claude_permissions.get("sources", []))
+            print(f"- Claude bridge permission: ready via {sources}")
+        else:
+            print("- Claude bridge permission: missing")
+            print("  Create one of these before relying on Claude `/thoth:*` commands without approval prompts:")
+            print(f"  - Global: {claude_permissions.get('global_path')}")
+            print(f"  - Project-local: {claude_permissions.get('project_local_path')}")
+            print("  Minimal JSON:")
+            print("    {")
+            print('      "$schema": "https://json.schemastore.org/claude-code-settings.json",')
+            print('      "permissions": {')
+            print('        "allow": ["Bash(*thoth-claude-command.sh*)"]')
+            print("      }")
+            print("    }")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -147,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         return _run_legacy_script("extend.py", legacy_args, cwd=ROOT)
 
     if args.command in {"review", "discuss"}:
-        content = " ".join(getattr(args, "rest", []) or [])
+        content = (getattr(args, "goal", None) or " ".join(getattr(args, "rest", []) or [])).strip()
         note_path = _append_project_note(project_root, args.command, content)
         print(f"Recorded {args.command} note in {note_path}")
         return 0

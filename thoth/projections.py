@@ -23,6 +23,9 @@ def _bullet_lines(items: tuple[str, ...]) -> str:
 
 def render_claude_command(spec: CommandSpec) -> str:
     lifecycle = " -> ".join(spec.lifecycle) if spec.lifecycle else "n/a"
+    runtime_invocation = f'"${{CLAUDE_PLUGIN_ROOT}}/scripts/thoth-claude-command.sh" {spec.command_id} $ARGUMENTS'
+    if spec.command_id in {"discuss", "review"}:
+        runtime_invocation = f'"${{CLAUDE_PLUGIN_ROOT}}/scripts/thoth-claude-command.sh" {spec.command_id} --goal "$ARGUMENTS"'
     return f"""---
 name: thoth:{spec.command_id}
 description: {spec.summary}
@@ -42,7 +45,7 @@ The repo-local Thoth runtime command for this slash command has already been
 executed before Claude sees this prompt.
 
 ```!
-"${{CLAUDE_PLUGIN_ROOT}}/scripts/thoth-claude-command.sh" {spec.command_id} $ARGUMENTS
+{runtime_invocation}
 ```
 
 ## Response Contract
