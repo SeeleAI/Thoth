@@ -7,76 +7,18 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
 ## Entries
 
 - `CD-001` `2026-04-22` `[accepted]`: Thoth V2 的控制平面采用 `Thoth 主控`，外部 Codex 仅作每轮或显式子任务 worker
-  - Related items: `REQ-003`, `WS-002`
-  - Human rationale: 需要稳定、可控、可追踪、跨 session 恢复的 runtime，而不是把控制权交给外部 worker
-  - Effect on project: 未来目标架构以 `.thoth` authority + durable runtime 为中心
-
 - `CD-002` `2026-04-22` `[accepted]`: 运行时真相模型为“repo ledger 为权威，SQLite 仅为派生索引/缓存”
-  - Related items: `REQ-003`, `WS-002`
-  - Human rationale: 最大化可追踪性、Git 友好性与宿主解耦
-  - Effect on project: 当前文档必须把 SQLite 视为派生层，不能把数据库写成最终 authority
-
-- `CD-003` `2026-04-22` `[accepted]`: `/thoth:init` 的未来目标语义是“先审计，再 preview，再询问，再 apply”，而不是盲目 scaffold
-  - Related items: `REQ-003`, `WS-002`, `TD-005`
-  - Human rationale: 现有项目接管不能破坏已有仓库信息
-  - Effect on project: 当前 init 脚手架能力与目标 adoption 语义之间的差距必须被明确记录
-
-- `CD-004` `2026-04-23` `[accepted]`: `dev` 分支保留开发态文档系统，`main` 完全不保留 `AGENTS.md`、`CLAUDE.md`、`.agent-os/`
-  - Related items: `REQ-001`, `REQ-004`, `WS-001`
-  - Human rationale: `dev` 作为开发控制平面，`main` 作为发布面，两者职责要彻底分离
-  - Effect on project: 当前初始化的根文档与状态目录只服务于 `dev`
-
-- `CD-005` `2026-04-23` `[accepted]`: `dev -> main` 的默认集成策略为 `cherry-pick` 代码提交
-  - Related items: `REQ-005`, `WS-001`
-  - Human rationale: 避免把 `dev` 动态状态文档和控制平面信息带入 `main`
-  - Effect on project: 后续治理机制、脚本与文档都必须围绕 `cherry-pick` 作为默认路径
-
+- `CD-003` `2026-04-22` `[accepted]`: `/thoth:init` 的目标语义是“先审计，再 preview，再 apply”，而不是盲目 scaffold
+- `CD-004` `2026-04-23` `[accepted]`: `dev` 分支保留开发态文档系统，`main` 不保留 `AGENTS.md`、`CLAUDE.md`、`.agent-os/`
+- `CD-005` `2026-04-23` `[accepted]`: `dev -> main` 的默认集成策略为 `cherry-pick`
 - `CD-006` `2026-04-23` `[accepted]`: 当前公开命令面保持显式 `/thoth:*`，内部协议层与内部 worker 不暴露为公开 slash surface
-  - Related items: `REQ-006`, `WS-003`
-  - Human rationale: 宿主体验必须干净，不能把内部模块暴露给用户
-  - Effect on project: 公开 `:codex` 变体和内部 skill 外露已被视为 rejected 路径
-
-- `CD-007` `2026-04-23` `[accepted]`: `Codex` / `Claude Code` 外部平台知识采用“官方 docs 为 authority，`.agent-os/official-sources/` 为缓存综合层”的治理模型
-  - Related items: `REQ-013`, `WS-004`
-  - Human rationale: 涉及平台能力与实现原理时不能依赖陈旧认知，必须有 latest-first 的真源规则
-  - Effect on project: 后续所有平台知识都必须遵守 freshness policy 与 live-check 规则
-
+- `CD-007` `2026-04-23` `[accepted]`: `Codex` / `Claude Code` 平台知识采用“官方 docs 为 authority，仓库文档为缓存综合层”的治理模型
 - `CD-008` `2026-04-23` `[accepted]`: dashboard 的长时运行真相采用 `task-first UI + run-ledger truth + smart polling` 模型
-  - Related items: `REQ-014`, `WS-002`, `WS-003`
-  - Human rationale: 前端必须稳定展示后端 Agent 长时进度，运行日志不能再依赖 YAML 或宿主会话拼装
-  - Effect on project: `.thoth/runs/*` 成为运行事实层；task 页面必须展示 active run、history run 与 run logs；默认轮询周期锁定为 `10` 分钟
-
-- `CD-009` `2026-04-23` `[accepted]`: 所有默认开发工作都在 `dev` 分支进行，未经用户明确批准不得直接修改 `main`
-  - Related items: `REQ-015`, `REQ-016`, `WS-001`
-  - Human rationale: 需要把开发控制平面和稳定发布面彻底分开，避免代理在 `main` 上继续积累未审查改动
-  - Effect on project: `main` 只作为稳定集成入口；代理若位于 `main` 必须先切回 `dev` 或其他获批开发分支，再继续修改 repo-tracked 文件
-
+- `CD-009` `2026-04-23` `[accepted]`: 所有默认开发工作都在 `dev`，未经用户明确批准不得直接修改 `main`
 - `CD-010` `2026-04-23` `[accepted]`: Thoth 的验证体系采用“双层门槛 + repo-real 默认 + host-real 自动追加”模型
-  - Related items: `REQ-017`, `AC-009`, `WS-003`
-  - Human rationale: 当前测试过于接口化，必须把真实工作目录、真实进程、真实 dashboard、故障注入和宿主能力纳入主验证路径，同时避免日常开发完全被超重回归拖慢
-  - Effect on project: 新增 `scripts/selftest.py` / `thoth.selftest` 作为官方入口；`hard` 档成为默认重型 gate；`heavy` 档承载浏览器层与宿主真实矩阵
-
 - `CD-011` `2026-04-23` `[accepted]`: Codex 分发面按官方 plugin manifest/schema 对齐，但不改动 Claude Code 公开 surface 与 `.thoth` authority 边界
-  - Related items: `REQ-006`, `WS-003`, `TD-002`
-  - Human rationale: 用户要求把 Thoth 收敛为官方标准 Codex plugin，同时不能伤到现有 Claude 使用方式
-  - Effect on project: `.codex-plugin/plugin.json` 需使用官方 metadata + `interface` 形状；Codex 安装说明以 GitHub marketplace source 为准；`.agents/skills/thoth/agents/openai.yaml` 必须进入生成与测试链路
-
-- `CD-012` `2026-04-23` `[accepted]`: `/thoth:init` 必须升级为 audit-first adopt/init，而不是假设目标 repo 为空或在已有控制平面时直接失败
-  - Related items: `REQ-018`, `WS-002`
-  - Human rationale: 目标仓库可能是空白、漂移、部分接管或已有 `.agent-os` / `docs` / `.thoth` 的混合状态，接管必须先审计再标准化
-  - Effect on project: init 实现必须产出 migration ledger 与 source map，并保留非 Thoth 管理内容；测试必须覆盖 re-init / adopt 场景
-
-- `CD-013` `2026-04-23` `[accepted]`: Thoth 仓库后续每次新功能开发都必须同步兼顾 Claude Code 与 Codex，且开发完成后必须完成 `dev -> main -> push both -> update local installs` 收尾
-  - Related items: `REQ-019`, `REQ-020`, `WS-001`, `WS-003`
-  - Human rationale: 用户要求双宿主长期同步，且当前机器上的本地安装不能长期落后于仓库状态
-  - Effect on project: `AGENTS.md`、状态文档和实际收尾流程都必须显式执行这套约束
-
-- `CD-014` `2026-04-24` `[accepted]`: Thoth 的严格任务执行模型固定为 `Decision -> Contract -> compiler-generated Task`，且 `run` / `loop` 默认只接受 `--task-id`
-  - Related items: `REQ-003`, `REQ-014`, `WS-002`, `WS-003`
-  - Human rationale: 用户明确拒绝模糊 task、拒绝让 agent 猜测方法或验收标准，并要求旧 vague task 彻底退出执行 authority
-  - Effect on project: `.thoth/project/decisions/`、`.thoth/project/contracts/` 与 `.thoth/project/tasks/` 成为新的严格执行 authority；自由文本 `run` / `loop` 被禁用；`doctor` / `dashboard` / `selftest` 必须以 compiler 状态为准
-
-- `CD-015` `2026-04-24` `[accepted]`: 仓库的唯一保留上游切换为 `https://github.com/SeeleAI/Thoth`，`Royalvice/Thoth` 仅作为待删除旧地址
-  - Related items: `WS-003`, `REQ-020`
-  - Human rationale: 用户计划删除旧仓库，因此必须先把 git 上游、README、插件元数据与生成源全部切到新的 canonical repository，确保删除旧仓库后安装和分发面不悬空；GitHub 实际返回的 canonical 路径为 `SeeleAI/Thoth`
-  - Effect on project: `origin`、`README.md`、`thoth/projections.py` 与 `.codex-plugin/plugin.json` 必须统一指向 `SeeleAI/Thoth`；仅法律署名字段如 `LICENSE` copyright 不随本次上游迁移改写
+- `CD-012` `2026-04-23` `[accepted]`: `/thoth:init` 必须升级为 audit-first adopt/init
+- `CD-013` `2026-04-23` `[accepted]`: 新功能开发必须同步兼顾 Claude Code 与 Codex，且开发完成后必须完成 `dev -> main -> push both -> update local installs` 收尾
+- `CD-014` `2026-04-24` `[accepted]`: 严格任务执行模型固定为 `Decision -> Contract -> compiler-generated Task`，`run` / `loop` 默认只接受 `--task-id`
+- `CD-015` `2026-04-24` `[accepted]`: 仓库的唯一保留上游切换为 `https://github.com/SeeleAI/Thoth`
+- `CD-016` `2026-04-24` `[accepted]`: 公开仓库不保留个人邮箱、私人本地路径或外部项目来源链

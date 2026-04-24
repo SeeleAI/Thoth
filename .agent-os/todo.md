@@ -4,25 +4,20 @@
 
 - `TD-004` `[backlog]`: 明确 `main` 分支对开发态文档路径的拒收机制
   - Related items: `WS-001`, `MS-002`, `REQ-004`, `REQ-005`
-  - Definition of done: 文档、脚本或流程层明确规定 `main` 如何避免接收 `AGENTS.md`、`CLAUDE.md`、`.agent-os/`
 
-- `TD-005` `[backlog]`: 对照当前 `scripts/init.py` 与目标 audit-first adopt/init 语义，整理差距清单
+- `TD-005` `[backlog]`: 对照当前 `scripts/init.py` 与目标 audit-first adopt/init 语义整理差距清单
   - Related items: `WS-002`, `MS-004`, `REQ-003`
-  - Definition of done: 明确当前 init 行为、目标行为、过渡路径与 blocker
 
 - `TD-006` `[backlog]`: 梳理当前 repo 结构到未来 `.thoth/` authority layout 的迁移映射
   - Related items: `WS-002`, `MS-004`, `REQ-003`
-  - Definition of done: 至少明确当前 `commands/contracts/agents/scripts/templates/tests` 与未来 `.thoth` 结构之间的映射边界
 
 ## Ready
 
 - `TD-001` `[ready]`: 将 `dev` / `main` 分流规则固化为仓库内可执行治理机制
-  - Related items: `WS-001`, `MS-002`, `REQ-004`, `REQ-005`, `CD-004`, `CD-005`
-  - Definition of done: 至少明确 dev-only 文档路径、`cherry-pick` 默认集成流程、以及面向 `main` 的检查或保护方案
+  - Related items: `WS-001`, `MS-002`, `REQ-004`, `REQ-005`
 
-- `TD-003` `[ready]`: 把 V2 规划材料整理成 decision-complete 的迁移主线
-  - Related items: `WS-002`, `MS-004`, `REQ-003`, `REQ-012`
-  - Definition of done: 未来 `.thoth` authority runtime 的关键未决点被整理成明确可实施的问题序列
+- `TD-003` `[ready]`: 把 V2 架构问题整理成 decision-complete 的迁移主线
+  - Related items: `WS-002`, `MS-004`, `REQ-003`
 
 ## Doing
 
@@ -38,41 +33,15 @@
 
 ## Verified
 
-- `TD-014` `[verified]`: 落地 strict `Decision -> Contract -> Task` 编译执行体系
-  - Related items: `WS-002`, `WS-003`, `REQ-003`, `REQ-014`, `CD-014`
-  - Definition of done: `.thoth/project/decisions|contracts|tasks` 成为严格执行 authority；`run` / `loop` 只接受 `--task-id`；`doctor` / `status` / dashboard / 自测试统一理解 compiler 状态；旧 `.agent-os/research-tasks/*.yaml` 只保留为 legacy 审计面且不再作为执行真源
-
-- `TD-013` `[verified]`: 实现 `/thoth:init` 的 audit-first adopt/init 主流程
-  - Related items: `WS-002`, `REQ-018`, `AC-010`, `AC-011`, `CD-012`
-  - Definition of done: `init` 先审计 repo 当前状态，再写 migration ledger / source map，并在保留已有 docs / `.agent-os` 内容的前提下补齐 Thoth 架构；相关单元与集成测试通过
-
-- `TD-002` `[verified]`: 审核当前插件公开 surface、README 与安装行为之间是否仍有漂移
-  - Related items: `WS-003`, `MS-003`, `REQ-006`, `CD-011`
-  - Definition of done: 当前公开命令面、README 叙事、安装后预期行为之间达成一致，并记录剩余问题
-
-- `TD-012` `[verified]`: 落地双层重型自测试系统
-  - Related items: `WS-003`, `REQ-017`, `AC-009`, `CD-010`
-  - Definition of done: 仓库存在单一自测试入口；`hard` 档真实覆盖 temp repo / run / loop / dashboard / hooks / fault injection；`heavy` 档具备 Playwright 与宿主矩阵能力；并有通过证据
-
-- `TD-011` `[verified]`: 落地 task-first 的 run-ledger dashboard contract
-  - Related items: `WS-002`, `WS-003`, `REQ-014`, `AC-008`, `CD-008`
-  - Definition of done: `.thoth/` 最小 authority tree 可由 `/thoth:init` 生成；dashboard backend 可读取 `.thoth/runs/*`；task 页面可展示 active run、history run 和 run logs；相关测试通过
-
-- `TD-007` `[verified]`: 初始化 `dev` 分支项目状态文档系统
-  - Related items: `MS-001`, `REQ-001`, `REQ-002`, `AC-001`, `AC-002`, `AC-003`
-  - Definition of done: 基于现有 repo 与规划材料建立根入口和 `.agent-os/` 文档系统，并通过项目状态校验
-
-- `TD-009` `[verified]`: 将外部 Thoth 规划材料完整吸收进 `.agent-os/`
-  - Related items: `WS-002`, `REQ-007`, `REQ-012`, `AC-006`
-  - Definition of done: 5 份外部规划文档被拆分承载到 repo-local `.agent-os/planning/`，并在核心状态文档中建立可恢复引用关系
-
-- `TD-010` `[verified]`: 建立 `Codex` / `Claude Code` 官方资料解析与真源治理层
-  - Related items: `WS-004`, `REQ-013`, `AC-007`, `CD-007`
-  - Definition of done: 15 个官方来源入表；建立 OpenAI / Claude Code 综合解析、跨平台对照与真源治理合同；并在 `AGENTS.md` 写入 freshness / authority 规则
+- `TD-002` `[verified]`: 当前插件公开 surface、README 与安装行为已重新对齐
+- `TD-007` `[verified]`: `dev` 状态文档系统已初始化
+- `TD-010` `[verified]`: 官方平台资料治理层已建立
+- `TD-011` `[verified]`: task-first 的 run-ledger dashboard contract 已落地
+- `TD-012` `[verified]`: 双层重型自测试系统已落地
+- `TD-013` `[verified]`: `/thoth:init` 的 audit-first adopt/init 主流程已落地
+- `TD-014` `[verified]`: strict `Decision -> Contract -> Task` 编译执行体系已落地
 
 ## Abandoned
 
-- `TD-008` `[abandoned]`: 把 bare command 名作为公共命令前缀策略
-  - Related items: `WS-003`, `REQ-006`
-  - Definition of done: N/A
-  - Reason: 实际宿主行为验证后不符合期望，公共命令已恢复为显式 `/thoth:*`
+- `TD-008` `[abandoned]`: 使用 bare command 名作为公共命令前缀
+  - Reason: 实际宿主行为验证后不符合目标，公共命令已恢复为显式 `/thoth:*`
