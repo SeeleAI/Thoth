@@ -11,7 +11,7 @@ from .command_specs import COMMAND_SPECS, CommandSpec, PUBLIC_CODEX_COMMANDS
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_NAME = "thoth"
 PLUGIN_VERSION = "0.1.4"
-PLUGIN_REPOSITORY = "https://github.com/Royalvice/Thoth"
+PLUGIN_REPOSITORY = "https://github.com/SeeleAI/thoth"
 PLUGIN_SKILLS_PATH = "./.agents/skills"
 
 
@@ -132,9 +132,9 @@ def render_plugin_manifest() -> dict:
         "version": PLUGIN_VERSION,
         "description": "Official Codex-native public surface for the Thoth authority runtime.",
         "author": {
-            "name": "Royalvice",
+            "name": "SeeleAI",
             "email": "viceyzy@foxmail.com",
-            "url": "https://github.com/Royalvice",
+            "url": "https://github.com/SeeleAI",
         },
         "homepage": f"{PLUGIN_REPOSITORY}#readme",
         "repository": PLUGIN_REPOSITORY,
@@ -152,7 +152,7 @@ def render_plugin_manifest() -> dict:
             "displayName": "Thoth",
             "shortDescription": "Single Codex entrypoint for the shared Thoth runtime.",
             "longDescription": "Operate Thoth through one $thoth command surface backed by the shared .thoth authority, durable run ledger, and dashboard-visible project state.",
-            "developerName": "Royalvice",
+            "developerName": "SeeleAI",
             "category": "Productivity",
             "capabilities": ["Read", "Write", "Execute"],
             "websiteURL": PLUGIN_REPOSITORY,
