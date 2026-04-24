@@ -18,7 +18,10 @@
 - Codex 以 executor-mode 进入 `run` / `loop` / `review`
 - 内部公开 skills 与独立公开 `:codex` 变体已经被收敛掉
 - `/thoth:init` 现在会先审计当前 repo 状态，再以 migration ledger 驱动 adopt/init，并生成最小 `.thoth/` authority tree：`project/`、`runs/`、`migrations/`、`derived/`
+- `.thoth/project/` 现已新增 strict planning authority：`decisions/`、`contracts/`、compiler-generated `tasks/`、`compiler-state.json`、`legacy-audit.json`
+- `run` / `loop` 已收敛为 strict task execution：默认只接受 `--task-id`，自由文本执行入口已被显式拒绝
 - dashboard 模板现在可以把 `.thoth/runs/*` 里的 active run、history run 和事件日志绑定回 task 视图
+- dashboard backend 现已优先读取 `.thoth/project/tasks/*.json`，并显式暴露 compiler / decision / contract 读面
 - 当前 repo 已有基础 durable supervisor / lease conflict / resume / stale heartbeat / dashboard restart 验证闭环，并已落成基线版 audit-first adopt/init；更强的交互式接管协议仍未实现
 - 当前 repo 新增了仓库级双层自测试系统：
   - `hard` 档覆盖真实 temp repo、真实 CLI 生命周期、真实 dashboard backend、hooks、stale、lease conflict、resume

@@ -67,6 +67,14 @@
     - `python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
     - `python /root/.codex/skills/agent-project-system/scripts/validate_project_system.py /mnt/cfs/5vr0p6/yzy/thoth --state-dir .agent-os` -> `[OK] Project state document system is valid`
 
+- `EV-015` related to `TD-014`: strict `Decision -> Contract -> Task` 编译执行体系已落地并通过 repo-real 验证
+  - Evidence: 新增 `thoth/task_contracts.py`；`thoth/cli.py`、`thoth/runtime.py`、`thoth/project_init.py` 已接入 strict compiler；dashboard backend 改为优先读取 `.thoth/project/tasks/*.json`，并暴露 `/api/decisions`、`/api/contracts`、`/api/compiler-state`；`thoth/selftest.py`、`tests/integration/test_runtime_lifecycle_e2e.py`、`tests/unit/test_dashboard_runtime_api.py`、`tests/unit/test_task_contracts.py` 已迁移到 strict authority
+  - Conclusion: 当前执行权已经从旧 `.agent-os/research-tasks/*.yaml` 切换到 `.thoth/project/decisions|contracts|tasks`，并且 `run` / `loop` 默认只接受编译生成的 `task_id`
+  - Validation:
+    - `pytest -q` -> `161 passed in 268.64s`
+    - `npm run build` in `templates/dashboard/frontend` -> passed
+    - `python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
+
 ## Failed Or Pending Checks
 
 - `EV-005` related to `WS-002`: 完整 `.thoth` durable runtime 仍未在当前 checkout 中实现

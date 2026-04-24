@@ -70,3 +70,8 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
   - Related items: `REQ-019`, `REQ-020`, `WS-001`, `WS-003`
   - Human rationale: 用户要求双宿主长期同步，且当前机器上的本地安装不能长期落后于仓库状态
   - Effect on project: `AGENTS.md`、状态文档和实际收尾流程都必须显式执行这套约束
+
+- `CD-014` `2026-04-24` `[accepted]`: Thoth 的严格任务执行模型固定为 `Decision -> Contract -> compiler-generated Task`，且 `run` / `loop` 默认只接受 `--task-id`
+  - Related items: `REQ-003`, `REQ-014`, `WS-002`, `WS-003`
+  - Human rationale: 用户明确拒绝模糊 task、拒绝让 agent 猜测方法或验收标准，并要求旧 vague task 彻底退出执行 authority
+  - Effect on project: `.thoth/project/decisions/`、`.thoth/project/contracts/` 与 `.thoth/project/tasks/` 成为新的严格执行 authority；自由文本 `run` / `loop` 被禁用；`doctor` / `dashboard` / `selftest` 必须以 compiler 状态为准

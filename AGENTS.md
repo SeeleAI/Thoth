@@ -110,6 +110,7 @@
    - 当前已实现事实
    - 已锁定但尚未实现的目标架构
 6. `/thoth:init` 必须按 audit-first adopt/init 语义工作：先审查当前 repo 的代码、文档与现有控制平面状态，再通过 migration ledger 进行受管更新，不得假设目标 repo 是空白仓库。
+7. 当前 checkout 已新增 strict execution planning authority：`.thoth/project/decisions/`、`.thoth/project/contracts/` 与编译生成的 `.thoth/project/tasks/`；`run` / `loop` 默认只接受 `--task-id`，不允许自由文本直接进入执行。
 
 ## 7. 升级给用户的条件
 

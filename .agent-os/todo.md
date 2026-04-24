@@ -38,6 +38,10 @@
 
 ## Verified
 
+- `TD-014` `[verified]`: 落地 strict `Decision -> Contract -> Task` 编译执行体系
+  - Related items: `WS-002`, `WS-003`, `REQ-003`, `REQ-014`, `CD-014`
+  - Definition of done: `.thoth/project/decisions|contracts|tasks` 成为严格执行 authority；`run` / `loop` 只接受 `--task-id`；`doctor` / `status` / dashboard / 自测试统一理解 compiler 状态；旧 `.agent-os/research-tasks/*.yaml` 只保留为 legacy 审计面且不再作为执行真源
+
 - `TD-013` `[verified]`: 实现 `/thoth:init` 的 audit-first adopt/init 主流程
   - Related items: `WS-002`, `REQ-018`, `AC-010`, `AC-011`, `CD-012`
   - Definition of done: `init` 先审计 repo 当前状态，再写 migration ledger / source map，并在保留已有 docs / `.agent-os` 内容的前提下补齐 Thoth 架构；相关单元与集成测试通过

@@ -2,6 +2,12 @@
 
 ## Entries
 
+- 2026-04-24 05:24 UTC [strict decision contract task compiler cutover]
+  - Worked on: `OBJ-001`, `WS-002`, `WS-003`, `TD-014`
+  - State changes: 执行 authority 从“runtime 进 `.thoth`，但 task 仍默认依赖 `.agent-os/research-tasks/*.yaml`” -> “`.thoth/project/decisions|contracts|tasks` 成为 strict authority，`run` / `loop` 仅执行 `--task-id`，旧 YAML 退化为 legacy 审计面”；dashboard/backend/selftest 与 doctor/status 全部开始理解 compiler state
+  - Evidence produced: 新增 `thoth/task_contracts.py`；更新 `thoth/cli.py`、`thoth/runtime.py`、`thoth/project_init.py`、`thoth/selftest.py`、`templates/dashboard/backend/{data_loader.py,progress_calculator.py,app.py,trigger_runner.py}`、`templates/dashboard/frontend/src/{types/index.ts,components/common/StatusBadge.vue,components/tasks/TaskBoard.vue}`；新增 `tests/unit/test_task_contracts.py`；`pytest -q` -> `161 passed in 268.64s`；`npm run build` in `templates/dashboard/frontend` -> passed；`python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
+  - Next likely action: 按仓库约束把本轮 `dev` 代码提交后精选集成到 `main`，push 两个分支，并刷新本机 Claude/Codex 的 Thoth 安装
+
 - 2026-04-24 03:46 UTC [Claude discuss bridge de-shadow and free-text hardening]
   - Worked on: `OBJ-001`, `WS-003`
   - State changes: Claude `/thoth:discuss` / `/thoth:review` 从“可能被目标仓库中的同名 `thoth` 包劫持，并在长文本输入时因参数形态漂移失败” -> “固定经插件本体 CLI wrapper 执行，并对自由文本采用 `--goal \"$ARGUMENTS\"` 安全传递”；`NeuralShader` 中由错误旧路径留下的一条假 discuss run 已清理

@@ -45,6 +45,9 @@
 - 2026-04-23: `/thoth:init` 已开始生成最小 `.thoth/` authority tree；dashboard 模板已支持 task 绑定 active run、history run 和 run logs，并采用 10 分钟 smart polling。
 - 2026-04-23: 新增 `scripts/selftest.py` / `thoth.selftest` 双层自测试系统；默认 `hard` 档已能真实验证 temp repo、run/loop 生命周期、dashboard backend、hooks、lease conflict、stale heartbeat、resume 与 restart。
 - 2026-04-23: 当前全量回归已扩展到 `139 passed`，并新增 process-real integration tests 覆盖 dashboard 真实进程与 runtime 生命周期。
+- 2026-04-24: `.thoth/project` 已新增 strict `Decision -> Contract -> Task` authority compiler；`run` / `loop` 现在只执行编译生成的 `task_id`，旧 `.agent-os/research-tasks/*.yaml` 被降级为 legacy 审计面而非执行真源。
+- 2026-04-24: dashboard backend 已优先读取 `.thoth/project/tasks/*.json`、并新增 compiler/decision/contract API；前端与状态 badge 已补齐 `ready` / `invalid` / `failed` strict-task 状态。
+- 2026-04-24: 本轮 strict task 改造验证通过：`pytest -q` -> `161 passed in 268.64s`，`npm run build` 通过，`python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
 
 ## Read Next
 
