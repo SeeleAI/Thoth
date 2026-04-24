@@ -48,6 +48,7 @@
 - 2026-04-24: `.thoth/project` 已新增 strict `Decision -> Contract -> Task` authority compiler；`run` / `loop` 现在只执行编译生成的 `task_id`，旧 `.agent-os/research-tasks/*.yaml` 被降级为 legacy 审计面而非执行真源。
 - 2026-04-24: dashboard backend 已优先读取 `.thoth/project/tasks/*.json`、并新增 compiler/decision/contract API；前端与状态 badge 已补齐 `ready` / `invalid` / `failed` strict-task 状态。
 - 2026-04-24: 本轮 strict task 改造验证通过：`pytest -q` -> `161 passed in 268.64s`，`npm run build` 通过，`python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
+- 2026-04-24: strict-cut 已继续收口：修复了 `/thoth:init` 在新仓库上写 `.agent-os/milestones.yaml` 的阻塞问题，清除了未进入生成链路的 legacy `.research-config.yaml` / `research-tasks` 模板面，并再次通过 `pytest -q`、`npm run build` 与 `python scripts/selftest.py --tier hard --hosts none`
 
 ## Read Next
 

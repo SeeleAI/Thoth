@@ -75,6 +75,16 @@
     - `npm run build` in `templates/dashboard/frontend` -> passed
     - `python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
 
+- `EV-016` related to `TD-014`: strict-cut 已完成 init 阻塞修复与 legacy 模板面清理，当前 repo 仅在迁移导入路径保留 legacy 兼容代码
+  - Evidence: `thoth/project_init.py` 已修复 `.agent-os/milestones.yaml` 创建顺序并在 `generate_milestones()` 中自建父目录；`README.md`、`contracts/core.md`、`contracts/audit.md` 已全部改写为 `.thoth` strict authority 叙事；`templates/agent-os/`、`templates/hooks/`、`templates/scripts/`、`templates/tests/` 等未进入生成链路的 legacy 模板已删除；`pyproject.toml` 与相关单测已移除对 `templates/agent-os/research-tasks` 的测试依赖
+  - Conclusion: 当前仓库已经从“strict runtime + legacy template 残留并存”收敛到“strict runtime + 仅在 init 迁移路径保留 legacy 导入”，不会再把旧 `.research-config.yaml` / `research-tasks` 模板误呈现为当前正式 surface
+  - Validation:
+    - `pytest -q tests/unit/test_cli_surface.py tests/unit/test_init.py tests/integration/test_init_workflow.py tests/integration/test_runtime_lifecycle_e2e.py` -> `27 passed in 141.39s`
+    - `pytest -q tests/unit/test_dashboard_runtime_api.py tests/unit/test_data_loader.py tests/unit/test_status.py tests/unit/test_doctor.py tests/unit/test_report.py tests/unit/test_host_hooks.py tests/unit/test_task_contracts.py` -> `29 passed in 0.98s`
+    - `pytest -q` -> `110 passed in 178.31s`
+    - `npm run build` in `templates/dashboard/frontend` -> passed
+    - `python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
+
 ## Failed Or Pending Checks
 
 - `EV-005` related to `WS-002`: 完整 `.thoth` durable runtime 仍未在当前 checkout 中实现

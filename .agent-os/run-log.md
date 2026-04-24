@@ -2,6 +2,12 @@
 
 ## Entries
 
+- 2026-04-24 08:18 UTC [strict cut closure and legacy template removal]
+  - Worked on: `OBJ-001`, `WS-002`, `WS-003`, `TD-014`
+  - State changes: `/thoth:init` 从“strict 设计已落地但新仓库首跑仍可能在 `.agent-os/milestones.yaml` 处崩溃” -> “新仓库、re-init、legacy import 路径均稳定通过”；repo surface 从“主代码 strict 化完成但 `templates/` 下仍残留旧 `.research-config.yaml` / `research-tasks` 模板” -> “仅迁移导入逻辑保留 legacy 兼容，未进入生成链路的旧模板面全部移除”
+  - Evidence produced: 更新 `thoth/project_init.py`、`README.md`、`contracts/{core.md,audit.md}`、`pyproject.toml`、`tests/conftest.py`、`tests/unit/{test_database.py,test_progress_calculator.py}`；删除 `templates/agent-os/`、`templates/hooks/`、`templates/scripts/`、`templates/tests/`、`templates/research-config.template.yaml`、`templates/milestones.template.yaml`、`templates/claude-md.template.md` 等 legacy 模板；`pytest -q tests/unit/test_cli_surface.py tests/unit/test_init.py tests/integration/test_init_workflow.py tests/integration/test_runtime_lifecycle_e2e.py` -> `27 passed in 141.39s`；`pytest -q tests/unit/test_dashboard_runtime_api.py tests/unit/test_data_loader.py tests/unit/test_status.py tests/unit/test_doctor.py tests/unit/test_report.py tests/unit/test_host_hooks.py tests/unit/test_task_contracts.py` -> `29 passed in 0.98s`；`pytest -q` -> `110 passed in 178.31s`；`npm run build` in `templates/dashboard/frontend` -> passed；`python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
+  - Next likely action: 按仓库约束在 `dev` 提交本轮 strict-cut 收口结果，`cherry-pick` 到 `main`，push 两个分支，并刷新本机 Claude/Codex 的 Thoth 安装
+
 - 2026-04-24 05:24 UTC [strict decision contract task compiler cutover]
   - Worked on: `OBJ-001`, `WS-002`, `WS-003`, `TD-014`
   - State changes: 执行 authority 从“runtime 进 `.thoth`，但 task 仍默认依赖 `.agent-os/research-tasks/*.yaml`” -> “`.thoth/project/decisions|contracts|tasks` 成为 strict authority，`run` / `loop` 仅执行 `--task-id`，旧 YAML 退化为 legacy 审计面”；dashboard/backend/selftest 与 doctor/status 全部开始理解 compiler state
