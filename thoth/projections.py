@@ -11,7 +11,7 @@ from .command_specs import COMMAND_SPECS, CommandSpec, PUBLIC_CODEX_COMMANDS
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_NAME = "thoth"
 PLUGIN_VERSION = "0.1.4"
-PLUGIN_REPOSITORY = "https://github.com/SeeleAI/thoth"
+PLUGIN_REPOSITORY = "https://github.com/SeeleAI/Thoth"
 PLUGIN_SKILLS_PATH = "./.agents/skills"
 
 

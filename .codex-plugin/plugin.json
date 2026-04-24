@@ -7,8 +7,8 @@
     "email": "viceyzy@foxmail.com",
     "url": "https://github.com/SeeleAI"
   },
-  "homepage": "https://github.com/SeeleAI/thoth#readme",
-  "repository": "https://github.com/SeeleAI/thoth",
+  "homepage": "https://github.com/SeeleAI/Thoth#readme",
+  "repository": "https://github.com/SeeleAI/Thoth",
   "license": "MIT",
   "keywords": [
     "thoth",
@@ -30,7 +30,7 @@
       "Write",
       "Execute"
     ],
-    "websiteURL": "https://github.com/SeeleAI/thoth",
+    "websiteURL": "https://github.com/SeeleAI/Thoth",
     "defaultPrompt": [
       "Show the current Thoth project status and active runs.",
       "Initialize Thoth in this repository and render project layers.",
