@@ -2,6 +2,18 @@
 
 ## Entries
 
+- 2026-04-24 03:46 UTC [Claude discuss bridge de-shadow and free-text hardening]
+  - Worked on: `OBJ-001`, `WS-003`
+  - State changes: Claude `/thoth:discuss` / `/thoth:review` 从“可能被目标仓库中的同名 `thoth` 包劫持，并在长文本输入时因参数形态漂移失败” -> “固定经插件本体 CLI wrapper 执行，并对自由文本采用 `--goal \"$ARGUMENTS\"` 安全传递”；`NeuralShader` 中由错误旧路径留下的一条假 discuss run 已清理
+  - Evidence produced: 新增 `scripts/thoth-cli-entry.py`；更新 `thoth/claude_bridge.py`、`thoth/runtime.py`、`thoth/cli.py`、`thoth/projections.py`、`commands/discuss.md`、`commands/review.md` 与对应单测；`pytest -q tests/unit/test_claude_bridge.py tests/unit/test_command_spec_generation.py tests/unit/test_plugin_surface.py tests/unit/test_init_permission_guidance.py` -> `20 passed in 38.77s`；在 `/mnt/cfs/5vr0p6/yzy/NeuralShader` 真实复现后，bridge event `argv` 已从 `["/opt/conda/bin/python3","-m","thoth.cli",...]` 变为 `["/opt/conda/bin/python3","/root/.claude/plugins/cache/thoth/thoth/0.1.4/scripts/thoth-cli-entry.py",...]`，且 stdout 为 `Recorded discuss note in .../.thoth/project/conversations.jsonl`
+  - Next likely action: 将本轮 `init` 权限提示和 Claude bridge de-shadow 修复一起在 `dev` 收敛验证后按仓库约束集成到 `main`，并刷新本机 Claude/Codex 安装
+
+- 2026-04-24 03:15 UTC [global Claude bridge allow and init reminder]
+  - Worked on: `OBJ-001`, `WS-003`
+  - State changes: Claude 全局 `~/.claude/settings.json` 已加入 `Bash(*thoth-claude-command.sh*)` allow 规则；`/thoth:init` 现在会显式报告 Claude bridge 权限是否已就绪，若缺失则提醒创建 `~/.claude/settings.json` 或项目 `.claude/settings.local.json`
+  - Evidence produced: 更新 `thoth/project_init.py`、`thoth/cli.py`、`README.md`、新增 `tests/unit/test_init_permission_guidance.py`；`pytest -q tests/unit/test_init_permission_guidance.py tests/unit/test_cli_surface.py tests/unit/test_init.py` -> `28 passed in 90.83s`；真实已安装 Claude 插件在无项目本地 `.claude/settings.local.json` 的前提下通过全局 allow 跑通 `/thoth:init` 与 `/thoth:doctor`，bridge event `plugin_root=/root/.claude/plugins/cache/thoth/thoth/0.1.4`
+  - Next likely action: 若要把这轮也按仓库约束集成到 `main`，下一步是在 `dev` 提交、验证工作树，然后执行 `cherry-pick` 到 `main`
+
 - 2026-04-24 01:55 UTC [Claude slash-command bridge closure]
   - Worked on: `OBJ-001`, `WS-003`, `WS-004`
   - State changes: Claude `/thoth:*` 从“生成说明文 + 模型即兴执行”收敛为“先桥接 repo-local CLI，再由 Claude 总结结果”；Claude host heavy gate 从 `thoth-main` 误路由/权限漂移收敛为稳定通过
