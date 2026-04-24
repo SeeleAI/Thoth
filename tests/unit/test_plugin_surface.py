@@ -37,9 +37,9 @@ def test_executor_mode_documents_exist():
         assert "Codex executor allowed: yes" in content
 
 
-def test_internal_agents_and_settings_exist():
-    """The plugin should provide a default main agent and an internal Codex worker."""
-    assert (ROOT / "settings.json").exists()
+def test_internal_agents_exist_without_default_agent_activation():
+    """Internal agents may exist, but the plugin should not force a default main agent."""
+    assert not (ROOT / "settings.json").exists()
     assert (ROOT / "agents" / "thoth-main.md").exists()
     assert (ROOT / "agents" / "codex-worker.md").exists()
 

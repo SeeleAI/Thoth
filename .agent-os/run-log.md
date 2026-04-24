@@ -2,6 +2,12 @@
 
 ## Entries
 
+- 2026-04-24 01:55 UTC [Claude slash-command bridge closure]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-004`
+  - State changes: Claude `/thoth:*` 从“生成说明文 + 模型即兴执行”收敛为“先桥接 repo-local CLI，再由 Claude 总结结果”；Claude host heavy gate 从 `thoth-main` 误路由/权限漂移收敛为稳定通过
+  - Evidence produced: 新增 `thoth/claude_bridge.py` 与 `scripts/thoth-claude-command.sh`；生成的 `commands/*.md` 含 shell bridge；删除默认 `settings.json` agent 激活；`pytest -q tests/unit/test_claude_bridge.py tests/unit/test_command_spec_generation.py tests/unit/test_plugin_surface.py` -> `14 passed in 8.82s`；真实 Claude slash gate `/thoth:init` 与 `/thoth:status` 在 `/tmp/thoth-claude-slash-run-EZXT0G` 通过并写入 `.thoth/derived/host-bridges/claude-command-events.jsonl`；`python scripts/selftest.py --tier heavy --hosts claude --keep-workdir` -> `overall_status=passed`, workdir `/tmp/thoth-selftest-frrbad7y`
+  - Next likely action: 继续把相同 bridge 思路只保留在 Claude public surface，内部 agent 仅作可选扩展；如需再收紧，可补充 full `pytest -q` 与双宿主联跑证据
+
 - 2026-04-23 00:00 UTC [dev project system adoption]
   - Worked on: `OBJ-001`, `WS-001`, `WS-003`, `WS-002`, `TD-007`
   - State changes: no state docs -> root contract + `.agent-os/` initialized; `TD-007` backlog -> done -> verified

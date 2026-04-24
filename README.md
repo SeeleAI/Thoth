@@ -69,6 +69,11 @@ claude plugin install thoth@thoth --scope user
 
 Use `project` or `local` scope instead of `user` if you want a narrower install.
 
+Claude `/thoth:*` commands execute the repo-local Thoth CLI through the plugin
+bridge before Claude summarizes the result. On the first run, Claude may ask
+you to approve `scripts/thoth-claude-command.sh`; approving it once or adding a
+project-local allow rule in `.claude/settings.local.json` is the intended path.
+
 ### 2. Install in Codex
 
 Codex uses the marketplace source as the install and enable step:

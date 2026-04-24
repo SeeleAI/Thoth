@@ -671,9 +671,42 @@ def _looks_like_transient_host_outage(result: CommandResult) -> bool:
     )
 
 
+def _read_claude_bridge_events(project_dir: Path) -> list[dict[str, Any]]:
+    path = project_dir / ".thoth" / "derived" / "host-bridges" / "claude-command-events.jsonl"
+    if not path.exists():
+        return []
+    events: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            events.append(payload)
+    return events
+
+
+def _write_claude_local_settings(project_dir: Path, repo_root: Path, recorder: Recorder) -> str:
+    settings_path = project_dir / ".claude" / "settings.local.json"
+    payload = {
+        "$schema": "https://json.schemastore.org/claude-code-settings.json",
+        "permissions": {
+            "allow": [
+                f"Bash(*{repo_root / 'scripts' / 'thoth-claude-command.sh'}*)",
+            ]
+        },
+    }
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return recorder.write_text("claude/settings.local.json", settings_path.read_text(encoding="utf-8"))
+
+
 def _host_claude(repo_root: Path, project_dir: Path, recorder: Recorder) -> None:
-    permission_mode = "dontAsk" if hasattr(os, "geteuid") and os.geteuid() == 0 else "bypassPermissions"
-    result = _run_command(
+    permission_mode = "dontAsk"
+    artifacts = [_write_claude_local_settings(project_dir, repo_root, recorder)]
+    init_result = _run_command(
         [
             "claude",
             "-p",
@@ -685,23 +718,79 @@ def _host_claude(repo_root: Path, project_dir: Path, recorder: Recorder) -> None
             "--output-format",
             "stream-json",
             "--include-hook-events",
-            "Use the official /thoth:init command to initialize the current repository, then run /thoth:status. Reply with the exact token SELFTEST_OK.",
+            "/thoth:init",
         ],
         cwd=project_dir,
         timeout=240,
     )
-    artifacts = _save_command(recorder, "host-claude", result)
-    success = result.returncode == 0 and "SELFTEST_OK" in result.stdout and (project_dir / ".thoth" / "project" / "project.json").exists()
-    hook_seen = "hook" in result.stdout.lower() or "session" in result.stdout.lower()
+    artifacts.extend(_save_command(recorder, "host-claude-init", init_result))
+    status_result = _run_command(
+        [
+            "claude",
+            "-p",
+            "--plugin-dir",
+            str(repo_root),
+            "--permission-mode",
+            permission_mode,
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--include-hook-events",
+            "/thoth:status",
+        ],
+        cwd=project_dir,
+        timeout=240,
+    )
+    artifacts.extend(_save_command(recorder, "host-claude-status", status_result))
+    combined_stdout = f"{init_result.stdout}\n{status_result.stdout}"
+    combined_stderr = f"{init_result.stderr}\n{status_result.stderr}"
+    bridge_events = _read_claude_bridge_events(project_dir)
+    bridge_commands = [event.get("command_id") for event in bridge_events]
+    bridge_success = {
+        event.get("command_id"): bool(event.get("bridge_success"))
+        for event in bridge_events
+        if isinstance(event.get("command_id"), str)
+    }
+    bridge_artifact = None
+    bridge_path = project_dir / ".thoth" / "derived" / "host-bridges" / "claude-command-events.jsonl"
+    if bridge_path.exists():
+        bridge_artifact = str(bridge_path)
+    if bridge_artifact:
+        artifacts.append(bridge_artifact)
+    success = (
+        init_result.returncode == 0
+        and status_result.returncode == 0
+        and (project_dir / ".thoth" / "project" / "project.json").exists()
+        and "init" in bridge_commands
+        and "status" in bridge_commands
+        and bridge_success.get("init") is True
+        and bridge_success.get("status") is True
+    )
+    hook_seen = "hook" in combined_stdout.lower() or "session" in combined_stdout.lower()
     if success:
         status = "passed" if hook_seen else "degraded"
         detail = "Claude host initialized the repo through the plugin surface and emitted hook/session evidence." if hook_seen else "Claude host initialized the repo, but hook/session evidence was not emitted in stream output."
-    elif _looks_like_transient_host_outage(result):
+    elif _looks_like_transient_host_outage(init_result) or _looks_like_transient_host_outage(status_result):
         status = "degraded"
         detail = "Claude host matrix hit an upstream/transient host outage rather than a deterministic Thoth runtime failure."
+    elif "unknown skill: thoth:thoth-main" in f"{combined_stdout}\n{combined_stderr}".lower():
+        status = "failed"
+        detail = "Claude host tried to route through the internal thoth-main agent instead of the public /thoth:* slash commands."
+    elif "requires approval" in f"{combined_stdout}\n{combined_stderr}".lower():
+        status = "failed"
+        detail = "Claude host slash commands still required approval for the bridge shell command, so the repo-local runtime did not execute autonomously."
+    elif "shell command execution disabled by policy" in combined_stdout.lower():
+        status = "failed"
+        detail = "Claude host disabled skill shell execution, so /thoth:* could not bridge into the repo-local runtime."
+    elif (project_dir / ".thoth" / "project" / "project.json").exists() and not bridge_events:
+        status = "failed"
+        detail = "Claude host created project state, but no Claude command bridge events were recorded. This indicates a prompt-only fallback rather than the real repo runtime."
     else:
         status = "failed"
-        detail = "Claude host execution failed."
+        detail = (
+            "Claude host execution failed. "
+            f"init_rc={init_result.returncode} status_rc={status_result.returncode} bridge_commands={bridge_commands}"
+        )
     recorder.add("host.claude", status, detail, artifacts)
 
 
@@ -840,7 +929,7 @@ def run_selftest(
                     _host_claude(ROOT, host_project, recorder)
                 except Exception as exc:  # pragma: no cover - environment-specific
                     recorder.add("host.claude", "degraded", f"Claude host matrix degraded: {exc}", _snapshot_runtime(recorder, host_project, "host-claude"))
-            else:
+            elif hosts == "auto":
                 recorder.add("host.claude", "degraded", "Claude host matrix skipped because the CLI/auth surface was unavailable for this environment.")
 
             if _should_run_host(hosts, host="codex", capabilities=capabilities):
@@ -851,7 +940,7 @@ def run_selftest(
                     _host_codex(ROOT, host_project, recorder)
                 except Exception as exc:  # pragma: no cover - environment-specific
                     recorder.add("host.codex", "degraded", f"Codex host matrix degraded: {exc}", _snapshot_runtime(recorder, host_project, "host-codex"))
-            else:
+            elif hosts == "auto":
                 recorder.add("host.codex", "degraded", "Codex host matrix skipped because the CLI/auth surface was unavailable for this environment.")
 
         summary = recorder.summary_payload(tier=tier, capabilities=capabilities, work_root=str(base_dir))

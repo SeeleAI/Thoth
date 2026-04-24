@@ -23,8 +23,10 @@ def test_claude_surface_renders_from_spec():
     spec = next(spec for spec in COMMAND_SPECS if spec.command_id == "run")
     rendered = render_claude_command(spec)
     assert "name: thoth:run" in rendered
+    assert "disable-model-invocation: true" in rendered
     assert "Durable: yes" in rendered
     assert "Codex executor allowed: yes" in rendered
+    assert 'scripts/thoth-claude-command.sh" run $ARGUMENTS' in rendered
 
 
 def test_codex_skill_lists_single_public_entry():

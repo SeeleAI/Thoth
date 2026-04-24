@@ -7,7 +7,7 @@
 ## Verification Snapshot
 
 - `last_verified_utc`: `2026-04-23T04:04:51Z`
-- `sources`: `SRC-ANT-001` ~ `SRC-ANT-007`
+- `sources`: `SRC-ANT-001` ~ `SRC-ANT-009`
 
 ## 1. Runtime model
 
@@ -77,6 +77,36 @@
 
 - 这与“外部 worker / 子任务执行体”的心智模型兼容
 - 但 sub-agent 不是 durable authority，也不是项目级真相层
+
+### Skills and custom commands
+
+本轮重新核验 `skills` / custom commands 官方文档后，和 Thoth 直接相关的结论是：
+
+- `.claude/commands/*.md` 与 skill 走的是同一机制
+- slash command 本质上仍是 prompt-backed skill，而不是宿主硬编码命令
+- custom command 支持 shell preprocessing 与 `$ARGUMENTS`
+- 若 shell preprocessing 被策略禁用，命令内容会被替换成类似 `[shell command execution disabled by policy]`，而不是静默成功
+
+对 Thoth 的设计含义：
+
+- Claude `/thoth:*` 不能只放说明文，否则 Claude 会把命令当“让模型自己完成任务”的提示
+- 要想让 `/thoth:*` 真正落到 repo runtime，必须在命令 surface 中桥接 repo-local CLI，再让 Claude只做结果总结
+- 这也意味着自测不能只看“Claude 回复得像成功了”，必须验证 bridge 真事件和 canonical authority 文件
+
+### Permissions
+
+本轮重新核验 `permissions` 官方文档后，和 Thoth 直接相关的结论是：
+
+- `dontAsk` 会自动拒绝所有未被预先允许的工具调用
+- `.claude/settings.local.json` 是每个项目、每个开发者的本地允许规则入口，适合放不进 Git 的 trusted allowlist
+- 权限优先级是：managed > CLI args > `.claude/settings.local.json` > `.claude/settings.json` > user settings
+- Bash allow 规则可以用于让特定受信脚本在 `dontAsk` 下无交互执行
+
+对 Thoth 的设计含义：
+
+- Claude host 自测若想稳定验证 `/thoth:*` 真执行面，就不能依赖人工点批准
+- 正确路径是在临时测试仓中写入仅放行 Thoth bridge 脚本的 `.claude/settings.local.json`
+- 这类 allowlist 只是宿主权限层，不是 `.thoth` authority，也不应被误写进项目共享真相层
 
 ### Hooks
 

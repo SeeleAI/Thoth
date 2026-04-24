@@ -17,7 +17,7 @@
 
 ## Verification Snapshot
 
-- `verified_at_utc`: `2026-04-23T14:55:53Z`
+- `verified_at_utc`: `2026-04-24T01:55:00Z`
 - `verified_by`: `Codex`
 - `policy`: `high-volatility 30 days / concept-and-best-practice 60 days`
 
@@ -43,6 +43,8 @@
 | `SRC-ANT-005` | Anthropic | Claude Code Hooks | https://code.claude.com/docs/en/hooks | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 任何 hooks 事件、输入 JSON、控制语义判断时 | 事件矩阵和输入合同对实现影响很大，必须保持最新 |
 | `SRC-ANT-006` | Anthropic | Claude Code GitHub Actions | https://code.claude.com/docs/en/github-actions | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于 CI/CD、PR automation、非交互运行判断时 | 与 best practices、hooks、remote 工作流耦合 |
 | `SRC-ANT-007` | Anthropic | Claude Code Best practices | https://code.claude.com/docs/en/best-practices | `claude-code-runtime-and-platforms.md` | `active` | `medium` | `60` | `2026-04-23T04:04:51Z` | 用于推荐性工作流、提示与工程实践判断时 | 这是建议层，不是强合同，但仍属官方指导 |
+| `SRC-ANT-008` | Anthropic | Claude Code Skills / custom commands | https://code.claude.com/docs/en/skills | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T01:55:00Z` | 用于 `/thoth:*` slash command、custom command 前端、shell preprocessing、`$ARGUMENTS` 等行为判断时 | 直接决定 Claude plugin public surface 是否是真执行还是说明文 |
+| `SRC-ANT-009` | Anthropic | Claude Code permissions | https://code.claude.com/docs/en/permissions | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T01:55:00Z` | 用于 `dontAsk`、`.claude/settings.local.json` allow 规则、权限优先级判断时 | 直接影响 Claude host 自测与 slash command bridge 是否可无交互运行 |
 
 ## Read Path
 
