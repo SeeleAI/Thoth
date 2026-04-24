@@ -85,9 +85,9 @@
     - `npm run build` in `templates/dashboard/frontend` -> passed
     - `python scripts/selftest.py --tier hard --hosts none` -> `overall_status=passed`
 
-- `EV-017` related to `WS-003`: 仓库已完成对 `SeeleAI/thoth` 的安全上游迁移，删除 `Royalvice/Thoth` 后不会遗留安装/分发悬空链接
-  - Evidence: `git remote set-url origin https://github.com/SeeleAI/thoth.git` 已执行；`README.md` 中所有 GitHub 安装与链接地址已改为 `SeeleAI/thoth`；`thoth/projections.py` 中 `PLUGIN_REPOSITORY`、作者 URL 与 `developerName` 已切换；生成后的 `.codex-plugin/plugin.json` 已同步为 `https://github.com/SeeleAI/thoth`
-  - Conclusion: 当前仓库的 canonical upstream、README 安装文案、Codex plugin 元数据和生成源已经一致指向 `SeeleAI/thoth`；删除旧仓库不会打断公开安装面
+- `EV-017` related to `WS-003`: 仓库已完成对 `SeeleAI/Thoth` 的安全上游迁移，删除 `Royalvice/Thoth` 后不会遗留安装/分发悬空链接
+  - Evidence: `git remote set-url origin https://github.com/SeeleAI/Thoth.git` 已执行；`README.md` 中所有 GitHub 安装与链接地址已改为 `SeeleAI/Thoth`；`thoth/projections.py` 中 `PLUGIN_REPOSITORY`、作者 URL 与 `developerName` 已切换；生成后的 `.codex-plugin/plugin.json` 已同步为 `https://github.com/SeeleAI/Thoth`
+  - Conclusion: 当前仓库的 canonical upstream、README 安装文案、Codex plugin 元数据和生成源已经一致指向 `SeeleAI/Thoth`；删除旧仓库不会打断公开安装面
   - Validation:
     - `pytest -q tests/unit/test_command_spec_generation.py tests/unit/test_plugin_surface.py` -> `15 passed in 0.30s`
     - `rg -n "Royalvice|github.com/Royalvice/Thoth|Royalvice/Thoth|github.com/Royalvice" . -g '!templates/dashboard/frontend/dist/**' -g '!.git/**'` -> 仅剩 `LICENSE` copyright 署名

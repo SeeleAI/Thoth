@@ -76,7 +76,7 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
   - Human rationale: 用户明确拒绝模糊 task、拒绝让 agent 猜测方法或验收标准，并要求旧 vague task 彻底退出执行 authority
   - Effect on project: `.thoth/project/decisions/`、`.thoth/project/contracts/` 与 `.thoth/project/tasks/` 成为新的严格执行 authority；自由文本 `run` / `loop` 被禁用；`doctor` / `dashboard` / `selftest` 必须以 compiler 状态为准
 
-- `CD-015` `2026-04-24` `[accepted]`: 仓库的唯一保留上游切换为 `https://github.com/SeeleAI/thoth`，`Royalvice/Thoth` 仅作为待删除旧地址
+- `CD-015` `2026-04-24` `[accepted]`: 仓库的唯一保留上游切换为 `https://github.com/SeeleAI/Thoth`，`Royalvice/Thoth` 仅作为待删除旧地址
   - Related items: `WS-003`, `REQ-020`
-  - Human rationale: 用户计划删除旧仓库，因此必须先把 git 上游、README、插件元数据与生成源全部切到新的 canonical repository，确保删除旧仓库后安装和分发面不悬空
-  - Effect on project: `origin`、`README.md`、`thoth/projections.py` 与 `.codex-plugin/plugin.json` 必须统一指向 `SeeleAI/thoth`；仅法律署名字段如 `LICENSE` copyright 不随本次上游迁移改写
+  - Human rationale: 用户计划删除旧仓库，因此必须先把 git 上游、README、插件元数据与生成源全部切到新的 canonical repository，确保删除旧仓库后安装和分发面不悬空；GitHub 实际返回的 canonical 路径为 `SeeleAI/Thoth`
+  - Effect on project: `origin`、`README.md`、`thoth/projections.py` 与 `.codex-plugin/plugin.json` 必须统一指向 `SeeleAI/Thoth`；仅法律署名字段如 `LICENSE` copyright 不随本次上游迁移改写
