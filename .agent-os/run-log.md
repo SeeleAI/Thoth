@@ -2,6 +2,12 @@
 
 ## Entries
 
+- 2026-04-24 08:34 UTC [canonical upstream migration to SeeleAI]
+  - Worked on: `OBJ-001`, `WS-003`
+  - State changes: 仓库从“git 上游、README 安装文案与 Codex plugin 元数据仍指向 `Royalvice/Thoth`” -> “canonical upstream、README、生成源与 plugin manifest 全部统一到 `https://github.com/SeeleAI/thoth`”；`LICENSE` 中的版权署名保持不变，不把上游迁移误做成作者身份改写
+  - Evidence produced: 更新 `README.md`、`thoth/projections.py`、`.codex-plugin/plugin.json`；执行 `git remote set-url origin https://github.com/SeeleAI/thoth.git`；执行 `thoth.projections.sync_repository_surfaces()` 重刷生成面；`pytest -q tests/unit/test_command_spec_generation.py tests/unit/test_plugin_surface.py` -> `15 passed in 0.30s`；`rg` 复查后仅剩 `LICENSE` 中的 `Royalvice` 版权署名
+  - Next likely action: 按仓库约束在 `dev` 提交本轮上游迁移，`cherry-pick` 到 `main`，push `origin/dev` 与 `origin/main` 到新的 `SeeleAI/thoth`，并刷新本机 Claude/Codex 的 Thoth 安装来源
+
 - 2026-04-24 08:18 UTC [strict cut closure and legacy template removal]
   - Worked on: `OBJ-001`, `WS-002`, `WS-003`, `TD-014`
   - State changes: `/thoth:init` 从“strict 设计已落地但新仓库首跑仍可能在 `.agent-os/milestones.yaml` 处崩溃” -> “新仓库、re-init、legacy import 路径均稳定通过”；repo surface 从“主代码 strict 化完成但 `templates/` 下仍残留旧 `.research-config.yaml` / `research-tasks` 模板” -> “仅迁移导入逻辑保留 legacy 兼容，未进入生成链路的旧模板面全部移除”
