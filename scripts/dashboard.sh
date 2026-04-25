@@ -44,14 +44,31 @@ DASHBOARD_BACKEND="tools/dashboard/backend"
 DASHBOARD_FRONTEND="tools/dashboard/frontend"
 LOG_DIR=".thoth/derived"
 LOG_FILE="${LOG_DIR}/dashboard.log"
+PID_FILE="${LOG_DIR}/dashboard.pid"
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 find_pid() {
-    # Find uvicorn process serving our dashboard port
-    pgrep -f "uvicorn.*--port.*${PORT}" 2>/dev/null || true
+    if [ -f "$PID_FILE" ]; then
+        local pid
+        pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "$pid"
+            return 0
+        fi
+        rm -f "$PID_FILE"
+    fi
+
+    # Fall back to process scan for legacy starts that predate the pid file.
+    local pid
+    pid="$(pgrep -f "uvicorn.*--port.*${PORT}" 2>/dev/null | head -n 1 || true)"
+    if [ -n "$pid" ]; then
+        mkdir -p "$LOG_DIR"
+        printf '%s\n' "$pid" > "$PID_FILE"
+        echo "$pid"
+    fi
 }
 
 is_running() {
@@ -89,9 +106,10 @@ do_start() {
     echo "Starting dashboard on port ${PORT}..."
     mkdir -p "$LOG_DIR"
     cd "$DASHBOARD_BACKEND"
-    "$PYTHON_BIN" -m uvicorn app:app --host 0.0.0.0 --port "${PORT}" \
-        > "${OLDPWD}/${LOG_FILE}" 2>&1 &
+    nohup setsid "$PYTHON_BIN" -m uvicorn app:app --host 0.0.0.0 --port "${PORT}" \
+        > "${OLDPWD}/${LOG_FILE}" 2>&1 < /dev/null &
     local pid=$!
+    printf '%s\n' "$pid" > "${OLDPWD}/${PID_FILE}"
     cd - > /dev/null
 
     # Wait briefly and check it started
@@ -109,6 +127,7 @@ do_stop() {
     pid=$(find_pid)
     if [ -z "$pid" ]; then
         echo "Dashboard is not running."
+        rm -f "$PID_FILE"
         return 0
     fi
 
@@ -126,6 +145,7 @@ do_stop() {
     if kill -0 "$pid" 2>/dev/null; then
         kill -9 "$pid" 2>/dev/null || true
     fi
+    rm -f "$PID_FILE"
 
     echo "Dashboard stopped."
 }

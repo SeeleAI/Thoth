@@ -70,3 +70,20 @@ def test_bridge_uses_plugin_cli_even_if_project_has_shadow_thoth_package(tmp_pat
     payload = json.loads(result.stdout)
     assert payload["bridge_success"] is True
     assert "shadow-cli-should-not-run" not in payload["stderr"]
+
+
+def test_bridge_rewrites_review_positional_target_for_prepare(tmp_path):
+    init_result = _run_bridge(tmp_path, "init")
+    assert json.loads(init_result.stdout)["bridge_success"] is True
+
+    result = _run_bridge(tmp_path, "review", "--executor", "codex", "backend/app.py")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["command_id"] == "review"
+    assert payload["bridged_command_id"] == "prepare"
+    assert payload["bridge_success"] is True
+    assert "--target" in payload["argv"]
+    assert "backend/app.py" in payload["argv"]
+    assert payload["packet"]["command_id"] == "review"
+    assert payload["packet"]["target"] == "backend/app.py"
+    assert "protocol_commands" in payload["packet"]

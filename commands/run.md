@@ -1,8 +1,9 @@
 ---
 name: thoth:run
-description: Create one durable run under the shared runtime and attach in the foreground by default.
-argument-hint: "[--executor claude|codex] [--host claude|codex] [--detach] [--attach <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>"
-disable-model-invocation: true
+description: Prepare one strict run packet for live in-session execution, or use `--sleep` to hand it to an external worker.
+argument-hint: "[--executor claude|codex] [--host claude|codex] [--sleep] [--attach <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>"
+disable-model-invocation: false
+allowed-tools: Read, Glob, Grep, Edit, Write, Bash, Task
 ---
 
 # /thoth:run
@@ -17,28 +18,37 @@ The repo-local Thoth runtime command for this slash command has already been
 executed before Claude sees this prompt.
 
 ```!
-"${CLAUDE_PLUGIN_ROOT}/scripts/thoth-claude-command.sh" run $ARGUMENTS
+"${CLAUDE_PLUGIN_ROOT}/scripts/thoth-claude-command.sh" run --host claude $ARGUMENTS
 ```
 
 ## Response Contract
 
 - Treat the structured bridge payload above as the only authority for this command invocation.
 - Do not invent or hand-roll alternate `.thoth` layouts, migrations, run ledgers, or host projections.
-- If `bridge_success` is `true`, summarize the real result of the already executed command and the next useful action.
 - If `bridge_success` is `false`, explain the exact failure from the bridge payload and stop.
-- Do not run Bash, Write, or Task tools unless the user explicitly asks for follow-up work beyond this command result.
+- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, the command is NOT finished yet: execute `packet` in this Claude session using native tool use or subagents as needed.
+- For `run` and `loop`, use `packet.strict_task.goal_statement`, `packet.strict_task.implementation_recipe`, and `packet.strict_task.eval_entrypoint` as the task contract; do real code edits, run the relevant validators, and do not stop after merely restating the packet.
+- Prefer running `packet.strict_task.eval_entrypoint.command` exactly as provided; do not hand-roll a parallel service lifecycle when the packet already gives a validator entrypoint.
+- If `packet.executor` is `codex`, the substantive execution must really flow through Codex from this Claude session. Do not silently do the work yourself and then claim Codex parity.
+- For `packet.executor == codex`, use the installed Codex surface or `codex exec` from Bash to perform the requested run/review work, keep the Thoth ledger writes in this session, and preserve the same `packet` / acceptance shape.
+- While executing a live packet, keep `.thoth` updated only through the internal runtime protocol commands included in `packet.protocol_commands`.
+- End the command only after the protocol reaches a terminal state via `complete` or `fail`; leaving the run in `prepared` or `running` without a terminal protocol write is a contract violation.
+- If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up (`status`, `watch`, `dashboard`, or `report`).
+- For `review`, inspect `packet.target`, produce structured findings matching `packet.required_review_shape`, and finish by writing them through the protocol rather than free-form narration only.
+- For `review` with `packet.executor == codex`, make Codex inspect `packet.target`, then write the resulting structured findings through `packet.protocol_commands.complete` instead of returning prose only.
+- If you only summarize the packet, list the task, or say what should happen next without executing it, treat that as failure and call `fail` with the exact blocker.
 
 ## Scope Guard
 
 **CAN:**
-- Create a durable run and attach to it
-- Delegate execution to Codex through the shared runtime path
-- Write run/state/events/acceptance/artifacts ledgers
+- Prepare a durable run packet for the current host session
+- Switch to an external worker only with --sleep
+- Write run/state/events/acceptance/artifacts ledgers through the protocol
 - Stop or watch an existing run
 
 **CANNOT:**
 - Use host session state as runtime truth
-- Create a non-durable foreground-only pseudo run
+- Use detached live execution without --sleep
 
 ## Runtime Contract
 
@@ -46,8 +56,8 @@ executed before Claude sees this prompt.
 - Codex executor allowed: yes
 - Hooks required for correctness: no
 - Subagents required for correctness: no
-- Lifecycle: create -> lease -> supervise -> attach/watch/stop -> acceptance
-- Acceptance: A durable run ledger exists under .thoth/runs/<run_id>, and execution only starts from a compiler-generated strict task.
+- Lifecycle: prepare -> live-native|external-worker -> protocol-update -> attach/watch/stop -> acceptance
+- Acceptance: A durable run ledger plus execution packet exist under .thoth/runs/<run_id>, live mode stays in the current host session, and `--sleep` backgrounds through the same authority shape.
 
 ## Interaction Gaps
 

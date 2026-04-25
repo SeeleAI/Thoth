@@ -53,12 +53,31 @@ def _canonical_checks(project_root: Path, command_id: str, command_args: list[st
         "source_map_exists": source_map.exists(),
     }
 
-    if command_id in {"run", "loop"} and not any(flag in command_args for flag in ("--attach", "--watch", "--stop")):
-        candidate = stdout.strip().splitlines()[-1].strip() if stdout.strip() else ""
+    if command_id in {"run", "loop", "review"} and not any(flag in command_args for flag in ("--attach", "--watch", "--stop")):
+        packet = {}
+        try:
+            packet = json.loads(stdout) if stdout.strip().startswith("{") else {}
+        except json.JSONDecodeError:
+            packet = {}
+        candidate = str(packet.get("run_id") or "").strip()
         checks["run_id"] = candidate
+        checks["packet_kind"] = packet.get("packet_kind")
+        checks["dispatch_mode"] = packet.get("dispatch_mode")
         checks["run_ledger_exists"] = bool(candidate) and (project_root / ".thoth" / "runs" / candidate / "run.json").exists()
+        checks["packet_exists"] = bool(candidate) and (project_root / ".thoth" / "runs" / candidate / "packet.json").exists()
 
     return checks
+
+
+def _parse_packet(stdout: str) -> dict[str, Any]:
+    text = stdout.strip()
+    if not text.startswith("{"):
+        return {}
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _bridge_success(command_id: str, returncode: int, checks: dict[str, Any]) -> bool:
@@ -72,9 +91,34 @@ def _bridge_success(command_id: str, returncode: int, checks: dict[str, Any]) ->
         )
     if command_id == "status":
         return bool(checks.get("project_manifest_exists"))
-    if command_id in {"run", "loop"} and "run_ledger_exists" in checks:
-        return bool(checks.get("run_ledger_exists"))
+    if command_id in {"run", "loop", "review"} and "run_ledger_exists" in checks:
+        return bool(checks.get("run_ledger_exists") and checks.get("packet_exists"))
     return True
+
+
+def _rewrite_review_prepare_args(command_args: list[str]) -> list[str]:
+    rewritten: list[str] = []
+    target_parts: list[str] = []
+    expects_value = {"--goal", "--target", "--host", "--executor"}
+    idx = 0
+    while idx < len(command_args):
+        token = command_args[idx]
+        if token in expects_value:
+            rewritten.append(token)
+            if idx + 1 < len(command_args):
+                rewritten.append(command_args[idx + 1])
+            idx += 2
+            continue
+        if token.startswith("--"):
+            rewritten.append(token)
+            idx += 1
+            continue
+        target_parts.append(token)
+        idx += 1
+    has_explicit_target = any(flag in rewritten for flag in ("--target", "--goal"))
+    if target_parts and not has_explicit_target:
+        rewritten.extend(["--target", " ".join(target_parts)])
+    return rewritten
 
 
 def run_bridge(command_id: str, command_args: list[str], *, project_root: Path | None = None) -> dict[str, Any]:
@@ -87,7 +131,13 @@ def run_bridge(command_id: str, command_args: list[str], *, project_root: Path |
     env["PYTHONPATH"] = str(plugin_root) if not existing_pythonpath else f"{plugin_root}:{existing_pythonpath}"
     env["THOTH_CLAUDE_BRIDGE"] = "1"
 
-    argv = [sys.executable, str(cli_entry), command_id, *command_args]
+    actual_command = command_id
+    actual_args = list(command_args)
+    if command_id in {"run", "loop", "review"} and not any(flag in command_args for flag in ("--attach", "--watch", "--stop")):
+        actual_command = "prepare"
+        prepare_args = _rewrite_review_prepare_args(command_args) if command_id == "review" else list(command_args)
+        actual_args = ["--command-id", command_id, *prepare_args]
+    argv = [sys.executable, str(cli_entry), actual_command, *actual_args]
     started = time.time()
     result = subprocess.run(
         argv,
@@ -99,6 +149,9 @@ def run_bridge(command_id: str, command_args: list[str], *, project_root: Path |
     duration = round(time.time() - started, 3)
 
     checks = _canonical_checks(project_root, command_id, command_args, result.stdout)
+    packet = {}
+    if command_id in {"run", "loop", "review"} and actual_command == "prepare":
+        packet = _parse_packet(result.stdout)
     payload = {
         "schema_version": 1,
         "bridge": "claude-command",
@@ -106,6 +159,7 @@ def run_bridge(command_id: str, command_args: list[str], *, project_root: Path |
         "project_root": str(project_root),
         "plugin_root": str(plugin_root),
         "command_id": command_id,
+        "bridged_command_id": actual_command,
         "arguments": command_args,
         "argv": argv,
         "returncode": result.returncode,
@@ -115,6 +169,8 @@ def run_bridge(command_id: str, command_args: list[str], *, project_root: Path |
         "stdout": _trim(result.stdout.strip()),
         "stderr": _trim(result.stderr.strip()),
     }
+    if packet:
+        payload["packet"] = packet
     _append_event(project_root, payload)
     return payload
 

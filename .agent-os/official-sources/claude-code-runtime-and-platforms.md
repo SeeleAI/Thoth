@@ -6,8 +6,8 @@
 
 ## Verification Snapshot
 
-- `last_verified_utc`: `2026-04-23T04:04:51Z`
-- `sources`: `SRC-ANT-001` ~ `SRC-ANT-009`
+- `last_verified_utc`: `2026-04-24T16:40:14Z`
+- `sources`: `SRC-ANT-001` ~ `SRC-ANT-014`
 
 ## 1. Runtime model
 
@@ -58,11 +58,29 @@
 
 - Claude Code 支持某种远程控制/衔接终端的产品工作流
 - 这类能力依赖账号、认证与产品面前提
+- 远程控制更接近“把用户带回一个正在运行或可接管的宿主环境”，而不是把 repo 状态本身外包给平台
 
 对 Thoth 的设计含义：
 
 - Remote Control 可以启发“新 session 接管旧执行面”的用户体验设计
 - 但不能被等同为 `.thoth` 的 lease transfer 协议
+
+### Agent SDK runtime, sessions, and storage
+
+本轮新增回源了 Claude Code Agent SDK 的 overview / sessions / session storage / hosting / monitoring 页面，和 Thoth 最相关的官方事实是：
+
+- SDK 会创建和恢复长期 session，而不是每轮都新建无状态调用。
+- session storage 是显式概念，官方提供持久化与恢复路径。
+- hosting 文档明确区分 session owner、server process，以及 sleep/wake 生命周期。
+- session continuity 不只包含消息，还包括工具状态与运行中的 shell 上下文。
+
+对 Thoth 的设计含义：
+
+- Claude Code 宿主侧确实已经提供“跨 turn 持续会话”的官方 substrate，这比单纯 CLI prompt loop 更接近长时自主运行。
+- 但它的 authority 仍是宿主级 session/runtime，不是 repo-native project ledger。
+- 对 Thoth 来说，最好的关系不是二选一，而是：
+  - Claude session/storage 负责宿主连续性
+  - `.thoth/runs/*` 负责项目级真相、可审计恢复点和跨宿主接管
 
 ## 3. Extension and specialization
 
@@ -72,11 +90,27 @@
 
 - Claude Code 支持 sub-agents，用于分担研究或并行上下文工作
 - sub-agents 与 task/tool 调用模型关联紧密
+- 官方文档显式区分 foreground subagent 与 background subagent，且子代理拥有独立上下文窗口与独立工具轨迹
 
 对 Thoth 的设计含义：
 
 - 这与“外部 worker / 子任务执行体”的心智模型兼容
 - 但 sub-agent 不是 durable authority，也不是项目级真相层
+
+### Shell and monitor
+
+本轮回源 `Agent SDK monitoring` 与 `hosting` 页面后，和长时任务最相关的信号是：
+
+- Claude Agent SDK 有专门的 `Monitor` 工具，定位就是观察与跟踪长时间运行的 bash 进程。
+- 官方文档明确强调 shell 状态会在会话中保留，这意味着后续步骤可以继续使用同一终端上下文。
+- 监控面不仅是“看日志”，而是支持对进行中的 shell 工作做进度观察、状态判断和后续接续。
+- 这套能力建立在会话与宿主 runtime 上，而不是建立在 repo 本身。
+
+对 Thoth 的设计含义：
+
+- 如果目标是让 live session 更稳定、更像“可持续自主运行”，Claude 宿主目前给出的最强官方抓手就是 persistent shell + monitor + session storage。
+- Thoth 不应该重复发明一个宿主内 shell monitor；它更应该消费这些宿主信号，把关键状态折叠进 `.thoth/runs/*`。
+- 当 Claude session 丢失、进程漂移或宿主升级导致状态断裂时，恢复 authority 应回到 `.thoth`，而不是假设 Monitor 本身就是最终真相。
 
 ### Skills and custom commands
 
@@ -117,6 +151,7 @@
 - hooks 是事件驱动的
 - 有丰富生命周期事件
 - `SessionStart` 与 `SubagentStart` 都有明确输入合同
+- `SessionStart` 支持在新建、恢复、清空压缩后等不同来源触发
 - hooks 可收到结构化 JSON 输入
 - 某些事件支持通过输出控制行为或阻止操作
 
@@ -124,6 +159,7 @@
 
 - `SessionStart` 可用于会话开始或恢复时注入上下文
 - `SubagentStart` / `SubagentStop` 允许观察子代理生命周期
+- `PreToolUse` / `PostToolUse` 与通知类 hooks 让外部系统有机会围绕工具调用做校验、记账和告警
 - hooks 文档对输入字段和控制语义写得很细
 
 对 Thoth 的设计含义：
@@ -171,6 +207,7 @@
 
 - Claude Code on the web
 - Remote Control
+- Agent SDK monitoring / hosting / session storage 的实现细节
 - hooks 事件矩阵与行为细节
 - GitHub Actions 集成方式
 - sub-agent operational semantics

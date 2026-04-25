@@ -14,7 +14,7 @@ from thoth.project_init import (
     audit_repository_state,
     build_init_preview,
     generate_agent_os_docs,
-    generate_codex_project_layer,
+    generate_codex_hook_projection,
     generate_dashboard,
     generate_host_projections,
     generate_milestones,
@@ -64,11 +64,15 @@ def test_generate_host_projections(base_config, tmp_path):
     assert (tmp_path / "AGENTS.md").read_text(encoding="utf-8") == (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
 
 
-def test_generate_codex_project_layer(base_config, tmp_path):
-    generate_codex_project_layer(base_config, tmp_path)
-    assert (tmp_path / ".codex" / "config.json").exists()
-    assert (tmp_path / ".codex" / "setup.sh").exists()
-    assert (tmp_path / ".codex" / "hooks.json").exists()
+def test_generate_codex_hook_projection(tmp_path):
+    generate_codex_hook_projection(tmp_path)
+    hook_path = tmp_path / ".thoth" / "derived" / "codex-hooks.json"
+    assert hook_path.exists()
+    payload = json.loads(hook_path.read_text(encoding="utf-8"))
+    start_hook = payload["hooks"]["SessionStart"][0]["hooks"][0]
+    stop_hook = payload["hooks"]["Stop"][0]["hooks"][0]
+    assert "thoth-codex-hook.sh\" start" in start_hook["command"]
+    assert "thoth-codex-hook.sh\" stop" in stop_hook["command"]
 
 
 def test_generate_thoth_runtime(base_config, tmp_path):
@@ -121,6 +125,14 @@ def test_build_init_preview_marks_legacy_for_removal(tmp_path):
     assert ".research-config.yaml" in preview["remove"]
     assert ".agent-os/research-tasks" in preview["remove"]
     assert ".thoth/project/verdicts/.gitkeep" in preview["create"]
+
+
+def test_build_init_preview_ignores_host_owned_codex_root(tmp_path):
+    (tmp_path / ".codex").write_text("", encoding="utf-8")
+    audit = audit_repository_state(tmp_path)
+    preview = build_init_preview(tmp_path, audit)
+    assert ".codex" not in preview["update"]
+    assert ".thoth/derived/codex-hooks.json" in preview["create"]
 
 
 def test_initialize_project_strict_cut_imports_legacy_and_removes_old_surface(base_config, tmp_path):
@@ -187,3 +199,19 @@ def test_initialize_project_strict_cut_imports_legacy_and_removes_old_surface(ba
     preview = json.loads((tmp_path / ".thoth" / "migrations" / result["migration_id"] / "preview.json").read_text(encoding="utf-8"))
     assert ".research-config.yaml" in preview["remove"]
     assert ".agent-os/research-tasks" in preview["remove"]
+
+
+def test_initialize_project_preserves_host_owned_codex_root(base_config, tmp_path):
+    (tmp_path / ".codex").write_text("", encoding="utf-8")
+
+    result = initialize_project(base_config, tmp_path)
+
+    assert (tmp_path / ".codex").is_file()
+    assert (tmp_path / ".thoth" / "derived" / "codex-hooks.json").exists()
+    backup = tmp_path / ".thoth" / "migrations" / result["migration_id"] / "backup" / ".codex"
+    displaced = tmp_path / ".thoth" / "migrations" / result["migration_id"] / "displaced" / ".codex"
+    assert not backup.exists()
+    assert not displaced.exists()
+    preview = json.loads((tmp_path / ".thoth" / "migrations" / result["migration_id"] / "preview.json").read_text(encoding="utf-8"))
+    assert ".codex" not in preview["update"]
+    assert result["displaced_conflicts"] == []

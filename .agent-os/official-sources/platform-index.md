@@ -17,7 +17,7 @@
 
 ## Verification Snapshot
 
-- `verified_at_utc`: `2026-04-24T01:55:00Z`
+- `verified_at_utc`: `2026-04-24T16:40:14Z`
 - `verified_by`: `Codex`
 - `policy`: `high-volatility 30 days / concept-and-best-practice 60 days`
 
@@ -36,15 +36,23 @@
 | `SRC-OAI-009` | OpenAI | Codex Skills | https://developers.openai.com/codex/skills | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T14:55:53Z` | 用于 skills 目录、`SKILL.md`、`agents/openai.yaml`、skill 命名与公开 surface 判断时 | 直接影响 Thoth 的 Codex public skill 投影 |
 | `SRC-OAI-010` | OpenAI | Codex Plugins Build | https://developers.openai.com/codex/plugins/build | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T14:55:53Z` | 用于 `.codex-plugin/plugin.json` schema、component namespace、plugin metadata 判断时 | 直接影响 Thoth 的官方 plugin manifest 对齐 |
 | `SRC-OAI-011` | OpenAI | Codex Plugins Install | https://developers.openai.com/codex/plugins/install-plugins | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T14:55:53Z` | 用于 marketplace 安装/升级路径、GitHub source 安装行为判断时 | 直接影响 README 安装与更新文案 |
-| `SRC-ANT-001` | Anthropic | How Claude Code works | https://code.claude.com/docs/en/how-claude-code-works | `claude-code-runtime-and-platforms.md` | `active` | `medium` | `60` | `2026-04-23T04:04:51Z` | 用于 Claude Code 运行原理、agent loop、tooling model 判断时 | 原理页相对稳，但仍需回源确认 |
+| `SRC-OAI-012` | OpenAI | Codex Config Basics | https://developers.openai.com/codex/config-basic | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-24T14:14:03Z` | 用于 config 层级、`~/.codex/config.toml`、`<repo>/.codex/config.toml`、`hooks.json` 路径与 protected path 判断时 | 直接影响 Thoth 是否把 repo-root `.codex` 当成受管目录 |
+| `SRC-OAI-013` | OpenAI | Codex Config Reference | https://developers.openai.com/codex/config-reference | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-24T14:14:03Z` | 用于 config 字段、project-scoped override 与 hooks file shape 判断时 | 直接影响 Thoth 的 Codex hooks 配置与 selftest preflight 设计 |
+| `SRC-OAI-014` | OpenAI | Codex CLI features | https://developers.openai.com/codex/cli/features | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-24T16:40:14Z` | 用于 CLI shell/approval/background session 行为判断时 | 对比 Claude Agent SDK 的 persistent shell 与 monitor 时很关键 |
+| `SRC-ANT-001` | Anthropic | How Claude Code works | https://code.claude.com/docs/en/how-claude-code-works | `claude-code-runtime-and-platforms.md` | `active` | `medium` | `60` | `2026-04-24T16:40:14Z` | 用于 Claude Code 运行原理、agent loop、tooling model 判断时 | 原理页相对稳，但仍需回源确认 |
 | `SRC-ANT-002` | Anthropic | Claude Code on the web | https://code.claude.com/docs/en/claude-code-on-the-web | `claude-code-runtime-and-platforms.md` | `research-preview` | `high` | `30` | `2026-04-23T04:04:51Z` | 任何 web 端能力、限制、远程执行流程判断时 | 当前文档明确为 `research preview` |
-| `SRC-ANT-003` | Anthropic | Remote Control | https://code.claude.com/docs/en/remote-control | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于远程接管、终端/浏览器衔接、认证前提判断时 | 交互路径和账号前提属于高波动产品行为 |
-| `SRC-ANT-004` | Anthropic | Claude Code Sub-agents | https://code.claude.com/docs/en/sub-agents | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于 sub-agent 能力、配置、隔离语义判断时 | 与 hooks 和 task tool 强相关 |
-| `SRC-ANT-005` | Anthropic | Claude Code Hooks | https://code.claude.com/docs/en/hooks | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 任何 hooks 事件、输入 JSON、控制语义判断时 | 事件矩阵和输入合同对实现影响很大，必须保持最新 |
+| `SRC-ANT-003` | Anthropic | Remote Control | https://code.claude.com/docs/en/remote-control | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T16:40:14Z` | 用于远程接管、终端/浏览器衔接、认证前提判断时 | 交互路径和账号前提属于高波动产品行为 |
+| `SRC-ANT-004` | Anthropic | Claude Code Sub-agents | https://code.claude.com/docs/en/sub-agents | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T16:40:14Z` | 用于 sub-agent 能力、配置、隔离语义判断时 | 本轮补充了 foreground/background 行为与上下文隔离语义 |
+| `SRC-ANT-005` | Anthropic | Claude Code Hooks | https://code.claude.com/docs/en/hooks | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T16:40:14Z` | 任何 hooks 事件、输入 JSON、控制语义判断时 | 事件矩阵和输入合同对实现影响很大，必须保持最新 |
 | `SRC-ANT-006` | Anthropic | Claude Code GitHub Actions | https://code.claude.com/docs/en/github-actions | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于 CI/CD、PR automation、非交互运行判断时 | 与 best practices、hooks、remote 工作流耦合 |
 | `SRC-ANT-007` | Anthropic | Claude Code Best practices | https://code.claude.com/docs/en/best-practices | `claude-code-runtime-and-platforms.md` | `active` | `medium` | `60` | `2026-04-23T04:04:51Z` | 用于推荐性工作流、提示与工程实践判断时 | 这是建议层，不是强合同，但仍属官方指导 |
 | `SRC-ANT-008` | Anthropic | Claude Code Skills / custom commands | https://code.claude.com/docs/en/skills | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T01:55:00Z` | 用于 `/thoth:*` slash command、custom command 前端、shell preprocessing、`$ARGUMENTS` 等行为判断时 | 直接决定 Claude plugin public surface 是否是真执行还是说明文 |
 | `SRC-ANT-009` | Anthropic | Claude Code permissions | https://code.claude.com/docs/en/permissions | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T01:55:00Z` | 用于 `dontAsk`、`.claude/settings.local.json` allow 规则、权限优先级判断时 | 直接影响 Claude host 自测与 slash command bridge 是否可无交互运行 |
+| `SRC-ANT-010` | Anthropic | Claude Code Agent SDK overview | https://docs.anthropic.com/en/docs/claude-code/sdk | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T16:40:14Z` | 用于 SDK runtime、session、tool surface、托管方式判断时 | 本轮用于补足 monitor、persistent shell 与 session continuity 证据 |
+| `SRC-ANT-011` | Anthropic | Claude Code Agent SDK hosting | https://code.claude.com/docs/en/agent-sdk/hosting | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T16:40:14Z` | 用于 session owner、server lifecycle、sleep/wake 与 external process 管理判断时 | 对比 Thoth own-supervisor 边界很关键 |
+| `SRC-ANT-012` | Anthropic | Claude Code Agent SDK monitoring | https://code.claude.com/docs/en/agent-sdk/monitoring | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T16:40:14Z` | 用于 Monitor 工具、long-running bash、progress tracking 与 log inspection 判断时 | 直接回答 monitor 如何支撑长时任务 |
+| `SRC-ANT-013` | Anthropic | Claude Code Agent SDK sessions | https://code.claude.com/docs/en/agent-sdk/sessions | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T16:40:14Z` | 用于 session lifecycle、resume、tool continuity 判断时 | 直接回答 live session 稳定性与恢复边界 |
+| `SRC-ANT-014` | Anthropic | Claude Code Agent SDK session storage | https://code.claude.com/docs/en/agent-sdk/session-storage | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T16:40:14Z` | 用于 durable session persistence、crash recovery 与 storage backend 判断时 | 对比 `.thoth/runs/*` 的 repo authority 很关键 |
 
 ## Read Path
 

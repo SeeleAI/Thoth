@@ -24,7 +24,6 @@ from thoth.project_init import (
     generate_thoth_runtime,
     generate_pre_commit_config,
     generate_host_projections,
-    generate_codex_project_layer,
     initialize_project,
     parse_config,
 )

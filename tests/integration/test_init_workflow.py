@@ -70,9 +70,7 @@ class TestInitWorkflow:
             ".thoth/project/source-map.json",
             ".thoth/project/compiler-state.json",
             ".thoth/project/verdicts/.gitkeep",
-            ".codex/config.json",
-            ".codex/setup.sh",
-            ".codex/hooks.json",
+            ".thoth/derived/codex-hooks.json",
             "tools/dashboard/backend/app.py",
         ]:
             assert (project_dir / rel).exists(), f"Missing: {rel}"

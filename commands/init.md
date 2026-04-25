@@ -1,6 +1,6 @@
 ---
 name: thoth:init
-description: Initialize canonical .thoth authority and render both Claude/Codex project layers.
+description: Initialize canonical .thoth authority and render both host projections without taking ownership of repo-root `.codex`.
 argument-hint: "[project-name]"
 disable-model-invocation: true
 ---
@@ -33,11 +33,12 @@ executed before Claude sees this prompt.
 **CAN:**
 - Create canonical .thoth project authority files
 - Generate AGENTS.md and CLAUDE.md from the same renderer
-- Generate .codex local environment, setup script, and hooks config
+- Generate a Codex hooks projection under .thoth/derived for global or repo-local host wiring
 - Generate dashboard, tests, helper scripts, and config
 
 **CANNOT:**
 - Silently delete existing project files
+- Treat repo-root .codex as a Thoth-managed authority directory
 - Treat hooks as correctness-critical runtime dependencies
 
 ## Runtime Contract
@@ -47,7 +48,7 @@ executed before Claude sees this prompt.
 - Hooks required for correctness: hooks may enhance but are not correctness-critical
 - Subagents required for correctness: no
 - Lifecycle: preview -> render-authority -> render-projections -> verify
-- Acceptance: Authority tree, host projections, Codex project layer, dashboard, scripts, and tests are generated from one canonical source.
+- Acceptance: Authority tree, host projections, Codex hook projection, dashboard, scripts, and tests are generated from one canonical source while repo-root `.codex` remains host-owned.
 
 ## Interaction Gaps
 

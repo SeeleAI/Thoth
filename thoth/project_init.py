@@ -63,6 +63,16 @@ GENERATED_SCRIPT_FILES = [
 
 GENERATED_TEST_FILES = ["tests/conftest.py", "tests/test_structure.py"]
 
+MANAGED_DIRECTORY_ROOTS = [
+    ".agent-os",
+    ".claude",
+    ".thoth",
+    "scripts",
+    "tests",
+    "tools",
+    "tools/dashboard",
+]
+
 LEGACY_REMOVE_PATHS = [
     LEGACY_CONFIG_FILE,
     ".agent-os/research-tasks",
@@ -238,9 +248,6 @@ def _managed_path_list() -> list[str]:
         ".pre-commit-config.yaml",
         "AGENTS.md",
         "CLAUDE.md",
-        ".codex/config.json",
-        ".codex/setup.sh",
-        ".codex/hooks.json",
         ".thoth/project/project.json",
         ".thoth/project/instructions.md",
         ".thoth/project/source-map.json",
@@ -250,6 +257,7 @@ def _managed_path_list() -> list[str]:
         ".thoth/runs/.gitkeep",
         ".thoth/migrations/.gitkeep",
         ".thoth/derived/.gitkeep",
+        ".thoth/derived/codex-hooks.json",
     ]
     base.extend(f"scripts/{name}" for name in GENERATED_SCRIPT_FILES)
     base.extend(f".agent-os/{name}" for name in REQUIRED_AGENT_OS_FILES)
@@ -266,7 +274,7 @@ def _detect_init_mode(audit: dict[str, Any]) -> str:
         return "adopt"
     if existing.get("agent_os") or existing.get("legacy_agentos_alias"):
         return "adopt"
-    if existing.get("docs") or existing.get("dashboard") or existing.get("codex_project_layer"):
+    if existing.get("docs") or existing.get("dashboard"):
         return "adopt"
     if audit.get("top_level_entries"):
         return "adopt"
@@ -368,7 +376,7 @@ def audit_repository_state(project_dir: Path) -> dict[str, Any]:
             "agent_os": agent_os_dir.exists(),
             "legacy_agentos_alias": legacy_agentos_dir.exists(),
             "docs": docs_dir.exists(),
-            "codex_project_layer": (project_dir / ".codex").exists(),
+            "codex_reserved_path_present": (project_dir / ".codex").exists(),
             "dashboard": (project_dir / "tools" / "dashboard").exists(),
         },
         "top_level_entries": top_level_entries,
@@ -435,9 +443,7 @@ def build_init_preview(project_dir: Path, audit: dict[str, Any]) -> dict[str, An
         ".pre-commit-config.yaml",
         "AGENTS.md",
         "CLAUDE.md",
-        ".codex/config.json",
-        ".codex/setup.sh",
-        ".codex/hooks.json",
+        ".thoth/derived/codex-hooks.json",
         "tools/dashboard",
     }
     managed_update_targets.update(f"scripts/{name}" for name in GENERATED_SCRIPT_FILES)
@@ -454,6 +460,11 @@ def build_init_preview(project_dir: Path, audit: dict[str, Any]) -> dict[str, An
     }
     managed_create_if_missing.update(f".agent-os/{name}" for name in REQUIRED_AGENT_OS_FILES)
     managed_create_if_missing.update(f".agent-os/{name}" for name in OPTIONAL_AGENT_OS_FILES)
+
+    for rel in MANAGED_DIRECTORY_ROOTS:
+        path = project_dir / rel
+        if path.exists() and not path.is_dir():
+            preview["update"].append(rel)
 
     for rel in sorted(managed_update_targets | managed_create_if_missing):
         path = project_dir / rel
@@ -499,6 +510,30 @@ def _remove_existing_path(project_dir: Path, relpath: str) -> None:
         target.unlink()
 
 
+def _displace_existing_path(project_dir: Path, migration_dir: Path, relpath: str) -> str | None:
+    source = project_dir / relpath
+    if not source.exists():
+        return None
+    target = migration_dir / "displaced" / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+    source.rename(target)
+    return str((Path("displaced") / relpath).as_posix())
+
+
+def _managed_directory_conflicts(project_dir: Path) -> list[str]:
+    conflicts: list[str] = []
+    for rel in MANAGED_DIRECTORY_ROOTS:
+        path = project_dir / rel
+        if path.exists() and not path.is_dir():
+            conflicts.append(rel)
+    return sorted(conflicts)
+
+
 def _write_source_map(project_dir: Path, audit: dict[str, Any], preview: dict[str, Any]) -> None:
     payload = {
         "schema_version": 1,
@@ -511,7 +546,10 @@ def _write_source_map(project_dir: Path, audit: dict[str, Any], preview: dict[st
         "projections": {
             "claude": "CLAUDE.md",
             "codex": "AGENTS.md",
-            "codex_project_layer": ".codex/",
+            "codex_hooks_projection": ".thoth/derived/codex-hooks.json",
+        },
+        "host_reserved_paths": {
+            "codex": ".codex",
         },
         "managed_paths": sorted(set(preview["create"] + preview["update"] + preview["preserve"])),
         "removed_legacy_paths": preview.get("remove", []),
@@ -585,7 +623,7 @@ def generate_agent_os_docs(config: dict[str, Any], project_dir: Path) -> None:
         "cross-repo-mapping.md": "# Cross-Repo Mapping\n\n| Main ID | Local ID | Repo | Status |\n|---------|----------|------|--------|\n| (none) | | | |\n",
         "acceptance-report.md": "# Acceptance Report\n\n- No conclusions yet.\n",
         "lessons-learned.md": "# Lessons Learned\n\n- No failed explorations recorded yet.\n",
-        "run-log.md": f"# Run Log\n\n- {_now_str()} [project initialization]\n  - Worked on: Project setup\n  - Evidence produced: .thoth authority, AGENTS.md, CLAUDE.md, .codex/\n",
+        "run-log.md": f"# Run Log\n\n- {_now_str()} [project initialization]\n  - Worked on: Project setup\n  - Evidence produced: .thoth authority, AGENTS.md, CLAUDE.md, codex hook projection\n",
         "change-decisions.md": f"# Change Decisions\n\n| ID | Date | Decision | Rationale | Impact |\n|----|------|----------|-----------|--------|\n| CD-001 | {_now_str()[:10]} | Project initialized | Starting from scratch | All files created |\n",
     }
     agent_os = project_dir / ".agent-os"
@@ -762,19 +800,8 @@ def generate_host_projections(config: dict[str, Any], project_dir: Path) -> None
         claude_path.write_text(content, encoding="utf-8")
 
 
-def generate_codex_project_layer(config: dict[str, Any], project_dir: Path) -> None:
-    codex_dir = project_dir / ".codex"
-    codex_dir.mkdir(parents=True, exist_ok=True)
-    (codex_dir / "config.json").write_text(json.dumps({
-        "schema_version": 1,
-        "project_layer": "enabled",
-        "thoth_authority": ".thoth",
-        "official_surface": "$thoth",
-    }, indent=2) + "\n", encoding="utf-8")
-    setup_path = codex_dir / "setup.sh"
-    setup_path.write_text("#!/usr/bin/env bash\nset -e\npython --version\n", encoding="utf-8")
-    setup_path.chmod(0o755)
-    (codex_dir / "hooks.json").write_text(json.dumps({
+def render_codex_hooks_payload() -> dict[str, Any]:
+    return {
         "hooks": {
             "SessionStart": [
                 {
@@ -800,7 +827,14 @@ def generate_codex_project_layer(config: dict[str, Any], project_dir: Path) -> N
                 }
             ],
         }
-    }, indent=2) + "\n", encoding="utf-8")
+    }
+
+
+def generate_codex_hook_projection(project_dir: Path) -> None:
+    payload = render_codex_hooks_payload()
+    path = project_dir / ".thoth" / "derived" / "codex-hooks.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def generate_tests(config: dict[str, Any], project_dir: Path) -> None:
@@ -819,7 +853,7 @@ REQUIRED_FILES = [
     ".thoth/project/compiler-state.json",
     ".thoth/project/legacy-audit.json",
     ".thoth/project/verdicts/.gitkeep",
-    ".codex/config.json",
+    ".thoth/derived/codex-hooks.json",
 ]
 
 
@@ -865,6 +899,17 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
             }
         )
 
+    displaced_conflicts: list[dict[str, Any]] = []
+    for relpath in _managed_directory_conflicts(project_dir):
+        displaced_path = _displace_existing_path(project_dir, migration_dir, relpath)
+        if displaced_path:
+            displaced_conflicts.append(
+                {
+                    "relative_path": relpath,
+                    "displaced_path": displaced_path,
+                }
+            )
+
     (project_dir / "reports").mkdir(exist_ok=True)
     generate_agent_os_docs(normalized, project_dir)
     generate_milestones(normalized, project_dir)
@@ -874,7 +919,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
     generate_pre_commit_config(normalized, project_dir)
     generate_scripts(normalized, project_dir)
     generate_host_projections(normalized, project_dir)
-    generate_codex_project_layer(normalized, project_dir)
+    generate_codex_hook_projection(project_dir)
     generate_tests(normalized, project_dir)
 
     for relpath in preview.get("remove", []):
@@ -891,6 +936,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
         "created_paths": preview["create"],
         "removed_paths": preview.get("remove", []),
         "backup_targets": backups,
+        "displaced_conflicts": displaced_conflicts,
     }
     (migration_dir / "rollback.json").write_text(
         json.dumps(rollback_payload, ensure_ascii=False, indent=2) + "\n",
@@ -907,6 +953,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
         "updated_count": len(preview["update"]),
         "preserved_count": len(preview["preserve"]),
         "removed_count": len(preview.get("remove", [])),
+        "displaced_conflict_count": len(displaced_conflicts),
     }
     (migration_dir / "apply.json").write_text(
         json.dumps(apply_payload, ensure_ascii=False, indent=2) + "\n",
@@ -921,6 +968,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
         "apply": apply_payload,
         "legacy_import": legacy_import,
         "claude_permissions": detect_claude_bridge_permission(project_dir),
+        "displaced_conflicts": displaced_conflicts,
     }
 
 
@@ -942,7 +990,7 @@ def sync_project_layer(project_dir: Path) -> None:
     }
     generate_thoth_runtime(normalized, project_dir)
     generate_host_projections(normalized, project_dir)
-    generate_codex_project_layer(normalized, project_dir)
+    generate_codex_hook_projection(project_dir)
     audit = audit_repository_state(project_dir)
     preview = build_init_preview(project_dir, audit)
     _write_source_map(project_dir, audit, preview)

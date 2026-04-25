@@ -2,14 +2,14 @@
 
 ## Purpose
 
-本文件综合解析 OpenAI 官方关于 `Background mode`、`Webhooks`、`Codex web/cloud`、`Subagents`、`Subagent concepts`、`Hooks`、`Automations`、`Local environments`、`Skills`、`Plugins build/install` 的当前公开说明。
+本文件综合解析 OpenAI 官方关于 `Background mode`、`Webhooks`、`Codex web/cloud`、`Subagents`、`Subagent concepts`、`Hooks`、`Automations`、`Local environments`、`Config basics/reference`、`Skills`、`Plugins build/install` 的当前公开说明。
 
 authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 
 ## Verification Snapshot
 
-- `last_verified_utc`: `2026-04-23T14:55:53Z`
-- `sources`: `SRC-OAI-001` ~ `SRC-OAI-011`
+- `last_verified_utc`: `2026-04-24T16:40:14Z`
+- `sources`: `SRC-OAI-001` ~ `SRC-OAI-014`
 
 ## 1. OpenAI API primitives
 
@@ -112,11 +112,27 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 
 - Codex app 支持把编码工作流自动化。
 - 该能力与 GitHub / repo 工作流有强关联。
+- 当前页面强调 automations 可以在后台运行，并在专用 worktree 中执行任务。
 
 本仓库的综合理解：
 
 - Automations 更像是托管产品工作流层。
 - 它可以启发 Thoth 的自动触发和持续运行设计，但不能代替 repo-native authority。
+
+### CLI shell and approvals
+
+截至本轮回源，官方 `Codex CLI features` 页对“shell / live session”最关键的信号有四个：
+
+- Codex CLI 内置终端工作流，支持直接从交互界面运行 shell 命令。
+- CLI 有明确的 approval modes，而不是把 shell 长任务自动升格为 durable supervisor。
+- 页面把 shell 交互、补丁编辑、计划与执行视为同一交互式 agent loop 的一部分。
+- 官方文档没有把 CLI shell 说成项目级持久 session store 或 durable monitor。
+
+对 Thoth 的设计含义：
+
+- `Codex` 侧更适合作为“当前交互式执行壳”和子任务 worker。
+- 若任务需要可恢复的长时运行，不能把 CLI shell 本身当成 durability substrate。
+- 更合理的方式是让 `Thoth` 持有 run ledger / heartbeat / attach state，再把 Codex shell 作为前台执行面或短生命周期 worker。
 
 ### Local environments
 
@@ -136,6 +152,21 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 - 更合理的关系是：
   - local environment 提供执行与上下文接近性
   - `.thoth` 提供项目级 authority 与 recovery
+
+### Config basics / reference
+
+截至本轮核验，官方 `Config Basics` / `Config Reference` 页对 Thoth 最关键的信号有四个：
+
+- user-scoped config 路径是 `~/.codex/config.toml`
+- project-scoped override 路径是 `<repo>/.codex/config.toml`
+- hooks 配置文件路径是 `~/.codex/hooks.json` 或 `<repo>/.codex/hooks.json`
+- `Config Basics` 的 sandbox 说明把 writable roots 下的 `.git` 与 `.codex` 标为 protected paths
+
+对 Thoth 的设计含义：
+
+- repo-root `.codex` 是 Codex 宿主保留配置层，不应再被 Thoth 当成受管 authority 目录。
+- 若需要为 Codex 生成 hooks 配置，应该把可审计投影放在 `.thoth/derived/`，再由全局或宿主配置层接入，而不是把 `.codex/` 直接纳入 Thoth 的 init/sync 管辖。
+- heavy host-real 的 preflight 直接管理 `~/.codex/config.toml` 与 `~/.codex/hooks.json` 是与官方层级一致的。
 
 ### Skills
 
@@ -182,8 +213,10 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 高波动内容：
 
 - Codex hooks
+- config basics / reference 中的路径、protected-path 与 hooks 接入细节
 - cloud/web product behavior
 - automations
+- CLI shell / approval behavior
 - local environments
 - subagent operational details
 - skills / plugin presentation metadata
