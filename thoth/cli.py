@@ -48,10 +48,14 @@ def _run_legacy_script(script_name: str, extra_args: list[str] | None = None, *,
 
 
 def _run_shell_script(script_name: str, extra_args: list[str] | None = None, *, cwd: Path | None = None) -> int:
+    env = dict(os.environ)
+    env.setdefault("PYTHON", sys.executable)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(ROOT) if not existing else f"{ROOT}:{existing}"
     cmd = ["bash", str(SCRIPTS_DIR / script_name)]
     if extra_args:
         cmd.extend(extra_args)
-    result = subprocess.run(cmd, cwd=str(cwd or Path.cwd()))
+    result = subprocess.run(cmd, cwd=str(cwd or Path.cwd()), env=env)
     return result.returncode
 
 

@@ -103,9 +103,26 @@ class TestInitWorkflow:
     def test_validation_scripts_are_strict_only(self, init_project):
         project_dir, _ = init_project
         session_end = (project_dir / "scripts" / "session-end-check.sh").read_text(encoding="utf-8")
-        assert "python -m thoth.cli sync" in session_end
-        assert "python -m thoth.cli doctor" in session_end
+        assert "command -v python3" in session_end
+        assert "THOTH_SOURCE_ROOT" in session_end
+        assert '"$PYTHON_BIN" -m thoth.cli sync' in session_end
+        assert '"$PYTHON_BIN" -m thoth.cli doctor' in session_end
         assert "research-tasks" not in session_end
+
+    def test_generated_hooks_and_dashboard_are_portable(self, init_project):
+        project_dir, _ = init_project
+        setup = (project_dir / ".codex" / "setup.sh").read_text(encoding="utf-8")
+        hooks = json.loads((project_dir / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+        codex_hook = (project_dir / "scripts" / "thoth-codex-hook.sh").read_text(encoding="utf-8")
+        dashboard_start = (project_dir / "tools" / "dashboard" / "start.sh").read_text(encoding="utf-8")
+        frontend_package = json.loads((project_dir / "tools" / "dashboard" / "frontend" / "package.json").read_text(encoding="utf-8"))
+        assert "command -v python3" in setup
+        assert "git rev-parse --show-toplevel 2>/dev/null || pwd" in hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        assert 'git -C "$SCRIPT_DIR" rev-parse --show-toplevel' in codex_hook
+        assert '"$PYTHON_BIN" -m thoth.cli hook' in codex_hook
+        assert 'git -C "$SCRIPT_DIR" rev-parse --show-toplevel' in dashboard_start
+        assert 'command -v python3' in dashboard_start
+        assert frontend_package["devDependencies"]["vite"].startswith("^6.")
 
     def test_creates_migration_bundle(self, init_project):
         project_dir, _ = init_project

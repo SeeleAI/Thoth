@@ -69,6 +69,13 @@ def test_generate_codex_project_layer(base_config, tmp_path):
     assert (tmp_path / ".codex" / "config.json").exists()
     assert (tmp_path / ".codex" / "setup.sh").exists()
     assert (tmp_path / ".codex" / "hooks.json").exists()
+    setup = (tmp_path / ".codex" / "setup.sh").read_text(encoding="utf-8")
+    hooks = json.loads((tmp_path / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+    assert "command -v python3" in setup
+    assert "python --version" in setup
+    start_command = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    assert "git rev-parse --show-toplevel 2>/dev/null || pwd" in start_command
+    assert "thoth-codex-hook.sh\" start" in start_command
 
 
 def test_generate_thoth_runtime(base_config, tmp_path):
@@ -90,8 +97,26 @@ def test_generate_pre_commit_config(base_config, tmp_path):
 def test_generate_scripts(base_config, tmp_path):
     generate_scripts(base_config, tmp_path)
     session_end = (tmp_path / "scripts" / "session-end-check.sh").read_text(encoding="utf-8")
-    assert "python -m thoth.cli sync" in session_end
-    assert "python -m thoth.cli doctor" in session_end
+    hook = (tmp_path / "scripts" / "thoth-codex-hook.sh").read_text(encoding="utf-8")
+    assert "command -v python3" in session_end
+    assert "THOTH_SOURCE_ROOT" in session_end
+    assert '"$PYTHON_BIN" -m thoth.cli sync' in session_end
+    assert '"$PYTHON_BIN" -m thoth.cli doctor' in session_end
+    assert 'git -C "$SCRIPT_DIR" rev-parse --show-toplevel' in hook
+    assert '"$PYTHON_BIN" -m thoth.cli hook' in hook
+
+
+def test_generate_dashboard_template_is_portable(base_config, tmp_path):
+    generate_dashboard(base_config, tmp_path)
+    start_script = (tmp_path / "tools" / "dashboard" / "start.sh").read_text(encoding="utf-8")
+    package_json = json.loads((tmp_path / "tools" / "dashboard" / "frontend" / "package.json").read_text(encoding="utf-8"))
+    trigger_runner = (tmp_path / "tools" / "dashboard" / "backend" / "trigger_runner.py").read_text(encoding="utf-8")
+    assert 'git -C "$SCRIPT_DIR" rev-parse --show-toplevel' in start_script
+    assert 'PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python"' in start_script
+    assert 'command -v python3' in start_script
+    assert '"$PYTHON_BIN" -m uvicorn' in start_script
+    assert package_json["devDependencies"]["vite"].startswith("^6.")
+    assert "sys.executable" in trigger_runner
 
 
 def test_generate_tests(base_config, tmp_path):
