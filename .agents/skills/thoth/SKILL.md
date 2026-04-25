@@ -14,10 +14,10 @@ Use the single public entrypoint:
 - `$thoth <command>`
 
 Supported commands:
-- `$thoth init`: Initialize canonical .thoth authority and render both Claude/Codex project layers.
-- `$thoth run`: Create one durable run under the shared runtime and attach in the foreground by default.
-- `$thoth loop`: Create one durable autonomous loop under the shared runtime and attach in the foreground by default.
-- `$thoth review`: Review code or plans through the shared Thoth surface.
+- `$thoth init`: Initialize canonical .thoth authority and render both host projections without taking ownership of repo-root `.codex`.
+- `$thoth run`: Prepare one strict run packet for live in-session execution, or use `--sleep` to hand it to an external worker.
+- `$thoth loop`: Prepare one strict loop packet for live in-session iteration, or use `--sleep` to hand it to an external worker.
+- `$thoth review`: Prepare a structured live review packet through the shared Thoth surface.
 - `$thoth status`: Show repo status and active durable runs from the shared ledger.
 - `$thoth doctor`: Audit project health, generated surfaces, and runtime shape.
 - `$thoth dashboard`: Start or describe the task-first dashboard backed by .thoth ledgers.
@@ -29,7 +29,8 @@ Supported commands:
 ## Runtime Rules
 
 - `.thoth` is the only runtime authority.
-- `run` and `loop` are durable by default and support attach/watch/stop semantics.
+- `run` and `loop` are durable by default, prepare live packets in-session, and only switch to a background worker with `--sleep`.
+- `review` also uses a live packet and must end with structured findings, not vague prose.
 - Host hooks and subagents may enhance throughput but are never correctness requirements.
 - Do not create alternative public Codex skill variants such as `run:codex` or `loop:codex`.
 
@@ -38,3 +39,6 @@ Supported commands:
 - When the current workspace is this Thoth repository itself, prefer the repo-local CLI implementation over any globally installed `thoth` binary.
 - In that case, invoke commands from the repository root with `python -m thoth.cli <command>` and ensure `PYTHONPATH` includes the repository root.
 - Only rely on a PATH-level `thoth` binary when you have already verified it resolves to the same checked-out repository code.
+- For `run`, `loop`, and `review`, treat the printed JSON packet as an execution contract: keep progress/heartbeat/events synced with the internal protocol commands until you call `complete` or `fail`.
+- A live packet is incomplete until it reaches a terminal protocol write; printing or paraphrasing the packet alone is a failure, not a success.
+- For `run` and `loop`, execute the strict task recipe and validator entrypoint rather than stopping at task interpretation.

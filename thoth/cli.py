@@ -12,14 +12,22 @@ from pathlib import Path
 from .host_hooks import run_host_hook
 from .project_init import initialize_project, parse_config, sync_project_layer
 from .runtime import (
+    LIVE_DISPATCH_MODE,
     attach_run,
+    append_protocol_event,
     build_status_payload,
-    create_run,
+    complete_run,
+    default_executor,
+    fail_run,
+    heartbeat_run,
+    prepare_execution,
+    record_artifact,
     resume_run,
     runtime_arg_parser,
     spawn_supervisor,
     stop_run,
     supervisor_main,
+    worker_main,
 )
 from .task_contracts import (
     build_doctor_payload,
@@ -79,6 +87,15 @@ def _print_generic(command: str, args) -> int:
     return 0
 
 
+def _decode_json_arg(raw: str | None, *, field: str) -> dict | list | None:
+    if raw is None:
+        return None
+    payload = json.loads(raw)
+    if not isinstance(payload, (dict, list)):
+        raise ValueError(f"{field} must decode to an object or list")
+    return payload
+
+
 def _print_init_result(result: dict[str, object], project_root: Path) -> None:
     audit = result.get("audit", {}) if isinstance(result, dict) else {}
     preview = result.get("preview", {}) if isinstance(result, dict) else {}
@@ -126,6 +143,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "supervise":
         return supervisor_main(Path(args.project_root), args.run_id)
 
+    if args.command == "worker":
+        return worker_main(Path(args.project_root), args.run_id)
+
     if args.command == "init":
         config = parse_config(args.config_json) if getattr(args, "config_json", None) else {}
         result = initialize_project(config, project_root)
@@ -149,8 +169,19 @@ def main(argv: list[str] | None = None) -> int:
                     legacy=int(compiler.get("legacy_task_count", 0)),
                 )
             )
+            defaults = payload.get("runtime_defaults", {})
+            print(
+                "Runtime defaults: executor={executor} live={live} sleep={sleep}".format(
+                    executor=defaults.get("default_executor", default_executor()),
+                    live=defaults.get("live_dispatch_mode", LIVE_DISPATCH_MODE),
+                    sleep=defaults.get("sleep_dispatch_mode", "external_worker"),
+                )
+            )
             for run in payload["active_runs"]:
-                print(f"- {run['run_id']} [{run['kind']}] {run['host']}/{run['executor']} {run['status']} {run['progress_pct']}%")
+                print(
+                    f"- {run['run_id']} [{run['kind']}] {run['host']}/{run['executor']} "
+                    f"{run['status']} {run['progress_pct']}% dispatch={run.get('dispatch_mode')}"
+                )
         return 0
 
     if args.command == "doctor":
@@ -174,6 +205,107 @@ def main(argv: list[str] | None = None) -> int:
         if result.stdout:
             print(result.stdout, end="")
         return result.exit_code
+
+    if args.command == "prepare":
+        root = Path(args.project_root).resolve() if getattr(args, "project_root", None) else project_root
+        title = str(args.goal or args.target or args.task_id or args.command_id)
+        strict_task = None
+        if args.command_id in {"run", "loop"}:
+            if not args.task_id:
+                print("Strict task execution requires --task-id.", file=sys.stderr)
+                return 2
+            try:
+                strict_task = load_task_for_execution(root, args.task_id, require_ready=True)
+            except (FileNotFoundError, ValueError) as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
+            title = str(strict_task.get("title") or args.task_id)
+        elif args.command_id == "review" and not (args.target or args.goal):
+            print("Review prepare requires --target or --goal.", file=sys.stderr)
+            return 2
+        try:
+            handle, packet = prepare_execution(
+                root,
+                command_id=args.command_id,
+                title=title,
+                task_id=args.task_id,
+                host=args.host,
+                executor=args.executor,
+                sleep_requested=bool(args.sleep),
+                strict_task=strict_task,
+                target=args.target,
+                goal=args.goal or title,
+                max_rounds=5 if args.command_id == "loop" else None,
+                max_runtime_seconds=12 * 60 if args.command_id == "loop" else None,
+            )
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        if packet.get("dispatch_mode") == "external_worker":
+            spawn_supervisor(handle)
+            packet["worker_spawned"] = True
+            packet["background_mode"] = "detached"
+        print(json.dumps(packet, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "append-event":
+        payload = _decode_json_arg(getattr(args, "payload_json", None), field="--payload-json")
+        append_protocol_event(
+            Path(args.project_root),
+            args.run_id,
+            message=args.message,
+            kind=args.kind,
+            level=args.level,
+            phase=args.phase,
+            progress_pct=args.progress,
+            payload=payload if isinstance(payload, dict) else None,
+        )
+        return 0
+
+    if args.command == "record-artifact":
+        metadata = _decode_json_arg(getattr(args, "metadata_json", None), field="--metadata-json")
+        record_artifact(
+            Path(args.project_root),
+            args.run_id,
+            path=args.path,
+            label=args.label,
+            artifact_kind=args.kind,
+            metadata=metadata if isinstance(metadata, dict) else None,
+        )
+        return 0
+
+    if args.command == "heartbeat":
+        heartbeat_run(
+            Path(args.project_root),
+            args.run_id,
+            phase=args.phase,
+            progress_pct=args.progress,
+            note=args.note,
+        )
+        return 0
+
+    if args.command == "complete":
+        result_payload = _decode_json_arg(getattr(args, "result_json", None), field="--result-json")
+        checks = _decode_json_arg(getattr(args, "checks_json", None), field="--checks-json")
+        complete_run(
+            Path(args.project_root),
+            args.run_id,
+            summary=args.summary,
+            result_payload=result_payload if isinstance(result_payload, dict) else None,
+            checks=checks if isinstance(checks, list) else None,
+        )
+        return 0
+
+    if args.command == "fail":
+        result_payload = _decode_json_arg(getattr(args, "result_json", None), field="--result-json")
+        fail_run(
+            Path(args.project_root),
+            args.run_id,
+            summary=args.summary,
+            reason=args.reason,
+            result_payload=result_payload if isinstance(result_payload, dict) else None,
+        )
+        return 0
 
     if args.command == "report":
         end = datetime.now(timezone.utc).date()
@@ -221,6 +353,27 @@ def main(argv: list[str] | None = None) -> int:
                     legacy=int(summary.get("legacy_task_count", 0)),
                 )
             )
+            return 0
+        if not content:
+            print("Review target is required.", file=sys.stderr)
+            return 2
+        try:
+            _handle, packet = prepare_execution(
+                project_root,
+                command_id="review",
+                title=f"Review: {content}",
+                task_id=None,
+                host=args.host,
+                executor=args.executor,
+                sleep_requested=False,
+                target=content,
+                goal=getattr(args, "goal", None) or content,
+            )
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(f"Recorded review note in {note_path}")
+        print(json.dumps(packet, ensure_ascii=False, indent=2))
         return 0
 
     if args.command in {"run", "loop"}:
@@ -236,11 +389,23 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "loop" and getattr(args, "resume", None):
             handle = resume_run(project_root, args.resume)
-            if args.detach:
-                print(handle.run_id)
+            run_payload = handle.run_json()
+            packet_path = handle.run_dir / "packet.json"
+            if run_payload.get("dispatch_mode") == "external_worker":
+                spawn_supervisor(handle)
+                refreshed = json.loads(packet_path.read_text(encoding="utf-8")) if packet_path.exists() else {"run_id": handle.run_id}
+                refreshed["worker_spawned"] = True
+                print(json.dumps(refreshed, ensure_ascii=False, indent=2))
+                return 0
+            if packet_path.exists():
+                print(packet_path.read_text(encoding="utf-8").rstrip())
                 return 0
             print(attach_run(project_root, handle.run_id, watch=True))
             return 0
+
+        if args.detach and not args.sleep:
+            print("Detached live execution is no longer allowed. Use --sleep for background external-worker mode.", file=sys.stderr)
+            return 2
 
         if not getattr(args, "task_id", None):
             print("Strict task execution requires --task-id. Free-form run/loop entry is disabled.", file=sys.stderr)
@@ -258,19 +423,27 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
         title = str(task.get("title") or args.task_id)
-        handle = create_run(
-            project_root,
-            kind=args.command,
-            title=title,
-            task_id=args.task_id,
-            host=args.host,
-            executor=args.executor,
-        )
-        spawn_supervisor(handle)
-        if args.detach:
-            print(handle.run_id)
-            return 0
-        print(attach_run(project_root, handle.run_id, watch=True))
+        try:
+            handle, packet = prepare_execution(
+                project_root,
+                command_id=args.command,
+                title=title,
+                task_id=args.task_id,
+                host=args.host,
+                executor=args.executor,
+                sleep_requested=bool(args.sleep),
+                strict_task=task,
+                goal=getattr(args, "goal", None) or title,
+                max_rounds=5 if args.command == "loop" else None,
+                max_runtime_seconds=12 * 60 if args.command == "loop" else None,
+            )
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        if packet.get("dispatch_mode") == "external_worker":
+            spawn_supervisor(handle)
+            packet["worker_spawned"] = True
+        print(json.dumps(packet, ensure_ascii=False, indent=2))
         return 0
 
     return _print_generic(args.command, args)

@@ -17,6 +17,7 @@ class CommandSpec:
     needs_hooks: bool = False
     needs_subagents: bool = False
     acceptance: str = "Script-backed acceptance only."
+    allowed_tools: tuple[str, ...] = field(default_factory=tuple)
     scope_can: tuple[str, ...] = field(default_factory=tuple)
     scope_cannot: tuple[str, ...] = field(default_factory=tuple)
     lifecycle: tuple[str, ...] = field(default_factory=tuple)
@@ -26,18 +27,19 @@ class CommandSpec:
 COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
         command_id="init",
-        summary="Initialize canonical .thoth authority and render both Claude/Codex project layers.",
+        summary="Initialize canonical .thoth authority and render both host projections without taking ownership of repo-root `.codex`.",
         argument_hint="[project-name]",
-        acceptance="Authority tree, host projections, Codex project layer, dashboard, scripts, and tests are generated from one canonical source.",
+        acceptance="Authority tree, host projections, Codex hook projection, dashboard, scripts, and tests are generated from one canonical source while repo-root `.codex` remains host-owned.",
         needs_hooks=True,
         scope_can=(
             "Create canonical .thoth project authority files",
             "Generate AGENTS.md and CLAUDE.md from the same renderer",
-            "Generate .codex local environment, setup script, and hooks config",
+            "Generate a Codex hooks projection under .thoth/derived for global or repo-local host wiring",
             "Generate dashboard, tests, helper scripts, and config",
         ),
         scope_cannot=(
             "Silently delete existing project files",
+            "Treat repo-root .codex as a Thoth-managed authority directory",
             "Treat hooks as correctness-critical runtime dependencies",
         ),
         lifecycle=("preview", "render-authority", "render-projections", "verify"),
@@ -45,55 +47,58 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         command_id="run",
-        summary="Create one durable run under the shared runtime and attach in the foreground by default.",
-        argument_hint="[--executor claude|codex] [--host claude|codex] [--detach] [--attach <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>",
+        summary="Prepare one strict run packet for live in-session execution, or use `--sleep` to hand it to an external worker.",
+        argument_hint="[--executor claude|codex] [--host claude|codex] [--sleep] [--attach <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>",
         durable=True,
         supports_codex_executor=True,
-        acceptance="A durable run ledger exists under .thoth/runs/<run_id>, and execution only starts from a compiler-generated strict task.",
+        acceptance="A durable run ledger plus execution packet exist under .thoth/runs/<run_id>, live mode stays in the current host session, and `--sleep` backgrounds through the same authority shape.",
         needs_subagents=True,
+        allowed_tools=("Read", "Glob", "Grep", "Edit", "Write", "Bash", "Task"),
         scope_can=(
-            "Create a durable run and attach to it",
-            "Delegate execution to Codex through the shared runtime path",
-            "Write run/state/events/acceptance/artifacts ledgers",
+            "Prepare a durable run packet for the current host session",
+            "Switch to an external worker only with --sleep",
+            "Write run/state/events/acceptance/artifacts ledgers through the protocol",
             "Stop or watch an existing run",
         ),
         scope_cannot=(
             "Use host session state as runtime truth",
-            "Create a non-durable foreground-only pseudo run",
+            "Use detached live execution without --sleep",
         ),
-        lifecycle=("create", "lease", "supervise", "attach/watch/stop", "acceptance"),
+        lifecycle=("prepare", "live-native|external-worker", "protocol-update", "attach/watch/stop", "acceptance"),
         interaction_gaps=("Strict task id",),
     ),
     CommandSpec(
         command_id="loop",
-        summary="Create one durable autonomous loop under the shared runtime and attach in the foreground by default.",
-        argument_hint="[--executor claude|codex] [--host claude|codex] [--detach] [--attach <run_id>] [--resume <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>",
+        summary="Prepare one strict loop packet for live in-session iteration, or use `--sleep` to hand it to an external worker.",
+        argument_hint="[--executor claude|codex] [--host claude|codex] [--sleep] [--attach <run_id>] [--resume <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>",
         durable=True,
         supports_codex_executor=True,
-        acceptance="Loop lifecycle is durable and recoverable through attach/resume/watch/stop, and loop creation only starts from a compiler-generated strict task.",
+        acceptance="Loop lifecycle is durable and recoverable through attach/resume/watch/stop, live mode stays inside the current host session, and heavy acceptance expects bounded rounds/time rather than unbounded supervisor churn.",
         needs_subagents=True,
+        allowed_tools=("Read", "Glob", "Grep", "Edit", "Write", "Bash", "Task"),
         scope_can=(
-            "Create or resume a durable loop run",
+            "Create or resume a durable loop packet",
             "Attach/watch/stop through the same runtime state machine",
             "Delegate work to Codex without changing authority write shape",
         ),
         scope_cannot=(
-            "Run as a best-effort background loop without supervisor state",
+            "Use detached live execution without --sleep",
             "Depend on subagents or hooks for correctness",
         ),
-        lifecycle=("create", "lease", "supervise", "attach/resume/watch/stop", "acceptance"),
+        lifecycle=("prepare", "live-native|external-worker", "protocol-update", "attach/resume/watch/stop", "acceptance"),
         interaction_gaps=("Strict task id",),
     ),
     CommandSpec(
         command_id="review",
-        summary="Review code or plans through the shared Thoth surface.",
+        summary="Prepare a structured live review packet through the shared Thoth surface.",
         argument_hint="[--executor claude|codex] [--host claude|codex] <target>",
         supports_codex_executor=True,
-        acceptance="Findings are reported without mutating source code, while preserving executor parity.",
+        acceptance="Findings are reported in structured form through the same authority protocol without mutating source code, while preserving executor parity.",
         needs_subagents=True,
-        scope_can=("Read code and documents", "Delegate review to Codex"), 
+        allowed_tools=("Read", "Glob", "Grep", "Bash", "Task"),
+        scope_can=("Read code and documents", "Delegate review to Codex", "Write structured findings through the protocol"), 
         scope_cannot=("Modify project code", "Claim acceptance without evidence"),
-        lifecycle=("analyze", "report"),
+        lifecycle=("prepare", "live-native-review", "protocol-update", "report"),
     ),
     CommandSpec(
         command_id="status",
@@ -108,7 +113,7 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         command_id="doctor",
         summary="Audit project health, generated surfaces, and runtime shape.",
         argument_hint="[--quick]",
-        acceptance="Doctor validates .thoth authority, generated projections, and project layer consistency.",
+        acceptance="Doctor validates .thoth authority and generated projections without assuming repo-root `.codex` is Thoth-managed.",
         scope_can=("Run health checks", "Verify generated surfaces"), 
         scope_cannot=("Use missing hooks as a correctness failure by themselves",),
         lifecycle=("audit", "report"),

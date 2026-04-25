@@ -44,7 +44,7 @@ executed before Claude sees this prompt.
 - Hooks required for correctness: no
 - Subagents required for correctness: no
 - Lifecycle: audit -> report
-- Acceptance: Doctor validates .thoth authority, generated projections, and project layer consistency.
+- Acceptance: Doctor validates .thoth authority and generated projections without assuming repo-root `.codex` is Thoth-managed.
 
 ## Interaction Gaps
 

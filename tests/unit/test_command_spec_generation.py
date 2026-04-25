@@ -23,16 +23,27 @@ def test_claude_surface_renders_from_spec():
     spec = next(spec for spec in COMMAND_SPECS if spec.command_id == "run")
     rendered = render_claude_command(spec)
     assert "name: thoth:run" in rendered
-    assert "disable-model-invocation: true" in rendered
+    assert "disable-model-invocation: false" in rendered
+    assert "allowed-tools: Read, Glob, Grep, Edit, Write, Bash, Task" in rendered
     assert "Durable: yes" in rendered
     assert "Codex executor allowed: yes" in rendered
-    assert 'scripts/thoth-claude-command.sh" run $ARGUMENTS' in rendered
+    assert 'scripts/thoth-claude-command.sh" run --host claude $ARGUMENTS' in rendered
+    assert "packet.dispatch_mode` is `live_native`" in rendered
 
 
-def test_claude_discuss_surface_quotes_free_text_arguments():
+def test_claude_discuss_surface_preserves_structured_arguments():
     spec = next(spec for spec in COMMAND_SPECS if spec.command_id == "discuss")
     rendered = render_claude_command(spec)
-    assert 'scripts/thoth-claude-command.sh" discuss --goal "$ARGUMENTS"' in rendered
+    assert 'scripts/thoth-claude-command.sh" discuss $ARGUMENTS' in rendered
+    assert "disable-model-invocation: true" in rendered
+
+
+def test_claude_review_surface_preserves_structured_arguments():
+    spec = next(spec for spec in COMMAND_SPECS if spec.command_id == "review")
+    rendered = render_claude_command(spec)
+    assert 'scripts/thoth-claude-command.sh" review --host claude $ARGUMENTS' in rendered
+    assert "allowed-tools: Read, Glob, Grep, Bash, Task" in rendered
+    assert "packet.executor` is `codex`" in rendered
 
 
 def test_codex_skill_lists_single_public_entry():

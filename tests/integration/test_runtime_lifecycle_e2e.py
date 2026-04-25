@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 import pytest
+from thoth.project_init import render_codex_hooks_payload
 from thoth.runtime import local_registry_root
 from thoth.task_contracts import compile_task_authority
 
@@ -47,6 +48,12 @@ def _wait_until(predicate, *, timeout: float, description: str) -> None:
 
 def _read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _extract_json(stdout: str) -> dict:
+    start = stdout.find("{")
+    assert start >= 0, stdout
+    return json.loads(stdout[start:])
 
 
 def _free_port() -> int:
@@ -134,66 +141,89 @@ def thoth_project(tmp_path, monkeypatch):
 
 @pytest.mark.integration
 def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
-    run_result = _run_cli(thoth_project, "run", "--task-id", "task-1", "--detach")
+    run_result = _run_cli(thoth_project, "run", "--task-id", "task-1")
     assert run_result.returncode == 0, run_result.stderr
-    run_id = run_result.stdout.strip().splitlines()[-1]
-
-    _wait_until(
-        lambda: _read_json(thoth_project / ".thoth" / "runs" / run_id / "state.json").get("status") == "running",
-        timeout=15,
-        description="detached run to become active",
-    )
+    run_packet = _extract_json(run_result.stdout)
+    run_id = run_packet["run_id"]
+    assert run_packet["dispatch_mode"] == "live_native"
     run_json = _read_json(thoth_project / ".thoth" / "runs" / run_id / "run.json")
     assert run_json["task_id"] == "task-1"
+    assert run_json["executor"] == "claude"
 
     watch_result = _run_cli(thoth_project, "run", "--watch", run_id, timeout=20)
     assert watch_result.returncode == 0
     assert "status=running" in watch_result.stdout
+
+    conflict_result = _run_cli(thoth_project, "run", "--task-id", "task-1")
+    assert conflict_result.returncode == 1
+    assert "Active lease already held" in conflict_result.stderr
 
     stop_result = _run_cli(thoth_project, "run", "--stop", run_id)
     assert stop_result.returncode == 0
     _wait_until(
         lambda: _read_json(thoth_project / ".thoth" / "runs" / run_id / "state.json").get("status") == "stopped",
         timeout=15,
-        description="detached run to stop",
+        description="live run to stop",
     )
 
-    loop_result = _run_cli(thoth_project, "loop", "--task-id", "task-1", "--detach")
+    run_sleep_result = _run_cli(
+        thoth_project,
+        "run",
+        "--task-id",
+        "task-1",
+        "--sleep",
+        env={"THOTH_TEST_EXTERNAL_WORKER_MODE": "complete"},
+    )
+    assert run_sleep_result.returncode == 0, run_sleep_result.stderr
+    run_sleep_packet = _extract_json(run_sleep_result.stdout)
+    run_sleep_id = run_sleep_packet["run_id"]
+    assert run_sleep_packet["dispatch_mode"] == "external_worker"
+    assert run_sleep_packet["worker_spawned"] is True
+    _wait_until(
+        lambda: _read_json(thoth_project / ".thoth" / "runs" / run_sleep_id / "state.json").get("status") == "completed",
+        timeout=15,
+        description="sleep run to complete",
+    )
+
+    loop_live_result = _run_cli(thoth_project, "loop", "--task-id", "task-1")
+    assert loop_live_result.returncode == 0, loop_live_result.stderr
+    loop_live_packet = _extract_json(loop_live_result.stdout)
+    loop_live_id = loop_live_packet["run_id"]
+    assert loop_live_packet["dispatch_mode"] == "live_native"
+    loop_live_watch = _run_cli(thoth_project, "loop", "--watch", loop_live_id, timeout=20)
+    assert loop_live_watch.returncode == 0
+    assert "status=running" in loop_live_watch.stdout
+    loop_live_stop = _run_cli(thoth_project, "loop", "--stop", loop_live_id)
+    assert loop_live_stop.returncode == 0
+    _wait_until(
+        lambda: _read_json(thoth_project / ".thoth" / "runs" / loop_live_id / "state.json").get("status") == "stopped",
+        timeout=15,
+        description="live loop to stop",
+    )
+
+    loop_result = _run_cli(
+        thoth_project,
+        "loop",
+        "--task-id",
+        "task-1",
+        "--sleep",
+        env={"THOTH_TEST_EXTERNAL_WORKER_MODE": "hold"},
+    )
     assert loop_result.returncode == 0, loop_result.stderr
-    loop_id = loop_result.stdout.strip().splitlines()[-1]
+    loop_packet = _extract_json(loop_result.stdout)
+    loop_id = loop_packet["run_id"]
+    assert loop_packet["dispatch_mode"] == "external_worker"
+    assert loop_packet["worker_spawned"] is True
     _wait_until(
-        lambda: _read_json(thoth_project / ".thoth" / "runs" / loop_id / "state.json").get("status") == "running",
+        lambda: _read_json(thoth_project / ".thoth" / "runs" / loop_id / "state.json").get("status") in {"running", "completed"},
         timeout=15,
-        description="detached loop to become active",
+        description="sleep loop to become active",
     )
-
-    supervisor_path = local_registry_root(thoth_project) / "runs" / loop_id / "supervisor.json"
-    supervisor = _read_json(supervisor_path)
-    os.kill(int(supervisor["pid"]), signal.SIGKILL)
-
-    resume_result = _run_cli(thoth_project, "loop", "--resume", loop_id, "--detach")
-    assert resume_result.returncode == 0, resume_result.stderr
-    _wait_until(
-        lambda: _read_json(thoth_project / ".thoth" / "runs" / loop_id / "state.json").get("phase") == "active",
-        timeout=15,
-        description="loop resume after supervisor kill",
-    )
-
-    conflict_result = _run_cli(thoth_project, "run", "--task-id", "task-1", "--detach")
-    assert conflict_result.returncode == 0, conflict_result.stderr
-    conflict_id = conflict_result.stdout.strip().splitlines()[-1]
-    _wait_until(
-        lambda: _read_json(thoth_project / ".thoth" / "runs" / conflict_id / "state.json").get("status") in {"failed", "running"},
-        timeout=15,
-        description="conflict probe to settle",
-    )
-    conflict_state = _read_json(thoth_project / ".thoth" / "runs" / conflict_id / "state.json")
-    assert conflict_state["phase"] == "lease_conflict"
 
     loop_stop = _run_cli(thoth_project, "loop", "--stop", loop_id)
     assert loop_stop.returncode == 0
     _wait_until(
-        lambda: _read_json(thoth_project / ".thoth" / "runs" / loop_id / "state.json").get("status") == "stopped",
+        lambda: _read_json(thoth_project / ".thoth" / "runs" / loop_id / "state.json").get("status") in {"stopped", "completed"},
         timeout=15,
         description="loop to stop",
     )
@@ -207,14 +237,10 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     config["dashboard"]["port"] = port
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    run_result = _run_cli(thoth_project, "run", "--task-id", "task-1", "--detach")
+    run_result = _run_cli(thoth_project, "run", "--task-id", "task-1")
     assert run_result.returncode == 0
-    run_id = run_result.stdout.strip().splitlines()[-1]
-    _wait_until(
-        lambda: _read_json(thoth_project / ".thoth" / "runs" / run_id / "state.json").get("status") == "running",
-        timeout=15,
-        description="dashboard-bound run to become active",
-    )
+    run_packet = _extract_json(run_result.stdout)
+    run_id = run_packet["run_id"]
 
     dashboard_env = {"THOTH_HEARTBEAT_STALE_MINUTES": "1"}
     start = _run_cli(thoth_project, "dashboard", "start", env=dashboard_env, timeout=60)
@@ -245,7 +271,7 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
         stale_run = json.loads(response.read().decode("utf-8"))
     assert stale_run["is_stale"] is True
 
-    hooks_json = json.loads((thoth_project / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+    hooks_json = render_codex_hooks_payload()
     start_hook = hooks_json["hooks"]["SessionStart"][0]["hooks"][0]
     stop_hook = hooks_json["hooks"]["Stop"][0]["hooks"][0]
     assert "thoth-codex-hook.sh\" start" in start_hook["command"]
