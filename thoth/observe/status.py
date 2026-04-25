@@ -74,6 +74,8 @@ def time_ago(iso_str: str | None) -> str:
         dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
     except ValueError:
         return "unknown"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
     delta = now - dt
     seconds = int(delta.total_seconds())

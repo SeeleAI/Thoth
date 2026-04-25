@@ -11,6 +11,8 @@ import pytest
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from thoth.observe.status import time_ago
+
 from status import (
     is_task_blocked,
     is_task_completed,
@@ -114,3 +116,8 @@ def test_quick_health_all_present(tmp_path, monkeypatch):
     healthy, msg = quick_health()
     assert healthy
     assert "Strict authority" in msg or "Last run-log update" in msg
+
+
+def test_time_ago_accepts_naive_timestamp_as_utc():
+    value = time_ago("2026-04-25 14:47")
+    assert value.endswith("ago")

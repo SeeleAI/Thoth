@@ -8,7 +8,7 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 
 ## Verification Snapshot
 
-- `last_verified_utc`: `2026-04-24T16:40:14Z`
+- `last_verified_utc`: `2026-04-25T17:06:00Z`
 - `sources`: `SRC-OAI-001` ~ `SRC-OAI-014`
 
 ## 1. OpenAI API primitives
@@ -91,9 +91,9 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 
 ### Hooks
 
-截至本轮核验，官方 `Codex Hooks` 页最重要的信号有两个：
+截至 `2026-04-25T17:06:00Z` 的官方 latest 页面，`Codex Hooks` 最重要的信号有两个：
 
-- 页面带有 `Experimental` 性质
+- 页面当前不再带 `Experimental` 标记
 - 启用需要 `config.toml` feature flag
 
 额外重要点：
@@ -103,8 +103,8 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 
 对 Thoth 的设计含义：
 
-- 任何试图把 Codex hooks 当成稳定长期扩展点的设计都必须极其谨慎。
-- 在本仓库内，相关文档只能写成“可利用的宿主扩展能力候选”，不能写成稳定基线。
+- 即便页面不再写成 `Experimental`，hooks 仍属于高波动宿主扩展点，设计上不应被当成 repo authority 或 durability substrate。
+- 在本仓库内，相关文档仍应写成“宿主扩展接入面”，而不是稳定跨版本基线。
 
 ### Automations
 

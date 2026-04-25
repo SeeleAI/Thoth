@@ -165,10 +165,20 @@ def isolated_data_file():
             else:
                 os.environ["THOTH_SELFTEST_DATA_PATH"] = previous
 """,
+    "scripts/__init__.py": """\
+\"\"\"Validator helpers for the deterministic Thoth selftest repo.\"\"\"
+""",
     "scripts/validate_feature.py": """\
 from __future__ import annotations
 
-from scripts._validator_support import isolated_data_file, require, task_by_id
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from _validator_support import isolated_data_file, require, task_by_id
 from tracker.store import create_task, load_tasks
 
 
@@ -194,7 +204,14 @@ if __name__ == "__main__":
     "scripts/validate_bugfix.py": """\
 from __future__ import annotations
 
-from scripts._validator_support import isolated_data_file, require, task_by_id
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from _validator_support import isolated_data_file, require, task_by_id
 from tracker.store import create_task, load_tasks, update_task
 
 
@@ -214,7 +231,14 @@ if __name__ == "__main__":
     "scripts/validate_full.py": """\
 from __future__ import annotations
 
-from scripts._validator_support import isolated_data_file, require, task_by_id
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from _validator_support import isolated_data_file, require, task_by_id
 from tracker.store import create_task, load_tasks, update_task
 
 

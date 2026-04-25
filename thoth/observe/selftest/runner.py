@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import re
+import selectors
 import shutil
 import signal
 import socket
@@ -40,8 +41,13 @@ FIXED_CLAUDE_DIR = Path("/tmp/thoth-selftest-claude")
 FIXED_CODEX_DIR = Path("/tmp/thoth-selftest-codex")
 FIXED_RUNTIME_DIR = Path("/tmp/thoth-selftest-runtime")
 CODEX_SKILL_NAME = "thoth"
-SELFTEST_MAX_RUNTIME_SECONDS = 180.0
+HARD_SUITE_MAX_RUNTIME_SECONDS = 180.0
+HEAVY_PREFLIGHT_MAX_RUNTIME_SECONDS = 120.0
+HEAVY_HOST_MAX_RUNTIME_SECONDS = 900.0
 _SELFTEST_DEADLINE: float | None = None
+_SELFTEST_DEADLINE_LABEL: str | None = None
+_SELFTEST_DEADLINE_SECONDS: float | None = None
+_SELFTEST_STREAM_OUTPUT = False
 
 
 def utc_now() -> str:
@@ -195,13 +201,47 @@ def _http_get_json(url: str) -> dict[str, Any]:
 
 
 def _selftest_runtime_exceeded_message() -> str:
-    return f"Self-test exceeded the hard {int(SELFTEST_MAX_RUNTIME_SECONDS)}s runtime limit."
+    label = f" for {_SELFTEST_DEADLINE_LABEL}" if _SELFTEST_DEADLINE_LABEL else ""
+    if _SELFTEST_DEADLINE_SECONDS is None:
+        return f"Self-test exceeded the active runtime limit{label}."
+    seconds = int(_SELFTEST_DEADLINE_SECONDS)
+    return f"Self-test exceeded the active {seconds}s runtime limit{label}."
 
 
 def _remaining_selftest_seconds() -> float | None:
     if _SELFTEST_DEADLINE is None:
         return None
     return max(0.0, _SELFTEST_DEADLINE - time.time())
+
+
+class _SelftestBudget:
+    def __init__(self, seconds: float | None, *, label: str) -> None:
+        self.seconds = seconds
+        self.label = label
+        self._previous_deadline: float | None = None
+        self._previous_label: str | None = None
+        self._previous_seconds: float | None = None
+
+    def __enter__(self) -> None:
+        global _SELFTEST_DEADLINE, _SELFTEST_DEADLINE_LABEL, _SELFTEST_DEADLINE_SECONDS
+        self._previous_deadline = _SELFTEST_DEADLINE
+        self._previous_label = _SELFTEST_DEADLINE_LABEL
+        self._previous_seconds = _SELFTEST_DEADLINE_SECONDS
+        _SELFTEST_DEADLINE = None if self.seconds is None else time.time() + self.seconds
+        _SELFTEST_DEADLINE_LABEL = self.label
+        _SELFTEST_DEADLINE_SECONDS = self.seconds
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        global _SELFTEST_DEADLINE, _SELFTEST_DEADLINE_LABEL, _SELFTEST_DEADLINE_SECONDS
+        _SELFTEST_DEADLINE = self._previous_deadline
+        _SELFTEST_DEADLINE_LABEL = self._previous_label
+        _SELFTEST_DEADLINE_SECONDS = self._previous_seconds
+
+
+def _emit_selftest_progress(message: str) -> None:
+    if not _SELFTEST_STREAM_OUTPUT:
+        return
+    print(f"[thoth-selftest] {message}", file=sys.stderr, flush=True)
 
 
 def _cap_selftest_timeout(timeout: float) -> float:
@@ -331,20 +371,102 @@ def _run_command(
         merged_env.update(env)
     effective_timeout = _cap_selftest_timeout(timeout)
     started = time.time()
+    _emit_selftest_progress(f"exec cwd={cwd} argv={json.dumps(argv, ensure_ascii=False)} timeout={effective_timeout:.1f}s")
+    process = subprocess.Popen(
+        argv,
+        cwd=str(cwd),
+        env=merged_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=False,
+    )
+    stdout_chunks: list[bytes] = []
+    stderr_chunks: list[bytes] = []
+    selector = selectors.DefaultSelector()
+    if process.stdout is not None:
+        selector.register(process.stdout, selectors.EVENT_READ, data="stdout")
+    if process.stderr is not None:
+        selector.register(process.stderr, selectors.EVENT_READ, data="stderr")
+
+    timed_out = False
+    while selector.get_map():
+        remaining = effective_timeout - (time.time() - started)
+        if remaining <= 0:
+            timed_out = True
+            process.kill()
+            break
+        events = selector.select(timeout=min(0.1, remaining))
+        if not events:
+            if process.poll() is not None:
+                events = [(key, None) for key in list(selector.get_map().values())]
+            else:
+                continue
+        for key, _ in events:
+            stream = key.fileobj
+            data = b""
+            try:
+                data = stream.read1(4096) if hasattr(stream, "read1") else stream.read(4096)
+            except OSError:
+                data = b""
+            if not data:
+                selector.unregister(stream)
+                stream.close()
+                continue
+            if key.data == "stdout":
+                stdout_chunks.append(data)
+                if _SELFTEST_STREAM_OUTPUT:
+                    sys.stdout.write(data.decode("utf-8", errors="ignore"))
+                    sys.stdout.flush()
+            else:
+                stderr_chunks.append(data)
+                if _SELFTEST_STREAM_OUTPUT:
+                    sys.stderr.write(data.decode("utf-8", errors="ignore"))
+                    sys.stderr.flush()
+
+    if timed_out:
+        deadline = time.time() + 1.0
+        while selector.get_map() and time.time() < deadline:
+            events = selector.select(timeout=0.05)
+            if not events:
+                break
+            for key, _ in events:
+                stream = key.fileobj
+                data = b""
+                try:
+                    data = stream.read1(4096) if hasattr(stream, "read1") else stream.read(4096)
+                except OSError:
+                    data = b""
+                if not data:
+                    selector.unregister(stream)
+                    stream.close()
+                    continue
+                if key.data == "stdout":
+                    stdout_chunks.append(data)
+                else:
+                    stderr_chunks.append(data)
+
+    for key in list(selector.get_map().values()):
+        try:
+            selector.unregister(key.fileobj)
+        except Exception:
+            pass
+        try:
+            key.fileobj.close()
+        except Exception:
+            pass
+
     try:
-        completed = subprocess.run(
-            argv,
-            cwd=str(cwd),
-            env=merged_env,
-            text=True,
-            capture_output=True,
-            timeout=effective_timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout.decode("utf-8", errors="ignore") if exc.stdout else "")
-        stderr = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr.decode("utf-8", errors="ignore") if exc.stderr else "")
+        process.wait(timeout=1.0 if timed_out else 0.5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=1.0)
+
+    stdout = b"".join(stdout_chunks).decode("utf-8", errors="ignore")
+    stderr = b"".join(stderr_chunks).decode("utf-8", errors="ignore")
+    if timed_out:
         timeout_note = f"Command timed out after {effective_timeout:.1f}s."
         stderr = f"{stderr}\n{timeout_note}".strip()
+        _emit_selftest_progress(f"timeout argv={json.dumps(argv, ensure_ascii=False)} after {effective_timeout:.1f}s")
         return CommandResult(
             argv=argv,
             cwd=str(cwd),
@@ -353,12 +475,15 @@ def _run_command(
             stderr=stderr,
             duration_seconds=round(time.time() - started, 3),
         )
+    _emit_selftest_progress(
+        f"done rc={process.returncode} argv={json.dumps(argv, ensure_ascii=False)} duration={time.time() - started:.3f}s"
+    )
     return CommandResult(
         argv=argv,
         cwd=str(cwd),
-        returncode=completed.returncode,
-        stdout=completed.stdout,
-        stderr=completed.stderr,
+        returncode=int(process.returncode or 0),
+        stdout=stdout,
+        stderr=stderr,
         duration_seconds=round(time.time() - started, 3),
     )
 
@@ -1531,9 +1656,7 @@ def _run_claude_public_command(
 
 
 def _codex_prompt_for_public_command(public_command: str, done_token: str) -> str:
-    shell_command = public_command.strip()
-    if shell_command.startswith("$thoth "):
-        shell_command = f"thoth {shell_command[len('$thoth '):]}"
+    shell_command = _shell_command_for_public_command(public_command)
     live_packet_contract = shell_command.startswith("thoth run ") or shell_command.startswith("thoth loop ") or shell_command.startswith("thoth review ")
     prompt = (
         "Operate only on this repo. "
@@ -1555,6 +1678,13 @@ def _codex_prompt_for_public_command(public_command: str, done_token: str) -> st
     else:
         prompt += f"When the command finishes, reply with exactly {done_token}."
     return prompt
+
+
+def _shell_command_for_public_command(public_command: str) -> str:
+    shell_command = public_command.strip()
+    if shell_command.startswith("$thoth "):
+        shell_command = f"thoth {shell_command[len('$thoth '):]}"
+    return shell_command
 
 
 def _run_codex_public_command(
@@ -1579,10 +1709,108 @@ def _run_codex_public_command(
             _codex_prompt_for_public_command(public_command, done_token),
         ],
         cwd=project_dir,
-        env={"THOTH_DETACH_WORKER_VIA_NOHUP": "1"},
         timeout=timeout,
     )
     return result, _save_command(recorder, artifact_name, result)
+
+
+def _codex_completed_command_items(stdout: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if payload.get("type") != "item.completed":
+            continue
+        item = payload.get("item")
+        if isinstance(item, dict) and item.get("type") == "command_execution":
+            items.append(item)
+    return items
+
+
+def _normalize_codex_public_command_result(
+    result: CommandResult,
+    *,
+    public_command: str,
+    done_token: str,
+) -> CommandResult:
+    completed_commands = _codex_completed_command_items(result.stdout)
+    shell_command = _shell_command_for_public_command(public_command)
+    live_packet_contract = _is_live_packet_public_command(public_command)
+    matching_commands = [
+        item for item in completed_commands if shell_command in str(item.get("command") or "")
+    ]
+    public_step = matching_commands[0] if matching_commands else None
+    if public_step is None:
+        return CommandResult(
+            argv=result.argv,
+            cwd=result.cwd,
+            returncode=1,
+            stdout=result.stdout,
+            stderr=(result.stderr + "\nCodex did not execute the requested shell command: " + shell_command).strip(),
+            duration_seconds=result.duration_seconds,
+        )
+    if public_step.get("status") != "completed" or int(public_step.get("exit_code") or 0) != 0:
+        return CommandResult(
+            argv=result.argv,
+            cwd=result.cwd,
+            returncode=1,
+            stdout=result.stdout,
+            stderr=(
+                result.stderr
+                + "\nCodex command execution failed: "
+                + json.dumps(
+                    {
+                        "command": public_step.get("command"),
+                        "status": public_step.get("status"),
+                        "exit_code": public_step.get("exit_code"),
+                    },
+                    ensure_ascii=False,
+                )
+            ).strip(),
+            duration_seconds=result.duration_seconds,
+        )
+    if not live_packet_contract:
+        failed_commands = [
+            item
+            for item in completed_commands
+            if item.get("status") != "completed" or int(item.get("exit_code") or 0) != 0
+        ]
+        if failed_commands:
+            first = failed_commands[0]
+            return CommandResult(
+                argv=result.argv,
+                cwd=result.cwd,
+                returncode=1,
+                stdout=result.stdout,
+                stderr=(
+                    result.stderr
+                    + "\nCodex command execution failed: "
+                    + json.dumps(
+                        {
+                            "command": first.get("command"),
+                            "status": first.get("status"),
+                            "exit_code": first.get("exit_code"),
+                        },
+                        ensure_ascii=False,
+                    )
+                ).strip(),
+                duration_seconds=result.duration_seconds,
+            )
+    if done_token not in result.stdout:
+        return CommandResult(
+            argv=result.argv,
+            cwd=result.cwd,
+            returncode=1,
+            stdout=result.stdout,
+            stderr=(result.stderr + f"\nMissing done token: {done_token}").strip(),
+            duration_seconds=result.duration_seconds,
+        )
+    return result
 
 
 def _run_host_real_flow(
@@ -1593,12 +1821,38 @@ def _run_host_real_flow(
     run_public_command,
     commands: dict[str, Any],
     review_expected_executor: str | None = None,
+    from_step: str | None = None,
+    to_step: str | None = None,
 ) -> tuple[list[str], dict[str, CommandResult]]:
     artifacts: list[str] = []
     command_results: dict[str, CommandResult] = {}
     seen_run_ids: set[str] = set()
     transient_retry_limit = 2
     transient_retry_window_seconds = 90.0
+    ordered_step_ids = [
+        "init",
+        "status",
+        "doctor",
+        "discuss-decision",
+        *[f"discuss-contract-{index}" for index, _ in enumerate(commands["discuss_contracts"], start=1)],
+        "run-feature",
+        "run-bugfix",
+        "review",
+        "dashboard",
+        "loop",
+    ]
+    if commands.get("loop_live_followup"):
+        ordered_step_ids.append("loop-live-followup")
+    ordered_step_ids.extend(["report", "sync"])
+    step_index = {step_id: index for index, step_id in enumerate(ordered_step_ids)}
+    if from_step is not None and from_step not in step_index:
+        raise RuntimeError(f"unknown host-real from-step: {from_step}")
+    if to_step is not None and to_step not in step_index:
+        raise RuntimeError(f"unknown host-real to-step: {to_step}")
+    start_index = step_index.get(from_step, 0)
+    end_index = step_index.get(to_step, len(ordered_step_ids) - 1)
+    if start_index > end_index:
+        raise RuntimeError(f"invalid host-real step window: from-step={from_step} after to-step={to_step}")
 
     def is_sleep_command(public_command: str) -> bool:
         return "--sleep" in public_command.split()
@@ -1609,22 +1863,45 @@ def _run_host_real_flow(
     def completion_timeout(public_command: str) -> float:
         return 900 if is_sleep_command(public_command) else 60
 
-    def execute(step_id: str, public_command: str, *, timeout: float = 240) -> CommandResult:
+    def step_mode(step_id: str) -> str:
+        index = step_index[step_id]
+        if index < start_index:
+            return "prereq"
+        if index > end_index:
+            return "skipped"
+        return "selected"
+
+    def should_run(step_id: str) -> bool:
+        return step_index[step_id] <= end_index
+
+    def check_name(base: str, mode: str) -> str:
+        if mode == "selected":
+            return f"host.{host_name}.{base}"
+        return f"host.{host_name}.prereq.{base}"
+
+    def execute(step_id: str, public_command: str, *, timeout: float = 240) -> CommandResult | None:
+        mode = step_mode(step_id)
+        if mode == "skipped":
+            return None
         started = time.time()
         attempt = 0
         effective_timeout = _effective_host_command_timeout(host_name, public_command, timeout)
+        _emit_selftest_progress(f"{host_name} step {step_id} mode={mode} begin")
         while True:
             attempt += 1
+            base_artifact_name = f"host-{host_name}-{step_id}" if mode == "selected" else f"host-{host_name}-prereq-{step_id}"
             artifact_suffix = "" if attempt == 1 else f"-attempt-{attempt}"
             result, command_artifacts = run_public_command(
                 public_command,
                 recorder=recorder,
-                artifact_name=f"host-{host_name}-{step_id}{artifact_suffix}",
+                artifact_name=f"{base_artifact_name}{artifact_suffix}",
                 timeout=effective_timeout,
             )
-            command_results[step_id] = result
+            if mode == "selected":
+                command_results[step_id] = result
             artifacts.extend(command_artifacts)
             if result.returncode == 0:
+                _emit_selftest_progress(f"{host_name} step {step_id} mode={mode} ok")
                 return result
             transient = _looks_like_transient_host_outage(result)
             if transient and attempt <= transient_retry_limit and (time.time() - started) <= transient_retry_window_seconds:
@@ -1644,142 +1921,152 @@ def _run_host_real_flow(
     for index, command in enumerate(commands["discuss_contracts"], start=1):
         execute(f"discuss-contract-{index}", command)
 
-    compiler_summary = compile_task_authority(project_dir).get("summary", {})
-    ready_count = int(compiler_summary.get("task_counts", {}).get("ready", 0))
-    queue_count = int(compiler_summary.get("decision_queue_count", 0))
-    compiler_ok = ready_count == 3 and queue_count == 0
-    compiler_artifact = recorder.write_json(f"host-{host_name}-compiler-summary.json", compiler_summary)
-    recorder.add(
-        f"host.{host_name}.compiler_ready",
-        "passed" if compiler_ok else "failed",
-        f"Structured discuss compiled the host-real tasks: ready={ready_count} decision_queue={queue_count}.",
-        [compiler_artifact],
-    )
-    if not compiler_ok:
-        raise RuntimeError("compiled host-real tasks were not ready after structured discuss")
-
-    execute("run-feature", commands["run_feature"], timeout=900)
-    feature_run_id = _latest_run_id(project_dir, kind="run", task_id="task-feature-owner-due-date", exclude_run_ids=seen_run_ids)
-    if not feature_run_id:
-        raise RuntimeError("feature run did not create a new run ledger")
-    seen_run_ids.add(feature_run_id)
-    artifacts.extend(
-        _verify_host_run_completion(
-            project_dir,
-            recorder,
-            check_name=f"host.{host_name}.feature_run",
-            run_id=feature_run_id,
-            expected_kind="run",
-            expected_task_id="task-feature-owner-due-date",
-            expected_host=host_name,
-            expected_dispatch_mode=expected_dispatch(commands["run_feature"]),
-            timeout=completion_timeout(commands["run_feature"]),
+    last_discuss_step = f"discuss-contract-{len(commands['discuss_contracts'])}"
+    if should_run(last_discuss_step):
+        compiler_summary = compile_task_authority(project_dir).get("summary", {})
+        ready_count = int(compiler_summary.get("task_counts", {}).get("ready", 0))
+        queue_count = int(compiler_summary.get("decision_queue_count", 0))
+        compiler_ok = ready_count == 3 and queue_count == 0
+        compiler_artifact = recorder.write_json(f"host-{host_name}-compiler-summary.json", compiler_summary)
+        recorder.add(
+            check_name("compiler_ready", step_mode(last_discuss_step)),
+            "passed" if compiler_ok else "failed",
+            f"Structured discuss compiled the host-real tasks: ready={ready_count} decision_queue={queue_count}.",
+            [compiler_artifact],
         )
-    )
+        if not compiler_ok:
+            raise RuntimeError("compiled host-real tasks were not ready after structured discuss")
 
-    execute("run-bugfix", commands["run_bugfix"], timeout=900)
-    bugfix_run_id = _latest_run_id(project_dir, kind="run", task_id="task-bugfix-column-persist", exclude_run_ids=seen_run_ids)
-    if not bugfix_run_id:
-        raise RuntimeError("bugfix run did not create a new run ledger")
-    seen_run_ids.add(bugfix_run_id)
-    artifacts.extend(
-        _verify_host_run_completion(
-            project_dir,
-            recorder,
-            check_name=f"host.{host_name}.bugfix_run",
-            run_id=bugfix_run_id,
-            expected_kind="run",
-            expected_task_id="task-bugfix-column-persist",
-            expected_host=host_name,
-            expected_dispatch_mode=expected_dispatch(commands["run_bugfix"]),
-            timeout=completion_timeout(commands["run_bugfix"]),
+    if should_run("run-feature"):
+        execute("run-feature", commands["run_feature"], timeout=900)
+        feature_run_id = _latest_run_id(project_dir, kind="run", task_id="task-feature-owner-due-date", exclude_run_ids=seen_run_ids)
+        if not feature_run_id:
+            raise RuntimeError("feature run did not create a new run ledger")
+        seen_run_ids.add(feature_run_id)
+        artifacts.extend(
+            _verify_host_run_completion(
+                project_dir,
+                recorder,
+                check_name=check_name("feature_run", step_mode("run-feature")),
+                run_id=feature_run_id,
+                expected_kind="run",
+                expected_task_id="task-feature-owner-due-date",
+                expected_host=host_name,
+                expected_dispatch_mode=expected_dispatch(commands["run_feature"]),
+                timeout=completion_timeout(commands["run_feature"]),
+            )
         )
-    )
 
-    artifacts.extend(
-        _run_deterministic_validators(
-            project_dir,
-            recorder,
-            label=f"host.{host_name}.post_bugfix",
-            validators=("scripts/validate_feature.py", "scripts/validate_bugfix.py"),
+    if should_run("run-bugfix"):
+        execute("run-bugfix", commands["run_bugfix"], timeout=900)
+        bugfix_run_id = _latest_run_id(project_dir, kind="run", task_id="task-bugfix-column-persist", exclude_run_ids=seen_run_ids)
+        if not bugfix_run_id:
+            raise RuntimeError("bugfix run did not create a new run ledger")
+        seen_run_ids.add(bugfix_run_id)
+        artifacts.extend(
+            _verify_host_run_completion(
+                project_dir,
+                recorder,
+                check_name=check_name("bugfix_run", step_mode("run-bugfix")),
+                run_id=bugfix_run_id,
+                expected_kind="run",
+                expected_task_id="task-bugfix-column-persist",
+                expected_host=host_name,
+                expected_dispatch_mode=expected_dispatch(commands["run_bugfix"]),
+                timeout=completion_timeout(commands["run_bugfix"]),
+            )
         )
-    )
-
-    execute("review", commands["review"], timeout=900)
-    review_run_id = _latest_run_id(project_dir, kind="review", exclude_run_ids=seen_run_ids)
-    if not review_run_id:
-        raise RuntimeError("review did not create a new run ledger")
-    seen_run_ids.add(review_run_id)
-    artifacts.extend(
-        _verify_host_run_completion(
-            project_dir,
-            recorder,
-            check_name=f"host.{host_name}.review_run",
-            run_id=review_run_id,
-            expected_kind="review",
-            expected_host=host_name,
-            expected_executor=review_expected_executor,
-            expected_dispatch_mode=expected_dispatch(commands["review"]),
-            require_findings=True,
-            timeout=completion_timeout(commands["review"]),
+        artifacts.extend(
+            _run_deterministic_validators(
+                project_dir,
+                recorder,
+                label=check_name("post_bugfix", step_mode("run-bugfix")),
+                validators=("scripts/validate_feature.py", "scripts/validate_bugfix.py"),
+            )
         )
-    )
 
-    execute("dashboard", commands["dashboard"], timeout=240)
+    if should_run("review"):
+        execute("review", commands["review"], timeout=900)
+        review_run_id = _latest_run_id(project_dir, kind="review", exclude_run_ids=seen_run_ids)
+        if not review_run_id:
+            raise RuntimeError("review did not create a new run ledger")
+        seen_run_ids.add(review_run_id)
+        artifacts.extend(
+            _verify_host_run_completion(
+                project_dir,
+                recorder,
+                check_name=check_name("review_run", step_mode("review")),
+                run_id=review_run_id,
+                expected_kind="review",
+                expected_host=host_name,
+                expected_executor=review_expected_executor,
+                expected_dispatch_mode=expected_dispatch(commands["review"]),
+                require_findings=True,
+                timeout=completion_timeout(commands["review"]),
+            )
+        )
+
     dashboard_port = int(_read_json(project_dir / ".thoth" / "project" / "project.json").get("dashboard", {}).get("port", 8501))
-    dashboard_status = _wait_for_http_json(
-        f"http://127.0.0.1:{dashboard_port}/api/status",
-        timeout=20,
-        description=f"{host_name} dashboard start",
-    )
-    dashboard_status_artifact = recorder.write_json(f"host-{host_name}-dashboard-status.json", dashboard_status)
-    dashboard_ready = isinstance(dashboard_status, dict) and bool(dashboard_status.get("runtime"))
-    recorder.add(
-        f"host.{host_name}.dashboard_start",
-        "passed" if dashboard_ready else "failed",
-        f"Dashboard started for {host_name} on port {dashboard_port}.",
-        [dashboard_status_artifact],
-    )
-    if not dashboard_ready:
-        raise RuntimeError(f"{host_name} dashboard did not become ready")
-
-    execute("loop", commands["loop"], timeout=900)
-    loop_run_id = _latest_run_id(project_dir, kind="loop", task_id="task-loop-close-review", exclude_run_ids=seen_run_ids)
-    if not loop_run_id:
-        raise RuntimeError("loop did not create a new run ledger")
-    seen_run_ids.add(loop_run_id)
-    artifacts.extend(
-        _verify_host_run_completion(
-            project_dir,
-            recorder,
-            check_name=f"host.{host_name}.loop_run",
-            run_id=loop_run_id,
-            expected_kind="loop",
-            expected_task_id="task-loop-close-review",
-            expected_host=host_name,
-            expected_dispatch_mode=expected_dispatch(commands["loop"]),
-            timeout=completion_timeout(commands["loop"]),
+    if should_run("dashboard"):
+        execute("dashboard", commands["dashboard"], timeout=240)
+        dashboard_status = _wait_for_http_json(
+            f"http://127.0.0.1:{dashboard_port}/api/status",
+            timeout=20,
+            description=f"{host_name} dashboard start",
         )
-    )
-    artifacts.extend(
-        _run_deterministic_validators(
-            project_dir,
-            recorder,
-            label=f"host.{host_name}.post_loop_sleep",
-            validators=("scripts/validate_full.py",),
+        dashboard_status_artifact = recorder.write_json(f"host-{host_name}-dashboard-status.json", dashboard_status)
+        dashboard_ready = isinstance(dashboard_status, dict) and bool(dashboard_status.get("runtime"))
+        recorder.add(
+            check_name("dashboard_start", step_mode("dashboard")),
+            "passed" if dashboard_ready else "failed",
+            f"Dashboard started for {host_name} on port {dashboard_port}.",
+            [dashboard_status_artifact],
         )
-    )
-    dashboard_run = _http_get_json(f"http://127.0.0.1:{dashboard_port}/api/runs/{loop_run_id}")
-    dashboard_run_artifact = recorder.write_json(f"host-{host_name}-dashboard-run.json", dashboard_run if isinstance(dashboard_run, dict) else {})
-    dashboard_runtime_ok = isinstance(dashboard_run, dict) and str(dashboard_run.get("run_id") or "") == loop_run_id
-    recorder.add(
-        f"host.{host_name}.dashboard_runtime",
-        "passed" if dashboard_runtime_ok else "failed",
-        f"Dashboard served runtime details for loop run {loop_run_id}.",
-        [dashboard_run_artifact],
-    )
+        if not dashboard_ready:
+            raise RuntimeError(f"{host_name} dashboard did not become ready")
 
-    if commands.get("loop_live_followup"):
+    if should_run("loop"):
+        execute("loop", commands["loop"], timeout=900)
+        loop_run_id = _latest_run_id(project_dir, kind="loop", task_id="task-loop-close-review", exclude_run_ids=seen_run_ids)
+        if not loop_run_id:
+            raise RuntimeError("loop did not create a new run ledger")
+        seen_run_ids.add(loop_run_id)
+        artifacts.extend(
+            _verify_host_run_completion(
+                project_dir,
+                recorder,
+                check_name=check_name("loop_run", step_mode("loop")),
+                run_id=loop_run_id,
+                expected_kind="loop",
+                expected_task_id="task-loop-close-review",
+                expected_host=host_name,
+                expected_dispatch_mode=expected_dispatch(commands["loop"]),
+                timeout=completion_timeout(commands["loop"]),
+            )
+        )
+        artifacts.extend(
+            _run_deterministic_validators(
+                project_dir,
+                recorder,
+                label=check_name("post_loop_sleep", step_mode("loop")),
+                validators=("scripts/validate_full.py",),
+            )
+        )
+        if should_run("dashboard"):
+            dashboard_run = _http_get_json(f"http://127.0.0.1:{dashboard_port}/api/runs/{loop_run_id}")
+            dashboard_run_artifact = recorder.write_json(
+                f"host-{host_name}-dashboard-run.json",
+                dashboard_run if isinstance(dashboard_run, dict) else {},
+            )
+            dashboard_runtime_ok = isinstance(dashboard_run, dict) and str(dashboard_run.get("run_id") or "") == loop_run_id
+            recorder.add(
+                check_name("dashboard_runtime", step_mode("dashboard")),
+                "passed" if dashboard_runtime_ok else "failed",
+                f"Dashboard served runtime details for loop run {loop_run_id}.",
+                [dashboard_run_artifact],
+            )
+
+    if commands.get("loop_live_followup") and should_run("loop-live-followup"):
         execute("loop-live-followup", commands["loop_live_followup"], timeout=900)
         loop_live_followup_id = _latest_run_id(project_dir, kind="loop", task_id="task-loop-close-review", exclude_run_ids=seen_run_ids)
         if not loop_live_followup_id:
@@ -1789,7 +2076,7 @@ def _run_host_real_flow(
             _verify_host_run_completion(
                 project_dir,
                 recorder,
-                check_name=f"host.{host_name}.loop_live_followup",
+                check_name=check_name("loop_live_followup", step_mode("loop-live-followup")),
                 run_id=loop_live_followup_id,
                 expected_kind="loop",
                 expected_task_id="task-loop-close-review",
@@ -1802,27 +2089,40 @@ def _run_host_real_flow(
             _run_deterministic_validators(
                 project_dir,
                 recorder,
-                label=f"host.{host_name}.post_loop_live",
+                label=check_name("post_loop_live", step_mode("loop-live-followup")),
                 validators=("scripts/validate_full.py",),
             )
         )
-    _stop_dashboard(project_dir, recorder=recorder)
 
-    artifacts.extend(
-        _run_deterministic_validators(
-            project_dir,
-            recorder,
-            label=f"host.{host_name}.final",
-            validators=("scripts/validate_full.py",),
+    if should_run("dashboard"):
+        _stop_dashboard(project_dir, recorder=recorder)
+
+    if should_run("loop") or (commands.get("loop_live_followup") and should_run("loop-live-followup")):
+        final_validator_step = "loop-live-followup" if commands.get("loop_live_followup") and should_run("loop-live-followup") else "loop"
+        artifacts.extend(
+            _run_deterministic_validators(
+                project_dir,
+                recorder,
+                label=check_name("final", step_mode(final_validator_step)),
+                validators=("scripts/validate_full.py",),
+            )
         )
-    )
 
-    execute("report", commands["report"], timeout=240)
-    execute("sync", commands["sync"], timeout=240)
+    if should_run("report"):
+        execute("report", commands["report"], timeout=240)
+    if should_run("sync"):
+        execute("sync", commands["sync"], timeout=240)
     return artifacts, command_results
 
 
-def _host_claude(repo_root: Path, project_dir: Path, recorder: Recorder) -> None:
+def _host_claude(
+    repo_root: Path,
+    project_dir: Path,
+    recorder: Recorder,
+    *,
+    from_step: str | None = None,
+    to_step: str | None = None,
+) -> None:
     artifacts = [_write_claude_local_settings(project_dir, repo_root, recorder)]
 
     def run_public_command(public_command: str, *, recorder: Recorder, artifact_name: str, timeout: float = 240) -> tuple[CommandResult, list[str]]:
@@ -1861,8 +2161,11 @@ def _host_claude(repo_root: Path, project_dir: Path, recorder: Recorder) -> None
             "sync": "/thoth:sync",
         },
         review_expected_executor="codex",
+        from_step=from_step,
+        to_step=to_step,
     )
     artifacts.extend(flow_artifacts)
+    partial_window = from_step is not None or to_step is not None
 
     combined_stdout = "\n".join(result.stdout for result in command_results.values())
     combined_stderr = "\n".join(result.stderr for result in command_results.values())
@@ -1877,13 +2180,17 @@ def _host_claude(repo_root: Path, project_dir: Path, recorder: Recorder) -> None
     if bridge_path.exists():
         artifacts.append(str(bridge_path))
     required_bridge_commands = ("init", "status", "doctor", "discuss", "run", "review", "dashboard", "loop", "report", "sync")
-    success = (
-        all(result.returncode == 0 for result in command_results.values())
-        and all(command in bridge_commands for command in required_bridge_commands)
-        and all(bridge_success.get(command) is True for command in required_bridge_commands)
-    )
+    success = all(result.returncode == 0 for result in command_results.values())
+    if not partial_window:
+        success = success and all(command in bridge_commands for command in required_bridge_commands) and all(
+            bridge_success.get(command) is True for command in required_bridge_commands
+        )
     hook_seen = "hook" in combined_stdout.lower() or "session" in combined_stdout.lower()
-    if success and hook_seen:
+    check_name = "host.claude.window" if partial_window else "host.claude"
+    if partial_window and success:
+        status = "passed"
+        detail = f"Claude host window completed successfully with from_step={from_step!r} to_step={to_step!r}."
+    elif success and hook_seen:
         status = "passed"
         detail = "Claude host completed the host-real decision/run/review/loop flow through the public /thoth:* surface, including a real `--executor codex` review bridge."
     elif success:
@@ -1908,10 +2215,17 @@ def _host_claude(repo_root: Path, project_dir: Path, recorder: Recorder) -> None
         status = "failed"
         result_codes = {command: result.returncode for command, result in command_results.items()}
         detail = f"Claude host execution failed. result_codes={result_codes} bridge_commands={bridge_commands}"
-    recorder.add("host.claude", status, detail, artifacts)
+    recorder.add(check_name, status, detail, artifacts)
 
 
-def _host_codex(repo_root: Path, project_dir: Path, recorder: Recorder) -> None:
+def _host_codex(
+    repo_root: Path,
+    project_dir: Path,
+    recorder: Recorder,
+    *,
+    from_step: str | None = None,
+    to_step: str | None = None,
+) -> None:
     decision_path, contract_paths = _write_host_real_discuss_payload_files(project_dir)
 
     def run_public_command(public_command: str, *, recorder: Recorder, artifact_name: str, timeout: float = 240) -> tuple[CommandResult, list[str]]:
@@ -1924,15 +2238,11 @@ def _host_codex(repo_root: Path, project_dir: Path, recorder: Recorder) -> None:
             artifact_name=artifact_name,
             timeout=timeout,
         )
-        if done_token not in result.stdout:
-            result = CommandResult(
-                argv=result.argv,
-                cwd=result.cwd,
-                returncode=1,
-                stdout=result.stdout,
-                stderr=(result.stderr + f"\nMissing done token: {done_token}").strip(),
-                duration_seconds=result.duration_seconds,
-            )
+        result = _normalize_codex_public_command_result(
+            result,
+            public_command=public_command,
+            done_token=done_token,
+        )
         return result, artifacts
 
     contract_commands = [
@@ -1959,6 +2269,8 @@ def _host_codex(repo_root: Path, project_dir: Path, recorder: Recorder) -> None:
             "report": "$thoth report",
             "sync": "$thoth sync",
         },
+        from_step=from_step,
+        to_step=to_step,
     )
     conversations_path = project_dir / ".thoth" / "project" / "conversations.jsonl"
     skill_load_failed = any("failed to load skill" in result.stderr.lower() for result in command_results.values())
@@ -1967,8 +2279,15 @@ def _host_codex(repo_root: Path, project_dir: Path, recorder: Recorder) -> None:
     hook_seen = False
     if conversations_path.exists():
         hook_seen = "\"type\": \"hook\"" in conversations_path.read_text(encoding="utf-8")
-    success = not skill_load_failed and all(result.returncode == 0 for result in command_results.values()) and hook_seen
-    if success:
+    partial_window = from_step is not None or to_step is not None
+    success = not skill_load_failed and all(result.returncode == 0 for result in command_results.values())
+    if not partial_window:
+        success = success and hook_seen
+    check_name = "host.codex.window" if partial_window else "host.codex"
+    if partial_window and success:
+        status = "passed"
+        detail = f"Codex host window completed successfully with from_step={from_step!r} to_step={to_step!r}."
+    elif success:
         status = "passed"
         detail = "Codex host completed the host-real decision/run/review/loop flow through the installed `$thoth` skill and emitted hook ledger notes."
     elif any(_looks_like_transient_host_outage(result) for result in command_results.values()):
@@ -1984,12 +2303,7 @@ def _host_codex(repo_root: Path, project_dir: Path, recorder: Recorder) -> None:
         status = "failed"
         result_codes = {command: result.returncode for command, result in command_results.items()}
         detail = f"Codex host execution failed. result_codes={result_codes}"
-    recorder.add(
-        "host.codex",
-        status,
-        detail,
-        artifacts,
-    )
+    recorder.add(check_name, status, detail, artifacts)
 
 
 def _should_run_host(mode: str, *, host: str, capabilities: dict[str, Any]) -> bool:
@@ -2013,10 +2327,12 @@ def run_selftest(
     artifact_dir: Path | None,
     json_report: Path | None,
     keep_workdir: bool,
+    only_host: str | None = None,
+    from_step: str | None = None,
+    to_step: str | None = None,
 ) -> int:
-    global _SELFTEST_DEADLINE
+    global _SELFTEST_DEADLINE, _SELFTEST_DEADLINE_LABEL, _SELFTEST_DEADLINE_SECONDS, _SELFTEST_STREAM_OUTPUT
     capabilities = detect_capabilities()
-    _SELFTEST_DEADLINE = time.time() + SELFTEST_MAX_RUNTIME_SECONDS
     base_dir = Path(tempfile.mkdtemp(prefix="thoth-selftest-"))
     if tier == "heavy":
         _cleanup_legacy_heavy_processes()
@@ -2035,13 +2351,18 @@ def run_selftest(
     try:
         project_dir = base_dir / "repo-hard"
         project_dir.mkdir(parents=True, exist_ok=True)
-        hard_details = _repo_hard_suite(project_dir, recorder)
+        _SELFTEST_STREAM_OUTPUT = True
+        with _SelftestBudget(HARD_SUITE_MAX_RUNTIME_SECONDS, label=f"{tier} repo-hard suite"):
+            hard_details = _repo_hard_suite(project_dir, recorder)
         recorder.write_json("repo-hard/details.json", hard_details)
         recorder.add("repo-hard.snapshot", "passed", "Captured runtime and project snapshots.", _snapshot_runtime(recorder, project_dir, "repo-hard"))
 
         if tier == "heavy":
-            _preflight_host_real(capabilities, recorder)
+            with _SelftestBudget(HEAVY_PREFLIGHT_MAX_RUNTIME_SECONDS, label="heavy host preflight"):
+                _preflight_host_real(capabilities, recorder)
             requested_hosts = ["claude", "codex"] if hosts in {"auto", "both"} else ([] if hosts == "none" else [hosts])
+            if only_host is not None:
+                requested_hosts = [only_host]
             if not requested_hosts:
                 raise RuntimeError("heavy host-real selftest requires at least one explicit host")
 
@@ -2056,10 +2377,11 @@ def run_selftest(
                     _snapshot_runtime(recorder, host_project, f"host-{host_name}-seed"),
                 )
                 try:
-                    if host_name == "claude":
-                        _host_claude(ROOT, host_project, recorder)
-                    else:
-                        _host_codex(ROOT, host_project, recorder)
+                    with _SelftestBudget(HEAVY_HOST_MAX_RUNTIME_SECONDS, label=f"heavy host {host_name}"):
+                        if host_name == "claude":
+                            _host_claude(ROOT, host_project, recorder, from_step=from_step, to_step=to_step)
+                        else:
+                            _host_codex(ROOT, host_project, recorder, from_step=from_step, to_step=to_step)
                 except Exception as exc:  # pragma: no cover - environment-specific
                     recorder.add(f"host.{host_name}", "failed", f"{host_name} host matrix failed: {exc}", _snapshot_runtime(recorder, host_project, f"host-{host_name}"))
                 recorder.add(
@@ -2085,6 +2407,9 @@ def run_selftest(
         exit_code = 1
     finally:
         _SELFTEST_DEADLINE = None
+        _SELFTEST_DEADLINE_LABEL = None
+        _SELFTEST_DEADLINE_SECONDS = None
+        _SELFTEST_STREAM_OUTPUT = False
         if keep_workdir:
             print(f"Kept self-test workdir at {base_dir}")
         else:
@@ -2096,6 +2421,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run Thoth heavy self-tests.")
     parser.add_argument("--tier", choices=("hard", "heavy"), default="heavy")
     parser.add_argument("--hosts", choices=("auto", "none", "codex", "claude", "both"), default="auto")
+    parser.add_argument("--only-host", choices=("codex", "claude"))
+    parser.add_argument("--from-step")
+    parser.add_argument("--to-step")
     parser.add_argument("--json-report", type=Path)
     parser.add_argument("--artifact-dir", type=Path)
     parser.add_argument("--keep-workdir", action="store_true")
@@ -2106,6 +2434,9 @@ def main(argv: list[str] | None = None) -> int:
         artifact_dir=args.artifact_dir,
         json_report=args.json_report,
         keep_workdir=args.keep_workdir,
+        only_host=args.only_host,
+        from_step=args.from_step,
+        to_step=args.to_step,
     )
 
 

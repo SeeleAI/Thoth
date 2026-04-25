@@ -97,3 +97,14 @@
   - State changes: canonical upstream、README 与插件元数据统一到 `SeeleAI/Thoth`
   - Evidence produced: `README.md`、`thoth/projections.py`、`.codex-plugin/plugin.json`
   - Next likely action: 继续收口公开元数据与开源发布面
+- 2026-04-25 17:06 UTC [codex official live-check for heavy-testing guidance]
+  - Worked on: `OBJ-001`, `WS-004`
+  - State changes: 按 `source-governance.md` 针对当前“如何根据 Codex 特点做 heavy 测试”问题回源核验 OpenAI 官方 `Codex CLI features`、`Codex Hooks`、`Codex Config basics` 与 `Codex Local environments`；确认本地缓存中对 `Codex Hooks` 的 `experimental` 判断已漂移，官方当前页面不再这样标注，但 hooks 仍需 feature flag 且仍属高波动宿主扩展点；同时把后续 heavy 策略讨论重新锚定到“Codex CLI 是交互式 shell/approval agent loop，不是 durable supervisor”这一官方边界上
+  - Evidence produced: 更新 `.agent-os/official-sources/platform-index.md` 与 `.agent-os/official-sources/openai-codex-and-api.md`；live-check authority 为 OpenAI 官方 `https://developers.openai.com/codex/cli/features`、`https://developers.openai.com/codex/hooks`、`https://developers.openai.com/codex/config-basic`、`https://developers.openai.com/codex/app/local-environments`
+  - Next likely action: 结合当前 `thoth/observe/selftest/runner.py` 的 host-real 结构，总结一套面向 Codex 的 heavy 分层策略与 log-first 改码回路，并优先修掉当前把 whole heavy gate 截断到 `180s` 的时限设计
+
+- 2026-04-25 15:43 UTC [codex heavy closeout debug and external-worker isolation]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 继续执行 `TD-024` 的 `Codex-only` closing gate 调试；先修复 deterministic seed repo 的 validator 入口，使 `python scripts/validate_feature.py` / `validate_bugfix.py` / `validate_full.py` 能按 heavy contract 直接执行，不再因 `scripts._validator_support` 或 `tracker` 导入路径错误提前失败；随后收敛 Codex host-real 结果判定，live `run/loop/review` 会话只对请求的公共命令本身做硬失败判断，不再因会话内后续可恢复的辅助 shell 失败误杀整步；最后定位到新的真实 blocker 已收缩为 `external_worker` detached 启动链，当前 `run-bugfix --sleep` 会写出 spawned/queued，但未继续产生 heartbeat 或 terminalize
+  - Evidence produced: 更新 `thoth/selftest_seed.py`、`thoth/observe/selftest/runner.py`、`tests/unit/test_selftest_helpers.py`；验证 `python -m py_compile thoth/observe/selftest/runner.py thoth/selftest_seed.py tests/unit/test_selftest_helpers.py` 通过，`python -m pytest -q tests/unit/test_selftest_helpers.py` 通过（`22 passed`）；真实 `python -m thoth.selftest --tier heavy --hosts codex --keep-workdir --artifact-dir /tmp/thoth-heavy-codex-closeout-artifacts-3 --json-report /tmp/thoth-heavy-codex-closeout-summary-3.json --only-host codex --from-step run-feature` 已确认 `run-feature` 真正 terminalize；真实 `python -m thoth.selftest --tier heavy --hosts codex --keep-workdir --artifact-dir /tmp/thoth-heavy-codex-closeout-artifacts-5 --json-report /tmp/thoth-heavy-codex-closeout-summary-5.json --only-host codex --from-step run-bugfix` 当前仍在推进，最新 `.thoth/runs/run-3b2c754ab01d/state.json` 停在 `status=running phase=queued dispatch_mode=external_worker`
+  - Next likely action: 继续只围绕 `external_worker` detached 启动链收敛 `run-bugfix` 的真实卡点，确认默认 `Popen(..., start_new_session=True)` 路径是否能替代此前失败的 `THOTH_DETACH_WORKER_VIA_NOHUP=1` 注入

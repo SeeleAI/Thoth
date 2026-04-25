@@ -17,7 +17,7 @@
 
 ## Verification Snapshot
 
-- `verified_at_utc`: `2026-04-24T16:40:14Z`
+- `verified_at_utc`: `2026-04-25T17:06:00Z`
 - `verified_by`: `Codex`
 - `policy`: `high-volatility 30 days / concept-and-best-practice 60 days`
 
@@ -30,7 +30,7 @@
 | `SRC-OAI-003` | OpenAI | Codex web / cloud | https://developers.openai.com/codex/cloud | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于 Codex cloud/web 执行能力、交互面、托管流程判断时 | 产品面变化风险高 |
 | `SRC-OAI-004` | OpenAI | Codex Subagents | https://developers.openai.com/codex/subagents | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于子代理配置、调用方式、职责边界判断时 | 与 concepts 页配套阅读 |
 | `SRC-OAI-005` | OpenAI | Codex Subagent concepts | https://developers.openai.com/codex/concepts/subagents | `openai-codex-and-api.md` | `active` | `medium` | `60` | `2026-04-23T04:04:51Z` | 用于解释性概念、设计心智模型判断时 | 概念页比功能页更稳，但仍应定期回源 |
-| `SRC-OAI-006` | OpenAI | Codex Hooks | https://developers.openai.com/codex/hooks | `openai-codex-and-api.md` | `experimental` | `high` | `30` | `2026-04-23T04:04:51Z` | 任何 hooks 支持矩阵、配置方式、平台兼容性判断时 | 当前页面标记为 `Experimental`，且需 feature flag；平台支持信息高波动 |
+| `SRC-OAI-006` | OpenAI | Codex Hooks | https://developers.openai.com/codex/hooks | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-25T17:06:00Z` | 任何 hooks 支持矩阵、配置方式、平台兼容性判断时 | 2026-04-25 live-check 时页面不再标记 `Experimental`；仍需通过 `config.toml` feature flag 启用，平台支持信息依旧高波动 |
 | `SRC-OAI-007` | OpenAI | Codex Automations | https://developers.openai.com/codex/app/automations | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于自动化触发、GitHub 集成、计划任务判断时 | 产品工作流可能快速变化 |
 | `SRC-OAI-008` | OpenAI | Codex Local environments | https://developers.openai.com/codex/app/local-environments | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于本地环境接入、权限/连接方式、宿主边界判断时 | 与 cloud/web/codex app 的边界要最新核对 |
 | `SRC-OAI-009` | OpenAI | Codex Skills | https://developers.openai.com/codex/skills | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T14:55:53Z` | 用于 skills 目录、`SKILL.md`、`agents/openai.yaml`、skill 命名与公开 surface 判断时 | 直接影响 Thoth 的 Codex public skill 投影 |

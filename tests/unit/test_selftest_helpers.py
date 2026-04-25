@@ -6,12 +6,14 @@ import json
 import signal
 import time
 import subprocess
+import sys
 from pathlib import Path
 
 from thoth.observe.selftest.runner import (
     Recorder,
     _cap_selftest_timeout,
     _cleanup_legacy_heavy_tmp,
+    _codex_completed_command_items,
     _codex_prompt_for_public_command,
     _effective_host_command_timeout,
     _ensure_codex_global_hooks,
@@ -21,6 +23,7 @@ from thoth.observe.selftest.runner import (
     _host_real_decision_payload,
     _legacy_heavy_process_targets,
     _looks_like_transient_host_outage,
+    _normalize_codex_public_command_result,
     _run_command,
     _verify_host_run_completion,
     _terminate_processes,
@@ -32,6 +35,7 @@ def test_seed_host_real_app_writes_expected_surface(tmp_path):
     seed_host_real_app(tmp_path)
     assert (tmp_path / "tracker" / "store.py").exists()
     assert (tmp_path / "data" / "tasks.json").exists()
+    assert (tmp_path / "scripts" / "__init__.py").exists()
     assert (tmp_path / "scripts" / "validate_feature.py").exists()
     assert (tmp_path / "scripts" / "validate_bugfix.py").exists()
     assert (tmp_path / "scripts" / "validate_full.py").exists()
@@ -39,6 +43,21 @@ def test_seed_host_real_app_writes_expected_surface(tmp_path):
     validator = (tmp_path / "scripts" / "validate_full.py").read_text(encoding="utf-8")
     assert "owner and due_date are ignored" in store
     assert "empty title update was accepted" in validator
+
+
+def test_seed_host_real_feature_validator_runs_as_script_without_import_error(tmp_path):
+    seed_host_real_app(tmp_path)
+
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_feature.py"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "ModuleNotFoundError" not in result.stderr
+    assert "create_task() did not return owner" in result.stderr
 
 
 def test_ensure_features_flag_inserts_inside_features_block():
@@ -158,6 +177,118 @@ def test_effective_host_command_timeout_caps_claude_bridge_only_commands():
     assert _effective_host_command_timeout("claude", "/thoth:discuss --decision-json '{}'", 240) == 25.0
     assert _effective_host_command_timeout("claude", "/thoth:run --task-id task-1", 240) == 240
     assert _effective_host_command_timeout("codex", "$thoth init", 240) == 240
+
+
+def test_codex_completed_command_items_extracts_failed_shell_step():
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "thread.started", "thread_id": "t-1"}),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_0",
+                        "type": "command_execution",
+                        "command": "/bin/bash -lc 'thoth status'",
+                        "aggregated_output": "boom",
+                        "exit_code": 1,
+                        "status": "failed",
+                    },
+                }
+            ),
+            json.dumps({"type": "item.completed", "item": {"id": "item_1", "type": "agent_message", "text": "DONE"}}),
+        ]
+    )
+
+    items = _codex_completed_command_items(stdout)
+
+    assert len(items) == 1
+    assert items[0]["command"] == "/bin/bash -lc 'thoth status'"
+    assert items[0]["exit_code"] == 1
+
+
+def test_normalize_codex_public_command_result_ignores_aux_failure_after_live_run_success():
+    command_result = type("CommandResultLike", (), {})()
+    command_result.argv = ["codex", "exec"]
+    command_result.cwd = "/tmp/project"
+    command_result.returncode = 0
+    command_result.duration_seconds = 1.0
+    command_result.stderr = ""
+    command_result.stdout = "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_0",
+                        "type": "command_execution",
+                        "command": "/bin/bash -lc 'thoth run --host codex --task-id task-1'",
+                        "aggregated_output": "{\"status\":\"ok\"}",
+                        "exit_code": 0,
+                        "status": "completed",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_1",
+                        "type": "command_execution",
+                        "command": "/bin/bash -lc \"sed -n '1,20p' missing.file\"",
+                        "aggregated_output": "sed: can't read missing.file",
+                        "exit_code": 2,
+                        "status": "failed",
+                    },
+                }
+            ),
+            json.dumps({"type": "item.completed", "item": {"id": "item_2", "type": "agent_message", "text": "DONE"}}),
+        ]
+    )
+
+    normalized = _normalize_codex_public_command_result(
+        command_result,
+        public_command="$thoth run --host codex --task-id task-1",
+        done_token="DONE",
+    )
+
+    assert normalized.returncode == 0
+
+
+def test_normalize_codex_public_command_result_fails_when_requested_shell_step_fails():
+    command_result = type("CommandResultLike", (), {})()
+    command_result.argv = ["codex", "exec"]
+    command_result.cwd = "/tmp/project"
+    command_result.returncode = 0
+    command_result.duration_seconds = 1.0
+    command_result.stderr = ""
+    command_result.stdout = "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_0",
+                        "type": "command_execution",
+                        "command": "/bin/bash -lc 'thoth run --host codex --task-id task-1'",
+                        "aggregated_output": "boom",
+                        "exit_code": 1,
+                        "status": "failed",
+                    },
+                }
+            ),
+            json.dumps({"type": "item.completed", "item": {"id": "item_1", "type": "agent_message", "text": "DONE"}}),
+        ]
+    )
+
+    normalized = _normalize_codex_public_command_result(
+        command_result,
+        public_command="$thoth run --host codex --task-id task-1",
+        done_token="DONE",
+    )
+
+    assert normalized.returncode == 1
+    assert "Codex command execution failed" in normalized.stderr
 
 
 def test_cap_selftest_timeout_respects_global_deadline(monkeypatch):
