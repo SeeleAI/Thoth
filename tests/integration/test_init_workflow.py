@@ -69,7 +69,6 @@ class TestInitWorkflow:
             ".thoth/project/instructions.md",
             ".thoth/project/source-map.json",
             ".thoth/project/compiler-state.json",
-            ".thoth/project/verdicts/.gitkeep",
             ".thoth/derived/codex-hooks.json",
             "tools/dashboard/backend/app.py",
         ]:
@@ -166,4 +165,4 @@ class TestInitWorkflow:
         assert not (project_dir / ".research-config.yaml").exists()
         assert not (project_dir / ".agent-os" / "research-tasks").exists()
         assert (project_dir / ".thoth" / "project" / "tasks" / "legacy-task.json").exists()
-        assert (project_dir / ".thoth" / "project" / "verdicts" / "legacy-task.json").exists()
+        assert (project_dir / ".thoth" / "project" / "tasks" / "legacy-task.result.json").exists()

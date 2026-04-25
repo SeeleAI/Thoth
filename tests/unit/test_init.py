@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from thoth.project_init import (
+from thoth.init.audit import audit_repository_state
+from thoth.init.apply import build_init_preview
+from thoth.init.render import (
     DEFAULT_PHASES,
     REQUIRED_AGENT_OS_FILES,
-    audit_repository_state,
-    build_init_preview,
     generate_agent_os_docs,
     generate_codex_hook_projection,
     generate_dashboard,
@@ -22,9 +22,9 @@ from thoth.project_init import (
     generate_scripts,
     generate_tests,
     generate_thoth_runtime,
-    initialize_project,
     parse_config,
 )
+from thoth.init.service import initialize_project
 
 
 @pytest.fixture
@@ -71,8 +71,10 @@ def test_generate_codex_hook_projection(tmp_path):
     payload = json.loads(hook_path.read_text(encoding="utf-8"))
     start_hook = payload["hooks"]["SessionStart"][0]["hooks"][0]
     stop_hook = payload["hooks"]["Stop"][0]["hooks"][0]
-    assert "thoth-codex-hook.sh\" start" in start_hook["command"]
-    assert "thoth-codex-hook.sh\" stop" in stop_hook["command"]
+    assert "thoth hook --host codex --event start" in start_hook["command"]
+    assert "thoth hook --host codex --event stop" in stop_hook["command"]
+    assert "thoth-codex-hook.sh" in start_hook["command"]
+    assert "thoth-codex-hook.sh" in stop_hook["command"]
 
 
 def test_generate_thoth_runtime(base_config, tmp_path):
@@ -80,7 +82,6 @@ def test_generate_thoth_runtime(base_config, tmp_path):
     manifest = json.loads((tmp_path / ".thoth" / "project" / "project.json").read_text(encoding="utf-8"))
     assert manifest["project"]["name"] == "UnitTestProject"
     assert manifest["dashboard"]["port"] == 8501
-    assert (tmp_path / ".thoth" / "project" / "verdicts" / ".gitkeep").exists()
     assert (tmp_path / ".thoth" / "project" / "compiler-state.json").exists()
 
 
@@ -124,7 +125,7 @@ def test_build_init_preview_marks_legacy_for_removal(tmp_path):
     preview = build_init_preview(tmp_path, audit)
     assert ".research-config.yaml" in preview["remove"]
     assert ".agent-os/research-tasks" in preview["remove"]
-    assert ".thoth/project/verdicts/.gitkeep" in preview["create"]
+    assert ".thoth/project/project.json" in preview["create"]
 
 
 def test_build_init_preview_ignores_host_owned_codex_root(tmp_path):
@@ -188,7 +189,7 @@ def test_initialize_project_strict_cut_imports_legacy_and_removes_old_surface(ba
     assert not (tmp_path / ".research-config.yaml").exists()
     assert not (tmp_path / ".agent-os" / "research-tasks").exists()
     task = json.loads((tmp_path / ".thoth" / "project" / "tasks" / "legacy-task.json").read_text(encoding="utf-8"))
-    verdict = json.loads((tmp_path / ".thoth" / "project" / "verdicts" / "legacy-task.json").read_text(encoding="utf-8"))
+    verdict = json.loads((tmp_path / ".thoth" / "project" / "tasks" / "legacy-task.result.json").read_text(encoding="utf-8"))
     assert task["ready_state"] == "imported_resolved"
     assert task["runnable"] is False
     assert verdict["source"] == "legacy_import"

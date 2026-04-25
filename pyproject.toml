@@ -11,8 +11,8 @@ dependencies = [
 ]
 
 [project.scripts]
-thoth = "thoth.cli:main"
-thoth-selftest = "thoth.selftest:main"
+thoth = "thoth.surface.cli:main"
+thoth-selftest = "thoth.observe.selftest.runner:main"
 
 [project.optional-dependencies]
 dev = [
@@ -25,5 +25,8 @@ dev = [
 testpaths = ["tests"]
 pythonpath = [".", "templates/dashboard/backend"]
 markers = [
-    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "integration: process-real integration coverage",
+    "light: fast in-process developer smoke tier",
+    "medium: repo-real but bounded developer tier",
+    "heavy: full suite including the slowest process-real coverage",
 ]

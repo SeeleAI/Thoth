@@ -43,7 +43,7 @@ executed before Claude sees this prompt.
 **CAN:**
 - Prepare a durable run packet for the current host session
 - Switch to an external worker only with --sleep
-- Write run/state/events/acceptance/artifacts ledgers through the protocol
+- Write run/state/events/result/artifacts ledgers through the protocol
 - Stop or watch an existing run
 
 **CANNOT:**
@@ -57,7 +57,7 @@ executed before Claude sees this prompt.
 - Hooks required for correctness: no
 - Subagents required for correctness: no
 - Lifecycle: prepare -> live-native|external-worker -> protocol-update -> attach/watch/stop -> acceptance
-- Acceptance: A durable run ledger plus execution packet exist under .thoth/runs/<run_id>, live mode stays in the current host session, and `--sleep` backgrounds through the same authority shape.
+- Acceptance: A durable run ledger with run/state/events/result/artifacts exists under .thoth/runs/<run_id>, live mode stays in the current host session, and `--sleep` backgrounds through the same authority shape.
 
 ## Interaction Gaps
 

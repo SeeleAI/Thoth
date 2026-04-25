@@ -17,7 +17,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .task_contracts import compile_task_authority
+from thoth.plan.compiler import (
+    compile_task_authority,
+    load_task_result,
+    update_task_result_from_run_result,
+)
 
 
 ACTIVE_STATUSES = {"queued", "running", "paused", "waiting_input", "stopping"}
@@ -135,8 +139,8 @@ class RunHandle:
     def state_json(self) -> dict[str, Any]:
         return _read_json(self.run_dir / "state.json")
 
-    def heartbeat_json(self) -> dict[str, Any]:
-        return _read_json(self.run_dir / "heartbeat.json")
+    def result_json(self) -> dict[str, Any]:
+        return _read_json(self.run_dir / "result.json")
 
 
 def ensure_runtime_tree(project_root: Path) -> None:
@@ -181,8 +185,8 @@ def _lease_holder_is_stale(project_root: Path, lease_payload: dict[str, Any]) ->
     if not isinstance(run_id, str) or not run_id:
         return True
     run_dir = project_root / ".thoth" / "runs" / run_id
-    heartbeat = _read_json(run_dir / "heartbeat.json")
-    heartbeat_age = _age_seconds(heartbeat.get("last_heartbeat_at"))
+    state = _read_json(run_dir / "state.json")
+    heartbeat_age = _age_seconds(state.get("last_heartbeat_at"))
     supervisor = _supervisor_payload(project_root, run_id)
     supervisor_alive = _process_alive(supervisor.get("pid"))
     if supervisor_alive:
@@ -270,6 +274,7 @@ def create_run(
         "phase": "queued",
         "progress_pct": 0,
         "last_event_seq": 0,
+        "last_heartbeat_at": now,
         "updated_at": now,
         "supervisor_state": "spawning" if dispatch_mode == SLEEP_DISPATCH_MODE else LIVE_DISPATCH_MODE,
         "dispatch_mode": dispatch_mode,
@@ -277,9 +282,21 @@ def create_run(
     }
     _write_json(handle.run_dir / "run.json", run_payload)
     _write_json(handle.run_dir / "state.json", state_payload)
-    _write_json(handle.run_dir / "acceptance.json", {"status": "pending", "checks": [], "updated_at": now})
+    _write_json(
+        handle.run_dir / "result.json",
+        {
+            "schema_version": PROTOCOL_VERSION,
+            "kind": kind,
+            "run_id": run_id,
+            "task_id": task_id,
+            "status": "pending",
+            "summary": None,
+            "checks": [],
+            "result": {},
+            "updated_at": now,
+        },
+    )
     _write_json(handle.run_dir / "artifacts.json", {"artifacts": [], "updated_at": now})
-    _write_json(handle.run_dir / "heartbeat.json", {"last_heartbeat_at": now, "updated_at": now})
     _append_jsonl(handle.run_dir / "events.jsonl", {"seq": 1, "ts": now, "kind": "log", "message": "run created"})
     return handle
 
@@ -302,7 +319,7 @@ def _update_state(handle: RunHandle, **fields: Any) -> dict[str, Any]:
 
 def _write_heartbeat(handle: RunHandle) -> None:
     now = utc_now()
-    _write_json(handle.run_dir / "heartbeat.json", {"last_heartbeat_at": now, "updated_at": now})
+    _update_state(handle, last_heartbeat_at=now)
 
 
 def _next_event_seq(handle: RunHandle) -> int:
@@ -359,6 +376,52 @@ def _protocol_command_strings(project_root: Path, run_id: str) -> dict[str, str]
     }
 
 
+def _latest_fresh_review_context(
+    project_root: Path,
+    *,
+    task_id: str | None,
+    target: str | None,
+) -> dict[str, Any]:
+    if not task_id or not target:
+        return {}
+    task_result = load_task_result(project_root, task_id)
+    last_closure_at = task_result.get("last_closure_at")
+    last_closure_ts = _parse_iso8601(last_closure_at)
+    best: dict[str, Any] = {}
+    runs_root = project_root / ".thoth" / "runs"
+    if not runs_root.is_dir():
+        return {}
+    for run_dir in runs_root.iterdir():
+        if not run_dir.is_dir():
+            continue
+        run_payload = _read_json(run_dir / "run.json")
+        if run_payload.get("kind") != "review":
+            continue
+        if run_payload.get("task_id") != task_id or run_payload.get("target") != target:
+            continue
+        result_payload = _read_json(run_dir / "result.json")
+        if result_payload.get("status") != "completed":
+            continue
+        finished_at = result_payload.get("finished_at") or result_payload.get("updated_at")
+        finished_ts = _parse_iso8601(finished_at)
+        if finished_ts is None:
+            continue
+        if last_closure_ts is not None and finished_ts <= last_closure_ts:
+            continue
+        current_best_ts = _parse_iso8601(best.get("finished_at")) if best else None
+        if current_best_ts is not None and finished_ts <= current_best_ts:
+            continue
+        review_result = result_payload.get("result") if isinstance(result_payload.get("result"), dict) else {}
+        best = {
+            "run_id": run_payload.get("run_id") or run_dir.name,
+            "target": target,
+            "summary": result_payload.get("summary"),
+            "finished_at": finished_at,
+            "findings": review_result.get("findings", []),
+        }
+    return best
+
+
 def _build_execution_packet(
     handle: RunHandle,
     *,
@@ -404,7 +467,7 @@ def _build_execution_packet(
             "events": str(handle.run_dir / "events.jsonl"),
             "state": str(handle.run_dir / "state.json"),
             "artifacts": str(handle.run_dir / "artifacts.json"),
-            "acceptance": str(handle.run_dir / "acceptance.json"),
+            "result": str(handle.run_dir / "result.json"),
             "packet": str(handle.run_dir / "packet.json"),
         },
         "execution_requirements": [
@@ -427,6 +490,16 @@ def _build_execution_packet(
                 }
             ],
         }
+    elif command_id == "loop":
+        review_binding = strict_task.get("review_binding") if isinstance(strict_task, dict) else {}
+        review_target = review_binding.get("target") if isinstance(review_binding, dict) else None
+        review_context = _latest_fresh_review_context(
+            handle.project_root,
+            task_id=str(run.get("task_id") or "") or None,
+            target=review_target if isinstance(review_target, str) else None,
+        )
+        if review_context:
+            packet["review_context"] = review_context
     _write_json(handle.run_dir / "packet.json", packet)
     return packet
 
@@ -460,7 +533,7 @@ def prepare_execution(
         task_id=task_id,
         host=host,
         executor=executor,
-        durable=command_id in {"run", "loop"},
+        durable=command_id in {"run", "loop", "review"},
         dispatch_mode=dispatch_mode,
         sleep_requested=sleep_requested,
         max_rounds=max_rounds,
@@ -561,20 +634,30 @@ def heartbeat_run(
     return handle
 
 
-def _normalize_acceptance_payload(
+def _normalize_run_result(
     *,
+    handle: RunHandle,
     summary: str,
     result_payload: dict[str, Any] | None = None,
     checks: list[dict[str, Any]] | None = None,
     status: str,
+    reason: str | None = None,
 ) -> dict[str, Any]:
+    run = handle.run_json()
     payload = {
+        "schema_version": PROTOCOL_VERSION,
+        "run_id": handle.run_id,
+        "task_id": run.get("task_id"),
+        "kind": run.get("kind"),
         "status": status,
         "summary": summary,
         "checks": checks or [],
         "result": result_payload or {},
         "updated_at": utc_now(),
+        "finished_at": utc_now(),
     }
+    if reason:
+        payload["reason"] = reason
     return payload
 
 
@@ -587,9 +670,18 @@ def complete_run(
     checks: list[dict[str, Any]] | None = None,
 ) -> RunHandle:
     handle = RunHandle(project_root=project_root.resolve(), run_id=run_id)
+    run_payload = handle.run_json()
+    artifacts_payload = _read_json(handle.run_dir / "artifacts.json")
+    run_result = _normalize_run_result(
+        handle=handle,
+        summary=summary,
+        result_payload=result_payload,
+        checks=checks,
+        status="completed",
+    )
     _write_json(
-        handle.run_dir / "acceptance.json",
-        _normalize_acceptance_payload(summary=summary, result_payload=result_payload, checks=checks, status="passed"),
+        handle.run_dir / "result.json",
+        run_result,
     )
     _append_event(handle, summary, kind="complete")
     _update_state(handle, status="completed", phase="conclusion", progress_pct=100, supervisor_state="completed")
@@ -597,6 +689,12 @@ def complete_run(
     _update_run(handle, attachable=False)
     release_repo_lease(project_root, run_id)
     _write_json(handle.local_dir / "supervisor.json", {"pid": os.getpid(), "state": "completed", "updated_at": utc_now()})
+    update_task_result_from_run_result(
+        project_root,
+        run_payload=run_payload,
+        run_result=run_result,
+        artifacts_payload=artifacts_payload,
+    )
     return handle
 
 
@@ -609,12 +707,22 @@ def fail_run(
     result_payload: dict[str, Any] | None = None,
 ) -> RunHandle:
     handle = RunHandle(project_root=project_root.resolve(), run_id=run_id)
+    run_payload = handle.run_json()
+    artifacts_payload = _read_json(handle.run_dir / "artifacts.json")
     checks = []
     if reason:
         checks.append({"name": "reason", "ok": False, "detail": reason})
+    run_result = _normalize_run_result(
+        handle=handle,
+        summary=summary,
+        result_payload=result_payload,
+        checks=checks,
+        status="failed",
+        reason=reason,
+    )
     _write_json(
-        handle.run_dir / "acceptance.json",
-        _normalize_acceptance_payload(summary=summary, result_payload=result_payload, checks=checks, status="failed"),
+        handle.run_dir / "result.json",
+        run_result,
     )
     _append_event(handle, summary, kind="error", level="error", payload={"reason": reason})
     _update_state(handle, status="failed", phase="failed", progress_pct=min(99, int(handle.state_json().get("progress_pct", 0))), supervisor_state="failed")
@@ -622,10 +730,17 @@ def fail_run(
     _update_run(handle, attachable=False)
     release_repo_lease(project_root, run_id)
     _write_json(handle.local_dir / "supervisor.json", {"pid": os.getpid(), "state": "failed", "updated_at": utc_now()})
+    update_task_result_from_run_result(
+        project_root,
+        run_payload=run_payload,
+        run_result=run_result,
+        artifacts_payload=artifacts_payload,
+    )
     return handle
 
 
 def spawn_supervisor(handle: RunHandle) -> int:
+    run_payload = handle.run_json()
     package_root = Path(__file__).resolve().parent.parent
     env = dict(os.environ)
     existing = env.get("PYTHONPATH", "")
@@ -640,16 +755,47 @@ def spawn_supervisor(handle: RunHandle) -> int:
         "--run-id",
         handle.run_id,
     ]
-    proc = subprocess.Popen(
-        cmd,
-        cwd=str(handle.project_root),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-        env=env,
-    )
     handle.local_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(handle.local_dir / "supervisor.json", {"pid": proc.pid, "state": "running", "runtime": "external_worker", "updated_at": utc_now()})
+    stdout_path = handle.local_dir / "worker-bootstrap.stdout.log"
+    stderr_path = handle.local_dir / "worker-bootstrap.stderr.log"
+    detached_launcher = str(os.environ.get("THOTH_DETACH_WORKER_VIA_NOHUP") or "").strip().lower() in {"1", "true", "yes"}
+
+    if detached_launcher:
+        launcher = (
+            f"nohup {shlex.join(cmd)} </dev/null >{shlex.quote(str(stdout_path))} "
+            f"2>{shlex.quote(str(stderr_path))} & echo $!"
+        )
+        launch = subprocess.run(
+            ["bash", "-lc", launcher],
+            cwd=str(handle.project_root),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        if launch.returncode != 0:
+            raise RuntimeError(f"failed to launch external worker: {launch.stderr.strip() or launch.stdout.strip() or 'unknown launcher failure'}")
+        pid_text = (launch.stdout or "").strip().splitlines()
+        try:
+            worker_pid = int(pid_text[-1]) if pid_text else -1
+        except ValueError as exc:
+            raise RuntimeError(f"failed to parse external worker pid from launcher output: {launch.stdout!r}") from exc
+    else:
+        stdout_handle = stdout_path.open("w", encoding="utf-8")
+        stderr_handle = stderr_path.open("w", encoding="utf-8")
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(handle.project_root),
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                start_new_session=True,
+                env=env,
+            )
+        finally:
+            stdout_handle.close()
+            stderr_handle.close()
+        worker_pid = proc.pid
+    _write_json(handle.local_dir / "supervisor.json", {"pid": worker_pid, "state": "running", "runtime": "external_worker", "updated_at": utc_now()})
     _update_state(
         handle,
         status="running",
@@ -660,7 +806,33 @@ def spawn_supervisor(handle: RunHandle) -> int:
     )
     _update_run(handle, dispatch_mode=SLEEP_DISPATCH_MODE, sleep_requested=True, worker_mode="background")
     _append_event(handle, "external worker spawned", kind="worker")
-    return proc.pid
+    if not detached_launcher:
+        return worker_pid
+    boot_deadline = time.time() + 5.0
+    while time.time() < boot_deadline:
+        state = handle.state_json()
+        phase = str(state.get("phase") or "")
+        progress_pct = int(state.get("progress_pct") or 0)
+        last_event_seq = int(state.get("last_event_seq") or 0)
+        if phase not in {"", "queued"} or progress_pct >= 5 or last_event_seq >= 4:
+            return worker_pid
+        time.sleep(0.1)
+    stderr_tail = _tail_text(stderr_path, limit=2000)
+    stdout_tail = _tail_text(stdout_path, limit=2000)
+    detail = "\n".join(part for part in (stdout_tail.strip(), stderr_tail.strip()) if part).strip()
+    fail_run(
+        handle.project_root,
+        handle.run_id,
+        summary="External worker failed to report a startup heartbeat.",
+        reason="worker bootstrap timeout",
+        result_payload={
+            "worker_runtime": "external_worker",
+            "worker_pid": worker_pid,
+            "bootstrap_stdout": stdout_tail,
+            "bootstrap_stderr": stderr_tail,
+        },
+    )
+    raise RuntimeError(f"external worker bootstrap timed out before first heartbeat: {detail or 'no worker output'}")
 
 
 def _worker_prompt_path(handle: RunHandle) -> Path:
@@ -844,10 +1016,29 @@ def _test_external_worker_mode() -> str:
     return os.environ.get("THOTH_TEST_EXTERNAL_WORKER_MODE", "").strip().lower()
 
 
+def _write_stopped_result(handle: RunHandle) -> None:
+    run = handle.run_json()
+    _write_json(
+        handle.run_dir / "result.json",
+        {
+            "schema_version": PROTOCOL_VERSION,
+            "run_id": handle.run_id,
+            "task_id": run.get("task_id"),
+            "kind": run.get("kind"),
+            "status": "stopped",
+            "summary": "Run stopped before completion.",
+            "checks": [],
+            "result": {},
+            "updated_at": utc_now(),
+            "finished_at": utc_now(),
+        },
+    )
+
+
 def _terminalize_stopped_worker(handle: RunHandle) -> int:
     _append_event(handle, "external worker stopping", kind="worker")
     _update_state(handle, status="stopped", phase="stopped", progress_pct=100, supervisor_state="stopped")
-    _write_json(handle.run_dir / "acceptance.json", {"status": "stopped", "checks": [], "updated_at": utc_now()})
+    _write_stopped_result(handle)
     release_repo_lease(handle.project_root, handle.run_id)
     _write_json(handle.local_dir / "supervisor.json", {"pid": os.getpid(), "state": "stopped", "runtime": "external_worker", "updated_at": utc_now()})
     return 0
@@ -1072,7 +1263,7 @@ def stop_run(project_root: Path, run_id: str) -> None:
     if isinstance(pid, int) and _process_alive(pid):
         if terminalize_immediately:
             _update_state(handle, status="stopped", phase="stopped", progress_pct=100, supervisor_state="stopped")
-            _write_json(handle.run_dir / "acceptance.json", {"status": "stopped", "checks": [], "updated_at": utc_now()})
+            _write_stopped_result(handle)
             _update_run(handle, attachable=False)
             release_repo_lease(project_root, run_id)
         try:
@@ -1085,7 +1276,7 @@ def stop_run(project_root: Path, run_id: str) -> None:
         return
     if terminalize_immediately:
         _update_state(handle, status="stopped", phase="stopped", progress_pct=100, supervisor_state="stopped")
-        _write_json(handle.run_dir / "acceptance.json", {"status": "stopped", "checks": [], "updated_at": utc_now()})
+        _write_stopped_result(handle)
         _update_run(handle, attachable=False)
         release_repo_lease(project_root, run_id)
 
@@ -1155,7 +1346,6 @@ def list_active_runs(project_root: Path) -> list[dict[str, Any]]:
         run = _read_json(run_dir / "run.json")
         state = _read_json(run_dir / "state.json")
         if state.get("status") in ACTIVE_STATUSES:
-            heartbeat = _read_json(run_dir / "heartbeat.json")
             rows.append(
                 {
                     "run_id": run.get("run_id", run_dir.name),
@@ -1167,7 +1357,7 @@ def list_active_runs(project_root: Path) -> list[dict[str, Any]]:
                     "status": state.get("status"),
                     "phase": state.get("phase"),
                     "progress_pct": state.get("progress_pct"),
-                    "last_heartbeat_at": heartbeat.get("last_heartbeat_at"),
+                    "last_heartbeat_at": state.get("last_heartbeat_at"),
                 }
             )
     return rows
@@ -1195,11 +1385,9 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
 
     run_parser = sub.add_parser("run")
     run_parser.add_argument("--task-id")
-    run_parser.add_argument("legacy_task_text", nargs="*")
     run_parser.add_argument("--host", default="codex")
     run_parser.add_argument("--executor", default=default_executor())
     run_parser.add_argument("--sleep", action="store_true")
-    run_parser.add_argument("--detach", action="store_true")
     run_parser.add_argument("--attach")
     run_parser.add_argument("--watch")
     run_parser.add_argument("--stop")
@@ -1207,11 +1395,9 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
     loop_parser = sub.add_parser("loop")
     loop_parser.add_argument("--goal", default="loop")
     loop_parser.add_argument("--task-id")
-    loop_parser.add_argument("legacy_goal_text", nargs="*")
     loop_parser.add_argument("--host", default="codex")
     loop_parser.add_argument("--executor", default=default_executor())
     loop_parser.add_argument("--sleep", action="store_true")
-    loop_parser.add_argument("--detach", action="store_true")
     loop_parser.add_argument("--attach")
     loop_parser.add_argument("--resume")
     loop_parser.add_argument("--watch")
@@ -1247,6 +1433,7 @@ def runtime_arg_parser() -> argparse.ArgumentParser:
 
     review = sub.add_parser("review")
     review.add_argument("--goal")
+    review.add_argument("--task-id")
     review.add_argument("--host", default="codex")
     review.add_argument("--executor", default=default_executor())
     review.add_argument("rest", nargs="*")

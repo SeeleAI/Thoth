@@ -22,3 +22,13 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
 - `CD-014` `2026-04-24` `[accepted]`: 严格任务执行模型固定为 `Decision -> Contract -> compiler-generated Task`，`run` / `loop` 默认只接受 `--task-id`
 - `CD-015` `2026-04-24` `[accepted]`: 仓库的唯一保留上游切换为 `https://github.com/SeeleAI/Thoth`
 - `CD-016` `2026-04-24` `[accepted]`: 公开仓库不保留个人邮箱、私人本地路径或外部项目来源链
+- `CD-017` `2026-04-25` `[accepted]`: pytest 测试面固定分为 `light` / `medium` / `heavy` 三层；`light` 目标 `20s` 内、`medium` 目标 `2` 分钟内且包含 `light`、`heavy` 为全量，用于重构和最终收口
+- `CD-018` `2026-04-25` `[accepted]`: `thoth/selftest.py` 的 heavy 主门禁改为最小 deterministic Python repo + 明确 validator + review-to-loop 闭环；不再把前端浏览器链路作为命令语义主证明
+- `CD-019` `2026-04-25` `[accepted]`: 本轮只做 Thoth 整体代码简化；前提是不能丢功能、不能破坏既有目标与治理约束、不能放松现有验收语义
+- `CD-020` `2026-04-25` `[accepted]`: Thoth 的设计要按高维分层重新冻结；`contract` 只是其中一层，层与层之间必须清晰解耦，且协议/数据高度确定
+- `CD-021` `2026-04-25` `[accepted]`: 本轮只有在 `Codex-only` closing gate 真实通过后才算结束；之后仍必须按约束完成 `dev -> main -> push both`
+- `CD-022` `2026-04-25` `[accepted]`: 本轮最高层骨架固定为 `Surface / Plan / Run / Observe`；其内部只保留七个实现子层，host difference 只允许停留在 `Surface / Host Adapter`
+- `CD-023` `2026-04-25` `[accepted]`: 结果模型固定为 `RunResult + TaskResult`；run ledger 的长期 canonical 文件集固定为 `run.json`、`state.json`、`events.jsonl`、`result.json`、`artifacts.json`
+- `CD-024` `2026-04-25` `[accepted]`: `TaskResult` 是长期存在但可重建的 task 当前态文件；`sync` 允许按 run 历史重建它，但不得伪造或改写历史 `RunResult`
+- `CD-025` `2026-04-25` `[accepted]`: `review` 的 public contract 固定为 live-only；`loop` 只允许消费同 `task_id + target` 且晚于 `TaskResult.last_closure_at` 的 review findings
+- `CD-026` `2026-04-25` `[accepted]`: 旧内部模块路径不做兼容保留；`thoth/runtime.py`、`thoth/task_contracts.py`、`thoth/project_init.py`、`thoth/claude_bridge.py`、`thoth/host_hooks.py` 直接从主实现中删除，全部切到新包级实现

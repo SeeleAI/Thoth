@@ -40,9 +40,9 @@ def _has_strict_shape(task: dict[str, Any]) -> bool:
 
 
 def _strict_task_progress(task: dict[str, Any]) -> float:
-    verdict = task.get("verdict") if isinstance(task.get("verdict"), dict) else {}
+    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
     ready_state = str(task.get("ready_state") or "blocked")
-    if verdict.get("updated_at"):
+    if task_result.get("updated_at"):
         return 100.0
     if ready_state == "imported_resolved":
         return 100.0
@@ -68,9 +68,9 @@ def calculate_task_progress(task: dict) -> float:
 
 def get_task_status(task: dict) -> str:
     if _has_strict_shape(task):
-        verdict = task.get("verdict") if isinstance(task.get("verdict"), dict) else {}
-        if verdict.get("updated_at"):
-            if verdict.get("usable") is True and verdict.get("meets_goal") is True:
+        task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+        if task_result.get("updated_at"):
+            if task_result.get("usable") is True and task_result.get("meets_goal") is True:
                 return "completed"
             return "failed"
         ready_state = str(task.get("ready_state") or "blocked")

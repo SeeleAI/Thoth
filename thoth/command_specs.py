@@ -51,13 +51,13 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         argument_hint="[--executor claude|codex] [--host claude|codex] [--sleep] [--attach <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>",
         durable=True,
         supports_codex_executor=True,
-        acceptance="A durable run ledger plus execution packet exist under .thoth/runs/<run_id>, live mode stays in the current host session, and `--sleep` backgrounds through the same authority shape.",
+        acceptance="A durable run ledger with run/state/events/result/artifacts exists under .thoth/runs/<run_id>, live mode stays in the current host session, and `--sleep` backgrounds through the same authority shape.",
         needs_subagents=True,
         allowed_tools=("Read", "Glob", "Grep", "Edit", "Write", "Bash", "Task"),
         scope_can=(
             "Prepare a durable run packet for the current host session",
             "Switch to an external worker only with --sleep",
-            "Write run/state/events/acceptance/artifacts ledgers through the protocol",
+            "Write run/state/events/result/artifacts ledgers through the protocol",
             "Stop or watch an existing run",
         ),
         scope_cannot=(
@@ -91,7 +91,7 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
         command_id="review",
         summary="Prepare a structured live review packet through the shared Thoth surface.",
-        argument_hint="[--executor claude|codex] [--host claude|codex] <target>",
+        argument_hint="[--executor claude|codex] [--host claude|codex] [--task-id <task_id>] <target>",
         supports_codex_executor=True,
         acceptance="Findings are reported in structured form through the same authority protocol without mutating source code, while preserving executor parity.",
         needs_subagents=True,

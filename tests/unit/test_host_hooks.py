@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from thoth.host_hooks import run_host_hook
-from thoth.runtime import create_run
+from thoth.run.lifecycle import create_run
+from thoth.surface.hooks import run_host_hook
 
 
 @pytest.fixture
@@ -44,8 +44,8 @@ def test_claude_start_hook_injects_context_and_records_events(hook_project: Path
 
     conversations = (hook_project / ".thoth" / "project" / "conversations.jsonl").read_text(encoding="utf-8")
     assert '"type": "hook"' in conversations
-    events = (hook_project / ".thoth" / "runs" / handle.run_id / "events.jsonl").read_text(encoding="utf-8")
-    assert "claude session_start hook observed (resume)" in events
+    assert '"event": "start"' in conversations
+    assert '"session_id": "session-1"' in conversations
 
 
 def test_codex_stop_hook_emits_system_message_when_lightweight_issues_exist(hook_project: Path, monkeypatch):

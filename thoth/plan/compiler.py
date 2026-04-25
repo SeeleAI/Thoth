@@ -13,6 +13,7 @@ import yaml
 
 
 SCHEMA_VERSION = 1
+TASK_RESULT_SUFFIX = ".result.json"
 DECISION_STATUSES = {"open", "frozen"}
 CONTRACT_STATUSES = {"draft", "frozen"}
 TASK_READY_STATES = {"ready", "blocked", "invalid", "imported_resolved"}
@@ -61,6 +62,16 @@ def _iter_json_files(path: Path) -> list[Path]:
     return sorted(candidate for candidate in path.glob("*.json") if candidate.is_file())
 
 
+def _iter_task_files(path: Path) -> list[Path]:
+    if not path.is_dir():
+        return []
+    return sorted(
+        candidate
+        for candidate in path.glob("*.json")
+        if candidate.is_file() and not candidate.name.endswith(TASK_RESULT_SUFFIX)
+    )
+
+
 def _slugify(value: str) -> str:
     normalized = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
     return normalized or "item"
@@ -101,8 +112,18 @@ def tasks_dir(project_root: Path) -> Path:
     return authority_root(project_root) / "tasks"
 
 
-def verdicts_dir(project_root: Path) -> Path:
-    return authority_root(project_root) / "verdicts"
+def task_result_path(project_root: Path, task_id: str) -> Path:
+    return tasks_dir(project_root) / f"{task_id}{TASK_RESULT_SUFFIX}"
+
+def _iter_task_result_files(project_root: Path) -> list[Path]:
+    task_dir = tasks_dir(project_root)
+    if not task_dir.is_dir():
+        return []
+    return sorted(
+        candidate
+        for candidate in task_dir.glob(f"*{TASK_RESULT_SUFFIX}")
+        if candidate.is_file()
+    )
 
 
 def compiler_state_path(project_root: Path) -> Path:
@@ -118,7 +139,7 @@ def load_project_manifest(project_root: Path) -> dict[str, Any]:
 
 
 def ensure_task_authority_tree(project_root: Path) -> None:
-    for path in (decisions_dir(project_root), contracts_dir(project_root), tasks_dir(project_root), verdicts_dir(project_root)):
+    for path in (decisions_dir(project_root), contracts_dir(project_root), tasks_dir(project_root)):
         path.mkdir(parents=True, exist_ok=True)
     if not compiler_state_path(project_root).exists():
         _write_json(
@@ -173,7 +194,7 @@ def load_contracts(project_root: Path) -> list[dict[str, Any]]:
 
 def load_compiled_tasks(project_root: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for path in _iter_json_files(tasks_dir(project_root)):
+    for path in _iter_task_files(tasks_dir(project_root)):
         payload = _read_json(path)
         if payload:
             payload.setdefault("_path", str(path))
@@ -181,9 +202,9 @@ def load_compiled_tasks(project_root: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def load_verdicts(project_root: Path) -> list[dict[str, Any]]:
+def load_task_results(project_root: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for path in _iter_json_files(verdicts_dir(project_root)):
+    for path in _iter_task_result_files(project_root):
         payload = _read_json(path)
         if payload:
             payload.setdefault("_path", str(path))
@@ -191,17 +212,29 @@ def load_verdicts(project_root: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def load_verdict_map(project_root: Path) -> dict[str, dict[str, Any]]:
+def load_task_result_map(project_root: Path) -> dict[str, dict[str, Any]]:
     rows: dict[str, dict[str, Any]] = {}
-    for payload in load_verdicts(project_root):
+    for payload in load_task_results(project_root):
         task_id = payload.get("task_id")
-        if isinstance(task_id, str) and task_id:
+        if isinstance(task_id, str) and task_id and task_id not in rows:
             rows[task_id] = payload
     return rows
 
 
+def load_task_result(project_root: Path, task_id: str) -> dict[str, Any]:
+    return _read_json(task_result_path(project_root, task_id))
+
+
+def load_verdicts(project_root: Path) -> list[dict[str, Any]]:
+    return load_task_results(project_root)
+
+
+def load_verdict_map(project_root: Path) -> dict[str, dict[str, Any]]:
+    return load_task_result_map(project_root)
+
+
 def load_task_verdict(project_root: Path, task_id: str) -> dict[str, Any]:
-    return _read_json(verdicts_dir(project_root) / f"{task_id}.json")
+    return load_task_result(project_root, task_id)
 
 
 def load_compiler_state(project_root: Path) -> dict[str, Any]:
@@ -339,64 +372,90 @@ def _decision_queue_entry(decision: dict[str, Any], errors: list[str]) -> dict[s
     }
 
 
-def _default_verdict(task_id: str) -> dict[str, Any]:
+def _default_task_result(task_id: str) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
-        "kind": "verdict",
+        "kind": "task_result",
         "task_id": task_id,
+        "status": "idle",
         "source": "none",
         "usable": None,
         "meets_goal": None,
         "failure_class": None,
         "reasons": [],
         "conclusion": None,
+        "current_summary": None,
         "evidence_paths": [],
+        "recent_evidence": [],
+        "recent_run_refs": [],
         "metrics": {},
+        "latest_run": {},
+        "latest_review": {},
+        "last_attempt_at": None,
         "updated_at": None,
+        "last_closure_at": None,
     }
 
 
-def _normalize_verdict(task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    verdict = _default_verdict(task_id)
-    verdict.update(payload)
-    verdict["schema_version"] = SCHEMA_VERSION
-    verdict["kind"] = "verdict"
-    verdict["task_id"] = task_id
-    verdict["reasons"] = _normalize_string_list(verdict.get("reasons"))
-    evidence_paths = verdict.get("evidence_paths")
+def _normalize_task_result(task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    result = _default_task_result(task_id)
+    result.update(payload)
+    result["schema_version"] = SCHEMA_VERSION
+    result["kind"] = "task_result"
+    result["task_id"] = task_id
+    result["reasons"] = _normalize_string_list(result.get("reasons"))
+    evidence_paths = result.get("evidence_paths")
     if not isinstance(evidence_paths, list):
-        verdict["evidence_paths"] = []
-    metrics = verdict.get("metrics")
+        result["evidence_paths"] = []
+    recent_evidence = result.get("recent_evidence")
+    if not isinstance(recent_evidence, list):
+        result["recent_evidence"] = []
+    recent_run_refs = result.get("recent_run_refs")
+    if not isinstance(recent_run_refs, list):
+        result["recent_run_refs"] = []
+    metrics = result.get("metrics")
     if not isinstance(metrics, dict):
-        verdict["metrics"] = {}
-    return verdict
+        result["metrics"] = {}
+    if not isinstance(result.get("latest_run"), dict):
+        result["latest_run"] = {}
+    if not isinstance(result.get("latest_review"), dict):
+        result["latest_review"] = {}
+    if result.get("current_summary") in ("", []):
+        result["current_summary"] = None
+    return result
+
+
+def upsert_task_result(project_root: Path, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_task_authority_tree(project_root)
+    result = _normalize_task_result(task_id, payload)
+    _write_json(task_result_path(project_root, task_id), result)
+    return result
 
 
 def upsert_verdict(project_root: Path, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    ensure_task_authority_tree(project_root)
-    verdict = _normalize_verdict(task_id, payload)
-    _write_json(verdicts_dir(project_root) / f"{task_id}.json", verdict)
-    return verdict
+    return upsert_task_result(project_root, task_id, payload)
 
 
-def _remove_stale_verdicts(project_root: Path, active_task_ids: set[str]) -> None:
-    for path in _iter_json_files(verdicts_dir(project_root)):
+def _remove_stale_task_results(project_root: Path, active_task_ids: set[str]) -> None:
+    for path in _iter_task_result_files(project_root):
         payload = _read_json(path)
         task_id = payload.get("task_id")
         if not isinstance(task_id, str) or task_id not in active_task_ids:
             path.unlink()
 
 
-def _normalize_legacy_verdict(task_id: str, legacy: dict[str, Any], *, snapshot_path: str) -> dict[str, Any]:
+def _normalize_legacy_task_result(task_id: str, legacy: dict[str, Any], *, snapshot_path: str) -> dict[str, Any]:
     raw = legacy.get("verdict")
     mapping = VERDICT_VALUE_MAP.get(str(raw), {"usable": None, "meets_goal": False, "failure_class": "legacy_unknown"})
     reasons: list[str] = []
     if isinstance(legacy.get("failure_analysis"), str) and legacy.get("failure_analysis").strip():
         reasons.append(legacy["failure_analysis"].strip())
     conclusion = legacy.get("conclusion_text")
-    return _normalize_verdict(
+    now = utc_now()
+    return _normalize_task_result(
         task_id,
         {
+            "status": "completed" if mapping["meets_goal"] else "failed",
             "source": "legacy_import",
             "legacy_verdict": raw,
             "usable": mapping["usable"],
@@ -404,12 +463,158 @@ def _normalize_legacy_verdict(task_id: str, legacy: dict[str, Any], *, snapshot_
             "failure_class": mapping["failure_class"],
             "reasons": reasons,
             "conclusion": conclusion if isinstance(conclusion, str) and conclusion.strip() else None,
+            "current_summary": conclusion if isinstance(conclusion, str) and conclusion.strip() else None,
             "evidence_paths": legacy.get("evidence_paths", []),
+            "recent_evidence": legacy.get("evidence_paths", []),
             "metrics": legacy.get("metrics", {}),
             "snapshot_path": snapshot_path,
-            "updated_at": utc_now(),
+            "updated_at": now,
+            "last_attempt_at": now,
+            "last_closure_at": now,
         },
     )
+
+
+def _first_failed_check_name(checks: Any) -> str | None:
+    if not isinstance(checks, list):
+        return None
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        if check.get("ok") is False:
+            for key in ("name", "detail", "summary"):
+                value = check.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    return None
+
+
+def _merge_recent_refs(existing: Any, new_ref: str) -> list[str]:
+    rows = [value for value in existing if isinstance(value, str) and value] if isinstance(existing, list) else []
+    merged = [new_ref, *[value for value in rows if value != new_ref]]
+    return merged[:5]
+
+
+def apply_run_result_to_task_result(
+    current: dict[str, Any],
+    *,
+    run_payload: dict[str, Any],
+    run_result: dict[str, Any],
+    artifacts_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    task_id = str(run_payload.get("task_id") or run_result.get("task_id") or "").strip()
+    if not task_id:
+        return current
+    result = _normalize_task_result(task_id, current)
+    artifacts = artifacts_payload.get("artifacts", []) if isinstance(artifacts_payload, dict) else []
+    evidence_paths = [
+        str(row.get("path"))
+        for row in artifacts
+        if isinstance(row, dict) and isinstance(row.get("path"), str) and row.get("path")
+    ]
+    finished_at = str(run_result.get("finished_at") or run_result.get("updated_at") or utc_now())
+    run_id = str(run_payload.get("run_id") or run_result.get("run_id") or "")
+    kind = str(run_result.get("kind") or run_payload.get("kind") or "")
+    status = str(run_result.get("status") or "")
+    summary = str(run_result.get("summary") or "").strip() or None
+    result_payload = run_result.get("result") if isinstance(run_result.get("result"), dict) else {}
+
+    result["updated_at"] = finished_at
+    result["last_attempt_at"] = finished_at
+    result["evidence_paths"] = evidence_paths
+    result["recent_evidence"] = evidence_paths
+    if run_id:
+        result["recent_run_refs"] = _merge_recent_refs(result.get("recent_run_refs"), run_id)
+
+    if kind == "review":
+        findings = result_payload.get("findings") if isinstance(result_payload.get("findings"), list) else []
+        result["latest_review"] = {
+            "run_id": run_id,
+            "target": run_payload.get("target"),
+            "summary": summary,
+            "finished_at": finished_at,
+            "findings_count": len(findings),
+        }
+        return result
+
+    result["status"] = status or result.get("status") or "idle"
+    result["source"] = "run_result"
+    result["usable"] = status == "completed"
+    result["meets_goal"] = status == "completed"
+    result["failure_class"] = None if status == "completed" else _first_failed_check_name(run_result.get("checks")) or str(run_result.get("reason") or "run_failed")
+    result["conclusion"] = summary
+    result["current_summary"] = summary
+    result["metrics"] = result_payload.get("metrics", {}) if isinstance(result_payload.get("metrics"), dict) else {}
+    result["latest_run"] = {
+        "run_id": run_id,
+        "kind": kind,
+        "status": status,
+        "summary": summary,
+        "finished_at": finished_at,
+    }
+    if status == "completed":
+        result["last_closure_at"] = finished_at
+    return result
+
+
+def update_task_result_from_run_result(
+    project_root: Path,
+    *,
+    run_payload: dict[str, Any],
+    run_result: dict[str, Any],
+    artifacts_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    task_id = str(run_payload.get("task_id") or run_result.get("task_id") or "").strip()
+    if not task_id:
+        return {}
+    current = load_task_result(project_root, task_id)
+    next_payload = apply_run_result_to_task_result(
+        current,
+        run_payload=run_payload,
+        run_result=run_result,
+        artifacts_payload=artifacts_payload,
+    )
+    return upsert_task_result(project_root, task_id, next_payload)
+
+
+def rebuild_task_results_from_runs(project_root: Path) -> dict[str, Any]:
+    ensure_task_authority_tree(project_root)
+    active_task_ids = {
+        str(task.get("task_id"))
+        for task in load_compiled_tasks(project_root)
+        if isinstance(task.get("task_id"), str) and task.get("task_id")
+    }
+    rebuilt: dict[str, dict[str, Any]] = {}
+    run_root = project_root / ".thoth" / "runs"
+    if run_root.is_dir():
+        run_dirs = sorted(
+            (run_dir for run_dir in run_root.iterdir() if run_dir.is_dir()),
+            key=lambda item: _read_json(item / "result.json").get("finished_at") or _read_json(item / "run.json").get("created_at") or "",
+        )
+        for run_dir in run_dirs:
+            run_payload = _read_json(run_dir / "run.json")
+            task_id = run_payload.get("task_id")
+            if not isinstance(task_id, str) or task_id not in active_task_ids:
+                continue
+            run_result = _read_json(run_dir / "result.json")
+            if not run_result:
+                continue
+            current = rebuilt.get(task_id, load_task_result(project_root, task_id))
+            rebuilt[task_id] = apply_run_result_to_task_result(
+                current,
+                run_payload=run_payload,
+                run_result=run_result,
+                artifacts_payload=_read_json(run_dir / "artifacts.json"),
+            )
+
+    _remove_stale_task_results(project_root, active_task_ids)
+    for task_id, payload in rebuilt.items():
+        upsert_task_result(project_root, task_id, payload)
+    return {
+        "rebuilt_task_result_count": len(rebuilt),
+        "active_task_count": len(active_task_ids),
+        "generated_at": utc_now(),
+    }
 
 
 def _primary_metric_from_legacy(task: dict[str, Any]) -> dict[str, Any]:
@@ -474,7 +679,7 @@ def import_legacy_tasks(project_root: Path, migration_dir: Path) -> dict[str, An
 
     decisions_written = 0
     contracts_written = 0
-    verdicts_written = 0
+    task_results_written = 0
     imported_rows: list[dict[str, Any]] = []
 
     if not legacy_root.is_dir():
@@ -484,7 +689,7 @@ def import_legacy_tasks(project_root: Path, migration_dir: Path) -> dict[str, An
             "imported_task_count": 0,
             "decisions_written": 0,
             "contracts_written": 0,
-            "verdicts_written": 0,
+            "task_results_written": 0,
             "tasks": [],
         }
         _write_json(import_root / "index.json", index)
@@ -604,13 +809,13 @@ def import_legacy_tasks(project_root: Path, migration_dir: Path) -> dict[str, An
             upsert_verdict(
                 project_root,
                 task_id,
-                _normalize_legacy_verdict(
+                _normalize_legacy_task_result(
                     task_id,
                     results,
                     snapshot_path=f".thoth/migrations/{migration_dir.name}/{task_snapshot_rel}",
                 ),
             )
-            verdicts_written += 1
+            task_results_written += 1
 
         imported_rows.append(
             {
@@ -632,7 +837,7 @@ def import_legacy_tasks(project_root: Path, migration_dir: Path) -> dict[str, An
         "imported_task_count": len(imported_rows),
         "decisions_written": decisions_written,
         "contracts_written": contracts_written,
-        "verdicts_written": verdicts_written,
+        "task_results_written": task_results_written,
         "tasks": imported_rows,
     }
     _write_json(import_root / "index.json", index)
@@ -649,7 +854,7 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
     }
     contracts = load_contracts(project_root)
     legacy_audit = audit_legacy_tasks(project_root)
-    verdict_map = load_verdict_map(project_root)
+    task_result_map = load_task_result_map(project_root)
 
     generated_tasks: dict[str, dict[str, Any]] = {}
     problems: list[str] = []
@@ -703,7 +908,7 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
             blocking_reason = "; ".join(_normalize_string_list(contract.get("blocking_gaps"))) or "contract is still draft"
             runnable = False
 
-        verdict_path = verdicts_dir(project_root) / f"{task_id}.json"
+        result_path = task_result_path(project_root, task_id)
         payload = {
             "schema_version": SCHEMA_VERSION,
             "kind": "task",
@@ -728,6 +933,7 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
             "primary_metric": contract.get("primary_metric", {}),
             "failure_classes": _normalize_string_list(contract.get("failure_classes")),
             "acceptance_contract": contract.get("acceptance_contract", {}),
+            "review_binding": contract.get("review_binding", {}),
             "legacy_snapshot_path": contract.get("legacy_snapshot_path"),
             "depends_on": contract.get("legacy_depends_on", []),
             "data_requirements": contract.get("legacy_data_requirements", {}),
@@ -746,7 +952,7 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
                     "import_state": contract.get("import_state"),
                 }
             ),
-            "verdict_ref": str(verdict_path.relative_to(project_root)),
+            "task_result_ref": str(result_path.relative_to(project_root)),
             "legacy_projection": {
                 "legacy_yaml_authority_allowed": False,
                 "legacy_task_count": legacy_audit["summary"]["total"],
@@ -758,7 +964,7 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
         for error in errors:
             problems.append(f"contract {contract_id}: {error}")
 
-    for path in _iter_json_files(tasks_dir(project_root)):
+    for path in _iter_task_files(tasks_dir(project_root)):
         task_payload = _read_json(path)
         task_id = task_payload.get("task_id")
         if not isinstance(task_id, str) or task_id not in generated_tasks:
@@ -767,10 +973,10 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
         _write_json(tasks_dir(project_root) / f"{task_id}.json", payload)
 
     active_task_ids = set(generated_tasks)
-    _remove_stale_verdicts(project_root, active_task_ids)
-    verdict_map = {task_id: verdict_map[task_id] for task_id in active_task_ids if task_id in verdict_map}
+    _remove_stale_task_results(project_root, active_task_ids)
+    task_result_map = {task_id: task_result_map[task_id] for task_id in active_task_ids if task_id in task_result_map}
 
-    for task_id, item in verdict_map.items():
+    for task_id, item in task_result_map.items():
         if generated_tasks.get(task_id, {}).get("ready_state") != "imported_resolved" and item.get("source") == "legacy_import":
             problems.append(f"task {task_id}: legacy_import verdict attached to non-imported_resolved task")
         if not _normalize_string_list(item.get("evidence_paths")) and item.get("source") not in {"none", "acceptance_pending"}:
@@ -788,7 +994,7 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
             "task_counts": task_counts,
             "legacy_task_count": legacy_audit["summary"]["total"],
             "decision_queue_count": len(decision_queue),
-            "verdict_count": len(verdict_map),
+            "task_result_count": len(task_result_map),
         },
         "decision_queue": decision_queue,
         "blocked_task_ids": sorted(set(blocked_task_ids)),
@@ -875,7 +1081,7 @@ def build_doctor_payload(project_root: Path) -> dict[str, Any]:
     decision_counts = summary.get("decision_counts", {})
     task_counts = summary.get("task_counts", {})
     legacy_task_count = int(summary.get("legacy_task_count", 0))
-    verdict_count = int(summary.get("verdict_count", 0))
+    task_result_count = int(summary.get("task_result_count", 0))
 
     checks = [
         {
@@ -904,9 +1110,9 @@ def build_doctor_payload(project_root: Path) -> dict[str, Any]:
             "detail": str(compiler_state_path(project_root)),
         },
         {
-            "id": "verdict-ledger-present",
-            "ok": verdicts_dir(project_root).exists(),
-            "detail": f"verdict_count={verdict_count}",
+            "id": "task-result-ledger-present",
+            "ok": tasks_dir(project_root).exists(),
+            "detail": f"task_result_count={task_result_count} path={tasks_dir(project_root)}",
         },
     ]
     overall_ok = all(check["ok"] for check in checks)
@@ -921,7 +1127,7 @@ def build_doctor_payload(project_root: Path) -> dict[str, Any]:
             "decision_counts": decision_counts,
             "task_counts": task_counts,
             "legacy_task_count": legacy_task_count,
-            "verdict_count": verdict_count,
+            "task_result_count": task_result_count,
         },
     }
 
@@ -954,7 +1160,7 @@ def render_doctor_text(payload: dict[str, Any]) -> str:
             total=int(summary.get("task_counts", {}).get("total", 0)),
         )
     )
-    lines.append(f"  verdict_count={int(summary.get('verdict_count', 0))}")
+    lines.append(f"  task_result_count={int(summary.get('task_result_count', 0))}")
     lines.append(f"  legacy_task_count={int(summary.get('legacy_task_count', 0))}")
     problems = compiler.get("problems", [])
     if problems:
@@ -968,3 +1174,19 @@ def render_doctor_text(payload: dict[str, Any]) -> str:
 def compiler_summary(project_root: Path) -> dict[str, Any]:
     compiler = load_compiler_state(project_root)
     return compiler.get("summary", {}) if isinstance(compiler, dict) else {}
+
+
+def infer_review_task_id(project_root: Path, target: str) -> str | None:
+    normalized = target.strip()
+    if not normalized:
+        return None
+    for task in load_compiled_tasks(project_root):
+        binding = task.get("review_binding")
+        if not isinstance(binding, dict):
+            continue
+        candidate = binding.get("target")
+        if isinstance(candidate, str) and candidate.strip() == normalized:
+            task_id = task.get("task_id")
+            if isinstance(task_id, str) and task_id:
+                return task_id
+    return None

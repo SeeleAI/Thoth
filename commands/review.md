@@ -1,7 +1,7 @@
 ---
 name: thoth:review
 description: Prepare a structured live review packet through the shared Thoth surface.
-argument-hint: "[--executor claude|codex] [--host claude|codex] <target>"
+argument-hint: "[--executor claude|codex] [--host claude|codex] [--task-id <task_id>] <target>"
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Bash, Task
 ---

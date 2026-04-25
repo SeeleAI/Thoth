@@ -21,6 +21,14 @@
 - `REQ-018`: `/thoth:init` 不能假设目标仓库为空；必须先审计当前 repo 状态，再以 audit-first adopt/init 流程补齐 Thoth 架构。
 - `REQ-019`: 任何新功能开发都必须同时兼顾 `Claude Code` 与 `Codex` 两个宿主面。
 - `REQ-020`: 每次开发完成后，必须按仓库治理约束完成：`dev` 验证、发布代码集成到 `main`、push `dev` 与 `main`、更新本机插件安装。
+- `REQ-021`: 仓库级 pytest 必须支持 `light` / `medium` / `heavy` 三层开发验证语义，并明确对应的推荐使用场景与时长预算。
+- `REQ-022`: 本轮重构的首要目标是在不丢失既有功能、不违反既有治理边界、不放松既有验收语义的前提下，显著简化 Thoth 的整体实现，删除冗余设计、重复包装和工程上不优雅的实现。
+- `REQ-023`: Thoth 必须有一套独立于当前代码目录结构的高维分层架构定义；每一层的职责、允许依赖方向、输入输出协议和 authority 边界都必须清晰、稳定、可解释。
+- `REQ-024`: 层与层之间传递的协议和数据必须高度确定：同一语义只能有一个 canonical shape；host 适配、dashboard 读面、worker 执行、validator/selftest 都必须围绕同一 authority 数据模型运转。
+- `REQ-025`: 本轮工作只有在 `Codex-only` closing gate 真实通过后才算完成；在此之前不得把“简化重构”声称为完成或可发布。
+- `REQ-026`: 结果模型固定为 `RunResult + TaskResult` 双层：单次尝试详细结果写入 `.thoth/runs/<run_id>/result.json`，task 当前结论写入 `.thoth/project/tasks/<task_id>.result.json`，并可由 `sync` 按 canonical run 历史重建。
+- `REQ-027`: `Observe` 读面必须保持纯读；`status`、`doctor`、`dashboard`、`report`、hooks、validators/read-model 不得偷偷修 authority。`review` 的 public contract 固定为 live-only，不提供 `--sleep`。
+- `REQ-028`: 旧的内部主路径 `thoth/runtime.py`、`thoth/task_contracts.py`、`thoth/project_init.py`、`thoth/claude_bridge.py`、`thoth/host_hooks.py` 不得继续保留为实现主入口；主实现必须集中到 `thoth/surface`、`thoth/plan`、`thoth/run`、`thoth/init`、`thoth/observe`。
 
 ## Acceptance Criteria
 
@@ -39,12 +47,21 @@
 - `AC-010`: `/thoth:init` 能在空白 repo、漂移 repo 和已有 `.thoth` / `.agent-os` 的 repo 上执行 audit-first adopt/init。
 - `AC-011`: `/thoth:init` 每次执行都会写出 migration ledger 和 `.thoth/project/source-map.json`。
 - `AC-012`: `AGENTS.md` 中明确要求新功能同步兼顾 Claude Code 与 Codex，并按固定流程收尾。
+- `AC-013`: 仓库提供可执行的 pytest 三层选择器：`light` 目标 `20s` 内，`medium` 目标 `2` 分钟内并包含 `light`，`heavy` 为全量回归。
+- `AC-014`: 文档中明确写出本轮认可的 Thoth 高维分层架构，且区分“层”与“代码目录”；每层都具备清晰职责说明和层间协议说明。
+- `AC-015`: `run` / `loop` / `review` / dashboard / selftest / host projections 共享同一 authority 数据模型，不再依赖多套平行 shape 或隐式宿主状态。
+- `AC-016`: 本轮结束时必须具有真实证据证明 `Codex-only` closing gate 通过，并按分支治理完成 `dev` 验证、发布代码集成、双分支 push 与本机安装更新。
+- `AC-017`: 当前代码与文档明确共享同一 run ledger canonical 形态：`.thoth/runs/<run_id>/run.json`、`state.json`、`events.jsonl`、`result.json`、`artifacts.json`。
+- `AC-018`: 当前代码与文档明确共享同一 task 当前态模型：`.thoth/project/tasks/<task_id>.result.json` 作为 `TaskResult`，`status` / `report` / `dashboard` 读当前结论时优先消费它，`sync` 能按 run 历史重建它。
+- `AC-019`: `review` 明确为 live-only；`loop` 只允许消费同 `task_id + target` 且时间晚于 `TaskResult.last_closure_at` 的 review findings。
+- `AC-020`: 当前仓库文档准确反映新的 canonical 包级骨架：`thoth/surface`、`thoth/plan`、`thoth/run`、`thoth/init`、`thoth/observe`，且不再把已删除的旧顶层内部模块描述成主实现。
 
 ## Non-Goals
 
 - 不把当前仓库描述成已完整实现 `Thoth V2`。
 - 不在本次状态文档中保存历史私有路径、私人环境细节或外部项目背景。
 - 不把 `main` 的隔离机制错误描述成已经完全自动化。
+- 不把“更少代码”本身当成目标；本轮追求的是在保持语义和验收不变时的更清晰抽象、更少冗余源和更确定的协议。
 
 ## Hard Constraints
 

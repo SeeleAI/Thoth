@@ -3,8 +3,8 @@
 ## Current Truth
 
 - Objective: `OBJ-001`
-- Top next action: `TD-001`
-- Active workstreams: `WS-001`, `WS-002`, `WS-003`, `WS-004`
+- Top next action: `TD-024`
+- Active workstreams: `WS-001`, `WS-002`, `WS-003`, `WS-004`, `WS-005`
 - Active blockers: `none`
 
 ## Objective Summary
@@ -16,13 +16,14 @@
 ## Active Workstreams
 
 - `WS-001` `[active]`: 分支治理与发布隔离
-- `WS-002` `[planned]`: `.thoth` authority runtime 收敛
+- `WS-002` `[active]`: `.thoth` authority runtime 收敛
 - `WS-003` `[active]`: 公开插件 surface、安装面与测试面稳定化
 - `WS-004` `[active]`: 官方平台资料治理与 freshness 维护
+- `WS-005` `[active]`: Thoth 整体架构简化与高维分层重构
 
 ## Top Next Action
 
-- `TD-001` `[ready]`: 将 `dev` / `main` 分流规则进一步机制化，减少对人工纪律的依赖
+- `TD-024` `[doing]`: 在已落地的新包级骨架上完成 `Codex-only` closing gate，并按分支治理完成最终收尾
 
 ## Active Blockers
 
@@ -36,6 +37,10 @@
 - 2026-04-24: 已落地 strict `Decision -> Contract -> Task` 执行 authority，`run` / `loop` 默认只接受 `--task-id`。
 - 2026-04-24: 仓库 canonical upstream、README 和插件元数据已切换到 `SeeleAI/Thoth`。
 - 2026-04-24: dev 分支状态文档已精简为公开版最小集，不再保留私人路径和外部项目来源链。
+- 2026-04-25: 用户锁定本轮主目标为“在不丢功能与约束的前提下，大幅简化 Thoth 的整体实现，并先冻结高维分层架构，再完成收口验证”；closing gate 已进一步收窄为 `Codex-only`。
+- 2026-04-25: 旧的 `thoth/runtime.py`、`thoth/task_contracts.py`、`thoth/project_init.py`、`thoth/claude_bridge.py`、`thoth/host_hooks.py` 已从主实现路径删除；当前 canonical 包级骨架为 `thoth/surface`、`thoth/plan`、`thoth/run`、`thoth/init`、`thoth/observe`。
+- 2026-04-25: 当前代码已落成 `Surface / Plan / Run / Observe` 四层骨架、`RunResult + TaskResult` 双层结果模型、`run/state/events/result/artifacts` canonical run ledger，以及 `review` live-only / `loop` 按 `task_id + target + last_closure_at` 自动消费新鲜 review 的运行规则。
+- 2026-04-25: 已完成本轮关键验证切片：targeted unit `50 passed`、integration `9 passed`、selftest/read-model unit `28 passed`、`python -m thoth.selftest --tier hard --hosts none` `25 passed / 0 failed / 0 degraded`；`Codex-only` closing gate 与分支收尾仍未完成，不得视为结束。
 
 ## Read Next
 

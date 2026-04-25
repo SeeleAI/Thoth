@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from thoth.task_contracts import compile_task_authority
+from thoth.plan.compiler import compile_task_authority
 
 
 ROOT = Path(__file__).parent.parent.parent
@@ -90,7 +90,20 @@ def _extract_json_object(text: str) -> dict:
     start = text.find("{")
     if start < 0:
         raise AssertionError(f"No JSON object found in output: {text!r}")
-    return json.loads(text[start:])
+    payload = json.loads(text[start:])
+    if not isinstance(payload, dict):
+        raise AssertionError(f"Expected object payload, got: {payload!r}")
+    body = payload.get("body")
+    if isinstance(body, dict):
+        if isinstance(body.get("packet"), dict):
+            return body["packet"]
+        if isinstance(body.get("status"), dict):
+            return body["status"]
+        if isinstance(body.get("doctor"), dict):
+            return body["doctor"]
+        if isinstance(body.get("result"), dict):
+            return body["result"]
+    return payload
 
 
 def test_cli_init_creates_project_layer(tmp_path):
@@ -134,7 +147,9 @@ def test_cli_discuss_accepts_structured_decision_payload(tmp_path):
     assert decision_path.exists()
     stored = json.loads(decision_path.read_text(encoding="utf-8"))
     assert stored["status"] == "frozen"
-    assert "Compiler summary:" in result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "discuss"
+    assert payload["status"] == "ok"
 
 
 def test_cli_review_records_note(tmp_path):
@@ -162,7 +177,7 @@ def test_cli_status_json(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
     result = _run_cli(tmp_path, "status", "--json")
     assert result.returncode == 0
-    payload = json.loads(result.stdout)
+    payload = _extract_json_object(result.stdout)
     assert payload["active_run_count"] == 0
     assert payload["compiler"]["task_counts"]["total"] == 0
 
@@ -203,9 +218,9 @@ def test_cli_sleep_mode_auto_backgrounds(tmp_path):
     assert packet["worker_spawned"] is True
 
 
-def test_cli_live_mode_rejects_detach(tmp_path):
+def test_cli_live_mode_rejects_removed_detach_flag(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
     _write_task(tmp_path)
     result = _run_cli(tmp_path, "run", "--task-id", "task-1", "--detach")
     assert result.returncode == 2
-    assert "--sleep" in result.stderr
+    assert "--detach" in result.stderr

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from thoth.task_contracts import (
+from thoth.plan.compiler import (
     build_doctor_payload,
     compile_task_authority,
     create_discussion_placeholder,
@@ -148,7 +148,7 @@ def test_compile_uses_external_verdict_ledger(tmp_path):
     )
     compile_task_authority(tmp_path)
     task = load_task_for_execution(tmp_path, "task-1")
-    assert task["verdict_ref"] == ".thoth/project/verdicts/task-1.json"
+    assert task["task_result_ref"] == ".thoth/project/tasks/task-1.result.json"
     verdict = load_task_verdict(tmp_path, "task-1")
     assert verdict["failure_class"] == "metric_shortfall"
     assert verdict["updated_at"] == "2026-04-24T00:00:00Z"

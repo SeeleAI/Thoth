@@ -54,11 +54,7 @@ def _canonical_checks(project_root: Path, command_id: str, command_args: list[st
     }
 
     if command_id in {"run", "loop", "review"} and not any(flag in command_args for flag in ("--attach", "--watch", "--stop")):
-        packet = {}
-        try:
-            packet = json.loads(stdout) if stdout.strip().startswith("{") else {}
-        except json.JSONDecodeError:
-            packet = {}
+        packet = _parse_packet(stdout)
         candidate = str(packet.get("run_id") or "").strip()
         checks["run_id"] = candidate
         checks["packet_kind"] = packet.get("packet_kind")
@@ -77,7 +73,14 @@ def _parse_packet(stdout: str) -> dict[str, Any]:
         payload = json.loads(text)
     except json.JSONDecodeError:
         return {}
-    return payload if isinstance(payload, dict) else {}
+    if not isinstance(payload, dict):
+        return {}
+    body = payload.get("body")
+    if isinstance(body, dict):
+        packet = body.get("packet")
+        if isinstance(packet, dict):
+            return packet
+    return payload
 
 
 def _bridge_success(command_id: str, returncode: int, checks: dict[str, Any]) -> bool:
@@ -99,7 +102,7 @@ def _bridge_success(command_id: str, returncode: int, checks: dict[str, Any]) ->
 def _rewrite_review_prepare_args(command_args: list[str]) -> list[str]:
     rewritten: list[str] = []
     target_parts: list[str] = []
-    expects_value = {"--goal", "--target", "--host", "--executor"}
+    expects_value = {"--goal", "--target", "--task-id", "--host", "--executor"}
     idx = 0
     while idx < len(command_args):
         token = command_args[idx]
@@ -123,7 +126,7 @@ def _rewrite_review_prepare_args(command_args: list[str]) -> list[str]:
 
 def run_bridge(command_id: str, command_args: list[str], *, project_root: Path | None = None) -> dict[str, Any]:
     project_root = (project_root or Path.cwd()).resolve()
-    plugin_root = Path(os.environ.get("THOTH_CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parent.parent).resolve()
+    plugin_root = Path(os.environ.get("THOTH_CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parents[3]).resolve()
     cli_entry = plugin_root / "scripts" / "thoth-cli-entry.py"
 
     env = dict(os.environ)

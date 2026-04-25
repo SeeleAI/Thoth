@@ -5,16 +5,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from thoth.runtime import (
-    CLAUDE_EXTERNAL_WORKER_ALLOWED_TOOLS,
-    _build_external_worker_prompt,
-    _external_worker_command,
+from thoth.run.ledger import (
     append_protocol_event,
     complete_run,
     fail_run,
     heartbeat_run,
-    prepare_execution,
     record_artifact,
+)
+from thoth.run.lifecycle import (
+    CLAUDE_EXTERNAL_WORKER_ALLOWED_TOOLS,
+    _build_external_worker_prompt,
+    _external_worker_command,
+    prepare_execution,
 )
 
 
@@ -69,11 +71,11 @@ def test_protocol_updates_artifacts_and_completion_shape(tmp_path):
     )
 
     state = json.loads((handle.run_dir / "state.json").read_text(encoding="utf-8"))
-    acceptance = json.loads((handle.run_dir / "acceptance.json").read_text(encoding="utf-8"))
+    result = json.loads((handle.run_dir / "result.json").read_text(encoding="utf-8"))
     artifacts = json.loads((handle.run_dir / "artifacts.json").read_text(encoding="utf-8"))
     assert state["status"] == "completed"
-    assert acceptance["status"] == "passed"
-    assert acceptance["result"]["findings"][0]["title"] == "Missing validation"
+    assert result["status"] == "completed"
+    assert result["result"]["findings"][0]["title"] == "Missing validation"
     assert artifacts["artifacts"][0]["label"] == "findings"
 
 
@@ -92,10 +94,10 @@ def test_fail_run_writes_failure_shape(tmp_path):
     )
     fail_run(project, handle.run_id, summary="Execution failed.", reason="validator failed")
     state = json.loads((handle.run_dir / "state.json").read_text(encoding="utf-8"))
-    acceptance = json.loads((handle.run_dir / "acceptance.json").read_text(encoding="utf-8"))
+    result = json.loads((handle.run_dir / "result.json").read_text(encoding="utf-8"))
     assert state["status"] == "failed"
-    assert acceptance["status"] == "failed"
-    assert acceptance["checks"][0]["detail"] == "validator failed"
+    assert result["status"] == "failed"
+    assert result["checks"][0]["detail"] == "validator failed"
 
 
 def test_external_worker_prompt_mentions_protocol_and_limits(tmp_path):

@@ -66,7 +66,7 @@ def test_status_output_format(tmp_path, monkeypatch):
         {"task_id": "task-1", "title": "Imported", "module": "f1", "direction": "frontend", "ready_state": "imported_resolved"},
     )
     _write_json(
-        tmp_path / ".thoth" / "project" / "verdicts" / "task-1.json",
+        tmp_path / ".thoth" / "project" / "tasks" / "task-1.result.json",
         {"task_id": "task-1", "source": "legacy_import", "updated_at": "2026-04-24T00:00:00Z", "evidence_paths": ["reports/demo.md"], "metrics": {}},
     )
 
@@ -85,13 +85,13 @@ def test_status_empty_project(tmp_path, monkeypatch):
 
 
 def test_task_current_phase_with_verdict():
-    phase, status = task_current_phase({"verdict": {"updated_at": "2026-04-24T00:00:00Z", "source": "legacy_import"}})
-    assert phase == "verdict"
-    assert status == "verdict:legacy_import"
+    phase, status = task_current_phase({"task_result": {"updated_at": "2026-04-24T00:00:00Z", "source": "legacy_import"}})
+    assert phase == "task_result"
+    assert status == "task_result:legacy_import"
 
 
 def test_is_task_completed():
-    assert is_task_completed({"verdict": {"updated_at": "2026-04-24T00:00:00Z"}})
+    assert is_task_completed({"task_result": {"updated_at": "2026-04-24T00:00:00Z"}})
     assert not is_task_completed({"ready_state": "blocked"})
 
 

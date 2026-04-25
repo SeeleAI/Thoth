@@ -4,19 +4,24 @@ from __future__ import annotations
 
 import json
 import signal
+import time
+import subprocess
 from pathlib import Path
 
-from thoth.selftest import (
+from thoth.observe.selftest.runner import (
     Recorder,
+    _cap_selftest_timeout,
     _cleanup_legacy_heavy_tmp,
     _codex_prompt_for_public_command,
+    _effective_host_command_timeout,
     _ensure_codex_global_hooks,
     _ensure_codex_skill_installed,
     _ensure_features_flag,
-    _ensure_seed_frontend_lock,
     _host_real_contract_payloads,
     _host_real_decision_payload,
     _legacy_heavy_process_targets,
+    _looks_like_transient_host_outage,
+    _run_command,
     _verify_host_run_completion,
     _terminate_processes,
 )
@@ -25,19 +30,15 @@ from thoth.selftest_seed import seed_host_real_app
 
 def test_seed_host_real_app_writes_expected_surface(tmp_path):
     seed_host_real_app(tmp_path)
-    assert (tmp_path / "backend" / "app.py").exists()
-    assert (tmp_path / "frontend" / "src" / "main.js").exists()
-    assert (tmp_path / "frontend" / "e2e" / "board.spec.ts").exists()
-    assert (tmp_path / "frontend" / "e2e" / "feature-create.spec.ts").exists()
-    assert (tmp_path / "frontend" / "e2e" / "column-persist.spec.ts").exists()
-    assert (tmp_path / "scripts" / "api_smoke.py").exists()
-    assert (tmp_path / "scripts" / "validate_host_real.py").exists()
-    frontend = (tmp_path / "frontend" / "src" / "main.js").read_text(encoding="utf-8")
-    validator = (tmp_path / "scripts" / "validate_host_real.py").read_text(encoding="utf-8")
-    assert "#assignee-input" not in frontend
-    assert "#due-date-input" not in frontend
-    assert "PLAYWRIGHT_BROWSERS_PATH" in validator
-    assert "NPM_CONFIG_CACHE" in validator
+    assert (tmp_path / "tracker" / "store.py").exists()
+    assert (tmp_path / "data" / "tasks.json").exists()
+    assert (tmp_path / "scripts" / "validate_feature.py").exists()
+    assert (tmp_path / "scripts" / "validate_bugfix.py").exists()
+    assert (tmp_path / "scripts" / "validate_full.py").exists()
+    store = (tmp_path / "tracker" / "store.py").read_text(encoding="utf-8")
+    validator = (tmp_path / "scripts" / "validate_full.py").read_text(encoding="utf-8")
+    assert "owner and due_date are ignored" in store
+    assert "empty title update was accepted" in validator
 
 
 def test_ensure_features_flag_inserts_inside_features_block():
@@ -56,32 +57,6 @@ def test_ensure_features_flag_handles_section_header_comments():
     assert updated.index("codex_hooks = true") < updated.index("[memories] # comment")
 
 
-def test_ensure_seed_frontend_lock_materializes_lockfile(tmp_path, monkeypatch):
-    seed_host_real_app(tmp_path)
-
-    def fake_run_command(argv, *, cwd, env=None, timeout=120):
-        assert argv[:3] == ["npm", "install", "--package-lock-only"]
-        lock = Path(cwd) / "package-lock.json"
-        lock.write_text(json.dumps({"name": "seed-lock", "lockfileVersion": 3}) + "\n", encoding="utf-8")
-
-        class Result:
-            def __init__(self) -> None:
-                self.returncode = 0
-                self.stdout = "ok"
-                self.stderr = ""
-                self.argv = list(argv)
-                self.cwd = str(cwd)
-                self.duration_seconds = 0.01
-
-        return Result()
-
-    monkeypatch.setattr("thoth.selftest._run_command", fake_run_command)
-    artifacts = _ensure_seed_frontend_lock(tmp_path)
-    assert artifacts == []
-    lock = tmp_path / "frontend" / "package-lock.json"
-    assert lock.exists()
-
-
 def test_ensure_codex_skill_installed_links_global_entry(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     source = repo_root / ".agents" / "skills" / "thoth"
@@ -90,7 +65,7 @@ def test_ensure_codex_skill_installed_links_global_entry(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir(parents=True)
 
-    monkeypatch.setattr("thoth.selftest.ROOT", repo_root)
+    monkeypatch.setattr("thoth.observe.selftest.runner.ROOT", repo_root)
     monkeypatch.setenv("HOME", str(home))
 
     recorder = Recorder(tmp_path / "artifacts")
@@ -115,8 +90,10 @@ def test_ensure_codex_global_hooks_writes_bridge_config(tmp_path, monkeypatch):
     hooks = json.loads(hooks_path.read_text(encoding="utf-8"))
     start_hook = hooks["hooks"]["SessionStart"][0]["hooks"][0]
     stop_hook = hooks["hooks"]["Stop"][0]["hooks"][0]
-    assert "thoth-codex-hook.sh\" start" in start_hook["command"]
-    assert "thoth-codex-hook.sh\" stop" in stop_hook["command"]
+    assert "thoth hook --host codex --event start" in start_hook["command"]
+    assert "thoth hook --host codex --event stop" in stop_hook["command"]
+    assert "thoth-codex-hook.sh" in start_hook["command"]
+    assert "thoth-codex-hook.sh" in stop_hook["command"]
     assert payload["effective"] is True
 
 
@@ -127,13 +104,13 @@ def test_host_real_payloads_define_frozen_decision_and_three_contracts():
     assert decision["decision_id"] == "DEC-host-real-selftest"
     assert decision["status"] == "frozen"
     assert [item["task_id"] for item in contracts] == [
-        "task-feature-create-card",
+        "task-feature-owner-due-date",
         "task-bugfix-column-persist",
         "task-loop-close-review",
     ]
-    assert "validate_host_real.py --spec e2e/feature-create.spec.ts" in contracts[0]["eval_entrypoint"]["command"]
-    assert "validate_host_real.py --spec e2e/column-persist.spec.ts" in contracts[1]["eval_entrypoint"]["command"]
-    assert "validate_host_real.py --api-script scripts/api_smoke.py --spec e2e/board.spec.ts" in contracts[2]["eval_entrypoint"]["command"]
+    assert contracts[0]["eval_entrypoint"]["command"] == "python scripts/validate_feature.py"
+    assert contracts[1]["eval_entrypoint"]["command"] == "python scripts/validate_bugfix.py"
+    assert contracts[2]["eval_entrypoint"]["command"] == "python scripts/validate_full.py"
 
 
 def test_codex_prompt_uses_literal_shell_command_for_public_surface():
@@ -148,6 +125,45 @@ def test_codex_run_prompt_requires_live_packet_terminalization():
     assert "dispatch_mode=live_native" in prompt
     assert "terminalize the run with `complete` or `fail`" in prompt
     assert "Reply with exactly DONE_TOKEN only after the live packet has reached terminal state" in prompt
+
+
+def test_run_command_returns_partial_result_on_timeout(tmp_path):
+    result = _run_command(
+        [
+            "python",
+            "-c",
+            "import sys, time; print('{\"type\":\"system\",\"subtype\":\"api_retry\",\"error_status\":503}', flush=True); time.sleep(1)",
+        ],
+        cwd=tmp_path,
+        timeout=0.1,
+    )
+
+    assert result.returncode == 124
+    assert '"subtype":"api_retry"' in result.stdout
+    assert "Command timed out after 0.1s." in result.stderr
+
+
+def test_transient_host_outage_recognizes_partial_api_retry_stream():
+    result = subprocess.CompletedProcess(args=[], returncode=124, stdout='{"type":"system","subtype":"api_retry","error_status":503}', stderr="")
+    command_result = type("CommandResultLike", (), {})()
+    command_result.stdout = result.stdout
+    command_result.stderr = result.stderr
+    command_result.returncode = result.returncode
+
+    assert _looks_like_transient_host_outage(command_result) is True
+
+
+def test_effective_host_command_timeout_caps_claude_bridge_only_commands():
+    assert _effective_host_command_timeout("claude", "/thoth:init", 240) == 25.0
+    assert _effective_host_command_timeout("claude", "/thoth:discuss --decision-json '{}'", 240) == 25.0
+    assert _effective_host_command_timeout("claude", "/thoth:run --task-id task-1", 240) == 240
+    assert _effective_host_command_timeout("codex", "$thoth init", 240) == 240
+
+
+def test_cap_selftest_timeout_respects_global_deadline(monkeypatch):
+    monkeypatch.setattr("thoth.observe.selftest.runner._SELFTEST_DEADLINE", time.time() + 1.5)
+    capped = _cap_selftest_timeout(20)
+    assert 0.1 <= capped <= 1.5
 
 
 def test_cleanup_legacy_heavy_tmp_only_keeps_preserved_fixed_dirs(tmp_path):
@@ -187,7 +203,7 @@ def test_legacy_heavy_process_targets_matches_fixed_roots_and_old_heavy_runner(t
 
     codex_skill = proc_root / "103"
     codex_skill.mkdir()
-    (codex_skill / "cmdline").write_bytes(f"node\x00{fixed_codex / 'frontend' / 'node_modules' / '.bin' / 'vite'}\x00preview\x00".encode())
+    (codex_skill / "cmdline").write_bytes(f"python\x00{fixed_codex / 'scripts' / 'validate_feature.py'}\x00".encode())
     (codex_skill / "cwd").symlink_to(tmp_path)
 
     unrelated = proc_root / "104"
@@ -220,7 +236,7 @@ def test_terminate_processes_escalates_from_term_to_kill(tmp_path, monkeypatch):
         if pid == 202 and signum == signal.SIGKILL:
             target.rmdir()
 
-    monkeypatch.setattr("thoth.selftest.os.kill", fake_kill)
+    monkeypatch.setattr("thoth.observe.selftest.runner.os.kill", fake_kill)
 
     remaining = _terminate_processes([201, 202], proc_root=proc_root, term_timeout=0.05, kill_timeout=0.05)
 
@@ -259,8 +275,8 @@ def test_verify_host_review_accepts_findings_from_review_events(tmp_path):
         + "\n",
         encoding="utf-8",
     )
-    (run_dir / "acceptance.json").write_text(
-        json.dumps({"status": "passed", "summary": "ok", "result": {}}) + "\n",
+    (run_dir / "result.json").write_text(
+        json.dumps({"status": "completed", "summary": "ok", "result": {}}) + "\n",
         encoding="utf-8",
     )
     (run_dir / "packet.json").write_text("{}\n", encoding="utf-8")
@@ -297,7 +313,7 @@ def test_verify_host_review_accepts_findings_from_artifact_file(tmp_path):
         encoding="utf-8",
     )
     (run_dir / "state.json").write_text(json.dumps({"run_id": run_id, "status": "completed"}) + "\n", encoding="utf-8")
-    (run_dir / "acceptance.json").write_text(json.dumps({"status": "passed", "result": {}}) + "\n", encoding="utf-8")
+    (run_dir / "result.json").write_text(json.dumps({"status": "completed", "result": {}}) + "\n", encoding="utf-8")
     (run_dir / "packet.json").write_text("{}\n", encoding="utf-8")
     (run_dir / "events.jsonl").write_text("{}\n", encoding="utf-8")
     (run_dir / "artifacts.json").write_text(
@@ -348,8 +364,8 @@ def test_verify_host_run_rejects_fallback_or_degraded_language(tmp_path):
         json.dumps({"run_id": run_id, "task_id": "task-1", "status": "completed"}) + "\n",
         encoding="utf-8",
     )
-    (run_dir / "acceptance.json").write_text(
-        json.dumps({"status": "passed", "summary": "official validator hung in playwright install chromium in this environment"}) + "\n",
+    (run_dir / "result.json").write_text(
+        json.dumps({"status": "completed", "summary": "official validator was replaced by a substitute implementation"}) + "\n",
         encoding="utf-8",
     )
     (run_dir / "packet.json").write_text("{}\n", encoding="utf-8")

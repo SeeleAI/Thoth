@@ -47,7 +47,7 @@ executed before Claude sees this prompt.
 - Codex executor allowed: no
 - Hooks required for correctness: hooks may enhance but are not correctness-critical
 - Subagents required for correctness: no
-- Lifecycle: preview -> render-authority -> render-projections -> verify
+- Lifecycle: audit -> typed-plan(mode=init|adopt|resume) -> apply -> post-sync
 - Acceptance: Authority tree, host projections, Codex hook projection, dashboard, scripts, and tests are generated from one canonical source while repo-root `.codex` remains host-owned.
 
 ## Interaction Gaps

@@ -116,7 +116,7 @@ or partial Thoth state. The managed layer includes:
 - `.agent-os/` state and governance documents
 - `.thoth/` runtime authority tree
 - strict `Decision -> Contract -> generated Task` planning authority
-- repo-level verdict ledger under `.thoth/project/verdicts/`
+- task-level current result ledger under `.thoth/project/tasks/*.result.json`
 - strict sync / doctor validation scripts
 - `tools/dashboard/` backend and frontend
 - project-local helper scripts and tests
@@ -199,6 +199,16 @@ The Thoth repository provides:
 
 This layer defines how the operating system behaves.
 
+The canonical Python implementation is now split into five packages:
+
+- `thoth/surface`: CLI parsing, command dispatch, host hooks, Claude bridge
+- `thoth/plan`: decision/contract/task authority, legacy import, TaskResult projection, doctor payloads
+- `thoth/run`: runtime ledger, lease, packet preparation, lifecycle, worker orchestration, status read model
+- `thoth/init`: audit, typed init planning, rendering, apply/service pipeline
+- `thoth/observe`: status, report, dashboard, selftest and other pure read-model helpers
+
+Old top-level internal modules such as `thoth/runtime.py`, `thoth/task_contracts.py`, and `thoth/project_init.py` are no longer part of the implementation path.
+
 ### 2. Project Layer
 
 When you run `/thoth:init` in a target repository, Thoth generates a persistent
@@ -207,7 +217,7 @@ project layer with:
 - state docs: `.agent-os/`
 - runtime authority: `.thoth/`
 - planning authority: `.thoth/project/decisions`, `.thoth/project/contracts`, `.thoth/project/tasks`
-- repo-level verdict authority: `.thoth/project/verdicts`
+- task-level current result authority: `.thoth/project/tasks/*.result.json`
 - strict sync / doctor validation tooling
 - dashboard backend and frontend
 - project-local scripts and tests
@@ -260,14 +270,15 @@ Run the daily process-real gate:
 python scripts/selftest.py --tier hard
 ```
 
-Run the heavy gate with dashboard browser validation and host-real matrices:
+Run the heavy gate with deterministic Python validators and host-native
+matrices:
 
 ```bash
 python scripts/selftest.py --tier heavy --hosts auto
 ```
 
 The runner writes a machine-readable summary plus artifacts for command
-transcripts, ledger snapshots, dashboard payloads, and browser traces.
+transcripts, ledger snapshots, dashboard payloads, and host command traces.
 
 ## Runtime Today, Direction Tomorrow
 
@@ -282,11 +293,32 @@ Thoth is currently:
 
 ## Local Development
 
-Run the test suite from the repository root:
+Thoth pytest coverage is split into three execution tiers:
 
 ```bash
-pytest -q
+pytest -q --thoth-tier light
 ```
+
+- `light`: fast in-process developer smoke tier, target `<=20s`
+- `medium`: bounded repo-real tier for slightly more complex work, target `<=2m`, includes `light`
+- `heavy`: full suite for refactors and release-grade validation, includes everything
+
+Recommended usage:
+
+```bash
+# ordinary feature work
+pytest -q --thoth-tier light
+
+# moderately complex work
+pytest -q --thoth-tier medium
+
+# refactors or final validation
+pytest -q --thoth-tier heavy
+```
+
+If you prefer raw markers, `light` / `medium` / `heavy` are also attached to
+every collected test item, but `--thoth-tier` is the canonical hierarchical
+selector.
 
 Branch policy:
 

@@ -14,17 +14,18 @@ from typing import Any
 
 import yaml
 
-from .command_specs import COMMAND_SPECS
-from .task_contracts import (
+from thoth.command_specs import COMMAND_SPECS
+from thoth.plan.compiler import (
     compile_task_authority,
     ensure_task_authority_tree,
     import_legacy_tasks,
     load_project_manifest,
+    rebuild_task_results_from_runs,
 )
 
 
 LEGACY_CONFIG_FILE = ".research-config.yaml"
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 TEMPLATES_DIR = ROOT / "templates"
 
 DEFAULT_PHASES = [
@@ -253,7 +254,6 @@ def _managed_path_list() -> list[str]:
         ".thoth/project/source-map.json",
         ".thoth/project/compiler-state.json",
         ".thoth/project/legacy-audit.json",
-        ".thoth/project/verdicts/.gitkeep",
         ".thoth/runs/.gitkeep",
         ".thoth/migrations/.gitkeep",
         ".thoth/derived/.gitkeep",
@@ -453,7 +453,6 @@ def build_init_preview(project_dir: Path, audit: dict[str, Any]) -> dict[str, An
         ".thoth/project/project.json",
         ".thoth/project/instructions.md",
         ".thoth/project/source-map.json",
-        ".thoth/project/verdicts/.gitkeep",
         ".thoth/runs/.gitkeep",
         ".thoth/migrations/.gitkeep",
         ".thoth/derived/.gitkeep",
@@ -652,7 +651,7 @@ This document is the canonical human-readable project instruction source for `{c
 
 - `.thoth` is the only runtime authority.
 - Execution planning is compiler-driven: `Decision -> Contract -> generated Task`.
-- Repo-level conclusions live in `.thoth/project/verdicts/*.json`; generated tasks are read-only projections.
+- Task-level current conclusions live in `.thoth/project/tasks/*.result.json`; generated tasks are read-only projections.
 - `run` and `loop` only execute generated tasks from `.thoth/project/tasks/*.json`.
 - Free-form execution is forbidden; ambiguous work must go back through `discuss`.
 - `init` must audit the current repository before it standardizes any Thoth-managed surface.
@@ -700,7 +699,7 @@ def generate_thoth_runtime(config: dict[str, Any], project_dir: Path) -> None:
             "decision_dir": ".thoth/project/decisions",
             "contract_dir": ".thoth/project/contracts",
             "task_dir": ".thoth/project/tasks",
-            "verdict_dir": ".thoth/project/verdicts",
+            "task_result_pattern": ".thoth/project/tasks/*.result.json",
             "compiler_state": ".thoth/project/compiler-state.json",
             "legacy_audit": ".thoth/project/legacy-audit.json",
             "execution_policy": {
@@ -716,7 +715,7 @@ def generate_thoth_runtime(config: dict[str, Any], project_dir: Path) -> None:
     }
     (thoth_dir / "project" / "project.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (thoth_dir / "project" / "instructions.md").write_text(render_project_instructions(config), encoding="utf-8")
-    for rel in ("project/verdicts/.gitkeep", "runs/.gitkeep", "migrations/.gitkeep", "derived/.gitkeep"):
+    for rel in ("runs/.gitkeep", "migrations/.gitkeep", "derived/.gitkeep"):
         (thoth_dir / rel).write_text("", encoding="utf-8")
     compile_task_authority(project_dir)
 
@@ -778,7 +777,7 @@ This file is generated from `.thoth/project/instructions.md` for `{config["name"
 ## Runtime Rules
 
 - Planning authority lives in `.thoth/project/decisions`, `.thoth/project/contracts`, and generated `.thoth/project/tasks`.
-- Repo-level verdict authority lives in `.thoth/project/verdicts`.
+- TaskResult authority lives in `.thoth/project/tasks/*.result.json`.
 - `run` and `loop` execute by `--task-id` only; free-form goals belong in `discuss`.
 - `run` and `loop` are durable by default and support attach/watch/stop lifecycle.
 - Hooks and subagents may enhance throughput but are never correctness dependencies.
@@ -801,6 +800,15 @@ def generate_host_projections(config: dict[str, Any], project_dir: Path) -> None
 
 
 def render_codex_hooks_payload() -> dict[str, Any]:
+    def _hook_command(event: str) -> str:
+        return (
+            "bash -lc '"
+            f"if command -v thoth >/dev/null 2>&1; then exec thoth hook --host codex --event {event}; fi; "
+            "ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; "
+            f"if [ -x \"$ROOT/scripts/thoth-codex-hook.sh\" ]; then exec bash \"$ROOT/scripts/thoth-codex-hook.sh\" {event}; fi; "
+            "exit 0'"
+        )
+
     return {
         "hooks": {
             "SessionStart": [
@@ -809,7 +817,7 @@ def render_codex_hooks_payload() -> dict[str, Any]:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/thoth-codex-hook.sh\" start",
+                            "command": _hook_command("start"),
                             "statusMessage": "Loading Thoth runtime context",
                         }
                     ],
@@ -820,7 +828,7 @@ def render_codex_hooks_payload() -> dict[str, Any]:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/thoth-codex-hook.sh\" stop",
+                            "command": _hook_command("stop"),
                             "statusMessage": "Recording Thoth runtime summary",
                         }
                     ],
@@ -852,7 +860,6 @@ REQUIRED_FILES = [
     ".thoth/project/instructions.md",
     ".thoth/project/compiler-state.json",
     ".thoth/project/legacy-audit.json",
-    ".thoth/project/verdicts/.gitkeep",
     ".thoth/derived/codex-hooks.json",
 ]
 
@@ -927,6 +934,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
 
     _write_source_map(project_dir, audit, preview)
     compile_task_authority(project_dir)
+    rebuild_task_results_from_runs(project_dir)
 
     rollback_payload = {
         "schema_version": 1,

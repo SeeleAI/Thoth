@@ -1,14 +1,82 @@
-"""Shared pytest fixtures for Thoth plugin tests."""
+"""Shared pytest fixtures and tier helpers for Thoth plugin tests."""
+from __future__ import annotations
+
 import json
-import os
-import tempfile
-import shutil
 from pathlib import Path
 
 import pytest
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "golden"
 THOTH_ROOT = Path(__file__).parent.parent
+TEST_TIER_ORDER = {"light": 0, "medium": 1, "heavy": 2}
+TEST_TIER_PATH_OVERRIDES = {
+    "tests/unit/test_init.py": "medium",
+    "tests/unit/test_init_permission_guidance.py": "medium",
+    "tests/integration/test_dashboard_api.py": "medium",
+    "tests/unit/test_claude_bridge.py": "heavy",
+    "tests/unit/test_cli_surface.py": "heavy",
+    "tests/integration/test_init_workflow.py": "heavy",
+    "tests/integration/test_runtime_lifecycle_e2e.py": "heavy",
+}
+
+
+def resolve_test_tier(nodeid: str) -> str:
+    """Return the canonical execution tier for a collected test node."""
+    path = nodeid.split("::", 1)[0].replace("\\", "/")
+    if path in TEST_TIER_PATH_OVERRIDES:
+        return TEST_TIER_PATH_OVERRIDES[path]
+    if path.startswith("tests/integration/"):
+        return "heavy"
+    return "light"
+
+
+def tier_includes(selected_tier: str, item_tier: str) -> bool:
+    """Whether a selected tier should include a specific item tier."""
+    return TEST_TIER_ORDER[item_tier] <= TEST_TIER_ORDER[selected_tier]
+
+
+def _closest_tier_marker(item: pytest.Item) -> str | None:
+    for tier in TEST_TIER_ORDER:
+        if item.get_closest_marker(tier):
+            return tier
+    return None
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    group = parser.getgroup("thoth")
+    group.addoption(
+        "--thoth-tier",
+        action="store",
+        choices=tuple(TEST_TIER_ORDER.keys()),
+        help=(
+            "Run a bounded Thoth test tier: light (<=20s target), "
+            "medium (<=2m target, includes light), or heavy (full suite)."
+        ),
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "integration: process-real integration coverage")
+    config.addinivalue_line("markers", "light: fast in-process developer smoke tier")
+    config.addinivalue_line("markers", "medium: repo-real but bounded developer tier")
+    config.addinivalue_line("markers", "heavy: full suite including the slowest process-real coverage")
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    selected_tier = config.getoption("--thoth-tier")
+    kept: list[pytest.Item] = []
+    deselected: list[pytest.Item] = []
+    for item in items:
+        item_tier = _closest_tier_marker(item) or resolve_test_tier(item.nodeid)
+        if _closest_tier_marker(item) is None:
+            item.add_marker(getattr(pytest.mark, item_tier))
+        if selected_tier and not tier_includes(selected_tier, item_tier):
+            deselected.append(item)
+        else:
+            kept.append(item)
+    if selected_tier and deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = kept
 
 
 @pytest.fixture
