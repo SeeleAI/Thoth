@@ -109,12 +109,10 @@ class TestInitWorkflow:
 
     def test_generated_hooks_and_dashboard_are_portable(self, init_project):
         project_dir, _ = init_project
-        setup = (project_dir / ".codex" / "setup.sh").read_text(encoding="utf-8")
-        hooks = json.loads((project_dir / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+        hooks = json.loads((project_dir / ".thoth" / "derived" / "codex-hooks.json").read_text(encoding="utf-8"))
         codex_hook = (project_dir / "scripts" / "thoth-codex-hook.sh").read_text(encoding="utf-8")
         dashboard_start = (project_dir / "tools" / "dashboard" / "start.sh").read_text(encoding="utf-8")
         frontend_package = json.loads((project_dir / "tools" / "dashboard" / "frontend" / "package.json").read_text(encoding="utf-8"))
-        assert "command -v python3" in setup
         assert "git rev-parse --show-toplevel 2>/dev/null || pwd" in hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         assert 'git -C "$SCRIPT_DIR" rev-parse --show-toplevel' in codex_hook
         assert '"$PYTHON_BIN" -m thoth.cli hook' in codex_hook
