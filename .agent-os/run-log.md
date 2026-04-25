@@ -2,6 +2,12 @@
 
 ## Entries
 
+- 2026-04-25 23:56 UTC [tmpdir cleanup and dev-only push closeout]
+  - Worked on: `OBJ-001`, `WS-001`, `WS-003`, `WS-005`
+  - State changes: 按用户要求删除了误留在仓库根目录的临时目录 `$tmpdir/`，确认当前 bugfix 收口提交已落在本地 `dev`，并按用户最新拍板只执行 `push origin dev`，暂不进行 `main` 集成与双端本机安装刷新
+  - Evidence produced: 已删除仓库根目录 `$tmpdir/`；当前提交为 `46b2a7c fix: tighten codex heavy selftest closeout`；`git push` 通过用户指定代理 `https_proxy=http://10.0.3.5:7899 http_proxy=http://10.0.3.5:7899` 成功推送 `dev -> origin/dev`；推送后 `git status --short --branch` 为 `## dev...origin/dev`
+  - Next likely action: 等待用户决定何时继续 `TD-024` 的剩余收尾，包括 `main` 的 cherry-pick / push 与本机 Claude Code / Codex 安装刷新
+
 - 2026-04-25 14:10 UTC [package-cut simplification and old-path deletion]
   - Worked on: `OBJ-001`, `WS-002`, `WS-003`, `WS-005`
   - State changes: 按用户“旧路径不做兼容、不做保留”的要求，直接删除了旧内部主实现 `thoth/runtime.py`、`thoth/task_contracts.py`、`thoth/project_init.py`、`thoth/claude_bridge.py`、`thoth/host_hooks.py`，并把 canonical 实现改为 `thoth/surface`、`thoth/plan`、`thoth/run`、`thoth/init`、`thoth/observe` 五个包级入口；同时移除了 CLI 对 `dashboard.sh`、`sync.py`、`report.py`、`extend.py` 的主逻辑依赖，改为直接调用新的 Python service，项目脚本仅保留 wrapper 角色
