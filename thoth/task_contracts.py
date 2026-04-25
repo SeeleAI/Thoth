@@ -819,6 +819,8 @@ def upsert_decision(project_root: Path, payload: dict[str, Any]) -> dict[str, An
     payload.setdefault("schema_version", SCHEMA_VERSION)
     payload.setdefault("kind", "decision")
     payload.setdefault("status", "open")
+    if payload.get("status") == "resolved":
+        payload["status"] = "frozen"
     payload.setdefault("host", "codex")
     payload.setdefault("created_at", utc_now())
     payload["updated_at"] = utc_now()

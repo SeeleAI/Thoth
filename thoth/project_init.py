@@ -705,12 +705,29 @@ repos:
 def generate_scripts(config: dict[str, Any], project_dir: Path) -> None:
     scripts_dir = project_dir / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
+    python_helper = """detect_python() {
+  if [ -n "${PYTHON:-}" ]; then
+    printf '%s\\n' "$PYTHON"
+  elif command -v python3 >/dev/null 2>&1; then
+    printf '%s\\n' "python3"
+  elif command -v python >/dev/null 2>&1; then
+    printf '%s\\n' "python"
+  else
+    echo "Error: neither python3 nor python was found" >&2
+    return 127
+  fi
+}
+PYTHON_BIN="$(detect_python)"
+if [ -n "${THOTH_SOURCE_ROOT:-}" ]; then
+  export PYTHONPATH="${THOTH_SOURCE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+fi
+"""
     scripts = {
         "install-hooks.sh": "#!/usr/bin/env bash\nset -e\npre-commit install\n",
         "check-required-files.sh": "#!/usr/bin/env bash\nset -e\nfor f in project-index.md requirements.md architecture-milestones.md todo.md cross-repo-mapping.md acceptance-report.md lessons-learned.md run-log.md change-decisions.md; do test -f \".agent-os/$f\" || { echo \"MISSING: .agent-os/$f\"; exit 1; }; done\n",
-        "session-end-check.sh": "#!/usr/bin/env bash\nset -e\npython -m thoth.cli sync\npython -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
-        "validate-all.sh": "#!/usr/bin/env bash\nset -e\npython -m thoth.cli sync\npython -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
-        "thoth-codex-hook.sh": "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"\ncd \"$ROOT\"\nEVENT=\"${1:-}\"\nif [ -z \"$EVENT\" ]; then\n  echo \"Usage: thoth-codex-hook.sh <start|stop>\" >&2\n  exit 0\nfi\nif command -v thoth >/dev/null 2>&1; then\n  exec thoth hook --host codex --event \"$EVENT\"\nfi\nif [ -n \"${THOTH_SOURCE_ROOT:-}\" ]; then\n  export PYTHONPATH=\"${THOTH_SOURCE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}\"\n  exec python -m thoth.cli hook --host codex --event \"$EVENT\"\nfi\nexit 0\n",
+        "session-end-check.sh": "#!/usr/bin/env bash\nset -e\n" + python_helper + "\"$PYTHON_BIN\" -m thoth.cli sync\n\"$PYTHON_BIN\" -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
+        "validate-all.sh": "#!/usr/bin/env bash\nset -e\n" + python_helper + "\"$PYTHON_BIN\" -m thoth.cli sync\n\"$PYTHON_BIN\" -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
+        "thoth-codex-hook.sh": "#!/usr/bin/env bash\nset -euo pipefail\nSCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\nROOT=\"$(git -C \"$SCRIPT_DIR\" rev-parse --show-toplevel 2>/dev/null || true)\"\nif [ -z \"$ROOT\" ]; then\n  ROOT=\"$(cd \"$SCRIPT_DIR/..\" && pwd)\"\nfi\ncd \"$ROOT\"\nEVENT=\"${1:-}\"\nif [ -z \"$EVENT\" ]; then\n  echo \"Usage: thoth-codex-hook.sh <start|stop>\" >&2\n  exit 0\nfi\nif command -v thoth >/dev/null 2>&1; then\n  exec thoth hook --host codex --event \"$EVENT\"\nfi\n" + python_helper + "if [ -n \"${THOTH_SOURCE_ROOT:-}\" ]; then\n  export PYTHONPATH=\"${THOTH_SOURCE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}\"\n  exec \"$PYTHON_BIN\" -m thoth.cli hook --host codex --event \"$EVENT\"\nfi\nexit 0\n",
     }
     for filename, content in scripts.items():
         path = scripts_dir / filename
@@ -772,8 +789,22 @@ def generate_codex_project_layer(config: dict[str, Any], project_dir: Path) -> N
         "official_surface": "$thoth",
     }, indent=2) + "\n", encoding="utf-8")
     setup_path = codex_dir / "setup.sh"
-    setup_path.write_text("#!/usr/bin/env bash\nset -e\npython --version\n", encoding="utf-8")
+    setup_path.write_text(textwrap.dedent("""\
+        #!/usr/bin/env bash
+        set -e
+        if [ -n "${PYTHON:-}" ]; then
+          "$PYTHON" --version
+        elif command -v python3 >/dev/null 2>&1; then
+          python3 --version
+        elif command -v python >/dev/null 2>&1; then
+          python --version
+        else
+          echo "Error: neither python3 nor python was found" >&2
+          exit 127
+        fi
+        """), encoding="utf-8")
     setup_path.chmod(0o755)
+    hook_command_prefix = 'ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"; bash "$ROOT/scripts/thoth-codex-hook.sh"'
     (codex_dir / "hooks.json").write_text(json.dumps({
         "hooks": {
             "SessionStart": [
@@ -782,7 +813,7 @@ def generate_codex_project_layer(config: dict[str, Any], project_dir: Path) -> N
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/thoth-codex-hook.sh\" start",
+                            "command": f"{hook_command_prefix} start",
                             "statusMessage": "Loading Thoth runtime context",
                         }
                     ],
@@ -793,7 +824,7 @@ def generate_codex_project_layer(config: dict[str, Any], project_dir: Path) -> N
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "bash \"$(git rev-parse --show-toplevel)/scripts/thoth-codex-hook.sh\" stop",
+                            "command": f"{hook_command_prefix} stop",
                             "statusMessage": "Recording Thoth runtime summary",
                         }
                     ],

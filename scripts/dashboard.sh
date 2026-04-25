@@ -19,15 +19,32 @@ if [ ! -f "$MANIFEST_FILE" ]; then
     exit 1
 fi
 
-PYTHON_BIN=$(python -c "
+detect_python() {
+    if [ -n "${PYTHON:-}" ]; then
+        printf '%s\n' "$PYTHON"
+    elif [ -x ".venv/bin/python" ]; then
+        printf '%s\n' ".venv/bin/python"
+    elif command -v python3 >/dev/null 2>&1; then
+        printf '%s\n' "python3"
+    elif command -v python >/dev/null 2>&1; then
+        printf '%s\n' "python"
+    else
+        echo "Error: neither python3 nor python was found" >&2
+        return 127
+    fi
+}
+
+BOOTSTRAP_PYTHON="$(detect_python)"
+
+PYTHON_BIN=$("$BOOTSTRAP_PYTHON" -c "
 import json
 try:
     with open('$MANIFEST_FILE') as f:
         c = json.load(f) or {}
-    print(c.get('runtime', {}).get('python_bin', 'python'))
+    print(c.get('runtime', {}).get('python_bin') or '$BOOTSTRAP_PYTHON')
 except Exception:
-    print('python')
-" 2>/dev/null || echo python)
+    print('$BOOTSTRAP_PYTHON')
+" 2>/dev/null || echo "$BOOTSTRAP_PYTHON")
 
 # Read port from config (default 8501)
 PORT=$("$PYTHON_BIN" -c "

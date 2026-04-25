@@ -288,6 +288,7 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
         capture_output=True,
         text=True,
         timeout=60,
+        env=hook_env,
     )
     assert hook_end.returncode == 0
     assert "PASS" in hook_end.stdout or hook_end.stdout == ""

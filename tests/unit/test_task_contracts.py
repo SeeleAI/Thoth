@@ -66,6 +66,26 @@ def test_compile_generates_ready_task_for_frozen_contract(tmp_path):
     assert task["contract_id"] == "CTR-001"
 
 
+def test_upsert_decision_accepts_resolved_alias_as_frozen(tmp_path):
+    ensure_task_authority_tree(tmp_path)
+    decision = upsert_decision(
+        tmp_path,
+        {
+            "decision_id": "DEC-resolved",
+            "scope_id": "runtime",
+            "question": "Which method should be used?",
+            "candidate_method_ids": ["real-process"],
+            "selected_values": {"candidate_method_id": "real-process"},
+            "status": "resolved",
+            "unresolved_gaps": [],
+        },
+    )
+    compiler = compile_task_authority(tmp_path)
+    assert decision["status"] == "frozen"
+    assert compiler["summary"]["decision_counts"]["frozen"] == 1
+    assert not compiler["problems"]
+
+
 def test_compile_blocks_contract_with_open_decision(tmp_path):
     ensure_task_authority_tree(tmp_path)
     decision = create_discussion_placeholder(tmp_path, "Need to freeze method universe")
