@@ -1,0 +1,147 @@
+[English](./README.md) | [简体中文](./README.zh-CN.md)
+
+<div align="center">
+  <h1>🐦 Thoth — Dashboard-First Runtime for Autoresearch</h1>
+  <img src="assets/thoth.png" width="80%" alt="Thoth 标志" />
+  <p><strong>面向 autoresearch 的 dashboard-first 编排运行时。</strong></p>
+  <p>把容易漂移的 agent 工作收敛成 durable runs、locked contracts 和可裁决的结果。</p>
+  <p>
+    <img alt="运行时 Dashboard First" src="https://img.shields.io/badge/runtime-dashboard--first-4B5563?style=for-the-badge&labelColor=3F3F46&color=0F766E" />
+    <img alt="模式 Autoresearch" src="https://img.shields.io/badge/mode-autoresearch-4B5563?style=for-the-badge&labelColor=3F3F46&color=B45309" />
+    <img alt="引擎 Orchestration" src="https://img.shields.io/badge/engine-orchestration-4B5563?style=for-the-badge&labelColor=3F3F46&color=2563EB" />
+    <img alt="可信 Contract Locked" src="https://img.shields.io/badge/trust-contract--locked-4B5563?style=for-the-badge&labelColor=3F3F46&color=6D28D9" />
+  </p>
+  <p>
+    <img alt="Claude Code Plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-4B5563?style=flat-square&labelColor=3F3F46&color=0284C7" />
+    <img alt="Codex Plugin" src="https://img.shields.io/badge/Codex-plugin-4B5563?style=flat-square&labelColor=3F3F46&color=65A30D" />
+    <img alt="Strict Tasks --task-id" src="https://img.shields.io/badge/tasks-strict%20--task--id-4B5563?style=flat-square&labelColor=3F3F46&color=7C3AED" />
+    <img alt="Version 0.1.4" src="https://img.shields.io/badge/version-0.1.4-4B5563?style=flat-square&labelColor=3F3F46&color=0369A1" />
+    <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-4B5563?style=flat-square&labelColor=3F3F46&color=84CC16" />
+  </p>
+  <img src="assets/thoth-teaser-figure.png" width="100%" alt="Thoth 概念首屏图" />
+</div>
+
+## 为什么是 Thoth
+
+Thoth 是一个 dashboard-first orchestration runtime for autoresearch。它的前提很简单：聊天记录本身不是操作系统，真实状态必须能跨会话保留，执行过程必须可见，完成与否必须能被机械裁决。
+
+## 失败模式表
+
+| 问题 | 为什么重要 |
+| --- | --- |
+| 工作不持久 | 一次有价值的运行可能随着会话结束直接消失，后续既无法恢复也无法审计。 |
+| 并行工作不可见 | 多个线程或委托运行会彼此漂移，而人很难知道当前究竟什么在运行。 |
+| Agent 会过早宣称完成 | 一段流畅的总结可能掩盖了其实没有任何机械验证通过。 |
+| 文档和状态会持续腐化漂移 | 决策、契约和运行时事实会慢慢脱节，最后没人知道哪个层才是 authority。 |
+
+## Thoth 修正机制表
+
+| 机制 | 它做什么 | 对应修正 |
+| --- | --- | --- |
+| Hooks + watchdog + runtime | 让执行过程始终挂靠到 durable ledger 和可观察的生命周期事件上。 | 工作不持久 |
+| Dashboard-first visibility | 在一个统一读面里显示 live、stale、attachable 和 host-specific 的运行时真相。 | 并行工作不可见 |
+| Mechanical yes/no acceptance | 用 validator、ledger 和 result payload 强制裁决工作是否真的通过。 | Agent 会过早宣称完成 |
+| Decision system + execution system + locked contracts | 先冻结边界，再编译成任务，并防止 authority 各层继续漂移。 | 文档和状态会持续腐化漂移 |
+
+## 系统一览
+
+人不应该把注意力花在漏斗里每一粒沙子上。Thoth 让 AI 负责沙漏中段，而 dashboard 只展示最后留下来的金子：decisions、tasks、runs、results，以及当前可裁决的结论。
+
+## 架构流程表
+
+| 阶段 | 目的 | 输入 | 输出 |
+| --- | --- | --- | --- |
+| Intent | 捕获用户请求和操作边界。 | 人类目标、约束、仓库上下文 | 用于规划的方向 |
+| Decision | 在执行漂移之前先锁定关键选择。 | Intent、未决问题、治理约束 | 已记录的 decisions |
+| Contract | 冻结什么允许做，以及什么算完成。 | Decisions、requirements、acceptance 规则 | Locked contracts |
+| Task | 从 contract 编译出可执行工作项。 | Contracts、项目状态、compiler 规则 | Strict task specs |
+| Run | 通过 durable runtime packet 执行一个任务。 | Task spec、host surface、executor | `.thoth/runs/<run_id>` ledger |
+| Result | 产出机械裁决，而不只是叙述性总结。 | Validator 输出、artifacts、runtime checks | Structured result 和 acceptance evidence |
+| Dashboard | 让人无需回放聊天记录就能读取最终状态。 | Ledgers、read model、derived summaries | 可检查的项目真相 |
+
+## 快速开始
+
+1. 在你使用的宿主面安装 Thoth。
+
+```bash
+claude plugin marketplace add SeeleAI/Thoth --scope user
+claude plugin install thoth@thoth --scope user
+codex plugin marketplace add SeeleAI/Thoth
+```
+
+2. 初始化你希望由 Thoth 接管的仓库。
+
+```text
+/thoth:init
+$thoth init
+```
+
+3. 从一个已编译任务启动第一次 strict run。
+
+```text
+/thoth:run --task-id task-1
+$thoth run --task-id task-1
+```
+
+4. 打开读面。
+
+```text
+/thoth:dashboard
+$thoth dashboard
+```
+
+## 命令总表
+
+| 命令 | 宿主入口 | 目的 | 输入 | 结果 |
+| --- | --- | --- | --- | --- |
+| `init` | `Claude: /thoth:init`<br>`Codex: $thoth init` | 审查仓库并物化 canonical Thoth authority。 | 可选的项目元信息或配置载荷 | `.thoth` authority、生成投影、dashboard 脚手架、脚本与测试 |
+| `discuss` | `Claude: /thoth:discuss`<br>`Codex: $thoth discuss` | 在不进入代码执行的前提下记录规划决策。 | 主题、decision payload 或 contract payload | 更新后的 decision 或 contract authority，以及重新编译后的 task 状态 |
+| `run` | `Claude: /thoth:run`<br>`Codex: $thoth run` | 通过 durable runtime packet 执行一个 strict task。 | `--task-id`，可选 host 或 executor 控制，以及 attach/watch/stop | 含 state、events、artifacts 和 terminal result 的 durable run ledger |
+| `loop` | `Claude: /thoth:loop`<br>`Codex: $thoth loop` | 对一个 strict task 做可恢复、可停止的迭代执行。 | `--task-id`，可选 resume 或 sleep 控制 | 可恢复的 loop ledger 和有边界的迭代历史 |
+| `review` | `Claude: /thoth:review`<br>`Codex: $thoth review` | 在不改源码的前提下产出结构化 findings。 | review target、可选 `--task-id`、可选 executor 控制 | 通过共享协议写入的 structured review result |
+| `status` | `Claude: /thoth:status`<br>`Codex: $thoth status` | 展示项目健康状态和活动中的 durable runs。 | 可选 `--json` | 基于 authority 和本机 registry 派生出的共享状态快照 |
+| `dashboard` | `Claude: /thoth:dashboard`<br>`Codex: $thoth dashboard` | 启动或管理本地 dashboard runtime。 | 可选动作：`start`、`stop` 或 `rebuild` | 由 `.thoth` ledgers 驱动的本地 dashboard 进程和读接口 |
+| `report` | `Claude: /thoth:report`<br>`Codex: $thoth report` | 从当前项目真相生成结构化报告。 | 可选输出格式，例如 `md` 或 `json` | 基于 ledgers 和项目文档派生出的进度报告 |
+| `doctor` | `Claude: /thoth:doctor`<br>`Codex: $thoth doctor` | 审计健康状态、生成面和 runtime shape。 | 可选 `--quick` 或 host 检查 | 含验证结论的健康报告 |
+| `sync` | `Claude: /thoth:sync`<br>`Codex: $thoth sync` | 重新生成投影并对齐派生 surface。 | 无必需位置参数 | 已刷新的 host projections 和同步后的派生文件 |
+| `extend` | `Claude: /thoth:extend`<br>`Codex: $thoth extend` | 在自身测试门槛下演进 Thoth 本体。 | 变更请求或受影响路径 | 保持 public-surface parity 的已验证仓库修改 |
+
+## 为什么值得信任
+
+| 信号 | 你可以检查什么 |
+| --- | --- |
+| Durable runtime truth | `.thoth/runs/*` 保留 run、state、events、artifacts 和 result payload。 |
+| Locked planning authority | `.thoth/project/decisions/`、`contracts/` 和 compiler 生成的 `tasks/` 定义了执行允许做什么。 |
+| Script-backed verification | Validators、doctor checks 和 selftests 以机械方式裁决 pass 或 fail。 |
+| Shared read model | `status`、`report` 和 `dashboard` 都读取同一 authority，而不是依赖聊天记忆。 |
+
+## 适用对象
+
+| 适合谁 | 为什么 |
+| --- | --- |
+| 研究和实验型仓库 | 它们需要 durable memory、可回放结果，以及可见的长运行工作。 |
+| 用 AI 做真实改动的工程团队 | 它们需要让代码执行、review 和 acceptance 始终可审计。 |
+| 想同时保持 Claude Code 与 Codex 一致性的团队 | 它们需要一个 host-neutral command model，而不是两套不断漂移的工作流。 |
+
+## 当前限制
+
+| 当前边界 | 含义 |
+| --- | --- |
+| `run` 和 `loop` 是 strict `--task-id` surface | 自由文本执行会被有意拒绝。 |
+| Host parity 是语义一致，不是 UX 完全一致 | Claude 和 Codex 仍然各自需要安装和本地运行时接线。 |
+| Dashboard 是本地服务，不是托管控制平面 | 操作者需要一台能运行 backend 和 frontend 资产的机器。 |
+| 首屏 logo 当前主要以 PNG 形态发布 | 后续仍适合补一版干净的 SVG 和 icon family，用于更小尺寸与插件包装场景。 |
+
+---
+
+## 贡献者
+
+由一群希望 AI 工作始终可检查的人公开构建。
+
+[![Contributors](https://contrib.rocks/image?repo=SeeleAI/Thoth)](https://github.com/SeeleAI/Thoth/graphs/contributors)
+
+参与路径：[发起一个 pull request](https://github.com/SeeleAI/Thoth/pulls) 或 [开启一个 discussion](https://github.com/SeeleAI/Thoth/discussions)。
+
+## 许可证
+
+MIT。详见 [LICENSE](LICENSE)。
