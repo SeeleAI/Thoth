@@ -2,6 +2,66 @@
 
 ## Entries
 
+- 2026-04-26 10:31 UTC [hero logo note removed for open source landing page]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 按用户纠正，将 hero 下方的 `Logo note` / `Logo 说明` 文案完全删除；README 首页回到纯公开落地页形态，只保留标题、logo、定位、副标题和 badges，不再夹带设计过程说明
+  - Evidence produced: 更新 `README.md` 与 `README.zh-CN.md`，删除 logo 下方说明段
+  - Next likely action: 若继续准备合并到 `main`，当前 README 首屏已更符合公开开源仓库首页语气
+
+- 2026-04-26 10:22 UTC [hero logo moved below title at 80 percent width]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 按用户要求，将正式 Thoth logo 从 hero 标题上方移动到标题正下方，并把宽度改为 `80%`；中英文 README 同步调整，从而让首屏先读到品牌标题，再看到横向大 logo 作为主视觉
+  - Evidence produced: 更新 `README.md` 与 `README.zh-CN.md` 顶部 `<div align="center">` 内的 logo 顺序与 `width="80%"`
+  - Next likely action: 若继续打磨首屏，可根据 GitHub 实际渲染效果微调 logo 与副标题之间的纵向留白，但当前布局已满足“标题下方、占满 80% 宽度”的要求
+
+- 2026-04-26 10:16 UTC [final logo wired into README hero]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 按用户确认，把 README 首屏中的 logo 资产从占位 SVG 切换为正式 PNG `assets/thoth.png`，并同步更新英文与中文 README；同时把原先仍偏 future-tense 的 logo brief 改成对当前已落版 mark 的现状说明，避免首页继续表现成“等待替换”的半完成状态
+  - Evidence produced: 更新 `README.md` 与 `README.zh-CN.md` 的 hero 顶部 logo 引用和说明文案；当前首屏已直接显示正式 Thoth logo，而不是 `thoth-logo-placeholder.svg`
+  - Next likely action: 若继续优化发布面，可再根据 GitHub 实际渲染效果微调 logo 宽度与 hero 首屏留白，但不需要再保留 placeholder 语义
+
+- 2026-04-26 07:27 UTC [logo prompt round three with humanoid Thoth torso]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 根据用户指出“左侧仍然控不住成纯鸟形”的问题，再追加一轮 5 条 prompts，明确把左侧主体强制收敛为 `ibis-headed Thoth deity, upper torso only`；本轮重点是让模型一眼读出“托特神的人形上半身”，而不是普通神鸟 mascot，同时继续保留红头白身、`O` 内新月、翅膀穿字后层次，以及厚重 frontier-style 字标
+  - Evidence produced: 更新 `.pytest_cache/thoth_logo_final_prompts_4to1.md`，新增 `Prompt 11` 到 `Prompt 15`；新 prompts 显式写入 `unmistakably humanoid divine figure`、`upper torso only`、`not a bird mascot`、`not merely a red bird`
+  - Next likely action: 若用户继续筛图，下一轮大概率只需在“神像感更强”还是“logo 感更强”之间做微调，而无需再改变主体物种与构图
+
+- 2026-04-26 07:18 UTC [logo prompt round two with sacred ibis direction]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 基于用户对两张生成图的二次反馈，追加了新一轮 5 条最终整合版 logo prompts；本轮将鸟体从“纯红色 mascot”进一步收敛为“红色头部 + 白色身体 + 神性拉满的托特朱鹭”，同时把字标风格从一般队徽块状字改成更接近经典 frontier poster 的厚重展示衬线字，并显式保留 `O` 内新月以及“翅膀穿到字后方”的层次要求
+  - Evidence produced: 更新 `.pytest_cache/thoth_logo_final_prompts_4to1.md`，新增 `Prompt 6` 到 `Prompt 10`；新 prompts 明确要求 sacred ibis-headed bird、red head + white body、frontier-style slab-serif display lettering、crescent moon inside the `O`、wing behind the wordmark
+  - Next likely action: 若用户继续筛图，可围绕“更神性”与“更 mascot”两条再做一次窄范围 prompt 分叉，而无需再重写整体构图
+
+- 2026-04-26 06:56 UTC [hero info-bricks reduced to four]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 按用户确认，把 README 首屏第一排机制砖块从 5 个压缩为 4 个，固定为 `runtime/dashboard-first`、`mode/autoresearch`、`engine/orchestration`、`trust/contract-locked`；删除了先前较细碎的 `.thoth only`、`mechanical yes/no` 与 `durable runs` 拆分，使首屏主张更像产品摘要而不是内部机制枚举
+  - Evidence produced: 更新 `README.md` 与 `README.zh-CN.md` 顶部第一排 `for-the-badge` 砖块；当前首屏第一排已满足用户要求显式包含 `dashboard`、`autoresearch`、`orchestration`
+  - Next likely action: 若继续微调首屏，可只在颜色、间距和正式 logo 上做 refinement，避免再次扩回超过 4 个主张砖块
+
+- 2026-04-26 06:49 UTC [hero title finalized with bird mark]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 按用户最终拍板，将 README hero 主标题正式定为 `🐦 Thoth — Dashboard-First Runtime for Autoresearch`，并同步到英文页与中文镜像页；保留现有副标题与 badge 结构不变，只把品牌标题从单独的 `Thoth` 收敛为“emoji + 名称 + 产品定位”的一行式首部
+  - Evidence produced: 更新 `README.md` 与 `README.zh-CN.md` 的 hero `h1`；当前首屏标题已从抽象项目名切换为更接近用户参考图风格、但仍保持 Thoth 基础设施气质的定稿版本
+  - Next likely action: 若继续精修首屏，可围绕这个 `🐦` 方向继续统一正式 logo、social preview 和 badge 色相，但标题本身已经可以视为冻结
+
+- 2026-04-26 06:42 UTC [hero badges and info-brick refinement]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 继续收紧 README 首屏表达，把原先单行内联 code labels 升级为两层 badge system；第一排改成偏“信息砖块”的机制标签，专门表达 `dashboard-first`、`.thoth only`、`mechanical yes/no`、`contract-locked` 与 `durable runs`，第二排改成偏元信息 badge，表达 `Claude Code plugin`、`Codex plugin`、strict `--task-id`、版本号与 `MIT`，以吸收用户给定两张参考图的优点，同时避免退回成高噪声 badge 墙
+  - Evidence produced: 更新 `README.md` 与 `README.zh-CN.md` 顶部 hero 区；新增的 badge URLs 统一采用深灰 label + 单强调色体系，并保持双语页镜像结构一致；当前首屏已同时具备“强产品机制辨识”和“轻量宿主元信息说明”
+  - Next likely action: 若继续打磨 README 首屏，可在正式 logo 落下后再微调 badge 的色相分工与行宽密度，必要时把 `strict --task-id` 换成 `dual-host` 或 `task-compiled`，但应继续保持“两层、少量、高信息密度”的原则
+
+- 2026-04-26 06:20 UTC [minimal bilingual README redesign]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 按用户给定的 README 重构计划，将首页文案从长说明书改写为极简、对称、表格优先、流程优先的双语镜像结构；英文 `README.md` 现在作为默认入口，新增完整镜像版 `README.zh-CN.md`，首屏统一为深色 hero、logo 占位图、语言导航、信息砖块与概念图，主体统一收敛为失败模式表、修正机制表、架构流程表、命令总表、信任依据、适用对象、限制与 contributors 墙
+  - Evidence produced: 新增 `README.zh-CN.md` 与 `assets/thoth-logo-placeholder.svg`，重写 `README.md`；命令总表已覆盖 `init`、`discuss`、`run`、`loop`、`review`、`status`、`dashboard`、`report`、`doctor`、`sync`、`extend`，并逐行对齐 `thoth.command_specs.COMMAND_SPECS` 与 `thoth/surface/cli.py`；已核对双语文档的章节顺序、命令行数与双宿主入口镜像一致
+  - Next likely action: 若继续完善公开发布面，可在不改骨架的前提下补正式朱鹭头托特 logo、校准 GitHub social preview 视觉，以及视需要新增 CONTRIBUTING 入口来替代当前 PR/discussion contribution path
+
+- 2026-04-26 02:57 UTC [dev fast-forward and architecture refresh]
+  - Worked on: `OBJ-001`, `WS-002`, `WS-003`, `WS-005`
+  - State changes: 按用户要求从 `origin/dev` fast-forward 拉取最新远端重构，并基于当前 checkout 重新恢复 Thoth 核心架构理解；确认当前 `dev` 已进一步完成九阶段简化收口，公共入口、strict planning authority、runtime ledger、observe read model 与 selftest 都已切入新的包级职责骨架
+  - Evidence produced: `git pull --ff-only origin dev` 将本地从 `5c48bf9` 更新到 `e134a9f`；当前 `git status --short --branch` 为 `## dev...origin/dev`；新骨架核对覆盖 `thoth/surface/*`、`thoth/plan/*`、`thoth/run/*`、`thoth/init/*`、`thoth/observe/*`，并确认 `thoth/run/lifecycle.py` 已删除、`thoth/observe/selftest/runner.py` 已退化为总编排入口
+  - Next likely action: 若继续推进实现，优先把当前“已明显变薄但仍略偏 service-heavy 的 init 主流程”继续压向真正 typed `InitPlan -> ApplyResult` pipeline；若只是沟通架构，则直接以当前 `surface -> plan -> run -> observe(+selftest)` 和 `RunResult -> TaskResult` 为主线对外说明
+
 - 2026-04-26 02:40 UTC [nine-stage refactor closeout and codex-only gate]
   - Worked on: `OBJ-001`, `WS-001`, `WS-002`, `WS-003`, `WS-005`, `TD-024`
   - State changes: 在 `dev` 上完成本轮九阶段架构简化收口：删除旧 `thoth/run/lifecycle.py` 聚合主实现，Run / Plan / Init / Surface / Observe / Selftest 分别拆入职责模块；`runner.py` 仅保留 selftest CLI 与总编排；WSL 验证环境已修复为用户目录内 Node LTS 与 Codex CLI；按用户最新计划，本轮只收口并推送 `dev`，不执行 `main` 集成与本机 Claude/Codex 安装刷新
