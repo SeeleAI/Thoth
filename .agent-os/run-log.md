@@ -2,6 +2,12 @@
 
 ## Entries
 
+- 2026-04-26 10:52 UTC [readme release cherry-picked to main and both branches pushed]
+  - Worked on: `OBJ-001`, `WS-001`, `WS-003`, `WS-005`
+  - State changes: 按仓库发布约束完成本轮 README/logo 发布收尾：将公开发布面改动拆成 `README + bilingual page + thoth.png` 与 `teaser asset` 两笔发布提交，保留 `.agent-os/run-log.md` 仅在 `dev`；随后把发布提交以 `cherry-pick` 方式带到 `main` 并完成 `push origin main`，当前 `dev` 也已准备好推送
+  - Evidence produced: `dev` 上发布提交为 `79f9e9d docs: redesign readme hero and bilingual landing`、`a95d0d4 docs: refresh readme hero teaser`，dev-only 记账提交为 `54dced5 docs: record readme and logo rollout`；`main` 上对应发布结果为 `672191a docs: refresh readme hero teaser` 与 `dae5cfb docs: redesign readme hero and bilingual landing`；`git push origin main` 已成功将 `63e9269..dae5cfb` 推到远端
+  - Next likely action: 推送当前 `dev`，并视需要后续再决定是否对 README 的 logo 尺寸、SVG 补版或 contributor/open-source 发布细节继续精修
+
 - 2026-04-26 10:31 UTC [hero logo note removed for open source landing page]
   - Worked on: `OBJ-001`, `WS-003`, `WS-005`
   - State changes: 按用户纠正，将 hero 下方的 `Logo note` / `Logo 说明` 文案完全删除；README 首页回到纯公开落地页形态，只保留标题、logo、定位、副标题和 badges，不再夹带设计过程说明
