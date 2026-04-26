@@ -9,10 +9,10 @@ Codex is an executor mode, not a separate public command surface.
 
 ## Internal Routing
 
-- When `--executor codex` is selected, delegate to the internal `codex-worker` agent.
+- When `--executor codex` is selected, route work through the shared Codex executor path.
 - Keep Thoth responsible for validation, sync, and reporting after delegated work completes.
 
 ## Command Surface Rule
 
 - Do not create public slash commands whose only purpose is selecting Codex.
-- Do not expose internal worker names in the public command list.
+- Do not expose executor implementation details in the public command list.

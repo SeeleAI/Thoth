@@ -37,11 +37,10 @@ def test_executor_mode_documents_exist():
         assert "Codex executor allowed: yes" in content
 
 
-def test_internal_agents_exist_without_default_agent_activation():
-    """Internal agents may exist, but the plugin should not force a default main agent."""
+def test_plugin_does_not_force_default_agent_activation():
+    """The plugin should not rely on a default agent activation file."""
     assert not (ROOT / "settings.json").exists()
-    assert (ROOT / "agents" / "thoth-main.md").exists()
-    assert (ROOT / "agents" / "codex-worker.md").exists()
+    assert not (ROOT / "agents").exists()
 
 
 def test_public_command_names_are_bare():
@@ -54,29 +53,28 @@ def test_public_command_names_are_bare():
         assert name.startswith("thoth:"), (path, name)
 
 
-def test_single_official_codex_skill_and_plugin_manifest():
-    """Codex public surface should be the single generated `$thoth` skill plus plugin manifest."""
-    skill_path = ROOT / ".agents" / "skills" / "thoth" / "SKILL.md"
-    assert skill_path.exists()
-    content = skill_path.read_text(encoding="utf-8")
-    assert content.startswith("---\nname: thoth\n")
-    assert "$thoth <command>" in content
+def test_single_official_codex_plugin_package_and_marketplace():
+    """Codex public install surface should be the marketplace entry plus one plugin package."""
+    marketplace_path = ROOT / ".agents" / "plugins" / "marketplace.json"
+    assert marketplace_path.exists()
+    marketplace = json.loads(marketplace_path.read_text(encoding="utf-8"))
+    assert marketplace["plugins"][0]["source"]["path"] == "./plugins/thoth"
 
-    plugin_path = ROOT / ".codex-plugin" / "plugin.json"
+    plugin_path = ROOT / "plugins" / "thoth" / ".codex-plugin" / "plugin.json"
     assert plugin_path.exists()
     manifest = json.loads(plugin_path.read_text(encoding="utf-8"))
     assert manifest["name"] == "thoth"
-    assert manifest["skills"] == "./.agents/skills"
+    assert manifest["skills"] == "./skills"
     assert manifest["interface"]["displayName"] == "Thoth"
     assert "entrypoint" not in manifest
     assert "public_skill_path" not in manifest
 
 
 def test_codex_agent_metadata_exists():
-    """Skill-local OpenAI metadata should exist for the single public skill."""
-    metadata_path = ROOT / ".agents" / "skills" / "thoth" / "agents" / "openai.yaml"
-    assert metadata_path.exists()
-    metadata = yaml.safe_load(metadata_path.read_text(encoding="utf-8"))
+    """Plugin-packaged OpenAI metadata should exist for the installable Codex skill."""
+    plugin_metadata_path = ROOT / "plugins" / "thoth" / "skills" / "thoth" / "agents" / "openai.yaml"
+    assert plugin_metadata_path.exists()
+    metadata = yaml.safe_load(plugin_metadata_path.read_text(encoding="utf-8"))
     assert metadata["interface"]["display_name"] == "thoth"
 
 

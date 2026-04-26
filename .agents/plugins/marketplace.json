@@ -1,0 +1,24 @@
+{
+  "name": "thoth",
+  "interface": {
+    "displayName": "Thoth"
+  },
+  "owner": {
+    "name": "SeeleAI",
+    "url": "https://github.com/SeeleAI"
+  },
+  "plugins": [
+    {
+      "name": "thoth",
+      "source": {
+        "source": "local",
+        "path": "./plugins/thoth"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

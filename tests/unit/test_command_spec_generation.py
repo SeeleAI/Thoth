@@ -7,8 +7,10 @@ from pathlib import Path
 
 from thoth.command_specs import COMMAND_SPECS, PUBLIC_CODEX_COMMANDS
 from thoth.projections import (
+    PLUGIN_PACKAGE_DIR,
     PLUGIN_SKILLS_PATH,
     render_claude_command,
+    render_codex_marketplace,
     render_codex_agent_metadata,
     render_codex_skill,
     render_plugin_manifest,
@@ -72,11 +74,21 @@ def test_plugin_manifest_matches_official_schema_shape():
         assert removed_field not in manifest
 
 
+def test_codex_marketplace_points_to_plugin_package():
+    marketplace = render_codex_marketplace()
+    assert marketplace["name"] == "thoth"
+    assert marketplace["plugins"][0]["name"] == "thoth"
+    assert marketplace["plugins"][0]["source"]["path"] == f"./{PLUGIN_PACKAGE_DIR}"
+    assert marketplace["plugins"][0]["policy"]["installation"] == "AVAILABLE"
+    assert marketplace["plugins"][0]["policy"]["authentication"] == "ON_INSTALL"
+
+
 def test_sync_repository_surfaces_writes_generated_files(tmp_path):
     (tmp_path / "commands").mkdir()
     written = sync_repository_surfaces(tmp_path)
     assert tmp_path / "commands" / "run.md" in written
-    assert (tmp_path / ".agents" / "skills" / "thoth" / "SKILL.md").exists()
-    assert (tmp_path / ".agents" / "skills" / "thoth" / "agents" / "openai.yaml").exists()
-    manifest = json.loads((tmp_path / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    assert (tmp_path / ".agents" / "plugins" / "marketplace.json").exists()
+    assert (tmp_path / "plugins" / "thoth" / "skills" / "thoth" / "SKILL.md").exists()
+    assert (tmp_path / "plugins" / "thoth" / "skills" / "thoth" / "agents" / "openai.yaml").exists()
+    manifest = json.loads((tmp_path / "plugins" / "thoth" / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
     assert manifest["skills"] == PLUGIN_SKILLS_PATH

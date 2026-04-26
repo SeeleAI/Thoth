@@ -118,9 +118,6 @@ def _host_claude(
     elif any(_looks_like_transient_host_outage(result) for result in command_results.values()):
         status = "failed"
         detail = "Claude host matrix hit an upstream/transient host outage and exceeded the heavy gate's no-degraded policy."
-    elif "unknown skill: thoth:thoth-main" in f"{combined_stdout}\n{combined_stderr}".lower():
-        status = "failed"
-        detail = "Claude host tried to route through the internal thoth-main agent instead of the public /thoth:* slash commands."
     elif "requires approval" in f"{combined_stdout}\n{combined_stderr}".lower():
         status = "failed"
         detail = "Claude host slash commands still required approval for the bridge shell command, so the repo-local runtime did not execute autonomously."
