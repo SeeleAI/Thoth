@@ -18,7 +18,7 @@ def _run_bridge(tmp_path: Path, command_id: str, *args: str) -> subprocess.Compl
     env["PYTHONPATH"] = str(ROOT) if not existing else f"{ROOT}:{existing}"
     env["THOTH_CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     return subprocess.run(
-        [sys.executable, str(ROOT / "thoth" / "claude_bridge.py"), command_id, *args],
+        [sys.executable, str(ROOT / "thoth" / "surface" / "bridges" / "claude.py"), command_id, *args],
         cwd=str(tmp_path),
         text=True,
         capture_output=True,
