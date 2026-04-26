@@ -12,13 +12,24 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.parent
 
 
+def _bridge_entry() -> Path:
+    candidates = [
+        ROOT / "thoth" / "surface" / "bridges" / "claude.py",
+        ROOT / "thoth" / "claude_bridge.py",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    raise AssertionError(f"No Claude bridge entry found under {ROOT}")
+
+
 def _run_bridge(tmp_path: Path, command_id: str, *args: str) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = str(ROOT) if not existing else f"{ROOT}:{existing}"
     env["THOTH_CLAUDE_PLUGIN_ROOT"] = str(ROOT)
     return subprocess.run(
-        [sys.executable, str(ROOT / "thoth" / "surface" / "bridges" / "claude.py"), command_id, *args],
+        [sys.executable, str(_bridge_entry()), command_id, *args],
         cwd=str(tmp_path),
         text=True,
         capture_output=True,
