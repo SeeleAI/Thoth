@@ -1,359 +1,147 @@
-# Thoth
+[English](./README.md) | [简体中文](./README.zh-CN.md)
 
-**Turn Claude Code and OpenAI Codex into two host surfaces over one auditable Thoth runtime with persistent state, mechanical verification, and dashboard visibility.**
-
-Persistent truth + validation scripts + autonomous execution loops = agent work you can actually inspect, recover, and trust.
-
-[![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-blue?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
-[![Codex](https://img.shields.io/badge/OpenAI_Codex-Plugin-green?logo=openai&logoColor=white)](https://developers.openai.com/codex)
-[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](https://github.com/SeeleAI/Thoth)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-
-[![Project OS](https://img.shields.io/badge/Agent_Project_OS-Audit_%2B_Execution-black)](https://github.com/SeeleAI/Thoth)
-[![Dashboard](https://img.shields.io/badge/Human_Visibility-Dashboard-8A6A3A)](https://github.com/SeeleAI/Thoth)
-[![Runtime](https://img.shields.io/badge/Runtime-Claude_%2B_Codex-5B8DEF)](https://github.com/SeeleAI/Thoth)
-
-<br>
-
-![Thoth teaser figure](assets/thoth-teaser-figure.png)
-
-*Thoth bridges a human-facing audit dashboard with an AI execution engine through shared persistent project state.*
-
-Thoth is an **Agent Project OS** for research and engineering workflows. It
-does not stop at prompting conventions: it installs a persistent project layer
-with state documents, validation scripts, generated structure, and a dashboard
-humans can use to see what is actually true.
-
-At the center of Thoth are two connected systems:
-
-- **Audit System**: truth, evidence, decisions, recoverability
-- **Execution System**: tasks, loops, verification, delegation
-
-Thoth now treats **`.thoth` as the only runtime authority** and exposes two
-official host surfaces:
-
-- **Claude**: `/thoth:*`
-- **Codex**: `$thoth <command>`
-
-Both surfaces project from the same host-neutral command specification and
-write through the same runtime ledger shape.
+<div align="center">
+  <h1>🐦 Thoth — Dashboard-First Runtime for Autoresearch</h1>
+  <img src="assets/thoth.png" width="80%" alt="Thoth logo" />
+  <p><strong>Dashboard-first orchestration runtime for autoresearch.</strong></p>
+  <p>Turn drifting agent work into durable runs, locked contracts, and reviewable verdicts.</p>
+  <p>
+    <img alt="Runtime Dashboard First" src="https://img.shields.io/badge/runtime-dashboard--first-4B5563?style=for-the-badge&labelColor=3F3F46&color=0F766E" />
+    <img alt="Mode Autoresearch" src="https://img.shields.io/badge/mode-autoresearch-4B5563?style=for-the-badge&labelColor=3F3F46&color=B45309" />
+    <img alt="Engine Orchestration" src="https://img.shields.io/badge/engine-orchestration-4B5563?style=for-the-badge&labelColor=3F3F46&color=2563EB" />
+    <img alt="Trust Contract Locked" src="https://img.shields.io/badge/trust-contract--locked-4B5563?style=for-the-badge&labelColor=3F3F46&color=6D28D9" />
+  </p>
+  <p>
+    <img alt="Claude Code Plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-4B5563?style=flat-square&labelColor=3F3F46&color=0284C7" />
+    <img alt="Codex Plugin" src="https://img.shields.io/badge/Codex-plugin-4B5563?style=flat-square&labelColor=3F3F46&color=65A30D" />
+    <img alt="Strict Tasks --task-id" src="https://img.shields.io/badge/tasks-strict%20--task--id-4B5563?style=flat-square&labelColor=3F3F46&color=7C3AED" />
+    <img alt="Version 0.1.4" src="https://img.shields.io/badge/version-0.1.4-4B5563?style=flat-square&labelColor=3F3F46&color=0369A1" />
+    <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-4B5563?style=flat-square&labelColor=3F3F46&color=84CC16" />
+  </p>
+  <img src="assets/thoth-teaser-figure.png" width="100%" alt="Thoth concept banner" />
+</div>
 
 ## Why Thoth
 
-Most agent workflows disappear into chat history:
+Thoth is a dashboard-first orchestration runtime for autoresearch. It assumes chat alone is not an operating system: truth must survive the session, progress must stay visible, and completion must be mechanically testable.
 
-- plans drift
-- decisions are lost
-- evidence is hard to recover
-- execution and review happen in different places
-- humans cannot easily see current project truth
+## Failure Modes Table
 
-Thoth solves that by materializing agent work into a real operating layer:
+| Problem | Why it matters |
+| --- | --- |
+| Work is not persistent | A useful run can disappear with the session, leaving no durable state to resume or audit. |
+| Parallel work is invisible | Multiple threads or delegated runs drift apart, and humans cannot see what is actually active. |
+| Agents can claim completion too early | A fluent summary can hide that nothing mechanical passed. |
+| Docs and state rot over time | Decisions, contracts, and runtime facts drift until nobody knows which layer is authoritative. |
 
-- persistent project state in files
-- mechanical validation and consistency checks
-- explicit execution and governance modes
-- dashboard-visible progress and health
-- recoverable project memory outside the chat window
+## Thoth Response Table
+
+| Mechanism | What it does | Counters |
+| --- | --- | --- |
+| Hooks + watchdog + runtime | Keep execution attached to durable ledgers and observable lifecycle events. | Work is not persistent |
+| Dashboard-first visibility | Show live, stale, attachable, and host-specific runtime truth in one read surface. | Parallel work is invisible |
+| Mechanical yes/no acceptance | Force validators, ledgers, and result payloads to decide whether work really passed. | Agents can claim completion too early |
+| Decision system + execution system + locked contracts | Freeze what is allowed, compile it into tasks, and keep authority layers from drifting. | Docs and state rot over time |
+
+## System At A Glance
+
+Humans should not spend their attention tracking every grain of sand in the funnel. Thoth lets AI own the middle of the hourglass, while the dashboard shows the gold that survives: decisions, tasks, runs, results, and the current verdict.
+
+## Architecture Flow Table
+
+| Stage | Purpose | Input | Output |
+| --- | --- | --- | --- |
+| Intent | Capture the user request and operating boundary. | Human goals, constraints, repo context | Direction for planning |
+| Decision | Lock key choices before execution drifts. | Intent, open questions, policy constraints | Recorded decisions |
+| Contract | Freeze what is allowed and what counts as done. | Decisions, requirements, acceptance rules | Locked contracts |
+| Task | Compile executable work items from the contract. | Contracts, project state, compiler rules | Strict task specs |
+| Run | Execute one task through a durable runtime packet. | Task spec, host surface, executor | `.thoth/runs/<run_id>` ledger |
+| Result | Produce a mechanical verdict instead of narration alone. | Validator outputs, artifacts, runtime checks | Structured result and acceptance evidence |
+| Dashboard | Let humans read the final state without replaying the chat. | Ledgers, read models, derived summaries | Inspectable project truth |
 
 ## Quick Start
 
-### 1. Install in Claude Code
-
-Add the Thoth marketplace and install the plugin:
+1. Install Thoth on the host surfaces you use.
 
 ```bash
 claude plugin marketplace add SeeleAI/Thoth --scope user
 claude plugin install thoth@thoth --scope user
-```
-
-Use `project` or `local` scope instead of `user` if you want a narrower install.
-
-Claude `/thoth:*` commands execute the repo-local Thoth CLI through the plugin
-bridge before Claude summarizes the result. On the first run, Claude may ask
-you to approve `scripts/thoth-claude-command.sh`; you can either approve it
-once, add a project-local allow rule in `.claude/settings.local.json`, or set a
-global allow rule in `~/.claude/settings.json` if you want Thoth to work
-without approval prompts across all projects.
-
-### 2. Install in Codex
-
-Codex uses the marketplace source as the install and enable step:
-
-```bash
 codex plugin marketplace add SeeleAI/Thoth
 ```
 
-Update an existing Codex install:
-
-```bash
-codex plugin marketplace upgrade thoth
-```
-
-### 3. Install from a local checkout
-
-```bash
-git clone https://github.com/SeeleAI/Thoth.git
-cd Thoth
-claude plugin add "$(pwd)"
-codex plugin marketplace add "$(pwd)"
-```
-
-### 4. Initialize a target project
-
-Open the repository you want to manage with Thoth and run:
+2. Initialize the repository you want Thoth to manage.
 
 ```text
 /thoth:init
 $thoth init
 ```
 
-This audits the current repository first, then adopts or scaffolds the project
-operating layer with a recorded migration bundle. It can start from a blank
-repository or an already-drifted repo that already contains docs, `.agent-os/`,
-or partial Thoth state. The managed layer includes:
-
-- `.agent-os/` state and governance documents
-- `.thoth/` runtime authority tree
-- strict `Decision -> Contract -> generated Task` planning authority
-- task-level current result ledger under `.thoth/project/tasks/*.result.json`
-- strict sync / doctor validation scripts
-- `tools/dashboard/` backend and frontend
-- project-local helper scripts and tests
-
-Use `/thoth:init` inside Claude Code and `$thoth init` inside Codex. Both routes
-write the same `.thoth` authority tree.
-
-### 5. Start operating the project
-
-Typical first actions:
+3. Start the first strict run from a compiled task.
 
 ```text
-/thoth:status
-/thoth:run --task-id <task_id>
-/thoth:loop --task-id <task_id>
-/thoth:dashboard
+/thoth:run --task-id task-1
+$thoth run --task-id task-1
+```
 
-$thoth status
-$thoth run --task-id <task_id>
-$thoth loop --task-id <task_id>
+4. Open the read surface.
+
+```text
+/thoth:dashboard
 $thoth dashboard
 ```
 
-## Core Capabilities
+## Command Matrix
 
-| Capability | Commands | What it does |
-| --- | --- | --- |
-| Bootstrap | `/thoth:init` | Audits the current repository and adopts/scaffolds the managed Thoth project layer |
-| Single-task execution | `/thoth:run` | Executes one focused task with validation, sync, and commit discipline |
-| Autonomous iteration | `/thoth:loop` | Runs task-mode or metric-mode loops with verification and rollback logic |
-| Governance | `/thoth:discuss`, `/thoth:review` | Separates planning and review from code execution while preserving conclusions |
-| Visibility | `/thoth:status`, `/thoth:dashboard`, `/thoth:report` | Surfaces current truth through structured output, dashboard views, and reports |
-| Integrity checks | `/thoth:doctor`, `/thoth:sync` | Audits project persistence, reference health, and synchronization |
-| Plugin evolution | `/thoth:extend` | Safely evolves the plugin itself under test gates |
+| Command | Host Surface | Purpose | Input | Result |
+| --- | --- | --- | --- | --- |
+| `init` | `Claude: /thoth:init`<br>`Codex: $thoth init` | Audit the repo and materialize canonical Thoth authority. | Optional project metadata or config payload | `.thoth` authority, generated projections, dashboard scaffolding, scripts, and tests |
+| `discuss` | `Claude: /thoth:discuss`<br>`Codex: $thoth discuss` | Record planning decisions without entering code execution. | Topic, decision payload, or contract payload | Updated decision or contract authority plus recompiled task state |
+| `run` | `Claude: /thoth:run`<br>`Codex: $thoth run` | Execute one strict task through a durable runtime packet. | `--task-id`, optional host or executor controls, optional attach/watch/stop | Durable run ledger with state, events, artifacts, and terminal result |
+| `loop` | `Claude: /thoth:loop`<br>`Codex: $thoth loop` | Iterate on one strict task with durable resume and stop semantics. | `--task-id`, optional resume or sleep controls | Recoverable loop ledger and bounded iteration history |
+| `review` | `Claude: /thoth:review`<br>`Codex: $thoth review` | Produce structured findings without modifying source code. | Review target, optional `--task-id`, optional executor controls | Structured review result recorded through the shared protocol |
+| `status` | `Claude: /thoth:status`<br>`Codex: $thoth status` | Show project health and active durable runs. | Optional `--json` | Shared status snapshot derived from authority and local registry |
+| `dashboard` | `Claude: /thoth:dashboard`<br>`Codex: $thoth dashboard` | Start or manage the local dashboard runtime. | Optional action: `start`, `stop`, or `rebuild` | Local dashboard process and read endpoints backed by `.thoth` ledgers |
+| `report` | `Claude: /thoth:report`<br>`Codex: $thoth report` | Build a structured report from current project truth. | Optional output format such as `md` or `json` | Derived progress report from ledgers and project docs |
+| `doctor` | `Claude: /thoth:doctor`<br>`Codex: $thoth doctor` | Audit health, generated surfaces, and runtime shape. | Optional `--quick` or host checks | Health report with validation findings |
+| `sync` | `Claude: /thoth:sync`<br>`Codex: $thoth sync` | Regenerate projections and align generated surfaces. | No required positional input | Refreshed host projections and synchronized derived files |
+| `extend` | `Claude: /thoth:extend`<br>`Codex: $thoth extend` | Evolve Thoth itself under its own test gates. | Change request or touched paths | Verified repository changes that preserve public-surface parity |
 
-### Codex Native And Delegation
+## Why Trust It
 
-Claude still supports Codex delegation on the main public commands:
+| Signal | What you can inspect |
+| --- | --- |
+| Durable runtime truth | `.thoth/runs/*` keeps run, state, events, artifacts, and result payloads. |
+| Locked planning authority | `.thoth/project/decisions/`, `contracts/`, and compiler-generated `tasks/` define what execution is allowed to do. |
+| Script-backed verification | Validators, doctor checks, and selftests decide pass or fail mechanically. |
+| Shared read model | `status`, `report`, and `dashboard` all read from the same authority instead of chat memory. |
 
-- `/thoth:run --executor codex ...`
-- `/thoth:loop --executor codex ...`
-- `/thoth:review --executor codex ...`
+## Who It Is For
 
-Codex also has its own official single-entry public surface:
+| Good fit | Why |
+| --- | --- |
+| Research and experimentation repos | They need durable memory, replayable results, and visible long-running work. |
+| Engineering teams using AI for real changes | They need code execution, review, and acceptance to stay auditable. |
+| Teams that want Claude Code and Codex parity | They need one host-neutral command model rather than two drifting workflows. |
 
-```text
-$thoth init
-$thoth run
-$thoth loop
-$thoth review
-$thoth status
-```
+## Current Limitations
 
-The Codex plugin is packaged through `.codex-plugin/plugin.json` and exposes one
-public skill bundle rooted at `.agents/skills/thoth/`.
+| Current boundary | Implication |
+| --- | --- |
+| `run` and `loop` are strict `--task-id` surfaces | Free-form execution is intentionally rejected. |
+| Host parity is semantic, not identical UX | Claude and Codex still need their own install and local runtime wiring. |
+| Dashboard is a local service, not a hosted control plane | Operators need a machine that can run the backend and frontend assets. |
+| The hero logo currently ships as a raster PNG | A clean SVG and icon-family refinement is still useful for smaller surfaces and plugin packaging. |
 
-Both surfaces share the same runtime rules:
+---
 
-- `.thoth` is the only authority
-- execution planning is strict: `Decision -> Contract -> compiler-generated Task`
-- `run` and `loop` execute only by `--task-id`; free-form execution is intentionally rejected
-- `run` and `loop` are durable by default
-- attach / resume / watch / stop operate on the same run ledger
-- dashboard reads `.thoth/runs/*`, not host session state
+## Contributors
 
-## How It Works
+Built in public by contributors who want AI work to remain inspectable.
 
-Thoth operates in two layers.
+[![Contributors](https://contrib.rocks/image?repo=SeeleAI/Thoth)](https://github.com/SeeleAI/Thoth/graphs/contributors)
 
-### 1. Plugin Layer
-
-The Thoth repository provides:
-
-- public command definitions in `commands/`
-- internal contracts in `contracts/`
-- internal agents in `agents/`
-- automation hooks in `hooks/`
-- management scripts in `scripts/`
-- deployable project templates in `templates/`
-
-This layer defines how the operating system behaves.
-
-The canonical Python implementation is now split into five packages:
-
-- `thoth/surface`: CLI parsing, command dispatch, host hooks, Claude bridge
-- `thoth/plan`: decision/contract/task authority, legacy import, TaskResult projection, doctor payloads
-- `thoth/run`: runtime ledger, lease, packet preparation, lifecycle, worker orchestration, status read model
-- `thoth/init`: audit, typed init planning, rendering, apply/service pipeline
-- `thoth/observe`: status, report, dashboard, selftest and other pure read-model helpers
-
-Old top-level internal modules such as `thoth/runtime.py`, `thoth/task_contracts.py`, and `thoth/project_init.py` are no longer part of the implementation path.
-
-### 2. Project Layer
-
-When you run `/thoth:init` in a target repository, Thoth generates a persistent
-project layer with:
-
-- state docs: `.agent-os/`
-- runtime authority: `.thoth/`
-- planning authority: `.thoth/project/decisions`, `.thoth/project/contracts`, `.thoth/project/tasks`
-- task-level current result authority: `.thoth/project/tasks/*.result.json`
-- strict sync / doctor validation tooling
-- dashboard backend and frontend
-- project-local scripts and tests
-
-That is the core idea: **Thoth does not only tell the agent what to do; it
-installs the project substrate that makes the work inspectable and recoverable.**
-
-## Command Model
-
-Thoth is designed around distinct operating modes rather than one overloaded
-assistant surface.
-
-### Execution
-
-- `/thoth:run` for one focused change
-- `/thoth:loop` for iterative execution with decision logic
-- `--executor codex` for delegated Codex work under Thoth control
-
-### Governance
-
-- `/thoth:discuss` for docs, config, and task-state changes without touching code
-- `/thoth:review` for first-principles critique outside the active implementation path
-
-### Visibility and Health
-
-- `/thoth:status` prints a structured project snapshot
-- `/thoth:dashboard` starts the human-facing dashboard
-- `/thoth:doctor` audits project health and consistency
-- `/thoth:sync` aligns generated views and references
-- `/thoth:report` builds progress reports from recorded state
-
-## Design Principles
-
-- **Audit-first**: no silent completion claims without evidence
-- **Execution with verification**: loops must validate, not just act
-- **Recoverable state**: important truth must live in files, not only in chat
-- **Dashboard visibility**: humans need an operating view, not raw agent traces
-- **Script-backed behavior**: the system relies on contracts and scripts, not pure improvisation
-- **Tested infrastructure**: golden-data-driven tests protect the operating layer
-
-## Self-Test Gates
-
-Thoth now ships a heavy self-test orchestration entrypoint that exercises the
-real CLI, real temporary repositories, real dashboard processes, fault
-injection, and optional host-native Codex / Claude matrices.
-
-Run the daily process-real gate:
-
-```bash
-python scripts/selftest.py --tier hard
-```
-
-Run the heavy gate with deterministic Python validators and host-native
-matrices:
-
-```bash
-python scripts/selftest.py --tier heavy --hosts auto
-```
-
-The runner writes a machine-readable summary plus artifacts for command
-transcripts, ledger snapshots, dashboard payloads, and host command traces.
-
-## Runtime Today, Direction Tomorrow
-
-### Today
-
-Thoth is currently:
-
-- generated from a host-neutral public command spec
-- published as both a Claude plugin surface and an official Codex plugin surface
-- backed by a durable `.thoth/runs/*` ledger plus machine-local supervisor registry
-- observable in the dashboard through shared runtime summaries
-
-## Local Development
-
-Thoth pytest coverage is split into three execution tiers:
-
-```bash
-pytest -q --thoth-tier light
-```
-
-- `light`: fast in-process developer smoke tier, target `<=20s`
-- `medium`: bounded repo-real tier for slightly more complex work, target `<=2m`, includes `light`
-- `heavy`: full suite for refactors and release-grade validation, includes everything
-
-Recommended usage:
-
-```bash
-# ordinary feature work
-pytest -q --thoth-tier light
-
-# moderately complex work
-pytest -q --thoth-tier medium
-
-# refactors or final validation
-pytest -q --thoth-tier heavy
-```
-
-If you prefer raw markers, `light` / `medium` / `heavy` are also attached to
-every collected test item, but `--thoth-tier` is the canonical hierarchical
-selector.
-
-Branch policy:
-
-- Do day-to-day development on `dev`
-- Treat `main` as the stable integration and release branch
-- Do not directly modify `main` for normal feature or code development
-- Promote changes from `dev` into `main` deliberately, with `cherry-pick` as the default path
-- Do not commit normal development work straight onto `main`; land it on `dev` first and promote reviewed code later
-
-Current repository contents include:
-
-- plugin metadata in `.codex-plugin/`
-- plugin metadata in `.claude-plugin/`
-- Codex skill metadata in `.agents/skills/`
-- public commands in `commands/`
-- internal contracts in `contracts/`
-- internal agents in `agents/`
-- scripts in `scripts/`
-- dashboard and project templates in `templates/`
-- unit and integration tests in `tests/`
-
-## Contributing
-
-Thoth is now a standalone open-source project. Contributions that improve the
-operating model, validation logic, dashboard experience, runtime abstractions,
-or documentation are welcome.
-
-When changing behavior, update tests and contracts together so the system stays
-trustworthy as it evolves.
+Contribution path: [open a pull request](https://github.com/SeeleAI/Thoth/pulls) or [start a discussion](https://github.com/SeeleAI/Thoth/discussions).
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-## References
-
-- [karpathy/autoresearch](https://github.com/karpathy/autoresearch)
-- [uditgoenka/autoresearch](https://github.com/uditgoenka/autoresearch)
