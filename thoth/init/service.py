@@ -22,6 +22,7 @@ from .audit import (
 )
 from .generators import (
     DEFAULT_PHASES,
+    _write_dashboard_locale_selection,
     generate_agent_os_docs,
     generate_codex_hook_projection,
     generate_dashboard,
@@ -190,6 +191,7 @@ def sync_project_layer(project_dir: Path) -> None:
         "theme": dashboard.get("theme", "warm-bear"),
     }
     generate_thoth_runtime(normalized, project_dir)
+    _write_dashboard_locale_selection(normalized, project_dir)
     generate_host_projections(normalized, project_dir)
     generate_codex_hook_projection(project_dir)
     audit = audit_repository_state(project_dir)

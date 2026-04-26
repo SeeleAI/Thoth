@@ -118,6 +118,17 @@ def generate_dashboard(config: dict[str, Any], project_dir: Path) -> None:
     src = TEMPLATES_DIR / "dashboard"
     dest = project_dir / "tools" / "dashboard"
     shutil.copytree(src, dest, dirs_exist_ok=True)
+    _write_dashboard_locale_selection(config, project_dir)
+
+
+def _write_dashboard_locale_selection(config: dict[str, Any], project_dir: Path) -> None:
+    locale = "en" if str(config.get("language", "zh")).strip().lower().startswith("en") else "zh"
+    path = project_dir / "tools" / "dashboard" / "frontend" / "src" / "generated" / "locale.ts"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"export const defaultLocale = '{locale}' as const\n",
+        encoding="utf-8",
+    )
 
 
 def render_project_instructions(config: dict[str, Any]) -> str:

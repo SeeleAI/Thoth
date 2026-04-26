@@ -1,150 +1,168 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { api } from '@/api/client'
-
-const projectName = ref('Thoth')
-const healthy = ref<boolean | null>(null)
-const refreshing = ref(false)
+import { computed } from 'vue'
+import { locale } from '@/locales'
+import { useDashboardStore } from '@/stores/dashboard'
 
 const emit = defineEmits<{
-  (e: 'refresh'): void
+  refresh: []
 }>()
 
-async function loadConfig() {
-  try {
-    const cfg = await api.getConfig()
-    projectName.value = cfg.project?.name ?? 'Thoth'
-  } catch {
-    /* keep default */
-  }
-}
+const store = useDashboardStore()
 
-async function checkHealth() {
-  try {
-    const status = await api.getSystemStatus()
-    healthy.value = status.task_count >= 0
-  } catch {
-    healthy.value = false
-  }
-}
+const projectName = computed(
+  () => store.config?.project?.name || store.overviewSummary?.project?.name || locale.brand,
+)
 
-async function handleRefresh() {
-  refreshing.value = true
-  emit('refresh')
-  await checkHealth()
-  refreshing.value = false
-}
-
-onMounted(() => {
-  loadConfig()
-  checkHealth()
+const freshness = computed(() => {
+  if (!store.lastUpdatedAt) return '—'
+  const diffSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(store.lastUpdatedAt).getTime()) / 1000),
+  )
+  if (diffSeconds < 60) return `${diffSeconds}s`
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`
+  return `${Math.floor(diffSeconds / 3600)}h`
 })
+
+const headline = computed(() => store.overviewSummary?.headline)
+const runtime = computed(() => store.overviewSummary?.runtime)
 </script>
 
 <template>
-  <header class="app-header">
-    <div class="header-left">
-      <h1 class="project-name">{{ projectName }}</h1>
-      <span class="subtitle">Research Dashboard</span>
+  <header class="header">
+    <div class="header__brand">
+      <div class="header__mark">TH</div>
+      <div>
+        <h1 class="header__title">{{ projectName }}</h1>
+        <p class="header__subtitle">{{ locale.subtitle }}</p>
+      </div>
     </div>
-    <div class="header-right">
-      <span
-        class="health-dot"
-        :class="{
-          'health-ok': healthy === true,
-          'health-err': healthy === false,
-          'health-unknown': healthy === null,
-        }"
-        :title="healthy === true ? '系统正常' : healthy === false ? '系统异常' : '检查中...'"
-      />
-      <button
-        class="refresh-btn"
-        :disabled="refreshing"
-        :class="{ spinning: refreshing }"
-        title="刷新数据"
-        @click="handleRefresh"
-      >
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M23 4v6h-6M1 20v-6h6" />
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-        </svg>
+
+    <div class="header__stats" v-if="headline">
+      <div class="header__chip">
+        <span>{{ locale.header.activeRuns }}</span>
+        <strong>{{ runtime?.active_run_count ?? 0 }}</strong>
+      </div>
+      <div class="header__chip">
+        <span>{{ locale.header.staleRuns }}</span>
+        <strong>{{ runtime?.stale_run_count ?? 0 }}</strong>
+      </div>
+      <div class="header__chip">
+        <span>{{ locale.header.decisionQueue }}</span>
+        <strong>{{ headline.decision_queue_count }}</strong>
+      </div>
+    </div>
+
+    <div class="header__actions">
+      <div class="header__freshness">
+        <span>{{ locale.header.freshness }}</span>
+        <strong>{{ freshness }}</strong>
+      </div>
+      <button class="header__button" @click="emit('refresh')">
+        {{ locale.header.refresh }}
       </button>
     </div>
   </header>
 </template>
 
 <style scoped>
-.app-header {
+.header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  height: 56px;
-  background: var(--bg-card, #ffffff);
-  border-bottom: 1px solid var(--border, #e8e0d6);
-  box-shadow: 0 1px 3px rgba(44, 24, 16, 0.04);
-  flex-shrink: 0;
+  gap: 20px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-header);
 }
 
-.header-left {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.project-name {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary, #2C1810);
-}
-
-.subtitle {
-  font-size: 13px;
-  color: var(--text-secondary, #6b5b4e);
-}
-
-.header-right {
+.header__brand {
   display: flex;
   align-items: center;
   gap: 14px;
 }
 
-.health-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.header__mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #3c2a1f, #6a492e);
+  color: #fff8ef;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
 }
-.health-ok     { background: #2d6a4f; box-shadow: 0 0 0 3px rgba(45,106,79,0.2); }
-.health-err    { background: #a4262c; box-shadow: 0 0 0 3px rgba(164,38,44,0.2); }
-.health-unknown { background: #ccc; }
 
-.refresh-btn {
+.header__title {
+  font-size: 1.2rem;
+}
+
+.header__subtitle {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.header__stats {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  gap: 10px;
+}
+
+.header__chip {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(47, 33, 24, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.75);
+  color: var(--text-secondary);
+}
+
+.header__chip strong {
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.header__actions {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary, #6b5b4e);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  gap: 12px;
 }
-.refresh-btn:hover {
-  background: var(--bg-secondary, #f0ebe4);
-  color: var(--accent, #CC8B3A);
+
+.header__freshness {
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 0.8rem;
 }
-.refresh-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
+
+.header__freshness strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 0.95rem;
 }
-.refresh-btn.spinning svg {
-  animation: spin 0.8s linear infinite;
+
+.header__button {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: var(--text-primary);
+  color: #fff7ef;
+  box-shadow: var(--shadow-soft);
 }
-@keyframes spin {
-  to { transform: rotate(360deg); }
+
+@media (max-width: 1080px) {
+  .header {
+    flex-wrap: wrap;
+  }
+
+  .header__stats {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
 }
 </style>

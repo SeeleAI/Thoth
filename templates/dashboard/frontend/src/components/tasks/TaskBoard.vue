@@ -139,7 +139,7 @@ const phaseLabels: Record<string, string> = {
                   class="phase-item"
                 >
                   <span class="phase-name">{{ phaseLabels[pname] ?? pname }}</span>
-                  <StatusBadge :status="phase.status" />
+                  <StatusBadge :status="phase?.status || 'pending'" />
                 </div>
               </div>
             </div>

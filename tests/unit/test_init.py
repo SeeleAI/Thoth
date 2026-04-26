@@ -24,7 +24,7 @@ from thoth.init.render import (
     generate_thoth_runtime,
     parse_config,
 )
-from thoth.init.service import initialize_project
+from thoth.init.service import initialize_project, sync_project_layer
 
 
 @pytest.fixture
@@ -90,6 +90,13 @@ def test_generate_pre_commit_config(base_config, tmp_path):
     content = (tmp_path / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     assert "thoth-doctor" in content
     assert "thoth-sync" in content
+
+
+def test_generate_dashboard_writes_locale_selection(base_config, tmp_path):
+    generate_dashboard(base_config, tmp_path)
+    locale_file = tmp_path / "tools" / "dashboard" / "frontend" / "src" / "generated" / "locale.ts"
+    assert locale_file.exists()
+    assert "defaultLocale = 'en'" in locale_file.read_text(encoding="utf-8")
 
 
 def test_generate_scripts(base_config, tmp_path):
@@ -216,3 +223,24 @@ def test_initialize_project_preserves_host_owned_codex_root(base_config, tmp_pat
     preview = json.loads((tmp_path / ".thoth" / "migrations" / result["migration_id"] / "preview.json").read_text(encoding="utf-8"))
     assert ".codex" not in preview["update"]
     assert result["displaced_conflicts"] == []
+
+
+def test_sync_project_layer_refreshes_dashboard_locale(tmp_path):
+    config = {
+        "name": "LocaleSyncProject",
+        "language": "zh",
+        "directions": [],
+        "phases": DEFAULT_PHASES,
+        "port": 8501,
+        "theme": "warm-bear",
+    }
+    initialize_project(config, tmp_path)
+    manifest_path = tmp_path / ".thoth" / "project" / "project.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["project"]["language"] = "en"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    sync_project_layer(tmp_path)
+
+    locale_file = tmp_path / "tools" / "dashboard" / "frontend" / "src" / "generated" / "locale.ts"
+    assert "defaultLocale = 'en'" in locale_file.read_text(encoding="utf-8")

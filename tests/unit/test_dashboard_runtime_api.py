@@ -148,12 +148,32 @@ def test_runtime_progress_and_event_endpoints(monkeypatch, tmp_path):
     assert payload["next_after_seq"] == 2
 
 
+def test_overview_summary_and_gantt_endpoints(monkeypatch, tmp_path):
+    _setup_project(tmp_path, monkeypatch)
+    dashboard_app.invalidate_cache()
+    client = TestClient(dashboard_app.app)
+
+    summary = client.get("/api/overview-summary")
+    assert summary.status_code == 200
+    summary_payload = summary.json()
+    assert summary_payload["headline"]["total_tasks"] == 1
+    assert summary_payload["runtime"]["active_run_count"] == 1
+    assert summary_payload["recent_conclusions"] == []
+
+    gantt = client.get("/api/gantt")
+    assert gantt.status_code == 200
+    gantt_payload = gantt.json()
+    assert gantt_payload[0]["id"] == "task-1"
+    assert gantt_payload[0]["status"] == "ready"
+    assert gantt_payload[0]["dependencies"] == []
+
+
 def test_spa_entry_routes_return_frontend_shell(monkeypatch, tmp_path):
     _setup_project(tmp_path, monkeypatch)
     dashboard_app.invalidate_cache()
     client = TestClient(dashboard_app.app)
 
-    for route in ("/", "/overview", "/tasks"):
+    for route in ("/", "/overview", "/tasks", "/timeline", "/system"):
         response = client.get(route)
         assert response.status_code == 200
         assert "dashboard shell" in response.text

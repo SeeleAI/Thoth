@@ -71,6 +71,7 @@ class TestInitWorkflow:
             ".thoth/project/compiler-state.json",
             ".thoth/derived/codex-hooks.json",
             "tools/dashboard/backend/app.py",
+            "tools/dashboard/frontend/src/generated/locale.ts",
         ]:
             assert (project_dir / rel).exists(), f"Missing: {rel}"
 

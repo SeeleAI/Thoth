@@ -9,7 +9,12 @@ from typing import Any
 
 import yaml
 
-from thoth.plan.store import load_compiled_tasks, load_project_manifest, load_task_result
+from thoth.plan.store import (
+    load_compiled_tasks,
+    load_compiler_state,
+    load_project_manifest,
+    load_task_result,
+)
 from thoth.run.service import list_active_runs
 
 
@@ -125,6 +130,202 @@ def time_ago(iso_str: str | None) -> str:
     if hours < 24:
         return f"{hours}h ago"
     return f"{hours // 24}d ago"
+
+
+def parse_iso_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def task_updated_at(task: dict[str, Any]) -> str | None:
+    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+    for key in ("updated_at", "last_closure_at", "last_attempt_at"):
+        value = task_result.get(key)
+        if isinstance(value, str) and value:
+            return value
+    verdict = task.get("verdict")
+    if isinstance(verdict, dict):
+        for key in ("updated_at", "created_at"):
+            value = verdict.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
+def task_created_at(task: dict[str, Any]) -> str | None:
+    for key in ("created_at", "generated_at"):
+        value = task.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def task_runtime_status(task: dict[str, Any]) -> str:
+    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+    if task_result.get("updated_at"):
+        if task_result.get("usable") is True and task_result.get("meets_goal") is True:
+            return "completed"
+        return "failed"
+    ready_state = str(task.get("ready_state") or "blocked")
+    if ready_state == "ready":
+        return "ready"
+    if ready_state == "imported_resolved":
+        return "completed"
+    if ready_state == "invalid":
+        return "invalid"
+    return "blocked"
+
+
+def task_progress_pct(task: dict[str, Any]) -> float:
+    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+    if task_result.get("updated_at"):
+        return 100.0
+    ready_state = str(task.get("ready_state") or "blocked")
+    if ready_state == "imported_resolved":
+        return 100.0
+    if ready_state == "ready":
+        return 15.0
+    if ready_state == "blocked":
+        return 5.0
+    return 0.0
+
+
+def recent_verdict_summaries(tasks: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for task in tasks:
+        task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+        updated_at = task_updated_at(task)
+        conclusion = (
+            task_result.get("conclusion")
+            or task_result.get("current_summary")
+            or (task.get("verdict", {}) if isinstance(task.get("verdict"), dict) else {}).get("conclusion")
+        )
+        evidence_paths = task_result.get("evidence_paths")
+        if not isinstance(evidence_paths, list):
+            evidence_paths = []
+        if not updated_at and not conclusion and not evidence_paths:
+            continue
+        rows.append(
+            {
+                "task_id": task.get("task_id") or task.get("id"),
+                "title": task.get("title", ""),
+                "module": task.get("module", ""),
+                "direction": task.get("direction", ""),
+                "status": task_runtime_status(task),
+                "updated_at": updated_at,
+                "source": task_result.get("source") or "task_result",
+                "conclusion": conclusion,
+                "evidence_paths": evidence_paths,
+            }
+        )
+    rows.sort(
+        key=lambda item: parse_iso_timestamp(item.get("updated_at")) or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return rows[:limit]
+
+
+def derive_gantt_rows(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for task in tasks:
+        phases = task.get("phases") if isinstance(task.get("phases"), dict) else {}
+        timestamps: list[str] = []
+        completed_timestamps: list[str] = []
+        for phase in phases.values():
+            if not isinstance(phase, dict):
+                continue
+            for key in ("started_at", "completed_at"):
+                value = phase.get(key)
+                if isinstance(value, str) and value:
+                    timestamps.append(value)
+                    if key == "completed_at":
+                        completed_timestamps.append(value)
+
+        start_date = None
+        for candidate in sorted(timestamps, key=lambda value: parse_iso_timestamp(value) or datetime.max.replace(tzinfo=timezone.utc)):
+            start_date = candidate
+            break
+        if start_date is None:
+            start_date = task_created_at(task)
+
+        end_date = None
+        if completed_timestamps:
+            end_date = max(
+                completed_timestamps,
+                key=lambda value: parse_iso_timestamp(value) or datetime.min.replace(tzinfo=timezone.utc),
+            )
+        elif task_runtime_status(task) in {"completed", "failed"}:
+            end_date = task_updated_at(task)
+
+        estimated_hours = task.get("estimated_total_hours")
+        if not isinstance(estimated_hours, (int, float)):
+            estimated_hours = 0
+
+        dependency_rows = task.get("depends_on")
+        dependencies: list[str] = []
+        if isinstance(dependency_rows, list):
+            for dep in dependency_rows:
+                if isinstance(dep, dict):
+                    task_id = dep.get("task_id")
+                    if isinstance(task_id, str) and task_id:
+                        dependencies.append(task_id)
+
+        rows.append(
+            {
+                "id": task.get("task_id") or task.get("id"),
+                "title": task.get("title", ""),
+                "module": task.get("module", ""),
+                "direction": task.get("direction", ""),
+                "status": task_runtime_status(task),
+                "start_date": start_date,
+                "end_date": end_date,
+                "estimated_hours": estimated_hours,
+                "progress": task_progress_pct(task),
+                "dependencies": dependencies,
+            }
+        )
+    return rows
+
+
+def overview_summary_read_model(project_root: Path) -> dict[str, Any]:
+    tasks = load_tasks(project_root)
+    config = load_config(project_root)
+    compiler_state = load_compiler_state(project_root)
+    healthy, health_message = quick_health(project_root)
+    ready_count = sum(1 for task in tasks if str(task.get("ready_state") or "") == "ready")
+    total_count = len(tasks)
+    completed_count = len(completed_tasks(tasks))
+    blocked_count = len(blocking_tasks(tasks))
+    overall_progress = round((100 * completed_count / total_count), 1) if total_count else 0.0
+    compiler_summary = compiler_state.get("summary", {}) if isinstance(compiler_state, dict) else {}
+    return {
+        "project": config.get("project", {}),
+        "headline": {
+            "total_tasks": total_count,
+            "completed_tasks": completed_count,
+            "blocked_tasks": blocked_count,
+            "ready_tasks": ready_count,
+            "overall_progress": overall_progress,
+            "decision_queue_count": compiler_summary.get("decision_queue_count", 0),
+        },
+        "compiler_summary": compiler_summary,
+        "recent_conclusions": recent_verdict_summaries(tasks, limit=6),
+        "recent_activity": load_run_log_recent(project_root, 6),
+        "todo_next": [
+            {"id": item_id, "status": item_status, "description": description}
+            for item_id, item_status, description in load_todo_next(project_root)
+        ],
+        "healthy": healthy,
+        "health_message": health_message,
+        "active_run_count": len(active_runs(project_root)),
+    }
 
 
 def status_read_model(project_root: Path) -> dict[str, Any]:

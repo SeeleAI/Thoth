@@ -1,51 +1,66 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import type { WorkbenchTab } from '@/types'
 
-const routes: RouteRecordRaw[] = [
+const WorkbenchView = () => import('@/views/WorkbenchView.vue')
+
+interface RouteMetaShape {
+  tab: WorkbenchTab
+  section?: 'milestones' | 'overview'
+}
+
+const routes: Array<RouteRecordRaw & { meta: RouteMetaShape }> = [
   {
     path: '/',
     redirect: '/overview',
+    meta: { tab: 'overview' },
   },
   {
     path: '/overview',
     name: 'overview',
-    component: () => import('@/views/OverviewPanel.vue'),
-    meta: { title: '总览', icon: 'overview' },
+    component: WorkbenchView,
+    meta: { tab: 'overview', section: 'overview' },
   },
   {
     path: '/tasks',
     name: 'tasks',
-    component: () => import('@/views/TasksPanel.vue'),
-    meta: { title: '任务', icon: 'tasks' },
+    component: WorkbenchView,
+    meta: { tab: 'detail' },
   },
   {
     path: '/milestones',
     name: 'milestones',
-    component: () => import('@/views/MilestonesPanel.vue'),
-    meta: { title: '里程碑', icon: 'milestones' },
+    component: WorkbenchView,
+    meta: { tab: 'overview', section: 'milestones' },
   },
   {
     path: '/dag',
     name: 'dag',
-    component: () => import('@/views/DagPanel.vue'),
-    meta: { title: '依赖图', icon: 'dag' },
+    component: WorkbenchView,
+    meta: { tab: 'dag' },
   },
   {
     path: '/timeline',
     name: 'timeline',
-    component: () => import('@/views/TimelinePanel.vue'),
-    meta: { title: '时间线', icon: 'timeline' },
+    component: WorkbenchView,
+    meta: { tab: 'gantt' },
   },
   {
     path: '/todo',
     name: 'todo',
-    component: () => import('@/views/TodoPanel.vue'),
-    meta: { title: '待办', icon: 'todo' },
+    component: WorkbenchView,
+    meta: { tab: 'todo' },
   },
   {
     path: '/activity',
     name: 'activity',
-    component: () => import('@/views/ActivityPanel.vue'),
-    meta: { title: '活动', icon: 'activity' },
+    component: WorkbenchView,
+    meta: { tab: 'activity' },
+  },
+  {
+    path: '/system',
+    name: 'system',
+    component: WorkbenchView,
+    meta: { tab: 'system' },
   },
 ]
 

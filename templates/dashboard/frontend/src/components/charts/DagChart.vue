@@ -33,6 +33,9 @@ const statusColors: Record<string, string> = {
   in_progress: '#CC8B3A',
   completed: '#2d6a4f',
   blocked: '#a4262c',
+  ready: '#7e9ec7',
+  invalid: '#d28a93',
+  failed: '#9c6b38',
 }
 
 const chartOption = computed(() => {

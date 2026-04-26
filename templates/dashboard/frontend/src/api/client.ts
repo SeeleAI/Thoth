@@ -1,46 +1,44 @@
-/* Thoth Dashboard — API client */
-
 import type {
-  ResearchConfig,
-  ProgressData,
-  TaskListResponse,
-  Task,
-  DagData,
-  TimelineItem,
-  Milestone,
   ActivityEvent,
-  TodoProject,
-  TaskFilters,
-  SystemStatus,
-  RunSummary,
-  TaskRunsResponse,
+  DagData,
+  GanttRow,
+  OverviewSummary,
+  ProgressData,
+  ResearchConfig,
   RunDetail,
   RunEventPage,
-} from '@/types/index'
+  RunSummary,
+  SystemStatus,
+  Task,
+  TaskFilters,
+  TaskListResponse,
+  TaskRunsResponse,
+  Milestone,
+  TodoProject,
+  TreeDirection,
+} from '@/types'
 
 const BASE = '/api'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const response = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || body.error || `HTTP ${res.status}`)
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.detail || body.error || `HTTP ${response.status}`)
   }
-  return res.json() as Promise<T>
+  return response.json() as Promise<T>
 }
 
 export const api = {
-  /* ── Config & Status ─────────────────────── */
   getConfig: () => request<ResearchConfig>('/config'),
+  getTree: () => request<TreeDirection[]>('/tree'),
+  getProgress: () => request<ProgressData>('/progress'),
+  getOverviewSummary: () => request<OverviewSummary>('/overview-summary'),
   getSystemStatus: () => request<SystemStatus>('/status'),
 
-  /* ── Progress ────────────────────────────── */
-  getProgress: () => request<ProgressData>('/progress'),
-
-  /* ── Tasks ───────────────────────────────── */
   getTasks: (filters?: TaskFilters) => {
     const params = new URLSearchParams()
     if (filters?.status) params.set('status', filters.status)
@@ -48,10 +46,10 @@ export const api = {
     if (filters?.direction) params.set('direction', filters.direction)
     if (filters?.limit) params.set('limit', String(filters.limit))
     if (filters?.offset) params.set('offset', String(filters.offset))
-    const qs = params.toString()
-    return request<TaskListResponse>(`/tasks${qs ? `?${qs}` : ''}`)
+    const query = params.toString()
+    return request<TaskListResponse>(`/tasks${query ? `?${query}` : ''}`)
   },
-  getTask: (id: string) => request<Task>(`/tasks/${id}`),
+  getTask: (taskId: string) => request<Task>(`/tasks/${taskId}`),
   getTaskActiveRun: (taskId: string) =>
     request<RunSummary | null>(`/tasks/${taskId}/active-run`),
   getTaskRuns: (taskId: string) =>
@@ -64,20 +62,12 @@ export const api = {
     return request<RunEventPage>(`/runs/${runId}/events?${params.toString()}`)
   },
 
-  /* ── DAG ─────────────────────────────────── */
   getDag: () => request<DagData>('/dag'),
-
-  /* ── Timeline ────────────────────────────── */
-  getTimeline: () => request<TimelineItem[]>('/timeline'),
-
-  /* ── Milestones ──────────────────────────── */
+  getTimeline: () => request<GanttRow[]>('/timeline'),
+  getGantt: () => request<GanttRow[]>('/gantt'),
   getMilestones: () => request<Milestone[]>('/milestones'),
+  getActivity: (limit = 50) => request<ActivityEvent[]>(`/activity?limit=${limit}`),
 
-  /* ── Activity ────────────────────────────── */
-  getActivity: (limit = 20) =>
-    request<ActivityEvent[]>(`/activity?limit=${limit}`),
-
-  /* ── Todo ─────────────────────────────────── */
   getTodo: () => request<TodoProject[]>('/todo'),
   addTodoProject: (name: string) =>
     request<{ id: number; name: string }>('/todo/projects', {
@@ -105,7 +95,6 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
-  /* ── Triggers ────────────────────────────── */
   triggerValidate: () =>
     request<Record<string, unknown>>('/trigger/validate', { method: 'POST' }),
   triggerSync: () =>
