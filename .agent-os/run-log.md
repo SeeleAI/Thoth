@@ -228,3 +228,9 @@
   - State changes: 修复 `tests/unit/test_claude_bridge.py` 对旧入口 `thoth/claude_bridge.py` 的漂移引用，使其重新指向当前真实 Claude bridge `thoth/surface/bridges/claude.py`；本次未改动 bridge 语义，只做测试入口对齐
   - Evidence produced: 更新 `tests/unit/test_claude_bridge.py`；验证 `python -m pytest -q tests/unit/test_claude_bridge.py tests/unit/test_plugin_surface.py` 通过（`13 passed in 23.07s`）
   - Next likely action: 若继续收口安装/宿主文档，可补一轮针对 repo-local fallback 文案的 targeted audit，确认所有 `python -m ...` 提示都与当前 `thoth.cli` 入口保持一致
+
+- 2026-04-26 13:13 UTC [branch-aware claude bridge test alignment]
+  - Worked on: `OBJ-001`, `WS-003`
+  - State changes: 在按约束将修复集成到 `main` 时，发现 `dev` 与 `main` 的 Claude bridge 真实布局不同：`dev` 当前使用 `thoth/surface/bridges/claude.py`，而 `main` 仍使用 `thoth/claude_bridge.py`，且对应 shell bridge 也仍指向旧路径。为避免把只对单一分支成立的测试路径硬编码进发布面，改为让 `tests/unit/test_claude_bridge.py` 按当前分支真实存在的 bridge 文件自动选择入口
+  - Evidence produced: 更新 `tests/unit/test_claude_bridge.py`，新增 `_bridge_entry()` 回退逻辑；验证 `python -m pytest -q tests/unit/test_claude_bridge.py tests/unit/test_plugin_surface.py` 通过（`13 passed in 23.58s`）
+  - Next likely action: 若后续计划继续收敛双分支桥接实现，可将 `main` 的 Claude bridge 布局也迁到 `surface/bridges/`，但应作为单独公开变更处理，而不是夹带在这次测试漂移修复里
