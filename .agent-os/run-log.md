@@ -216,3 +216,15 @@
   - State changes: 继续执行 `TD-024` 的 `Codex-only` closing gate 调试；先修复 deterministic seed repo 的 validator 入口，使 `python scripts/validate_feature.py` / `validate_bugfix.py` / `validate_full.py` 能按 heavy contract 直接执行，不再因 `scripts._validator_support` 或 `tracker` 导入路径错误提前失败；随后收敛 Codex host-real 结果判定，live `run/loop/review` 会话只对请求的公共命令本身做硬失败判断，不再因会话内后续可恢复的辅助 shell 失败误杀整步；最后定位到新的真实 blocker 已收缩为 `external_worker` detached 启动链，当前 `run-bugfix --sleep` 会写出 spawned/queued，但未继续产生 heartbeat 或 terminalize
   - Evidence produced: 更新 `thoth/selftest_seed.py`、`thoth/observe/selftest/runner.py`、`tests/unit/test_selftest_helpers.py`；验证 `python -m py_compile thoth/observe/selftest/runner.py thoth/selftest_seed.py tests/unit/test_selftest_helpers.py` 通过，`python -m pytest -q tests/unit/test_selftest_helpers.py` 通过（`22 passed`）；真实 `python -m thoth.selftest --tier heavy --hosts codex --keep-workdir --artifact-dir /tmp/thoth-heavy-codex-closeout-artifacts-3 --json-report /tmp/thoth-heavy-codex-closeout-summary-3.json --only-host codex --from-step run-feature` 已确认 `run-feature` 真正 terminalize；真实 `python -m thoth.selftest --tier heavy --hosts codex --keep-workdir --artifact-dir /tmp/thoth-heavy-codex-closeout-artifacts-5 --json-report /tmp/thoth-heavy-codex-closeout-summary-5.json --only-host codex --from-step run-bugfix` 当前仍在推进，最新 `.thoth/runs/run-3b2c754ab01d/state.json` 停在 `status=running phase=queued dispatch_mode=external_worker`
   - Next likely action: 继续只围绕 `external_worker` detached 启动链收敛 `run-bugfix` 的真实卡点，确认默认 `Popen(..., start_new_session=True)` 路径是否能替代此前失败的 `THOTH_DETACH_WORKER_VIA_NOHUP=1` 注入
+
+- 2026-04-26 12:55 UTC [local launcher cleanup verification]
+  - Worked on: `OBJ-001`, `WS-003`
+  - State changes: 核查用户追问的 `/opt/conda/bin/thoth` 本机全局入口；确认它不属于当前仓库的官方 Claude Code / Codex 插件分发面，也不是当前公开安装链路的必需项。当前本机已不存在该文件，因此无需再做 repo 侧修复；官方安装面仍保持为 Claude `.claude-plugin/` 与 Codex `.agents/plugins/marketplace.json -> plugins/thoth/.codex-plugin/plugin.json`
+  - Evidence produced: `test -e /opt/conda/bin/thoth` 返回 `__THOTH_REMOVED__`；`pyproject.toml` 当前仅声明 Python console script `thoth = "thoth.surface.cli:main"`；Codex 官方入口指向 `.agents/plugins/marketplace.json` 中的 `./plugins/thoth`，Claude 官方入口位于 `.claude-plugin/plugin.json`；仓库内未发现当前公开安装说明要求依赖 `/opt/conda/bin/thoth`
+  - Next likely action: 若后续仍出现同名全局命令，应优先按“手工 PATH launcher / 环境自定义包装器”排查，而不是把它视作 Thoth 官方插件自动生成物
+
+- 2026-04-26 13:05 UTC [claude bridge test drift fix]
+  - Worked on: `OBJ-001`, `WS-003`
+  - State changes: 修复 `tests/unit/test_claude_bridge.py` 对旧入口 `thoth/claude_bridge.py` 的漂移引用，使其重新指向当前真实 Claude bridge `thoth/surface/bridges/claude.py`；本次未改动 bridge 语义，只做测试入口对齐
+  - Evidence produced: 更新 `tests/unit/test_claude_bridge.py`；验证 `python -m pytest -q tests/unit/test_claude_bridge.py tests/unit/test_plugin_surface.py` 通过（`13 passed in 23.07s`）
+  - Next likely action: 若继续收口安装/宿主文档，可补一轮针对 repo-local fallback 文案的 targeted audit，确认所有 `python -m ...` 提示都与当前 `thoth.cli` 入口保持一致
