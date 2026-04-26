@@ -8,7 +8,7 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 
 ## Verification Snapshot
 
-- `last_verified_utc`: `2026-04-25T17:06:00Z`
+- `last_verified_utc`: `2026-04-26T12:11:33Z`
 - `sources`: `SRC-OAI-001` ~ `SRC-OAI-014`
 
 ## 1. OpenAI API primitives
@@ -178,24 +178,40 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 
 对 Thoth 的设计含义：
 
-- Thoth 的 Codex public surface 可以继续保持单一 skill。
-- `.agents/skills/thoth/` 这层是 Codex-facing projection，不是 `.thoth` authority。
+- Thoth 的 Codex installable surface 仍应保持单一 skill。
 - `openai.yaml` 应进入生成链路与测试护栏，避免手工漂移。
 
 ### Plugins build / install
 
-本轮围绕 Codex 官方 plugin 对齐重核后，官方 `Plugins build` / `Install plugins` 页对我们最关键的信号有四个：
+本轮围绕 Codex 官方 plugin 对齐重核后，官方 `Plugins build` / `Install plugins` 页对我们最关键的信号有五个：
 
 - `.codex-plugin/plugin.json` 是官方 plugin manifest。
 - plugin `name` 是 manifest identity，同时也是 component namespace 的关键部分。
 - manifest 采用标准 metadata 字段和 `interface` 展示层，而不是仓库自定义字段。
-- Codex 当前 CLI 的安装/更新主路径是 marketplace source：`marketplace add` / `marketplace upgrade`。
+- `marketplace.json` 定义 marketplace root、owner 和 plugins 列表。
+- 官方当前把“添加 marketplace source”和“从 plugin directory 安装插件”区分成两个层次，而不是 Claude 风格的单条 `plugin install` 叙事。
 
 对 Thoth 的设计含义：
 
-- README 里的 Codex 安装说明必须写成 marketplace source 安装，而不能照搬 Claude 的 `install` 子命令叙事。
+- README 里的 Codex 安装说明必须明确分成两步：
+  - 先 `marketplace add` 接入 source
+  - 再从 Codex plugin directory 安装或启用 `thoth`
+- repo marketplace 应与 installable plugin package 分层：
+  - marketplace root 放在 `.agents/plugins/marketplace.json`
+  - plugin entry 的 `source.path` 指向 `./plugins/<plugin-name>`
+  - installable plugin 自己再持有 `.codex-plugin/plugin.json` 与 `skills/`
 - Thoth 的 plugin manifest 应尽量收敛到官方 schema，减少 repo 自定义字段。
 - 即使 plugin / skill 展示层做了 UI metadata 收敛，也不能把它们当成 authority；真正 authority 仍是 `.thoth`。
+
+本仓库在本机 `codex-cli 0.125.0` 的实际 CLI 帮助中额外观察到：
+
+- `codex plugin marketplace add` 接受的是 source，例如 `owner/repo[@ref]`
+- `codex plugin marketplace upgrade` 接受的是已配置的 marketplace name
+
+对 Thoth 的操作含义是：
+
+- `codex plugin marketplace add SeeleAI/Thoth` 是正确的首次接入命令
+- 后续升级不应再写 `SeeleAI/Thoth`，而应写成 `codex plugin marketplace upgrade thoth`
 
 ## 3. Cross-cutting distinctions
 

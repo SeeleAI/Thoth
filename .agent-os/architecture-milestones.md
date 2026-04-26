@@ -6,7 +6,7 @@
 
 - 公开命令定义：`commands/`
 - 内部合同层：`contracts/`
-- 内部 worker：`agents/`
+- Codex installable marketplace/package：`.agents/plugins/marketplace.json` 与 `plugins/thoth/`
 - 插件脚本：`scripts/`
 - 模板与生成物：`templates/`
 - hooks：`hooks/`

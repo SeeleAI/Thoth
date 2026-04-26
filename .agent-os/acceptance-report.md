@@ -3,7 +3,7 @@
 ## Passed Checks
 
 - `EV-001` related to `WS-003`: 当前公开命令面已稳定为显式 `/thoth:*` 与单一 `$thoth <command>`
-  - Evidence: `commands/*.md`、`.agents/skills/thoth/`、`.codex-plugin/plugin.json`
+  - Evidence: `commands/*.md`、`.agents/plugins/marketplace.json`、`plugins/thoth/.codex-plugin/plugin.json`、`plugins/thoth/skills/thoth/`
   - Conclusion: 当前公开 surface 与仓库定位一致
 
 - `EV-002` related to `TD-012`: 重型自测试系统已落地
@@ -15,7 +15,7 @@
   - Conclusion: `run` / `loop` 默认只接受 `--task-id`
 
 - `EV-004` related to `WS-003`: 公开安装面已切换到 `SeeleAI/Thoth`
-  - Evidence: `README.md`、`.claude-plugin/`、`.codex-plugin/`、`thoth/projections.py`
+  - Evidence: `README.md`、`.claude-plugin/`、`.agents/plugins/marketplace.json`、`plugins/thoth/`、`thoth/projections.py`
   - Conclusion: 仓库对外元数据已统一到公开 canonical upstream
 
 - `EV-005` related to `REQ-007`: dev 状态文档已清理私人路径、个人邮箱和外部项目来源链
@@ -49,4 +49,3 @@
 
 - `EV-011` related to `WS-001`: `main` 对开发态文档的拒收机制仍待进一步机制化
   - Conclusion: 当前主要依赖分支纪律和 `cherry-pick` 流程
-

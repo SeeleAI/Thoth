@@ -2,12 +2,12 @@
 
 ## Purpose
 
-本文件综合解析 Anthropic 官方关于 `How Claude Code works`、`Claude Code on the web`、`Remote Control`、`Sub-agents`、`Hooks`、`GitHub Actions`、`Best practices` 的当前公开说明。
+本文件综合解析 Anthropic 官方关于 `How Claude Code works`、`Claude Code on the web`、`Remote Control`、`Sub-agents`、`Hooks`、`GitHub Actions`、`Best practices`、`Discover plugins`、`Plugins reference` 的当前公开说明。
 
 ## Verification Snapshot
 
-- `last_verified_utc`: `2026-04-24T16:40:14Z`
-- `sources`: `SRC-ANT-001` ~ `SRC-ANT-014`
+- `last_verified_utc`: `2026-04-26T12:11:33Z`
+- `sources`: `SRC-ANT-001` ~ `SRC-ANT-016`
 
 ## 1. Runtime model
 
@@ -141,6 +141,23 @@
 - Claude host 自测若想稳定验证 `/thoth:*` 真执行面，就不能依赖人工点批准
 - 正确路径是在临时测试仓中写入仅放行 Thoth bridge 脚本的 `.claude/settings.local.json`
 - 这类 allowlist 只是宿主权限层，不是 `.thoth` authority，也不应被误写进项目共享真相层
+
+### Plugins and marketplaces
+
+本轮新增回源 `Discover plugins` 与 `Plugins reference` 页面后，和 Thoth 安装升级最相关的官方事实是：
+
+- Claude Code 有官方 plugin directory，也支持从 GitHub、URL 或本地路径添加 marketplace。
+- `claude plugin install <plugin@marketplace>` 是安装插件的公开 CLI 路径。
+- `claude plugin marketplace update [name]` 用于刷新 marketplace source。
+- `claude plugin update <plugin>` 用于把已安装插件更新到最新版本。
+- 官方当前明确写明：`plugin update` 后需要 restart，更新才会真正生效。
+
+对 Thoth 的设计含义：
+
+- README 需要把 Claude 的“刷新 marketplace”和“更新已安装插件”分成两个动作，而不是只写 install。
+- `thoth@thoth` 里的前一个 `thoth` 是 plugin name，后一个 `thoth` 是 marketplace name；这和 Codex 的 `marketplace add SOURCE / marketplace upgrade NAME` 语义不同，文档必须显式区分。
+- 若后续做发布流程硬化，`.claude-plugin/plugin.json` 与 marketplace 元数据中的 version 必须同步维护，否则用户升级路径会失去稳定语义。
+- Claude marketplace schema 与 Codex marketplace schema 不是同一份合同；不要把 Codex 的 `policy`、对象型 `source` 或顶层 `interface` 直接塞进 `.claude-plugin/marketplace.json`。
 
 ### Hooks
 

@@ -2,6 +2,36 @@
 
 ## Entries
 
+- 2026-04-26 12:28 UTC [redundant repo-local codex skill layer removed]
+  - Worked on: `OBJ-001`, `WS-003`
+  - State changes: 按用户要求进一步删除只为 repo-local authoring 服务、但不属于 `SeeleAI/Thoth` 官方分发链的冗余结构；已从生成逻辑中移除 `.agents/skills/thoth/*` 投影，删除对应仓库文件，并清掉空的 repo-root `.codex-plugin/` 与 `agents/` 残留壳
+  - Evidence produced: 更新 `thoth/projections.py`、`tests/unit/test_command_spec_generation.py`、`tests/unit/test_plugin_surface.py`、`.agent-os/architecture-milestones.md`、`.agent-os/acceptance-report.md`、`.agent-os/official-sources/openai-codex-and-api.md`；删除 `.agents/skills/thoth/*`
+  - Next likely action: 跑宿主 validator 与针对性单测，随后按 `dev -> main` 约束提交、cherry-pick、push，并再次卸载本机 Claude/Codex 的 Thoth 插件以便用户手动重装
+
+- 2026-04-26 12:11 UTC [codex plugin package separated from repo-local skill surface]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-004`
+  - State changes: 按用户要求审查 `.claude-plugin`、`.agents`、`.codex-plugin` 与 `agents/` 四个目录后，确认当前冗余核心是把“repo-local Codex skill surface”与“installable Codex plugin package”混在仓库根；现已恢复 `.claude-plugin/marketplace.json` 的 Claude 原生 schema，并将 Codex 安装面收敛为 `.agents/plugins/marketplace.json -> ./plugins/thoth -> plugins/thoth/.codex-plugin/plugin.json + plugins/thoth/skills/thoth/*`，同时删除 repo-root `.codex-plugin/plugin.json`
+  - Evidence produced: 更新 `thoth/projections.py`、`tests/unit/test_plugin_surface.py`、`tests/unit/test_command_spec_generation.py`、`.claude-plugin/marketplace.json`、`.agents/plugins/marketplace.json`，新增 `plugins/thoth/` package；验证 `claude plugin validate .` 通过（仅 description warning），`python -m pytest -q tests/unit/test_plugin_surface.py tests/unit/test_command_spec_generation.py` 通过（`17 passed`）
+  - Next likely action: 重新执行 `codex plugin marketplace remove thoth && codex plugin marketplace add /mnt/cfs/5vr0p6/yzy/thoth` 后重启 Codex，再检查 `/plugins` 是否已经能发现 `thoth`
+
+- 2026-04-26 11:56 UTC [local host uninstall for claude code and codex]
+  - Worked on: `OBJ-001`, `WS-003`
+  - State changes: 按用户要求，从当前机器卸载 Thoth 的 Claude Code 与 Codex 宿主安装层；Claude 侧已执行 `plugin uninstall thoth --scope user` 与 `plugin marketplace remove thoth`，Codex 侧已执行 `plugin marketplace remove thoth`，并额外清理 `~/.codex/skills/thoth` 软链与仅包含 Thoth 的全局 `~/.codex/hooks.json`
+  - Evidence produced: `claude plugin list --json` 与 `claude plugin marketplace list --json` 均已不再出现 `thoth`；`/root/.codex/.tmp/marketplaces/thoth`、`/root/.codex/skills/thoth` 与 `~/.codex/hooks.json` 已不存在
+  - Next likely action: 用户可从当前干净宿主状态重新手动走一遍 Claude Code / Codex 的安装流程；`/opt/conda/bin/thoth` CLI 仍保留，因其不属于本次宿主插件卸载范围
+
+- 2026-04-26 11:37 UTC [host upgrade path clarified for Claude Code and Codex]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-004`
+  - State changes: 针对用户在 Codex 侧执行 `codex plugin marketplace upgrade SeeleAI/Thoth` 报错的问题，回源核验 OpenAI `Codex Plugins Build` 与 Anthropic `Discover plugins` / `Plugins reference`，并结合本机 `codex-cli 0.125.0` 与 `Claude Code 2.1.120` 的 CLI 帮助，确认需要区分 `SOURCE` 与 `MARKETPLACE_NAME`；同时把 README 中英文页改成显式的宿主安装/稳定升级矩阵，补清 Codex 的 plugin-directory 安装层和 `upgrade thoth` 语义
+  - Evidence produced: 更新 `README.md`、`README.zh-CN.md`、`.agent-os/official-sources/platform-index.md`、`.agent-os/official-sources/openai-codex-and-api.md`、`.agent-os/official-sources/claude-code-runtime-and-platforms.md`
+  - Next likely action: 若继续收口公开安装面，可进一步验证用户态从干净环境执行 `claude` / `codex` 安装升级指令的端到端可用性，并视结果补一轮 host-real 安装 smoke
+
+- 2026-04-26 11:06 UTC [readme persistence wording sharpened]
+  - Worked on: `OBJ-001`, `WS-003`
+  - State changes: 按用户要求，把 README 失败模式表中“工作不持久 / Work is not persistent”的解释从“会话结束后消失”收紧为更明确的“长时间任务无法跨睡眠持续运行，且缺少可恢复、可审计的持久状态”
+  - Evidence produced: 更新 `README.md` 与 `README.zh-CN.md` 对应 failure-mode 表格文案
+  - Next likely action: 若继续细调 README 叙事，可把 `Hooks + watchdog + runtime` 的 response 文案也进一步往“overnight durable execution”靠拢
+
 - 2026-04-26 10:52 UTC [readme release cherry-picked to main and both branches pushed]
   - Worked on: `OBJ-001`, `WS-001`, `WS-003`, `WS-005`
   - State changes: 按仓库发布约束完成本轮 README/logo 发布收尾：将公开发布面改动拆成 `README + bilingual page + thoth.png` 与 `teaser asset` 两笔发布提交，保留 `.agent-os/run-log.md` 仅在 `dev`；随后把发布提交以 `cherry-pick` 方式带到 `main` 并完成 `push origin main`，当前 `dev` 也已准备好推送
