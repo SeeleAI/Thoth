@@ -21,6 +21,7 @@ from fastapi import FastAPI, Query, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.requests import Request
+from thoth.observe.read_model import derive_gantt_rows, overview_summary_read_model
 
 from data_loader import (
     load_all_tasks, load_modules, load_task, get_paper_mapping,
@@ -60,6 +61,23 @@ def _load_milestones() -> list:
             return data.get("milestones", [])
     return []
 
+
+def _milestone_payload() -> list[dict]:
+    milestone_map = _load_milestones()
+    tasks = load_all_tasks(PROJECT_ROOT)
+    tasks_by_id = {t.get("id", ""): t for t in tasks}
+    result = []
+    for ms in milestone_map:
+        ms_task_ids = ms.get("tasks", [])
+        ms_tasks = [tasks_by_id[tid] for tid in ms_task_ids if tid in tasks_by_id]
+        progress = sum(calculate_task_progress(t) for t in ms_tasks) / len(ms_tasks) if ms_tasks else 0.0
+        result.append({
+            "id": ms["id"], "name": ms["name"],
+            "description": ms.get("description", ""),
+            "progress": round(progress, 1), "task_count": len(ms_task_ids),
+        })
+    return result
+
 _RESEARCH_CONFIG = load_project_config(PROJECT_ROOT)
 _DIRECTIONS_CONFIG = _RESEARCH_CONFIG.get("research", {}).get("directions") or []
 _PROJECT_NAME = _RESEARCH_CONFIG.get("project", {}).get("name", "Thoth Project")
@@ -79,6 +97,7 @@ SPA_ENTRY_ROUTES = (
     "/timeline",
     "/todo",
     "/activity",
+    "/system",
 )
 
 
@@ -200,6 +219,21 @@ async def api_tree():
         return _error_response(500, "InternalError", str(exc))
 
 
+@app.get("/api/overview-summary")
+async def api_overview_summary():
+    try:
+        tasks = load_all_tasks(PROJECT_ROOT)
+        runtime = runtime_overview(PROJECT_ROOT)
+        payload = overview_summary_read_model(PROJECT_ROOT)
+        payload["runtime"] = runtime
+        payload["milestones"] = _milestone_payload()
+        payload["gantt_preview"] = derive_gantt_rows(tasks)[:6]
+        return payload
+    except Exception as exc:
+        logger.error("Error in /api/overview-summary: %s", traceback.format_exc())
+        return _error_response(500, "InternalError", str(exc))
+
+
 @app.get("/api/tasks")
 async def api_tasks(
     status: Optional[str] = Query(None),
@@ -304,30 +338,33 @@ async def api_dag():
 @app.get("/api/timeline")
 async def api_timeline():
     try:
-        tasks = load_all_tasks(PROJECT_ROOT)
-        items = []
-        for task in tasks:
-            phases = task.get("phases", {})
-            starts, ends = [], []
-            for pname in ("survey", "method_design", "experiment", "conclusion"):
-                p = phases.get(pname, {})
-                if p.get("started_at"):
-                    starts.append(str(p["started_at"]))
-                if p.get("completed_at"):
-                    ends.append(str(p["completed_at"]))
-            created = task.get("created_at")
-            items.append({
-                "id": task.get("id", "") or task.get("task_id", ""), "title": task.get("title", ""),
-                "module": task.get("module", ""), "direction": task.get("direction", ""),
-                "status": get_task_status(task), "progress": calculate_task_progress(task),
-                "start_date": min(starts) if starts else (str(created) if created else str(task.get("generated_at")) if task.get("generated_at") else None),
-                "end_date": max(ends) if ends else None,
-                "estimated_hours": task.get("estimated_total_hours", 0),
-                "spent_hours": task.get("time_spent_hours", 0),
-            })
-        return items
+        gantt_rows = derive_gantt_rows(load_all_tasks(PROJECT_ROOT))
+        return [
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "module": row["module"],
+                "direction": row["direction"],
+                "status": row["status"],
+                "progress": row["progress"],
+                "start_date": row["start_date"],
+                "end_date": row["end_date"],
+                "estimated_hours": row["estimated_hours"],
+                "spent_hours": 0,
+            }
+            for row in gantt_rows
+        ]
     except Exception as exc:
         logger.error("Error in /api/timeline: %s", traceback.format_exc())
+        return _error_response(500, "InternalError", str(exc))
+
+
+@app.get("/api/gantt")
+async def api_gantt():
+    try:
+        return derive_gantt_rows(load_all_tasks(PROJECT_ROOT))
+    except Exception as exc:
+        logger.error("Error in /api/gantt: %s", traceback.format_exc())
         return _error_response(500, "InternalError", str(exc))
 
 
@@ -371,20 +408,7 @@ async def api_progress():
 @app.get("/api/milestones")
 async def api_milestones():
     try:
-        milestone_map = _load_milestones()
-        tasks = load_all_tasks(PROJECT_ROOT)
-        tasks_by_id = {t.get("id", ""): t for t in tasks}
-        result = []
-        for ms in milestone_map:
-            ms_task_ids = ms.get("tasks", [])
-            ms_tasks = [tasks_by_id[tid] for tid in ms_task_ids if tid in tasks_by_id]
-            progress = sum(calculate_task_progress(t) for t in ms_tasks) / len(ms_tasks) if ms_tasks else 0.0
-            result.append({
-                "id": ms["id"], "name": ms["name"],
-                "description": ms.get("description", ""),
-                "progress": round(progress, 1), "task_count": len(ms_task_ids),
-            })
-        return result
+        return _milestone_payload()
     except Exception as exc:
         logger.error("Error in /api/milestones: %s", traceback.format_exc())
         return _error_response(500, "InternalError", str(exc))

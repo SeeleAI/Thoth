@@ -4,7 +4,7 @@ const props = withDefaults(defineProps<{
   color?: string
   height?: number
 }>(), {
-  color: 'var(--accent)',
+  color: 'var(--accent-primary)',
   height: 8,
 })
 
@@ -42,7 +42,7 @@ import { computed } from 'vue'
 
 .progress-bar-track {
   flex: 1;
-  background: var(--bg-secondary, #f0ebe4);
+  background: var(--bg-hover, #f0ebe4);
   border-radius: 999px;
   overflow: hidden;
 }
