@@ -21,6 +21,91 @@
   <img src="assets/thoth-teaser-figure.png" width="100%" alt="Thoth concept banner" />
 </div>
 
+## Control Plane At A Glance
+
+```text
+                               THOTH CONTROL PLANE
+
+                    Claude Code surfaces      Codex surfaces
+                 /thoth:* command set        $thoth command set
+                              \                 /
+                               \               /
+                                +-------------+
+                                              |
+                                              v
+
++----------------------------------------------------------------------------+
+| Layer 1. Host Surface                                                      |
+|                                                                            |
+|  init   discuss   run   loop   review   status   dashboard                 |
+|  report doctor    sync  extend                                             |
++----------------------------------------------------------------------------+
+                                              |
+                                              v
++----------------------------------------------------------------------------+
+| Layer 2. Planning Authority                                                |
+|                                                                            |
+|  init      -> bootstrap .thoth authority and host projections              |
+|  discuss   -> record decisions and contracts                               |
+|  sync      -> regenerate projections and derived surfaces                  |
+|                                                                            |
+|  Discuss -> Decision -> Contract -> Task Compiler                          |
+|                                         |                                  |
+|                                         v                                  |
+|                               Strict Task (--task-id)                      |
++----------------------------------------------------------------------------+
+                                              |
+                                              v
++----------------------------------------------------------------------------+
+| Layer 3. Execution Runtime                                                 |
+|                                                                            |
+|  run      -> one durable execution packet                                  |
+|  loop     -> one durable recoverable loop packet                           |
+|  review   -> structured findings through the same protocol                 |
+|                                                                            |
+|                           +---------------------------+                    |
+|                           | Strict Task (--task-id)   |                    |
+|                           +-------------+-------------+                    |
+|                                         |                                  |
+|                              +----------+----------+                       |
+|                              |                     |                       |
+|                              v                     v                       |
+|                            Run                   Loop                      |
+|                              |                     |                       |
+|                              +----------+----------+                       |
+|                                         |                                  |
+|                                         v                                  |
+|                 Run Ledger / Events / Artifacts / Result                   |
+|                                         |                                  |
+|                                         v                                  |
+|                  Mechanical Validation / Acceptance                        |
+|                                                                            |
+|  attach   watch   resume   stop                                            |
++----------------------------------------------------------------------------+
+                                              |
+                                              v
++----------------------------------------------------------------------------+
+| Layer 4. Read Surfaces                                                     |
+|                                                                            |
+|  dashboard -> human-visible runtime workbench                              |
+|  status    -> active / stale / attachable run summaries                    |
+|  report    -> derived project truth from current authority                 |
+|  doctor    -> health, projection, and runtime-shape audit                  |
+|                                                                            |
+|                     +-----------+-----------+-----------+-----------+        |
+|                     |           |           |           |                    |
+|                     v           v           v           v                    |
+|                 Dashboard    Status      Report      Doctor                  |
++----------------------------------------------------------------------------+
+
+Key invariants:
+- .thoth is the shared machine/runtime authority
+- .agent-os is the human governance layer
+- run and loop are strict --task-id surfaces
+- dashboard, status, report, and doctor are read surfaces, not authority writers
+- every live packet must end in complete or fail
+```
+
 ## Why Thoth
 
 Thoth is a dashboard-first orchestration runtime for autoresearch. It assumes chat alone is not an operating system: truth must survive the session, progress must stay visible, and completion must be mechanically testable.
