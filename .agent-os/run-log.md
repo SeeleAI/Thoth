@@ -2,6 +2,12 @@
 
 ## Entries
 
+- 2026-04-26 14:45 UTC [dashboard workbench transplant completed]
+  - Worked on: `OBJ-001`, `WS-005`
+  - State changes: 按锁定计划把当前 dashboard 从旧 route-based 多页模板整体切到单一 workbench shell；后端新增 `/api/overview-summary` 与 `/api/gantt` 只读读面，并把 gantt/summary 关键派生逻辑下沉到 `thoth.observe.read_model`；前端新增 `Header + Sidebar(Filter + Tree) + MainPanel(Tab Workbench)` 骨架、Thoth-native task/module detail、cockpit/runtime/system/activity 面板，以及共享源码下的中英文 locale 资源与生成态 `src/generated/locale.ts`；同时保留 `/overview`、`/tasks`、`/milestones`、`/dag`、`/timeline`、`/todo`、`/activity`、`/system` 的 SPA 兼容入口
+  - Evidence produced: 更新 `thoth/observe/read_model.py`、`templates/dashboard/backend/app.py`、`thoth/init/generators.py`、`thoth/init/service.py`、`templates/dashboard/frontend/src/*`、`templates/dashboard/frontend/e2e/dashboard-realtime.spec.ts`、`tests/unit/test_init.py`、`tests/unit/test_dashboard_runtime_api.py`、`tests/integration/test_init_workflow.py`；验证 `python -m pytest -q tests/unit/test_init.py tests/unit/test_dashboard_runtime_api.py tests/unit/test_data_loader.py tests/integration/test_init_workflow.py` 通过（`31 passed`）、`python -m pytest -q tests/unit/test_runtime_loader.py tests/unit/test_status.py tests/integration/test_runtime_lifecycle_e2e.py -k dashboard_process_and_hooks_are_observable` 通过（`1 passed`）、`cd templates/dashboard/frontend && npm run build` 通过
+  - Next likely action: 若用户继续推进，可在真实 temp project 上追加一轮浏览器级 smoke，或进一步压缩当前前端大 chunk 的打包体积
+
 - 2026-04-26 12:28 UTC [redundant repo-local codex skill layer removed]
   - Worked on: `OBJ-001`, `WS-003`
   - State changes: 按用户要求进一步删除只为 repo-local authoring 服务、但不属于 `SeeleAI/Thoth` 官方分发链的冗余结构；已从生成逻辑中移除 `.agents/skills/thoth/*` 投影，删除对应仓库文件，并清掉空的 repo-root `.codex-plugin/` 与 `agents/` 残留壳

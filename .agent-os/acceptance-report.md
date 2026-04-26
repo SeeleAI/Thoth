@@ -42,6 +42,10 @@
   - Evidence: WSL 验证环境已修复为 Node `v20.20.2` 与 Codex CLI `0.125.0`；`python -m py_compile` 覆盖 `thoth` 与 `scripts` 全量 Python 文件通过；`python -m pytest -q --thoth-tier light` 为 `107 passed, 45 deselected`；`python -m pytest -q --thoth-tier medium` 为 `128 passed, 24 deselected`；`python -m pytest -q tests/integration/test_init_workflow.py tests/integration/test_runtime_lifecycle_e2e.py` 为 `9 passed`；`python -m thoth.selftest --tier hard --hosts none` 为 `25 passed / 0 failed / 0 degraded`；真实 `codex exec -m gpt-5.4 --json --full-auto` 在 `/tmp/thoth-codex-fast-gate-work.vAX0K9` 执行 `thoth status`、`thoth run --task-id task-gate`、protocol `heartbeat` / `complete`、`thoth loop --task-id task-gate`、protocol `heartbeat` / `complete`，并验证 `run-0f6c9c1c7583/result.json`、`loop-c1e5eaa1e5cc/result.json` 与 `task-gate.result.json`
   - Conclusion: 本轮不依赖双宿主 heavy，也不测试模型业务开发能力；Codex-only fast gate 已覆盖 public surface、packet 解析、protocol terminalization、RunResult 与 TaskResult 投影
 
+- `EV-014` related to `WS-005`, `REQ-014`, `REQ-024`, `REQ-027`: dashboard 已完成 workbench transplant，且保持 Observe-only authority 边界
+  - Evidence: `thoth/observe/read_model.py`、`templates/dashboard/backend/app.py`、`thoth/init/{generators,service}.py`、`templates/dashboard/frontend/src/{views/WorkbenchView.vue,stores/dashboard.ts,locales/*,generated/locale.ts,components/layout/*,components/detail/*,components/panels/*,components/tree/*,components/filters/*,components/charts/GanttChart.vue}`；`python -m pytest -q tests/unit/test_init.py tests/unit/test_dashboard_runtime_api.py tests/unit/test_data_loader.py tests/integration/test_init_workflow.py` 为 `31 passed`；`python -m pytest -q tests/unit/test_runtime_loader.py tests/unit/test_status.py tests/integration/test_runtime_lifecycle_e2e.py -k dashboard_process_and_hooks_are_observable` 为 `1 passed`；`cd templates/dashboard/frontend && npm run build` 通过
+  - Conclusion: 当前 dashboard 已切到单一 workbench shell、保留旧路径兼容入口、补齐 `/api/overview-summary` 与 `/api/gantt`、以 Thoth-native detail 替换旧 NeuralShader 语义槽位，并按 init/sync 语言配置生成默认中英文文案
+
 ## Open Checks
 
 - `EV-010` related to `WS-002`: 完整 `.thoth` durable runtime 仍未闭环

@@ -27,6 +27,9 @@
 - heartbeat 当前写入 `state.json.last_heartbeat_at`，而不是单独的 `heartbeat.json`
 - `loop` 会按 `task_id + review_binding.target + TaskResult.last_closure_at` 自动吸收新鲜 review findings
 - dashboard 模板可以把 `.thoth/runs/*` 的 active run、history run 和事件日志绑定回 task 视图
+- dashboard 前端主壳已从旧多页导航切到单一 workbench shell，并保留 `/overview`、`/tasks`、`/milestones`、`/dag`、`/timeline`、`/todo`、`/activity` 的兼容入口
+- dashboard 已新增 `overview-summary` 与 `gantt` 只读读面；驾驶舱、Task Detail 与时间线面板均只消费 `.thoth` authority、task result、runtime ledger 与 `.agent-os` 派生结果
+- dashboard 模板已收敛为单套共享前端源码，并通过 `tools/dashboard/frontend/src/generated/locale.ts` 固化 init/sync 生成时的默认语言
 - 仓库具备双层自测试系统：`hard` 为默认 repo-real gate，`heavy` 追加浏览器层与宿主矩阵
 - 仓库级 pytest 已切成三层开发验证面：`light`、`medium`、`heavy`
 - `heavy` 主门禁已切到 deterministic Python seed repo，重点验证 `run` / `review` / `loop` 的 ledger 闭环与双宿主 public command 语义
