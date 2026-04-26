@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_NAME = "thoth"
 PLUGIN_VERSION = "0.1.4"
 PLUGIN_REPOSITORY = "https://github.com/SeeleAI/Thoth"
-PLUGIN_SKILLS_PATH = "./.agents/skills"
+PLUGIN_PACKAGE_DIR = "plugins/thoth"
+PLUGIN_SKILLS_PATH = "./skills"
 
 
 def _bullet_lines(items: tuple[str, ...]) -> str:
@@ -195,6 +196,33 @@ def render_plugin_manifest() -> dict:
     }
 
 
+def render_codex_marketplace() -> dict:
+    return {
+        "name": PLUGIN_NAME,
+        "interface": {
+            "displayName": "Thoth",
+        },
+        "owner": {
+            "name": "SeeleAI",
+            "url": "https://github.com/SeeleAI",
+        },
+        "plugins": [
+            {
+                "name": PLUGIN_NAME,
+                "source": {
+                    "source": "local",
+                    "path": f"./{PLUGIN_PACKAGE_DIR}",
+                },
+                "policy": {
+                    "installation": "AVAILABLE",
+                    "authentication": "ON_INSTALL",
+                },
+                "category": "Productivity",
+            }
+        ],
+    }
+
+
 def sync_repository_surfaces(root: Path | None = None) -> list[Path]:
     """Render all generated repository surfaces from the canonical spec."""
     repo_root = (root or ROOT).resolve()
@@ -207,18 +235,24 @@ def sync_repository_surfaces(root: Path | None = None) -> list[Path]:
         path.write_text(render_claude_command(spec), encoding="utf-8")
         written.append(path)
 
-    skill_path = repo_root / ".agents" / "skills" / "thoth" / "SKILL.md"
-    skill_path.parent.mkdir(parents=True, exist_ok=True)
-    skill_path.write_text(render_codex_skill(), encoding="utf-8")
-    written.append(skill_path)
+    plugin_root = repo_root / PLUGIN_PACKAGE_DIR
+    plugin_skill_path = plugin_root / "skills" / "thoth" / "SKILL.md"
+    plugin_skill_path.parent.mkdir(parents=True, exist_ok=True)
+    plugin_skill_path.write_text(render_codex_skill(), encoding="utf-8")
+    written.append(plugin_skill_path)
 
-    agent_metadata_path = repo_root / ".agents" / "skills" / "thoth" / "agents" / "openai.yaml"
-    agent_metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    agent_metadata_path.write_text(render_codex_agent_metadata(), encoding="utf-8")
-    written.append(agent_metadata_path)
+    plugin_agent_metadata_path = plugin_root / "skills" / "thoth" / "agents" / "openai.yaml"
+    plugin_agent_metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    plugin_agent_metadata_path.write_text(render_codex_agent_metadata(), encoding="utf-8")
+    written.append(plugin_agent_metadata_path)
 
-    plugin_path = repo_root / ".codex-plugin" / "plugin.json"
+    plugin_path = plugin_root / ".codex-plugin" / "plugin.json"
     plugin_path.parent.mkdir(parents=True, exist_ok=True)
     plugin_path.write_text(json.dumps(render_plugin_manifest(), indent=2) + "\n", encoding="utf-8")
     written.append(plugin_path)
+
+    marketplace_path = repo_root / ".agents" / "plugins" / "marketplace.json"
+    marketplace_path.parent.mkdir(parents=True, exist_ok=True)
+    marketplace_path.write_text(json.dumps(render_codex_marketplace(), indent=2) + "\n", encoding="utf-8")
+    written.append(marketplace_path)
     return written

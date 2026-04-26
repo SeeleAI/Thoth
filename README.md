@@ -29,7 +29,7 @@ Thoth is a dashboard-first orchestration runtime for autoresearch. It assumes ch
 
 | Problem | Why it matters |
 | --- | --- |
-| Work is not persistent | A useful run can disappear with the session, leaving no durable state to resume or audit. |
+| Work is not persistent | Long-running work dies with the session, so the agent cannot keep working while you sleep and there is no durable state to resume or audit. |
 | Parallel work is invisible | Multiple threads or delegated runs drift apart, and humans cannot see what is actually active. |
 | Agents can claim completion too early | A fluent summary can hide that nothing mechanical passed. |
 | Docs and state rot over time | Decisions, contracts, and runtime facts drift until nobody knows which layer is authoritative. |
@@ -69,6 +69,8 @@ claude plugin install thoth@thoth --scope user
 codex plugin marketplace add SeeleAI/Thoth
 ```
 
+For Codex, adding the marketplace is the source step. Then install or enable the `thoth` plugin from the Codex plugin directory.
+
 2. Initialize the repository you want Thoth to manage.
 
 ```text
@@ -89,6 +91,13 @@ $thoth run --task-id task-1
 /thoth:dashboard
 $thoth dashboard
 ```
+
+## Host Install And Upgrade
+
+| Host | First install | Stable upgrade | Important note |
+| --- | --- | --- | --- |
+| Claude Code | `claude plugin marketplace add SeeleAI/Thoth --scope user` then `claude plugin install thoth@thoth --scope user` | `claude plugin marketplace update thoth` then `claude plugin update thoth --scope user` | Restart Claude Code after `plugin update` so the new version is applied. |
+| Codex | `codex plugin marketplace add SeeleAI/Thoth`, then install or enable `thoth` from the Codex plugin directory | `codex plugin marketplace upgrade thoth` | `add` takes a source such as `SeeleAI/Thoth`; `upgrade` takes the configured marketplace name, which is `thoth` in this repo. |
 
 ## Command Matrix
 

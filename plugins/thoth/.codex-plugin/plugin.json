@@ -17,7 +17,7 @@
     "runtime",
     "dashboard"
   ],
-  "skills": "./.agents/skills",
+  "skills": "./skills",
   "interface": {
     "displayName": "Thoth",
     "shortDescription": "Single Codex entrypoint for the shared Thoth runtime.",
