@@ -12,12 +12,9 @@ from thoth.run.ledger import (
     heartbeat_run,
     record_artifact,
 )
-from thoth.run.lifecycle import (
-    CLAUDE_EXTERNAL_WORKER_ALLOWED_TOOLS,
-    _build_external_worker_prompt,
-    _external_worker_command,
-    prepare_execution,
-)
+from thoth.run.model import CLAUDE_EXTERNAL_WORKER_ALLOWED_TOOLS
+from thoth.run.packets import prepare_execution
+from thoth.run.worker import build_external_worker_prompt, external_worker_command
 
 
 def _prepare_project(tmp_path: Path) -> Path:
@@ -120,7 +117,7 @@ def test_external_worker_prompt_mentions_protocol_and_limits(tmp_path):
         max_rounds=5,
         max_runtime_seconds=720,
     )
-    prompt = _build_external_worker_prompt(handle, packet)
+    prompt = build_external_worker_prompt(handle, packet)
     assert handle.run_id in prompt
     assert "Do NOT call `$thoth run`, `$thoth loop`, or `$thoth review` again." in prompt
     assert "at most 5 rounds" in prompt
@@ -130,8 +127,8 @@ def test_external_worker_prompt_mentions_protocol_and_limits(tmp_path):
 
 def test_external_worker_command_uses_executor_specific_cli(tmp_path):
     project = _prepare_project(tmp_path)
-    codex_cmd = _external_worker_command("codex", project, "prompt")
-    claude_cmd = _external_worker_command("claude", project, "prompt")
+    codex_cmd = external_worker_command("codex", project, "prompt")
+    claude_cmd = external_worker_command("claude", project, "prompt")
     assert codex_cmd[:5] == ["codex", "exec", "-m", "gpt-5.4", "--json"]
     assert "-C" in codex_cmd
     assert str(project) in codex_cmd

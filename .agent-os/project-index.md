@@ -3,7 +3,7 @@
 ## Current Truth
 
 - Objective: `OBJ-001`
-- Top next action: `TD-024`
+- Top next action: `TD-001`
 - Active workstreams: `WS-001`, `WS-002`, `WS-003`, `WS-004`, `WS-005`
 - Active blockers: `none`
 
@@ -23,7 +23,7 @@
 
 ## Top Next Action
 
-- `TD-024` `[doing]`: 在已落地的新包级骨架上完成 `Codex-only` closing gate，并按分支治理完成最终收尾
+- `TD-001` `[ready]`: 将 `dev` / `main` 分流规则固化为仓库内可执行治理机制
 
 ## Active Blockers
 
@@ -41,6 +41,7 @@
 - 2026-04-25: 旧的 `thoth/runtime.py`、`thoth/task_contracts.py`、`thoth/project_init.py`、`thoth/claude_bridge.py`、`thoth/host_hooks.py` 已从主实现路径删除；当前 canonical 包级骨架为 `thoth/surface`、`thoth/plan`、`thoth/run`、`thoth/init`、`thoth/observe`。
 - 2026-04-25: 当前代码已落成 `Surface / Plan / Run / Observe` 四层骨架、`RunResult + TaskResult` 双层结果模型、`run/state/events/result/artifacts` canonical run ledger，以及 `review` live-only / `loop` 按 `task_id + target + last_closure_at` 自动消费新鲜 review 的运行规则。
 - 2026-04-25: 已完成本轮关键验证切片：targeted unit `50 passed`、integration `9 passed`、selftest/read-model unit `28 passed`、`python -m thoth.selftest --tier hard --hosts none` `25 passed / 0 failed / 0 degraded`；`Codex-only` closing gate 与分支收尾仍未完成，不得视为结束。
+- 2026-04-26: 本轮九阶段架构简化已在 `dev` 上完成代码收口：`run/lifecycle.py` 已删除，Run / Plan / Init / Surface / Observe / Selftest 主实现拆入职责模块；WSL Node LTS 与 Codex CLI 已修复；`py_compile`、pytest `light` / `medium`、targeted integration、`hard --hosts none` 与真实 Codex-only fast contract gate 均通过。本轮按用户最新计划只收口 `dev`，不执行 `main` 集成与本机安装刷新。
 
 ## Read Next
 

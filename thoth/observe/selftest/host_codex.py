@@ -1,0 +1,124 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import selectors
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import textwrap
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Iterable
+from urllib.error import URLError
+from urllib.request import urlopen
+
+import yaml
+
+from thoth.init.render import render_codex_hooks_payload
+from thoth.plan.compiler import compile_task_authority
+from thoth.run.ledger import complete_run, heartbeat_run
+from thoth.selftest_seed import seed_host_real_app
+
+from .model import *
+from .recorder import *
+from .processes import *
+from .capabilities import *
+from .fixtures import *
+from .hard_suite import *
+from .host_common import *
+
+def _host_codex(
+    repo_root: Path,
+    project_dir: Path,
+    recorder: Recorder,
+    *,
+    from_step: str | None = None,
+    to_step: str | None = None,
+) -> None:
+    decision_path, contract_paths = _write_host_real_discuss_payload_files(project_dir)
+
+    def run_public_command(public_command: str, *, recorder: Recorder, artifact_name: str, timeout: float = 240) -> tuple[CommandResult, list[str]]:
+        done_token = f"{_safe_name(artifact_name).upper()}_DONE"
+        result, artifacts = _run_codex_public_command(
+            project_dir,
+            public_command,
+            done_token=done_token,
+            recorder=recorder,
+            artifact_name=artifact_name,
+            timeout=timeout,
+        )
+        result = _normalize_codex_public_command_result(
+            result,
+            public_command=public_command,
+            done_token=done_token,
+        )
+        return result, artifacts
+
+    contract_commands = [
+        f"$thoth discuss --contract-json \"$(cat {path})\""
+        for path in contract_paths
+    ]
+    artifacts, command_results = _run_host_real_flow(
+        "codex",
+        project_dir,
+        recorder,
+        run_public_command=run_public_command,
+        commands={
+            "init": "$thoth init",
+            "status": "$thoth status",
+            "doctor": "$thoth doctor --quick",
+            "discuss_decision": f"$thoth discuss --decision-json \"$(cat {decision_path})\"",
+            "discuss_contracts": contract_commands,
+            "run_feature": "$thoth run --host codex --task-id task-feature-owner-due-date",
+            "run_bugfix": "$thoth run --host codex --executor codex --sleep --task-id task-bugfix-column-persist",
+            "review": "$thoth review --task-id task-loop-close-review --host codex tracker/store.py",
+            "dashboard": "$thoth dashboard",
+            "loop": "$thoth loop --host codex --executor codex --sleep --task-id task-loop-close-review",
+            "loop_live_followup": "$thoth loop --host codex --task-id task-loop-close-review",
+            "report": "$thoth report",
+            "sync": "$thoth sync",
+        },
+        from_step=from_step,
+        to_step=to_step,
+    )
+    conversations_path = project_dir / ".thoth" / "project" / "conversations.jsonl"
+    skill_load_failed = any("failed to load skill" in result.stderr.lower() for result in command_results.values())
+    if conversations_path.exists():
+        artifacts.append(str(conversations_path))
+    hook_seen = False
+    if conversations_path.exists():
+        hook_seen = "\"type\": \"hook\"" in conversations_path.read_text(encoding="utf-8")
+    partial_window = from_step is not None or to_step is not None
+    success = not skill_load_failed and all(result.returncode == 0 for result in command_results.values())
+    if not partial_window:
+        success = success and hook_seen
+    check_name = "host.codex.window" if partial_window else "host.codex"
+    if partial_window and success:
+        status = "passed"
+        detail = f"Codex host window completed successfully with from_step={from_step!r} to_step={to_step!r}."
+    elif success:
+        status = "passed"
+        detail = "Codex host completed the host-real decision/run/review/loop flow through the installed `$thoth` skill and emitted hook ledger notes."
+    elif any(_looks_like_transient_host_outage(result) for result in command_results.values()):
+        status = "failed"
+        detail = "Codex host matrix hit an upstream/transient host outage and exceeded the heavy gate's no-degraded policy."
+    elif skill_load_failed:
+        status = "failed"
+        detail = "Codex host could not load the generated Thoth public skill, so the host-real surface is not valid."
+    elif not hook_seen:
+        status = "failed"
+        detail = "Codex host completed the command flow, but no hook ledger notes were observed."
+    else:
+        status = "failed"
+        result_codes = {command: result.returncode for command, result in command_results.items()}
+        detail = f"Codex host execution failed. result_codes={result_codes}"
+    recorder.add(check_name, status, detail, artifacts)
+
+__all__ = [name for name in globals() if not name.startswith("__")]

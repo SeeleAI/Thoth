@@ -27,7 +27,7 @@
   - Conclusion: 仓库已提供 `light` / `medium` / `heavy` 三层 pytest 选择器与使用约定，且本轮验证结果分别为 `1.64s`、`25.40s`、`190.89s`
 
 - `EV-007` related to `REQ-023`, `REQ-024`, `REQ-026`, `REQ-027`: 新四层骨架、双层结果模型与 canonical run ledger 已落到代码主链
-  - Evidence: `thoth/surface/cli.py`、`thoth/surface/handlers.py`、`thoth/plan/compiler.py`、`thoth/run/lifecycle.py`、`thoth/init/service.py`、`thoth/observe/status.py`、`thoth/observe/report.py`、`thoth/observe/dashboard.py`、`templates/dashboard/backend/runtime_loader.py`、`templates/dashboard/backend/data_loader.py`
+  - Evidence: `thoth/surface/*_commands.py`、`thoth/plan/{compiler,store,results,doctor,validators,paths}.py`、`thoth/run/{model,io,lease,ledger,packets,worker,service,status}.py`、`thoth/init/{audit,preview,migration,generators,service}.py`、`thoth/observe/{read_model,status,report,dashboard}.py`、`templates/dashboard/backend/runtime_loader.py`、`templates/dashboard/backend/data_loader.py`
   - Conclusion: 当前代码已经共享 `Surface / Plan / Run / Observe` 的分层约束、`RunResult + TaskResult` 的结果模型、`run/state/events/result/artifacts` 的 run ledger 形态，以及 `review` live-only / `loop` 新鲜 review consumption 规则
 
 - `EV-008` related to `WS-005`: 本轮重构关键切片已通过针对性代码验证
@@ -38,6 +38,10 @@
   - Evidence: `python -m thoth.selftest --tier hard --hosts none --artifact-dir /tmp/thoth-hard-simplify-artifacts --json-report /tmp/thoth-hard-simplify-summary.json`
   - Conclusion: 当前 checkout 在不依赖真实宿主交互的前提下，`hard` 自测结果为 `25 passed / 0 failed / 0 degraded`
 
+- `EV-013` related to `WS-005`, `TD-024`: 九阶段架构简化与 `Codex-only` closing gate 已在 `dev` 上完成
+  - Evidence: WSL 验证环境已修复为 Node `v20.20.2` 与 Codex CLI `0.125.0`；`python -m py_compile` 覆盖 `thoth` 与 `scripts` 全量 Python 文件通过；`python -m pytest -q --thoth-tier light` 为 `107 passed, 45 deselected`；`python -m pytest -q --thoth-tier medium` 为 `128 passed, 24 deselected`；`python -m pytest -q tests/integration/test_init_workflow.py tests/integration/test_runtime_lifecycle_e2e.py` 为 `9 passed`；`python -m thoth.selftest --tier hard --hosts none` 为 `25 passed / 0 failed / 0 degraded`；真实 `codex exec -m gpt-5.4 --json --full-auto` 在 `/tmp/thoth-codex-fast-gate-work.vAX0K9` 执行 `thoth status`、`thoth run --task-id task-gate`、protocol `heartbeat` / `complete`、`thoth loop --task-id task-gate`、protocol `heartbeat` / `complete`，并验证 `run-0f6c9c1c7583/result.json`、`loop-c1e5eaa1e5cc/result.json` 与 `task-gate.result.json`
+  - Conclusion: 本轮不依赖双宿主 heavy，也不测试模型业务开发能力；Codex-only fast gate 已覆盖 public surface、packet 解析、protocol terminalization、RunResult 与 TaskResult 投影
+
 ## Open Checks
 
 - `EV-010` related to `WS-002`: 完整 `.thoth` durable runtime 仍未闭环
@@ -46,5 +50,3 @@
 - `EV-011` related to `WS-001`: `main` 对开发态文档的拒收机制仍待进一步机制化
   - Conclusion: 当前主要依赖分支纪律和 `cherry-pick` 流程
 
-- `EV-012` related to `WS-005`: Thoth 的整体简化重构尚未达到最终结束条件
-  - Conclusion: 当前已形成阶段性代码收敛证据，但还没有 `Codex-only` closing gate、`dev -> main` 集成、双分支 push 与本机安装更新证据

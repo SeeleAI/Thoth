@@ -11,8 +11,9 @@ from pathlib import Path
 
 from thoth.run.ledger import _write_json
 from thoth.run.lease import local_registry_root
-from thoth.run.lifecycle import create_run, stop_run
+from thoth.run.ledger import create_run
 from thoth.run.status import build_status_payload
+from thoth.run.service import stop_run
 from thoth.run.worker import spawn_supervisor
 
 
@@ -73,7 +74,7 @@ def test_local_registry_root_falls_back_to_repo_local_state_when_home_is_read_on
     def fake_writable(path: Path) -> bool:
         return path == project_dir / ".thoth" / "derived" / "local-state"
 
-    monkeypatch.setattr("thoth.run.lifecycle._directory_is_writable", fake_writable)
+    monkeypatch.setattr("thoth.run.io._directory_is_writable", fake_writable)
 
     root = local_registry_root(project_dir)
 

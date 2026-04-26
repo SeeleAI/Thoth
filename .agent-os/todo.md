@@ -43,13 +43,9 @@
 - `TD-023` `[ready]`: 收敛验证体系，确保 light / medium / heavy 与 deterministic selftest 的职责边界清晰且可维护
   - Related items: `WS-003`, `WS-005`, `MS-005`, `REQ-017`, `REQ-021`, `REQ-022`
 
-- `TD-024` `[ready]`: 以 `Codex-only` closing gate 作为本轮唯一结束门槛，并按分支治理完成 `dev -> main -> push both -> update local installs`
-  - Related items: `WS-001`, `WS-003`, `WS-005`, `MS-005`, `REQ-020`, `REQ-025`
-
 ## Doing
 
-- `TD-024` `[doing]`: 以 `Codex-only` closing gate 作为本轮唯一结束门槛，并按分支治理完成 `dev -> main -> push both -> update local installs`
-  - Related items: `WS-001`, `WS-003`, `WS-005`, `MS-005`, `REQ-020`, `REQ-025`
+- None
 
 ## Blocked
 
@@ -70,6 +66,9 @@
 - `TD-012` `[verified]`: 双层重型自测试系统已落地
 - `TD-013` `[verified]`: `/thoth:init` 的 audit-first adopt/init 主流程已落地
 - `TD-014` `[verified]`: strict `Decision -> Contract -> Task` 编译执行体系已落地
+- `TD-024` `[verified]`: 以 `Codex-only` closing gate 作为本轮唯一结束门槛，并按用户最新计划完成 `dev` 收口；本轮不执行 `main` 集成、不刷新本机 Claude/Codex 安装
+  - Related items: `WS-001`, `WS-003`, `WS-005`, `MS-005`, `REQ-020`, `REQ-025`
+  - Evidence: WSL Node LTS `v20.20.2` 与 Codex CLI `0.125.0` 可用；`py_compile`、pytest `light` / `medium`、targeted integration、`hard --hosts none`、真实 Codex-only fast contract gate 均通过
 
 ## Abandoned
 

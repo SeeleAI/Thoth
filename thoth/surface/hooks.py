@@ -13,7 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from thoth.run.lifecycle import _read_json, list_active_runs, utc_now
+from thoth.run.io import _read_json
+from thoth.run.model import utc_now
+from thoth.run.service import list_active_runs
 
 
 @dataclass

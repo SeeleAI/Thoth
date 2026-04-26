@@ -1,31 +1,19 @@
-"""Canonical progress report generator."""
+"""Canonical progress report generator backed by the observe read model."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
-from thoth.plan.store import load_compiled_tasks, load_project_manifest, load_task_result
-
-
-def load_tasks(project_root: Path) -> list[dict[str, Any]]:
-    tasks = []
-    for task in load_compiled_tasks(project_root):
-        task_id = task.get("task_id")
-        if isinstance(task_id, str) and task_id:
-            task_result = load_task_result(project_root, task_id)
-            if task_result:
-                task["task_result"] = task_result
-        tasks.append(task)
-    return tasks
-
-
-def load_run_log(project_root: Path) -> str:
-    path = project_root / ".agent-os" / "run-log.md"
-    if not path.exists():
-        return ""
-    return path.read_text(encoding="utf-8")
+from thoth.observe.read_model import (
+    blocking_tasks,
+    completed_tasks,
+    is_task_completed,
+    load_config,
+    load_run_log,
+    load_tasks,
+    task_completed_in_range,
+)
 
 
 def parse_run_log_entries(content: str, from_date: datetime, to_date: datetime) -> list[str]:
@@ -51,33 +39,16 @@ def parse_run_log_entries(content: str, from_date: datetime, to_date: datetime) 
     return entries
 
 
-def is_task_completed(task: dict[str, Any]) -> bool:
-    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
-    return bool(task_result.get("updated_at"))
-
-
-def task_completed_in_range(task: dict[str, Any], from_date: datetime, to_date: datetime) -> bool:
-    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
-    updated_at = task_result.get("updated_at")
-    if not isinstance(updated_at, str) or not updated_at:
-        return False
-    try:
-        dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
-    except ValueError:
-        return False
-    return from_date <= dt <= to_date
-
-
 def generate_report(project_root: Path, from_date: datetime, to_date: datetime, output_path: Path) -> Path:
-    manifest = load_project_manifest(project_root)
-    project_name = manifest.get("project", {}).get("name", "Unknown Project")
+    config = load_config(project_root)
+    project_name = config.get("project", {}).get("name", "Unknown Project")
     tasks = load_tasks(project_root)
     run_log_entries = parse_run_log_entries(load_run_log(project_root), from_date, to_date)
 
     completed_in_range = [task for task in tasks if task_completed_in_range(task, from_date, to_date)]
     in_progress = [task for task in tasks if task.get("ready_state") == "ready"]
-    blocked = [task for task in tasks if task.get("ready_state") in {"blocked", "invalid"}]
-    total_completed = sum(1 for task in tasks if is_task_completed(task))
+    blocked = blocking_tasks(tasks)
+    total_completed = len(completed_tasks(tasks))
     total = len(tasks)
     overall_pct = int(round((100 * total_completed / total), 0)) if total else 0
 
@@ -146,24 +117,16 @@ def render_report_summary(path: Path) -> str:
 
 def main() -> int:
     import argparse
-
     parser = argparse.ArgumentParser(description="Thoth report generator")
     parser.add_argument("--from", dest="date_from", required=True)
     parser.add_argument("--to", dest="date_to", required=True)
     parser.add_argument("--output", default=None)
     args = parser.parse_args()
-
     project_root = Path.cwd()
-    manifest = load_project_manifest(project_root)
-    if not manifest:
+    if not load_config(project_root).get("project"):
         print("Not a Thoth project. Run /thoth:init to set up.")
         return 1
     output_path = Path(args.output) if args.output else (project_root / "reports" / f"{args.date_to}-report.md")
-    generate_report(
-        project_root,
-        datetime.fromisoformat(args.date_from).replace(tzinfo=timezone.utc),
-        datetime.fromisoformat(args.date_to).replace(tzinfo=timezone.utc),
-        output_path,
-    )
+    generate_report(project_root, datetime.fromisoformat(args.date_from).replace(tzinfo=timezone.utc), datetime.fromisoformat(args.date_to).replace(tzinfo=timezone.utc), output_path)
     print(render_report_summary(output_path))
     return 0

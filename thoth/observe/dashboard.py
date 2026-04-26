@@ -10,11 +10,11 @@ import time
 from pathlib import Path
 from typing import Any
 
-from thoth.plan.store import load_project_manifest
+from thoth.observe.read_model import load_config
 
 
 def _manifest(project_root: Path) -> dict[str, Any]:
-    return load_project_manifest(project_root)
+    return load_config(project_root)
 
 
 def _python_bin(project_root: Path) -> str:

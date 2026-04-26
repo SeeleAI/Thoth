@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from thoth.run.lifecycle import create_run
+from thoth.run.ledger import create_run
 from thoth.surface.hooks import run_host_hook
 
 

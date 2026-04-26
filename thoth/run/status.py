@@ -1,13 +1,15 @@
-"""Canonical runtime status read model."""
+"""Canonical runtime status read payload."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-from .lifecycle import LIVE_DISPATCH_MODE, SLEEP_DISPATCH_MODE, default_executor, list_active_runs, local_registry_root
 from thoth.plan.compiler import compile_task_authority
 
+from .io import local_registry_root
+from .model import LIVE_DISPATCH_MODE, SLEEP_DISPATCH_MODE, default_executor
+from .service import list_active_runs
 
 def build_status_payload(project_root: Path) -> dict[str, Any]:
     active_runs = list_active_runs(project_root)
@@ -23,7 +25,3 @@ def build_status_payload(project_root: Path) -> dict[str, Any]:
             "sleep_dispatch_mode": SLEEP_DISPATCH_MODE,
         },
     }
-
-
-__all__ = ["build_status_payload"]
-

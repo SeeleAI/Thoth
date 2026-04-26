@@ -2,6 +2,12 @@
 
 ## Entries
 
+- 2026-04-26 02:40 UTC [nine-stage refactor closeout and codex-only gate]
+  - Worked on: `OBJ-001`, `WS-001`, `WS-002`, `WS-003`, `WS-005`, `TD-024`
+  - State changes: 在 `dev` 上完成本轮九阶段架构简化收口：删除旧 `thoth/run/lifecycle.py` 聚合主实现，Run / Plan / Init / Surface / Observe / Selftest 分别拆入职责模块；`runner.py` 仅保留 selftest CLI 与总编排；WSL 验证环境已修复为用户目录内 Node LTS 与 Codex CLI；按用户最新计划，本轮只收口并推送 `dev`，不执行 `main` 集成与本机 Claude/Codex 安装刷新
+  - Evidence produced: WSL Node `v20.20.2`、Codex CLI `0.125.0` 可用；`python -m py_compile` 覆盖 `thoth` 与 `scripts` 全量 Python 文件通过；`python -m pytest -q --thoth-tier light` 通过（`107 passed, 45 deselected`）；`python -m pytest -q --thoth-tier medium` 通过（`128 passed, 24 deselected`）；`python -m pytest -q tests/integration/test_init_workflow.py tests/integration/test_runtime_lifecycle_e2e.py` 通过（`9 passed`）；`python -m thoth.selftest --tier hard --hosts none` 通过（`25 passed / 0 failed / 0 degraded`）；真实 `codex exec -m gpt-5.4 --json --full-auto` 在 `/tmp/thoth-codex-fast-gate-work.vAX0K9` 完成 `thoth status`、`run`、protocol `heartbeat/complete`、`loop`、protocol `heartbeat/complete`，落下 `run-0f6c9c1c7583/result.json`、`loop-c1e5eaa1e5cc/result.json` 与 `task-gate.result.json`
+  - Next likely action: 完成 git commit 与 `push origin dev`；后续若继续发布面治理，回到 `TD-001` 机制化 `dev` / `main` 分流规则
+
 - 2026-04-25 23:56 UTC [tmpdir cleanup and dev-only push closeout]
   - Worked on: `OBJ-001`, `WS-001`, `WS-003`, `WS-005`
   - State changes: 按用户要求删除了误留在仓库根目录的临时目录 `$tmpdir/`，确认当前 bugfix 收口提交已落在本地 `dev`，并按用户最新拍板只执行 `push origin dev`，暂不进行 `main` 集成与双端本机安装刷新

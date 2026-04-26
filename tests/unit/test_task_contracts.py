@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from thoth.plan.compiler import (
-    build_doctor_payload,
-    compile_task_authority,
+from thoth.plan.compiler import compile_task_authority
+from thoth.plan.doctor import build_doctor_payload
+from thoth.plan.store import (
     create_discussion_placeholder,
     ensure_task_authority_tree,
     load_task_for_execution,

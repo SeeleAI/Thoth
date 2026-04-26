@@ -84,7 +84,7 @@ def test_ensure_codex_skill_installed_links_global_entry(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir(parents=True)
 
-    monkeypatch.setattr("thoth.observe.selftest.runner.ROOT", repo_root)
+    monkeypatch.setattr("thoth.observe.selftest.capabilities.ROOT", repo_root)
     monkeypatch.setenv("HOME", str(home))
 
     recorder = Recorder(tmp_path / "artifacts")
@@ -292,7 +292,7 @@ def test_normalize_codex_public_command_result_fails_when_requested_shell_step_f
 
 
 def test_cap_selftest_timeout_respects_global_deadline(monkeypatch):
-    monkeypatch.setattr("thoth.observe.selftest.runner._SELFTEST_DEADLINE", time.time() + 1.5)
+    monkeypatch.setattr("thoth.observe.selftest.processes._SELFTEST_DEADLINE", time.time() + 1.5)
     capped = _cap_selftest_timeout(20)
     assert 0.1 <= capped <= 1.5
 

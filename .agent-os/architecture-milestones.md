@@ -37,6 +37,12 @@
 - `thoth/cli.py` 与 `thoth/selftest.py` 仅保留公共入口角色
 - `scripts/status.py`、`scripts/report.py`、`scripts/doctor.py`、`scripts/sync.py`、`scripts/init.py` 均已退化为 canonical Python API wrapper，而不再承载平行实现
 - dashboard 控制面已切到 `thoth.observe.dashboard` Python service，不再以 `scripts/dashboard.sh` 作为 CLI 主逻辑
+- `thoth/run/lifecycle.py` 已删除，Run 主实现拆入 `model.py`、`io.py`、`lease.py`、`ledger.py`、`packets.py`、`worker.py`、`service.py`、`status.py`
+- Plan 主实现已拆为 `paths.py`、`store.py`、`validators.py`、`compiler.py`、`results.py`、`legacy_import.py`、`doctor.py`；`compiler.py` 只保留编译主流程
+- Init 主实现已拆为 `audit.py`、`preview.py`、`migration.py`、`generators.py`、`planner.py`、`apply.py`、`render.py` 与 orchestration-only `service.py`
+- Surface handler 已拆为 `envelope.py`、`project_commands.py`、`plan_commands.py`、`run_commands.py`、`protocol_commands.py`、`observe_commands.py`，`handlers.py` 只做 registry dispatch
+- Observe 已新增 `read_model.py`，`status` / `report` / `dashboard` 共享只读派生模型，不在读面隐式修 authority
+- Selftest 已拆为 `model.py`、`recorder.py`、`processes.py`、`capabilities.py`、`fixtures.py`、`hard_suite.py`、`host_common.py`、`host_codex.py`、`host_claude.py`，`runner.py` 只保留 CLI 与总编排入口
 
 ## Target Architecture
 
@@ -123,3 +129,4 @@
 - 2026-04-25: 本轮最高层架构固定为 `Surface / Plan / Run / Observe`，并在其内冻结七个实现子层
 - 2026-04-25: 本轮结果模型固定为 `RunResult + TaskResult`，run ledger canonical 文件集固定为 `run/state/events/result/artifacts`
 - 2026-04-25: 旧顶层内部模块路径不再保留兼容主链；canonical Python 实现统一迁入 `thoth/surface`、`thoth/plan`、`thoth/run`、`thoth/init`、`thoth/observe`
+- 2026-04-26: 用户最新收口计划锁定为 `dev` only：完成 Codex-only fast gate 后只提交并推送 `dev`，本轮不 cherry-pick 到 `main`、不 push `main`、不刷新本机 Claude/Codex 安装

@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from thoth.run.lifecycle import default_executor
+from thoth.run.model import default_executor
 from .handlers import handle_command
 
 

@@ -30,3 +30,6 @@ markers = [
     "medium: repo-real but bounded developer tier",
     "heavy: full suite including the slowest process-real coverage",
 ]
+
+[tool.setuptools.packages.find]
+include = ["thoth*"]
