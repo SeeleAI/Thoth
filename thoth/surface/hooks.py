@@ -13,14 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .runtime import (
-    RunHandle,
-    _append_event,
-    _read_json,
-    _write_heartbeat,
-    list_active_runs,
-    utc_now,
-)
+from thoth.run.io import _read_json
+from thoth.run.model import utc_now
+from thoth.run.service import list_active_runs
 
 
 @dataclass
@@ -64,16 +59,6 @@ def _append_project_note(project_root: Path, payload: dict[str, Any]) -> None:
     }
     with note_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-
-def _active_run_handles(project_root: Path) -> list[RunHandle]:
-    return [RunHandle(project_root=project_root, run_id=row["run_id"]) for row in list_active_runs(project_root)]
-
-
-def _record_active_run_events(project_root: Path, *, host: str, event: str, message: str) -> None:
-    for handle in _active_run_handles(project_root):
-        _append_event(handle, message, kind="hook")
-        _write_heartbeat(handle)
 
 
 def _truncate(value: str, *, limit: int = 160) -> str:
@@ -144,17 +129,6 @@ def run_host_hook(*, host: str, event: str, project_root: Path) -> HookResult:
             return HookResult(stdout="No Thoth project. Run /thoth:init to set up.\n")
         return HookResult()
 
-    message = f"{host} {event} hook observed"
-    if event == "start":
-        source = hook_input.get("source") or hook_input.get("reason") or "startup"
-        message = f"{host} session_start hook observed ({source})"
-    elif event == "end":
-        reason = hook_input.get("reason") or "session_end"
-        message = f"{host} session_end hook observed ({reason})"
-    elif event == "stop":
-        reason = hook_input.get("stop_hook_active") or "stop"
-        message = f"{host} stop hook observed ({reason})"
-
     active_runs = list_active_runs(root)
     _append_project_note(
         root,
@@ -167,7 +141,6 @@ def run_host_hook(*, host: str, event: str, project_root: Path) -> HookResult:
             "last_assistant_message": _truncate(str(hook_input.get("last_assistant_message", ""))) if hook_input.get("last_assistant_message") else "",
         },
     )
-    _record_active_run_events(root, host=host, event=event, message=message)
 
     if event == "start":
         context = _session_start_context(root, host=host, hook_input=hook_input)

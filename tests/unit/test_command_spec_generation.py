@@ -31,6 +31,9 @@ def test_claude_surface_renders_from_spec():
     assert "Codex executor allowed: yes" in rendered
     assert 'scripts/thoth-claude-command.sh" run --host claude $ARGUMENTS' in rendered
     assert "packet.dispatch_mode` is `live_native`" in rendered
+    assert "do not invent, create, compile, or guess a task" in rendered
+    assert "## Prompt Contract" in rendered
+    assert "Thoth strict task finisher" in rendered
 
 
 def test_claude_discuss_surface_preserves_structured_arguments():
@@ -45,7 +48,8 @@ def test_claude_review_surface_preserves_structured_arguments():
     rendered = render_claude_command(spec)
     assert 'scripts/thoth-claude-command.sh" review --host claude $ARGUMENTS' in rendered
     assert "allowed-tools: Read, Glob, Grep, Bash, Task" in rendered
-    assert "packet.executor` is `codex`" in rendered
+    assert "packet.required_review_shape" in rendered
+    assert "Thoth structured reviewer" in rendered
 
 
 def test_codex_skill_lists_single_public_entry():
@@ -53,6 +57,9 @@ def test_codex_skill_lists_single_public_entry():
     assert content.startswith("---\nname: thoth\n")
     assert "$thoth <command>" in content
     assert "python -m thoth.cli <command>" in content
+    assert "do not create a task" in content
+    assert "## Command Contracts" in content
+    assert "### `$thoth run`" in content
     for command in PUBLIC_CODEX_COMMANDS:
         assert f"$thoth {command}" in content
 

@@ -9,13 +9,13 @@ from typing import Any
 
 import yaml
 
-from thoth.runtime import list_active_runs
-from thoth.task_contracts import (
+from thoth.plan.store import (
     load_compiled_tasks,
     load_compiler_state,
     load_project_manifest,
-    load_task_verdict,
+    load_task_result,
 )
+from thoth.run.service import list_active_runs
 
 
 def load_config(project_root: Path) -> dict[str, Any]:
@@ -29,10 +29,9 @@ def load_tasks(project_root: Path) -> list[dict[str, Any]]:
         item = dict(task)
         task_id = item.get("task_id")
         if isinstance(task_id, str) and task_id:
-            verdict = load_task_verdict(project_root, task_id)
-            if verdict:
-                item["verdict"] = verdict
-                item["task_result"] = verdict
+            task_result = load_task_result(project_root, task_id)
+            if task_result:
+                item["task_result"] = task_result
         tasks.append(item)
     return tasks
 
@@ -70,8 +69,24 @@ def load_todo_next(project_root: Path) -> list[tuple[str, str, str]]:
 
 
 def is_task_completed(task: dict[str, Any]) -> bool:
-    verdict = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
-    return bool(verdict.get("updated_at"))
+    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+    return bool(task_result.get("updated_at"))
+
+
+def task_completed_in_range(task: dict[str, Any], from_date: datetime, to_date: datetime) -> bool:
+    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+    updated_at = task_result.get("updated_at")
+    if not isinstance(updated_at, str) or not updated_at:
+        return False
+    try:
+        dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return from_date <= dt <= to_date
+
+
+def active_runs(project_root: Path) -> list[dict[str, Any]]:
+    return list_active_runs(project_root)
 
 
 def completed_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -80,74 +95,6 @@ def completed_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def blocking_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [task for task in tasks if task.get("ready_state") in {"blocked", "invalid"}]
-
-
-def parse_iso_timestamp(value: Any) -> datetime | None:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt
-
-
-def task_created_at(task: dict[str, Any]) -> str | None:
-    for key in ("created_at", "generated_at"):
-        value = task.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return None
-
-
-def task_updated_at(task: dict[str, Any]) -> str | None:
-    verdict = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
-    value = verdict.get("updated_at")
-    return value if isinstance(value, str) and value else None
-
-
-def task_runtime_status(task: dict[str, Any]) -> str:
-    verdict = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
-    if verdict.get("updated_at"):
-        if verdict.get("usable") is True and verdict.get("meets_goal") is True:
-            return "completed"
-        return "failed"
-    ready_state = str(task.get("ready_state") or "blocked")
-    if ready_state == "ready":
-        return "ready"
-    if ready_state == "imported_resolved":
-        return "completed"
-    if ready_state == "invalid":
-        return "invalid"
-    return "blocked"
-
-
-def task_progress_pct(task: dict[str, Any]) -> float:
-    verdict = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
-    if verdict.get("updated_at"):
-        return 100.0
-    ready_state = str(task.get("ready_state") or "blocked")
-    if ready_state == "imported_resolved":
-        return 100.0
-    if ready_state == "ready":
-        return 15.0
-    if ready_state == "blocked":
-        return 5.0
-    return 0.0
-
-
-def task_completed_in_range(task: dict[str, Any], from_date: datetime, to_date: datetime) -> bool:
-    updated_at = task_updated_at(task)
-    dt = parse_iso_timestamp(updated_at)
-    if dt is None:
-        return False
-    return from_date <= dt <= to_date
-
-
-def active_runs(project_root: Path) -> list[dict[str, Any]]:
-    return list_active_runs(project_root)
 
 
 def quick_health(project_root: Path) -> tuple[bool, str]:
@@ -185,13 +132,82 @@ def time_ago(iso_str: str | None) -> str:
     return f"{hours // 24}d ago"
 
 
+def parse_iso_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def task_updated_at(task: dict[str, Any]) -> str | None:
+    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+    for key in ("updated_at", "last_closure_at", "last_attempt_at"):
+        value = task_result.get(key)
+        if isinstance(value, str) and value:
+            return value
+    verdict = task.get("verdict")
+    if isinstance(verdict, dict):
+        for key in ("updated_at", "created_at"):
+            value = verdict.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
+def task_created_at(task: dict[str, Any]) -> str | None:
+    for key in ("created_at", "generated_at"):
+        value = task.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def task_runtime_status(task: dict[str, Any]) -> str:
+    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+    if task_result.get("updated_at"):
+        if task_result.get("usable") is True and task_result.get("meets_goal") is True:
+            return "completed"
+        return "failed"
+    ready_state = str(task.get("ready_state") or "blocked")
+    if ready_state == "ready":
+        return "ready"
+    if ready_state == "imported_resolved":
+        return "completed"
+    if ready_state == "invalid":
+        return "invalid"
+    return "blocked"
+
+
+def task_progress_pct(task: dict[str, Any]) -> float:
+    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+    if task_result.get("updated_at"):
+        return 100.0
+    ready_state = str(task.get("ready_state") or "blocked")
+    if ready_state == "imported_resolved":
+        return 100.0
+    if ready_state == "ready":
+        return 15.0
+    if ready_state == "blocked":
+        return 5.0
+    return 0.0
+
+
 def recent_verdict_summaries(tasks: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for task in tasks:
-        verdict = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+        task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
         updated_at = task_updated_at(task)
-        conclusion = verdict.get("conclusion")
-        evidence_paths = verdict.get("evidence_paths")
+        conclusion = (
+            task_result.get("conclusion")
+            or task_result.get("current_summary")
+            or (task.get("verdict", {}) if isinstance(task.get("verdict"), dict) else {}).get("conclusion")
+        )
+        evidence_paths = task_result.get("evidence_paths")
         if not isinstance(evidence_paths, list):
             evidence_paths = []
         if not updated_at and not conclusion and not evidence_paths:
@@ -204,7 +220,7 @@ def recent_verdict_summaries(tasks: list[dict[str, Any]], *, limit: int = 5) -> 
                 "direction": task.get("direction", ""),
                 "status": task_runtime_status(task),
                 "updated_at": updated_at,
-                "source": verdict.get("source") or "verdict",
+                "source": task_result.get("source") or "task_result",
                 "conclusion": conclusion,
                 "evidence_paths": evidence_paths,
             }
@@ -231,28 +247,36 @@ def derive_gantt_rows(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     timestamps.append(value)
                     if key == "completed_at":
                         completed_timestamps.append(value)
+
         start_date = None
         for candidate in sorted(timestamps, key=lambda value: parse_iso_timestamp(value) or datetime.max.replace(tzinfo=timezone.utc)):
             start_date = candidate
             break
         if start_date is None:
             start_date = task_created_at(task)
+
         end_date = None
         if completed_timestamps:
-            end_date = max(completed_timestamps, key=lambda value: parse_iso_timestamp(value) or datetime.min.replace(tzinfo=timezone.utc))
+            end_date = max(
+                completed_timestamps,
+                key=lambda value: parse_iso_timestamp(value) or datetime.min.replace(tzinfo=timezone.utc),
+            )
         elif task_runtime_status(task) in {"completed", "failed"}:
             end_date = task_updated_at(task)
+
         estimated_hours = task.get("estimated_total_hours")
         if not isinstance(estimated_hours, (int, float)):
             estimated_hours = 0
-        dependencies: list[str] = []
+
         dependency_rows = task.get("depends_on")
+        dependencies: list[str] = []
         if isinstance(dependency_rows, list):
             for dep in dependency_rows:
                 if isinstance(dep, dict):
                     task_id = dep.get("task_id")
                     if isinstance(task_id, str) and task_id:
                         dependencies.append(task_id)
+
         rows.append(
             {
                 "id": task.get("task_id") or task.get("id"),
@@ -274,13 +298,13 @@ def overview_summary_read_model(project_root: Path) -> dict[str, Any]:
     tasks = load_tasks(project_root)
     config = load_config(project_root)
     compiler_state = load_compiler_state(project_root)
-    compiler_summary = compiler_state.get("summary", {}) if isinstance(compiler_state, dict) else {}
     healthy, health_message = quick_health(project_root)
-    completed_count = len(completed_tasks(tasks))
-    blocked_count = len(blocking_tasks(tasks))
     ready_count = sum(1 for task in tasks if str(task.get("ready_state") or "") == "ready")
     total_count = len(tasks)
+    completed_count = len(completed_tasks(tasks))
+    blocked_count = len(blocking_tasks(tasks))
     overall_progress = round((100 * completed_count / total_count), 1) if total_count else 0.0
+    compiler_summary = compiler_state.get("summary", {}) if isinstance(compiler_state, dict) else {}
     return {
         "project": config.get("project", {}),
         "headline": {

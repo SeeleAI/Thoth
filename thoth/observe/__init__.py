@@ -1,1 +1,2 @@
-"""Observe-only read models for dashboard and report surfaces."""
+"""Canonical read-model and verification package for Thoth."""
+

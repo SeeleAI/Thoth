@@ -105,7 +105,7 @@ def list_runs(project_root: Path) -> list[dict[str, Any]]:
 
         run_data = _read_json(run_dir / "run.json")
         state_data = _read_json(run_dir / "state.json")
-        heartbeat_data = _read_json(run_dir / "heartbeat.json")
+        result_data = _read_json(run_dir / "result.json")
         artifacts_data = _read_json(run_dir / "artifacts.json")
         supervisor_data = _read_json(run_dir / "supervisor.json")
         events = [_normalize_event(event) for event in _read_jsonl(run_dir / "events.jsonl")]
@@ -113,7 +113,7 @@ def list_runs(project_root: Path) -> list[dict[str, Any]]:
 
         run_id = str(run_data.get("run_id") or run_data.get("id") or state_data.get("run_id") or run_dir.name)
         task_id = run_data.get("task_id") or state_data.get("task_id")
-        status = str(state_data.get("status") or run_data.get("status") or heartbeat_data.get("status") or "unknown")
+        status = str(state_data.get("status") or run_data.get("status") or result_data.get("status") or "unknown")
         progress_pct = state_data.get("progress_pct")
         if not isinstance(progress_pct, (int, float)):
             progress_pct = state_data.get("progress")
@@ -122,11 +122,11 @@ def list_runs(project_root: Path) -> list[dict[str, Any]]:
         progress_pct = round(max(0.0, min(100.0, float(progress_pct))), 1)
 
         last_event = events[-1] if events else None
-        last_heartbeat_at = heartbeat_data.get("last_heartbeat_at") or heartbeat_data.get("heartbeat_at")
+        last_heartbeat_at = state_data.get("last_heartbeat_at")
         last_updated_at = _latest_ts(
             state_data.get("updated_at"),
             last_heartbeat_at,
-            heartbeat_data.get("updated_at"),
+            result_data.get("updated_at"),
             last_event.get("ts") if last_event else None,
             run_data.get("updated_at"),
             run_data.get("created_at"),
@@ -192,9 +192,9 @@ def get_run_detail(project_root: Path, run_id: str) -> Optional[dict[str, Any]]:
         **summary,
         "run": _read_json(run_dir / "run.json"),
         "state": _read_json(run_dir / "state.json"),
-        "heartbeat": _read_json(run_dir / "heartbeat.json"),
+        "heartbeat": {"last_heartbeat_at": summary.get("last_heartbeat_at")},
         "artifacts": _read_json(run_dir / "artifacts.json"),
-        "acceptance": _read_json(run_dir / "acceptance.json"),
+        "result": _read_json(run_dir / "result.json"),
     }
 
 
@@ -228,6 +228,6 @@ def runtime_overview(project_root: Path) -> dict[str, Any]:
         "stale_run_count": len(stale_runs),
         "active_runs": active_runs[:10],
         "last_runtime_update": runs[0].get("last_updated_at") if runs else None,
-        "progress_source": "task_yaml_plus_run_ledger",
+        "progress_source": "task_result_plus_run_ledger",
         "host_breakdown": sorted({run.get("host") for run in runs if run.get("host")}),
     }

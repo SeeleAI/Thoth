@@ -50,7 +50,7 @@ def test_directions_from_manifest(tmp_path):
     assert directions == ("frontend", "backend")
 
 
-def test_load_all_tasks_attaches_verdicts(tmp_path):
+def test_load_all_tasks_attaches_task_results(tmp_path):
     invalidate_cache()
     _write_json(
         tmp_path / ".thoth" / "project" / "project.json",
@@ -68,7 +68,7 @@ def test_load_all_tasks_attaches_verdicts(tmp_path):
         },
     )
     _write_json(
-        tmp_path / ".thoth" / "project" / "verdicts" / "task-1.json",
+        tmp_path / ".thoth" / "project" / "tasks" / "task-1.result.json",
         {
             "task_id": "task-1",
             "source": "legacy_import",
@@ -81,7 +81,7 @@ def test_load_all_tasks_attaches_verdicts(tmp_path):
     )
     tasks = load_all_tasks(tmp_path)
     assert tasks[0]["id"] == "task-1"
-    assert tasks[0]["verdict"]["source"] == "legacy_import"
+    assert tasks[0]["task_result"]["source"] == "legacy_import"
 
 
 def test_load_modules_from_tasks(tmp_path):

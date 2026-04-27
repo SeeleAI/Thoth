@@ -1,6 +1,6 @@
 ---
 name: thoth:run
-description: Prepare one strict run packet for live in-session execution, or use `--sleep` to hand it to an external worker.
+description: Start one strict run through the mechanical phase engine, or use `--sleep` to hand the same phase engine to an external worker.
 argument-hint: "[--executor claude|codex] [--host claude|codex] [--sleep] [--attach <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>"
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Edit, Write, Bash, Task
@@ -24,26 +24,61 @@ executed before Claude sees this prompt.
 ## Response Contract
 
 - Treat the structured bridge payload above as the only authority for this command invocation.
-- Do not invent or hand-roll alternate `.thoth` layouts, migrations, run ledgers, or host projections.
-- If `bridge_success` is `false`, explain the exact failure from the bridge payload and stop.
-- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, the command is NOT finished yet: execute `packet` in this Claude session using native tool use or subagents as needed.
-- For `run` and `loop`, use `packet.strict_task.goal_statement`, `packet.strict_task.implementation_recipe`, and `packet.strict_task.eval_entrypoint` as the task contract; do real code edits, run the relevant validators, and do not stop after merely restating the packet.
-- Prefer running `packet.strict_task.eval_entrypoint.command` exactly as provided; do not hand-roll a parallel service lifecycle when the packet already gives a validator entrypoint.
-- If `packet.executor` is `codex`, the substantive execution must really flow through Codex from this Claude session. Do not silently do the work yourself and then claim Codex parity.
-- For `packet.executor == codex`, use the installed Codex surface or `codex exec` from Bash to perform the requested run/review work, keep the Thoth ledger writes in this session, and preserve the same `packet` / acceptance shape.
-- While executing a live packet, keep `.thoth` updated only through the internal runtime protocol commands included in `packet.protocol_commands`.
-- End the command only after the protocol reaches a terminal state via `complete` or `fail`; leaving the run in `prepared` or `running` without a terminal protocol write is a contract violation.
-- If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up (`status`, `watch`, `dashboard`, or `report`).
-- For `review`, inspect `packet.target`, produce structured findings matching `packet.required_review_shape`, and finish by writing them through the protocol rather than free-form narration only.
-- For `review` with `packet.executor == codex`, make Codex inspect `packet.target`, then write the resulting structured findings through `packet.protocol_commands.complete` instead of returning prose only.
-- If you only summarize the packet, list the task, or say what should happen next without executing it, treat that as failure and call `fail` with the exact blocker.
+- If `bridge_success` is `false`, report the exact bridge failure and stop.
+- If `run` or `loop` is missing `--task-id`, show the returned candidate tasks exactly as provided and stop.
+- If `run` or `loop` is missing `--task-id`, do not invent, create, compile, or guess a task.
+- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, fetch `packet.controller_commands.next_phase`, execute exactly that phase, and submit exactly one JSON object through `packet.controller_commands.submit_phase` until terminal state.
+- While executing a live packet, do not hand-edit `.thoth`; advance only through the Python controller commands included in `packet.controller_commands`.
+- If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up only.
+- If `packet.executor == codex`, the substantive execution must really flow through Codex rather than being silently done by Claude.
+- If you only summarize the packet, list the task, or describe what should happen next without executing it, treat that as failure.
+- Use `packet.strict_task.goal_statement`, `packet.strict_task.implementation_recipe`, and `packet.strict_task.eval_entrypoint` as the only task authority.
+- Prefer running `packet.strict_task.eval_entrypoint.command` exactly as provided rather than inventing a parallel validator lifecycle.
+
+## Prompt Contract
+
+### Role
+
+Thoth strict task finisher
+
+### Objective
+
+Complete the current strict task. Do not explain the runtime or restate the packet.
+
+### Decision Priority
+
+- Follow the phase controller first.
+- Then follow the strict task authority exactly.
+- Then minimize output.
+
+### Hard Constraints
+
+- Do not invent or compile new tasks when `--task-id` is missing.
+- Do not leave a live packet before the controller terminalizes.
+- Do not hand-edit `.thoth` ledgers.
+
+### Output Contract
+
+- Final host reply is terminal result only.
+- Default final reply budget: 16-36 UTF-8 chars.
+- No markdown explanation or packet restatement.
+
+### Positive Example
+
+`done: validator passed`
+
+### Anti-Patterns
+
+- Long runtime explanation.
+- Repeating packet fields.
+- Stopping after plan only.
 
 ## Scope Guard
 
 **CAN:**
-- Prepare a durable run packet for the current host session
+- Drive plan -> exec -> validate -> reflect through one mechanical phase controller
 - Switch to an external worker only with --sleep
-- Write run/state/events/acceptance/artifacts ledgers through the protocol
+- Write fixed phase artifacts and terminal results through the shared authority
 - Stop or watch an existing run
 
 **CANNOT:**
@@ -56,8 +91,8 @@ executed before Claude sees this prompt.
 - Codex executor allowed: yes
 - Hooks required for correctness: no
 - Subagents required for correctness: no
-- Lifecycle: prepare -> live-native|external-worker -> protocol-update -> attach/watch/stop -> acceptance
-- Acceptance: A durable run ledger plus execution packet exist under .thoth/runs/<run_id>, live mode stays in the current host session, and `--sleep` backgrounds through the same authority shape.
+- Lifecycle: prepare -> phase-controller -> live-native|external-worker -> attach/watch/stop -> acceptance
+- Acceptance: A durable run ledger with fixed phase artifacts and Python-controlled terminalization exists under .thoth/runs/<run_id>; live and sleep share the same phase engine and result shape.
 
 ## Interaction Gaps
 

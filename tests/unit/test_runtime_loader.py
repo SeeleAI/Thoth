@@ -28,8 +28,7 @@ def test_runtime_overview_reads_active_and_history_runs(tmp_path, monkeypatch):
     monkeypatch.setenv("THOTH_HEARTBEAT_STALE_MINUTES", "100000")
 
     _write_json(runs_dir / "run-a" / "run.json", {"run_id": "run-a", "task_id": "task-1", "executor": "claude", "created_at": "2026-04-23T10:00:00Z"})
-    _write_json(runs_dir / "run-a" / "state.json", {"status": "running", "phase": "experiment", "progress_pct": 52, "last_event_seq": 2, "updated_at": "2026-04-23T10:15:00Z"})
-    _write_json(runs_dir / "run-a" / "heartbeat.json", {"last_heartbeat_at": "2026-04-23T10:16:00Z"})
+    _write_json(runs_dir / "run-a" / "state.json", {"status": "running", "phase": "experiment", "progress_pct": 52, "last_event_seq": 2, "updated_at": "2026-04-23T10:15:00Z", "last_heartbeat_at": "2026-04-23T10:16:00Z"})
     _write_jsonl(runs_dir / "run-a" / "events.jsonl", [
         {"seq": 1, "ts": "2026-04-23T10:01:00Z", "kind": "log", "message": "boot"},
         {"seq": 2, "ts": "2026-04-23T10:15:00Z", "kind": "log", "message": "step 520"},

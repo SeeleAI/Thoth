@@ -85,7 +85,7 @@ def _infer_project_root(base_dir: str | Path) -> Path:
     base = Path(base_dir).resolve()
     if (base / ".thoth" / "project").exists():
         return base
-    if base.name in {"tasks", "contracts", "decisions", "verdicts"} and base.parent.name == "project":
+    if base.name in {"tasks", "contracts", "decisions"} and base.parent.name == "project":
         return base.parent.parent.parent
     return base
 
@@ -128,27 +128,28 @@ def _read_directions_from_config(base_dir: Path) -> tuple[str, ...]:
 DIRECTIONS = _read_directions_from_config(Path(__file__).resolve().parents[3])
 
 
-def _load_verdict_map(project_root: Path) -> dict[str, dict[str, Any]]:
-    verdict_dir = project_root / ".thoth" / "project" / "verdicts"
+def _load_task_result_map(project_root: Path) -> dict[str, dict[str, Any]]:
+    task_dir = project_root / ".thoth" / "project" / "tasks"
     rows: dict[str, dict[str, Any]] = {}
-    if not verdict_dir.is_dir():
-        return rows
-    for path in sorted(verdict_dir.glob("*.json")):
-        payload = _read_json(path)
-        task_id = payload.get("task_id") if payload else None
-        if isinstance(task_id, str) and task_id:
-            payload["_path"] = str(path)
-            rows[task_id] = payload
+    if task_dir.is_dir():
+        for path in sorted(task_dir.glob("*.result.json")):
+            payload = _read_json(path)
+            task_id = payload.get("task_id") if payload else None
+            if isinstance(task_id, str) and task_id:
+                payload["_path"] = str(path)
+                rows[task_id] = payload
     return rows
 
 
 def _load_compiled_tasks(project_root: Path) -> list[dict[str, Any]]:
     task_dir = project_root / ".thoth" / "project" / "tasks"
-    verdict_map = _load_verdict_map(project_root)
+    task_result_map = _load_task_result_map(project_root)
     rows: list[dict[str, Any]] = []
     if not task_dir.is_dir():
         return rows
     for path in sorted(task_dir.glob("*.json")):
+        if path.name.endswith(".result.json"):
+            continue
         payload = _read_json(path)
         if not payload:
             continue
@@ -157,8 +158,8 @@ def _load_compiled_tasks(project_root: Path) -> list[dict[str, Any]]:
             continue
         payload.setdefault("id", task_id)
         payload.setdefault("_path", str(path))
-        if task_id in verdict_map:
-            payload["verdict"] = verdict_map[task_id]
+        if task_id in task_result_map:
+            payload["task_result"] = task_result_map[task_id]
         rows.append(payload)
     return rows
 

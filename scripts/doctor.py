@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Thoth persistence audit helpers for strict `.thoth` authority."""
+"""Wrapper for the canonical Thoth doctor command."""
 
 from __future__ import annotations
 
-import sys
+import argparse
+import json
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from thoth.task_contracts import build_doctor_payload, load_compiler_state, load_compiled_tasks, render_doctor_text
+from thoth.plan.doctor import build_doctor_payload, render_doctor_text
+from thoth.plan.store import load_compiled_tasks
 
 
 REQUIRED_AGENT_OS_FILES = [
@@ -27,39 +25,35 @@ REQUIRED_AGENT_OS_FILES = [
 
 
 def check_required_files() -> tuple[bool, str]:
-    agent_os = Path.cwd() / ".agent-os"
-    missing = [fname for fname in REQUIRED_AGENT_OS_FILES if not (agent_os / fname).exists()]
+    root = Path.cwd()
+    missing = [name for name in REQUIRED_AGENT_OS_FILES if not (root / ".agent-os" / name).exists()]
     if missing:
-        return False, f"FAIL (missing: {', '.join(missing)})"
-    return True, f"PASS ({len(REQUIRED_AGENT_OS_FILES)}/{len(REQUIRED_AGENT_OS_FILES)})"
+        return False, "Missing required .agent-os files: " + ", ".join(missing)
+    return True, "PASS required .agent-os files present"
 
 
 def check_id_integrity() -> tuple[bool, str]:
     tasks = load_compiled_tasks(Path.cwd())
-    if not tasks:
-        return True, "PASS (no strict tasks)"
-    seen: set[str] = set()
-    duplicates: list[str] = []
-    for task in tasks:
-        task_id = task.get("task_id")
-        if not isinstance(task_id, str) or not task_id:
-            continue
-        if task_id in seen:
-            duplicates.append(task_id)
-        seen.add(task_id)
+    ids = [str(task.get("task_id") or task.get("id")) for task in tasks if task.get("task_id") or task.get("id")]
+    if not ids:
+        return True, "PASS no strict tasks found"
+    duplicates = sorted({item for item in ids if ids.count(item) > 1})
     if duplicates:
-        return False, f"FAIL (duplicates: {', '.join(sorted(set(duplicates)))})"
-    return True, f"PASS ({len(seen)} unique IDs)"
+        return False, "Duplicate strict task ids: " + ", ".join(duplicates)
+    return True, f"PASS {len(ids)} unique strict task ids"
 
 
 def main() -> int:
-    if not (Path.cwd() / ".thoth" / "project" / "project.json").exists():
-        print("Not a Thoth project. Run /thoth:init to set up.")
-        return 1
+    parser = argparse.ArgumentParser(description="Thoth doctor")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
     payload = build_doctor_payload(Path.cwd())
-    print(render_doctor_text(payload), end="")
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(render_doctor_text(payload), end="")
     return 0 if payload.get("overall_ok") else 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

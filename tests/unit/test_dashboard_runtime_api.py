@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from thoth.run.phases import default_validate_output_schema
 
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "templates" / "dashboard" / "backend"))
@@ -37,7 +38,6 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / ".thoth" / "project" / "tasks").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".thoth" / "project" / "decisions").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".thoth" / "project" / "contracts").mkdir(parents=True, exist_ok=True)
-    (tmp_path / ".thoth" / "project" / "verdicts").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".agent-os").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".agent-os" / "milestones.yaml").write_text("milestones: []\n", encoding="utf-8")
     (tmp_path / "tools" / "dashboard" / "frontend" / "dist").mkdir(parents=True, exist_ok=True)
@@ -76,6 +76,7 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
         "eval_entrypoint": {"command": "pytest"},
         "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
         "failure_classes": ["runtime_drift"],
+        "validate_output_schema": default_validate_output_schema(),
     }
     _write_json(
         tmp_path / ".thoth" / "project" / "tasks" / "task-1.json",
@@ -102,8 +103,7 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
 
     runs_dir = tmp_path / ".thoth" / "runs"
     _write_json(runs_dir / "run-1" / "run.json", {"run_id": "run-1", "task_id": "task-1", "host": "codex", "executor": "claude", "attachable": True, "created_at": "2026-04-23T01:00:00Z"})
-    _write_json(runs_dir / "run-1" / "state.json", {"status": "running", "phase": "experiment", "progress_pct": 61, "last_event_seq": 2, "updated_at": "2026-04-23T01:10:00Z", "supervisor_state": "running"})
-    _write_json(runs_dir / "run-1" / "heartbeat.json", {"last_heartbeat_at": "2026-04-23T01:11:00Z"})
+    _write_json(runs_dir / "run-1" / "state.json", {"status": "running", "phase": "experiment", "progress_pct": 61, "last_event_seq": 2, "updated_at": "2026-04-23T01:10:00Z", "supervisor_state": "running", "last_heartbeat_at": "2026-04-23T01:11:00Z"})
     _write_jsonl(runs_dir / "run-1" / "events.jsonl", [
         {"seq": 1, "ts": "2026-04-23T01:01:00Z", "kind": "log", "message": "started"},
         {"seq": 2, "ts": "2026-04-23T01:10:00Z", "kind": "log", "message": "still running"},

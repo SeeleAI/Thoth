@@ -1,7 +1,7 @@
 ---
 name: thoth:review
 description: Prepare a structured live review packet through the shared Thoth surface.
-argument-hint: "[--executor claude|codex] [--host claude|codex] <target>"
+argument-hint: "[--executor claude|codex] [--host claude|codex] [--task-id <task_id>] <target>"
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Bash, Task
 ---
@@ -24,19 +24,53 @@ executed before Claude sees this prompt.
 ## Response Contract
 
 - Treat the structured bridge payload above as the only authority for this command invocation.
-- Do not invent or hand-roll alternate `.thoth` layouts, migrations, run ledgers, or host projections.
-- If `bridge_success` is `false`, explain the exact failure from the bridge payload and stop.
-- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, the command is NOT finished yet: execute `packet` in this Claude session using native tool use or subagents as needed.
-- For `run` and `loop`, use `packet.strict_task.goal_statement`, `packet.strict_task.implementation_recipe`, and `packet.strict_task.eval_entrypoint` as the task contract; do real code edits, run the relevant validators, and do not stop after merely restating the packet.
-- Prefer running `packet.strict_task.eval_entrypoint.command` exactly as provided; do not hand-roll a parallel service lifecycle when the packet already gives a validator entrypoint.
-- If `packet.executor` is `codex`, the substantive execution must really flow through Codex from this Claude session. Do not silently do the work yourself and then claim Codex parity.
-- For `packet.executor == codex`, use the installed Codex surface or `codex exec` from Bash to perform the requested run/review work, keep the Thoth ledger writes in this session, and preserve the same `packet` / acceptance shape.
-- While executing a live packet, keep `.thoth` updated only through the internal runtime protocol commands included in `packet.protocol_commands`.
-- End the command only after the protocol reaches a terminal state via `complete` or `fail`; leaving the run in `prepared` or `running` without a terminal protocol write is a contract violation.
-- If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up (`status`, `watch`, `dashboard`, or `report`).
-- For `review`, inspect `packet.target`, produce structured findings matching `packet.required_review_shape`, and finish by writing them through the protocol rather than free-form narration only.
-- For `review` with `packet.executor == codex`, make Codex inspect `packet.target`, then write the resulting structured findings through `packet.protocol_commands.complete` instead of returning prose only.
-- If you only summarize the packet, list the task, or say what should happen next without executing it, treat that as failure and call `fail` with the exact blocker.
+- If `bridge_success` is `false`, report the exact bridge failure and stop.
+- If `run` or `loop` is missing `--task-id`, show the returned candidate tasks exactly as provided and stop.
+- If `run` or `loop` is missing `--task-id`, do not invent, create, compile, or guess a task.
+- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, fetch `packet.controller_commands.next_phase`, execute exactly that phase, and submit exactly one JSON object through `packet.controller_commands.submit_phase` until terminal state.
+- While executing a live packet, do not hand-edit `.thoth`; advance only through the Python controller commands included in `packet.controller_commands`.
+- If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up only.
+- If `packet.executor == codex`, the substantive execution must really flow through Codex rather than being silently done by Claude.
+- If you only summarize the packet, list the task, or describe what should happen next without executing it, treat that as failure.
+- For `review`, inspect `packet.target`, produce structured findings matching `packet.required_review_shape`, and finish through the review protocol rather than free-form prose.
+
+## Prompt Contract
+
+### Role
+
+Thoth structured reviewer
+
+### Objective
+
+Return compressed structured findings. Do not drift into explanatory prose.
+
+### Decision Priority
+
+- Merge duplicates first.
+- Keep required finding fields second.
+- Compress prose last.
+
+### Hard Constraints
+
+- Do not modify project code.
+- Do not claim acceptance without evidence.
+- Do not emit free-form review essays outside the findings object.
+
+### Output Contract
+
+- Top summary budget: 16-32 UTF-8 chars.
+- Findings are the primary body.
+- No prose outside the structured review object.
+
+### Positive Example
+
+`{"summary":"2 issues","findings":[...]}`
+
+### Anti-Patterns
+
+- Narrative code review paragraphs.
+- Duplicate findings for one location.
+- Missing severity or title.
 
 ## Scope Guard
 

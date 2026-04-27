@@ -13,9 +13,10 @@ from pathlib import Path
 from urllib.request import urlopen
 
 import pytest
-from thoth.project_init import render_codex_hooks_payload
-from thoth.runtime import local_registry_root
-from thoth.task_contracts import compile_task_authority
+from thoth.init.render import render_codex_hooks_payload
+from thoth.plan.compiler import compile_task_authority
+from thoth.run.lease import local_registry_root
+from thoth.run.phases import default_validate_output_schema
 
 
 ROOT = Path(__file__).parent.parent.parent
@@ -53,7 +54,16 @@ def _read_json(path: Path) -> dict:
 def _extract_json(stdout: str) -> dict:
     start = stdout.find("{")
     assert start >= 0, stdout
-    return json.loads(stdout[start:])
+    payload = json.loads(stdout[start:])
+    assert isinstance(payload, dict)
+    body = payload.get("body")
+    if isinstance(body, dict) and isinstance(body.get("packet"), dict):
+        return body["packet"]
+    if isinstance(body, dict):
+        status_payload = body.get("status")
+        if isinstance(status_payload, dict):
+            return status_payload
+    return payload
 
 
 def _free_port() -> int:
@@ -110,6 +120,7 @@ def _write_task(project_dir: Path, task_id: str = "task-1") -> None:
                 "eval_entrypoint": {"command": "pytest -q tests/integration/test_runtime_lifecycle_e2e.py"},
                 "primary_metric": {"name": "lifecycle_checks", "direction": "gte", "threshold": 1},
                 "failure_classes": ["runtime_drift", "lease_conflict_failure"],
+                "validate_output_schema": default_validate_output_schema(),
                 "status": "frozen",
                 "blocking_gaps": [],
                 "created_at": "2026-04-24T00:00:00Z",
@@ -261,11 +272,11 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     assert active_run["run_id"] == run_id
     assert active_run["task_id"] == "task-1"
 
-    heartbeat_path = thoth_project / ".thoth" / "runs" / run_id / "heartbeat.json"
-    heartbeat = _read_json(heartbeat_path)
-    heartbeat["last_heartbeat_at"] = "2000-01-01T00:00:00Z"
-    heartbeat["updated_at"] = "2000-01-01T00:00:00Z"
-    heartbeat_path.write_text(json.dumps(heartbeat, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    state_path = thoth_project / ".thoth" / "runs" / run_id / "state.json"
+    state = _read_json(state_path)
+    state["last_heartbeat_at"] = "2000-01-01T00:00:00Z"
+    state["updated_at"] = "2000-01-01T00:00:00Z"
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     with urlopen(f"http://127.0.0.1:{port}/api/tasks/task-1/active-run", timeout=5) as response:  # noqa: S310
         stale_run = json.loads(response.read().decode("utf-8"))
@@ -274,8 +285,10 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     hooks_json = render_codex_hooks_payload()
     start_hook = hooks_json["hooks"]["SessionStart"][0]["hooks"][0]
     stop_hook = hooks_json["hooks"]["Stop"][0]["hooks"][0]
-    assert "thoth-codex-hook.sh\" start" in start_hook["command"]
-    assert "thoth-codex-hook.sh\" stop" in stop_hook["command"]
+    assert "thoth hook --host codex --event start" in start_hook["command"]
+    assert "thoth hook --host codex --event stop" in stop_hook["command"]
+    assert "thoth-codex-hook.sh" in start_hook["command"]
+    assert "thoth-codex-hook.sh" in stop_hook["command"]
 
     hook_env = dict(os.environ)
     hook_env["THOTH_SOURCE_ROOT"] = str(ROOT)
@@ -304,9 +317,19 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     )
     assert hook_stop.returncode == 0
 
-    events_payload = (thoth_project / ".thoth" / "runs" / run_id / "events.jsonl").read_text(encoding="utf-8")
-    assert "codex session_start hook observed" in events_payload
-    assert "codex stop hook observed" in events_payload
+    conversations_payload = (thoth_project / ".thoth" / "project" / "conversations.jsonl").read_text(encoding="utf-8")
+    assert '"type": "hook"' in conversations_payload
+    assert '"event": "start"' in conversations_payload
+    assert '"event": "stop"' in conversations_payload
+
+    out_of_repo_stop = subprocess.run(
+        ["bash", "-lc", stop_hook["command"]],
+        cwd="/",
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert out_of_repo_stop.returncode == 0, out_of_repo_stop.stderr
 
     hook_end = subprocess.run(
         ["bash", "scripts/session-end-check.sh"],
@@ -314,7 +337,6 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
         capture_output=True,
         text=True,
         timeout=60,
-        env=hook_env,
     )
     assert hook_end.returncode == 0
     assert "PASS" in hook_end.stdout or hook_end.stdout == ""

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from .command_specs import COMMAND_SPECS, CommandSpec, PUBLIC_CODEX_COMMANDS
+from .prompt_contracts import render_command_contract_markdown
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +29,45 @@ def _frontmatter_allowed_tools(spec: CommandSpec) -> str:
     return f"allowed-tools: {', '.join(spec.allowed_tools)}\n"
 
 
+def _claude_bridge_rules(spec: CommandSpec) -> str:
+    if spec.command_id not in {"run", "loop", "review"}:
+        return """- Treat the structured bridge payload above as the only authority for this command invocation.
+- If `bridge_success` is `false`, report the exact bridge failure and stop.
+- If `bridge_success` is `true`, report only the real command result.
+- Do not run extra Bash, Write, or Task work unless the user explicitly asks for follow-up work beyond this command result."""
+    rules = [
+        "- Treat the structured bridge payload above as the only authority for this command invocation.",
+        "- If `bridge_success` is `false`, report the exact bridge failure and stop.",
+        "- If `run` or `loop` is missing `--task-id`, show the returned candidate tasks exactly as provided and stop.",
+        "- If `run` or `loop` is missing `--task-id`, do not invent, create, compile, or guess a task.",
+        "- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, fetch `packet.controller_commands.next_phase`, execute exactly that phase, and submit exactly one JSON object through `packet.controller_commands.submit_phase` until terminal state.",
+        "- While executing a live packet, do not hand-edit `.thoth`; advance only through the Python controller commands included in `packet.controller_commands`.",
+        "- If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up only.",
+        "- If `packet.executor == codex`, the substantive execution must really flow through Codex rather than being silently done by Claude.",
+        "- If you only summarize the packet, list the task, or describe what should happen next without executing it, treat that as failure.",
+    ]
+    if spec.command_id in {"run", "loop"}:
+        rules.extend(
+            (
+                "- Use `packet.strict_task.goal_statement`, `packet.strict_task.implementation_recipe`, and `packet.strict_task.eval_entrypoint` as the only task authority.",
+                "- Prefer running `packet.strict_task.eval_entrypoint.command` exactly as provided rather than inventing a parallel validator lifecycle.",
+            )
+        )
+    if spec.command_id == "review":
+        rules.append(
+            "- For `review`, inspect `packet.target`, produce structured findings matching `packet.required_review_shape`, and finish through the review protocol rather than free-form prose."
+        )
+    return "\n".join(rules)
+
+
+def _codex_command_contracts() -> str:
+    sections = []
+    for spec in COMMAND_SPECS:
+        sections.append(f"### `$thoth {spec.command_id}`")
+        sections.append(render_command_contract_markdown(spec.command_id, heading_level=4).strip())
+    return "\n\n".join(sections)
+
+
 def render_claude_command(spec: CommandSpec) -> str:
     lifecycle = " -> ".join(spec.lifecycle) if spec.lifecycle else "n/a"
     runtime_invocation = f'"${{CLAUDE_PLUGIN_ROOT}}/scripts/thoth-claude-command.sh" {spec.command_id} $ARGUMENTS'
@@ -37,26 +77,8 @@ def render_claude_command(spec: CommandSpec) -> str:
         runtime_invocation = f'"${{CLAUDE_PLUGIN_ROOT}}/scripts/thoth-claude-command.sh" {spec.command_id} --host claude $ARGUMENTS'
     elif spec.command_id in {"run", "loop"}:
         runtime_invocation = f'"${{CLAUDE_PLUGIN_ROOT}}/scripts/thoth-claude-command.sh" {spec.command_id} --host claude $ARGUMENTS'
-    response_contract = """- Treat the structured bridge payload above as the only authority for this command invocation.
-- Do not invent or hand-roll alternate `.thoth` layouts, migrations, run ledgers, or host projections.
-- If `bridge_success` is `true`, summarize the real result of the already executed command and the next useful action.
-- If `bridge_success` is `false`, explain the exact failure from the bridge payload and stop.
-- Do not run Bash, Write, or Task tools unless the user explicitly asks for follow-up work beyond this command result."""
-    if live_packet_contract:
-        response_contract = """- Treat the structured bridge payload above as the only authority for this command invocation.
-- Do not invent or hand-roll alternate `.thoth` layouts, migrations, run ledgers, or host projections.
-- If `bridge_success` is `false`, explain the exact failure from the bridge payload and stop.
-- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, the command is NOT finished yet: execute `packet` in this Claude session using native tool use or subagents as needed.
-- For `run` and `loop`, use `packet.strict_task.goal_statement`, `packet.strict_task.implementation_recipe`, and `packet.strict_task.eval_entrypoint` as the task contract; do real code edits, run the relevant validators, and do not stop after merely restating the packet.
-- Prefer running `packet.strict_task.eval_entrypoint.command` exactly as provided; do not hand-roll a parallel service lifecycle when the packet already gives a validator entrypoint.
-- If `packet.executor` is `codex`, the substantive execution must really flow through Codex from this Claude session. Do not silently do the work yourself and then claim Codex parity.
-- For `packet.executor == codex`, use the installed Codex surface or `codex exec` from Bash to perform the requested run/review work, keep the Thoth ledger writes in this session, and preserve the same `packet` / acceptance shape.
-- While executing a live packet, keep `.thoth` updated only through the internal runtime protocol commands included in `packet.protocol_commands`.
-- End the command only after the protocol reaches a terminal state via `complete` or `fail`; leaving the run in `prepared` or `running` without a terminal protocol write is a contract violation.
-- If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up (`status`, `watch`, `dashboard`, or `report`).
-- For `review`, inspect `packet.target`, produce structured findings matching `packet.required_review_shape`, and finish by writing them through the protocol rather than free-form narration only.
-- For `review` with `packet.executor == codex`, make Codex inspect `packet.target`, then write the resulting structured findings through `packet.protocol_commands.complete` instead of returning prose only.
-- If you only summarize the packet, list the task, or say what should happen next without executing it, treat that as failure and call `fail` with the exact blocker."""
+    response_contract = _claude_bridge_rules(spec)
+    prompt_contract = render_command_contract_markdown(spec.command_id, heading_level=3).strip()
     return f"""---
 name: thoth:{spec.command_id}
 description: {spec.summary}
@@ -82,6 +104,10 @@ executed before Claude sees this prompt.
 ## Response Contract
 
 {response_contract}
+
+## Prompt Contract
+
+{prompt_contract}
 
 ## Scope Guard
 
@@ -112,6 +138,7 @@ def render_codex_skill() -> str:
     command_lines = "\n".join(
         f"- `$thoth {spec.command_id}`: {spec.summary}" for spec in COMMAND_SPECS
     )
+    command_contracts = _codex_command_contracts()
     return f"""---
 name: thoth
 description: Official Codex public surface for the Thoth authority runtime. Use this skill when the user wants to operate Thoth through the single `$thoth <command>` public entry.
@@ -133,7 +160,7 @@ Supported commands:
 ## Runtime Rules
 
 - `.thoth` is the only runtime authority.
-- `run` and `loop` are durable by default, prepare live packets in-session, and only switch to a background worker with `--sleep`.
+- `run` and `loop` are durable by default, expose a Python phase controller in-session, and only switch to a background worker with `--sleep`.
 - `review` also uses a live packet and must end with structured findings, not vague prose.
 - Host hooks and subagents may enhance throughput but are never correctness requirements.
 - Do not create alternative public Codex skill variants such as `run:codex` or `loop:codex`.
@@ -143,9 +170,14 @@ Supported commands:
 - When the current workspace is this Thoth repository itself, prefer the repo-local CLI implementation over any globally installed `thoth` binary.
 - In that case, invoke commands from the repository root with `python -m thoth.cli <command>` and ensure `PYTHONPATH` includes the repository root.
 - Only rely on a PATH-level `thoth` binary when you have already verified it resolves to the same checked-out repository code.
-- For `run`, `loop`, and `review`, treat the printed JSON packet as an execution contract: keep progress/heartbeat/events synced with the internal protocol commands until you call `complete` or `fail`.
-- A live packet is incomplete until it reaches a terminal protocol write; printing or paraphrasing the packet alone is a failure, not a success.
+- If `run` or `loop` is called without `--task-id`, do not create a task, do not guess a task id, and do not touch code. Surface the returned candidate tasks and stop.
+- For `run` and `loop`, treat the printed JSON packet as a phase controller contract: repeatedly fetch the next phase, execute exactly that phase, and submit one JSON object back through the controller until it terminalizes.
+- A live packet is incomplete until the controller reaches a terminal state; printing or paraphrasing the packet alone is a failure, not a success.
 - For `run` and `loop`, execute the strict task recipe and validator entrypoint rather than stopping at task interpretation.
+
+## Command Contracts
+
+{command_contracts}
 """
 
 

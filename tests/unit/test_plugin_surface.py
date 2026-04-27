@@ -83,7 +83,7 @@ def test_claude_bridge_script_executes_file_path_directly():
     script_path = ROOT / "scripts" / "thoth-claude-command.sh"
     assert script_path.exists()
     content = script_path.read_text(encoding="utf-8")
-    assert '"${PYTHON_BIN}" "${PLUGIN_ROOT}/thoth/claude_bridge.py" "$@"' in content
+    assert '"${PYTHON_BIN}" "${PLUGIN_ROOT}/thoth/surface/bridges/claude.py" "$@"' in content
     assert '-m thoth.claude_bridge' not in content
 
 
@@ -92,4 +92,4 @@ def test_plugin_cli_entry_exists_for_shadow_safe_execution():
     entry_path = ROOT / "scripts" / "thoth-cli-entry.py"
     assert entry_path.exists()
     content = entry_path.read_text(encoding="utf-8")
-    assert "from thoth.cli import main as cli_main" in content
+    assert "from thoth.surface.cli import main as cli_main" in content

@@ -9,7 +9,12 @@ import threading
 import time
 from pathlib import Path
 
-from thoth.runtime import _write_json, build_status_payload, create_run, local_registry_root, stop_run, spawn_supervisor
+from thoth.run.ledger import _write_json
+from thoth.run.lease import local_registry_root
+from thoth.run.ledger import create_run
+from thoth.run.status import build_status_payload
+from thoth.run.service import stop_run
+from thoth.run.worker import spawn_supervisor
 
 
 def _prepare_project(tmp_path: Path) -> None:
@@ -22,7 +27,7 @@ def test_create_run_writes_full_ledger(tmp_path):
     assert (handle.run_dir / "run.json").exists()
     assert (handle.run_dir / "state.json").exists()
     assert (handle.run_dir / "events.jsonl").exists()
-    assert (handle.run_dir / "acceptance.json").exists()
+    assert (handle.run_dir / "result.json").exists()
     assert (handle.run_dir / "artifacts.json").exists()
     run_data = json.loads((handle.run_dir / "run.json").read_text(encoding="utf-8"))
     assert run_data["host"] == "codex"
@@ -69,7 +74,7 @@ def test_local_registry_root_falls_back_to_repo_local_state_when_home_is_read_on
     def fake_writable(path: Path) -> bool:
         return path == project_dir / ".thoth" / "derived" / "local-state"
 
-    monkeypatch.setattr("thoth.runtime._directory_is_writable", fake_writable)
+    monkeypatch.setattr("thoth.run.io._directory_is_writable", fake_writable)
 
     root = local_registry_root(project_dir)
 
