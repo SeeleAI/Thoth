@@ -18,7 +18,7 @@
     <img alt="Version 0.1.4" src="https://img.shields.io/badge/version-0.1.4-4B5563?style=flat-square&labelColor=3F3F46&color=0369A1" />
     <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-4B5563?style=flat-square&labelColor=3F3F46&color=84CC16" />
   </p>
-  <img src="assets/thoth-teaser-figure.png" width="100%" alt="Thoth 概念首屏图" />
+  <img src="assets/thoth-teaser-figure-v2.png" width="100%" alt="Thoth 概念首屏图" />
 </div>
 
 ## 控制平面一览
