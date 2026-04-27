@@ -136,14 +136,15 @@ def test_codex_prompt_uses_literal_shell_command_for_public_surface():
     prompt = _codex_prompt_for_public_command("$thoth doctor --quick", "DONE_TOKEN")
     assert "`$thoth doctor --quick`" in prompt
     assert "`thoth doctor --quick`" in prompt
-    assert "rather than treating `$thoth` as a shell variable" in prompt
+    assert "execute it literally as `thoth doctor --quick`" in prompt
+    assert "Role: Thoth drift auditor." in prompt
 
 
 def test_codex_run_prompt_requires_live_packet_terminalization():
     prompt = _codex_prompt_for_public_command("$thoth run --host codex --task-id task-1", "DONE_TOKEN")
     assert "dispatch_mode=live_native" in prompt
-    assert "terminalize the run with `complete` or `fail`" in prompt
-    assert "Reply with exactly DONE_TOKEN only after the live packet has reached terminal state" in prompt
+    assert "obey the packet plus the phase-specific controller outputs only" in prompt
+    assert "Done token: DONE_TOKEN." in prompt
 
 
 def test_run_command_returns_partial_result_on_timeout(tmp_path):

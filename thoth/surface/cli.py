@@ -115,6 +115,16 @@ def build_cli_parser() -> argparse.ArgumentParser:
     heartbeat.add_argument("--progress", type=int)
     heartbeat.add_argument("--note")
 
+    next_phase = sub.add_parser("next-phase")
+    next_phase.add_argument("--project-root", required=True)
+    next_phase.add_argument("--run-id", required=True)
+
+    submit_phase = sub.add_parser("submit-phase")
+    submit_phase.add_argument("--project-root", required=True)
+    submit_phase.add_argument("--run-id", required=True)
+    submit_phase.add_argument("--phase", required=True)
+    submit_phase.add_argument("--output-json", required=True)
+
     complete = sub.add_parser("complete")
     complete.add_argument("--project-root", required=True)
     complete.add_argument("--run-id", required=True)
@@ -135,7 +145,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_cli_parser()
     args, extras = parser.parse_known_args(argv)
     if extras:
-        if args.command in {"run", "loop"} and any(not token.startswith("-") for token in extras):
-            parser.exit(2, "thoth: error: Strict task execution requires --task-id. Free-form run/loop entry is disabled.\n")
-        parser.error(f"unrecognized arguments: {' '.join(extras)}")
+        if args.command in {"run", "loop"}:
+            free_text = [token for token in extras if not token.startswith("-")]
+            unknown_flags = [token for token in extras if token.startswith("-")]
+            if unknown_flags:
+                parser.error(f"unrecognized arguments: {' '.join(extras)}")
+            setattr(args, "prompt_query", " ".join(free_text).strip())
+            extras = []
+        else:
+            parser.error(f"unrecognized arguments: {' '.join(extras)}")
+    elif args.command in {"run", "loop"}:
+        setattr(args, "prompt_query", "")
     return handle_command(args, parser, project_root=Path.cwd())

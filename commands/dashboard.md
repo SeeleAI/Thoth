@@ -23,10 +23,44 @@ executed before Claude sees this prompt.
 ## Response Contract
 
 - Treat the structured bridge payload above as the only authority for this command invocation.
-- Do not invent or hand-roll alternate `.thoth` layouts, migrations, run ledgers, or host projections.
-- If `bridge_success` is `true`, summarize the real result of the already executed command and the next useful action.
-- If `bridge_success` is `false`, explain the exact failure from the bridge payload and stop.
-- Do not run Bash, Write, or Task tools unless the user explicitly asks for follow-up work beyond this command result.
+- If `bridge_success` is `false`, report the exact bridge failure and stop.
+- If `bridge_success` is `true`, report only the real command result.
+- Do not run extra Bash, Write, or Task work unless the user explicitly asks for follow-up work beyond this command result.
+
+## Prompt Contract
+
+### Role
+
+Thoth dashboard operator
+
+### Objective
+
+Report only key runtime read-model state, abnormal panels, endpoint, or failure point.
+
+### Decision Priority
+
+- Endpoint or failure first.
+- Then active runtime anomalies.
+- Then one next action.
+
+### Hard Constraints
+
+- Do not narrate the whole UI.
+- Do not restate healthy panels.
+
+### Output Contract
+
+- Short operator brief only.
+- Default reply budget: 24-56 UTF-8 chars.
+
+### Positive Example
+
+`dashboard live on :8501`
+
+### Anti-Patterns
+
+- Explaining every dashboard section.
+- Repeating unchanged runtime state.
 
 ## Scope Guard
 

@@ -24,6 +24,7 @@ import yaml
 from thoth.init.render import render_codex_hooks_payload
 from thoth.plan.compiler import compile_task_authority
 from thoth.run.ledger import complete_run, heartbeat_run
+from thoth.run.phases import default_validate_output_schema
 from thoth.selftest_seed import seed_host_real_app
 
 from .model import *
@@ -81,6 +82,7 @@ def _host_real_contract_payloads() -> list[dict[str, Any]]:
             "eval_entrypoint": {"command": "python scripts/validate_feature.py"},
             "primary_metric": {"name": "deterministic_acceptance", "direction": "gte", "threshold": 1},
             "failure_classes": ["feature_gap"],
+            "validate_output_schema": default_validate_output_schema(),
             "acceptance_contract": {
                 "usable_question": "Does create_task() produce the requested owner/due_date output under deterministic validation?",
                 "goal_question": "Does the feature task close without fallback or degraded behavior?",
@@ -112,6 +114,7 @@ def _host_real_contract_payloads() -> list[dict[str, Any]]:
             "eval_entrypoint": {"command": "python scripts/validate_bugfix.py"},
             "primary_metric": {"name": "deterministic_acceptance", "direction": "gte", "threshold": 1},
             "failure_classes": ["persistence_bug"],
+            "validate_output_schema": default_validate_output_schema(),
             "acceptance_contract": {
                 "usable_question": "Does update_task() persist the requested column after reload under deterministic validation?",
                 "goal_question": "Does the bugfix task close without fallback or degraded behavior?",
@@ -144,6 +147,7 @@ def _host_real_contract_payloads() -> list[dict[str, Any]]:
             "eval_entrypoint": {"command": "python scripts/validate_full.py"},
             "primary_metric": {"name": "deterministic_acceptance", "direction": "gte", "threshold": 1},
             "failure_classes": ["review_gap"],
+            "validate_output_schema": default_validate_output_schema(),
             "acceptance_contract": {
                 "usable_question": "Does the repo satisfy feature, bugfix, and review-closure behavior under deterministic validation?",
                 "goal_question": "Does the review-closure loop finish without fallback or degraded behavior?",
@@ -303,6 +307,7 @@ def _seed_task(project_dir: Path, *, task_id: str = "task-1") -> None:
             "eval_entrypoint": {"command": "python scripts/selftest.py --tier hard --hosts none"},
             "primary_metric": {"name": "selftest_checks_passed", "direction": "gte", "threshold": 1},
             "failure_classes": ["runtime_unstable", "dashboard_drift", "hook_failure"],
+            "validate_output_schema": default_validate_output_schema(),
             "acceptance_contract": {
                 "usable_question": "Does the lifecycle remain attachable and observable?",
                 "goal_question": "Do hard selftest checks pass without ambiguity?",

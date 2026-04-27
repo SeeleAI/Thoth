@@ -9,7 +9,15 @@ from thoth.surface.envelope import print_envelope
 from thoth.surface.observe_commands import handle_dashboard, handle_doctor, handle_report, handle_status
 from thoth.surface.plan_commands import handle_discuss
 from thoth.surface.project_commands import handle_extend, handle_hook, handle_init, handle_sync
-from thoth.surface.protocol_commands import handle_append_event, handle_complete, handle_fail, handle_heartbeat, handle_record_artifact
+from thoth.surface.protocol_commands import (
+    handle_append_event,
+    handle_complete,
+    handle_fail,
+    handle_heartbeat,
+    handle_next_phase,
+    handle_record_artifact,
+    handle_submit_phase,
+)
 from thoth.surface.run_commands import handle_prepare, handle_review, handle_run_or_loop, handle_supervise, handle_worker
 
 COMMAND_HANDLERS = {
@@ -29,6 +37,8 @@ COMMAND_HANDLERS = {
     "append-event": handle_append_event,
     "record-artifact": handle_record_artifact,
     "heartbeat": handle_heartbeat,
+    "next-phase": handle_next_phase,
+    "submit-phase": handle_submit_phase,
     "complete": handle_complete,
     "fail": handle_fail,
 }

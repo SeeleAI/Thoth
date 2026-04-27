@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .store import _normalize_string_list
+from thoth.run.phases import normalize_runtime_contract
 
 DECISION_STATUSES = {"open", "frozen"}
 CONTRACT_STATUSES = {"draft", "frozen"}
@@ -92,6 +93,22 @@ def _validate_contract(contract: dict[str, Any], decisions_by_id: dict[str, dict
                 for key in ("name", "direction", "threshold"):
                     if primary_metric.get(key) in (None, "", []):
                         errors.append(f"primary_metric.{key} is required")
+            runtime_contract = contract.get("runtime_contract")
+            if runtime_contract not in (None, {}) and not isinstance(runtime_contract, dict):
+                errors.append("runtime_contract must be an object when provided")
+            else:
+                loop = normalize_runtime_contract(runtime_contract).get("loop", {})
+                if not isinstance(loop.get("max_iterations"), int) or int(loop["max_iterations"]) <= 0:
+                    errors.append("runtime_contract.loop.max_iterations must be a positive integer")
+                if not isinstance(loop.get("max_runtime_seconds"), int) or int(loop["max_runtime_seconds"]) <= 0:
+                    errors.append("runtime_contract.loop.max_runtime_seconds must be a positive integer")
+            validate_output_schema = contract.get("validate_output_schema")
+            if not isinstance(validate_output_schema, dict) or not validate_output_schema:
+                errors.append("frozen contract requires validate_output_schema")
+            elif validate_output_schema.get("type") != "object":
+                errors.append("validate_output_schema.type must be object")
+            elif not _normalize_string_list(validate_output_schema.get("required")):
+                errors.append("validate_output_schema.required must list required fields")
         failure_classes = _normalize_string_list(contract.get("failure_classes"))
         if not failure_classes:
             errors.append("frozen contract requires failure_classes")

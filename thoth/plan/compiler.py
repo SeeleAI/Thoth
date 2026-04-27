@@ -23,6 +23,7 @@ from .store import (
     utc_now,
 )
 from .validators import _is_imported_terminal, _validate_contract, _validate_decision
+from thoth.run.phases import normalize_runtime_contract, normalize_validate_output_schema
 
 def audit_legacy_tasks(project_root: Path) -> dict[str, Any]:
     root = project_root / ".agent-os" / "research-tasks"
@@ -157,6 +158,8 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
             "eval_entrypoint": contract.get("eval_entrypoint", {}),
             "primary_metric": contract.get("primary_metric", {}),
             "failure_classes": _normalize_string_list(contract.get("failure_classes")),
+            "runtime_contract": normalize_runtime_contract(contract.get("runtime_contract")),
+            "validate_output_schema": normalize_validate_output_schema(contract.get("validate_output_schema")),
             "acceptance_contract": contract.get("acceptance_contract", {}),
             "review_binding": contract.get("review_binding", {}),
             "legacy_snapshot_path": contract.get("legacy_snapshot_path"),
@@ -173,6 +176,8 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
                     "eval_entrypoint": contract.get("eval_entrypoint", {}),
                     "primary_metric": contract.get("primary_metric", {}),
                     "failure_classes": _normalize_string_list(contract.get("failure_classes")),
+                    "runtime_contract": normalize_runtime_contract(contract.get("runtime_contract")),
+                    "validate_output_schema": normalize_validate_output_schema(contract.get("validate_output_schema")),
                     "source_kind": contract.get("source_kind"),
                     "import_state": contract.get("import_state"),
                 }

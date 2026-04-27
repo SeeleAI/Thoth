@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from thoth.run.phases import default_validate_output_schema
 
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / "templates" / "dashboard" / "backend"))
@@ -75,6 +76,7 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
         "eval_entrypoint": {"command": "pytest"},
         "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
         "failure_classes": ["runtime_drift"],
+        "validate_output_schema": default_validate_output_schema(),
     }
     _write_json(
         tmp_path / ".thoth" / "project" / "tasks" / "task-1.json",

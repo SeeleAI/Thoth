@@ -113,6 +113,8 @@ def list_active_runs(project_root: Path) -> list[dict[str, Any]]:
                 {
                     "run_id": run.get("run_id", run_dir.name),
                     "kind": run.get("kind"),
+                    "parent_run_id": run.get("parent_run_id"),
+                    "iteration_index": run.get("iteration_index"),
                     "host": run.get("host"),
                     "executor": run.get("executor"),
                     "dispatch_mode": run.get("dispatch_mode"),

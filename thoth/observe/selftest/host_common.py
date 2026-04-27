@@ -23,6 +23,7 @@ import yaml
 
 from thoth.init.render import render_codex_hooks_payload
 from thoth.plan.compiler import compile_task_authority
+from thoth.prompt_contracts import build_codex_public_command_prompt
 from thoth.run.ledger import complete_run, heartbeat_run
 from thoth.selftest_seed import seed_host_real_app
 
@@ -139,27 +140,14 @@ def _run_claude_public_command(
 
 def _codex_prompt_for_public_command(public_command: str, done_token: str) -> str:
     shell_command = _shell_command_for_public_command(public_command)
-    live_packet_contract = shell_command.startswith("thoth run ") or shell_command.startswith("thoth loop ") or shell_command.startswith("thoth review ")
-    prompt = (
-        "Operate only on this repo. "
-        "Use the installed skill named thoth. "
-        f"The Codex public surface is `{public_command}`, but in the workspace shell you must execute it literally as `{shell_command}` rather than treating `$thoth` as a shell variable. "
-        f"Execute that shell command immediately as your first meaningful action. "
-        "Do not search memories, inspect unrelated files, or explain the command before executing it. "
-        "Do not replace it with prose, and do not rely on a stale global thoth binary if it differs from the repo-local implementation. "
+    parts = shell_command.split()
+    command_id = parts[1] if len(parts) >= 2 else "status"
+    return build_codex_public_command_prompt(
+        command_id,
+        public_command=public_command,
+        shell_command=shell_command,
+        done_token=done_token,
     )
-    if live_packet_contract:
-        prompt += (
-            "If the command returns a Thoth execution packet with `dispatch_mode=live_native`, the work is NOT finished yet. "
-            "Continue in this same Codex session: use the packet's strict task or review target as authority, keep progress synced through the packet's internal protocol commands, and terminalize the run with `complete` or `fail`. "
-            "For `run` and `loop`, execute the strict task recipe and validator entrypoint rather than stopping at packet interpretation. "
-            "For `review`, produce structured findings matching the packet's required review shape and write them through the protocol. "
-            "If the command returns `dispatch_mode=external_worker`, do not duplicate the work locally; handing the packet off successfully is enough. "
-            f"Reply with exactly {done_token} only after the live packet has reached terminal state, or after an external-worker packet has been handed off successfully."
-        )
-    else:
-        prompt += f"When the command finishes, reply with exactly {done_token}."
-    return prompt
 
 
 def _shell_command_for_public_command(public_command: str) -> str:

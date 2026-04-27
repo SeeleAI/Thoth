@@ -1,4 +1,4 @@
-"""External worker spawning and execution."""
+"""External worker spawning and mechanical phase execution."""
 
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from thoth.prompt_contracts import render_phase_worker_prompt, validate_phase_output
+
 from .io import _read_json, _write_json
 from .lease import release_repo_lease
 from .ledger import (
@@ -24,6 +26,7 @@ from .ledger import (
     heartbeat_run,
     record_artifact,
 )
+from .phases import PhaseDriver, execute_background_controller, next_phase_payload
 from .model import (
     CLAUDE_EXTERNAL_WORKER_ALLOWED_TOOLS,
     DEFAULT_EXTERNAL_WORKER_TIMEOUT_SECONDS,
@@ -200,86 +203,19 @@ def _protocol_cli_commands(project_root: Path, run_id: str) -> dict[str, str]:
 
 
 def build_external_worker_prompt(handle: RunHandle, packet: dict[str, Any]) -> str:
-    project_root = handle.project_root.resolve()
-    run = handle.run_json()
-    protocol_commands = _protocol_cli_commands(project_root, handle.run_id)
-    packet_path = handle.run_dir / "packet.json"
-    kind = str(packet.get("command_id") or run.get("kind") or "run")
-    strict_task = packet.get("strict_task") if isinstance(packet.get("strict_task"), dict) else {}
-    eval_command = str(strict_task.get("eval_entrypoint", {}).get("command") or "").strip()
-    loop_limits = ""
-    if kind == "loop":
-        loop_limits = (
-            f"- This loop is bounded: at most {int(run.get('max_rounds') or 5)} rounds and "
-            f"at most {int(run.get('max_runtime_seconds') or 12 * 60)} seconds of active work.\n"
-        )
-    review_clause = ""
-    if kind == "review":
-        findings_path = handle.run_dir / "review-findings.json"
-        review_clause = f"""
-- Produce structured findings matching the required shape in the packet.
-- Write them to `{findings_path}` as JSON with top-level keys `summary` and `findings`.
-- Record that file as an artifact with label `review-findings`.
-- Complete the run with `--result-json` carrying the same `summary` and `findings`.
-"""
-    else:
-        review_clause = f"""
-- For this task, do actual repository work instead of summarizing.
-- Run the validator exactly as written: `{eval_command}`.
-- If the validator passes, call `complete` with a concise summary plus evidence in `--checks-json`.
-- If the validator cannot be made to pass within the allowed budget, call `fail` with the concrete blocker.
-"""
-    return f"""# Thoth External Worker
+    phase_packet = packet
+    if not str(packet.get("phase") or "").strip():
+        phase_packet = next_phase_payload(handle.project_root, handle.run_id)
+    return build_phase_worker_prompt(handle, phase_packet, handle.run_dir / "worker-output.json")
 
-You are the detached external worker for an already-prepared Thoth run.
 
-## Hard Rules
-
-- Work only inside `{project_root}`.
-- Do NOT call `$thoth run`, `$thoth loop`, or `$thoth review` again.
-- Do NOT create a new run ledger. The current run id is `{handle.run_id}`.
-- `.thoth` is the only runtime authority.
-- Before exiting, you MUST terminalize this run by calling exactly one of:
-  - `complete`
-  - `fail`
-
-## Packet Authority
-
-- Packet file: `{packet_path}`
-- Command kind: `{kind}`
-- Host: `{run.get("host")}`
-- Executor: `{run.get("executor")}`
-- Task id: `{run.get("task_id")}`
-
-Read the packet file before taking action. Treat its `strict_task`, `limits`, and `required_review_shape` as authoritative.
-
-## Internal Protocol Commands
-
-- Append an event:
-  - `{protocol_commands["append_event"]}`
-- Heartbeat:
-  - `{protocol_commands["heartbeat"]}`
-- Record artifact:
-  - `{protocol_commands["record_artifact"]}`
-- Complete:
-  - `{protocol_commands["complete"]}`
-- Fail:
-  - `{protocol_commands["fail"]}`
-
-Use these repo-local CLI protocol commands for runtime updates. Do not mutate run ledgers by hand.
-
-## Required Workflow
-
-- Append one event when you begin meaningful work.
-- Emit heartbeat updates as you make progress.
-- Record material artifacts such as validator logs, report files, or findings files.
-{loop_limits}{review_clause}
-## Packet Snapshot
-
-```json
-{json.dumps(packet, ensure_ascii=False, indent=2)}
-```
-"""
+def build_phase_worker_prompt(handle: RunHandle, phase_packet: dict[str, Any], output_path: Path) -> str:
+    return render_phase_worker_prompt(
+        phase_packet=phase_packet,
+        run_id=handle.run_id,
+        project_root=handle.project_root.resolve(),
+        output_path=output_path,
+    )
 
 
 def external_worker_command(executor: str, project_root: Path, prompt: str) -> list[str]:
@@ -307,6 +243,136 @@ def external_worker_command(executor: str, project_root: Path, prompt: str) -> l
         "stream-json",
         prompt,
     ]
+
+
+class TestPhaseDriver:
+    """Deterministic phase driver for integration tests and explicit seams."""
+
+    def __init__(self, mode: str) -> None:
+        self.mode = mode
+
+    def execute_phase(self, *, handle: RunHandle, phase_packet: dict[str, Any]) -> dict[str, Any]:
+        phase = str(phase_packet.get("phase") or "")
+        if phase == "plan":
+            return {
+                "summary": "plan ready",
+                "edits": [],
+                "commands": [],
+                "checks": [{"name": "plan_shape", "ok": True}],
+            }
+        if phase == "exec":
+            return {
+                "summary": "exec done",
+                "files_touched": [],
+                "commands_run": [],
+                "artifacts": [],
+            }
+        if phase == "validate":
+            passed = self.mode != "fail"
+            return {
+                "summary": "Validator passed." if passed else "Validator failed.",
+                "passed": passed,
+                "metric_name": "deterministic_acceptance",
+                "metric_value": 1 if passed else 0,
+                "threshold": 1,
+                "checks": [{"name": "deterministic_acceptance", "ok": passed}],
+            }
+        if phase == "reflect":
+            return {
+                "summary": "reflect done",
+                "failure_class": "deterministic_validation_failed",
+                "root_cause": "test phase driver forced validation failure",
+                "next_plan_hint": "adjust implementation before retrying",
+            }
+        raise ValueError(f"unsupported phase for test driver: {phase}")
+
+
+class ExternalWorkerPhaseDriver:
+    """Run one phase via non-interactive Codex or Claude worker commands."""
+
+    def __init__(self, *, executor: str, timeout_seconds: float) -> None:
+        self.executor = executor
+        self.timeout_seconds = timeout_seconds
+
+    def execute_phase(self, *, handle: RunHandle, phase_packet: dict[str, Any]) -> dict[str, Any]:
+        phase = str(phase_packet.get("phase") or "")
+        prompt_path = handle.run_dir / f"{phase}-prompt.md"
+        output_path = handle.run_dir / f"{phase}.worker-output.json"
+        stdout_path = _worker_log_dir(handle) / f"{phase}.stdout.log"
+        stderr_path = _worker_log_dir(handle) / f"{phase}.stderr.log"
+        env = dict(os.environ)
+        existing = env.get("PYTHONPATH", "")
+        repo_root = Path(__file__).resolve().parent.parent
+        env["PYTHONPATH"] = str(repo_root) if not existing else f"{repo_root}:{existing}"
+        env["THOTH_EXTERNAL_WORKER"] = "1"
+        validate_schema = phase_packet.get("output_contract", {}).get("validate_output_schema")
+        max_attempts = max(1, int(WORKER_RETRY_LIMIT))
+        last_error = ""
+        for attempt_index in range(1, max_attempts + 1):
+            correction_error = last_error if attempt_index > 1 else None
+            prompt = render_phase_worker_prompt(
+                phase_packet=phase_packet,
+                run_id=handle.run_id,
+                project_root=handle.project_root.resolve(),
+                output_path=output_path,
+                correction_error=correction_error,
+            )
+            prompt_path.write_text(prompt, encoding="utf-8")
+            record_artifact(
+                handle.project_root,
+                handle.run_id,
+                path=str(prompt_path),
+                label=prompt_path.name,
+                artifact_kind="prompt",
+            )
+            if output_path.exists():
+                output_path.unlink()
+            command = external_worker_command(self.executor, handle.project_root, prompt)
+            with stdout_path.open("w", encoding="utf-8") as stdout_handle, stderr_path.open("w", encoding="utf-8") as stderr_handle:
+                proc = subprocess.run(
+                    command,
+                    cwd=str(handle.project_root),
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
+                    text=True,
+                    env=env,
+                    timeout=self.timeout_seconds,
+                )
+            record_artifact(handle.project_root, handle.run_id, path=str(stdout_path), label=stdout_path.name, artifact_kind="log")
+            record_artifact(handle.project_root, handle.run_id, path=str(stderr_path), label=stderr_path.name, artifact_kind="log")
+            if proc.returncode != 0:
+                stdout_tail = _tail_text(stdout_path)
+                stderr_tail = _tail_text(stderr_path)
+                raise RuntimeError(
+                    f"phase worker failed for {phase}: executor={self.executor} returncode={proc.returncode}\n{stdout_tail}\n{stderr_tail}".strip()
+                )
+            if not output_path.exists():
+                last_error = f"{output_path.name} was not written"
+                if attempt_index < max_attempts:
+                    continue
+                stdout_tail = _tail_text(stdout_path)
+                stderr_tail = _tail_text(stderr_path)
+                raise RuntimeError(
+                    f"phase worker did not write {output_path.name} for {phase}\n{stdout_tail}\n{stderr_tail}".strip()
+                )
+            payload = _read_json(output_path)
+            if not payload:
+                last_error = "output was not a single JSON object"
+                if attempt_index < max_attempts:
+                    continue
+                raise RuntimeError(f"phase worker wrote invalid JSON for {phase}: {output_path}")
+            try:
+                return validate_phase_output(
+                    phase,
+                    payload,
+                    validate_schema=validate_schema if isinstance(validate_schema, dict) else None,
+                )
+            except ValueError as exc:
+                last_error = str(exc)
+                if attempt_index < max_attempts:
+                    continue
+                raise RuntimeError(f"phase worker produced invalid {phase} output: {exc}") from exc
+        raise RuntimeError(f"phase worker exhausted retries for {phase}: {last_error or 'unknown error'}")
 
 
 def _test_external_worker_mode() -> str:
@@ -349,15 +415,6 @@ def worker_main(project_root: Path, run_id: str) -> int:
     _write_json(handle.local_dir / "supervisor.json", {"pid": os.getpid(), "state": "running", "runtime": "external_worker", "updated_at": utc_now()})
     heartbeat_run(project_root, run_id, phase="external_worker_start", progress_pct=5, note="external worker started")
     test_mode = _test_external_worker_mode()
-    if test_mode == "complete":
-        time.sleep(0.2)
-        complete_run(
-            project_root,
-            run_id,
-            summary="External worker completed through the explicit test seam.",
-            result_payload={"worker_runtime": "external_worker", "executor": run_payload.get("executor"), "test_mode": test_mode},
-        )
-        return 0
     if test_mode == "hold":
         while True:
             state = handle.state_json()
@@ -372,158 +429,26 @@ def worker_main(project_root: Path, run_id: str) -> int:
             )
             time.sleep(0.5)
     if test_mode == "fail":
+        driver = TestPhaseDriver("fail")
+    elif test_mode == "complete":
+        driver = TestPhaseDriver("complete")
+    else:
+        executor = _normalize_worker_executor(run_payload.get("executor"))
+        driver = ExternalWorkerPhaseDriver(executor=executor, timeout_seconds=_worker_timeout_seconds(run_payload))
+
+    try:
+        status = execute_background_controller(project_root, run_id, driver=driver)
+    except Exception as exc:
         fail_run(
             project_root,
             run_id,
-            summary="External worker failed through the explicit test seam.",
-            reason="test mode fail",
-            result_payload={"worker_runtime": "external_worker", "executor": run_payload.get("executor"), "test_mode": test_mode},
+            summary="Background phase controller failed.",
+            reason=str(exc),
+            result_payload={"worker_runtime": "external_worker", "executor": run_payload.get("executor")},
         )
+        _write_json(handle.local_dir / "supervisor.json", {"pid": os.getpid(), "state": "failed", "runtime": "external_worker", "updated_at": utc_now()})
         return 1
-
-    packet = _read_json(handle.run_dir / "packet.json")
-    if not packet:
-        fail_run(project_root, run_id, summary="External worker could not find packet.json.", reason="missing packet")
-        return 1
-
-    prompt = build_external_worker_prompt(handle, packet)
-    prompt_path = _worker_prompt_path(handle)
-    prompt_path.write_text(prompt, encoding="utf-8")
-    record_artifact(project_root, run_id, path=str(prompt_path), label="external-worker-prompt", artifact_kind="prompt")
-
-    executor = _normalize_worker_executor(run_payload.get("executor"))
-    env = dict(os.environ)
-    existing = env.get("PYTHONPATH", "")
-    repo_root = Path(__file__).resolve().parent.parent
-    env["PYTHONPATH"] = str(repo_root) if not existing else f"{repo_root}:{existing}"
-    env["THOTH_EXTERNAL_WORKER"] = "1"
-
-    timeout_seconds = _worker_timeout_seconds(run_payload)
-    attempts = 0
-    attempt_window_started = time.time()
-
-    while attempts <= WORKER_RETRY_LIMIT:
-        attempts += 1
-        _append_event(
-            handle,
-            f"external worker attempt {attempts} starting",
-            kind="worker",
-            payload={"executor": executor, "attempt": attempts},
-        )
-        heartbeat_run(project_root, run_id, phase=f"external_worker_attempt_{attempts}", progress_pct=min(95, 10 + attempts * 5), note=f"external worker attempt {attempts} running")
-
-        log_dir = _worker_log_dir(handle)
-        stdout_path = log_dir / f"attempt-{attempts}.stdout.log"
-        stderr_path = log_dir / f"attempt-{attempts}.stderr.log"
-        command = external_worker_command(executor, handle.project_root, prompt)
-
-        with stdout_path.open("w", encoding="utf-8") as stdout_handle, stderr_path.open("w", encoding="utf-8") as stderr_handle:
-            proc = subprocess.Popen(
-                command,
-                cwd=str(handle.project_root),
-                stdout=stdout_handle,
-                stderr=stderr_handle,
-                text=True,
-                env=env,
-                start_new_session=True,
-            )
-            child_pid = proc.pid
-            deadline = time.time() + timeout_seconds
-            last_heartbeat_at = 0.0
-
-            while proc.poll() is None:
-                state = handle.state_json()
-                now = time.time()
-                if interrupted or state.get("status") == "stopping":
-                    try:
-                        os.killpg(proc.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
-                    try:
-                        proc.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        try:
-                            os.killpg(proc.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                    child_pid = None
-                    return _terminalize_stopped_worker(handle)
-                if now >= deadline:
-                    try:
-                        os.killpg(proc.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
-                    try:
-                        proc.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        try:
-                            os.killpg(proc.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                    break
-                if now - last_heartbeat_at >= WORKER_HEARTBEAT_INTERVAL_SECONDS:
-                    heartbeat_run(
-                        project_root,
-                        run_id,
-                        phase=f"external_worker_attempt_{attempts}",
-                        progress_pct=min(95, 15 + attempts * 5),
-                        note=f"external worker attempt {attempts} still running",
-                    )
-                    last_heartbeat_at = now
-                time.sleep(1.0)
-
-            returncode = proc.wait()
-            child_pid = None
-
-        record_artifact(project_root, run_id, path=str(stdout_path), label=f"external-worker-attempt-{attempts}-stdout", artifact_kind="log")
-        record_artifact(project_root, run_id, path=str(stderr_path), label=f"external-worker-attempt-{attempts}-stderr", artifact_kind="log")
-
-        terminal_state = handle.state_json().get("status")
-        if terminal_state == "completed":
-            _write_json(handle.local_dir / "supervisor.json", {"pid": os.getpid(), "state": "completed", "runtime": "external_worker", "updated_at": utc_now()})
-            return 0
-        if terminal_state == "stopped":
-            _write_json(handle.local_dir / "supervisor.json", {"pid": os.getpid(), "state": "stopped", "runtime": "external_worker", "updated_at": utc_now()})
-            return 0
-        if terminal_state == "failed":
-            _write_json(handle.local_dir / "supervisor.json", {"pid": os.getpid(), "state": "failed", "runtime": "external_worker", "updated_at": utc_now()})
-            return 1
-
-        stdout_tail = _tail_text(stdout_path)
-        stderr_tail = _tail_text(stderr_path)
-        detail = f"{stdout_tail}\n{stderr_tail}".strip()
-        timed_out = returncode != 0 and "timed out" in detail.lower()
-        transient = _looks_like_transient_worker_outage(detail) or timed_out
-        if transient and attempts <= WORKER_RETRY_LIMIT and (time.time() - attempt_window_started) <= WORKER_RETRY_WINDOW_SECONDS:
-            _append_event(
-                handle,
-                f"external worker attempt {attempts} hit a transient host failure; retrying",
-                kind="worker",
-                level="warning",
-                payload={"returncode": returncode},
-            )
-            continue
-
-        fail_run(
-            project_root,
-            run_id,
-            summary="External worker exited without a terminal protocol write.",
-            reason=f"executor={executor} returncode={returncode}",
-            result_payload={
-                "worker_runtime": "external_worker",
-                "executor": executor,
-                "attempts": attempts,
-                "stdout_tail": stdout_tail,
-                "stderr_tail": stderr_tail,
-            },
-        )
-        return 1
-
-    fail_run(
-        project_root,
-        run_id,
-        summary="External worker exhausted the retry budget without terminalizing the run.",
-        reason="retry_budget_exhausted",
-        result_payload={"worker_runtime": "external_worker", "executor": executor, "attempts": attempts},
-    )
-    return 1
+    final_state = handle.state_json().get("status")
+    runtime_state = "completed" if final_state == "completed" else "stopped" if final_state == "stopped" else "failed"
+    _write_json(handle.local_dir / "supervisor.json", {"pid": os.getpid(), "state": runtime_state, "runtime": "external_worker", "updated_at": utc_now()})
+    return status

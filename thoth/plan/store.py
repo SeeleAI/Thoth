@@ -298,6 +298,85 @@ def load_task_for_execution(project_root: Path, task_id: str, *, require_ready: 
     return payload
 
 
+def _tokenize_task_query(value: str) -> list[str]:
+    return [token for token in re.findall(r"[a-zA-Z0-9]+", value.lower()) if token]
+
+
+def _task_search_text(task: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for field in (
+        "task_id",
+        "title",
+        "goal_statement",
+        "module",
+        "direction",
+        "contract_id",
+        "candidate_method_id",
+        "blocking_reason",
+    ):
+        value = task.get(field)
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+    for field in ("decision_ids", "failure_classes", "baseline_ids"):
+        values = task.get(field)
+        if isinstance(values, list):
+            parts.extend(str(item).strip() for item in values if isinstance(item, str) and item.strip())
+    return " ".join(parts)
+
+
+def suggest_tasks_for_query(project_root: Path, query: str, *, limit: int = 3) -> list[dict[str, Any]]:
+    from .compiler import compile_task_authority
+
+    compile_task_authority(project_root)
+    tasks = load_compiled_tasks(project_root)
+    normalized_query = " ".join(query.strip().lower().split())
+    query_tokens = _tokenize_task_query(normalized_query)
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for task in tasks:
+        ready_state = str(task.get("ready_state") or "")
+        runnable = task.get("runnable") is True
+        text = _task_search_text(task)
+        haystack = text.lower()
+        text_tokens = set(_tokenize_task_query(text))
+        score = 0.0
+        if ready_state == "ready":
+            score += 3.0
+        elif runnable:
+            score += 1.5
+        if normalized_query:
+            if normalized_query in haystack:
+                score += 8.0
+            for token in query_tokens:
+                if token in text_tokens:
+                    score += 3.0
+                elif token in haystack:
+                    score += 1.0
+        scored.append((score, task))
+    scored.sort(
+        key=lambda item: (
+            item[0],
+            1 if str(item[1].get("ready_state") or "") == "ready" else 0,
+            1 if item[1].get("runnable") is True else 0,
+            str(item[1].get("title") or ""),
+            str(item[1].get("task_id") or ""),
+        ),
+        reverse=True,
+    )
+    picks = [task for _score, task in scored[: max(0, limit)]]
+    return [
+        {
+            "task_id": str(task.get("task_id") or ""),
+            "title": str(task.get("title") or task.get("task_id") or ""),
+            "ready_state": str(task.get("ready_state") or ""),
+            "module": str(task.get("module") or ""),
+            "direction": str(task.get("direction") or ""),
+            "goal_statement": str(task.get("goal_statement") or ""),
+        }
+        for task in picks
+        if str(task.get("task_id") or "").strip()
+    ]
+
+
 def upsert_decision(project_root: Path, payload: dict[str, Any]) -> dict[str, Any]:
     ensure_task_authority_tree(project_root)
     payload = dict(payload)

@@ -14,7 +14,8 @@ from thoth.run.ledger import (
 )
 from thoth.run.model import CLAUDE_EXTERNAL_WORKER_ALLOWED_TOOLS
 from thoth.run.packets import prepare_execution
-from thoth.run.worker import build_external_worker_prompt, external_worker_command
+from thoth.run.phases import default_validate_output_schema, next_phase_payload, submit_phase_output
+from thoth.run.worker import ExternalWorkerPhaseDriver, build_external_worker_prompt, external_worker_command
 
 
 def _prepare_project(tmp_path: Path) -> Path:
@@ -40,7 +41,7 @@ def test_prepare_execution_writes_packet_and_live_dispatch(tmp_path):
     assert packet["run_id"] == handle.run_id
     assert packet["dispatch_mode"] == "live_native"
     assert (handle.run_dir / "packet.json").exists()
-    assert "heartbeat" in packet["protocol_commands"]
+    assert "next_phase" in packet["controller_commands"]
 
 
 def test_protocol_updates_artifacts_and_completion_shape(tmp_path):
@@ -63,7 +64,18 @@ def test_protocol_updates_artifacts_and_completion_shape(tmp_path):
         project,
         handle.run_id,
         summary="Review finished.",
-        result_payload={"findings": [{"severity": "high", "title": "Missing validation"}]},
+        result_payload={
+            "summary": "1 issue",
+            "findings": [
+                {
+                    "severity": "high",
+                    "title": "Missing validation",
+                    "path": "src/app.py",
+                    "line": 12,
+                    "summary": "input guard missing",
+                }
+            ],
+        },
         checks=[{"name": "structured_findings", "ok": True}],
     )
 
@@ -74,6 +86,47 @@ def test_protocol_updates_artifacts_and_completion_shape(tmp_path):
     assert result["status"] == "completed"
     assert result["result"]["findings"][0]["title"] == "Missing validation"
     assert artifacts["artifacts"][0]["label"] == "findings"
+
+
+def test_review_completion_dedupes_duplicate_findings(tmp_path):
+    project = _prepare_project(tmp_path)
+    handle, _packet = prepare_execution(
+        project,
+        command_id="review",
+        title="Review demo",
+        task_id=None,
+        host="claude",
+        executor="claude",
+        sleep_requested=False,
+        target="src/app.py",
+        goal="review app",
+    )
+    complete_run(
+        project,
+        handle.run_id,
+        summary="Review finished.",
+        result_payload={
+            "summary": "2 issues",
+            "findings": [
+                {
+                    "severity": "high",
+                    "title": "Missing validation",
+                    "path": "src/app.py",
+                    "line": 12,
+                    "summary": "input guard missing",
+                },
+                {
+                    "severity": "high",
+                    "title": "Missing validation",
+                    "path": "src/app.py",
+                    "line": 12,
+                    "summary": "input guard missing",
+                },
+            ],
+        },
+    )
+    result = json.loads((handle.run_dir / "result.json").read_text(encoding="utf-8"))
+    assert len(result["result"]["findings"]) == 1
 
 
 def test_fail_run_writes_failure_shape(tmp_path):
@@ -112,6 +165,7 @@ def test_external_worker_prompt_mentions_protocol_and_limits(tmp_path):
             "title": "Loop demo",
             "implementation_recipe": ["Edit files", "Run validator"],
             "eval_entrypoint": {"command": "pytest -q tests/test_demo.py"},
+            "validate_output_schema": default_validate_output_schema(),
         },
         goal="close loop",
         max_rounds=5,
@@ -119,10 +173,111 @@ def test_external_worker_prompt_mentions_protocol_and_limits(tmp_path):
     )
     prompt = build_external_worker_prompt(handle, packet)
     assert handle.run_id in prompt
-    assert "Do NOT call `$thoth run`, `$thoth loop`, or `$thoth review` again." in prompt
-    assert "at most 5 rounds" in prompt
+    assert "Do not invoke `$thoth run`, `$thoth loop`, or `$thoth review`." in prompt
+    assert "\"max_iterations\": 10" in prompt
     assert "pytest -q tests/test_demo.py" in prompt
-    assert "complete" in prompt and "fail" in prompt
+    assert "worker-output.json" in prompt
+
+
+def test_phase_packets_include_phase_specific_prompt_contract(tmp_path):
+    project = _prepare_project(tmp_path)
+    handle, _packet = prepare_execution(
+        project,
+        command_id="run",
+        title="Prompt demo",
+        task_id="task-1",
+        host="codex",
+        executor="claude",
+        sleep_requested=False,
+        strict_task={
+            "task_id": "task-1",
+            "title": "Prompt demo",
+            "implementation_recipe": ["Edit files", "Run validator"],
+            "eval_entrypoint": {"command": "pytest -q tests/test_demo.py"},
+            "validate_output_schema": default_validate_output_schema(),
+        },
+        goal="close prompt gaps",
+    )
+    plan_packet = next_phase_payload(project, handle.run_id)
+    assert plan_packet["prompt_contract"]["role"] == "Strict phase planner"
+    assert "Do not run commands." in plan_packet["prompt_contract"]["hard_constraints"]
+
+    submit_phase_output(
+        project,
+        handle.run_id,
+        phase="plan",
+        payload={"summary": "plan ok", "edits": [], "commands": [], "checks": []},
+    )
+    exec_packet = next_phase_payload(project, handle.run_id)
+    assert exec_packet["prompt_contract"]["role"] == "Strict phase executor"
+    assert exec_packet["prompt_contract"]["objective"] != plan_packet["prompt_contract"]["objective"]
+
+
+def test_phase_output_rejects_overlong_summary(tmp_path):
+    project = _prepare_project(tmp_path)
+    handle, _packet = prepare_execution(
+        project,
+        command_id="run",
+        title="Budget demo",
+        task_id="task-1",
+        host="codex",
+        executor="claude",
+        sleep_requested=False,
+        strict_task={"task_id": "task-1", "title": "Budget demo"},
+        goal="close budget gap",
+    )
+    too_long = "x" * 25
+    try:
+        submit_phase_output(
+            project,
+            handle.run_id,
+            phase="plan",
+            payload={"summary": too_long, "edits": [], "commands": [], "checks": []},
+        )
+    except ValueError as exc:
+        assert "plan.summary exceeds 24 UTF-8 chars" in str(exc)
+    else:
+        raise AssertionError("expected summary budget failure")
+
+
+def test_external_worker_retries_with_shorter_correction_prompt(monkeypatch, tmp_path):
+    project = _prepare_project(tmp_path)
+    handle, _packet = prepare_execution(
+        project,
+        command_id="run",
+        title="Retry demo",
+        task_id="task-1",
+        host="codex",
+        executor="codex",
+        sleep_requested=False,
+        strict_task={"task_id": "task-1", "title": "Retry demo"},
+        goal="retry bad worker output",
+    )
+    phase_packet = next_phase_payload(project, handle.run_id)
+    output_path = handle.run_dir / "plan.worker-output.json"
+    prompts: list[str] = []
+
+    def _fake_run(command, cwd, stdout, stderr, text, env, timeout):
+        prompts.append(command[-1])
+        if len(prompts) == 1:
+            output_path.write_text(
+                json.dumps({"summary": "x" * 25, "edits": [], "commands": [], "checks": []}) + "\n",
+                encoding="utf-8",
+            )
+        else:
+            output_path.write_text(
+                json.dumps({"summary": "plan ok", "edits": [], "commands": [], "checks": []}) + "\n",
+                encoding="utf-8",
+            )
+        return type("Proc", (), {"returncode": 0})()
+
+    monkeypatch.setattr("thoth.run.worker.subprocess.run", _fake_run)
+    driver = ExternalWorkerPhaseDriver(executor="codex", timeout_seconds=5)
+    payload = driver.execute_phase(handle=handle, phase_packet=phase_packet)
+
+    assert payload["summary"] == "plan ok"
+    assert len(prompts) == 2
+    assert "Previous output failed validation: plan.summary exceeds 24 UTF-8 chars" in prompts[1]
 
 
 def test_external_worker_command_uses_executor_specific_cli(tmp_path):

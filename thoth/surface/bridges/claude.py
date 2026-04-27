@@ -124,6 +124,32 @@ def _rewrite_review_prepare_args(command_args: list[str]) -> list[str]:
     return rewritten
 
 
+def _rewrite_run_loop_prepare_args(command_args: list[str]) -> list[str]:
+    rewritten: list[str] = []
+    prompt_parts: list[str] = []
+    expects_value = {"--goal", "--task-id", "--host", "--executor"}
+    idx = 0
+    while idx < len(command_args):
+        token = command_args[idx]
+        if token in expects_value:
+            rewritten.append(token)
+            if idx + 1 < len(command_args):
+                rewritten.append(command_args[idx + 1])
+            idx += 2
+            continue
+        if token.startswith("--"):
+            rewritten.append(token)
+            idx += 1
+            continue
+        prompt_parts.append(token)
+        idx += 1
+    has_goal = "--goal" in rewritten
+    has_task_id = "--task-id" in rewritten
+    if prompt_parts and not has_goal and not has_task_id:
+        rewritten.extend(["--goal", " ".join(prompt_parts)])
+    return rewritten
+
+
 def run_bridge(command_id: str, command_args: list[str], *, project_root: Path | None = None) -> dict[str, Any]:
     project_root = (project_root or Path.cwd()).resolve()
     plugin_root = Path(os.environ.get("THOTH_CLAUDE_PLUGIN_ROOT") or Path(__file__).resolve().parents[3]).resolve()
@@ -138,7 +164,12 @@ def run_bridge(command_id: str, command_args: list[str], *, project_root: Path |
     actual_args = list(command_args)
     if command_id in {"run", "loop", "review"} and not any(flag in command_args for flag in ("--attach", "--watch", "--stop")):
         actual_command = "prepare"
-        prepare_args = _rewrite_review_prepare_args(command_args) if command_id == "review" else list(command_args)
+        if command_id == "review":
+            prepare_args = _rewrite_review_prepare_args(command_args)
+        elif command_id in {"run", "loop"}:
+            prepare_args = _rewrite_run_loop_prepare_args(command_args)
+        else:
+            prepare_args = list(command_args)
         actual_args = ["--command-id", command_id, *prepare_args]
     argv = [sys.executable, str(cli_entry), actual_command, *actual_args]
     started = time.time()

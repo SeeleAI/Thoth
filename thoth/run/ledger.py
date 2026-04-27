@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from thoth.plan.results import update_task_result_from_run_result
+from thoth.prompt_contracts import validate_review_result_payload
 
 from .io import _append_jsonl, _read_json, _write_json, ensure_runtime_tree
 from .lease import release_repo_lease
@@ -25,13 +26,17 @@ def create_run(
     dispatch_mode: str = LIVE_DISPATCH_MODE,
     sleep_requested: bool = False,
     max_rounds: int | None = None,
+    max_iterations: int | None = None,
     max_runtime_seconds: int | None = None,
     target: str | None = None,
+    parent_run_id: str | None = None,
+    iteration_index: int | None = None,
 ) -> RunHandle:
     ensure_runtime_tree(project_root)
     run_id = f"{kind}-{uuid.uuid4().hex[:12]}"
     handle = RunHandle(project_root=project_root, run_id=run_id)
     now = utc_now()
+    resolved_max_iterations = max_iterations if isinstance(max_iterations, int) and max_iterations > 0 else max_rounds
     run_payload = {
         "run_id": run_id,
         "kind": kind,
@@ -46,10 +51,13 @@ def create_run(
         "sleep_requested": sleep_requested,
         "worker_mode": "background" if sleep_requested else "foreground",
         "max_rounds": max_rounds,
+        "max_iterations": resolved_max_iterations,
         "max_runtime_seconds": max_runtime_seconds,
         "created_at": now,
         "updated_at": now,
         "project_root": str(project_root.resolve()),
+        "parent_run_id": parent_run_id,
+        "iteration_index": iteration_index,
     }
     state_payload = {
         "run_id": run_id,
@@ -76,7 +84,13 @@ def create_run(
             "status": "pending",
             "summary": None,
             "checks": [],
-            "result": {},
+            "result": {
+                "phase_statuses": {},
+                "validate_passed": False,
+                "final_summary": None,
+                "artifacts": {},
+                "next_hint": None,
+            },
             "updated_at": now,
         },
     )
@@ -218,6 +232,15 @@ def _normalize_run_result(
     reason: str | None = None,
 ) -> dict[str, Any]:
     run = handle.run_json()
+    normalized_result = {
+        "phase_statuses": {},
+        "validate_passed": False,
+        "final_summary": summary,
+        "artifacts": {},
+        "next_hint": None,
+    }
+    if isinstance(result_payload, dict):
+        normalized_result.update(result_payload)
     payload = {
         "schema_version": PROTOCOL_VERSION,
         "run_id": handle.run_id,
@@ -226,7 +249,7 @@ def _normalize_run_result(
         "status": status,
         "summary": summary,
         "checks": checks or [],
-        "result": result_payload or {},
+        "result": normalized_result,
         "updated_at": utc_now(),
         "finished_at": utc_now(),
     }
@@ -246,10 +269,13 @@ def complete_run(
     handle = RunHandle(project_root=project_root.resolve(), run_id=run_id)
     run_payload = handle.run_json()
     artifacts_payload = _read_json(handle.run_dir / "artifacts.json")
+    normalized_result_payload = result_payload
+    if run_payload.get("kind") == "review":
+        normalized_result_payload = validate_review_result_payload(result_payload or {})
     run_result = _normalize_run_result(
         handle=handle,
         summary=summary,
-        result_payload=result_payload,
+        result_payload=normalized_result_payload,
         checks=checks,
         status="completed",
     )

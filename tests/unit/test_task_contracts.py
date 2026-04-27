@@ -16,6 +16,7 @@ from thoth.plan.store import (
     upsert_decision,
     upsert_verdict,
 )
+from thoth.run.phases import default_validate_output_schema
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -54,6 +55,7 @@ def test_compile_generates_ready_task_for_frozen_contract(tmp_path):
             "eval_entrypoint": {"command": "pytest -q"},
             "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
             "failure_classes": ["runtime_drift"],
+            "validate_output_schema": default_validate_output_schema(),
             "status": "frozen",
             "blocking_gaps": [],
         },
@@ -64,6 +66,47 @@ def test_compile_generates_ready_task_for_frozen_contract(tmp_path):
     task = load_task_for_execution(tmp_path, "task-1")
     assert task["ready_state"] == "ready"
     assert task["contract_id"] == "CTR-001"
+    assert task["runtime_contract"]["loop"]["max_iterations"] == 10
+    assert task["runtime_contract"]["loop"]["max_runtime_seconds"] == 28800
+
+
+def test_compile_marks_missing_validate_output_schema_invalid(tmp_path):
+    ensure_task_authority_tree(tmp_path)
+    upsert_decision(
+        tmp_path,
+        {
+            "decision_id": "DEC-VAL",
+            "scope_id": "runtime",
+            "question": "Which method should be used?",
+            "candidate_method_ids": ["real-process"],
+            "selected_values": {"candidate_method_id": "real-process"},
+            "status": "frozen",
+            "unresolved_gaps": [],
+        },
+    )
+    upsert_contract(
+        tmp_path,
+        {
+            "contract_id": "CTR-VAL",
+            "task_id": "task-val",
+            "scope_id": "runtime",
+            "direction": "frontend",
+            "module": "f1",
+            "title": "Runtime validation without schema",
+            "decision_ids": ["DEC-VAL"],
+            "candidate_method_id": "real-process",
+            "goal_statement": "Validate runtime lifecycle.",
+            "implementation_recipe": ["Run detached lifecycle."],
+            "baseline_ids": ["tmp-project"],
+            "eval_entrypoint": {"command": "pytest -q"},
+            "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
+            "failure_classes": ["runtime_drift"],
+            "status": "frozen",
+            "blocking_gaps": [],
+        },
+    )
+    compiler = compile_task_authority(tmp_path)
+    assert "task-val" in compiler["invalid_task_ids"]
 
 
 def test_compile_blocks_contract_with_open_decision(tmp_path):
@@ -142,6 +185,7 @@ def test_compile_uses_external_verdict_ledger(tmp_path):
             "eval_entrypoint": {"command": "pytest -q"},
             "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
             "failure_classes": ["runtime_drift"],
+            "validate_output_schema": default_validate_output_schema(),
             "status": "frozen",
             "blocking_gaps": [],
         },

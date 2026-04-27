@@ -16,6 +16,7 @@ import pytest
 from thoth.init.render import render_codex_hooks_payload
 from thoth.plan.compiler import compile_task_authority
 from thoth.run.lease import local_registry_root
+from thoth.run.phases import default_validate_output_schema
 
 
 ROOT = Path(__file__).parent.parent.parent
@@ -119,6 +120,7 @@ def _write_task(project_dir: Path, task_id: str = "task-1") -> None:
                 "eval_entrypoint": {"command": "pytest -q tests/integration/test_runtime_lifecycle_e2e.py"},
                 "primary_metric": {"name": "lifecycle_checks", "direction": "gte", "threshold": 1},
                 "failure_classes": ["runtime_drift", "lease_conflict_failure"],
+                "validate_output_schema": default_validate_output_schema(),
                 "status": "frozen",
                 "blocking_gaps": [],
                 "created_at": "2026-04-24T00:00:00Z",
