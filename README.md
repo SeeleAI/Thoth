@@ -92,10 +92,10 @@
 |  report    -> derived project truth from current authority                 |
 |  doctor    -> health, projection, and runtime-shape audit                  |
 |                                                                            |
-|                     +-----------+-----------+-----------+-----------+        |
-|                     |           |           |           |                    |
-|                     v           v           v           v                    |
-|                 Dashboard    Status      Report      Doctor                  |
+|                     +-----------+-----------+-----------+-----------+      |
+|                     |           |           |           |                  |
+|                     v           v           v           v                  |
+|                 Dashboard    Status      Report      Doctor                |
 +----------------------------------------------------------------------------+
 
 Key invariants:
