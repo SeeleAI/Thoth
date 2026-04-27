@@ -2,6 +2,12 @@
 
 ## Entries
 
+- 2026-04-27 21:45 UTC [local host thoth caches refreshed after push]
+  - Worked on: `OBJ-001`, `WS-001`, `WS-003`
+  - State changes: 仓库双分支 push 完成后，继续按合同刷新本机宿主安装；`claude plugin marketplace update thoth` 成功，但 `claude plugin update thoth --scope user` 报 `Plugin "thoth" not found`；`codex plugin marketplace upgrade thoth` 两次都在 `/root/.codex/.tmp/marketplaces/.staging/...` clone 阶段超时并 `early EOF`。鉴于 Claude/Codex 当前实际加载版本都仍是 `0.1.4`，最终改为直接把仓库内最新 plugin 产物覆盖到本机缓存路径与 marketplace 源路径，避免继续依赖网络 clone 和根分区临时目录
+  - Evidence produced: `claude plugin list --json` 确认 `thoth@thoth` 安装路径为 `/root/.claude/plugins/cache/thoth/thoth/0.1.4`；Codex 缓存路径为 `/root/.codex/plugins/cache/thoth/thoth/0.1.4`；已将仓库中的 `.claude-plugin/plugin.json`、`plugins/thoth/.codex-plugin/plugin.json`、`plugins/thoth/skills/thoth/{SKILL.md,agents/openai.yaml}` 同步到 Claude/Codex 本地缓存与 marketplace 源目录；`sha256sum` 校验显示 repo 与 `/root/.claude/plugins/cache/thoth/thoth/0.1.4`、`/root/.codex/plugins/cache/thoth/thoth/0.1.4` 中对应 `plugin.json` 和 `SKILL.md` 完全一致
+  - Next likely action: 若后续还要依赖 marketplace 原生命令升级，可先清理根分区空间，再重试 Claude/Codex 的官方升级流，并确认 `lastUpdated` 元数据随之刷新
+
 - 2026-04-27 21:20 UTC [main integration and dual-branch push closeout]
   - Worked on: `OBJ-001`, `WS-001`, `WS-002`, `WS-003`, `WS-005`
   - State changes: 按分支治理约束完成本轮发布收尾：`dev` 上先提交 publishable runtime/prompt/phase-contract 代码面与 dev-only 状态文档，再将发布面以受控集成方式带到 `main`，显式排除 `.agent-os/`、`AGENTS.md` 与 `CLAUDE.md` 这类开发态控制平面文档；同时确认本机根分区 `overlay` 已满，`main` closing tests 需把 `TMPDIR` 切到 `/mnt/cfs/5vr0p6/yzy/tmp/*` 才能稳定完成
