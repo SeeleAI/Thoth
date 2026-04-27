@@ -2,6 +2,12 @@
 
 ## Entries
 
+- 2026-04-27 10:31 UTC [readme teaser figure switched to v2 artwork]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 按用户提供的新成图，将 README 中英文页引用的 teaser/workbench 海报从 `assets/thoth-teaser-figure.png` 切换到新的 `assets/thoth-teaser-figure-v2.png`；本次只更新公开文档引用，不改 hero logo、不改 README 结构
+  - Evidence produced: 更新 `README.md`、`README.zh-CN.md`，并纳入新的公开资产 `assets/thoth-teaser-figure-v2.png`
+  - Next likely action: 若用户继续细修公开发布面，可再决定是否删除旧版 teaser 资产，或进一步统一 README 内所有视觉资产的命名规范
+
 - 2026-04-26 14:45 UTC [dashboard workbench transplant completed]
   - Worked on: `OBJ-001`, `WS-005`
   - State changes: 按锁定计划把当前 dashboard 从旧 route-based 多页模板整体切到单一 workbench shell；后端新增 `/api/overview-summary` 与 `/api/gantt` 只读读面，并把 gantt/summary 关键派生逻辑下沉到 `thoth.observe.read_model`；前端新增 `Header + Sidebar(Filter + Tree) + MainPanel(Tab Workbench)` 骨架、Thoth-native task/module detail、cockpit/runtime/system/activity 面板，以及共享源码下的中英文 locale 资源与生成态 `src/generated/locale.ts`；同时保留 `/overview`、`/tasks`、`/milestones`、`/dag`、`/timeline`、`/todo`、`/activity`、`/system` 的 SPA 兼容入口
