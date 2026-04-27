@@ -2,6 +2,12 @@
 
 ## Entries
 
+- 2026-04-27 21:20 UTC [main integration and dual-branch push closeout]
+  - Worked on: `OBJ-001`, `WS-001`, `WS-002`, `WS-003`, `WS-005`
+  - State changes: 按分支治理约束完成本轮发布收尾：`dev` 上先提交 publishable runtime/prompt/phase-contract 代码面与 dev-only 状态文档，再将发布面以受控集成方式带到 `main`，显式排除 `.agent-os/`、`AGENTS.md` 与 `CLAUDE.md` 这类开发态控制平面文档；同时确认本机根分区 `overlay` 已满，`main` closing tests 需把 `TMPDIR` 切到 `/mnt/cfs/5vr0p6/yzy/tmp/*` 才能稳定完成
+  - Evidence produced: `dev` 提交 `cd44263 feat: harden strict runtime phase contracts`、`25d2e38 docs: record strict runtime authority rollout`；`main` 提交 `c358536 feat: integrate strict runtime surface from dev`；`git push origin main` 已成功；`main` 上执行 `TMPDIR=/mnt/cfs/5vr0p6/yzy/tmp/thoth-main-pytest python -m pytest -q tests/unit/test_task_contracts.py tests/unit/test_run_state_machine.py tests/unit/test_runtime_protocol.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/integration/test_runtime_lifecycle_e2e.py tests/unit/test_dashboard_runtime_api.py tests/unit/test_command_spec_generation.py tests/unit/test_plugin_surface.py tests/unit/test_selftest_helpers.py` 通过（`80 passed`）；`df -h /tmp /mnt/cfs/5vr0p6/yzy/thoth` 显示 `overlay` `512G/512G`、`/mnt/cfs/5vr0p6` 仍有充足空间
+  - Next likely action: 刷新本机 Claude/Codex 的 Thoth 安装并记录结果；若后续继续做发布收尾，可再评估是否需要清理根分区或把验证默认临时目录迁到 `/mnt/cfs`
+
 - 2026-04-27 19:35 UTC [prompt authority and output budgets unified]
   - Worked on: `OBJ-001`, `WS-002`, `WS-003`, `WS-005`
   - State changes: 按锁定计划将 runtime-fed prompt authority 收拢到新增 `thoth/prompt_contracts.py` 单一代码源，统一定义 command-specific prompt delta、`run` 四阶段独立 prompt、UTF-8 长度预算与 review/phase 输出硬校验；`projections.py`、sleep worker prompt、host-real Codex selftest prompt 以及 review result 校验链路现在都复用同一 authority，不再各自手写一套长 prompt；background worker 还新增“不合规输出 -> 更短更硬纠错 prompt -> 有限重试”路径，phase packet 也显式携带 phase-specific prompt contract
