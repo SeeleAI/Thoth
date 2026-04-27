@@ -33,3 +33,5 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
 - `CD-025` `2026-04-25` `[accepted]`: `review` 的 public contract 固定为 live-only；`loop` 只允许消费同 `task_id + target` 且晚于 `TaskResult.last_closure_at` 的 review findings
 - `CD-026` `2026-04-25` `[accepted]`: 旧内部模块路径不做兼容保留；`thoth/runtime.py`、`thoth/task_contracts.py`、`thoth/project_init.py`、`thoth/claude_bridge.py`、`thoth/host_hooks.py` 直接从主实现中删除，全部切到新包级实现
 - `CD-027` `2026-04-25` `[accepted]`: 本轮 closeout 先删除临时目录并提交当前 `dev` 工作，再只执行 `push origin dev`；`main` 的 cherry-pick、`push origin main` 与本机安装刷新暂缓，等待用户后续批准
+- `CD-028` `2026-04-27` `[accepted]`: 若 `run` / `loop` 缺少 `--task-id`，Thoth 必须严格拒绝执行；只允许基于用户给出的 prompt 召回最接近的 `3` 个现有 task 候选并立即停下，禁止创建任何新 task，禁止在未拿到 `task-id` 前触碰项目代码
+- `CD-029` `2026-04-27` `[accepted]`: `run` 固定为一次 `plan -> exec -> validate -> reflect` 的 Python 机械状态机；`loop` 固定为父级 bounded orchestrator，每轮显式创建独立 child `run`，预算来自 task authority 的 `runtime_contract.loop.*`，且 validator 输出必须满足严格 JSON schema

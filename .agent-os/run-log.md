@@ -2,6 +2,18 @@
 
 ## Entries
 
+- 2026-04-27 19:35 UTC [prompt authority and output budgets unified]
+  - Worked on: `OBJ-001`, `WS-002`, `WS-003`, `WS-005`
+  - State changes: 按锁定计划将 runtime-fed prompt authority 收拢到新增 `thoth/prompt_contracts.py` 单一代码源，统一定义 command-specific prompt delta、`run` 四阶段独立 prompt、UTF-8 长度预算与 review/phase 输出硬校验；`projections.py`、sleep worker prompt、host-real Codex selftest prompt 以及 review result 校验链路现在都复用同一 authority，不再各自手写一套长 prompt；background worker 还新增“不合规输出 -> 更短更硬纠错 prompt -> 有限重试”路径，phase packet 也显式携带 phase-specific prompt contract
+  - Evidence produced: 新增 `thoth/prompt_contracts.py`；更新 `thoth/{projections.py}`、`thoth/run/{phases.py,packets.py,worker.py,ledger.py}`、`thoth/observe/selftest/host_common.py` 与相关单测；同步生成 `commands/*.md` 与 `plugins/thoth/skills/thoth/SKILL.md`；验证 `python -m py_compile thoth/prompt_contracts.py thoth/projections.py thoth/run/phases.py thoth/run/packets.py thoth/run/worker.py thoth/run/ledger.py thoth/observe/selftest/host_common.py tests/unit/test_runtime_protocol.py tests/unit/test_run_state_machine.py tests/unit/test_command_spec_generation.py tests/unit/test_selftest_helpers.py` 通过；`python -m pytest -q tests/unit/test_runtime_protocol.py tests/unit/test_run_state_machine.py tests/unit/test_command_spec_generation.py tests/unit/test_selftest_helpers.py` 通过（`42 passed`）；`python -m pytest -q tests/unit/test_claude_bridge.py tests/unit/test_cli_surface.py tests/integration/test_runtime_lifecycle_e2e.py` 通过（`20 passed`）；`python -m pytest -q tests/unit/test_dashboard_runtime_api.py tests/unit/test_plugin_surface.py` 通过（`13 passed`）
+  - Next likely action: 若继续收口 prompt/runtime surface，可把 `sync` 的 repo-self surface projection 路径也正式纳入统一生成/报告链路，并补一轮真实 host-real review finding shape 的端到端验证
+
+- 2026-04-27 17:15 UTC [run loop phase engine mechanicalized]
+  - Worked on: `OBJ-001`, `WS-002`, `WS-005`
+  - State changes: 按锁定方案将 strict task authority 扩展为 runtime-hard 合同：compiler 现在默认补 `runtime_contract.loop.max_iterations=10` 与 `max_runtime_seconds=28800`，并强制 frozen contract 提供 `validate_output_schema`；同时新增 `thoth/run/phases.py`，把单次 `run` 收敛为 Python 机械 `plan -> exec -> validate -> reflect` 状态机，把 `loop` 收敛为父级 bounded orchestrator，每轮显式创建独立 child `run`，并记录 `parent_run_id` / `iteration_index`、child lineage、最后一次反射提示与预算耗尽原因；live packet 也从旧 protocol-only 提示收紧为 phase controller contract，sleep worker 改为逐 phase 调度非交互 worker
+  - Evidence produced: 更新 `thoth/run/{phases.py,packets.py,worker.py,ledger.py,service.py}`、`thoth/plan/{compiler.py,validators.py}`、`thoth/{command_specs.py,projections.py}`、`thoth/surface/{cli.py,protocol_commands.py,handlers.py}`、相关测试与 selftest fixture；验证 `python -m py_compile thoth/run/phases.py thoth/run/worker.py thoth/run/packets.py thoth/run/ledger.py thoth/plan/compiler.py thoth/plan/validators.py thoth/surface/cli.py thoth/surface/protocol_commands.py thoth/surface/handlers.py thoth/projections.py tests/unit/test_task_contracts.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/unit/test_runtime_protocol.py tests/integration/test_runtime_lifecycle_e2e.py thoth/observe/selftest/fixtures.py tests/unit/test_dashboard_runtime_api.py` 通过；`python -m pytest -q tests/unit/test_task_contracts.py tests/unit/test_run_state_machine.py tests/unit/test_runtime_protocol.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/integration/test_runtime_lifecycle_e2e.py tests/unit/test_dashboard_runtime_api.py` 通过（`37 passed`）
+  - Next likely action: 若继续推进 host-real live 路径，需要把 Claude/Codex 宿主 prompt/adapter 进一步对齐到 `next-phase/submit-phase` controller 命令，并补双宿主 real-host matrix 对新 phase engine 的端到端验证
+
 - 2026-04-27 10:31 UTC [readme teaser figure switched to v2 artwork]
   - Worked on: `OBJ-001`, `WS-003`, `WS-005`
   - State changes: 按用户提供的新成图，将 README 中英文页引用的 teaser/workbench 海报从 `assets/thoth-teaser-figure.png` 切换到新的 `assets/thoth-teaser-figure-v2.png`；本次只更新公开文档引用，不改 hero logo、不改 README 结构
@@ -205,6 +217,12 @@
   - State changes: `run` / `loop` / `review` 从旧的 `--detach + supervisor` 语义切到 `prepare packet + internal protocol`；默认 executor 收敛到 `claude`；`--sleep` 成为唯一背景 external-worker 入口；generated Claude/Codex projections 与测试面同步到新 contract
   - Evidence produced: 更新 `thoth/runtime.py`、`thoth/cli.py`、`thoth/claude_bridge.py`、`thoth/command_specs.py`、`thoth/projections.py`、`thoth/selftest.py`，新增 `tests/unit/test_runtime_protocol.py`，并验证 `37 passed`
   - Next likely action: 继续把 `heavy` 自测场景补齐到固定双宿主 FastAPI+Vite host-real matrix，并把 preflight/hook 全局配置管理完全对齐新计划
+
+- 2026-04-27 14:30 UTC [strict missing-task-id rejection hardening]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 将 `run` / `loop` 缺少 `--task-id` 的入口从“仅报错”收紧为“先基于用户输入召回最接近的 `3` 个现有 task，然后立即停下”；当前实现显式禁止该失败路径创建任何新 task，也禁止在未拿到 `task-id` 前触碰项目代码；同时同步收紧 Claude bridge 与生成的 Claude/Codex surface 文案，避免宿主在收到拒绝后继续脑补 task 或擅自执行代码
+  - Evidence produced: 更新 `thoth/plan/store.py`、`thoth/surface/{cli.py,run_commands.py}`、`thoth/surface/bridges/claude.py`、`thoth/projections.py`、`tests/unit/test_{cli_surface,claude_bridge,command_spec_generation}.py`；执行 `python -m py_compile thoth/plan/store.py thoth/surface/run_commands.py thoth/surface/cli.py thoth/projections.py thoth/surface/bridges/claude.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/unit/test_command_spec_generation.py` 通过；执行 `python -m pytest -q tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/unit/test_command_spec_generation.py` 通过（`26 passed`）；执行 `python -m thoth.cli sync` 同步生成 surface
+  - Next likely action: 若后续继续收紧 strict-task 边界，可把 task 候选召回的排序信号与 dashboard/status 的 task 搜索读面统一为同一只读 helper，避免 CLI 与 Observe 侧漂移
 
 - 2026-04-24 09:05 UTC [public repo sanitization]
   - Worked on: `OBJ-001`, `WS-003`

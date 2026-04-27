@@ -70,6 +70,10 @@
   - Related items: `WS-001`, `WS-003`, `WS-005`, `MS-005`, `REQ-020`, `REQ-025`
   - Evidence: WSL Node LTS `v20.20.2` 与 Codex CLI `0.125.0` 可用；`py_compile`、pytest `light` / `medium`、targeted integration、`hard --hosts none`、真实 Codex-only fast contract gate 均通过
 
+- `TD-025` `[verified]`: 将 `run` / `loop` 收敛为 Python 机械化四阶段状态机，并让 `loop` 以父 orchestrator 复用 child `run`
+  - Related items: `WS-002`, `WS-005`, `MS-005`, `REQ-023`, `REQ-024`
+  - Evidence: `thoth/run/phases.py`、`thoth/run/{packets,worker,ledger}.py`、`thoth/plan/{compiler,validators}.py`、`tests/unit/test_run_state_machine.py`；`python -m pytest -q tests/unit/test_task_contracts.py tests/unit/test_run_state_machine.py tests/unit/test_runtime_protocol.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/integration/test_runtime_lifecycle_e2e.py tests/unit/test_dashboard_runtime_api.py` 为 `37 passed`
+
 ## Abandoned
 
 - `TD-008` `[abandoned]`: 使用 bare command 名作为公共命令前缀

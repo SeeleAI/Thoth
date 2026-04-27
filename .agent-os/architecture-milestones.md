@@ -24,6 +24,9 @@
 - 当前 task 级当前结论写入 `.thoth/project/tasks/*.result.json`，`sync` 会按 run 历史重建它们
 - 当前单次运行结果统一写入 `.thoth/runs/<run_id>/result.json`，不再把 `acceptance.json` 当主结果文件
 - 当前 run ledger 的长期 canonical 文件集已收敛为 `run.json`、`state.json`、`events.jsonl`、`result.json`、`artifacts.json`
+- 当前 `run` 已收敛为 Python 机械四阶段状态机：`plan -> exec -> validate -> reflect`
+- 当前四阶段固定产物为 `plan.json`、`exec.json`、`validate.json`、`reflect.json`；`result.json.result` 固定包含 `phase_statuses`、`validate_passed`、`final_summary`、`artifacts`、`next_hint`
+- 当前 `loop` 已收敛为父级 orchestrator：父 run 记录预算与 child lineage，每轮显式创建独立 child `run`，并通过上一轮 `reflect` 作为下一轮 `plan` 输入
 - heartbeat 当前写入 `state.json.last_heartbeat_at`，而不是单独的 `heartbeat.json`
 - `loop` 会按 `task_id + review_binding.target + TaskResult.last_closure_at` 自动吸收新鲜 review findings
 - dashboard 模板可以把 `.thoth/runs/*` 的 active run、history run 和事件日志绑定回 task 视图
@@ -105,6 +108,7 @@
 - `Observe`、hooks、validators 和任何 read model 都不得偷偷修 authority
 - `review` 的 public contract 冻结为 live-only，不保留 `--sleep` 口子
 - `loop` 只消费同 `task_id + target` 且晚于 `TaskResult.last_closure_at` 的 review findings
+- `runtime_contract.loop.*` 与 `validate_output_schema` 已成为 task authority 的 runtime-hard 合同；CLI 不提供高优先级覆盖入口
 
 ## Workstreams
 

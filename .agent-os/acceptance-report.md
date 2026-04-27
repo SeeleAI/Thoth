@@ -12,7 +12,7 @@
 
 - `EV-003` related to `TD-014`: strict `Decision -> Contract -> Task` 执行 authority 已落地
   - Evidence: `thoth/plan/compiler.py`、`thoth/plan/store.py`、`.thoth/project/tasks` 相关读写逻辑、dashboard compiler 读面
-  - Conclusion: `run` / `loop` 默认只接受 `--task-id`
+  - Conclusion: `run` / `loop` 默认只接受 `--task-id`；缺少 `--task-id` 时只允许召回现有 task 候选并停下，不允许创建新 task 或触碰代码
 
 - `EV-004` related to `WS-003`: 公开安装面已切换到 `SeeleAI/Thoth`
   - Evidence: `README.md`、`.claude-plugin/`、`.agents/plugins/marketplace.json`、`plugins/thoth/`、`thoth/projections.py`
@@ -45,6 +45,10 @@
 - `EV-014` related to `WS-005`, `REQ-014`, `REQ-024`, `REQ-027`: dashboard 已完成 workbench transplant，且保持 Observe-only authority 边界
   - Evidence: `thoth/observe/read_model.py`、`templates/dashboard/backend/app.py`、`thoth/init/{generators,service}.py`、`templates/dashboard/frontend/src/{views/WorkbenchView.vue,stores/dashboard.ts,locales/*,generated/locale.ts,components/layout/*,components/detail/*,components/panels/*,components/tree/*,components/filters/*,components/charts/GanttChart.vue}`；`python -m pytest -q tests/unit/test_init.py tests/unit/test_dashboard_runtime_api.py tests/unit/test_data_loader.py tests/integration/test_init_workflow.py` 为 `31 passed`；`python -m pytest -q tests/unit/test_runtime_loader.py tests/unit/test_status.py tests/integration/test_runtime_lifecycle_e2e.py -k dashboard_process_and_hooks_are_observable` 为 `1 passed`；`cd templates/dashboard/frontend && npm run build` 通过
   - Conclusion: 当前 dashboard 已切到单一 workbench shell、保留旧路径兼容入口、补齐 `/api/overview-summary` 与 `/api/gantt`、以 Thoth-native detail 替换旧 NeuralShader 语义槽位，并按 init/sync 语言配置生成默认中英文文案
+
+- `EV-015` related to `TD-025`, `REQ-023`, `REQ-024`: `run` / `loop` 已改为 Python 机械 phase engine，`loop` 通过父 run 复用 child `run`
+  - Evidence: `thoth/run/phases.py`、`thoth/run/{packets,worker,ledger}.py`、`thoth/plan/{compiler,validators}.py`、`tests/unit/test_run_state_machine.py`；`python -m pytest -q tests/unit/test_task_contracts.py tests/unit/test_run_state_machine.py tests/unit/test_runtime_protocol.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/integration/test_runtime_lifecycle_e2e.py tests/unit/test_dashboard_runtime_api.py` 为 `37 passed`
+  - Conclusion: 当前 strict task 会编译出默认 `runtime_contract.loop = {max_iterations: 10, max_runtime_seconds: 28800}`，缺失 `validate_output_schema` 的 frozen task 会转为不可执行；单次 `run` 由 Python 机械解析 phase JSON 决定成功或失败，`loop` 会记录 child run lineage、反射提示与预算耗尽原因
 
 ## Open Checks
 
