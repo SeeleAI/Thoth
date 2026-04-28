@@ -51,17 +51,11 @@ def test_run_state_machine_completes_after_validate_pass(tmp_path):
     )
 
     phase = next_phase_payload(project, handle.run_id)
-    assert phase["phase"] == "plan"
+    assert phase["phase"] == "execute"
     submit_phase_output(
         project,
         handle.run_id,
-        phase="plan",
-        payload={"summary": "plan ok", "edits": [], "commands": [], "checks": []},
-    )
-    submit_phase_output(
-        project,
-        handle.run_id,
-        phase="exec",
+        phase="execute",
         payload={"summary": "exec ok", "files_touched": [], "commands_run": [], "artifacts": []},
     )
     result = submit_phase_output(
@@ -82,8 +76,7 @@ def test_run_state_machine_completes_after_validate_pass(tmp_path):
     run_result = json.loads((handle.run_dir / "result.json").read_text(encoding="utf-8"))
     assert run_result["status"] == "completed"
     assert run_result["result"]["validate_passed"] is True
-    assert run_result["result"]["phase_statuses"]["plan"] == "completed"
-    assert run_result["result"]["phase_statuses"]["exec"] == "completed"
+    assert run_result["result"]["phase_statuses"]["execute"] == "completed"
     assert run_result["result"]["phase_statuses"]["validate"] == "completed"
     assert not (handle.run_dir / "reflect.json").exists()
 
@@ -104,13 +97,7 @@ def test_run_state_machine_forces_reflect_after_validate_failure(tmp_path):
     submit_phase_output(
         project,
         handle.run_id,
-        phase="plan",
-        payload={"summary": "plan ok", "edits": [], "commands": [], "checks": []},
-    )
-    submit_phase_output(
-        project,
-        handle.run_id,
-        phase="exec",
+        phase="execute",
         payload={"summary": "exec ok", "files_touched": [], "commands_run": [], "artifacts": []},
     )
     interim = submit_phase_output(
@@ -166,17 +153,11 @@ def test_loop_parent_stops_on_iteration_budget(tmp_path):
 
     for _ in range(2):
         phase = next_phase_payload(project, handle.run_id)
-        assert phase["phase"] == "plan"
+        assert phase["phase"] == "execute"
         submit_phase_output(
             project,
             handle.run_id,
-            phase="plan",
-            payload={"summary": "plan ok", "edits": [], "commands": [], "checks": []},
-        )
-        submit_phase_output(
-            project,
-            handle.run_id,
-            phase="exec",
+            phase="execute",
             payload={"summary": "exec ok", "files_touched": [], "commands_run": [], "artifacts": []},
         )
         submit_phase_output(

@@ -1,4 +1,4 @@
-"""Static prompt-spec authority for Thoth public commands and run phases."""
+"""Compressed prompt authority for Thoth public commands and live phases."""
 
 from __future__ import annotations
 
@@ -10,448 +10,230 @@ from typing import Any
 
 @dataclass(frozen=True)
 class CommandPromptSpec:
-    """Command-specific prompt delta rendered into public host surfaces."""
+    """Compressed command authority rendered into host-facing prompt surfaces."""
 
     command_id: str
-    role: str
+    route_class: str
+    intelligence_tier: str
+    packet_authority_mode: str
     objective: str
-    decision_priority: tuple[str, ...]
-    hard_constraints: tuple[str, ...]
-    output_contract: tuple[str, ...]
-    positive_example: str
-    anti_patterns: tuple[str, ...]
+    hard_stops: tuple[str, ...]
     reply_budget_utf8: int
+    result_style: str
+    validator_policy: str
 
 
 @dataclass(frozen=True)
 class PhasePromptSpec:
-    """Phase-specific prompt contract for strict run execution."""
+    """Compressed phase authority for validator-centered execution."""
 
     phase: str
-    role: str
     objective: str
-    decision_priority: tuple[str, ...]
-    hard_constraints: tuple[str, ...]
-    output_contract: tuple[str, ...]
-    positive_example: str
-    anti_patterns: tuple[str, ...]
-    thinking_order: tuple[str, ...]
+    hard_stops: tuple[str, ...]
+    required_fields: tuple[str, ...]
     summary_budget_utf8: int
+    validator_policy: str
 
 
 COMMAND_PROMPT_SPECS: dict[str, CommandPromptSpec] = {
     "run": CommandPromptSpec(
         command_id="run",
-        role="Thoth strict task finisher",
-        objective="Complete the current strict task. Do not explain the runtime or restate the packet.",
-        decision_priority=(
-            "Follow the phase controller first.",
-            "Then follow the strict task authority exactly.",
-            "Then minimize output.",
-        ),
-        hard_constraints=(
-            "Do not invent or compile new tasks when `--task-id` is missing.",
-            "Do not leave a live packet before the controller terminalizes.",
-            "Do not hand-edit `.thoth` ledgers.",
-        ),
-        output_contract=(
-            "Final host reply is terminal result only.",
-            "Default final reply budget: 16-36 UTF-8 chars.",
-            "No markdown explanation or packet restatement.",
-        ),
-        positive_example="done: validator passed",
-        anti_patterns=(
-            "Long runtime explanation.",
-            "Repeating packet fields.",
-            "Stopping after plan only.",
+        route_class="live_intelligent",
+        intelligence_tier="high",
+        packet_authority_mode="phase_controller",
+        objective="Finish the current strict task through the validator-centered controller.",
+        hard_stops=(
+            "Do not invent or compile a new task when --task-id is missing.",
+            "Do not stop after reading the packet; terminalize through controller commands only.",
+            "Do not hand-edit .thoth ledgers.",
         ),
         reply_budget_utf8=36,
+        result_style="terminal receipt only",
+        validator_policy="execute first, validator decides completion, reflect only after validator failure",
     ),
     "loop": CommandPromptSpec(
         command_id="loop",
-        role="Thoth bounded loop operator",
-        objective="Advance the child run under the parent loop controller. Do not decide loop termination by yourself.",
-        decision_priority=(
-            "Respect runtime budget first.",
-            "Then consume the child run result exactly.",
-            "Then apply the latest reflect hint.",
-        ),
-        hard_constraints=(
-            "Do not bypass the parent loop controller.",
-            "Do not free-run extra iterations outside controller budget.",
-            "Do not expand historical narration.",
-        ),
-        output_contract=(
-            "Final host reply is loop outcome only.",
-            "Default final reply budget: 16-40 UTF-8 chars.",
-            "No markdown explanation or iteration diary.",
-        ),
-        positive_example="failed: max_iterations hit",
-        anti_patterns=(
-            "Choosing extra retries yourself.",
-            "Explaining every child run.",
-            "Returning review prose.",
+        route_class="live_intelligent",
+        intelligence_tier="high",
+        packet_authority_mode="phase_controller",
+        objective="Advance the current bounded loop without bypassing the parent controller.",
+        hard_stops=(
+            "Do not decide extra iterations outside the recorded loop budget.",
+            "Do not skip validator output when judging success.",
+            "Do not expand into iteration diaries or runtime narration.",
         ),
         reply_budget_utf8=40,
+        result_style="terminal receipt only",
+        validator_policy="parent loop budget controls retries; child validator decides pass/fail",
     ),
     "review": CommandPromptSpec(
         command_id="review",
-        role="Thoth structured reviewer",
-        objective="Return compressed structured findings. Do not drift into explanatory prose.",
-        decision_priority=(
-            "Merge duplicates first.",
-            "Keep required finding fields second.",
-            "Compress prose last.",
-        ),
-        hard_constraints=(
+        route_class="live_intelligent",
+        intelligence_tier="high",
+        packet_authority_mode="review_packet",
+        objective="Return structured findings only, with exact-match short-circuit when provided.",
+        hard_stops=(
             "Do not modify project code.",
-            "Do not claim acceptance without evidence.",
-            "If `packet.strict_task.review_expectation` exists, return that exact structured result and nothing else.",
-            "Do not emit free-form review essays outside the findings object.",
-        ),
-        output_contract=(
-            "Top summary budget: 16-32 UTF-8 chars.",
-            "Findings are the primary body.",
-            "No prose outside the structured review object.",
-        ),
-        positive_example='{"summary":"2 issues","findings":[...]}',
-        anti_patterns=(
-            "Narrative code review paragraphs.",
-            "Duplicate findings for one location.",
-            "Missing severity or title.",
+            "Do not emit prose outside the structured review result.",
+            "If review_expectation or complete_exact exists, follow it exactly.",
         ),
         reply_budget_utf8=32,
+        result_style="short summary plus structured findings",
+        validator_policy="exact-match route is protocol_fast; open-ended route stays live but still structured",
     ),
     "status": CommandPromptSpec(
         command_id="status",
-        role="Thoth status briefer",
-        objective="Report only deltas, blockers, abnormalities, and active runs. Do not restate normal state.",
-        decision_priority=(
-            "Abnormal state first.",
-            "Then active run deltas.",
-            "Then blocking items only.",
-        ),
-        hard_constraints=(
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
+        objective="Report only abnormal state, blockers, and active run deltas.",
+        hard_stops=(
             "Do not restate healthy defaults.",
             "Do not expand into a dashboard walkthrough.",
         ),
-        output_contract=(
-            "Human-readable brief only.",
-            "Default reply budget: 24-56 UTF-8 chars.",
-        ),
-        positive_example="1 active run, no blockers",
-        anti_patterns=(
-            "Repeating every healthy check.",
-            "Dumping full task tables.",
-        ),
         reply_budget_utf8=56,
+        result_style="brief receipt",
+        validator_policy="runtime truth comes from current authority only",
     ),
     "doctor": CommandPromptSpec(
         command_id="doctor",
-        role="Thoth drift auditor",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
         objective="Report only failing, drifting, or missing checks.",
-        decision_priority=(
-            "Failing checks first.",
-            "Then drifted generated surfaces.",
-            "Then missing authority artifacts.",
-        ),
-        hard_constraints=(
+        hard_stops=(
             "Do not pad with passing checks.",
             "Do not claim repo health without checks.",
         ),
-        output_contract=(
-            "Short defect-oriented brief only.",
-            "Default reply budget: 24-64 UTF-8 chars.",
-        ),
-        positive_example="compiler-state missing",
-        anti_patterns=(
-            "Full green check list.",
-            "Narrative health essay.",
-        ),
         reply_budget_utf8=64,
+        result_style="brief defect receipt",
+        validator_policy="authority and generated surfaces decide health",
     ),
     "report": CommandPromptSpec(
         command_id="report",
-        role="Thoth report compressor",
-        objective="Compress current authority into a structured conclusion without replaying raw run logs.",
-        decision_priority=(
-            "Use authority-derived conclusions first.",
-            "Then include the output path.",
-            "Then compress wording.",
-        ),
-        hard_constraints=(
-            "Do not replay the entire run log.",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
+        objective="Compress the current authority state into one short report outcome.",
+        hard_stops=(
+            "Do not replay the full run log.",
             "Do not invent missing evidence.",
         ),
-        output_contract=(
-            "Short structured conclusion only.",
-            "Default reply budget: 32-80 UTF-8 chars.",
-        ),
-        positive_example="report ready: reports/2026-04-27-report.md",
-        anti_patterns=(
-            "Verbose timeline recap.",
-            "Copying raw markdown report content.",
-        ),
         reply_budget_utf8=80,
+        result_style="brief receipt with output path",
+        validator_policy="report must stay authority-derived",
     ),
     "dashboard": CommandPromptSpec(
         command_id="dashboard",
-        role="Thoth dashboard operator",
-        objective="Report only key runtime read-model state, abnormal panels, endpoint, or failure point.",
-        decision_priority=(
-            "Endpoint or failure first.",
-            "Then active runtime anomalies.",
-            "Then one next action.",
-        ),
-        hard_constraints=(
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
+        objective="Report endpoint, failure point, and one notable runtime delta only.",
+        hard_stops=(
             "Do not narrate the whole UI.",
             "Do not restate healthy panels.",
         ),
-        output_contract=(
-            "Short operator brief only.",
-            "Default reply budget: 24-56 UTF-8 chars.",
-        ),
-        positive_example="dashboard live on :8501",
-        anti_patterns=(
-            "Explaining every dashboard section.",
-            "Repeating unchanged runtime state.",
-        ),
         reply_budget_utf8=56,
+        result_style="brief operator receipt",
+        validator_policy="dashboard is read-only over .thoth ledgers",
     ),
     "init": CommandPromptSpec(
         command_id="init",
-        role="Thoth adopt/init reporter",
-        objective="Report adopt/init result, concrete generated artifacts, and blockers only.",
-        decision_priority=(
-            "Adopt or init outcome first.",
-            "Then generated artifacts.",
-            "Then blockers if any.",
-        ),
-        hard_constraints=(
-            "Do not claim blank-repo assumptions.",
-            "Do not narrate the whole migration procedure.",
-        ),
-        output_contract=(
-            "Short outcome brief only.",
-            "Default reply budget: 24-60 UTF-8 chars.",
-        ),
-        positive_example="init rendered .thoth and surfaces",
-        anti_patterns=(
-            "Long bootstrap explanation.",
-            "Repeating file trees.",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
+        objective="Report audit-first adopt/init outcome, generated artifacts, and blockers only.",
+        hard_stops=(
+            "Do not assume the repo is blank.",
+            "Do not narrate the full migration procedure.",
         ),
         reply_budget_utf8=60,
+        result_style="brief outcome receipt",
+        validator_policy="preview and generated artifacts define success",
     ),
     "sync": CommandPromptSpec(
         command_id="sync",
-        role="Thoth projection synchronizer",
-        objective="Report whether generated surfaces are in sync, what changed, and whether anything failed.",
-        decision_priority=(
-            "Sync status first.",
-            "Then changed surfaces.",
-            "Then failure detail if present.",
-        ),
-        hard_constraints=(
-            "Do not hand-maintain generated prompt semantics.",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
+        objective="Report whether generated surfaces are in sync and what changed.",
+        hard_stops=(
             "Do not narrate unchanged surfaces.",
-        ),
-        output_contract=(
-            "Short sync brief only.",
-            "Default reply budget: 24-60 UTF-8 chars.",
-        ),
-        positive_example="sync updated commands and skill",
-        anti_patterns=(
-            "Full generated file dump.",
-            "Explaining renderer internals.",
+            "Do not hand-maintain generated semantics.",
         ),
         reply_budget_utf8=60,
+        result_style="brief sync receipt",
+        validator_policy="canonical renderers define parity",
     ),
     "discuss": CommandPromptSpec(
         command_id="discuss",
-        role="Thoth planning authority editor",
-        objective="Write planning authority only. Do not enter execution semantics or implementation explanation.",
-        decision_priority=(
-            "Decision and contract authority first.",
-            "Then task compiler consequences.",
-            "Then unresolved gaps only.",
-        ),
-        hard_constraints=(
+        route_class="live_intelligent",
+        intelligence_tier="high",
+        packet_authority_mode="command_packet",
+        objective="Make the smallest correct planning-authority update and recompile tasks.",
+        hard_stops=(
             "Do not modify source code.",
-            "Do not fabricate ready execution tasks from open decisions.",
-        ),
-        output_contract=(
-            "Short planning brief only.",
-            "Default reply budget: 24-64 UTF-8 chars.",
-        ),
-        positive_example="decision recorded, tasks recompiled",
-        anti_patterns=(
-            "Implementation walkthrough.",
-            "Executing repo changes.",
+            "Do not fabricate ready execution tasks from unresolved decisions.",
+            "Do not repeat the packet or decision payload verbatim.",
         ),
         reply_budget_utf8=64,
+        result_style="brief planning receipt",
+        validator_policy="planning authority plus compiler output decide completion",
     ),
     "extend": CommandPromptSpec(
         command_id="extend",
-        role="Thoth repository extender",
-        objective="Finish repository changes and report only the key result.",
-        decision_priority=(
-            "Preserve generated surface parity first.",
-            "Then complete repository change.",
-            "Then report validation outcome.",
-        ),
-        hard_constraints=(
-            "Do not bypass test gates.",
-            "Do not leave host projections drifting.",
-        ),
-        output_contract=(
-            "Short change result only.",
-            "Default reply budget: 24-60 UTF-8 chars.",
-        ),
-        positive_example="surface parity restored, tests pass",
-        anti_patterns=(
-            "Changelog-style essay.",
-            "Ignoring projection drift.",
+        route_class="live_intelligent",
+        intelligence_tier="high",
+        packet_authority_mode="command_packet",
+        objective="Complete the requested repository change while preserving generated-surface parity.",
+        hard_stops=(
+            "Do not bypass repository test gates.",
+            "Do not leave Claude and Codex projections drifting.",
+            "Do not expand into changelog-style prose.",
         ),
         reply_budget_utf8=60,
+        result_style="brief change receipt",
+        validator_policy="repo tests and surface parity decide completion",
     ),
 }
 
 
 PHASE_PROMPT_SPECS: dict[str, PhasePromptSpec] = {
-    "plan": PhasePromptSpec(
-        phase="plan",
-        role="Strict phase planner",
-        objective="Produce the smallest execution plan for the current strict task phase packet.",
-        decision_priority=(
-            "Read the packet first.",
-            "List only the minimum edits and commands.",
-            "Keep the phase output compressed.",
+    "execute": PhasePromptSpec(
+        phase="execute",
+        objective="Perform the smallest execution slice needed for the strict task before validation.",
+        hard_stops=(
+            "Do not hand-edit .thoth ledgers.",
+            "Do not terminalize the full run from inside execute.",
+            "Do not drift into retrospective prose.",
         ),
-        hard_constraints=(
-            "Do not run commands.",
-            "Do not modify code.",
-            "Do not judge final success.",
-        ),
-        output_contract=(
-            "One JSON object only.",
-            "summary <= 24 UTF-8 chars.",
-            "Each edits[] item <= 24 UTF-8 chars.",
-            "Each commands[] item <= 40 UTF-8 chars.",
-        ),
-        positive_example='{"summary":"plan ready","edits":["touch api"],"commands":["pytest -q"],"checks":[{"name":"shape","ok":true}]}',
-        anti_patterns=(
-            "Running validators.",
-            "Writing markdown plans.",
-            "Restating the full packet.",
-        ),
-        thinking_order=(
-            "Read packet.",
-            "Choose minimum edits.",
-            "Choose minimum commands.",
-            "Write one short JSON object.",
-        ),
+        required_fields=("summary", "files_touched", "commands_run", "artifacts"),
         summary_budget_utf8=24,
-    ),
-    "exec": PhasePromptSpec(
-        phase="exec",
-        role="Strict phase executor",
-        objective="Execute the approved strict task work and record only this phase result.",
-        decision_priority=(
-            "Follow the plan artifact and task recipe.",
-            "Perform only execution work.",
-            "Keep the result compact.",
-        ),
-        hard_constraints=(
-            "Do not re-plan the task.",
-            "Do not terminalize the whole run.",
-            "Do not expand into retrospective prose.",
-        ),
-        output_contract=(
-            "One JSON object only.",
-            "summary <= 24 UTF-8 chars.",
-            "Each commands_run[] item <= 40 UTF-8 chars.",
-        ),
-        positive_example='{"summary":"exec done","files_touched":["src/app.py"],"commands_run":["pytest -q"],"artifacts":[]}',
-        anti_patterns=(
-            "Writing a new plan.",
-            "Declaring pass/fail without validation.",
-            "Explaining why the edit was needed.",
-        ),
-        thinking_order=(
-            "Read plan and task packet.",
-            "Do the minimum edits.",
-            "Run only execution-stage commands.",
-            "Write one short JSON object.",
-        ),
-        summary_budget_utf8=24,
+        validator_policy="execute may plan internally, but validator remains the acceptance authority",
     ),
     "validate": PhasePromptSpec(
         phase="validate",
-        role="Strict phase validator",
-        objective="Run the official validator and return a mechanical pass/fail verdict with metric output.",
-        decision_priority=(
-            "Run eval_entrypoint.command exactly.",
-            "Use actual validator result only.",
-            "Compress the verdict.",
-        ),
-        hard_constraints=(
-            "Do not repair code.",
-            "Do not implement new changes.",
+        objective="Run the official validator and return a mechanical pass/fail result.",
+        hard_stops=(
+            "Do not repair code inside validate.",
             "Do not guess pass/fail from intuition.",
+            "Do not skip eval_entrypoint.command when it exists.",
         ),
-        output_contract=(
-            "One JSON object only.",
-            "summary <= 20 UTF-8 chars.",
-            "checks[] string fields <= 24 UTF-8 chars.",
-            "Return pass/fail plus metric fields only.",
-        ),
-        positive_example='{"summary":"pass","passed":true,"metric_name":"checks","metric_value":1,"threshold":1,"checks":[{"name":"checks","ok":true}]}',
-        anti_patterns=(
-            "Skipping eval_entrypoint.command.",
-            "Fixing code inside validate.",
-            "Returning discussion instead of verdict.",
-        ),
-        thinking_order=(
-            "Read eval entrypoint.",
-            "Run validator.",
-            "Extract pass/fail and metric.",
-            "Write one short JSON object.",
-        ),
+        required_fields=("summary", "passed", "metric_name", "metric_value", "threshold", "checks"),
         summary_budget_utf8=20,
+        validator_policy="validator output alone decides whether the run completes or enters reflect",
     ),
     "reflect": PhasePromptSpec(
         phase="reflect",
-        role="Strict phase reflector",
-        objective="Compress the failed validation root cause and emit one next-round hint.",
-        decision_priority=(
-            "Use validator evidence first.",
-            "Compress one root cause second.",
-            "Emit one next plan hint last.",
-        ),
-        hard_constraints=(
-            "Do not run more commands.",
+        objective="Compress validator failure into one root cause and one next hint.",
+        hard_stops=(
             "Do not keep executing.",
-            "Do not expand into new solution branches.",
+            "Do not run extra commands.",
+            "Do not emit multiple competing next steps.",
         ),
-        output_contract=(
-            "One JSON object only.",
-            "summary <= 32 UTF-8 chars.",
-            "next_plan_hint <= 40 UTF-8 chars.",
-            "Return root cause plus next hint only.",
-        ),
-        positive_example='{"summary":"reflect done","failure_class":"validator_failed","root_cause":"api route missing guard","next_plan_hint":"add guard before retry"}',
-        anti_patterns=(
-            "Continuing execution.",
-            "Large redesign proposal.",
-            "Multiple competing next steps.",
-        ),
-        thinking_order=(
-            "Read validator artifact.",
-            "Name one failure class.",
-            "Compress one root cause.",
-            "Write one next hint JSON object.",
-        ),
+        required_fields=("summary", "failure_class", "root_cause", "next_plan_hint"),
         summary_budget_utf8=32,
+        validator_policy="reflect exists only after validator failure",
     ),
 }
 
@@ -464,6 +246,32 @@ def phase_prompt_spec(phase: str) -> PhasePromptSpec:
     return PHASE_PROMPT_SPECS[phase]
 
 
+def command_prompt_authority(command_id: str) -> dict[str, Any]:
+    spec = command_prompt_spec(command_id)
+    return {
+        "route_class": spec.route_class,
+        "intelligence_tier": spec.intelligence_tier,
+        "packet_authority_mode": spec.packet_authority_mode,
+        "objective": spec.objective,
+        "hard_stops": list(spec.hard_stops),
+        "reply_budget_utf8": spec.reply_budget_utf8,
+        "result_style": spec.result_style,
+        "validator_policy": spec.validator_policy,
+    }
+
+
+def phase_prompt_authority(phase: str) -> dict[str, Any]:
+    spec = phase_prompt_spec(phase)
+    return {
+        "phase": spec.phase,
+        "objective": spec.objective,
+        "hard_stops": list(spec.hard_stops),
+        "required_fields": list(spec.required_fields),
+        "summary_budget_utf8": spec.summary_budget_utf8,
+        "validator_policy": spec.validator_policy,
+    }
+
+
 def _render_bullets(items: tuple[str, ...]) -> str:
     return "\n".join(f"- {item}" for item in items)
 
@@ -471,33 +279,25 @@ def _render_bullets(items: tuple[str, ...]) -> str:
 def render_command_contract_markdown(command_id: str, *, heading_level: int = 2) -> str:
     spec = command_prompt_spec(command_id)
     heading = "#" * max(1, heading_level)
-    return f"""{heading} Role
+    return f"""{heading} Route
 
-{spec.role}
+- route_class: `{spec.route_class}`
+- intelligence_tier: `{spec.intelligence_tier}`
+- packet_authority_mode: `{spec.packet_authority_mode}`
 
 {heading} Objective
 
 {spec.objective}
 
-{heading} Decision Priority
+{heading} Hard Stops
 
-{_render_bullets(spec.decision_priority)}
+{_render_bullets(spec.hard_stops)}
 
-{heading} Hard Constraints
+{heading} Reply Contract
 
-{_render_bullets(spec.hard_constraints)}
-
-{heading} Output Contract
-
-{_render_bullets(spec.output_contract)}
-
-{heading} Positive Example
-
-`{spec.positive_example}`
-
-{heading} Anti-Patterns
-
-{_render_bullets(spec.anti_patterns)}
+- reply_budget_utf8: `{spec.reply_budget_utf8}`
+- result_style: {spec.result_style}
+- validator_policy: {spec.validator_policy}
 """
 
 
@@ -510,45 +310,30 @@ def render_phase_worker_prompt(
     correction_error: str | None = None,
 ) -> str:
     phase = str(phase_packet.get("phase") or "")
-    spec = phase_prompt_spec(phase)
-    rules = [
+    authority = phase_packet.get("phase_authority")
+    if not isinstance(authority, dict):
+        authority = phase_prompt_authority(phase)
+    hard_stops = authority.get("hard_stops") if isinstance(authority.get("hard_stops"), list) else []
+    required_fields = authority.get("required_fields") if isinstance(authority.get("required_fields"), list) else []
+    lines = [
+        f"Run id: {run_id}",
         f"Work only inside `{project_root}`.",
-        "Do not create or edit `.thoth` ledgers by hand.",
-        "Do not invoke `$thoth run`, `$thoth loop`, or `$thoth review`.",
         f"Execute exactly one phase: `{phase}`.",
         f"Write exactly one JSON object to `{output_path}`.",
+        "Do not create or edit `.thoth` ledgers by hand.",
+        "Do not invoke `$thoth run`, `$thoth loop`, or `$thoth review`.",
+        f"Objective: {authority.get('objective')}",
+        f"Required fields: {', '.join(str(item) for item in required_fields)}",
+        f"Summary budget utf8: {authority.get('summary_budget_utf8')}",
+        f"Validator policy: {authority.get('validator_policy')}",
     ]
+    lines.extend(f"Hard stop: {item}" for item in hard_stops)
     if correction_error:
-        rules.append(f"Previous output failed validation: {correction_error}")
-        rules.append("Rewrite a shorter, stricter JSON object. Do not explain the error.")
+        lines.append(f"Previous output failed validation: {correction_error}")
+        lines.append("Rewrite one shorter, stricter JSON object only.")
     return f"""# Thoth Phase Worker
 
-Short Rule Header:
-{_render_bullets(tuple(rules))}
-
-Role
-{spec.role}
-
-Objective
-{spec.objective}
-
-Decision Priority
-{_render_bullets(spec.decision_priority)}
-
-Hard Constraints
-{_render_bullets(spec.hard_constraints)}
-
-Output Contract
-{_render_bullets(spec.output_contract)}
-
-Positive Example
-`{spec.positive_example}`
-
-Anti-Patterns
-{_render_bullets(spec.anti_patterns)}
-
-Thinking Order
-{_render_bullets(spec.thinking_order)}
+{chr(10).join(f"- {line}" for line in lines)}
 
 Phase Packet
 ```json
@@ -557,35 +342,70 @@ Phase Packet
 """
 
 
-def build_codex_public_command_prompt(command_id: str, *, public_command: str, shell_command: str, done_token: str) -> str:
+def build_codex_public_command_prompt(
+    command_id: str,
+    *,
+    public_command: str,
+    shell_command: str,
+    done_token: str,
+) -> str:
     spec = command_prompt_spec(command_id)
     lines = [
         "Operate only on this repo.",
         "Use the installed skill named thoth.",
         f"The Codex public surface is `{public_command}`, but in the workspace shell you must execute it literally as `{shell_command}`.",
         "Execute that shell command immediately as your first meaningful action.",
-        "Do not search memories, inspect unrelated files, or explain the command before executing it.",
-        "If that `thoth` shell command is missing in a fresh plugin-installed environment, report host install drift instead of inventing a different entrypoint.",
-        "Do not replace execution with prose, and do not rely on a stale global thoth binary if it differs from the repo-local implementation.",
-        f"Role: {spec.role}.",
+        "Do not explain the command before executing it.",
+        "Do not replace execution with prose.",
+        "If the literal `thoth` shell command is missing in a fresh plugin-installed environment, report host install drift instead of inventing another entrypoint.",
+        f"route_class={spec.route_class}.",
+        f"intelligence_tier={spec.intelligence_tier}.",
+        f"packet_authority_mode={spec.packet_authority_mode}.",
         f"Objective: {spec.objective}",
     ]
-    lines.extend(f"Decision priority: {item}" for item in spec.decision_priority)
-    lines.extend(f"Hard constraint: {item}" for item in spec.hard_constraints)
-    lines.extend(f"Output contract: {item}" for item in spec.output_contract)
-    if command_id in {"run", "loop", "review"}:
+    lines.extend(f"Hard stop: {item}" for item in spec.hard_stops)
+    if command_id in {"run", "loop"}:
         lines.extend(
             (
-                "If the command returns a Thoth execution packet with `dispatch_mode=live_native`, the work is not finished yet.",
-                "Continue in this same Codex session and obey the packet plus the phase-specific controller outputs only.",
-                "Do not hand-edit `.thoth`; advance only through the provided protocol commands.",
-                "Reply with the done token only after the controller reaches terminal state, or after an external-worker packet has been handed off successfully.",
+                "If the command returns a live packet, the work is not finished yet.",
+                "Stay in the same session and obey only the packet plus controller outputs.",
+                "Default lifecycle is execute -> validate; reflect appears only after validator failure.",
+                "Do not hand-edit `.thoth`; advance through protocol commands only.",
             )
         )
-    else:
-        lines.append("After the command completes, reply with the done token only.")
-    lines.append(f"Done token: {done_token}.")
+    elif command_id == "review":
+        lines.extend(
+            (
+                "If the command returns a review packet, stay inside that review protocol only.",
+                "If `packet.review_mode` is `exact_match`, reproduce that exact structured result.",
+                "If `packet.protocol_commands.complete_exact` exists, execute that exact completion command.",
+            )
+        )
+    elif command_id in {"discuss", "extend"}:
+        lines.extend(
+            (
+                "If the command returns a command packet, use that packet as the only authority for the follow-up action.",
+                "Do not restate packet fields or expand into teaching prose.",
+            )
+        )
+    lines.append(f"Reply with `{done_token}` only after the command path reaches its terminal outcome.")
     return " ".join(lines)
+
+
+def render_codex_command_micro_prompt(command_id: str) -> str:
+    public_command = f"$thoth {command_id}"
+    shell_command = f"thoth {command_id}"
+    done_token = "THOTH_DONE"
+    return f"""# {public_command}
+
+Generated micro prompt for the Thoth Codex dispatcher.
+
+{render_command_contract_markdown(command_id, heading_level=2).strip()}
+
+## Execution String
+
+{build_codex_public_command_prompt(command_id, public_command=public_command, shell_command=shell_command, done_token=done_token)}
+"""
 
 
 def build_codex_selftest_command_probe_prompt(*, public_command: str, shell_command: str, done_token: str) -> str:
@@ -651,8 +471,11 @@ __all__ = [
     "build_codex_selftest_command_probe_prompt",
     "build_codex_selftest_review_probe_prompt",
     "build_review_result_shape",
+    "command_prompt_authority",
     "command_prompt_spec",
+    "phase_prompt_authority",
     "phase_prompt_spec",
+    "render_codex_command_micro_prompt",
     "render_command_contract_markdown",
     "render_phase_worker_prompt",
 ]

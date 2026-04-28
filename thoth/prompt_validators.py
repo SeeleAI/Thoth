@@ -9,8 +9,7 @@ from .prompt_specs import phase_prompt_spec
 
 
 PHASE_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
-    "plan": ("summary", "edits", "commands", "checks"),
-    "exec": ("summary", "files_touched", "commands_run", "artifacts"),
+    "execute": ("summary", "files_touched", "commands_run", "artifacts"),
     "validate": ("summary", "passed", "metric_name", "metric_value", "threshold", "checks"),
     "reflect": ("summary", "failure_class", "root_cause", "next_plan_hint"),
 }
@@ -103,18 +102,13 @@ def validate_phase_output(
         payload.get("summary"),
         phase_prompt_spec(phase).summary_budget_utf8,
     )
-    if phase == "plan":
-        normalized["edits"] = _require_string_list("plan.edits", payload.get("edits"), LIST_SHORT_ITEM_LIMIT)
-        normalized["commands"] = _require_string_list("plan.commands", payload.get("commands"), COMMAND_ITEM_LIMIT)
-        normalized["checks"] = _require_check_list("plan.checks", payload.get("checks"), limit=LIST_SHORT_ITEM_LIMIT)
-        return normalized
-    if phase == "exec":
+    if phase == "execute":
         if not isinstance(payload.get("files_touched"), list):
-            raise ValueError("exec.files_touched must be a list")
+            raise ValueError("execute.files_touched must be a list")
         if not isinstance(payload.get("artifacts"), list):
-            raise ValueError("exec.artifacts must be a list")
+            raise ValueError("execute.artifacts must be a list")
         normalized["commands_run"] = _require_string_list(
-            "exec.commands_run",
+            "execute.commands_run",
             payload.get("commands_run"),
             COMMAND_ITEM_LIMIT,
         )

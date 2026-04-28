@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from thoth.prompt_specs import build_review_result_shape
+from thoth.prompt_specs import build_review_result_shape, command_prompt_authority
 
 from .io import _read_json, _write_json
 from .lease import acquire_repo_lease
@@ -83,6 +83,7 @@ def _build_execution_packet(
         "sleep_requested": bool(run.get("sleep_requested")),
         "background_mode": "detached" if run.get("dispatch_mode") == SLEEP_DISPATCH_MODE else "current_session",
         "attachable": bool(run.get("attachable", True)),
+        "command_authority": command_prompt_authority(command_id),
         "state": {
             "status": state.get("status"),
             "phase": state.get("phase"),
@@ -102,16 +103,11 @@ def _build_execution_packet(
             "result": str(handle.run_dir / "result.json"),
             "packet": str(handle.run_dir / "packet.json"),
         },
-        "execution_requirements": [
-            "Use only the current packet plus compiler-generated strict task/context as authority.",
-            "Run the strict task eval_entrypoint exactly as written before inventing parallel validator orchestration.",
-            "Write heartbeat and progress updates through the internal runtime protocol.",
-            "Record material artifacts and finish via complete/fail rather than silently exiting.",
-        ],
     }
     if command_id == "review":
         packet["required_review_shape"] = build_review_result_shape()
         expectation = strict_task.get("review_expectation") if isinstance(strict_task, dict) else None
+        packet["review_mode"] = "exact_match" if isinstance(expectation, dict) else "open_ended"
         if isinstance(expectation, dict):
             summary = expectation.get("summary")
             if not isinstance(summary, str) or not summary.strip():
@@ -133,13 +129,6 @@ def _build_execution_packet(
                     ),
                 )
             )
-            packet["execution_requirements"].extend(
-                (
-                    "If `protocol_commands.complete_exact` exists, execute that exact command rather than deriving your own completion syntax.",
-                    "For review completion, `--summary` must stay a short plain string; structured findings belong only in `--result-json`.",
-                    "Do not run CLI help or discovery commands to infer review completion arguments when `protocol_commands.complete_exact` is present.",
-                )
-            )
     elif command_id == "loop":
         review_binding = strict_task.get("review_binding") if isinstance(strict_task, dict) else {}
         review_target = review_binding.get("target") if isinstance(review_binding, dict) else None
@@ -150,6 +139,17 @@ def _build_execution_packet(
         )
         if review_context:
             packet["review_context"] = review_context
+        packet["loop_lifecycle"] = {
+            "default_phases": ["execute", "validate"],
+            "reflect_on_failure": True,
+            "validator_centered": True,
+        }
+    elif command_id == "run":
+        packet["run_lifecycle"] = {
+            "default_phases": ["execute", "validate"],
+            "reflect_on_failure": True,
+            "validator_centered": True,
+        }
     _write_json(handle.run_dir / "packet.json", packet)
     return packet
 

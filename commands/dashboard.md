@@ -22,69 +22,30 @@ executed before Claude sees this prompt.
 
 ## Response Contract
 
-- Treat the structured bridge payload above as the only authority for this command invocation.
+- Treat the structured bridge payload above as the only authority for this invocation.
 - If `bridge_success` is `false`, report the exact bridge failure and stop.
-- If `bridge_success` is `true`, report only the real command result.
-- Do not run extra Bash, Write, or Task work unless the user explicitly asks for follow-up work beyond this command result.
+- If `bridge_success` is `true`, report only the real command result in one short receipt.
+- Do not expand into runtime explanation, walkthroughs, or extra command execution.
 
-## Prompt Contract
+## Authority Summary
 
-### Role
+### Route
 
-Thoth dashboard operator
+- route_class: `mechanical_fast`
+- intelligence_tier: `none`
+- packet_authority_mode: `result_envelope`
 
 ### Objective
 
-Report only key runtime read-model state, abnormal panels, endpoint, or failure point.
+Report endpoint, failure point, and one notable runtime delta only.
 
-### Decision Priority
-
-- Endpoint or failure first.
-- Then active runtime anomalies.
-- Then one next action.
-
-### Hard Constraints
+### Hard Stops
 
 - Do not narrate the whole UI.
 - Do not restate healthy panels.
 
-### Output Contract
+### Reply Contract
 
-- Short operator brief only.
-- Default reply budget: 24-56 UTF-8 chars.
-
-### Positive Example
-
-`dashboard live on :8501`
-
-### Anti-Patterns
-
-- Explaining every dashboard section.
-- Repeating unchanged runtime state.
-
-## Scope Guard
-
-**CAN:**
-- Start the dashboard
-- Report dashboard endpoints
-
-**CANNOT:**
-- Read host session state as runtime truth
-
-## Runtime Contract
-
-- Durable: no
-- Codex executor allowed: no
-- Hooks required for correctness: no
-- Subagents required for correctness: no
-- Lifecycle: serve
-- Acceptance: Dashboard reads .thoth/runs data only and renders host/executor/runtime distinctions explicitly.
-
-## Interaction Gaps
-
-- (none)
-
-## Shared Authority
-
-Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
-Host differences are interaction-only and must not change ledger shape.
+- reply_budget_utf8: `56`
+- result_style: brief operator receipt
+- validator_policy: dashboard is read-only over .thoth ledgers

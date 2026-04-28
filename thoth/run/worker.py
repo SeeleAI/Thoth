@@ -254,14 +254,7 @@ class TestPhaseDriver:
 
     def execute_phase(self, *, handle: RunHandle, phase_packet: dict[str, Any]) -> dict[str, Any]:
         phase = str(phase_packet.get("phase") or "")
-        if phase == "plan":
-            return {
-                "summary": "plan ready",
-                "edits": [],
-                "commands": [],
-                "checks": [{"name": "plan_shape", "ok": True}],
-            }
-        if phase == "exec":
+        if phase == "execute":
             return {
                 "summary": "exec done",
                 "files_touched": [],

@@ -12,6 +12,9 @@ class CommandSpec:
     command_id: str
     summary: str
     argument_hint: str
+    route_class: str = "mechanical_fast"
+    intelligence_tier: str = "none"
+    packet_authority_mode: str = "none"
     durable: bool = False
     supports_codex_executor: bool = False
     needs_hooks: bool = False
@@ -22,6 +25,7 @@ class CommandSpec:
     scope_cannot: tuple[str, ...] = field(default_factory=tuple)
     lifecycle: tuple[str, ...] = field(default_factory=tuple)
     interaction_gaps: tuple[str, ...] = field(default_factory=tuple)
+    internal_routes: tuple[str, ...] = field(default_factory=tuple)
 
 
 COMMAND_SPECS: tuple[CommandSpec, ...] = (
@@ -29,6 +33,9 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         command_id="init",
         summary="Initialize canonical .thoth authority and render both host projections without taking ownership of repo-root `.codex`.",
         argument_hint="[project-name]",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
         acceptance="Authority tree, host projections, Codex hook projection, dashboard, scripts, and tests are generated from one canonical source while repo-root `.codex` remains host-owned.",
         needs_hooks=True,
         scope_can=(
@@ -47,15 +54,18 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         command_id="run",
-        summary="Start one strict run through the mechanical phase engine, or use `--sleep` to hand the same phase engine to an external worker.",
+        summary="Start one validator-centered strict run, or use `--sleep` to hand the same controller to an external worker.",
         argument_hint="[--executor claude|codex] [--host claude|codex] [--sleep] [--attach <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>",
+        route_class="live_intelligent",
+        intelligence_tier="high",
+        packet_authority_mode="phase_controller",
         durable=True,
         supports_codex_executor=True,
-        acceptance="A durable run ledger with fixed phase artifacts and Python-controlled terminalization exists under .thoth/runs/<run_id>; live and sleep share the same phase engine and result shape.",
+        acceptance="A durable run ledger with validator-centered phase artifacts and Python-controlled terminalization exists under .thoth/runs/<run_id>; live and sleep share the same result shape.",
         needs_subagents=True,
         allowed_tools=("Read", "Glob", "Grep", "Edit", "Write", "Bash", "Task"),
         scope_can=(
-            "Drive plan -> exec -> validate -> reflect through one mechanical phase controller",
+            "Drive execute -> validate, and reflect only after validator failure",
             "Switch to an external worker only with --sleep",
             "Write fixed phase artifacts and terminal results through the shared authority",
             "Stop or watch an existing run",
@@ -64,13 +74,16 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
             "Use host session state as runtime truth",
             "Use detached live execution without --sleep",
         ),
-        lifecycle=("prepare", "phase-controller", "live-native|external-worker", "attach/watch/stop", "acceptance"),
+        lifecycle=("prepare", "execute", "validate", "reflect-on-failure", "attach/watch/stop", "acceptance"),
         interaction_gaps=("Strict task id",),
     ),
     CommandSpec(
         command_id="loop",
-        summary="Start one bounded loop whose parent orchestrator reuses child runs through the same mechanical phase engine.",
+        summary="Start one bounded loop whose parent orchestrator reuses validator-centered child runs.",
         argument_hint="[--executor claude|codex] [--host claude|codex] [--sleep] [--attach <run_id>] [--resume <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>",
+        route_class="live_intelligent",
+        intelligence_tier="high",
+        packet_authority_mode="phase_controller",
         durable=True,
         supports_codex_executor=True,
         acceptance="The parent loop run enforces child iteration count and wall-clock budget mechanically, records child run lineage, and stops immediately on the first validated child run.",
@@ -85,13 +98,16 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
             "Use detached live execution without --sleep",
             "Depend on subagents or hooks for correctness",
         ),
-        lifecycle=("prepare", "loop-parent", "child-run-phase-controller", "attach/resume/watch/stop", "acceptance"),
+        lifecycle=("prepare", "loop-parent", "child-execute", "child-validate", "reflect-on-failure", "attach/resume/watch/stop", "acceptance"),
         interaction_gaps=("Strict task id",),
     ),
     CommandSpec(
         command_id="review",
         summary="Prepare a structured live review packet through the shared Thoth surface.",
         argument_hint="[--executor claude|codex] [--host claude|codex] [--task-id <task_id>] <target>",
+        route_class="live_intelligent",
+        intelligence_tier="high",
+        packet_authority_mode="review_packet",
         supports_codex_executor=True,
         acceptance="Findings are reported in structured form through the same authority protocol without mutating source code, while preserving executor parity.",
         needs_subagents=True,
@@ -99,11 +115,15 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         scope_can=("Read code and documents", "Delegate review to Codex", "Write structured findings through the protocol"), 
         scope_cannot=("Modify project code", "Claim acceptance without evidence"),
         lifecycle=("prepare", "live-native-review", "protocol-update", "report"),
+        internal_routes=("exact_match=protocol_fast", "open_ended=live_intelligent"),
     ),
     CommandSpec(
         command_id="status",
         summary="Show repo status and active durable runs from the shared ledger.",
         argument_hint="[--json]",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
         acceptance="Status reports repo health plus active/stale run summaries without replacing attach/watch.",
         scope_can=("Read .thoth authority and machine-local registry",),
         scope_cannot=("Infer runtime state from chat history",),
@@ -113,6 +133,9 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         command_id="doctor",
         summary="Audit project health, generated surfaces, and runtime shape.",
         argument_hint="[--quick]",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
         acceptance="Doctor validates .thoth authority and generated projections without assuming repo-root `.codex` is Thoth-managed.",
         scope_can=("Run health checks", "Verify generated surfaces"), 
         scope_cannot=("Use missing hooks as a correctness failure by themselves",),
@@ -122,6 +145,9 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         command_id="dashboard",
         summary="Start or describe the task-first dashboard backed by .thoth ledgers.",
         argument_hint="[--port <port>]",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
         acceptance="Dashboard reads .thoth/runs data only and renders host/executor/runtime distinctions explicitly.",
         scope_can=("Start the dashboard", "Report dashboard endpoints"), 
         scope_cannot=("Read host session state as runtime truth",),
@@ -131,6 +157,9 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         command_id="sync",
         summary="Synchronize generated surfaces and project projections from their canonical sources.",
         argument_hint="",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
         acceptance="Generated Claude commands, Codex skill, plugin manifest, and project instructions match the host-neutral source of truth.",
         scope_can=("Regenerate projections", "Run TODO sync"), 
         scope_cannot=("Hand-edit generated public surfaces",),
@@ -140,6 +169,9 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         command_id="report",
         summary="Build a structured report from the current authority state.",
         argument_hint="[--format md|json]",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
         acceptance="Report is derived from current ledgers and project docs rather than session memory.",
         scope_can=("Read project authority and ledgers",),
         scope_cannot=("Invent missing evidence",),
@@ -149,6 +181,9 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         command_id="discuss",
         summary="Discuss or record planning decisions without entering implementation execution.",
         argument_hint="<topic>",
+        route_class="live_intelligent",
+        intelligence_tier="high",
+        packet_authority_mode="command_packet",
         acceptance="Planning output is recorded into the decision/contract authority and recompiled into executable task state without mutating code.",
         scope_can=("Update decisions and contracts", "Trigger the strict task compiler"),
         scope_cannot=("Modify source code", "Create ready execution tasks without a frozen contract"),
@@ -158,6 +193,9 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         command_id="extend",
         summary="Evolve Thoth itself under the generated test gates.",
         argument_hint="<change request>",
+        route_class="live_intelligent",
+        intelligence_tier="high",
+        packet_authority_mode="command_packet",
         acceptance="Extension work respects the generated surface contract and test gates.",
         scope_can=("Modify this repository", "Run repository tests"),
         scope_cannot=("Bypass generated surface parity",),

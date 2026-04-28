@@ -22,68 +22,30 @@ executed before Claude sees this prompt.
 
 ## Response Contract
 
-- Treat the structured bridge payload above as the only authority for this command invocation.
+- Treat the structured bridge payload above as the only authority for this invocation.
 - If `bridge_success` is `false`, report the exact bridge failure and stop.
-- If `bridge_success` is `true`, report only the real command result.
-- Do not run extra Bash, Write, or Task work unless the user explicitly asks for follow-up work beyond this command result.
+- If `bridge_success` is `true`, report only the real command result in one short receipt.
+- Do not expand into runtime explanation, walkthroughs, or extra command execution.
 
-## Prompt Contract
+## Authority Summary
 
-### Role
+### Route
 
-Thoth report compressor
+- route_class: `mechanical_fast`
+- intelligence_tier: `none`
+- packet_authority_mode: `result_envelope`
 
 ### Objective
 
-Compress current authority into a structured conclusion without replaying raw run logs.
+Compress the current authority state into one short report outcome.
 
-### Decision Priority
+### Hard Stops
 
-- Use authority-derived conclusions first.
-- Then include the output path.
-- Then compress wording.
-
-### Hard Constraints
-
-- Do not replay the entire run log.
+- Do not replay the full run log.
 - Do not invent missing evidence.
 
-### Output Contract
+### Reply Contract
 
-- Short structured conclusion only.
-- Default reply budget: 32-80 UTF-8 chars.
-
-### Positive Example
-
-`report ready: reports/2026-04-27-report.md`
-
-### Anti-Patterns
-
-- Verbose timeline recap.
-- Copying raw markdown report content.
-
-## Scope Guard
-
-**CAN:**
-- Read project authority and ledgers
-
-**CANNOT:**
-- Invent missing evidence
-
-## Runtime Contract
-
-- Durable: no
-- Codex executor allowed: no
-- Hooks required for correctness: no
-- Subagents required for correctness: no
-- Lifecycle: collect -> render
-- Acceptance: Report is derived from current ledgers and project docs rather than session memory.
-
-## Interaction Gaps
-
-- (none)
-
-## Shared Authority
-
-Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
-Host differences are interaction-only and must not change ledger shape.
+- reply_budget_utf8: `80`
+- result_style: brief receipt with output path
+- validator_policy: report must stay authority-derived

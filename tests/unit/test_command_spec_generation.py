@@ -27,20 +27,20 @@ def test_claude_surface_renders_from_spec():
     assert "name: thoth:run" in rendered
     assert "disable-model-invocation: false" in rendered
     assert "allowed-tools: Read, Glob, Grep, Edit, Write, Bash, Task" in rendered
-    assert "Durable: yes" in rendered
-    assert "Codex executor allowed: yes" in rendered
     assert 'scripts/thoth-claude-command.sh" run --host claude $ARGUMENTS' in rendered
     assert "packet.dispatch_mode` is `live_native`" in rendered
     assert "do not invent, create, compile, or guess a task" in rendered
-    assert "## Prompt Contract" in rendered
-    assert "Thoth strict task finisher" in rendered
+    assert "## Authority Summary" in rendered
+    assert "route_class: `live_intelligent`" in rendered
+    assert "packet_authority_mode: `phase_controller`" in rendered
+    assert "Default child lifecycle is `execute -> validate`" in rendered
 
 
 def test_claude_discuss_surface_preserves_structured_arguments():
     spec = next(spec for spec in COMMAND_SPECS if spec.command_id == "discuss")
     rendered = render_claude_command(spec)
     assert 'scripts/thoth-claude-command.sh" discuss $ARGUMENTS' in rendered
-    assert "disable-model-invocation: true" in rendered
+    assert "disable-model-invocation: false" in rendered
 
 
 def test_claude_review_surface_preserves_structured_arguments():
@@ -49,26 +49,35 @@ def test_claude_review_surface_preserves_structured_arguments():
     assert 'scripts/thoth-claude-command.sh" review --host claude $ARGUMENTS' in rendered
     assert "allowed-tools: Read, Glob, Grep, Bash, Task" in rendered
     assert "packet.required_review_shape" in rendered
-    assert "packet.strict_task.review_expectation" in rendered
+    assert "packet.review_mode` is `exact_match`" in rendered
     assert "packet.protocol_commands.complete_exact" in rendered
-    assert "do not write `.thoth/runs/*/result.json`" in rendered
-    assert "call `packet.protocol_commands.complete` with `--result-json`" in rendered
-    assert "never put the structured review JSON into `--summary`" in rendered
-    assert "do not inspect or invoke Codex CLI" in rendered
-    assert "Thoth structured reviewer" in rendered
+    assert "route_class: `live_intelligent`" in rendered
+    assert "packet_authority_mode: `review_packet`" in rendered
 
 
 def test_codex_skill_lists_single_public_entry():
     content = render_codex_skill()
     assert content.startswith("---\nname: thoth\n")
     assert "$thoth <command>" in content
-    assert "PATH-level `thoth` wrapper" in content
-    assert "python -m thoth.cli <command>" in content
-    assert "do not create a task" in content
-    assert "## Command Contracts" in content
-    assert "### `$thoth run`" in content
+    assert "## Dispatcher" in content
+    assert "./commands/<command>.md" in content
+    assert "## Route Table" in content
+    assert "## Command Contracts" not in content
+    assert "### `$thoth run`" not in content
     for command in PUBLIC_CODEX_COMMANDS:
         assert f"$thoth {command}" in content
+
+
+def test_prompt_surface_size_regression():
+    run_spec = next(spec for spec in COMMAND_SPECS if spec.command_id == "run")
+    review_spec = next(spec for spec in COMMAND_SPECS if spec.command_id == "review")
+    codex_skill = render_codex_skill()
+    claude_run = render_claude_command(run_spec)
+    claude_review = render_claude_command(review_spec)
+
+    assert len(codex_skill) < 3600
+    assert len(claude_run) < 3200
+    assert len(claude_review) < 3000
 
 
 def test_codex_agent_metadata_uses_single_public_entry():
@@ -103,6 +112,7 @@ def test_sync_repository_surfaces_writes_generated_files(tmp_path):
     assert tmp_path / "commands" / "run.md" in written
     assert (tmp_path / ".agents" / "plugins" / "marketplace.json").exists()
     assert (tmp_path / "plugins" / "thoth" / "skills" / "thoth" / "SKILL.md").exists()
+    assert (tmp_path / "plugins" / "thoth" / "skills" / "thoth" / "commands" / "run.md").exists()
     assert (tmp_path / "plugins" / "thoth" / "skills" / "thoth" / "agents" / "openai.yaml").exists()
     manifest = json.loads((tmp_path / "plugins" / "thoth" / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
     assert manifest["skills"] == PLUGIN_SKILLS_PATH
