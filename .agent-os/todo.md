@@ -79,6 +79,10 @@
   - Related items: `WS-003`, `WS-005`, `MS-005`, `REQ-017`, `REQ-019`, `REQ-025`
   - Evidence: 用户提供的 Claude 登录态环境下执行 `env PATH=/mnt/cfs/5vr0p6/yzy/thoth/bin:$PATH ANTHROPIC_BASE_URL='https://api.deepseek.com/anthropic' ANTHROPIC_AUTH_TOKEN='***' ANTHROPIC_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_OPUS_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_SONNET_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_HAIKU_MODEL='deepseek-v4-flash' CLAUDE_CODE_SUBAGENT_MODEL='deepseek-v4-flash' CLAUDE_CODE_EFFORT_LEVEL='max' TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m thoth.selftest --tier heavy --hosts both --artifact-dir /tmp/thoth-heavy-both-command-gate-artifacts-20260428-rerun --json-report /tmp/thoth-heavy-both-command-gate-summary-20260428-rerun.json`，结果 `104 passed / 0 failed / 0 degraded`
 
+- `TD-027` `[verified]`: 收敛 Thoth prompt router、双宿主投影与 live packet authority，删除宿主常驻合同冗余并把 `run/loop` 收敛为 validator-centered 短链
+  - Related items: `WS-003`, `WS-005`, `MS-005`, `REQ-019`, `REQ-023`, `REQ-024`
+  - Evidence: 更新 `thoth/{command_specs,projections,prompt_specs,prompt_validators}.py`、`thoth/run/{packets,phases,worker}.py`、`commands/*.md`、`plugins/thoth/skills/thoth/{SKILL.md,commands/*}` 与 targeted tests；`env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/unit/test_command_spec_generation.py tests/unit/test_runtime_protocol.py tests/unit/test_run_state_machine.py` 为 `22 passed in 8.10s`，`python -m pytest -q tests/unit/test_claude_bridge.py` 为 `6 passed in 235.80s`，`python -m pytest -q tests/unit/test_cli_surface.py` 为 `13 passed in 530.10s`；Codex 根 skill `10832 -> 3258` bytes，Claude `run/loop/review` projection 分别 `4118 -> 2984`、`4053 -> 2969`、`3593 -> 2790`
+
 ## Abandoned
 
 - `TD-008` `[abandoned]`: 使用 bare command 名作为公共命令前缀

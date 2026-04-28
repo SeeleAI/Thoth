@@ -31,6 +31,9 @@
 
 ## Recent Important Changes
 
+- 2026-04-28: prompt router 已进一步收敛为“薄宿主投影 + 压缩 packet authority”：`CommandSpec` 新增 `route_class` / `intelligence_tier` / `packet_authority_mode`，Claude `commands/*.md` 收敛为 runtime-first 薄包装，Codex 根 `SKILL.md` 收敛为薄 dispatcher，并新增按命令拆分的 micro prompt files。
+- 2026-04-28: `run` / `loop` live 路径已从固定 `plan -> exec -> validate -> reflect` 收敛为 validator-centered 短链：默认 `execute -> validate`，仅在 validator 失败时进入 `reflect`；review packet 现显式区分 `exact_match` 与 `open_ended`。
+- 2026-04-28: 本轮 prompt/packet 体积压缩已落账：Codex 根 skill `10832 -> 3258` bytes，Claude `run` projection `4118 -> 2984` bytes，`loop` `4053 -> 2969` bytes，`review` `3593 -> 2790` bytes；相关 targeted pytest `22 + 6 + 13` 条均通过。
 - 2026-04-23: `/thoth:init` 已升级为 audit-first adopt/init，并生成最小 `.thoth` authority tree。
 - 2026-04-23: 仓库已明确双宿主同步开发与固定收尾流程。
 - 2026-04-23: 已建立双层自测试系统，`hard` 档覆盖真实 temp repo、runtime、dashboard 和 hooks。

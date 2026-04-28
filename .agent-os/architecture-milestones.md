@@ -24,12 +24,15 @@
 - 当前 task 级当前结论写入 `.thoth/project/tasks/*.result.json`，`sync` 会按 run 历史重建它们
 - 当前单次运行结果统一写入 `.thoth/runs/<run_id>/result.json`，不再把 `acceptance.json` 当主结果文件
 - 当前 run ledger 的长期 canonical 文件集已收敛为 `run.json`、`state.json`、`events.jsonl`、`result.json`、`artifacts.json`
-- 当前 `run` 已收敛为 Python 机械四阶段状态机：`plan -> exec -> validate -> reflect`
-- 当前四阶段固定产物为 `plan.json`、`exec.json`、`validate.json`、`reflect.json`；`result.json.result` 固定包含 `phase_statuses`、`validate_passed`、`final_summary`、`artifacts`、`next_hint`
-- 当前 `loop` 已收敛为父级 orchestrator：父 run 记录预算与 child lineage，每轮显式创建独立 child `run`，并通过上一轮 `reflect` 作为下一轮 `plan` 输入
+- 当前 `run` 已收敛为 validator-centered Python phase engine：默认 `execute -> validate`，只有 validator 失败时才进入 `reflect`
+- 当前 phase 产物固定为 `execute.json`、`validate.json`、条件性的 `reflect.json`；`result.json.result` 固定包含 `phase_statuses`、`validate_passed`、`final_summary`、`artifacts`、`next_hint`
+- 当前 `loop` 已收敛为父级 orchestrator：父 run 记录预算与 child lineage，每轮显式创建独立 child `run`，并仅在失败后通过上一轮 `reflect` 结果影响下一轮
 - heartbeat 当前写入 `state.json.last_heartbeat_at`，而不是单独的 `heartbeat.json`
 - `loop` 会按 `task_id + review_binding.target + TaskResult.last_closure_at` 自动吸收新鲜 review findings
-- 当前 prompt authority 已显式拆成 `thoth/prompt_specs.py` 与 `thoth/prompt_validators.py`：前者只保存命令/phase prompt spec 与宿主投影所需静态文案，后者只负责 phase/review 输出校验
+- 当前 prompt authority 已显式拆成 `thoth/prompt_specs.py` 与 `thoth/prompt_validators.py`：前者现已收敛为压缩 authority source，只保存 `route_class` / `intelligence_tier` / `packet_authority_mode` / `objective` / `hard_stops` / `reply_budget` 等最小字段，后者只负责 phase/review 输出校验
+- Claude `commands/*.md` 当前已收敛为 runtime-first 薄包装：保留 bridge 执行、最小 fail-fast 规则与一条结果约束，不再重复展开大段 scope/runtime/shared-authority 文本
+- Codex 当前已收敛为“薄 dispatcher + per-command micro prompt files”：根 `plugins/thoth/skills/thoth/SKILL.md` 不再内联全量命令合同，按命令拆分的 micro prompt surface 固定生成到 `plugins/thoth/skills/thoth/commands/*.md`
+- `review` packet 当前显式区分 `exact_match` 与 `open_ended` 两条内部路由；`run/loop` packet 当前显式声明 validator-centered short lifecycle
 - dashboard 模板可以把 `.thoth/runs/*` 的 active run、history run 和事件日志绑定回 task 视图
 - dashboard 前端主壳已从旧多页导航切到单一 workbench shell，并保留 `/overview`、`/tasks`、`/milestones`、`/dag`、`/timeline`、`/todo`、`/activity` 的兼容入口
 - dashboard 已新增 `overview-summary` 与 `gantt` 只读读面；驾驶舱、Task Detail 与时间线面板均只消费 `.thoth` authority、task result、runtime ledger 与 `.agent-os` 派生结果
@@ -77,9 +80,9 @@
    - `discuss` 写入后立即编译
    - 不直接承载运行结果，也不管理 `TaskResult`
 3. `Run`
-   - 包含 runtime protocol、execution orchestration、project materialization
-   - 负责 `init` / `sync`、`run` / `loop` / `review` / `extend`、live/sleep、lease、worker、结果落账
-   - 这是唯一承接 prompt-bearing control commands 的核心实现层
+  - 包含 runtime protocol、execution orchestration、project materialization
+  - 负责 `init` / `sync`、`run` / `loop` / `review` / `extend`、live/sleep、lease、worker、结果落账
+  - 这是唯一承接 prompt-bearing control commands 与 packet authority 的核心实现层
 4. `Observe`
    - 包含 `status` / `doctor` / `dashboard` / `report` / `selftest`
    - 纯读 authority 与当前态文件，不承担修复、同步或隐式写入
