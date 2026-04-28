@@ -8,6 +8,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from . import processes as _processes
 from .capabilities import (
@@ -17,7 +18,15 @@ from .capabilities import (
     _preflight_host_real,
     detect_capabilities,
 )
-from .fixtures import _host_real_contract_payloads, _host_real_decision_payload, _seed_host_real_repo, _snapshot_runtime
+from .fixtures import (
+    _expected_host_review_result,
+    _host_real_contract_payloads,
+    _host_real_decision_payload,
+    _host_real_source_fingerprint,
+    _host_real_source_unchanged,
+    _seed_host_real_repo,
+    _snapshot_runtime,
+)
 from .hard_suite import _repo_hard_suite, _verify_host_run_completion
 from .host_claude import _host_claude
 from .host_codex import _host_codex
@@ -33,8 +42,7 @@ from .model import (
     FIXED_CODEX_DIR,
     FIXED_RUNTIME_DIR,
     HARD_SUITE_MAX_RUNTIME_SECONDS,
-    HEAVY_HOST_MAX_RUNTIME_SECONDS,
-    HEAVY_PREFLIGHT_MAX_RUNTIME_SECONDS,
+    HEAVY_SUITE_MAX_RUNTIME_SECONDS,
     ROOT,
 )
 from .processes import (
@@ -91,22 +99,22 @@ def run_selftest(
     exit_code = 0
 
     try:
-        project_dir = base_dir / "repo-hard"
-        project_dir.mkdir(parents=True, exist_ok=True)
         _processes._SELFTEST_STREAM_OUTPUT = True
-        with _SelftestBudget(HARD_SUITE_MAX_RUNTIME_SECONDS, label=f"{tier} repo-hard suite"):
-            hard_details = _repo_hard_suite(project_dir, recorder)
-        recorder.write_json("repo-hard/details.json", hard_details)
-        recorder.add("repo-hard.snapshot", "passed", "Captured runtime and project snapshots.", _snapshot_runtime(recorder, project_dir, "repo-hard"))
-
-        if tier == "heavy":
-            with _SelftestBudget(HEAVY_PREFLIGHT_MAX_RUNTIME_SECONDS, label="heavy host preflight"):
-                _preflight_host_real(capabilities, recorder)
+        if tier == "hard":
+            project_dir = base_dir / "repo-hard"
+            project_dir.mkdir(parents=True, exist_ok=True)
+            with _SelftestBudget(HARD_SUITE_MAX_RUNTIME_SECONDS, label="hard repo-hard suite"):
+                hard_details = _repo_hard_suite(project_dir, recorder)
+            recorder.write_json("repo-hard/details.json", hard_details)
+            recorder.add("repo-hard.snapshot", "passed", "Captured runtime and project snapshots.", _snapshot_runtime(recorder, project_dir, "repo-hard"))
+        elif tier == "heavy":
             requested_hosts = ["claude", "codex"] if hosts in {"auto", "both"} else ([] if hosts == "none" else [hosts])
             if only_host is not None:
                 requested_hosts = [only_host]
             if not requested_hosts:
                 raise RuntimeError("heavy host-real selftest requires at least one explicit host")
+            with _SelftestBudget(HEAVY_SUITE_MAX_RUNTIME_SECONDS, label="heavy host-real command gate"):
+                _preflight_host_real(capabilities, recorder, requested_hosts=set(requested_hosts))
 
             for host_name, host_project in (("claude", FIXED_CLAUDE_DIR), ("codex", FIXED_CODEX_DIR)):
                 if host_name not in requested_hosts:
@@ -119,11 +127,10 @@ def run_selftest(
                     _snapshot_runtime(recorder, host_project, f"host-{host_name}-seed"),
                 )
                 try:
-                    with _SelftestBudget(HEAVY_HOST_MAX_RUNTIME_SECONDS, label=f"heavy host {host_name}"):
-                        if host_name == "claude":
-                            _host_claude(ROOT, host_project, recorder, from_step=from_step, to_step=to_step)
-                        else:
-                            _host_codex(ROOT, host_project, recorder, from_step=from_step, to_step=to_step)
+                    if host_name == "claude":
+                        _host_claude(ROOT, host_project, recorder, from_step=from_step, to_step=to_step)
+                    else:
+                        _host_codex(ROOT, host_project, recorder, from_step=from_step, to_step=to_step)
                 except Exception as exc:  # pragma: no cover - environment-specific
                     recorder.add(f"host.{host_name}", "failed", f"{host_name} host matrix failed: {exc}", _snapshot_runtime(recorder, host_project, f"host-{host_name}"))
                 recorder.add(

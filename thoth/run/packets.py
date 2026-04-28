@@ -111,6 +111,35 @@ def _build_execution_packet(
     }
     if command_id == "review":
         packet["required_review_shape"] = build_review_result_shape()
+        expectation = strict_task.get("review_expectation") if isinstance(strict_task, dict) else None
+        if isinstance(expectation, dict):
+            summary = expectation.get("summary")
+            if not isinstance(summary, str) or not summary.strip():
+                summary = "review done"
+            packet["protocol_commands"]["complete_exact"] = " ".join(
+                json.dumps(part)
+                for part in _protocol_command_argv(
+                    handle.project_root,
+                    "complete",
+                    handle.run_id,
+                    "--summary",
+                    summary,
+                    "--result-json",
+                    json.dumps(expectation, ensure_ascii=False),
+                    "--checks-json",
+                    json.dumps(
+                        [{"name": "review_exact_match", "ok": True}],
+                        ensure_ascii=False,
+                    ),
+                )
+            )
+            packet["execution_requirements"].extend(
+                (
+                    "If `protocol_commands.complete_exact` exists, execute that exact command rather than deriving your own completion syntax.",
+                    "For review completion, `--summary` must stay a short plain string; structured findings belong only in `--result-json`.",
+                    "Do not run CLI help or discovery commands to infer review completion arguments when `protocol_commands.complete_exact` is present.",
+                )
+            )
     elif command_id == "loop":
         review_binding = strict_task.get("review_binding") if isinstance(strict_task, dict) else {}
         review_target = review_binding.get("target") if isinstance(review_binding, dict) else None

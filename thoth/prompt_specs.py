@@ -106,6 +106,7 @@ COMMAND_PROMPT_SPECS: dict[str, CommandPromptSpec] = {
         hard_constraints=(
             "Do not modify project code.",
             "Do not claim acceptance without evidence.",
+            "If `packet.strict_task.review_expectation` exists, return that exact structured result and nothing else.",
             "Do not emit free-form review essays outside the findings object.",
         ),
         output_contract=(
@@ -587,6 +588,45 @@ def build_codex_public_command_prompt(command_id: str, *, public_command: str, s
     return " ".join(lines)
 
 
+def build_codex_selftest_command_probe_prompt(*, public_command: str, shell_command: str, done_token: str) -> str:
+    return " ".join(
+        (
+            "This is a Thoth heavy selftest command probe.",
+            "Operate only on this repo.",
+            f"The Codex public surface is `{public_command}`, but in the workspace shell you must execute it literally as `{shell_command}`.",
+            "Execute that shell command immediately as your first meaningful action.",
+            "Do not inspect files, search memories, explain, retry, or execute any second shell command.",
+            "Do not continue a live packet locally and do not substitute a different entrypoint.",
+            "If the literal `thoth` shell command is missing, treat that as host install drift.",
+            f"After the shell command exits successfully, reply with `{done_token}` only.",
+        )
+    )
+
+
+def build_codex_selftest_review_probe_prompt(*, public_command: str, shell_command: str, done_token: str) -> str:
+    return " ".join(
+        (
+            "This is a Thoth heavy selftest review probe.",
+            "Operate only on this repo.",
+            f"The Codex public surface is `{public_command}`, but in the workspace shell you must execute it literally as `{shell_command}`.",
+            "Execute that shell command immediately as your first action.",
+            "Do not send commentary, progress updates, plans, explanations, or any non-command message before that command.",
+            "After the review packet is prepared, stay inside the Thoth review protocol only.",
+            "Inspect only the review target, the prepared packet, and files directly required by the protocol.",
+            "Do not inspect CLI help, do not explore unrelated files, and do not execute exploratory commands.",
+            "Allowed follow-up commands only: the packet-provided protocol command(s), the strict task eval entrypoint, and the minimum direct file reads needed to perform this review.",
+            "Do not run `--help`, `which`, `codex`, `grep`, or any discovery command after the packet is prepared.",
+            "Do not modify code, do not add a second finding, and do not emit prose outside the structured review result.",
+            "If `packet.strict_task.review_expectation` exists, use that exact object as the final review result.",
+            "If `packet.protocol_commands.complete_exact` exists, execute that exact completion command.",
+            "Run the strict task eval entrypoint exactly once if the packet requires it, then finish the run via the packet-provided complete command.",
+            "For review completion, `--summary` must be a short plain string only; the structured review object belongs only in `--result-json`.",
+            "When completing the run, pass the exact review result via `--result-json` and mark the exact-match check as passing via `--checks-json`.",
+            f"After the review run terminalizes successfully, reply with `{done_token}` only.",
+        )
+    )
+
+
 def build_review_result_shape() -> dict[str, Any]:
     return {
         "summary": "Short summary <= 48 UTF-8 chars.",
@@ -608,6 +648,8 @@ __all__ = [
     "CommandPromptSpec",
     "PhasePromptSpec",
     "build_codex_public_command_prompt",
+    "build_codex_selftest_command_probe_prompt",
+    "build_codex_selftest_review_probe_prompt",
     "build_review_result_shape",
     "command_prompt_spec",
     "phase_prompt_spec",

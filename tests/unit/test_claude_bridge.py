@@ -40,7 +40,15 @@ def _run_bridge(tmp_path: Path, command_id: str, *args: str) -> subprocess.Compl
     )
 
 
-def _write_task(project_dir: Path, task_id: str, *, title: str, goal_statement: str) -> None:
+def _write_task(
+    project_dir: Path,
+    task_id: str,
+    *,
+    title: str,
+    goal_statement: str,
+    review_binding: dict[str, object] | None = None,
+    review_expectation: dict[str, object] | None = None,
+) -> None:
     decisions = project_dir / ".thoth" / "project" / "decisions"
     contracts = project_dir / ".thoth" / "project" / "contracts"
     decisions.mkdir(parents=True, exist_ok=True)
@@ -66,32 +74,32 @@ def _write_task(project_dir: Path, task_id: str, *, title: str, goal_statement: 
         + "\n",
         encoding="utf-8",
     )
+    contract_payload = {
+        "schema_version": 1,
+        "kind": "contract",
+        "contract_id": contract_id,
+        "task_id": task_id,
+        "scope_id": f"scope-{task_id}",
+        "direction": "frontend",
+        "module": "f1",
+        "title": title,
+        "decision_ids": [decision_id],
+        "candidate_method_id": "repo-change",
+        "goal_statement": goal_statement,
+        "implementation_recipe": ["Make the requested repo change."],
+        "eval_entrypoint": {"command": "pytest -q"},
+        "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
+        "failure_classes": ["runtime_drift"],
+        "validate_output_schema": default_validate_output_schema(),
+        "status": "frozen",
+        "blocking_gaps": [],
+    }
+    if review_binding is not None:
+        contract_payload["review_binding"] = review_binding
+    if review_expectation is not None:
+        contract_payload["review_expectation"] = review_expectation
     (contracts / f"{contract_id}.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "kind": "contract",
-                "contract_id": contract_id,
-                "task_id": task_id,
-                "scope_id": f"scope-{task_id}",
-                "direction": "frontend",
-                "module": "f1",
-                "title": title,
-                "decision_ids": [decision_id],
-                "candidate_method_id": "repo-change",
-                "goal_statement": goal_statement,
-                "implementation_recipe": ["Make the requested repo change."],
-                "eval_entrypoint": {"command": "pytest -q"},
-                "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
-                "failure_classes": ["runtime_drift"],
-                "validate_output_schema": default_validate_output_schema(),
-                "status": "frozen",
-                "blocking_gaps": [],
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
+        json.dumps(contract_payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     compile_task_authority(project_dir)
@@ -158,6 +166,37 @@ def test_bridge_rewrites_review_positional_target_for_prepare(tmp_path):
     assert payload["packet"]["command_id"] == "review"
     assert payload["packet"]["target"] == "backend/app.py"
     assert "protocol_commands" in payload["packet"]
+
+
+def test_bridge_review_packet_includes_strict_task_when_task_id_is_ready(tmp_path):
+    init_result = _run_bridge(tmp_path, "init")
+    assert json.loads(init_result.stdout)["bridge_success"] is True
+    _write_task(
+        tmp_path,
+        "task-review-probe",
+        title="Return fixed review finding",
+        goal_statement="Inspect tracker/review_probe.py and emit one exact structured finding.",
+        review_binding={"target": "tracker/review_probe.py"},
+        review_expectation={
+            "summary": "1 issue",
+            "findings": [
+                {
+                    "severity": "high",
+                    "title": "Empty title accepted",
+                    "path": "tracker/review_probe.py",
+                    "line": 4,
+                    "summary": "Blank titles are persisted as valid task state.",
+                }
+            ],
+        },
+    )
+
+    result = _run_bridge(tmp_path, "review", "--task-id", "task-review-probe", "tracker/review_probe.py")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["bridge_success"] is True
+    assert payload["packet"]["strict_task"]["task_id"] == "task-review-probe"
+    assert payload["packet"]["strict_task"]["review_expectation"]["summary"] == "1 issue"
 
 
 def test_bridge_run_without_task_id_returns_candidate_tasks_and_stops(tmp_path):

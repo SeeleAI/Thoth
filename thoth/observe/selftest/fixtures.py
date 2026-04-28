@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -46,14 +47,29 @@ def _host_real_decision_payload() -> dict[str, Any]:
         "schema_version": 1,
         "kind": "decision",
         "decision_id": "DEC-host-real-selftest",
-        "scope_id": "deterministic-python-repo",
-        "question": "Which deterministic Python workflow should the disposable host repo follow?",
-        "candidate_method_ids": ["feature-run", "bugfix-run", "review-loop"],
-        "selected_values": {"workflow": ["feature-run", "bugfix-run", "review-loop"]},
+        "scope_id": "command-probe-repo",
+        "question": "Which minimal Thoth command-probe workflow should the disposable host repo follow?",
+        "candidate_method_ids": ["runtime-probe", "review-probe"],
+        "selected_values": {"workflow": ["runtime-probe", "review-probe"]},
         "status": "frozen",
         "unresolved_gaps": [],
         "created_at": now,
         "updated_at": now,
+    }
+
+
+def _expected_host_review_result() -> dict[str, Any]:
+    return {
+        "summary": "1 issue",
+        "findings": [
+            {
+                "severity": "high",
+                "title": "Empty title accepted",
+                "path": "tracker/review_probe.py",
+                "line": 4,
+                "summary": "Blank titles are persisted as valid task state.",
+            }
+        ],
     }
 
 
@@ -63,29 +79,29 @@ def _host_real_contract_payloads() -> list[dict[str, Any]]:
         {
             "schema_version": 1,
             "kind": "contract",
-            "contract_id": "CTR-host-real-feature",
-            "task_id": "task-feature-owner-due-date",
-            "scope_id": "deterministic-python-repo",
+            "contract_id": "CTR-host-real-runtime",
+            "task_id": "task-runtime-probe",
+            "scope_id": "command-probe-repo",
             "direction": "backend",
             "module": "selftest",
-            "title": "Persist owner and due date during task creation",
+            "title": "Exercise durable sleep handoff without source edits",
             "decision_ids": ["DEC-host-real-selftest"],
-            "candidate_method_id": "feature-run",
-            "goal_statement": "create_task() must persist owner and due_date in both return payload and stored task data.",
+            "candidate_method_id": "runtime-probe",
+            "goal_statement": "Public `run --sleep` and `loop --sleep` must create durable ledgers, remain attachable, and stop cleanly without touching source files.",
             "implementation_recipe": [
-                "Read tracker/store.py before editing.",
-                "Keep the repo pure Python with deterministic data file semantics.",
-                "Make create_task() persist owner and due_date instead of dropping them.",
-                "Validate with python scripts/validate_feature.py.",
+                "Treat this task as a runtime protocol probe rather than a product-development task.",
+                "Do not modify repo source files.",
+                "Do not invent feature work, fallback validators, or review closure work.",
+                "If an external worker is handed off successfully, stop there.",
             ],
-            "baseline_ids": ["selftest-deterministic-python-repo"],
-            "eval_entrypoint": {"command": "python scripts/validate_feature.py"},
-            "primary_metric": {"name": "deterministic_acceptance", "direction": "gte", "threshold": 1},
-            "failure_classes": ["feature_gap"],
+            "baseline_ids": ["selftest-command-probe-repo"],
+            "eval_entrypoint": {"command": "python scripts/runtime_probe.py"},
+            "primary_metric": {"name": "runtime_contract_ok", "direction": "gte", "threshold": 1},
+            "failure_classes": ["runtime_handoff_gap"],
             "validate_output_schema": default_validate_output_schema(),
             "acceptance_contract": {
-                "usable_question": "Does create_task() produce the requested owner/due_date output under deterministic validation?",
-                "goal_question": "Does the feature task close without fallback or degraded behavior?",
+                "usable_question": "Does the runtime handoff create an attachable external-worker ledger?",
+                "goal_question": "Does the runtime probe stop cleanly without source edits or fallback paths?",
             },
             "status": "frozen",
             "blocking_gaps": [],
@@ -95,62 +111,31 @@ def _host_real_contract_payloads() -> list[dict[str, Any]]:
         {
             "schema_version": 1,
             "kind": "contract",
-            "contract_id": "CTR-host-real-bugfix",
-            "task_id": "task-bugfix-column-persist",
-            "scope_id": "deterministic-python-repo",
+            "contract_id": "CTR-host-real-review",
+            "task_id": "task-review-probe",
+            "scope_id": "command-probe-repo",
             "direction": "backend",
             "module": "selftest",
-            "title": "Persist column updates after reload",
+            "title": "Return the fixed single finding for the known review defect",
             "decision_ids": ["DEC-host-real-selftest"],
-            "candidate_method_id": "bugfix-run",
-            "goal_statement": "update_task() must persist column changes into stored task data.",
+            "candidate_method_id": "review-probe",
+            "goal_statement": "Review `tracker/review_probe.py`, emit exactly one structured finding, and do not modify source files.",
+            "review_binding": {"target": "tracker/review_probe.py"},
+            "review_expectation": _expected_host_review_result(),
             "implementation_recipe": [
-                "Inspect tracker/store.py column update behavior.",
-                "Persist the requested column instead of silently keeping the old value.",
-                "Do not regress the feature task semantics.",
-                "Validate with python scripts/validate_bugfix.py.",
+                "Inspect only the review target and any imports needed to understand it.",
+                "Return exactly the expected structured finding.",
+                "Do not emit prose outside the structured review result.",
+                "Do not modify code.",
             ],
-            "baseline_ids": ["selftest-deterministic-python-repo"],
-            "eval_entrypoint": {"command": "python scripts/validate_bugfix.py"},
-            "primary_metric": {"name": "deterministic_acceptance", "direction": "gte", "threshold": 1},
-            "failure_classes": ["persistence_bug"],
+            "baseline_ids": ["selftest-command-probe-repo"],
+            "eval_entrypoint": {"command": "python scripts/runtime_probe.py"},
+            "primary_metric": {"name": "review_exact_match", "direction": "gte", "threshold": 1},
+            "failure_classes": ["review_output_drift"],
             "validate_output_schema": default_validate_output_schema(),
             "acceptance_contract": {
-                "usable_question": "Does update_task() persist the requested column after reload under deterministic validation?",
-                "goal_question": "Does the bugfix task close without fallback or degraded behavior?",
-            },
-            "status": "frozen",
-            "blocking_gaps": [],
-            "created_at": now,
-            "updated_at": now,
-        },
-        {
-            "schema_version": 1,
-            "kind": "contract",
-            "contract_id": "CTR-host-real-loop",
-            "task_id": "task-loop-close-review",
-            "scope_id": "deterministic-python-repo",
-            "direction": "backend",
-            "module": "selftest",
-            "title": "Close review findings and satisfy deterministic full validation",
-            "decision_ids": ["DEC-host-real-selftest"],
-            "candidate_method_id": "review-loop",
-            "goal_statement": "Review findings are fixed and the repo passes the full deterministic validator without degraded paths.",
-            "review_binding": {"target": "tracker/store.py"},
-            "implementation_recipe": [
-                "Use review findings against tracker/store.py as authority.",
-                "Fix the empty-title validation gap in update_task().",
-                "Keep feature and bugfix validators green while closing the review issue.",
-                "Validate with python scripts/validate_full.py.",
-            ],
-            "baseline_ids": ["selftest-deterministic-python-repo"],
-            "eval_entrypoint": {"command": "python scripts/validate_full.py"},
-            "primary_metric": {"name": "deterministic_acceptance", "direction": "gte", "threshold": 1},
-            "failure_classes": ["review_gap"],
-            "validate_output_schema": default_validate_output_schema(),
-            "acceptance_contract": {
-                "usable_question": "Does the repo satisfy feature, bugfix, and review-closure behavior under deterministic validation?",
-                "goal_question": "Does the review-closure loop finish without fallback or degraded behavior?",
+                "usable_question": "Does the review output match the fixed expected finding exactly?",
+                "goal_question": "Does the review probe finish with one exact finding and no code edits?",
             },
             "status": "frozen",
             "blocking_gaps": [],
@@ -190,6 +175,27 @@ def _seed_host_real_repo(project_dir: Path, recorder: Recorder | None = None) ->
     project_dir.mkdir(parents=True, exist_ok=True)
     seed_host_real_app(project_dir)
     _init_git_repo(project_dir)
+
+
+def _host_real_source_fingerprint(project_dir: Path) -> dict[str, str]:
+    tracked_root = project_dir / "tracker"
+    fingerprints: dict[str, str] = {}
+    if not tracked_root.is_dir():
+        return fingerprints
+    for path in sorted(tracked_root.rglob("*")):
+        if not path.is_file():
+            continue
+        relpath = path.relative_to(project_dir).as_posix()
+        fingerprints[relpath] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return fingerprints
+
+
+def _host_real_source_unchanged(project_dir: Path, baseline: dict[str, str]) -> tuple[bool, dict[str, Any]]:
+    current = _host_real_source_fingerprint(project_dir)
+    return current == baseline, {
+        "baseline": baseline,
+        "current": current,
+    }
 
 def _run_deterministic_validators(
     project_dir: Path,
@@ -453,5 +459,17 @@ def _review_findings_payload(project_dir: Path, run_id: str, acceptance: dict[st
         if isinstance(extracted, list) and extracted:
             return [item for item in extracted if isinstance(item, dict)]
     return []
+
+
+def _canonical_review_result_payload(project_dir: Path, run_id: str, acceptance: dict[str, Any]) -> dict[str, Any]:
+    result_payload = acceptance.get("result")
+    summary = result_payload.get("summary") if isinstance(result_payload, dict) else None
+    findings = _review_findings_payload(project_dir, run_id, acceptance)
+    payload: dict[str, Any] = {}
+    if isinstance(summary, str) and summary.strip():
+        payload["summary"] = summary.strip()
+    if findings:
+        payload["findings"] = findings
+    return payload
 
 __all__ = [name for name in globals() if not name.startswith("__")]

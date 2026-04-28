@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .host_common import (
+    _expected_host_review_result,
     _looks_like_transient_host_outage,
     _normalize_codex_public_command_result,
     _run_codex_public_command,
@@ -25,6 +26,7 @@ def _host_codex(
 
     def run_public_command(public_command: str, *, recorder: Recorder, artifact_name: str, timeout: float = 240) -> tuple[CommandResult, list[str]]:
         done_token = f"{_safe_name(artifact_name).upper()}_DONE"
+        extra_env = {"THOTH_TEST_EXTERNAL_WORKER_MODE": "hold"} if "--sleep" in public_command.split() else None
         result, artifacts = _run_codex_public_command(
             project_dir,
             public_command,
@@ -32,11 +34,13 @@ def _host_codex(
             recorder=recorder,
             artifact_name=artifact_name,
             timeout=timeout,
+            env=extra_env,
         )
         result = _normalize_codex_public_command_result(
             result,
             public_command=public_command,
             done_token=done_token,
+            allow_followup_commands=public_command.strip().startswith("$thoth review"),
         )
         return result, artifacts
 
@@ -55,17 +59,20 @@ def _host_codex(
             "doctor": "$thoth doctor --quick",
             "discuss_decision": f"$thoth discuss --decision-json \"$(cat {decision_path})\"",
             "discuss_contracts": contract_commands,
-            "run_feature": "$thoth run --host codex --task-id task-feature-owner-due-date",
-            "run_bugfix": "$thoth run --host codex --executor codex --sleep --task-id task-bugfix-column-persist",
-            "review": "$thoth review --task-id task-loop-close-review --host codex tracker/store.py",
-            "dashboard": "$thoth dashboard",
-            "loop": "$thoth loop --host codex --executor codex --sleep --task-id task-loop-close-review",
-            "loop_live_followup": "$thoth loop --host codex --task-id task-loop-close-review",
-            "report": "$thoth report",
+            "run_sleep": "$thoth run --host codex --executor codex --sleep --task-id task-runtime-probe",
+            "run_watch": lambda run_id: f"$thoth run --watch {run_id}",
+            "run_stop": lambda run_id: f"$thoth run --stop {run_id}",
+            "review": "$thoth review --task-id task-review-probe --host codex --executor codex tracker/review_probe.py",
+            "dashboard_start": "$thoth dashboard start",
+            "dashboard_stop": "$thoth dashboard stop",
+            "loop_sleep": "$thoth loop --host codex --executor codex --sleep --task-id task-runtime-probe",
+            "loop_stop": lambda run_id: f"$thoth loop --stop {run_id}",
             "sync": "$thoth sync",
         },
         from_step=from_step,
         to_step=to_step,
+        review_expected_executor="codex",
+        review_expected_result=_expected_host_review_result(),
     )
     conversations_path = project_dir / ".thoth" / "project" / "conversations.jsonl"
     skill_load_failed = any("failed to load skill" in result.stderr.lower() for result in command_results.values())

@@ -310,8 +310,21 @@ def _run_command(
     try:
         process.wait(timeout=1.0 if timed_out else 0.5)
     except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=1.0)
+        try:
+            process.terminate()
+        except Exception:
+            pass
+        try:
+            process.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except Exception:
+                pass
+            try:
+                process.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                pass
 
     stdout = b"".join(stdout_chunks).decode("utf-8", errors="ignore")
     stderr = b"".join(stderr_chunks).decode("utf-8", errors="ignore")

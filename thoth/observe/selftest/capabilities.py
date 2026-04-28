@@ -58,8 +58,9 @@ def detect_capabilities() -> dict[str, Any]:
 
     if capabilities["claude_cli_present"]:
         result = _run_command(["claude", "auth", "status"], cwd=ROOT, timeout=20)
-        capabilities["claude_authenticated"] = result.returncode == 0 and "\"loggedIn\": true" in result.stdout
-        capabilities["claude_auth_status"] = result.stdout.strip() or result.stderr.strip()
+        status_text = result.stdout.strip() or result.stderr.strip()
+        capabilities["claude_authenticated"] = "\"loggedIn\": true" in status_text
+        capabilities["claude_auth_status"] = status_text
     else:
         capabilities["claude_authenticated"] = False
 
@@ -159,7 +160,7 @@ def _ensure_codex_hooks_enabled(recorder: Recorder) -> dict[str, Any]:
 
 
 def _ensure_codex_skill_installed(recorder: Recorder) -> dict[str, Any]:
-    source = ROOT / ".agents" / "skills" / CODEX_SKILL_NAME
+    source = ROOT / "plugins" / "thoth" / "skills" / CODEX_SKILL_NAME
     if not source.exists():
         raise RuntimeError(f"missing generated Codex skill at {source}")
     target = _codex_skills_root() / CODEX_SKILL_NAME
@@ -230,13 +231,18 @@ def _ensure_codex_global_hooks(recorder: Recorder) -> dict[str, Any]:
     }
 
 
-def _preflight_host_real(capabilities: dict[str, Any], recorder: Recorder) -> None:
+def _preflight_host_real(
+    capabilities: dict[str, Any],
+    recorder: Recorder,
+    *,
+    requested_hosts: set[str],
+) -> None:
     required = {
-        "codex_cli_present": bool(capabilities.get("codex_cli_present")),
-        "codex_authenticated": bool(capabilities.get("codex_authenticated")),
-        "claude_cli_present": bool(capabilities.get("claude_cli_present")),
-        "claude_authenticated": bool(capabilities.get("claude_authenticated")),
-        "thoth_cli_present": bool(capabilities.get("thoth_cli_present")),
+        "codex_cli_present": bool(capabilities.get("codex_cli_present")) if "codex" in requested_hosts else True,
+        "codex_authenticated": bool(capabilities.get("codex_authenticated")) if "codex" in requested_hosts else True,
+        "claude_cli_present": bool(capabilities.get("claude_cli_present")) if "claude" in requested_hosts else True,
+        "claude_authenticated": bool(capabilities.get("claude_authenticated")) if "claude" in requested_hosts else True,
+        "thoth_cli_present": bool(capabilities.get("thoth_cli_present")) if "codex" in requested_hosts else True,
     }
     missing = [name for name, ok in required.items() if not ok]
     if missing:
@@ -245,9 +251,10 @@ def _preflight_host_real(capabilities: dict[str, Any], recorder: Recorder) -> No
             detail += ". Host install drift: expected the plugin-installed `thoth` shell wrapper on PATH."
         recorder.add("preflight.host_tools", "failed", detail)
         raise RuntimeError(detail)
-    _ensure_codex_hooks_enabled(recorder)
-    _ensure_codex_global_hooks(recorder)
-    _ensure_codex_skill_installed(recorder)
+    if "codex" in requested_hosts:
+        _ensure_codex_hooks_enabled(recorder)
+        _ensure_codex_global_hooks(recorder)
+        _ensure_codex_skill_installed(recorder)
     recorder.add(
         "preflight.deterministic_seed",
         "passed",

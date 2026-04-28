@@ -88,6 +88,44 @@ def test_protocol_updates_artifacts_and_completion_shape(tmp_path):
     assert artifacts["artifacts"][0]["label"] == "findings"
 
 
+def test_review_packet_includes_exact_completion_command_when_expectation_is_frozen(tmp_path):
+    project = _prepare_project(tmp_path)
+    handle, packet = prepare_execution(
+        project,
+        command_id="review",
+        title="Review demo",
+        task_id="task-review-probe",
+        host="claude",
+        executor="codex",
+        sleep_requested=False,
+        target="tracker/review_probe.py",
+        goal="review app",
+        strict_task={
+            "task_id": "task-review-probe",
+            "review_expectation": {
+                "summary": "1 issue",
+                "findings": [
+                    {
+                        "severity": "high",
+                        "title": "Empty title accepted",
+                        "path": "tracker/review_probe.py",
+                        "line": 4,
+                        "summary": "Blank titles are persisted as valid task state.",
+                    }
+                ],
+            },
+        },
+    )
+
+    exact_command = packet["protocol_commands"]["complete_exact"]
+    assert handle.run_id in exact_command
+    assert "--summary" in exact_command
+    assert "--result-json" in exact_command
+    assert "--checks-json" in exact_command
+    assert "review_exact_match" in exact_command
+    assert "Empty title accepted" in exact_command
+
+
 def test_review_completion_dedupes_duplicate_findings(tmp_path):
     project = _prepare_project(tmp_path)
     handle, _packet = prepare_execution(

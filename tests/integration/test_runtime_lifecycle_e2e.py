@@ -256,6 +256,14 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     dashboard_env = {"THOTH_HEARTBEAT_STALE_MINUTES": "1"}
     start = _run_cli(thoth_project, "dashboard", "start", env=dashboard_env, timeout=60)
     assert start.returncode == 0, start.stderr
+    status_cache_path = thoth_project / ".thoth" / "derived" / "dashboard.status.json"
+    port_cache_path = thoth_project / ".thoth" / "derived" / "dashboard.port"
+    assert status_cache_path.exists()
+    assert port_cache_path.exists()
+    cached_status = _read_json(status_cache_path)
+    assert isinstance(cached_status.get("runtime"), dict)
+    assert "active_run_count" in cached_status["runtime"]
+    assert port_cache_path.read_text(encoding="utf-8").strip() == str(port)
 
     def _status_payload():
         with urlopen(f"http://127.0.0.1:{port}/api/status", timeout=5) as response:  # noqa: S310
@@ -337,6 +345,7 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
         capture_output=True,
         text=True,
         timeout=60,
+        env=hook_env,
     )
     assert hook_end.returncode == 0
     assert "PASS" in hook_end.stdout or hook_end.stdout == ""
@@ -376,9 +385,13 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
 
     stop = _run_cli(thoth_project, "dashboard", "stop", timeout=30)
     assert stop.returncode == 0
+    assert not status_cache_path.exists()
+    assert not port_cache_path.exists()
 
     restart = _run_cli(thoth_project, "dashboard", "start", env=dashboard_env, timeout=60)
     assert restart.returncode == 0
+    assert status_cache_path.exists()
+    assert port_cache_path.exists()
     _wait_until(
         lambda: _status_payload()["runtime"]["active_run_count"] >= 0,
         timeout=20,
@@ -386,4 +399,6 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     )
 
     _run_cli(thoth_project, "dashboard", "stop", timeout=30)
+    assert not status_cache_path.exists()
+    assert not port_cache_path.exists()
     _run_cli(thoth_project, "run", "--stop", run_id, timeout=20)

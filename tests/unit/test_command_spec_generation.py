@@ -49,6 +49,12 @@ def test_claude_review_surface_preserves_structured_arguments():
     assert 'scripts/thoth-claude-command.sh" review --host claude $ARGUMENTS' in rendered
     assert "allowed-tools: Read, Glob, Grep, Bash, Task" in rendered
     assert "packet.required_review_shape" in rendered
+    assert "packet.strict_task.review_expectation" in rendered
+    assert "packet.protocol_commands.complete_exact" in rendered
+    assert "do not write `.thoth/runs/*/result.json`" in rendered
+    assert "call `packet.protocol_commands.complete` with `--result-json`" in rendered
+    assert "never put the structured review JSON into `--summary`" in rendered
+    assert "do not inspect or invoke Codex CLI" in rendered
     assert "Thoth structured reviewer" in rendered
 
 
