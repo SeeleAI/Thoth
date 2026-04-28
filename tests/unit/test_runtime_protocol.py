@@ -42,6 +42,7 @@ def test_prepare_execution_writes_packet_and_live_dispatch(tmp_path):
     assert packet["dispatch_mode"] == "live_native"
     assert (handle.run_dir / "packet.json").exists()
     assert "next_phase" in packet["controller_commands"]
+    assert len(json.dumps(packet, ensure_ascii=False)) < 3400
 
 
 def test_protocol_updates_artifacts_and_completion_shape(tmp_path):
@@ -215,6 +216,8 @@ def test_external_worker_prompt_mentions_protocol_and_limits(tmp_path):
     assert "\"max_iterations\": 10" in prompt
     assert "pytest -q tests/test_demo.py" in prompt
     assert "worker-output.json" in prompt
+    assert len(json.dumps(packet, ensure_ascii=False)) < 4200
+    assert len(prompt) < 4000
 
 
 def test_phase_packets_include_phase_specific_prompt_contract(tmp_path):
@@ -236,19 +239,20 @@ def test_phase_packets_include_phase_specific_prompt_contract(tmp_path):
         },
         goal="close prompt gaps",
     )
-    plan_packet = next_phase_payload(project, handle.run_id)
-    assert plan_packet["prompt_contract"]["role"] == "Strict phase planner"
-    assert "Do not run commands." in plan_packet["prompt_contract"]["hard_constraints"]
+    execute_packet = next_phase_payload(project, handle.run_id)
+    assert execute_packet["phase"] == "execute"
+    assert execute_packet["phase_authority"]["objective"].startswith("Perform the smallest execution slice")
+    assert "Do not terminalize the full run from inside execute." in execute_packet["phase_authority"]["hard_stops"]
 
     submit_phase_output(
         project,
         handle.run_id,
-        phase="plan",
-        payload={"summary": "plan ok", "edits": [], "commands": [], "checks": []},
+        phase="execute",
+        payload={"summary": "exec ok", "files_touched": [], "commands_run": [], "artifacts": []},
     )
-    exec_packet = next_phase_payload(project, handle.run_id)
-    assert exec_packet["prompt_contract"]["role"] == "Strict phase executor"
-    assert exec_packet["prompt_contract"]["objective"] != plan_packet["prompt_contract"]["objective"]
+    validate_packet = next_phase_payload(project, handle.run_id)
+    assert validate_packet["phase"] == "validate"
+    assert validate_packet["phase_authority"]["objective"] != execute_packet["phase_authority"]["objective"]
 
 
 def test_phase_output_rejects_overlong_summary(tmp_path):
@@ -269,11 +273,11 @@ def test_phase_output_rejects_overlong_summary(tmp_path):
         submit_phase_output(
             project,
             handle.run_id,
-            phase="plan",
-            payload={"summary": too_long, "edits": [], "commands": [], "checks": []},
+            phase="execute",
+            payload={"summary": too_long, "files_touched": [], "commands_run": [], "artifacts": []},
         )
     except ValueError as exc:
-        assert "plan.summary exceeds 24 UTF-8 chars" in str(exc)
+        assert "execute.summary exceeds 24 UTF-8 chars" in str(exc)
     else:
         raise AssertionError("expected summary budget failure")
 
@@ -292,19 +296,19 @@ def test_external_worker_retries_with_shorter_correction_prompt(monkeypatch, tmp
         goal="retry bad worker output",
     )
     phase_packet = next_phase_payload(project, handle.run_id)
-    output_path = handle.run_dir / "plan.worker-output.json"
+    output_path = handle.run_dir / "execute.worker-output.json"
     prompts: list[str] = []
 
     def _fake_run(command, cwd, stdout, stderr, text, env, timeout):
         prompts.append(command[-1])
         if len(prompts) == 1:
             output_path.write_text(
-                json.dumps({"summary": "x" * 25, "edits": [], "commands": [], "checks": []}) + "\n",
+                json.dumps({"summary": "x" * 25, "files_touched": [], "commands_run": [], "artifacts": []}) + "\n",
                 encoding="utf-8",
             )
         else:
             output_path.write_text(
-                json.dumps({"summary": "plan ok", "edits": [], "commands": [], "checks": []}) + "\n",
+                json.dumps({"summary": "exec ok", "files_touched": [], "commands_run": [], "artifacts": []}) + "\n",
                 encoding="utf-8",
             )
         return type("Proc", (), {"returncode": 0})()
@@ -313,9 +317,9 @@ def test_external_worker_retries_with_shorter_correction_prompt(monkeypatch, tmp
     driver = ExternalWorkerPhaseDriver(executor="codex", timeout_seconds=5)
     payload = driver.execute_phase(handle=handle, phase_packet=phase_packet)
 
-    assert payload["summary"] == "plan ok"
+    assert payload["summary"] == "exec ok"
     assert len(prompts) == 2
-    assert "Previous output failed validation: plan.summary exceeds 24 UTF-8 chars" in prompts[1]
+    assert "Previous output failed validation: execute.summary exceeds 24 UTF-8 chars" in prompts[1]
 
 
 def test_external_worker_command_uses_executor_specific_cli(tmp_path):

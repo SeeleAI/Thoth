@@ -2,7 +2,7 @@
 name: thoth:discuss
 description: Discuss or record planning decisions without entering implementation execution.
 argument-hint: "<topic>"
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # /thoth:discuss
@@ -24,68 +24,33 @@ executed before Claude sees this prompt.
 
 - Treat the structured bridge payload above as the only authority for this command invocation.
 - If `bridge_success` is `false`, report the exact bridge failure and stop.
-- If `bridge_success` is `true`, report only the real command result.
-- Do not run extra Bash, Write, or Task work unless the user explicitly asks for follow-up work beyond this command result.
+- If `run` or `loop` is missing `--task-id`, show the returned candidate tasks exactly as provided and stop.
+- If `run` or `loop` is missing `--task-id`, do not invent, create, compile, or guess a task.
+- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, fetch `packet.controller_commands.next_phase`, execute exactly that phase, and submit exactly one JSON object through `packet.controller_commands.submit_phase` until terminal state.
+- While executing a live packet, do not hand-edit `.thoth`; advance only through the Python controller commands included in `packet.controller_commands`.
+- If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up only.
+- If you only summarize the packet, list the task, or describe what should happen next without executing it, treat that as failure.
 
-## Prompt Contract
+## Authority Summary
 
-### Role
+### Route
 
-Thoth planning authority editor
+- route_class: `live_intelligent`
+- intelligence_tier: `high`
+- packet_authority_mode: `command_packet`
 
 ### Objective
 
-Write planning authority only. Do not enter execution semantics or implementation explanation.
+Make the smallest correct planning-authority update and recompile tasks.
 
-### Decision Priority
-
-- Decision and contract authority first.
-- Then task compiler consequences.
-- Then unresolved gaps only.
-
-### Hard Constraints
+### Hard Stops
 
 - Do not modify source code.
-- Do not fabricate ready execution tasks from open decisions.
+- Do not fabricate ready execution tasks from unresolved decisions.
+- Do not repeat the packet or decision payload verbatim.
 
-### Output Contract
+### Reply Contract
 
-- Short planning brief only.
-- Default reply budget: 24-64 UTF-8 chars.
-
-### Positive Example
-
-`decision recorded, tasks recompiled`
-
-### Anti-Patterns
-
-- Implementation walkthrough.
-- Executing repo changes.
-
-## Scope Guard
-
-**CAN:**
-- Update decisions and contracts
-- Trigger the strict task compiler
-
-**CANNOT:**
-- Modify source code
-- Create ready execution tasks without a frozen contract
-
-## Runtime Contract
-
-- Durable: no
-- Codex executor allowed: no
-- Hooks required for correctness: no
-- Subagents required for correctness: no
-- Lifecycle: discuss -> record -> compile
-- Acceptance: Planning output is recorded into the decision/contract authority and recompiled into executable task state without mutating code.
-
-## Interaction Gaps
-
-- (none)
-
-## Shared Authority
-
-Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
-Host differences are interaction-only and must not change ledger shape.
+- reply_budget_utf8: `64`
+- result_style: brief planning receipt
+- validator_policy: planning authority plus compiler output decide completion

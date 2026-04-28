@@ -1,6 +1,6 @@
 ---
 name: thoth:loop
-description: Start one bounded loop whose parent orchestrator reuses child runs through the same mechanical phase engine.
+description: Start one bounded loop whose parent orchestrator reuses validator-centered child runs.
 argument-hint: "[--executor claude|codex] [--host claude|codex] [--sleep] [--attach <run_id>] [--resume <run_id>] [--watch <run_id>] [--stop <run_id>] --task-id <task_id>"
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Edit, Write, Bash, Task
@@ -30,74 +30,32 @@ executed before Claude sees this prompt.
 - If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, fetch `packet.controller_commands.next_phase`, execute exactly that phase, and submit exactly one JSON object through `packet.controller_commands.submit_phase` until terminal state.
 - While executing a live packet, do not hand-edit `.thoth`; advance only through the Python controller commands included in `packet.controller_commands`.
 - If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up only.
-- If `packet.executor == codex`, the substantive execution must really flow through Codex rather than being silently done by Claude.
 - If you only summarize the packet, list the task, or describe what should happen next without executing it, treat that as failure.
+- If `packet.executor == codex`, the substantive execution must really flow through Codex rather than being silently done by Claude.
+- Default child lifecycle is `execute -> validate`; `reflect` appears only after validator failure.
 - Use `packet.strict_task.goal_statement`, `packet.strict_task.implementation_recipe`, and `packet.strict_task.eval_entrypoint` as the only task authority.
 - Prefer running `packet.strict_task.eval_entrypoint.command` exactly as provided rather than inventing a parallel validator lifecycle.
 
-## Prompt Contract
+## Authority Summary
 
-### Role
+### Route
 
-Thoth bounded loop operator
+- route_class: `live_intelligent`
+- intelligence_tier: `high`
+- packet_authority_mode: `phase_controller`
 
 ### Objective
 
-Advance the child run under the parent loop controller. Do not decide loop termination by yourself.
+Advance the current bounded loop without bypassing the parent controller.
 
-### Decision Priority
+### Hard Stops
 
-- Respect runtime budget first.
-- Then consume the child run result exactly.
-- Then apply the latest reflect hint.
+- Do not decide extra iterations outside the recorded loop budget.
+- Do not skip validator output when judging success.
+- Do not expand into iteration diaries or runtime narration.
 
-### Hard Constraints
+### Reply Contract
 
-- Do not bypass the parent loop controller.
-- Do not free-run extra iterations outside controller budget.
-- Do not expand historical narration.
-
-### Output Contract
-
-- Final host reply is loop outcome only.
-- Default final reply budget: 16-40 UTF-8 chars.
-- No markdown explanation or iteration diary.
-
-### Positive Example
-
-`failed: max_iterations hit`
-
-### Anti-Patterns
-
-- Choosing extra retries yourself.
-- Explaining every child run.
-- Returning review prose.
-
-## Scope Guard
-
-**CAN:**
-- Create or resume a durable bounded loop orchestrator
-- Attach/watch/stop through the same runtime state machine
-- Delegate work to Codex without changing authority write shape
-
-**CANNOT:**
-- Use detached live execution without --sleep
-- Depend on subagents or hooks for correctness
-
-## Runtime Contract
-
-- Durable: yes
-- Codex executor allowed: yes
-- Hooks required for correctness: no
-- Subagents required for correctness: no
-- Lifecycle: prepare -> loop-parent -> child-run-phase-controller -> attach/resume/watch/stop -> acceptance
-- Acceptance: The parent loop run enforces child iteration count and wall-clock budget mechanically, records child run lineage, and stops immediately on the first validated child run.
-
-## Interaction Gaps
-
-- Strict task id
-
-## Shared Authority
-
-Both Claude and Codex surfaces must write through the same `.thoth` authority tree.
-Host differences are interaction-only and must not change ledger shape.
+- reply_budget_utf8: `40`
+- result_style: terminal receipt only
+- validator_policy: parent loop budget controls retries; child validator decides pass/fail
