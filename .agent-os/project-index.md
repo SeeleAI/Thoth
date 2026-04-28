@@ -44,6 +44,7 @@
 - 2026-04-26: 本轮九阶段架构简化已在 `dev` 上完成代码收口：`run/lifecycle.py` 已删除，Run / Plan / Init / Surface / Observe / Selftest 主实现拆入职责模块；WSL Node LTS 与 Codex CLI 已修复；`py_compile`、pytest `light` / `medium`、targeted integration、`hard --hosts none` 与真实 Codex-only fast contract gate 均通过。本轮按用户最新计划只收口 `dev`，不执行 `main` 集成与本机安装刷新。
 - 2026-04-27: `run` / `loop` 已进一步收敛为 Python 机械 phase engine：task compiler 默认补 `runtime_contract.loop = {10, 28800}`、frozen task 强制要求 `validate_output_schema`、单次 `run` 固定为 `plan -> exec -> validate -> reflect`、`loop` 固定为父 run 复用 child `run` 的 bounded orchestrator；针对性验证 `37 passed`
 - 2026-04-27: prompt authority 已拆为 `thoth/prompt_specs.py` 与 `thoth/prompt_validators.py` 两层，`TaskResult` 的 `verdict` 别名层已删除，`run` 的 fresh-review 读取改为共享 helper，selftest 的 `model/recorder/runner/host adapters` 已去掉一批重复定义与星号导入；新增 `scripts/measure_tracked_source.py` 产出 tracked-source 压缩账本；相关 `68` 条单测与 `9` 条集成测试通过
+- 2026-04-28: 用户已批准恢复标准发布收尾；本轮代码面已按 `dev -> main` 受控 `cherry-pick` 集成到 `main` 并完成远端推送，`.tmp_pytest/` 已纳入忽略规则，本机 Claude/Codex 的 Thoth 缓存与 marketplace 源目录也已同步到当前仓库内容
 
 ## Read Next
 

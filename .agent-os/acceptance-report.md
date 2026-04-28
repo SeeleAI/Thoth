@@ -54,6 +54,10 @@
   - Evidence: `thoth/prompt_specs.py`、`thoth/prompt_validators.py`、`thoth/prompt_contracts.py`、`thoth/run/review_context.py`、`thoth/plan/{store,compiler,legacy_import}.py`、`thoth/observe/read_model.py`、`thoth/observe/selftest/{model,recorder,runner,host_common,host_claude,host_codex}.py`、`scripts/measure_tracked_source.py`；`env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/unit/test_command_spec_generation.py tests/unit/test_cli_surface.py tests/unit/test_runtime_protocol.py tests/unit/test_run_state_machine.py tests/unit/test_task_contracts.py tests/unit/test_status.py tests/unit/test_selftest_helpers.py` 为 `68 passed`；`env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/integration/test_init_workflow.py tests/integration/test_runtime_lifecycle_e2e.py` 为 `9 passed`
   - Conclusion: 当前 `prompt spec` 与 `runtime validation` 已明确分层；`TaskResult` 成为唯一 canonical task current-state 词汇；`run` 的 fresh-review 读取共享同一 helper；host-real selftest adapter 只保留宿主差异而不再依赖重复类型定义；tracked-source 行数账本已可重复生成
 
+- `EV-017` related to `WS-001`, `WS-003`, `REQ-004`, `REQ-011`: 本轮发布收尾已按分支治理约束完成，并同步刷新了本机 Claude/Codex 安装面
+  - Evidence: `dev` 提交 `8a27e5f refactor: compress prompt and task runtime surfaces`、`f4efa18 docs: record prompt and task runtime simplification`、`5ab08b8 chore: ignore local pytest workspace`；`main` 对应发布提交 `ef3b7c7 refactor: compress prompt and task runtime surfaces` 与 `3374705 chore: ignore local pytest workspace`；`git push origin main` 已成功；`rsync -a --delete` 已将当前仓库同步到 `/root/.claude/plugins/cache/thoth/thoth/0.1.4`、`/root/.claude/plugins/marketplaces/thoth`、`/root/.codex/plugins/cache/thoth/thoth/0.1.4`、`/root/.codex/.tmp/marketplaces/thoth`；`sha256sum` 证明 repo 与四处本机副本中的 `.gitignore`、`thoth/prompt_specs.py`、`thoth/prompt_validators.py`、`thoth/run/review_context.py` 完全一致
+  - Conclusion: 当前发布面已通过 `dev -> main` 受控 `cherry-pick` 带到 `main`，`.agent-os/` 未被夹带进发布分支；`.tmp_pytest/` 已加入忽略规则；本机 Claude/Codex 的 Thoth 副本已与当前仓库对齐。发布依据仍是 `dev` 上已通过的 `68` 条单测与 `9` 条集成测试；`main` 上同组复核曾被用户中途打断，之后仅追加了非行为性的 `.gitignore` 变更
+
 ## Open Checks
 
 - `EV-010` related to `WS-002`: 完整 `.thoth` durable runtime 仍未闭环
