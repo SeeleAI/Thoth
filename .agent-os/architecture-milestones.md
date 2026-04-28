@@ -34,9 +34,11 @@
 - dashboard 前端主壳已从旧多页导航切到单一 workbench shell，并保留 `/overview`、`/tasks`、`/milestones`、`/dag`、`/timeline`、`/todo`、`/activity` 的兼容入口
 - dashboard 已新增 `overview-summary` 与 `gantt` 只读读面；驾驶舱、Task Detail 与时间线面板均只消费 `.thoth` authority、task result、runtime ledger 与 `.agent-os` 派生结果
 - dashboard 模板已收敛为单套共享前端源码，并通过 `tools/dashboard/frontend/src/generated/locale.ts` 固化 init/sync 生成时的默认语言
-- 仓库具备双层自测试系统：`hard` 为默认 repo-real gate，`heavy` 追加浏览器层与宿主矩阵
+- 仓库具备双层自测试系统：`hard` 为默认 repo-real mechanical gate，`heavy` 为双宿主 headless host-real public-command conformance gate
 - 仓库级 pytest 已切成三层开发验证面：`light`、`medium`、`heavy`
-- `heavy` 主门禁已切到 deterministic Python seed repo，重点验证 `run` / `review` / `loop` 的 ledger 闭环与双宿主 public command 语义
+- `heavy` 不再隐式重跑 `hard`，而是在单一 `300s` 全局预算内直接执行双宿主命令矩阵
+- `heavy` 的 host-real fixture 已收敛为最小 command-probe repo：`1` 个 frozen decision、`2` 个 frozen contracts、`tracker/runtime_probe.py`、`tracker/review_probe.py`
+- `heavy` 中的 `run` / `loop` 统一只测 `--sleep` handoff 与 `watch/stop` 协议；`review` 是唯一保留真实智能输出的命令，但必须 exact-match 固定单 finding，且 `tracker/` 源码树受 source-write guard 保护
 
 本轮已经完成的结构性收敛：
 
@@ -128,7 +130,7 @@
 - `MS-002` `[backlog]`: `dev -> main` 分离策略机制化
 - `MS-003` `[backlog]`: 当前插件产品面稳定化
 - `MS-004` `[backlog]`: Thoth V2 迁移设计冻结
-- `MS-005` `[active]`: 在不丢功能和不改验收语义的前提下完成 Thoth 的整体简化重构，并以 `Codex-only` closing gate 收口
+- `MS-005` `[active]`: 在不丢功能和不改验收语义的前提下完成 Thoth 的整体简化重构，并以 `heavy` 双宿主命令协议 gate 收口
 
 ## Major Planning Decisions
 
@@ -142,3 +144,4 @@
 - 2026-04-25: 旧顶层内部模块路径不再保留兼容主链；canonical Python 实现统一迁入 `thoth/surface`、`thoth/plan`、`thoth/run`、`thoth/init`、`thoth/observe`
 - 2026-04-26: 用户最新收口计划锁定为 `dev` only：完成 Codex-only fast gate 后只提交并推送 `dev`，本轮不 cherry-pick 到 `main`、不 push `main`、不刷新本机 Claude/Codex 安装
 - 2026-04-28: 用户已批准恢复标准分支收尾流程；本轮在 `dev` 验证并提交后，需要仅将发布面代码 `cherry-pick` 到 `main`、推送两个分支，并刷新本机 Claude/Codex 的 Thoth 安装
+- 2026-04-28: 用户重新锁定 `heavy` 的关闭门语义：`heavy` 不再代表真实开发闭环能力，而是双宿主 public-command conformance gate；`hard` 继续单独覆盖 repo-local mechanical runtime，`run/loop` 在 `heavy` 中只测 `--sleep` handoff，`review` 必须返回固定单 finding

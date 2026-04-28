@@ -36,3 +36,4 @@ Append-only 记录用户后续拍板与解释变化，不通过偷偷改写 `req
 - `CD-028` `2026-04-27` `[accepted]`: 若 `run` / `loop` 缺少 `--task-id`，Thoth 必须严格拒绝执行；只允许基于用户给出的 prompt 召回最接近的 `3` 个现有 task 候选并立即停下，禁止创建任何新 task，禁止在未拿到 `task-id` 前触碰项目代码
 - `CD-029` `2026-04-27` `[accepted]`: `run` 固定为一次 `plan -> exec -> validate -> reflect` 的 Python 机械状态机；`loop` 固定为父级 bounded orchestrator，每轮显式创建独立 child `run`，预算来自 task authority 的 `runtime_contract.loop.*`，且 validator 输出必须满足严格 JSON schema
 - `CD-030` `2026-04-28` `[accepted]`: 用户已批准按既定分支治理约束完成本轮收尾，即在 `dev` 上提交完整变更、仅将发布面代码 `cherry-pick` 到 `main`，并推送两个分支
+- `CD-031` `2026-04-28` `[accepted]`: `heavy` 的关闭门语义重定义为“双宿主 public-command conformance gate”而不是“真实开发闭环 gate”；`heavy` 不再重跑 `hard`，总预算固定为 `300s`，固定命令矩阵为 `init/status/doctor/discuss/run/review/dashboard/loop/sync`，其中 `run/loop` 只验证 `--sleep` handoff / watch / stop 协议，`review` 必须 exact-match 固定单 finding，且不允许改动 probe repo 的 `tracker/` 源码

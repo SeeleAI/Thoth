@@ -40,9 +40,6 @@
 - `TD-022` `[ready]`: 收敛 observability/read-model，把 status / doctor / report / dashboard / hooks 统一为 authority 的只读派生层
   - Related items: `WS-002`, `WS-003`, `WS-005`, `MS-005`, `REQ-014`, `REQ-022`, `REQ-024`
 
-- `TD-023` `[ready]`: 收敛验证体系，确保 light / medium / heavy 与 deterministic selftest 的职责边界清晰且可维护
-  - Related items: `WS-003`, `WS-005`, `MS-005`, `REQ-017`, `REQ-021`, `REQ-022`
-
 ## Doing
 
 - None
@@ -73,6 +70,14 @@
 - `TD-025` `[verified]`: 将 `run` / `loop` 收敛为 Python 机械化四阶段状态机，并让 `loop` 以父 orchestrator 复用 child `run`
   - Related items: `WS-002`, `WS-005`, `MS-005`, `REQ-023`, `REQ-024`
   - Evidence: `thoth/run/phases.py`、`thoth/run/{packets,worker,ledger}.py`、`thoth/plan/{compiler,validators}.py`、`tests/unit/test_run_state_machine.py`；`python -m pytest -q tests/unit/test_task_contracts.py tests/unit/test_run_state_machine.py tests/unit/test_runtime_protocol.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/integration/test_runtime_lifecycle_e2e.py tests/unit/test_dashboard_runtime_api.py` 为 `37 passed`
+
+- `TD-023` `[verified]`: 收敛验证体系，明确 `hard` 与 `heavy` 的职责边界，并把 `heavy` 收口为双宿主 public-command conformance gate
+  - Related items: `WS-003`, `WS-005`, `MS-005`, `REQ-017`, `REQ-021`, `REQ-022`
+  - Evidence: `python -m thoth.cli sync` 未引入新的 tracked projection 漂移；`python -m py_compile thoth/observe/selftest/{fixtures,hard_suite,host_claude,host_codex,host_common,model,runner}.py thoth/{projections,prompt_specs,selftest_seed}.py thoth/surface/run_commands.py tests/unit/test_{selftest_helpers,command_spec_generation,claude_bridge}.py tests/integration/test_runtime_lifecycle_e2e.py` 通过；`env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/unit/test_selftest_helpers.py tests/unit/test_command_spec_generation.py tests/unit/test_claude_bridge.py tests/unit/test_cli_surface.py tests/integration/test_runtime_lifecycle_e2e.py` 为 `54 passed in 705.84s`；`python -m thoth.selftest --tier hard --hosts none --artifact-dir /tmp/thoth-hard-command-gate-artifacts-20260428 --json-report /tmp/thoth-hard-command-gate-summary-20260428.json` 为 `25 passed / 0 failed / 0 degraded`
+
+- `TD-026` `[verified]`: 收掉 `heavy` 双宿主命令协议门剩余的 host-real 阻塞，并把真实 `heavy --hosts both` 跑绿
+  - Related items: `WS-003`, `WS-005`, `MS-005`, `REQ-017`, `REQ-019`, `REQ-025`
+  - Evidence: 用户提供的 Claude 登录态环境下执行 `env PATH=/mnt/cfs/5vr0p6/yzy/thoth/bin:$PATH ANTHROPIC_BASE_URL='https://api.deepseek.com/anthropic' ANTHROPIC_AUTH_TOKEN='***' ANTHROPIC_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_OPUS_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_SONNET_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_HAIKU_MODEL='deepseek-v4-flash' CLAUDE_CODE_SUBAGENT_MODEL='deepseek-v4-flash' CLAUDE_CODE_EFFORT_LEVEL='max' TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m thoth.selftest --tier heavy --hosts both --artifact-dir /tmp/thoth-heavy-both-command-gate-artifacts-20260428-rerun --json-report /tmp/thoth-heavy-both-command-gate-summary-20260428-rerun.json`，结果 `104 passed / 0 failed / 0 degraded`
 
 ## Abandoned
 

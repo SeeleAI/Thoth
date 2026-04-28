@@ -46,6 +46,9 @@
 - 2026-04-27: prompt authority 已拆为 `thoth/prompt_specs.py` 与 `thoth/prompt_validators.py` 两层，`TaskResult` 的 `verdict` 别名层已删除，`run` 的 fresh-review 读取改为共享 helper，selftest 的 `model/recorder/runner/host adapters` 已去掉一批重复定义与星号导入；新增 `scripts/measure_tracked_source.py` 产出 tracked-source 压缩账本；相关 `68` 条单测与 `9` 条集成测试通过
 - 2026-04-28: 用户已批准恢复标准发布收尾；本轮代码面已按 `dev -> main` 受控 `cherry-pick` 集成到 `main` 并完成远端推送，`.tmp_pytest/` 已纳入忽略规则，本机 Claude/Codex 的 Thoth 缓存与 marketplace 源目录也已同步到当前仓库内容
 - 2026-04-28: 已修复安装面入口漂移：仓库新增 `bin/thoth` wrapper，README 与 Codex skill 现在明确区分“插件安装态的 `thoth` / host public surface”和“当前 Thoth 源码仓开发时的 `python -m thoth.cli` fallback”；空目录下以 `PATH=<repo>/bin:$PATH` 真实验证 `thoth init`、`thoth dashboard start/stop` 均通过
+- 2026-04-28: 用户已重锁 `heavy` 的关闭门语义：不再以 `Codex-only` fast gate 或 feature/bugfix/loop 闭环为准，而改为双宿主 headless public-command conformance gate；`heavy` 不再重跑 `hard`，host-real fixture 改为最小 command-probe repo，`run/loop` 只测 `--sleep` handoff、`review` 必须 exact-match 固定单 finding，并新增 `tracker/` source-write guard 与全局 `300s` 预算
+- 2026-04-28: 本轮围绕新 `heavy` 语义完成最终验证与记账：`python -m thoth.cli sync` 无新增 projection 漂移，targeted `py_compile` 通过，targeted pytest 为 `54 passed in 705.84s`，`python -m thoth.selftest --tier hard --hosts none --artifact-dir /tmp/thoth-hard-command-gate-artifacts-20260428 --json-report /tmp/thoth-hard-command-gate-summary-20260428.json` 为 `25 passed / 0 failed / 0 degraded`
+- 2026-04-28: 使用用户提供的 DeepSeek Anthropic compatibility Claude 登录态环境重新执行真实关闭门后，`python -m thoth.selftest --tier heavy --hosts both --artifact-dir /tmp/thoth-heavy-both-command-gate-artifacts-20260428-rerun --json-report /tmp/thoth-heavy-both-command-gate-summary-20260428-rerun.json` 已通过，结果为 `104 passed / 0 failed / 0 degraded`；`heavy` 双宿主 public-command conformance gate 现已真实关闭
 
 ## Read Next
 

@@ -2,6 +2,24 @@
 
 ## Entries
 
+- 2026-04-28 11:19 UTC [heavy both gate rerun passed with user-provided Claude login env]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 使用用户提供的 DeepSeek Anthropic compatibility Claude 登录态环境，重新执行真实 `heavy --hosts both`；Claude 与 Codex 双宿主的 `init/status/doctor/discuss/run/review/dashboard/loop/sync` 命令矩阵全部通过，`review` exact-match 与 `tracker/` source-write guard 也全部通过；`TD-026` 已可从剩余收口项转为 `verified`
+  - Evidence produced: `env PATH=/mnt/cfs/5vr0p6/yzy/thoth/bin:$PATH ANTHROPIC_BASE_URL='https://api.deepseek.com/anthropic' ANTHROPIC_AUTH_TOKEN='***' ANTHROPIC_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_OPUS_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_SONNET_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_HAIKU_MODEL='deepseek-v4-flash' CLAUDE_CODE_SUBAGENT_MODEL='deepseek-v4-flash' CLAUDE_CODE_EFFORT_LEVEL='max' TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m thoth.selftest --tier heavy --hosts both --artifact-dir /tmp/thoth-heavy-both-command-gate-artifacts-20260428-rerun --json-report /tmp/thoth-heavy-both-command-gate-summary-20260428-rerun.json` 返回 `overall_status=passed`、`104 passed / 0 failed / 0 degraded`
+  - Next likely action: 回到 `WS-001` 的分支治理硬化主线，继续推进 `TD-001`
+
+- 2026-04-28 05:29 UTC [heavy host-real rerun narrowed to two remaining blockers]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 用户提供基于 DeepSeek Anthropic compatibility 的 Claude 环境变量后，`claude auth status` 已恢复为 `loggedIn: true`；随后继续追真实 `heavy` gate，把 preflight 改为按 `requested_hosts` 收窄，修正 Codex skill 安装源路径到 `plugins/thoth/skills/thoth`，并继续修正两类 selftest 误判：Claude `discuss` bridge-event 参数比较改用 shell 语义拆分，Codex `watch` 成功但 wrapper 尾部 timeout 时不再仅因缺失 done token 被误杀。最新 host-real 结果显示：`claude --to-step discuss-decision` 已打绿，但真实 `heavy --hosts both` 仍未关闭
+  - Evidence produced: `env ANTHROPIC_* claude auth status` 返回 `{\"loggedIn\": true, \"authMethod\": \"oauth_token\"}`；`env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/unit/test_selftest_helpers.py -k 'preflight_host_real or ensure_codex_skill_installed or claude_expected_args or normalize_codex_public_command_result'` 通过；`/tmp/thoth-heavy-both-command-gate-summary-20260428.json` 证明修复前真实 `heavy --hosts both` 失败点为 Claude `discuss-decision` 与 Codex `run-watch`；`/tmp/thoth-heavy-claude-discuss-window-20260428.json` 现为 `overall_status=passed`；`/tmp/thoth-heavy-codex-watch-window-20260428b.json` 仍失败，当前剩余问题集中在 Claude session hook 参数装配错误，以及 Codex 在 `init` / `watch` 上偶发不回 `DONE_TOKEN`
+  - Next likely action: 继续收掉 Claude hook 参数装配与 Codex prompt/normalization 的最后漂移，再重跑完整 `heavy --hosts both`，否则不要把双宿主关闭门写成已通过
+
+- 2026-04-28 05:07 UTC [heavy re-scoped to dual-host command gate]
+  - Worked on: `OBJ-001`, `WS-003`, `WS-005`
+  - State changes: 按用户锁定计划把 `heavy` 从“真实开发闭环 gate”重定义为“双宿主 public-command conformance gate”，不再重跑 `hard`；host-real fixture 改成最小 command-probe repo，仅保留 `task-runtime-probe` 与 `task-review-probe` 两个 frozen contracts；Codex selftest prompt 细分为 literal command probe 与 review probe，Claude 侧继续走 `/thoth:*` public surface；`run/loop` 在 `heavy` 中统一改为 `--sleep` handoff + `watch/stop` 协议验证，`review` 固定要求返回单个 exact-match finding；同时补了 `tracker/` source-write guard、`review` strict task 注入、以及 `hard` hook 环境兼容修复
+  - Evidence produced: `python -m thoth.cli sync` 完成且无新增 tracked projection 漂移；`python -m py_compile thoth/observe/selftest/{fixtures,hard_suite,host_claude,host_codex,host_common,model,runner}.py thoth/{projections,prompt_specs,selftest_seed}.py thoth/surface/run_commands.py tests/unit/test_{selftest_helpers,command_spec_generation,claude_bridge}.py tests/integration/test_runtime_lifecycle_e2e.py` 通过；`env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/unit/test_selftest_helpers.py tests/unit/test_command_spec_generation.py tests/unit/test_claude_bridge.py tests/unit/test_cli_surface.py tests/integration/test_runtime_lifecycle_e2e.py` 通过（`54 passed in 705.84s`）；`python -m thoth.selftest --tier hard --hosts none --artifact-dir /tmp/thoth-hard-command-gate-artifacts-20260428 --json-report /tmp/thoth-hard-command-gate-summary-20260428.json` 通过（`25 passed / 0 failed / 0 degraded`）
+  - Next likely action: 在当前 `dev` 工作树内做最终 `git status` 与 diff 复核，确认只剩本轮代码与状态文档变更，然后再决定是否进入提交/分支收尾
+
 - 2026-04-27 21:45 UTC [local host thoth caches refreshed after push]
   - Worked on: `OBJ-001`, `WS-001`, `WS-003`
   - State changes: 仓库双分支 push 完成后，继续按合同刷新本机宿主安装；`claude plugin marketplace update thoth` 成功，但 `claude plugin update thoth --scope user` 报 `Plugin "thoth" not found`；`codex plugin marketplace upgrade thoth` 两次都在 `/root/.codex/.tmp/marketplaces/.staging/...` clone 阶段超时并 `early EOF`。鉴于 Claude/Codex 当前实际加载版本都仍是 `0.1.4`，最终改为直接把仓库内最新 plugin 产物覆盖到本机缓存路径与 marketplace 源路径，避免继续依赖网络 clone 和根分区临时目录
