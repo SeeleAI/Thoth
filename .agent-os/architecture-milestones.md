@@ -29,6 +29,7 @@
 - 当前 `loop` 已收敛为父级 orchestrator：父 run 记录预算与 child lineage，每轮显式创建独立 child `run`，并通过上一轮 `reflect` 作为下一轮 `plan` 输入
 - heartbeat 当前写入 `state.json.last_heartbeat_at`，而不是单独的 `heartbeat.json`
 - `loop` 会按 `task_id + review_binding.target + TaskResult.last_closure_at` 自动吸收新鲜 review findings
+- 当前 prompt authority 已显式拆成 `thoth/prompt_specs.py` 与 `thoth/prompt_validators.py`：前者只保存命令/phase prompt spec 与宿主投影所需静态文案，后者只负责 phase/review 输出校验
 - dashboard 模板可以把 `.thoth/runs/*` 的 active run、history run 和事件日志绑定回 task 视图
 - dashboard 前端主壳已从旧多页导航切到单一 workbench shell，并保留 `/overview`、`/tasks`、`/milestones`、`/dag`、`/timeline`、`/todo`、`/activity` 的兼容入口
 - dashboard 已新增 `overview-summary` 与 `gantt` 只读读面；驾驶舱、Task Detail 与时间线面板均只消费 `.thoth` authority、task result、runtime ledger 与 `.agent-os` 派生结果
@@ -45,10 +46,13 @@
 - dashboard 控制面已切到 `thoth.observe.dashboard` Python service，不再以 `scripts/dashboard.sh` 作为 CLI 主逻辑
 - `thoth/run/lifecycle.py` 已删除，Run 主实现拆入 `model.py`、`io.py`、`lease.py`、`ledger.py`、`packets.py`、`worker.py`、`service.py`、`status.py`
 - Plan 主实现已拆为 `paths.py`、`store.py`、`validators.py`、`compiler.py`、`results.py`、`legacy_import.py`、`doctor.py`；`compiler.py` 只保留编译主流程
+- Plan 当前只保留 `TaskResult` 这一套 canonical task current-state 词汇；`load_verdict*` / `upsert_verdict` 别名层已删除，Observe 读面也不再回退读取 task 内嵌 `verdict`
 - Init 主实现已拆为 `audit.py`、`preview.py`、`migration.py`、`generators.py`、`planner.py`、`apply.py`、`render.py` 与 orchestration-only `service.py`
+- Init migration backup 现在会跳过 `node_modules`、`dist`、`__pycache__`、`.pytest_cache` 这类可再生成目录，避免 `re-init` 把 dashboard 第三方依赖整棵复制进 migration ledger
 - Surface handler 已拆为 `envelope.py`、`project_commands.py`、`plan_commands.py`、`run_commands.py`、`protocol_commands.py`、`observe_commands.py`，`handlers.py` 只做 registry dispatch
 - Observe 已新增 `read_model.py`，`status` / `report` / `dashboard` 共享只读派生模型，不在读面隐式修 authority
-- Selftest 已拆为 `model.py`、`recorder.py`、`processes.py`、`capabilities.py`、`fixtures.py`、`hard_suite.py`、`host_common.py`、`host_codex.py`、`host_claude.py`，`runner.py` 只保留 CLI 与总编排入口
+- Selftest 已拆为 `model.py`、`recorder.py`、`processes.py`、`capabilities.py`、`fixtures.py`、`hard_suite.py`、`host_common.py`、`host_codex.py`、`host_claude.py`，`runner.py` 只保留 CLI 与总编排入口；其中 `CommandResult` / `CheckResult` 已回收为 `model.py` 单一 authority，host adapters 只保留宿主差异逻辑
+- 新增 `scripts/measure_tracked_source.py` 作为 tracked-source 行数账本入口，统计面显式区分 `hard_metric` 与 `dashboard_frontend`
 
 ## Target Architecture
 
@@ -137,3 +141,4 @@
 - 2026-04-25: 本轮结果模型固定为 `RunResult + TaskResult`，run ledger canonical 文件集固定为 `run/state/events/result/artifacts`
 - 2026-04-25: 旧顶层内部模块路径不再保留兼容主链；canonical Python 实现统一迁入 `thoth/surface`、`thoth/plan`、`thoth/run`、`thoth/init`、`thoth/observe`
 - 2026-04-26: 用户最新收口计划锁定为 `dev` only：完成 Codex-only fast gate 后只提交并推送 `dev`，本轮不 cherry-pick 到 `main`、不 push `main`、不刷新本机 Claude/Codex 安装
+- 2026-04-28: 用户已批准恢复标准分支收尾流程；本轮在 `dev` 验证并提交后，需要仅将发布面代码 `cherry-pick` 到 `main`、推送两个分支，并刷新本机 Claude/Codex 的 Thoth 安装

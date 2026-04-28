@@ -50,6 +50,10 @@
   - Evidence: `thoth/run/phases.py`、`thoth/run/{packets,worker,ledger}.py`、`thoth/plan/{compiler,validators}.py`、`tests/unit/test_run_state_machine.py`；`python -m pytest -q tests/unit/test_task_contracts.py tests/unit/test_run_state_machine.py tests/unit/test_runtime_protocol.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/integration/test_runtime_lifecycle_e2e.py tests/unit/test_dashboard_runtime_api.py` 为 `37 passed`
   - Conclusion: 当前 strict task 会编译出默认 `runtime_contract.loop = {max_iterations: 10, max_runtime_seconds: 28800}`，缺失 `validate_output_schema` 的 frozen task 会转为不可执行；单次 `run` 由 Python 机械解析 phase JSON 决定成功或失败，`loop` 会记录 child run lineage、反射提示与预算耗尽原因
 
+- `EV-016` related to `WS-005`, `REQ-022`, `REQ-024`: prompt authority、TaskResult canonical 词汇与 selftest host matrix 已继续收口
+  - Evidence: `thoth/prompt_specs.py`、`thoth/prompt_validators.py`、`thoth/prompt_contracts.py`、`thoth/run/review_context.py`、`thoth/plan/{store,compiler,legacy_import}.py`、`thoth/observe/read_model.py`、`thoth/observe/selftest/{model,recorder,runner,host_common,host_claude,host_codex}.py`、`scripts/measure_tracked_source.py`；`env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/unit/test_command_spec_generation.py tests/unit/test_cli_surface.py tests/unit/test_runtime_protocol.py tests/unit/test_run_state_machine.py tests/unit/test_task_contracts.py tests/unit/test_status.py tests/unit/test_selftest_helpers.py` 为 `68 passed`；`env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/integration/test_init_workflow.py tests/integration/test_runtime_lifecycle_e2e.py` 为 `9 passed`
+  - Conclusion: 当前 `prompt spec` 与 `runtime validation` 已明确分层；`TaskResult` 成为唯一 canonical task current-state 词汇；`run` 的 fresh-review 读取共享同一 helper；host-real selftest adapter 只保留宿主差异而不再依赖重复类型定义；tracked-source 行数账本已可重复生成
+
 ## Open Checks
 
 - `EV-010` related to `WS-002`: 完整 `.thoth` durable runtime 仍未闭环
