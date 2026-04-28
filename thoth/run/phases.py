@@ -112,7 +112,7 @@ def _write_controller(handle: RunHandle, payload: dict[str, Any]) -> dict[str, A
 
 
 def minimal_task_authority(strict_task: dict[str, Any]) -> dict[str, Any]:
-    return {
+    payload = {
         "task_id": strict_task.get("task_id"),
         "title": strict_task.get("title"),
         "goal_statement": strict_task.get("goal_statement"),
@@ -124,6 +124,9 @@ def minimal_task_authority(strict_task: dict[str, Any]) -> dict[str, Any]:
         "validate_output_schema": normalize_validate_output_schema(strict_task.get("validate_output_schema")),
         "review_binding": strict_task.get("review_binding", {}),
     }
+    if isinstance(strict_task.get("review_expectation"), dict):
+        payload["review_expectation"] = strict_task.get("review_expectation")
+    return payload
 
 
 def initialize_run_controller(

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .fixtures import _compact_json, _host_real_contract_payloads, _host_real_decision_payload, _shell_quote
 from .host_common import (
+    _expected_host_review_result,
     _looks_like_transient_host_outage,
     _read_claude_bridge_events,
     _run_claude_public_command,
@@ -24,6 +25,7 @@ def _host_claude(
     artifacts = [_write_claude_local_settings(project_dir, repo_root, recorder)]
 
     def run_public_command(public_command: str, *, recorder: Recorder, artifact_name: str, timeout: float = 240) -> tuple[CommandResult, list[str]]:
+        extra_env = {"THOTH_TEST_EXTERNAL_WORKER_MODE": "hold"} if "--sleep" in public_command.split() else None
         return _run_claude_public_command(
             repo_root,
             project_dir,
@@ -31,6 +33,7 @@ def _host_claude(
             recorder=recorder,
             artifact_name=artifact_name,
             timeout=timeout,
+            env=extra_env,
         )
 
     decision_arg = _shell_quote(_compact_json(_host_real_decision_payload()))
@@ -49,18 +52,20 @@ def _host_claude(
             "doctor": "/thoth:doctor --quick",
             "discuss_decision": f"/thoth:discuss --decision-json {decision_arg}",
             "discuss_contracts": contract_commands,
-            "run_feature": "/thoth:run --task-id task-feature-owner-due-date",
-            "run_bugfix": "/thoth:run --sleep --task-id task-bugfix-column-persist",
-            "review": "/thoth:review --task-id task-loop-close-review --executor codex tracker/store.py",
-            "dashboard": "/thoth:dashboard",
-            "loop": "/thoth:loop --sleep --task-id task-loop-close-review",
-            "loop_live_followup": "/thoth:loop --task-id task-loop-close-review",
-            "report": "/thoth:report",
+            "run_sleep": "/thoth:run --sleep --task-id task-runtime-probe",
+            "run_watch": lambda run_id: f"/thoth:run --watch {run_id}",
+            "run_stop": lambda run_id: f"/thoth:run --stop {run_id}",
+            "review": "/thoth:review --task-id task-review-probe --executor codex tracker/review_probe.py",
+            "dashboard_start": "/thoth:dashboard start",
+            "dashboard_stop": "/thoth:dashboard stop",
+            "loop_sleep": "/thoth:loop --sleep --task-id task-runtime-probe",
+            "loop_stop": lambda run_id: f"/thoth:loop --stop {run_id}",
             "sync": "/thoth:sync",
         },
         review_expected_executor="codex",
         from_step=from_step,
         to_step=to_step,
+        review_expected_result=_expected_host_review_result(),
     )
     artifacts.extend(flow_artifacts)
     partial_window = from_step is not None or to_step is not None
@@ -77,7 +82,7 @@ def _host_claude(
     bridge_path = project_dir / ".thoth" / "derived" / "host-bridges" / "claude-command-events.jsonl"
     if bridge_path.exists():
         artifacts.append(str(bridge_path))
-    required_bridge_commands = ("init", "status", "doctor", "discuss", "run", "review", "dashboard", "loop", "report", "sync")
+    required_bridge_commands = ("init", "status", "doctor", "discuss", "run", "review", "dashboard", "loop", "sync")
     success = all(result.returncode == 0 for result in command_results.values())
     if not partial_window:
         success = success and all(command in bridge_commands for command in required_bridge_commands) and all(

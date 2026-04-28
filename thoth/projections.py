@@ -43,12 +43,12 @@ def _claude_bridge_rules(spec: CommandSpec) -> str:
         "- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, fetch `packet.controller_commands.next_phase`, execute exactly that phase, and submit exactly one JSON object through `packet.controller_commands.submit_phase` until terminal state.",
         "- While executing a live packet, do not hand-edit `.thoth`; advance only through the Python controller commands included in `packet.controller_commands`.",
         "- If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up only.",
-        "- If `packet.executor == codex`, the substantive execution must really flow through Codex rather than being silently done by Claude.",
         "- If you only summarize the packet, list the task, or describe what should happen next without executing it, treat that as failure.",
     ]
     if spec.command_id in {"run", "loop"}:
         rules.extend(
             (
+                "- If `packet.executor == codex`, the substantive execution must really flow through Codex rather than being silently done by Claude.",
                 "- Use `packet.strict_task.goal_statement`, `packet.strict_task.implementation_recipe`, and `packet.strict_task.eval_entrypoint` as the only task authority.",
                 "- Prefer running `packet.strict_task.eval_entrypoint.command` exactly as provided rather than inventing a parallel validator lifecycle.",
             )
@@ -56,6 +56,30 @@ def _claude_bridge_rules(spec: CommandSpec) -> str:
     if spec.command_id == "review":
         rules.append(
             "- For `review`, inspect `packet.target`, produce structured findings matching `packet.required_review_shape`, and finish through the review protocol rather than free-form prose."
+        )
+        rules.append(
+            "- If `packet.strict_task.review_expectation` exists, reproduce that exact structured result and do not add prose or extra findings."
+        )
+        rules.append(
+            "- If `packet.protocol_commands.complete_exact` exists, execute that exact completion command rather than deriving your own variant."
+        )
+        rules.append(
+            "- For `review`, do not write `.thoth/runs/*/result.json`, `state.json`, or other ledger files directly; only use `packet.protocol_commands.heartbeat`, `packet.protocol_commands.complete`, or `packet.protocol_commands.fail`."
+        )
+        rules.append(
+            "- When finishing a review run, call `packet.protocol_commands.complete` with `--result-json` set to the final review object and `--checks-json` marking the exact-match review check as passing."
+        )
+        rules.append(
+            "- For `review`, `--summary` must stay a short plain string only; never put the structured review JSON into `--summary`."
+        )
+        rules.append(
+            "- Do not inspect Thoth CLI source, help text, or protocol implementation files; the packet and target file already define the contract."
+        )
+        rules.append(
+            "- If `packet.strict_task.review_expectation` exists, do not inspect or invoke Codex CLI; submit that exact review object through the packet protocol and stop."
+        )
+        rules.append(
+            "- If `packet.strict_task.review_expectation` exists, do not run `--help`, `which`, `codex`, `grep`, or any extra discovery command; only use the packet protocol command(s), the strict task eval entrypoint, and minimal target reads."
         )
     return "\n".join(rules)
 

@@ -372,7 +372,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
             start_hook_payload = json.loads(hook_start.stdout)
         except json.JSONDecodeError:
             start_hook_payload = {}
-    hook_end = _run_command(["bash", "scripts/session-end-check.sh"], cwd=project_dir, timeout=60)
+    hook_end = _run_command(["bash", "scripts/session-end-check.sh"], cwd=project_dir, env=hook_env, timeout=60)
     hook_artifacts = [
         recorder.write_json("hooks/hooks.json", hooks_config),
         recorder.write_json("hooks/start-hook.json", start_hook_payload),
@@ -404,7 +404,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
             "blocking_gaps": [],
         },
     )
-    broken_hook = _run_command(["bash", "scripts/session-end-check.sh"], cwd=project_dir, timeout=60)
+    broken_hook = _run_command(["bash", "scripts/session-end-check.sh"], cwd=project_dir, env=hook_env, timeout=60)
     broken_artifacts = _save_command(recorder, "hook-broken", broken_hook)
     broken_contract.unlink(missing_ok=True)
     degraded = broken_hook.returncode != 0

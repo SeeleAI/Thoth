@@ -72,6 +72,9 @@ def handle_prepare(args, parser, *, project_root: Path) -> int:
             return _reject_missing_task_id(command_id=args.command_id, args=args, project_root=root)
         strict_task = load_task_for_execution(root, args.task_id, require_ready=True)
         title = str(strict_task.get("title") or args.task_id)
+    elif args.command_id == "review" and args.task_id:
+        strict_task = load_task_for_execution(root, args.task_id, require_ready=True)
+        title = str(strict_task.get("title") or f"Review: {args.task_id}")
     elif args.command_id == "review" and not (args.target or args.goal):
         parser.exit(2, "thoth: error: Review prepare requires --target or --goal.\n")
     handle, packet = prepare_execution(root, command_id=args.command_id, title=title, task_id=args.task_id, host=args.host, executor=args.executor, sleep_requested=bool(args.sleep), strict_task=strict_task, target=args.target, goal=args.goal or title)
@@ -89,7 +92,21 @@ def handle_review(args, parser, *, project_root: Path) -> int:
     if not content:
         parser.exit(2, "thoth: error: Review target is required.\n")
     review_task_id = getattr(args, "task_id", None) or infer_review_task_id(project_root, content)
-    handle, packet = prepare_execution(project_root, command_id="review", title=f"Review: {content}", task_id=review_task_id, host=args.host, executor=args.executor, sleep_requested=False, target=content, goal=getattr(args, "goal", None) or content)
+    strict_task = None
+    if review_task_id:
+        strict_task = load_task_for_execution(project_root, review_task_id, require_ready=True)
+    handle, packet = prepare_execution(
+        project_root,
+        command_id="review",
+        title=f"Review: {content}",
+        task_id=review_task_id,
+        host=args.host,
+        executor=args.executor,
+        sleep_requested=False,
+        strict_task=strict_task,
+        target=content,
+        goal=getattr(args, "goal", None) or content,
+    )
     print_envelope(command="review", status="ok", summary=f"Prepared live review packet for {content}", body={"packet": packet, "note_path": str(note_path)}, refs=output_refs(note_path, handle.run_dir), checks=[{"name": "live_only", "ok": packet.get("dispatch_mode") == LIVE_DISPATCH_MODE}])
     return 0
 

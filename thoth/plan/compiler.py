@@ -177,6 +177,7 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
                     "failure_classes": _normalize_string_list(contract.get("failure_classes")),
                     "runtime_contract": normalize_runtime_contract(contract.get("runtime_contract")),
                     "validate_output_schema": normalize_validate_output_schema(contract.get("validate_output_schema")),
+                    "review_expectation": contract.get("review_expectation"),
                     "source_kind": contract.get("source_kind"),
                     "import_state": contract.get("import_state"),
                 }
@@ -187,6 +188,8 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
                 "legacy_task_count": legacy_audit["summary"]["total"],
             },
         }
+        if isinstance(contract.get("review_expectation"), dict):
+            payload["review_expectation"] = contract.get("review_expectation")
         generated_tasks[task_id] = payload
         task_counts[ready_state] += 1
         task_counts["total"] += 1

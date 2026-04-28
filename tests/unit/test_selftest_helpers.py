@@ -11,18 +11,28 @@ from pathlib import Path
 
 import pytest
 
+from thoth.observe.selftest.host_common import (
+    _claude_arguments_match,
+    _claude_expected_args,
+    _looks_like_claude_bridge_cold_start,
+    _normalize_claude_public_command_result,
+)
+from thoth.observe.selftest.fixtures import _canonical_review_result_payload
 from thoth.observe.selftest.runner import (
     Recorder,
     _cap_selftest_timeout,
     _cleanup_legacy_heavy_tmp,
     _codex_completed_command_items,
     _codex_prompt_for_public_command,
+    _expected_host_review_result,
     _effective_host_command_timeout,
     _ensure_codex_global_hooks,
     _ensure_codex_skill_installed,
     _ensure_features_flag,
     _host_real_contract_payloads,
     _host_real_decision_payload,
+    _host_real_source_fingerprint,
+    _host_real_source_unchanged,
     _legacy_heavy_process_targets,
     _looks_like_transient_host_outage,
     _normalize_codex_public_command_result,
@@ -36,31 +46,28 @@ from thoth.selftest_seed import seed_host_real_app
 
 def test_seed_host_real_app_writes_expected_surface(tmp_path):
     seed_host_real_app(tmp_path)
-    assert (tmp_path / "tracker" / "store.py").exists()
-    assert (tmp_path / "data" / "tasks.json").exists()
-    assert (tmp_path / "scripts" / "__init__.py").exists()
-    assert (tmp_path / "scripts" / "validate_feature.py").exists()
-    assert (tmp_path / "scripts" / "validate_bugfix.py").exists()
-    assert (tmp_path / "scripts" / "validate_full.py").exists()
-    store = (tmp_path / "tracker" / "store.py").read_text(encoding="utf-8")
-    validator = (tmp_path / "scripts" / "validate_full.py").read_text(encoding="utf-8")
-    assert "owner and due_date are ignored" in store
-    assert "empty title update was accepted" in validator
+    assert (tmp_path / "tracker" / "runtime_probe.py").exists()
+    assert (tmp_path / "tracker" / "review_probe.py").exists()
+    assert (tmp_path / "scripts" / "runtime_probe.py").exists()
+    review_probe = (tmp_path / "tracker" / "review_probe.py").read_text(encoding="utf-8")
+    readme = (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert 'task["title"] = title.strip()' in review_probe
+    assert "one fixed structured finding" in readme
 
 
-def test_seed_host_real_feature_validator_runs_as_script_without_import_error(tmp_path):
+def test_seed_host_real_runtime_probe_script_runs(tmp_path):
     seed_host_real_app(tmp_path)
 
     result = subprocess.run(
-        [sys.executable, "scripts/validate_feature.py"],
+        [sys.executable, "scripts/runtime_probe.py"],
         cwd=tmp_path,
         capture_output=True,
         text=True,
     )
 
-    assert result.returncode != 0
+    assert result.returncode == 0
     assert "ModuleNotFoundError" not in result.stderr
-    assert "create_task() did not return owner" in result.stderr
+    assert "RUNTIME_PROBE_READY" in result.stdout
 
 
 def test_ensure_features_flag_inserts_inside_features_block():
@@ -81,7 +88,7 @@ def test_ensure_features_flag_handles_section_header_comments():
 
 def test_ensure_codex_skill_installed_links_global_entry(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
-    source = repo_root / ".agents" / "skills" / "thoth"
+    source = repo_root / "plugins" / "thoth" / "skills" / "thoth"
     source.mkdir(parents=True)
     (source / "SKILL.md").write_text("# test\n", encoding="utf-8")
     home = tmp_path / "home"
@@ -132,38 +139,124 @@ def test_preflight_host_real_reports_missing_thoth_wrapper_as_install_drift(tmp_
                 "thoth_cli_present": False,
             },
             recorder,
+            requested_hosts={"codex"},
         )
 
 
-def test_host_real_payloads_define_frozen_decision_and_three_contracts():
+def test_preflight_host_real_scopes_requirements_to_requested_host(tmp_path, monkeypatch):
+    recorder = Recorder(tmp_path / "artifacts")
+    monkeypatch.setattr("thoth.observe.selftest.capabilities._ensure_codex_hooks_enabled", lambda _recorder: {})
+    monkeypatch.setattr("thoth.observe.selftest.capabilities._ensure_codex_global_hooks", lambda _recorder: {})
+    monkeypatch.setattr("thoth.observe.selftest.capabilities._ensure_codex_skill_installed", lambda _recorder: {})
+
+    _preflight_host_real(
+        {
+            "codex_cli_present": True,
+            "codex_authenticated": True,
+            "claude_cli_present": True,
+            "claude_authenticated": False,
+            "thoth_cli_present": True,
+        },
+        recorder,
+        requested_hosts={"codex"},
+    )
+
+    with pytest.raises(RuntimeError, match="claude_authenticated"):
+        _preflight_host_real(
+            {
+                "codex_cli_present": True,
+                "codex_authenticated": True,
+                "claude_cli_present": True,
+                "claude_authenticated": False,
+                "thoth_cli_present": True,
+            },
+            recorder,
+            requested_hosts={"claude"},
+        )
+
+
+def test_host_real_payloads_define_frozen_decision_and_two_probe_contracts():
     decision = _host_real_decision_payload()
     contracts = _host_real_contract_payloads()
 
     assert decision["decision_id"] == "DEC-host-real-selftest"
     assert decision["status"] == "frozen"
     assert [item["task_id"] for item in contracts] == [
-        "task-feature-owner-due-date",
-        "task-bugfix-column-persist",
-        "task-loop-close-review",
+        "task-runtime-probe",
+        "task-review-probe",
     ]
-    assert contracts[0]["eval_entrypoint"]["command"] == "python scripts/validate_feature.py"
-    assert contracts[1]["eval_entrypoint"]["command"] == "python scripts/validate_bugfix.py"
-    assert contracts[2]["eval_entrypoint"]["command"] == "python scripts/validate_full.py"
+    assert contracts[0]["eval_entrypoint"]["command"] == "python scripts/runtime_probe.py"
+    assert contracts[1]["review_expectation"] == _expected_host_review_result()
+    assert contracts[1]["review_binding"]["target"] == "tracker/review_probe.py"
 
 
 def test_codex_prompt_uses_literal_shell_command_for_public_surface():
     prompt = _codex_prompt_for_public_command("$thoth doctor --quick", "DONE_TOKEN")
     assert "`$thoth doctor --quick`" in prompt
     assert "`thoth doctor --quick`" in prompt
-    assert "execute it literally as `thoth doctor --quick`" in prompt
-    assert "Role: Thoth drift auditor." in prompt
+    assert "Execute that shell command immediately as your first meaningful action." in prompt
+    assert "Do not inspect files, search memories, explain, retry, or execute any second shell command." in prompt
 
 
-def test_codex_run_prompt_requires_live_packet_terminalization():
-    prompt = _codex_prompt_for_public_command("$thoth run --host codex --task-id task-1", "DONE_TOKEN")
-    assert "dispatch_mode=live_native" in prompt
-    assert "obey the packet plus the phase-specific controller outputs only" in prompt
-    assert "Done token: DONE_TOKEN." in prompt
+def test_codex_review_prompt_requires_exact_probe_result():
+    prompt = _codex_prompt_for_public_command("$thoth review --task-id task-review-probe tracker/review_probe.py", "DONE_TOKEN")
+    assert "heavy selftest review probe" in prompt
+    assert "stay inside the Thoth review protocol only" in prompt
+    assert "packet.strict_task.review_expectation" in prompt
+    assert "packet.protocol_commands.complete_exact" in prompt
+    assert "Do not send commentary" in prompt
+    assert "Do not inspect CLI help" in prompt
+    assert "Do not run `--help`, `which`, `codex`, `grep`" in prompt
+    assert "`--summary` must be a short plain string only" in prompt
+    assert "packet-provided complete command" in prompt
+    assert "reply with `DONE_TOKEN` only" in prompt
+
+
+def test_claude_expected_args_preserves_quoted_json_payload():
+    args = _claude_expected_args(
+        "/thoth:discuss --decision-json '{\"schema_version\":1,\"decision_id\":\"DEC-1\"}'"
+    )
+    assert args == ["--decision-json", '{"schema_version":1,"decision_id":"DEC-1"}']
+
+
+def test_claude_arguments_match_accepts_injected_host_prefix():
+    expected = ["--sleep", "--task-id", "task-runtime-probe"]
+    event_arguments = ["--host", "claude", "--sleep", "--task-id", "task-runtime-probe"]
+
+    assert _claude_arguments_match(event_arguments, expected) is True
+
+
+def test_normalize_claude_public_command_result_accepts_timeout_after_successful_bridge():
+    command_result = type("CommandResultLike", (), {})()
+    command_result.argv = ["claude", "-p", "/thoth:run --sleep --task-id task-runtime-probe"]
+    command_result.cwd = "/tmp/project"
+    command_result.returncode = 124
+    command_result.duration_seconds = 25.0
+    command_result.stdout = ""
+    command_result.stderr = "Command timed out after 25.0s."
+
+    normalized = _normalize_claude_public_command_result(
+        command_result,
+        bridge_event={
+            "command_id": "run",
+            "bridge_success": True,
+            "returncode": 0,
+        },
+    )
+
+    assert normalized.returncode == 0
+
+
+def test_claude_bridge_cold_start_detects_session_only_timeout():
+    command_result = type("CommandResultLike", (), {})()
+    command_result.returncode = 124
+    command_result.stdout = (
+        '{"type":"system","subtype":"hook_started","hook_name":"SessionStart:startup","hook_event":"SessionStart"}\n'
+        '{"type":"system","subtype":"hook_response","hook_name":"SessionStart:startup"}\n'
+    )
+    command_result.stderr = "Command timed out after 25.0s."
+
+    assert _looks_like_claude_bridge_cold_start(command_result) is True
 
 
 def test_run_command_returns_partial_result_on_timeout(tmp_path):
@@ -196,6 +289,7 @@ def test_effective_host_command_timeout_caps_claude_bridge_only_commands():
     assert _effective_host_command_timeout("claude", "/thoth:init", 240) == 25.0
     assert _effective_host_command_timeout("claude", "/thoth:discuss --decision-json '{}'", 240) == 25.0
     assert _effective_host_command_timeout("claude", "/thoth:run --task-id task-1", 240) == 240
+    assert _effective_host_command_timeout("claude", "/thoth:run --sleep --task-id task-runtime-probe", 240) == 25.0
     assert _effective_host_command_timeout("codex", "$thoth init", 240) == 240
 
 
@@ -227,7 +321,7 @@ def test_codex_completed_command_items_extracts_failed_shell_step():
     assert items[0]["exit_code"] == 1
 
 
-def test_normalize_codex_public_command_result_ignores_aux_failure_after_live_run_success():
+def test_normalize_codex_public_command_result_allows_followup_commands_for_review_probe():
     command_result = type("CommandResultLike", (), {})()
     command_result.argv = ["codex", "exec"]
     command_result.cwd = "/tmp/project"
@@ -242,7 +336,7 @@ def test_normalize_codex_public_command_result_ignores_aux_failure_after_live_ru
                     "item": {
                         "id": "item_0",
                         "type": "command_execution",
-                        "command": "/bin/bash -lc 'thoth run --host codex --task-id task-1'",
+                        "command": "/bin/bash -lc 'thoth review --task-id task-review-probe tracker/review_probe.py'",
                         "aggregated_output": "{\"status\":\"ok\"}",
                         "exit_code": 0,
                         "status": "completed",
@@ -268,11 +362,187 @@ def test_normalize_codex_public_command_result_ignores_aux_failure_after_live_ru
 
     normalized = _normalize_codex_public_command_result(
         command_result,
-        public_command="$thoth run --host codex --task-id task-1",
+        public_command="$thoth review --task-id task-review-probe tracker/review_probe.py",
+        done_token="DONE",
+        allow_followup_commands=True,
+    )
+
+    assert normalized.returncode == 0
+
+
+def test_normalize_codex_public_command_result_rejects_extra_commands_for_literal_probe():
+    command_result = type("CommandResultLike", (), {})()
+    command_result.argv = ["codex", "exec"]
+    command_result.cwd = "/tmp/project"
+    command_result.returncode = 0
+    command_result.duration_seconds = 1.0
+    command_result.stderr = ""
+    command_result.stdout = "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_0",
+                        "type": "command_execution",
+                        "command": "/bin/bash -lc 'thoth status'",
+                        "aggregated_output": "ok",
+                        "exit_code": 0,
+                        "status": "completed",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_1",
+                        "type": "command_execution",
+                        "command": "/bin/bash -lc 'pwd'",
+                        "aggregated_output": "/tmp/project",
+                        "exit_code": 0,
+                        "status": "completed",
+                    },
+                }
+            ),
+            json.dumps({"type": "item.completed", "item": {"id": "item_2", "type": "agent_message", "text": "DONE"}}),
+        ]
+    )
+
+    normalized = _normalize_codex_public_command_result(
+        command_result,
+        public_command="$thoth status",
+        done_token="DONE",
+    )
+
+    assert normalized.returncode == 1
+    assert "unexpected extra shell commands" in normalized.stderr
+
+
+def test_normalize_codex_public_command_result_accepts_timeout_after_successful_watch_probe():
+    command_result = type("CommandResultLike", (), {})()
+    command_result.argv = ["codex", "exec"]
+    command_result.cwd = "/tmp/project"
+    command_result.returncode = 124
+    command_result.duration_seconds = 25.0
+    command_result.stderr = "Reading additional input from stdin...\n\nCommand timed out after 25.0s."
+    command_result.stdout = "\n".join(
+        [
+            json.dumps({"type": "thread.started", "thread_id": "t-1"}),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_0",
+                        "type": "command_execution",
+                        "command": "/bin/bash -lc 'thoth run --watch run-123'",
+                        "aggregated_output": "{\"command\":\"run\",\"body\":{\"watch_output\":\"status=running dispatch=external_worker\"}}",
+                        "exit_code": 0,
+                        "status": "completed",
+                    },
+                }
+            ),
+        ]
+    )
+
+    normalized = _normalize_codex_public_command_result(
+        command_result,
+        public_command="$thoth run --watch run-123",
         done_token="DONE",
     )
 
     assert normalized.returncode == 0
+
+
+def test_normalize_codex_public_command_result_accepts_single_successful_literal_probe_without_done_token():
+    command_result = type("CommandResultLike", (), {})()
+    command_result.argv = ["codex", "exec"]
+    command_result.cwd = "/tmp/project"
+    command_result.returncode = 124
+    command_result.duration_seconds = 25.0
+    command_result.stderr = "Reading additional input from stdin...\n\nCommand timed out after 25.0s."
+    command_result.stdout = "\n".join(
+        [
+            json.dumps({"type": "thread.started", "thread_id": "t-1"}),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_0",
+                        "type": "command_execution",
+                        "command": "/bin/bash -lc 'thoth init'",
+                        "aggregated_output": "{\"command\":\"init\",\"status\":\"ok\"}",
+                        "exit_code": 0,
+                        "status": "completed",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_1",
+                        "type": "agent_message",
+                        "text": "thoth init finished, no extra shell commands were executed.",
+                    },
+                }
+            ),
+        ]
+    )
+
+    normalized = _normalize_codex_public_command_result(
+        command_result,
+        public_command="$thoth init",
+        done_token="DONE",
+    )
+
+    assert normalized.returncode == 0
+
+
+def test_normalize_codex_public_command_result_still_requires_done_token_for_review_probe():
+    command_result = type("CommandResultLike", (), {})()
+    command_result.argv = ["codex", "exec"]
+    command_result.cwd = "/tmp/project"
+    command_result.returncode = 0
+    command_result.duration_seconds = 1.0
+    command_result.stderr = ""
+    command_result.stdout = "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_0",
+                        "type": "command_execution",
+                        "command": "/bin/bash -lc 'thoth review --task-id task-review-probe tracker/review_probe.py'",
+                        "aggregated_output": "{\"command\":\"review\",\"status\":\"ok\"}",
+                        "exit_code": 0,
+                        "status": "completed",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_1",
+                        "type": "agent_message",
+                        "text": "{\"summary\":\"1 issue\",\"findings\":[]}",
+                    },
+                }
+            ),
+        ]
+    )
+
+    normalized = _normalize_codex_public_command_result(
+        command_result,
+        public_command="$thoth review --task-id task-review-probe tracker/review_probe.py",
+        done_token="DONE",
+        allow_followup_commands=True,
+    )
+
+    assert normalized.returncode == 1
+    assert "Missing done token" in normalized.stderr
 
 
 def test_normalize_codex_public_command_result_fails_when_requested_shell_step_fails():
@@ -309,6 +579,22 @@ def test_normalize_codex_public_command_result_fails_when_requested_shell_step_f
 
     assert normalized.returncode == 1
     assert "Codex command execution failed" in normalized.stderr
+
+
+def test_host_real_source_fingerprint_detects_probe_source_edits(tmp_path):
+    seed_host_real_app(tmp_path)
+    baseline = _host_real_source_fingerprint(tmp_path)
+
+    unchanged, payload = _host_real_source_unchanged(tmp_path, baseline)
+    assert unchanged is True
+    assert payload["baseline"] == payload["current"]
+
+    review_probe = tmp_path / "tracker" / "review_probe.py"
+    review_probe.write_text("from __future__ import annotations\n\nprint('mutated')\n", encoding="utf-8")
+
+    unchanged, payload = _host_real_source_unchanged(tmp_path, baseline)
+    assert unchanged is False
+    assert payload["baseline"] != payload["current"]
 
 
 def test_cap_selftest_timeout_respects_global_deadline(monkeypatch):
@@ -354,7 +640,7 @@ def test_legacy_heavy_process_targets_matches_fixed_roots_and_old_heavy_runner(t
 
     codex_skill = proc_root / "103"
     codex_skill.mkdir()
-    (codex_skill / "cmdline").write_bytes(f"python\x00{fixed_codex / 'scripts' / 'validate_feature.py'}\x00".encode())
+    (codex_skill / "cmdline").write_bytes(f"python\x00{fixed_codex / 'scripts' / 'runtime_probe.py'}\x00".encode())
     (codex_skill / "cwd").symlink_to(tmp_path)
 
     unrelated = proc_root / "104"
@@ -500,6 +786,37 @@ def test_verify_host_review_accepts_findings_from_artifact_file(tmp_path):
     )
 
     assert recorder.checks[-1].status == "passed"
+
+
+def test_canonical_review_result_payload_ignores_runtime_wrapper_fields(tmp_path):
+    project_dir = tmp_path / "project"
+    run_id = "review-789"
+    run_dir = project_dir / ".thoth" / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    acceptance = {
+        "status": "completed",
+        "result": {
+            "phase_statuses": {},
+            "validate_passed": False,
+            "final_summary": "finished",
+            "artifacts": {},
+            "next_hint": None,
+            "summary": "1 issue",
+            "findings": [
+                {
+                    "severity": "high",
+                    "title": "Empty title accepted",
+                    "path": "tracker/review_probe.py",
+                    "line": 4,
+                    "summary": "Blank titles are persisted as valid task state.",
+                }
+            ],
+        },
+    }
+
+    canonical = _canonical_review_result_payload(project_dir, run_id, acceptance)
+
+    assert canonical == _expected_host_review_result()
 
 
 def test_verify_host_run_rejects_fallback_or_degraded_language(tmp_path):

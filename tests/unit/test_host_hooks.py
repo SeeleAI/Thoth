@@ -58,3 +58,13 @@ def test_codex_stop_hook_emits_system_message_when_lightweight_issues_exist(hook
     payload = json.loads(result.stdout)
     assert "systemMessage" in payload
     assert "Run $thoth doctor" in payload["systemMessage"]
+
+
+def test_claude_plugin_hook_projection_passes_required_host_and_event_flags():
+    payload = json.loads((Path(__file__).resolve().parents[2] / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+
+    start_hook = payload["hooks"]["SessionStart"][0]["hooks"][0]
+    end_hook = payload["hooks"]["SessionEnd"][0]["hooks"][0]
+
+    assert 'session-hook.py" --host claude --event start' in start_hook["command"]
+    assert 'session-hook.py" --host claude --event end' in end_hook["command"]
