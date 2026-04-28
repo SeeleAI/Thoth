@@ -17,7 +17,7 @@ from .store import (
     ensure_task_authority_tree,
     upsert_contract,
     upsert_decision,
-    upsert_verdict,
+    upsert_task_result,
     utc_now,
 )
 from .validators import VERDICT_VALUE_MAP
@@ -242,7 +242,7 @@ def import_legacy_tasks(project_root: Path, migration_dir: Path) -> dict[str, An
         contracts_written += 1
 
         if import_state == "imported_resolved":
-            upsert_verdict(
+            upsert_task_result(
                 project_root,
                 task_id,
                 _normalize_legacy_task_result(

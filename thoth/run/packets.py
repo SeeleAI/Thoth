@@ -7,8 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from thoth.plan.store import load_task_result
-from thoth.prompt_contracts import build_review_result_shape
+from thoth.prompt_specs import build_review_result_shape
 
 from .io import _read_json, _write_json
 from .lease import acquire_repo_lease
@@ -20,6 +19,7 @@ from .phases import (
     initialize_run_controller,
     normalize_runtime_contract,
 )
+from .review_context import latest_fresh_review_context
 
 def _protocol_command_argv(project_root: Path, command: str, run_id: str, *extra: str) -> list[str]:
     repo_root = Path(__file__).resolve().parent.parent
@@ -48,52 +48,6 @@ def _protocol_command_strings(project_root: Path, run_id: str) -> dict[str, str]
         "complete": render("complete", "--summary", "finished"),
         "fail": render("fail", "--summary", "failed", "--reason", "reason"),
     }
-
-
-def _latest_fresh_review_context(
-    project_root: Path,
-    *,
-    task_id: str | None,
-    target: str | None,
-) -> dict[str, Any]:
-    if not task_id or not target:
-        return {}
-    task_result = load_task_result(project_root, task_id)
-    last_closure_at = task_result.get("last_closure_at")
-    last_closure_ts = _parse_iso8601(last_closure_at)
-    best: dict[str, Any] = {}
-    runs_root = project_root / ".thoth" / "runs"
-    if not runs_root.is_dir():
-        return {}
-    for run_dir in runs_root.iterdir():
-        if not run_dir.is_dir():
-            continue
-        run_payload = _read_json(run_dir / "run.json")
-        if run_payload.get("kind") != "review":
-            continue
-        if run_payload.get("task_id") != task_id or run_payload.get("target") != target:
-            continue
-        result_payload = _read_json(run_dir / "result.json")
-        if result_payload.get("status") != "completed":
-            continue
-        finished_at = result_payload.get("finished_at") or result_payload.get("updated_at")
-        finished_ts = _parse_iso8601(finished_at)
-        if finished_ts is None:
-            continue
-        if last_closure_ts is not None and finished_ts <= last_closure_ts:
-            continue
-        current_best_ts = _parse_iso8601(best.get("finished_at")) if best else None
-        if current_best_ts is not None and finished_ts <= current_best_ts:
-            continue
-        review_result = result_payload.get("result") if isinstance(result_payload.get("result"), dict) else {}
-        best = {
-            "run_id": run_payload.get("run_id") or run_dir.name,
-            "target": target,
-            "summary": result_payload.get("summary"),
-            "finished_at": finished_at,
-            "findings": review_result.get("findings", []),
-        }
-    return best
 
 
 def _build_execution_packet(
@@ -160,7 +114,7 @@ def _build_execution_packet(
     elif command_id == "loop":
         review_binding = strict_task.get("review_binding") if isinstance(strict_task, dict) else {}
         review_target = review_binding.get("target") if isinstance(review_binding, dict) else None
-        review_context = _latest_fresh_review_context(
+        review_context = latest_fresh_review_context(
             handle.project_root,
             task_id=str(run.get("task_id") or "") or None,
             target=review_target if isinstance(review_target, str) else None,

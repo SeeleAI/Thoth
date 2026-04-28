@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from .command_specs import COMMAND_SPECS, CommandSpec, PUBLIC_CODEX_COMMANDS
-from .prompt_contracts import render_command_contract_markdown
+from .prompt_specs import render_command_contract_markdown
 
 
 ROOT = Path(__file__).resolve().parent.parent

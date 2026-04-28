@@ -19,7 +19,6 @@ from .store import (
     load_contracts,
     load_decisions,
     load_task_result_map,
-    upsert_verdict,
     utc_now,
 )
 from .validators import _is_imported_terminal, _validate_contract, _validate_decision
@@ -208,9 +207,9 @@ def compile_task_authority(project_root: Path) -> dict[str, Any]:
 
     for task_id, item in task_result_map.items():
         if generated_tasks.get(task_id, {}).get("ready_state") != "imported_resolved" and item.get("source") == "legacy_import":
-            problems.append(f"task {task_id}: legacy_import verdict attached to non-imported_resolved task")
+            problems.append(f"task {task_id}: legacy_import task_result attached to non-imported_resolved task")
         if not _normalize_string_list(item.get("evidence_paths")) and item.get("source") not in {"none", "acceptance_pending"}:
-            problems.append(f"task {task_id}: verdict missing evidence_paths")
+            problems.append(f"task {task_id}: task_result missing evidence_paths")
 
     for item in legacy_audit.get("legacy_tasks", []):
         problems.append(f"legacy task {item.get('task_id')}: {item.get('reason')}")

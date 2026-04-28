@@ -23,7 +23,7 @@ import yaml
 
 from thoth.init.render import render_codex_hooks_payload
 from thoth.plan.compiler import compile_task_authority
-from thoth.prompt_contracts import build_codex_public_command_prompt
+from thoth.prompt_specs import build_codex_public_command_prompt
 from thoth.run.ledger import complete_run, heartbeat_run
 from thoth.selftest_seed import seed_host_real_app
 

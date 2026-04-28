@@ -150,12 +150,6 @@ def task_updated_at(task: dict[str, Any]) -> str | None:
         value = task_result.get(key)
         if isinstance(value, str) and value:
             return value
-    verdict = task.get("verdict")
-    if isinstance(verdict, dict):
-        for key in ("updated_at", "created_at"):
-            value = verdict.get(key)
-            if isinstance(value, str) and value:
-                return value
     return None
 
 
@@ -197,7 +191,7 @@ def task_progress_pct(task: dict[str, Any]) -> float:
     return 0.0
 
 
-def recent_verdict_summaries(tasks: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
+def recent_task_result_summaries(tasks: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for task in tasks:
         task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
@@ -205,7 +199,6 @@ def recent_verdict_summaries(tasks: list[dict[str, Any]], *, limit: int = 5) -> 
         conclusion = (
             task_result.get("conclusion")
             or task_result.get("current_summary")
-            or (task.get("verdict", {}) if isinstance(task.get("verdict"), dict) else {}).get("conclusion")
         )
         evidence_paths = task_result.get("evidence_paths")
         if not isinstance(evidence_paths, list):
@@ -316,7 +309,7 @@ def overview_summary_read_model(project_root: Path) -> dict[str, Any]:
             "decision_queue_count": compiler_summary.get("decision_queue_count", 0),
         },
         "compiler_summary": compiler_summary,
-        "recent_conclusions": recent_verdict_summaries(tasks, limit=6),
+        "recent_conclusions": recent_task_result_summaries(tasks, limit=6),
         "recent_activity": load_run_log_recent(project_root, 6),
         "todo_next": [
             {"id": item_id, "status": item_status, "description": description}
