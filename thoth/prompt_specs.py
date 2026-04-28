@@ -564,6 +564,7 @@ def build_codex_public_command_prompt(command_id: str, *, public_command: str, s
         f"The Codex public surface is `{public_command}`, but in the workspace shell you must execute it literally as `{shell_command}`.",
         "Execute that shell command immediately as your first meaningful action.",
         "Do not search memories, inspect unrelated files, or explain the command before executing it.",
+        "If that `thoth` shell command is missing in a fresh plugin-installed environment, report host install drift instead of inventing a different entrypoint.",
         "Do not replace execution with prose, and do not rely on a stale global thoth binary if it differs from the repo-local implementation.",
         f"Role: {spec.role}.",
         f"Objective: {spec.objective}",

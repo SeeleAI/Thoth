@@ -100,9 +100,12 @@ class TestInitWorkflow:
 
     def test_validation_scripts_are_strict_only(self, init_project):
         project_dir, _ = init_project
+        thoth_cli = (project_dir / "scripts" / "thoth-cli.sh").read_text(encoding="utf-8")
         session_end = (project_dir / "scripts" / "session-end-check.sh").read_text(encoding="utf-8")
-        assert "python -m thoth.cli sync" in session_end
-        assert "python -m thoth.cli doctor" in session_end
+        assert "command -v thoth" in thoth_cli
+        assert "THOTH_SOURCE_ROOT" in thoth_cli
+        assert "bash scripts/thoth-cli.sh sync" in session_end
+        assert "bash scripts/thoth-cli.sh doctor" in session_end
         assert "research-tasks" not in session_end
 
     def test_creates_migration_bundle(self, init_project):

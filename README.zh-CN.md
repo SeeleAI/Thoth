@@ -156,6 +156,13 @@ codex plugin marketplace add SeeleAI/Thoth
 
 对 Codex 来说，`marketplace add` 只是把 marketplace 源接进来。然后还需要在 Codex 的 plugin directory 里安装或启用 `thoth` 插件。
 
+插件安装完成后，这里有意区分两层入口：
+
+- 公开插件入口：`Claude /thoth:*`、`Codex $thoth <command>`，以及插件提供的 shell wrapper `thoth <command>`
+- 源码仓开发回退入口：`python -m thoth.cli <command>`
+
+在全新仓库或空目录里，应优先使用插件安装出来的 `thoth` wrapper；`python -m thoth.cli` 只用于你明确想绑定到某个 checked-out Thoth 源码树时。
+
 2. 初始化你希望由 Thoth 接管的仓库。
 
 ```text
