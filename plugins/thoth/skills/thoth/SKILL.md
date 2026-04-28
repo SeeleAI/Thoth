@@ -36,9 +36,11 @@ Supported commands:
 
 ## Execution Guidance
 
-- When the current workspace is this Thoth repository itself, prefer the repo-local CLI implementation over any globally installed `thoth` binary.
-- In that case, invoke commands from the repository root with `python -m thoth.cli <command>` and ensure `PYTHONPATH` includes the repository root.
-- Only rely on a PATH-level `thoth` binary when you have already verified it resolves to the same checked-out repository code.
+- In an ordinary plugin-installed environment, the install should provide a PATH-level `thoth` wrapper that resolves back to the installed plugin payload.
+- Use that wrapper for shell execution in fresh repos or empty directories, including `thoth init` and `thoth dashboard start`.
+- When the current workspace is this Thoth source repository itself, prefer the repo-local CLI implementation over the installed wrapper so execution stays pinned to the checked-out code.
+- In that source-repo case, invoke commands from the repository root with `python -m thoth.cli <command>` and ensure `PYTHONPATH` includes the repository root.
+- If the plugin-installed wrapper is missing from PATH in a fresh environment, treat that as host install drift rather than silently rewriting the public surface into a different entrypoint.
 - If `run` or `loop` is called without `--task-id`, do not create a task, do not guess a task id, and do not touch code. Surface the returned candidate tasks and stop.
 - For `run` and `loop`, treat the printed JSON packet as a phase controller contract: repeatedly fetch the next phase, execute exactly that phase, and submit one JSON object back through the controller until it terminalizes.
 - A live packet is incomplete until the controller reaches a terminal state; printing or paraphrasing the packet alone is a failure, not a success.

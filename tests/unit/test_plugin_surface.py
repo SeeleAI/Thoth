@@ -93,3 +93,11 @@ def test_plugin_cli_entry_exists_for_shadow_safe_execution():
     assert entry_path.exists()
     content = entry_path.read_text(encoding="utf-8")
     assert "from thoth.surface.cli import main as cli_main" in content
+
+
+def test_plugin_shell_wrapper_exists_for_fresh_install_envs():
+    """Fresh plugin installs should expose a shell-level thoth wrapper without pip install."""
+    wrapper_path = ROOT / "bin" / "thoth"
+    assert wrapper_path.exists()
+    content = wrapper_path.read_text(encoding="utf-8")
+    assert 'exec "${PYTHON_BIN}" "${PLUGIN_ROOT}/scripts/thoth-cli-entry.py" "$@"' in content

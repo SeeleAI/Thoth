@@ -90,6 +90,8 @@ def test_generate_pre_commit_config(base_config, tmp_path):
     content = (tmp_path / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     assert "thoth-doctor" in content
     assert "thoth-sync" in content
+    assert "bash scripts/thoth-cli.sh doctor --json" in content
+    assert "bash scripts/thoth-cli.sh sync" in content
 
 
 def test_generate_dashboard_writes_locale_selection(base_config, tmp_path):
@@ -101,9 +103,13 @@ def test_generate_dashboard_writes_locale_selection(base_config, tmp_path):
 
 def test_generate_scripts(base_config, tmp_path):
     generate_scripts(base_config, tmp_path)
+    thoth_cli = (tmp_path / "scripts" / "thoth-cli.sh").read_text(encoding="utf-8")
     session_end = (tmp_path / "scripts" / "session-end-check.sh").read_text(encoding="utf-8")
-    assert "python -m thoth.cli sync" in session_end
-    assert "python -m thoth.cli doctor" in session_end
+    assert "command -v thoth" in thoth_cli
+    assert "THOTH_SOURCE_ROOT" in thoth_cli
+    assert "Install drift" in thoth_cli
+    assert "bash scripts/thoth-cli.sh sync" in session_end
+    assert "bash scripts/thoth-cli.sh doctor" in session_end
 
 
 def test_generate_tests(base_config, tmp_path):

@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from thoth.observe.selftest.runner import (
     Recorder,
     _cap_selftest_timeout,
@@ -24,6 +26,7 @@ from thoth.observe.selftest.runner import (
     _legacy_heavy_process_targets,
     _looks_like_transient_host_outage,
     _normalize_codex_public_command_result,
+    _preflight_host_real,
     _run_command,
     _verify_host_run_completion,
     _terminate_processes,
@@ -114,6 +117,22 @@ def test_ensure_codex_global_hooks_writes_bridge_config(tmp_path, monkeypatch):
     assert "thoth-codex-hook.sh" in start_hook["command"]
     assert "thoth-codex-hook.sh" in stop_hook["command"]
     assert payload["effective"] is True
+
+
+def test_preflight_host_real_reports_missing_thoth_wrapper_as_install_drift(tmp_path):
+    recorder = Recorder(tmp_path / "artifacts")
+
+    with pytest.raises(RuntimeError, match="Host install drift"):
+        _preflight_host_real(
+            {
+                "codex_cli_present": True,
+                "codex_authenticated": True,
+                "claude_cli_present": True,
+                "claude_authenticated": True,
+                "thoth_cli_present": False,
+            },
+            recorder,
+        )
 
 
 def test_host_real_payloads_define_frozen_decision_and_three_contracts():

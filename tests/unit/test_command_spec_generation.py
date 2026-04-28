@@ -56,6 +56,7 @@ def test_codex_skill_lists_single_public_entry():
     content = render_codex_skill()
     assert content.startswith("---\nname: thoth\n")
     assert "$thoth <command>" in content
+    assert "PATH-level `thoth` wrapper" in content
     assert "python -m thoth.cli <command>" in content
     assert "do not create a task" in content
     assert "## Command Contracts" in content

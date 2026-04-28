@@ -34,10 +34,13 @@ def detect_capabilities() -> dict[str, Any]:
     def tool_path(name: str) -> str | None:
         return shutil.which(name)
 
+    thoth_cli_path = tool_path("thoth")
     capabilities: dict[str, Any] = {
         "python": PYTHON,
         "codex_cli_present": bool(tool_path("codex")),
         "claude_cli_present": bool(tool_path("claude")),
+        "thoth_cli_present": bool(thoth_cli_path),
+        "thoth_cli_path": thoth_cli_path,
     }
 
     if capabilities["codex_cli_present"]:
@@ -233,12 +236,15 @@ def _preflight_host_real(capabilities: dict[str, Any], recorder: Recorder) -> No
         "codex_authenticated": bool(capabilities.get("codex_authenticated")),
         "claude_cli_present": bool(capabilities.get("claude_cli_present")),
         "claude_authenticated": bool(capabilities.get("claude_authenticated")),
-        "thoth_cli_present": bool(shutil.which("thoth")),
+        "thoth_cli_present": bool(capabilities.get("thoth_cli_present")),
     }
     missing = [name for name, ok in required.items() if not ok]
     if missing:
-        recorder.add("preflight.host_tools", "failed", f"Missing heavy host-real prerequisites: {', '.join(missing)}")
-        raise RuntimeError(f"missing heavy host-real prerequisites: {', '.join(missing)}")
+        detail = f"Missing heavy host-real prerequisites: {', '.join(missing)}"
+        if "thoth_cli_present" in missing:
+            detail += ". Host install drift: expected the plugin-installed `thoth` shell wrapper on PATH."
+        recorder.add("preflight.host_tools", "failed", detail)
+        raise RuntimeError(detail)
     _ensure_codex_hooks_enabled(recorder)
     _ensure_codex_global_hooks(recorder)
     _ensure_codex_skill_installed(recorder)

@@ -156,6 +156,13 @@ codex plugin marketplace add SeeleAI/Thoth
 
 For Codex, adding the marketplace is the source step. Then install or enable the `thoth` plugin from the Codex plugin directory.
 
+After the plugin is installed, two different entry layers exist on purpose:
+
+- Public plugin surface: `Claude /thoth:*`, `Codex $thoth <command>`, and the plugin-provided shell wrapper `thoth <command>`
+- Source-repo development fallback: `python -m thoth.cli <command>`
+
+Use the plugin-installed `thoth` wrapper in fresh repos or empty directories. Use `python -m thoth.cli` only when you are intentionally running against a checked-out Thoth source tree and want execution pinned to that exact checkout.
+
 2. Initialize the repository you want Thoth to manage.
 
 ```text

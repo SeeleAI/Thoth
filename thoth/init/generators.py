@@ -28,7 +28,14 @@ DEFAULT_PHASES = [
 DIRECTION_COLORS = ["#CC8B3A", "#8BA870", "#D4907A", "#9B7CB5", "#6B9BD2", "#D4A76A", "#7BC8A4", "#C87B8A"]
 REQUIRED_AGENT_OS_FILES = ["project-index.md", "requirements.md", "architecture-milestones.md", "todo.md", "cross-repo-mapping.md", "acceptance-report.md", "lessons-learned.md", "run-log.md", "change-decisions.md"]
 OPTIONAL_AGENT_OS_FILES = ["milestones.yaml"]
-GENERATED_SCRIPT_FILES = ["install-hooks.sh", "check-required-files.sh", "session-end-check.sh", "validate-all.sh", "thoth-codex-hook.sh"]
+GENERATED_SCRIPT_FILES = [
+    "install-hooks.sh",
+    "check-required-files.sh",
+    "session-end-check.sh",
+    "validate-all.sh",
+    "thoth-cli.sh",
+    "thoth-codex-hook.sh",
+]
 GENERATED_TEST_FILES = ["tests/conftest.py", "tests/test_structure.py"]
 MANAGED_DIRECTORY_ROOTS = [".agent-os", ".claude", ".thoth", "scripts", "tests", "tools", "tools/dashboard"]
 LEGACY_REMOVE_PATHS = [LEGACY_CONFIG_FILE, ".agent-os/research-tasks", "tests/test_validate.py", "tests/test_check_consistency.py", "tests/test_sync_todo.py", "tests/test_verify_completion.py"]
@@ -218,13 +225,13 @@ repos:
     hooks:
       - id: thoth-doctor
         name: Validate strict Thoth authority
-        entry: python -m thoth.cli doctor --json
-        language: python
+        entry: bash scripts/thoth-cli.sh doctor --json
+        language: system
         pass_filenames: false
       - id: thoth-sync
         name: Refresh generated Thoth projections
-        entry: python -m thoth.cli sync
-        language: python
+        entry: bash scripts/thoth-cli.sh sync
+        language: system
         pass_filenames: false
 """)
     (project_dir / ".pre-commit-config.yaml").write_text(content, encoding="utf-8")
@@ -236,8 +243,9 @@ def generate_scripts(config: dict[str, Any], project_dir: Path) -> None:
     scripts = {
         "install-hooks.sh": "#!/usr/bin/env bash\nset -e\npre-commit install\n",
         "check-required-files.sh": "#!/usr/bin/env bash\nset -e\nfor f in project-index.md requirements.md architecture-milestones.md todo.md cross-repo-mapping.md acceptance-report.md lessons-learned.md run-log.md change-decisions.md; do test -f \".agent-os/$f\" || { echo \"MISSING: .agent-os/$f\"; exit 1; }; done\n",
-        "session-end-check.sh": "#!/usr/bin/env bash\nset -e\npython -m thoth.cli sync\npython -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
-        "validate-all.sh": "#!/usr/bin/env bash\nset -e\npython -m thoth.cli sync\npython -m thoth.cli doctor\nbash scripts/check-required-files.sh\n",
+        "thoth-cli.sh": "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"\ncd \"$ROOT\"\nif command -v thoth >/dev/null 2>&1; then\n  exec thoth \"$@\"\nfi\nif [ -n \"${THOTH_SOURCE_ROOT:-}\" ]; then\n  export PYTHONPATH=\"${THOTH_SOURCE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}\"\n  exec python -m thoth.cli \"$@\"\nfi\necho \"Missing Thoth shell wrapper. Install drift: expected 'thoth' on PATH or THOTH_SOURCE_ROOT for source-checkout fallback.\" >&2\nexit 1\n",
+        "session-end-check.sh": "#!/usr/bin/env bash\nset -euo pipefail\nbash scripts/thoth-cli.sh sync\nbash scripts/thoth-cli.sh doctor\nbash scripts/check-required-files.sh\n",
+        "validate-all.sh": "#!/usr/bin/env bash\nset -euo pipefail\nbash scripts/thoth-cli.sh sync\nbash scripts/thoth-cli.sh doctor\nbash scripts/check-required-files.sh\n",
         "thoth-codex-hook.sh": "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"\ncd \"$ROOT\"\nEVENT=\"${1:-}\"\nif [ -z \"$EVENT\" ]; then\n  echo \"Usage: thoth-codex-hook.sh <start|stop>\" >&2\n  exit 0\nfi\nif command -v thoth >/dev/null 2>&1; then\n  exec thoth hook --host codex --event \"$EVENT\"\nfi\nif [ -n \"${THOTH_SOURCE_ROOT:-}\" ]; then\n  export PYTHONPATH=\"${THOTH_SOURCE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}\"\n  exec python -m thoth.cli hook --host codex --event \"$EVENT\"\nfi\nexit 0\n",
     }
     for filename, content in scripts.items():
