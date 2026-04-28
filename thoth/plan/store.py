@@ -193,18 +193,6 @@ def load_task_result(project_root: Path, task_id: str) -> dict[str, Any]:
     return _read_json(task_result_path(project_root, task_id))
 
 
-def load_verdicts(project_root: Path) -> list[dict[str, Any]]:
-    return load_task_results(project_root)
-
-
-def load_verdict_map(project_root: Path) -> dict[str, dict[str, Any]]:
-    return load_task_result_map(project_root)
-
-
-def load_task_verdict(project_root: Path, task_id: str) -> dict[str, Any]:
-    return load_task_result(project_root, task_id)
-
-
 def load_compiler_state(project_root: Path) -> dict[str, Any]:
     ensure_task_authority_tree(project_root)
     return _read_json(compiler_state_path(project_root))
@@ -268,10 +256,6 @@ def upsert_task_result(project_root: Path, task_id: str, payload: dict[str, Any]
     result = _normalize_task_result(task_id, payload)
     _write_json(task_result_path(project_root, task_id), result)
     return result
-
-
-def upsert_verdict(project_root: Path, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    return upsert_task_result(project_root, task_id, payload)
 
 
 def _remove_stale_task_results(project_root: Path, active_task_ids: set[str]) -> None:

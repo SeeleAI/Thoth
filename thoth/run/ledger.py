@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from thoth.plan.results import update_task_result_from_run_result
-from thoth.prompt_contracts import validate_review_result_payload
+from thoth.prompt_validators import validate_review_result_payload
 
 from .io import _append_jsonl, _read_json, _write_json, ensure_runtime_tree
 from .lease import release_repo_lease

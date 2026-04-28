@@ -4,20 +4,49 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
 
 from . import processes as _processes
-from .capabilities import *
-from .fixtures import *
-from .hard_suite import *
-from .host_claude import *
-from .host_codex import *
-from .host_common import *
-from .model import *
-from .processes import *
-from .recorder import *
+from .capabilities import (
+    _ensure_codex_global_hooks,
+    _ensure_codex_skill_installed,
+    _ensure_features_flag,
+    _preflight_host_real,
+    detect_capabilities,
+)
+from .fixtures import _host_real_contract_payloads, _host_real_decision_payload, _seed_host_real_repo, _snapshot_runtime
+from .hard_suite import _repo_hard_suite, _verify_host_run_completion
+from .host_claude import _host_claude
+from .host_codex import _host_codex
+from .host_common import (
+    _codex_completed_command_items,
+    _codex_prompt_for_public_command,
+    _effective_host_command_timeout,
+    _looks_like_transient_host_outage,
+    _normalize_codex_public_command_result,
+)
+from .model import (
+    FIXED_CLAUDE_DIR,
+    FIXED_CODEX_DIR,
+    FIXED_RUNTIME_DIR,
+    HARD_SUITE_MAX_RUNTIME_SECONDS,
+    HEAVY_HOST_MAX_RUNTIME_SECONDS,
+    HEAVY_PREFLIGHT_MAX_RUNTIME_SECONDS,
+    ROOT,
+)
+from .processes import (
+    _SelftestBudget,
+    _cap_selftest_timeout,
+    _cleanup_legacy_heavy_processes,
+    _cleanup_legacy_heavy_tmp,
+    _legacy_heavy_process_targets,
+    _run_command,
+    _terminate_processes,
+)
+from .recorder import Recorder, _write_json
 
 
 def _should_run_host(mode: str, *, host: str, capabilities: dict[str, Any]) -> bool:

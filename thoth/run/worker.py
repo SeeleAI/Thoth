@@ -12,7 +12,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from thoth.prompt_contracts import render_phase_worker_prompt, validate_phase_output
+from thoth.prompt_specs import render_phase_worker_prompt
+from thoth.prompt_validators import validate_phase_output
 
 from .io import _read_json, _write_json
 from .lease import release_repo_lease

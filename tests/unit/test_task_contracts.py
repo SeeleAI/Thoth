@@ -11,10 +11,10 @@ from thoth.plan.store import (
     create_discussion_placeholder,
     ensure_task_authority_tree,
     load_task_for_execution,
-    load_task_verdict,
+    load_task_result,
     upsert_contract,
     upsert_decision,
-    upsert_verdict,
+    upsert_task_result,
 )
 from thoth.run.phases import default_validate_output_schema
 
@@ -139,9 +139,9 @@ def test_doctor_fails_when_legacy_yaml_exists(tmp_path):
     assert payload["summary"]["legacy_task_count"] == 1
 
 
-def test_compile_uses_external_verdict_ledger(tmp_path):
+def test_compile_uses_external_task_result_ledger(tmp_path):
     ensure_task_authority_tree(tmp_path)
-    upsert_verdict(
+    upsert_task_result(
         tmp_path,
         "task-1",
         {
@@ -193,6 +193,6 @@ def test_compile_uses_external_verdict_ledger(tmp_path):
     compile_task_authority(tmp_path)
     task = load_task_for_execution(tmp_path, "task-1")
     assert task["task_result_ref"] == ".thoth/project/tasks/task-1.result.json"
-    verdict = load_task_verdict(tmp_path, "task-1")
-    assert verdict["failure_class"] == "metric_shortfall"
-    assert verdict["updated_at"] == "2026-04-24T00:00:00Z"
+    task_result = load_task_result(tmp_path, "task-1")
+    assert task_result["failure_class"] == "metric_shortfall"
+    assert task_result["updated_at"] == "2026-04-24T00:00:00Z"

@@ -1,31 +1,8 @@
 from __future__ import annotations
 
-import argparse
-import json
-import os
-import re
-import selectors
-import shutil
-import signal
-import socket
-import subprocess
 import sys
-import tempfile
-import textwrap
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
-from urllib.error import URLError
-from urllib.request import urlopen
-
-import yaml
-
-from thoth.init.render import render_codex_hooks_payload
-from thoth.plan.compiler import compile_task_authority
-from thoth.run.ledger import complete_run, heartbeat_run
-from thoth.selftest_seed import seed_host_real_app
-
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -49,6 +26,7 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+@dataclass
 class CommandResult:
     argv: list[str]
     cwd: str
@@ -65,4 +43,22 @@ class CheckResult:
     detail: str
     artifacts: list[str] = field(default_factory=list)
 
-__all__ = [name for name in globals() if not name.startswith("__")]
+
+__all__ = [
+    "CODEX_SKILL_NAME",
+    "CheckResult",
+    "CommandResult",
+    "FIXED_CLAUDE_DIR",
+    "FIXED_CODEX_DIR",
+    "FIXED_RUNTIME_DIR",
+    "HARD_SUITE_MAX_RUNTIME_SECONDS",
+    "HEAVY_HOST_MAX_RUNTIME_SECONDS",
+    "HEAVY_PREFLIGHT_MAX_RUNTIME_SECONDS",
+    "PYTHON",
+    "ROOT",
+    "_SELFTEST_DEADLINE",
+    "_SELFTEST_DEADLINE_LABEL",
+    "_SELFTEST_DEADLINE_SECONDS",
+    "_SELFTEST_STREAM_OUTPUT",
+    "utc_now",
+]

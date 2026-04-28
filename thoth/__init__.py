@@ -2,7 +2,12 @@
 
 __all__ = [
     "command_specs",
+    "prompt_specs",
+    "prompt_validators",
     "projections",
-    "project_init",
-    "runtime",
+    "surface",
+    "plan",
+    "run",
+    "init",
+    "observe",
 ]

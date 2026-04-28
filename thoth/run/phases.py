@@ -8,8 +8,8 @@ from pathlib import Path
 from time import time
 from typing import Any, Protocol
 
-from thoth.plan.store import load_task_result
-from thoth.prompt_contracts import PHASE_REQUIRED_FIELDS, phase_prompt_spec, validate_phase_output
+from thoth.prompt_specs import phase_prompt_spec
+from thoth.prompt_validators import PHASE_REQUIRED_FIELDS, validate_phase_output
 
 from .io import _read_json, _write_json
 from .ledger import (
@@ -21,7 +21,8 @@ from .ledger import (
     heartbeat_run,
     record_artifact,
 )
-from .model import RunHandle, _parse_iso8601, utc_now
+from .model import RunHandle, utc_now
+from .review_context import latest_fresh_review_context
 
 DEFAULT_LOOP_MAX_ITERATIONS = 10
 DEFAULT_LOOP_MAX_RUNTIME_SECONDS = 8 * 60 * 60
@@ -110,52 +111,6 @@ def _write_controller(handle: RunHandle, payload: dict[str, Any]) -> dict[str, A
     return payload
 
 
-def _latest_fresh_review_context(
-    project_root: Path,
-    *,
-    task_id: str | None,
-    target: str | None,
-) -> dict[str, Any]:
-    if not task_id or not target:
-        return {}
-    task_result = load_task_result(project_root, task_id)
-    last_closure_at = task_result.get("last_closure_at")
-    last_closure_ts = _parse_iso8601(last_closure_at)
-    best: dict[str, Any] = {}
-    runs_root = project_root / ".thoth" / "runs"
-    if not runs_root.is_dir():
-        return {}
-    for run_dir in runs_root.iterdir():
-        if not run_dir.is_dir():
-            continue
-        run_payload = _read_json(run_dir / "run.json")
-        if run_payload.get("kind") != "review":
-            continue
-        if run_payload.get("task_id") != task_id or run_payload.get("target") != target:
-            continue
-        result_payload = _read_json(run_dir / "result.json")
-        if result_payload.get("status") != "completed":
-            continue
-        finished_at = result_payload.get("finished_at") or result_payload.get("updated_at")
-        finished_ts = _parse_iso8601(finished_at)
-        if finished_ts is None:
-            continue
-        if last_closure_ts is not None and finished_ts <= last_closure_ts:
-            continue
-        current_best_ts = _parse_iso8601(best.get("finished_at")) if best else None
-        if current_best_ts is not None and finished_ts <= current_best_ts:
-            continue
-        review_result = result_payload.get("result") if isinstance(result_payload.get("result"), dict) else {}
-        best = {
-            "run_id": run_payload.get("run_id") or run_dir.name,
-            "target": target,
-            "summary": result_payload.get("summary"),
-            "finished_at": finished_at,
-            "findings": review_result.get("findings", []),
-        }
-    return best
-
-
 def minimal_task_authority(strict_task: dict[str, Any]) -> dict[str, Any]:
     return {
         "task_id": strict_task.get("task_id"),
@@ -228,7 +183,7 @@ def initialize_loop_controller(
             "last_reflect": {},
             "budget_exhausted_by": None,
             "final_outcome": None,
-            "review_context": _latest_fresh_review_context(
+            "review_context": latest_fresh_review_context(
                 handle.project_root,
                 task_id=str(handle.run_json().get("task_id") or "") or None,
                 target=review_target,
