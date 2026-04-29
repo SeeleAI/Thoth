@@ -15,9 +15,11 @@ Use the single public entrypoint:
 
 Supported commands:
 - `$thoth init`: Initialize canonical .thoth authority and render both host projections without taking ownership of repo-root `.codex`.
-- `$thoth run`: Start one validator-centered strict run, or use `--sleep` to hand the same controller to an external worker.
-- `$thoth loop`: Start one bounded loop whose parent orchestrator reuses validator-centered child runs.
+- `$thoth run`: Start one validator-centered strict run bound to `work_id@revision`, or use `--sleep` to hand the same controller to an external worker.
+- `$thoth loop`: Start one bounded controller service whose parent creates validator-centered child runs.
 - `$thoth review`: Prepare a structured live review packet through the shared Thoth surface.
+- `$thoth orchestration`: Create a controller object that schedules ready work items by object-graph dependencies.
+- `$thoth auto`: Create a linear controller queue for multiple ready work items.
 - `$thoth status`: Show repo status and active durable runs from the shared ledger.
 - `$thoth doctor`: Audit project health, generated surfaces, and runtime shape.
 - `$thoth dashboard`: Start or describe the task-first dashboard backed by .thoth ledgers.
@@ -40,6 +42,8 @@ Supported commands:
 - `run` -> `live_intelligent` / `high` / `phase_controller`
 - `loop` -> `live_intelligent` / `high` / `phase_controller`
 - `review` -> `live_intelligent` / `high` / `review_packet`
+- `orchestration` -> `mechanical_fast` / `none` / `result_envelope`
+- `auto` -> `mechanical_fast` / `none` / `result_envelope`
 - `status` -> `mechanical_fast` / `none` / `result_envelope`
 - `doctor` -> `mechanical_fast` / `none` / `result_envelope`
 - `dashboard` -> `mechanical_fast` / `none` / `result_envelope`

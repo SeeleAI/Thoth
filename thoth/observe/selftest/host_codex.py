@@ -45,7 +45,7 @@ def _host_codex(
         return result, artifacts
 
     contract_commands = [
-        f"$thoth discuss --contract-json \"$(cat {path})\""
+        f"$thoth discuss --work-json \"$(cat {path})\""
         for path in contract_paths
     ]
     artifacts, command_results = _run_host_real_flow(
@@ -59,13 +59,15 @@ def _host_codex(
             "doctor": "$thoth doctor --quick",
             "discuss_decision": f"$thoth discuss --decision-json \"$(cat {decision_path})\"",
             "discuss_contracts": contract_commands,
-            "run_sleep": "$thoth run --host codex --executor codex --sleep --task-id task-runtime-probe",
+            "run_live": "$thoth run --host codex --executor codex --work-id task-runtime-probe",
+            "run_sleep": "$thoth run --host codex --executor codex --sleep --work-id task-runtime-probe",
             "run_watch": lambda run_id: f"$thoth run --watch {run_id}",
             "run_stop": lambda run_id: f"$thoth run --stop {run_id}",
-            "review": "$thoth review --task-id task-review-probe --host codex --executor codex tracker/review_probe.py",
+            "review": "$thoth review --work-id task-review-probe --host codex --executor codex tracker/review_probe.py",
+            "loop_live": "$thoth loop --host codex --executor codex --work-id task-runtime-probe",
             "dashboard_start": "$thoth dashboard start",
             "dashboard_stop": "$thoth dashboard stop",
-            "loop_sleep": "$thoth loop --host codex --executor codex --sleep --task-id task-runtime-probe",
+            "loop_sleep": "$thoth loop --host codex --executor codex --sleep --work-id task-runtime-probe",
             "loop_stop": lambda run_id: f"$thoth loop --stop {run_id}",
             "sync": "$thoth sync",
         },

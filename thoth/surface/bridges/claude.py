@@ -43,11 +43,13 @@ def _append_event(project_root: Path, payload: dict[str, Any]) -> None:
 
 
 def _canonical_checks(project_root: Path, command_id: str, command_args: list[str], stdout: str) -> dict[str, Any]:
-    project_manifest = project_root / ".thoth" / "project" / "project.json"
-    instructions = project_root / ".thoth" / "project" / "instructions.md"
-    source_map = project_root / ".thoth" / "project" / "source-map.json"
+    project_object = project_root / ".thoth" / "objects" / "project" / "project.json"
+    project_manifest = project_root / ".thoth" / "docs" / "project.json"
+    instructions = project_root / ".thoth" / "docs" / "agent-entry.md"
+    source_map = project_root / ".thoth" / "docs" / "source-map.json"
 
     checks: dict[str, Any] = {
+        "project_object_exists": project_object.exists(),
         "project_manifest_exists": project_manifest.exists(),
         "instructions_exists": instructions.exists(),
         "source_map_exists": source_map.exists(),
@@ -88,12 +90,13 @@ def _bridge_success(command_id: str, returncode: int, checks: dict[str, Any]) ->
         return False
     if command_id in {"init", "sync"}:
         return bool(
-            checks.get("project_manifest_exists")
+            checks.get("project_object_exists")
+            and checks.get("project_manifest_exists")
             and checks.get("instructions_exists")
             and checks.get("source_map_exists")
         )
     if command_id == "status":
-        return bool(checks.get("project_manifest_exists"))
+        return bool(checks.get("project_object_exists") or checks.get("project_manifest_exists"))
     if command_id in {"run", "loop", "review"} and "run_ledger_exists" in checks:
         return bool(checks.get("run_ledger_exists") and checks.get("packet_exists"))
     return True
@@ -102,7 +105,7 @@ def _bridge_success(command_id: str, returncode: int, checks: dict[str, Any]) ->
 def _rewrite_review_prepare_args(command_args: list[str]) -> list[str]:
     rewritten: list[str] = []
     target_parts: list[str] = []
-    expects_value = {"--goal", "--target", "--task-id", "--host", "--executor"}
+    expects_value = {"--goal", "--target", "--work-id", "--host", "--executor"}
     idx = 0
     while idx < len(command_args):
         token = command_args[idx]
@@ -127,7 +130,7 @@ def _rewrite_review_prepare_args(command_args: list[str]) -> list[str]:
 def _rewrite_run_loop_prepare_args(command_args: list[str]) -> list[str]:
     rewritten: list[str] = []
     prompt_parts: list[str] = []
-    expects_value = {"--goal", "--task-id", "--host", "--executor"}
+    expects_value = {"--goal", "--work-id", "--host", "--executor"}
     idx = 0
     while idx < len(command_args):
         token = command_args[idx]
@@ -144,8 +147,8 @@ def _rewrite_run_loop_prepare_args(command_args: list[str]) -> list[str]:
         prompt_parts.append(token)
         idx += 1
     has_goal = "--goal" in rewritten
-    has_task_id = "--task-id" in rewritten
-    if prompt_parts and not has_goal and not has_task_id:
+    has_work_id = "--work-id" in rewritten
+    if prompt_parts and not has_goal and not has_work_id:
         rewritten.extend(["--goal", " ".join(prompt_parts)])
     return rewritten
 

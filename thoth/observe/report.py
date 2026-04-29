@@ -68,12 +68,12 @@ def generate_report(project_root: Path, from_date: datetime, to_date: datetime, 
     lines.append("")
     if completed_in_range:
         for task in completed_in_range:
-            task_result = task.get("task_result", {})
-            lines.append(f"### [{task.get('task_id')}] {task.get('title', '')}")
+            work_result = task.get("work_result", {})
+            lines.append(f"### [{task.get('work_id')}] {task.get('title', '')}")
             lines.append(f"- Status: {task.get('ready_state')}")
-            lines.append(f"- Result source: {task_result.get('source', 'unknown')}")
-            lines.append(f"- Conclusion: {task_result.get('conclusion') or 'No conclusion text'}")
-            for evidence in task_result.get("evidence_paths", []):
+            lines.append(f"- Result source: {work_result.get('source', 'unknown')}")
+            lines.append(f"- Conclusion: {work_result.get('conclusion') or 'No conclusion text'}")
+            for evidence in work_result.get("evidence_paths", []):
                 lines.append(f"- Evidence: [{evidence}]({evidence})")
     else:
         lines.append("No tasks completed in the selected range.")
@@ -82,7 +82,7 @@ def generate_report(project_root: Path, from_date: datetime, to_date: datetime, 
     lines.append("")
     if in_progress:
         for task in in_progress:
-            lines.append(f"- `{task.get('task_id')}` {task.get('title', '')}")
+            lines.append(f"- `{task.get('work_id')}` {task.get('title', '')}")
     else:
         lines.append("No ready tasks at the moment.")
     lines.append("")
@@ -90,7 +90,7 @@ def generate_report(project_root: Path, from_date: datetime, to_date: datetime, 
     lines.append("")
     if blocked:
         for task in blocked:
-            lines.append(f"- `{task.get('task_id')}` {task.get('blocking_reason') or task.get('ready_state')}")
+            lines.append(f"- `{task.get('work_id')}` {task.get('blocking_reason') or task.get('ready_state')}")
     else:
         lines.append("No blocked tasks.")
     lines.append("")

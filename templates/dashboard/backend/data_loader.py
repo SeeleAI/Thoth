@@ -83,15 +83,21 @@ def _safe_load_yaml(file_path: str | Path) -> Optional[dict]:
 
 def _infer_project_root(base_dir: str | Path) -> Path:
     base = Path(base_dir).resolve()
-    if (base / ".thoth" / "project").exists():
+    if (base / ".thoth" / "objects").exists():
         return base
+    if base.name in {"work_item", "decision", "run", "controller"} and base.parent.name == "objects":
+        return base.parent.parent.parent
     if base.name in {"tasks", "contracts", "decisions"} and base.parent.name == "project":
         return base.parent.parent.parent
     return base
 
 
 def _load_manifest(project_root: Path) -> dict[str, Any]:
-    return _read_json(project_root / ".thoth" / "project" / "project.json") or {}
+    obj = _read_json(project_root / ".thoth" / "objects" / "project" / "project.json") or {}
+    payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+    if payload:
+        return payload
+    return _read_json(project_root / ".thoth" / "docs" / "project.json") or {}
 
 
 def _direction_entries(project_root: Path) -> list[dict[str, Any]]:
@@ -113,7 +119,7 @@ def _read_directions_from_config(base_dir: Path) -> tuple[str, ...]:
     directions = [row["id"] for row in _direction_entries(project_root)]
     if directions:
         return tuple(directions)
-    task_dir = project_root / ".thoth" / "project" / "tasks"
+    task_dir = project_root / ".thoth" / "objects" / "work_item"
     found = sorted(
         {
             payload.get("direction")
@@ -128,8 +134,8 @@ def _read_directions_from_config(base_dir: Path) -> tuple[str, ...]:
 DIRECTIONS = _read_directions_from_config(Path(__file__).resolve().parents[3])
 
 
-def _load_task_result_map(project_root: Path) -> dict[str, dict[str, Any]]:
-    task_dir = project_root / ".thoth" / "project" / "tasks"
+def _load_work_result_map(project_root: Path) -> dict[str, dict[str, Any]]:
+    task_dir = project_root / ".thoth" / "docs" / "work-results"
     rows: dict[str, dict[str, Any]] = {}
     if task_dir.is_dir():
         for path in sorted(task_dir.glob("*.result.json")):
@@ -141,26 +147,64 @@ def _load_task_result_map(project_root: Path) -> dict[str, dict[str, Any]]:
     return rows
 
 
+def _flatten_work_item(payload: dict[str, Any], path: Path) -> dict[str, Any] | None:
+    work_id = payload.get("object_id")
+    if not isinstance(work_id, str) or not work_id:
+        return None
+    work_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+    eval_contract = work_payload.get("eval_contract") if isinstance(work_payload.get("eval_contract"), dict) else {}
+    row = {
+        "schema_version": payload.get("schema_version"),
+        "kind": "work_item",
+        "id": work_id,
+        "work_id": work_id,
+        "task_id": work_id,
+        "title": payload.get("title") or work_id,
+        "summary": payload.get("summary") or "",
+        "module": work_payload.get("module") or work_payload.get("context") or "strict",
+        "direction": work_payload.get("direction") or "general",
+        "ready_state": payload.get("status"),
+        "status": payload.get("status"),
+        "runnable": work_payload.get("runnable") is True,
+        "work_type": work_payload.get("work_type"),
+        "goal_statement": work_payload.get("goal") or "",
+        "implementation_recipe": work_payload.get("execution_plan") or [],
+        "constraints": work_payload.get("constraints") or [],
+        "eval_entrypoint": eval_contract.get("entrypoint") or {},
+        "primary_metric": eval_contract.get("primary_metric") or {},
+        "failure_classes": eval_contract.get("failure_classes") or [],
+        "validate_output_schema": eval_contract.get("validate_output_schema") or {},
+        "decision_ids": work_payload.get("decisions") or [],
+        "contract_id": work_payload.get("source_contract_id"),
+        "depends_on": [
+            {"task_id": str(link.get("target", "")).split(":", 1)[-1], "type": "hard"}
+            for link in payload.get("links", [])
+            if isinstance(link, dict) and link.get("type") == "depends_on"
+        ],
+        "created_at": payload.get("created_at"),
+        "updated_at": payload.get("updated_at"),
+        "_path": str(path),
+    }
+    return row
+
+
 def _load_compiled_tasks(project_root: Path) -> list[dict[str, Any]]:
-    task_dir = project_root / ".thoth" / "project" / "tasks"
-    task_result_map = _load_task_result_map(project_root)
+    task_dir = project_root / ".thoth" / "objects" / "work_item"
+    work_result_map = _load_work_result_map(project_root)
     rows: list[dict[str, Any]] = []
     if not task_dir.is_dir():
         return rows
     for path in sorted(task_dir.glob("*.json")):
-        if path.name.endswith(".result.json"):
-            continue
         payload = _read_json(path)
         if not payload:
             continue
-        task_id = payload.get("task_id")
-        if not isinstance(task_id, str) or not task_id:
+        row = _flatten_work_item(payload, path)
+        if row is None:
             continue
-        payload.setdefault("id", task_id)
-        payload.setdefault("_path", str(path))
-        if task_id in task_result_map:
-            payload["task_result"] = task_result_map[task_id]
-        rows.append(payload)
+        task_id = row["task_id"]
+        if task_id in work_result_map:
+            row["work_result"] = work_result_map[task_id]
+        rows.append(row)
     return rows
 
 
@@ -215,7 +259,7 @@ def load_compiler_state(base_dir: str | Path) -> dict[str, Any]:
     if cached is not None:
         return cached
     project_root = _infer_project_root(base_dir)
-    return _set_cache("compiler_state", _read_json(project_root / ".thoth" / "project" / "compiler-state.json") or {})
+    return _set_cache("compiler_state", _read_json(project_root / ".thoth" / "docs" / "object-graph-summary.json") or {})
 
 
 def load_decisions(base_dir: str | Path) -> list[dict[str, Any]]:
@@ -224,7 +268,7 @@ def load_decisions(base_dir: str | Path) -> list[dict[str, Any]]:
         return cached
     project_root = _infer_project_root(base_dir)
     rows: list[dict[str, Any]] = []
-    decision_dir = project_root / ".thoth" / "project" / "decisions"
+    decision_dir = project_root / ".thoth" / "objects" / "decision"
     if decision_dir.is_dir():
         for path in sorted(decision_dir.glob("*.json")):
             payload = _read_json(path)
@@ -240,13 +284,15 @@ def load_contracts(base_dir: str | Path) -> list[dict[str, Any]]:
         return cached
     project_root = _infer_project_root(base_dir)
     rows: list[dict[str, Any]] = []
-    contract_dir = project_root / ".thoth" / "project" / "contracts"
-    if contract_dir.is_dir():
-        for path in sorted(contract_dir.glob("*.json")):
+    work_dir = project_root / ".thoth" / "objects" / "work_item"
+    if work_dir.is_dir():
+        for path in sorted(work_dir.glob("*.json")):
             payload = _read_json(path)
-            if payload:
-                payload["_path"] = str(path)
-                rows.append(payload)
+            if not payload:
+                continue
+            row = _flatten_work_item(payload, path)
+            if row and row.get("contract_id"):
+                rows.append(row)
     return _set_cache("contracts", rows)
 
 

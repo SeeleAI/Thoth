@@ -60,8 +60,9 @@ def _start_dashboard(project_dir: Path, *, recorder: Recorder, rebuild: bool = F
     artifacts = _save_command(recorder, f"dashboard-{action}", result)
     if result.returncode != 0:
         raise RuntimeError(f"dashboard {action} failed")
-    manifest = _read_json(project_dir / ".thoth" / "project" / "project.json")
-    port = int(manifest.get("dashboard", {}).get("port", 8501))
+    manifest = _read_json(project_dir / ".thoth" / "objects" / "project" / "project.json")
+    payload = manifest.get("payload") if isinstance(manifest.get("payload"), dict) else {}
+    port = int(payload.get("dashboard", {}).get("port", 8501))
 
     def _dashboard_ready() -> bool:
         try:
@@ -90,7 +91,7 @@ def _verify_host_run_completion(
     check_name: str,
     run_id: str,
     expected_kind: str,
-    expected_task_id: str | None = None,
+    expected_work_id: str | None = None,
     expected_host: str | None = None,
     expected_executor: str | None = None,
     expected_dispatch_mode: str | None = None,
@@ -120,8 +121,8 @@ def _verify_host_run_completion(
         and state.get("status") == "completed"
         and acceptance.get("status") == "completed"
     )
-    if expected_task_id is not None:
-        ok = ok and run.get("task_id") == expected_task_id
+    if expected_work_id is not None:
+        ok = ok and run.get("work_id") == expected_work_id
     if expected_host is not None:
         ok = ok and run.get("host") == expected_host
     if expected_executor is not None:
@@ -133,7 +134,7 @@ def _verify_host_run_completion(
     ok = ok and not _host_run_uses_forbidden_fallback(acceptance, events)
     detail = (
         f"Verified {expected_kind} run {run_id}: status={state.get('status')} "
-        f"acceptance={acceptance.get('status')} task_id={run.get('task_id')} "
+        f"acceptance={acceptance.get('status')} work_id={run.get('work_id')} "
         f"host={run.get('host')} executor={run.get('executor')} dispatch={run.get('dispatch_mode')}"
     )
     recorder.add(check_name, "passed" if ok else "failed", detail, artifacts)
@@ -205,7 +206,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
                 if stop_review.returncode != 0:
                     raise RuntimeError("review stop failed")
 
-    run_result = _run_thoth(project_dir, "run", "--task-id", "task-1", timeout=60)
+    run_result = _run_thoth(project_dir, "run", "--work-id", "task-1", timeout=60)
     run_artifacts = _save_command(recorder, "run-live", run_result)
     run_packet = _extract_json(run_result.stdout)
     run_id = str(run_packet.get("run_id") or "")
@@ -229,7 +230,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
     run_sleep_result = _run_thoth(
         project_dir,
         "run",
-        "--task-id",
+        "--work-id",
         "task-1",
         "--sleep",
         timeout=60,
@@ -248,7 +249,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
     )
     recorder.add("runtime.run_sleep", "passed", f"Prepared sleep run packet {run_sleep_id}.", run_sleep_artifacts)
 
-    loop_live_result = _run_thoth(project_dir, "loop", "--task-id", "task-1", timeout=60)
+    loop_live_result = _run_thoth(project_dir, "loop", "--work-id", "task-1", timeout=60)
     loop_live_artifacts = _save_command(recorder, "loop-live", loop_live_result)
     loop_live_packet = _extract_json(loop_live_result.stdout)
     loop_live_id = str(loop_live_packet.get("run_id") or "")
@@ -270,7 +271,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
     loop_result = _run_thoth(
         project_dir,
         "loop",
-        "--task-id",
+        "--work-id",
         "task-1",
         "--sleep",
         timeout=60,
@@ -289,7 +290,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
     )
     recorder.add("runtime.loop_sleep", "passed", f"Prepared sleep loop packet {loop_id}.", loop_artifacts)
 
-    conflict_result = _run_thoth(project_dir, "run", "--task-id", "task-1", timeout=60)
+    conflict_result = _run_thoth(project_dir, "run", "--work-id", "task-1", timeout=60)
     conflict_artifacts = _save_command(recorder, "lease-conflict-probe", conflict_result)
     if conflict_result.returncode == 1 and "Active lease already held" in conflict_result.stderr:
         recorder.add(
@@ -315,7 +316,7 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
     )
     recorder.add("runtime.loop_stop", "passed", f"Stopped loop {loop_id}.", _save_command(recorder, "loop-stop", loop_stop))
 
-    dashboard_run = _run_thoth(project_dir, "run", "--task-id", "task-1", timeout=60)
+    dashboard_run = _run_thoth(project_dir, "run", "--work-id", "task-1", timeout=60)
     dashboard_run_artifacts = _save_command(recorder, "dashboard-run-live", dashboard_run)
     dashboard_packet = _extract_json(dashboard_run.stdout)
     dashboard_run_id = str(dashboard_packet.get("run_id") or "")
@@ -386,32 +387,33 @@ def _repo_hard_suite(project_dir: Path, recorder: Recorder) -> dict[str, Any]:
     if not hook_ok:
         raise RuntimeError("local session hook success path failed")
 
-    broken_contract = project_dir / ".thoth" / "project" / "contracts" / "CTR-broken-selftest.json"
+    broken_work = project_dir / ".thoth" / "objects" / "work_item" / "work-broken.json"
     _write_json(
-        broken_contract,
+        broken_work,
         {
             "schema_version": 1,
-            "kind": "contract",
-            "contract_id": "CTR-broken-selftest",
-            "task_id": "task-broken",
-            "scope_id": "broken",
-            "direction": "frontend",
-            "module": "f1",
+            "kind": "work_item",
+            "object_id": "work-broken",
+            "status": "ready",
             "title": "Broken contract",
-            "decision_ids": ["DEC-missing"],
-            "candidate_method_id": "broken",
-            "status": "frozen",
-            "blocking_gaps": [],
+            "summary": "Intentionally invalid work item for hook failure observability.",
+            "revision": 1,
+            "created_at": utc_now(),
+            "updated_at": utc_now(),
+            "source": "selftest",
+            "links": [],
+            "payload": {"work_type": "task", "runnable": True, "missing_questions": []},
+            "history": [],
         },
     )
     broken_hook = _run_command(["bash", "scripts/session-end-check.sh"], cwd=project_dir, env=hook_env, timeout=60)
     broken_artifacts = _save_command(recorder, "hook-broken", broken_hook)
-    broken_contract.unlink(missing_ok=True)
+    broken_work.unlink(missing_ok=True)
     degraded = broken_hook.returncode != 0
     recorder.add(
         "hooks.local_failure_observable",
         "passed" if degraded else "failed",
-        "Broken strict contract file caused the generated session-end hook script to fail observably.",
+        "Broken work item object caused the generated session-end hook script to fail observably.",
         broken_artifacts,
     )
     if not degraded:

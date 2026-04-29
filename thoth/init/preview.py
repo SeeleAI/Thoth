@@ -23,7 +23,7 @@ REQUIRED_AGENT_OS_FILES = ["project-index.md", "requirements.md", "architecture-
 OPTIONAL_AGENT_OS_FILES = ["milestones.yaml"]
 GENERATED_SCRIPT_FILES = ["install-hooks.sh", "check-required-files.sh", "session-end-check.sh", "validate-all.sh", "thoth-cli.sh", "thoth-codex-hook.sh"]
 GENERATED_TEST_FILES = ["tests/conftest.py", "tests/test_structure.py"]
-MANAGED_DIRECTORY_ROOTS = [".agent-os", ".claude", ".thoth", "scripts", "tests", "tools", "tools/dashboard"]
+MANAGED_DIRECTORY_ROOTS = [".claude", ".thoth", "scripts", "tests", "tools", "tools/dashboard"]
 LEGACY_REMOVE_PATHS = [LEGACY_CONFIG_FILE, ".agent-os/research-tasks", "tests/test_validate.py", "tests/test_check_consistency.py", "tests/test_sync_todo.py", "tests/test_verify_completion.py"]
 DISCOVERY_CODE_SUFFIXES = {".py", ".js", ".ts", ".tsx", ".vue", ".sh", ".rs", ".go", ".java", ".c", ".cc", ".cpp", ".h", ".hpp"}
 THOTH_CLAUDE_BASH_ALLOW_PATTERN = "Bash(*thoth-claude-command.sh*)"
@@ -37,19 +37,18 @@ def _managed_path_list() -> list[str]:
         ".pre-commit-config.yaml",
         "AGENTS.md",
         "CLAUDE.md",
-        ".thoth/project/project.json",
-        ".thoth/project/instructions.md",
-        ".thoth/project/source-map.json",
-        ".thoth/project/compiler-state.json",
-        ".thoth/project/legacy-audit.json",
+        ".thoth/objects/project/project.json",
+        ".thoth/docs/project.json",
+        ".thoth/docs/agent-entry.md",
+        ".thoth/docs/source-map.json",
+        ".thoth/docs/object-graph-summary.json",
+        ".thoth/docs/legacy-audit.json",
         ".thoth/runs/.gitkeep",
         ".thoth/migrations/.gitkeep",
         ".thoth/derived/.gitkeep",
         ".thoth/derived/codex-hooks.json",
     ]
     base.extend(f"scripts/{name}" for name in GENERATED_SCRIPT_FILES)
-    base.extend(f".agent-os/{name}" for name in REQUIRED_AGENT_OS_FILES)
-    base.extend(f".agent-os/{name}" for name in OPTIONAL_AGENT_OS_FILES)
     base.extend(GENERATED_TEST_FILES)
     return base
 
@@ -92,16 +91,14 @@ def build_init_preview(project_dir: Path, audit: dict[str, Any]) -> dict[str, An
     managed_update_targets.update(GENERATED_TEST_FILES)
 
     managed_create_if_missing = {
-        ".thoth/project/project.json",
-        ".thoth/project/instructions.md",
-        ".thoth/project/source-map.json",
+        ".thoth/objects/project/project.json",
+        ".thoth/docs/project.json",
+        ".thoth/docs/agent-entry.md",
+        ".thoth/docs/source-map.json",
         ".thoth/runs/.gitkeep",
         ".thoth/migrations/.gitkeep",
         ".thoth/derived/.gitkeep",
     }
-    managed_create_if_missing.update(f".agent-os/{name}" for name in REQUIRED_AGENT_OS_FILES)
-    managed_create_if_missing.update(f".agent-os/{name}" for name in OPTIONAL_AGENT_OS_FILES)
-
     for rel in MANAGED_DIRECTORY_ROOTS:
         path = project_dir / rel
         if path.exists() and not path.is_dir():

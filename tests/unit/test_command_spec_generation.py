@@ -29,7 +29,7 @@ def test_claude_surface_renders_from_spec():
     assert "allowed-tools: Read, Glob, Grep, Edit, Write, Bash, Task" in rendered
     assert 'scripts/thoth-claude-command.sh" run --host claude $ARGUMENTS' in rendered
     assert "packet.dispatch_mode` is `live_native`" in rendered
-    assert "do not invent, create, compile, or guess a task" in rendered
+    assert "do not invent, create, compile, or guess a work item" in rendered
     assert "## Authority Summary" in rendered
     assert "route_class: `live_intelligent`" in rendered
     assert "packet_authority_mode: `phase_controller`" in rendered
@@ -75,7 +75,7 @@ def test_prompt_surface_size_regression():
     claude_run = render_claude_command(run_spec)
     claude_review = render_claude_command(review_spec)
 
-    assert len(codex_skill) < 3600
+    assert len(codex_skill) < 4200
     assert len(claude_run) < 3200
     assert len(claude_review) < 3000
 

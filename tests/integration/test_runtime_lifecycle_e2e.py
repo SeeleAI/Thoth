@@ -14,7 +14,7 @@ from urllib.request import urlopen
 
 import pytest
 from thoth.init.render import render_codex_hooks_payload
-from thoth.plan.compiler import compile_task_authority
+from thoth.plan.store import upsert_work_item, upsert_decision
 from thoth.run.lease import local_registry_root
 from thoth.run.phases import default_validate_output_schema
 
@@ -72,67 +72,51 @@ def _free_port() -> int:
         return int(handle.getsockname()[1])
 
 
-def _write_task(project_dir: Path, task_id: str = "task-1") -> None:
-    decisions = project_dir / ".thoth" / "project" / "decisions"
-    contracts = project_dir / ".thoth" / "project" / "contracts"
-    decisions.mkdir(parents=True, exist_ok=True)
-    contracts.mkdir(parents=True, exist_ok=True)
-    (decisions / "DEC-test-runtime.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "kind": "decision",
-                "decision_id": "DEC-test-runtime",
-                "scope_id": "frontend-runtime",
-                "question": "Which runtime validation method should be executed?",
-                "candidate_method_ids": ["real-process-lifecycle"],
-                "selected_values": {"candidate_method_id": "real-process-lifecycle"},
-                "status": "frozen",
-                "unresolved_gaps": [],
-                "created_at": "2026-04-24T00:00:00Z",
-                "updated_at": "2026-04-24T00:00:00Z",
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+def _write_task(project_dir: Path, work_id: str = "task-1") -> None:
+    upsert_decision(
+        project_dir,
+        {
+            "schema_version": 1,
+            "kind": "decision",
+            "decision_id": "DEC-test-runtime",
+            "scope_id": "frontend-runtime",
+            "question": "Which runtime validation method should be executed?",
+            "candidate_method_ids": ["real-process-lifecycle"],
+            "selected_values": {"candidate_method_id": "real-process-lifecycle"},
+            "status": "frozen",
+            "unresolved_gaps": [],
+        },
     )
-    (contracts / "CTR-test-runtime.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "kind": "contract",
-                "contract_id": "CTR-test-runtime",
-                "task_id": task_id,
-                "scope_id": "frontend-runtime",
-                "direction": "frontend",
-                "module": "f1",
-                "title": "Lifecycle Validation",
-                "decision_ids": ["DEC-test-runtime"],
-                "candidate_method_id": "real-process-lifecycle",
-                "goal_statement": "State stays inspectable under real execution.",
-                "implementation_recipe": [
-                    "Create detached runtime.",
-                    "Observe attach/watch/stop/resume.",
-                ],
-                "baseline_ids": ["temp-project"],
-                "eval_entrypoint": {"command": "pytest -q tests/integration/test_runtime_lifecycle_e2e.py"},
+    upsert_work_item(
+        project_dir,
+        {
+            "schema_version": 1,
+            "kind": "work_item",
+            "work_id": work_id,
+            "direction": "frontend",
+            "module": "f1",
+            "title": "Lifecycle Validation",
+            "status": "ready",
+            "work_type": "task",
+            "runnable": True,
+            "goal": "State stays inspectable under real execution.",
+            "context": "frontend-runtime",
+            "constraints": ["temp-project"],
+            "execution_plan": [
+                "Create detached runtime.",
+                "Observe attach/watch/stop/resume.",
+            ],
+            "eval_contract": {
+                "entrypoint": {"command": "pytest -q tests/integration/test_runtime_lifecycle_e2e.py"},
                 "primary_metric": {"name": "lifecycle_checks", "direction": "gte", "threshold": 1},
                 "failure_classes": ["runtime_drift", "lease_conflict_failure"],
                 "validate_output_schema": default_validate_output_schema(),
-                "status": "frozen",
-                "blocking_gaps": [],
-                "created_at": "2026-04-24T00:00:00Z",
-                "updated_at": "2026-04-24T00:00:00Z",
             },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+            "runtime_policy": {"loop": {"max_iterations": 10, "max_runtime_seconds": 28800}},
+            "decisions": ["DEC-test-runtime"],
+            "missing_questions": [],
+        },
     )
-    compile_task_authority(project_dir)
 
 
 @pytest.fixture
@@ -152,20 +136,20 @@ def thoth_project(tmp_path, monkeypatch):
 
 @pytest.mark.integration
 def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
-    run_result = _run_cli(thoth_project, "run", "--task-id", "task-1")
+    run_result = _run_cli(thoth_project, "run", "--work-id", "task-1")
     assert run_result.returncode == 0, run_result.stderr
     run_packet = _extract_json(run_result.stdout)
     run_id = run_packet["run_id"]
     assert run_packet["dispatch_mode"] == "live_native"
     run_json = _read_json(thoth_project / ".thoth" / "runs" / run_id / "run.json")
-    assert run_json["task_id"] == "task-1"
+    assert run_json["work_id"] == "task-1"
     assert run_json["executor"] == "claude"
 
     watch_result = _run_cli(thoth_project, "run", "--watch", run_id, timeout=20)
     assert watch_result.returncode == 0
     assert "status=running" in watch_result.stdout
 
-    conflict_result = _run_cli(thoth_project, "run", "--task-id", "task-1")
+    conflict_result = _run_cli(thoth_project, "run", "--work-id", "task-1")
     assert conflict_result.returncode == 1
     assert "Active lease already held" in conflict_result.stderr
 
@@ -180,7 +164,7 @@ def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
     run_sleep_result = _run_cli(
         thoth_project,
         "run",
-        "--task-id",
+        "--work-id",
         "task-1",
         "--sleep",
         env={"THOTH_TEST_EXTERNAL_WORKER_MODE": "complete"},
@@ -196,7 +180,7 @@ def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
         description="sleep run to complete",
     )
 
-    loop_live_result = _run_cli(thoth_project, "loop", "--task-id", "task-1")
+    loop_live_result = _run_cli(thoth_project, "loop", "--work-id", "task-1")
     assert loop_live_result.returncode == 0, loop_live_result.stderr
     loop_live_packet = _extract_json(loop_live_result.stdout)
     loop_live_id = loop_live_packet["run_id"]
@@ -215,7 +199,7 @@ def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
     loop_result = _run_cli(
         thoth_project,
         "loop",
-        "--task-id",
+        "--work-id",
         "task-1",
         "--sleep",
         env={"THOTH_TEST_EXTERNAL_WORKER_MODE": "hold"},
@@ -242,13 +226,13 @@ def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
 
 @pytest.mark.integration
 def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
-    config_path = thoth_project / ".thoth" / "project" / "project.json"
+    config_path = thoth_project / ".thoth" / "objects" / "project" / "project.json"
     config = _read_json(config_path)
     port = _free_port()
-    config["dashboard"]["port"] = port
+    config["payload"]["dashboard"]["port"] = port
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    run_result = _run_cli(thoth_project, "run", "--task-id", "task-1")
+    run_result = _run_cli(thoth_project, "run", "--work-id", "task-1")
     assert run_result.returncode == 0
     run_packet = _extract_json(run_result.stdout)
     run_id = run_packet["run_id"]
@@ -278,7 +262,7 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     with urlopen(f"http://127.0.0.1:{port}/api/tasks/task-1/active-run", timeout=5) as response:  # noqa: S310
         active_run = json.loads(response.read().decode("utf-8"))
     assert active_run["run_id"] == run_id
-    assert active_run["task_id"] == "task-1"
+    assert active_run["work_id"] == "task-1"
 
     state_path = thoth_project / ".thoth" / "runs" / run_id / "state.json"
     state = _read_json(state_path)
@@ -325,10 +309,13 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     )
     assert hook_stop.returncode == 0
 
-    conversations_payload = (thoth_project / ".thoth" / "project" / "conversations.jsonl").read_text(encoding="utf-8")
-    assert '"type": "hook"' in conversations_payload
-    assert '"event": "start"' in conversations_payload
-    assert '"event": "stop"' in conversations_payload
+    hook_discussions = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (thoth_project / ".thoth" / "objects" / "discussion").glob("*.json")
+    ]
+    hook_messages = json.dumps(hook_discussions, ensure_ascii=False)
+    assert '"event": "start"' in hook_messages
+    assert '"event": "stop"' in hook_messages
 
     out_of_repo_stop = subprocess.run(
         ["bash", "-lc", stop_hook["command"]],
@@ -350,22 +337,27 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     assert hook_end.returncode == 0
     assert "PASS" in hook_end.stdout or hook_end.stdout == ""
 
-    broken_task = thoth_project / ".thoth" / "project" / "contracts" / "CTR-broken.json"
+    broken_task = thoth_project / ".thoth" / "objects" / "work_item" / "task-broken.json"
     broken_task.write_text(
         json.dumps(
             {
                 "schema_version": 1,
-                "kind": "contract",
-                "contract_id": "CTR-broken",
-                "task_id": "task-broken",
-                "scope_id": "broken",
-                "direction": "frontend",
-                "module": "f1",
+                "kind": "work_item",
+                "object_id": "task-broken",
+                "status": "ready",
                 "title": "Broken contract",
-                "decision_ids": ["DEC-missing"],
-                "candidate_method_id": "broken",
-                "status": "frozen",
-                "blocking_gaps": [],
+                "summary": "Broken work item",
+                "revision": 1,
+                "created_at": "2026-04-29T00:00:00Z",
+                "updated_at": "2026-04-29T00:00:00Z",
+                "source": "test",
+                "links": [],
+                "payload": {
+                    "work_type": "task",
+                    "runnable": True,
+                    "missing_questions": [],
+                },
+                "history": [],
             },
             ensure_ascii=False,
             indent=2,

@@ -12,7 +12,8 @@ from typing import Any
 
 from thoth.command_specs import COMMAND_SPECS
 from thoth.plan.compiler import compile_task_authority
-from thoth.plan.store import ensure_task_authority_tree
+from thoth.plan.store import ensure_work_authority_tree
+from thoth.objects import Store
 
 LEGACY_CONFIG_FILE = ".research-config.yaml"
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,7 +38,7 @@ GENERATED_SCRIPT_FILES = [
     "thoth-codex-hook.sh",
 ]
 GENERATED_TEST_FILES = ["tests/conftest.py", "tests/test_structure.py"]
-MANAGED_DIRECTORY_ROOTS = [".agent-os", ".claude", ".thoth", "scripts", "tests", "tools", "tools/dashboard"]
+MANAGED_DIRECTORY_ROOTS = [".claude", ".thoth", "scripts", "tests", "tools", "tools/dashboard"]
 LEGACY_REMOVE_PATHS = [LEGACY_CONFIG_FILE, ".agent-os/research-tasks", "tests/test_validate.py", "tests/test_check_consistency.py", "tests/test_sync_todo.py", "tests/test_verify_completion.py"]
 DISCOVERY_CODE_SUFFIXES = {".py", ".js", ".ts", ".tsx", ".vue", ".sh", ".rs", ".go", ".java", ".c", ".cc", ".cpp", ".h", ".hpp"}
 THOTH_CLAUDE_BASH_ALLOW_PATTERN = "Bash(*thoth-claude-command.sh*)"
@@ -148,9 +149,10 @@ This document is the canonical human-readable project instruction source for `{c
 ## Runtime Authority
 
 - `.thoth` is the only runtime authority.
-- Execution planning is compiler-driven: `Decision -> Contract -> generated Task`.
-- Task-level current conclusions live in `.thoth/project/tasks/*.result.json`; generated tasks are read-only projections.
-- `run` and `loop` only execute generated tasks from `.thoth/project/tasks/*.json`.
+- Canonical storage lives in `.thoth/objects/<kind>/<object_id>.json`.
+- Planning authority is object-graph driven: `discussion -> decision -> work_item`.
+- `work_item` replaces old contract/task authority; runnable work must be `ready`.
+- `run` and `loop` only execute ready runnable work by `--work-id`.
 - Free-form execution is forbidden; ambiguous work must go back through `discuss`.
 - `init` must audit the current repository before it standardizes any Thoth-managed surface.
 - `run` and `loop` are durable by default and support attach/watch/stop lifecycle.
@@ -160,9 +162,9 @@ This document is the canonical human-readable project instruction source for `{c
 ## Recovery Order
 
 1. Read this file.
-2. Read `.agent-os/project-index.md`.
-3. Read `.agent-os/requirements.md`, `.agent-os/architecture-milestones.md`, `.agent-os/todo.md`.
-4. Read `.agent-os/run-log.md` last for recent context.
+2. Read `.thoth/docs/agent-entry.md`.
+3. Read `.thoth/docs/object-graph-summary.json`.
+4. Read generated project docs only as read views, not authority.
 
 ## Public Surfaces
 
@@ -172,47 +174,77 @@ This document is the canonical human-readable project instruction source for `{c
 
 def generate_thoth_runtime(config: dict[str, Any], project_dir: Path) -> None:
     thoth_dir = project_dir / ".thoth"
-    for rel in ("project", "runs", "migrations", "derived"):
+    for rel in ("objects", "docs", "runs", "migrations", "derived"):
         (thoth_dir / rel).mkdir(parents=True, exist_ok=True)
-    ensure_task_authority_tree(project_dir)
+    ensure_work_authority_tree(project_dir)
     directions = [_normalize_direction_entry(direction, index) for index, direction in enumerate(config.get("directions", []))]
+    project_payload = {
+        "name": config["name"],
+        "description": config.get("description", ""),
+        "language": config.get("language", "zh"),
+        "directions": directions,
+        "phases": config.get("phases", DEFAULT_PHASES),
+    }
+    dashboard_payload = {
+        "port": config.get("port", 8501),
+        "theme": config.get("theme", "warm-bear"),
+    }
+    Store(project_dir).upsert(
+        kind="project",
+        object_id="project",
+        status="active",
+        title=config["name"],
+        summary=config.get("description", ""),
+        source="init",
+        payload={
+            "project": project_payload,
+            "dashboard": dashboard_payload,
+            "runtime": {
+                "authority": ".thoth/objects",
+                "runs_dir": ".thoth/runs",
+                "docs_dir": ".thoth/docs",
+                "execution_policy": {
+                    "mode": "ready-work-only",
+                    "free_form_execution": False,
+                    "work_source": ".thoth/objects/work_item",
+                },
+            },
+            "hosts": {
+                "claude": {"projection": "CLAUDE.md"},
+                "codex": {"projection": "AGENTS.md"},
+            },
+        },
+    )
     manifest = {
-        "schema_version": 2,
-        "project": {
-            "name": config["name"],
-            "description": config.get("description", ""),
-            "language": config.get("language", "zh"),
-            "directions": directions,
-            "phases": config.get("phases", DEFAULT_PHASES),
-        },
-        "dashboard": {
-            "port": config.get("port", 8501),
-            "theme": config.get("theme", "warm-bear"),
-        },
+        "schema_version": 3,
+        "project": project_payload,
+        "dashboard": dashboard_payload,
         "runtime": {
-            "authority": ".thoth",
+            "authority": ".thoth/objects",
             "runs_dir": ".thoth/runs",
-            "project_manifest": ".thoth/project/project.json",
-            "project_instructions": ".thoth/project/instructions.md",
-            "decision_dir": ".thoth/project/decisions",
-            "contract_dir": ".thoth/project/contracts",
-            "task_dir": ".thoth/project/tasks",
-            "task_result_pattern": ".thoth/project/tasks/*.result.json",
-            "compiler_state": ".thoth/project/compiler-state.json",
-            "legacy_audit": ".thoth/project/legacy-audit.json",
+            "docs_dir": ".thoth/docs",
+            "project_object": ".thoth/objects/project/project.json",
+            "work_item_dir": ".thoth/objects/work_item",
+            "object_graph_summary": ".thoth/docs/object-graph-summary.json",
             "execution_policy": {
-                "mode": "strict-task-only",
+                "mode": "ready-work-only",
                 "free_form_execution": False,
-                "task_source": ".thoth/project/tasks",
+                "work_source": ".thoth/objects/work_item",
             },
         },
         "hosts": {
             "claude": {"projection": "CLAUDE.md"},
             "codex": {"projection": "AGENTS.md"},
         },
+        "legacy_removed": {
+            "agent_os_authority": True,
+            "contract_kind": True,
+            "task_compiler": True,
+            "dashboard_sqlite_authority": True,
+        },
     }
-    (thoth_dir / "project" / "project.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    (thoth_dir / "project" / "instructions.md").write_text(render_project_instructions(config), encoding="utf-8")
+    (thoth_dir / "docs" / "project.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (thoth_dir / "docs" / "agent-entry.md").write_text(render_project_instructions(config), encoding="utf-8")
     for rel in ("runs/.gitkeep", "migrations/.gitkeep", "derived/.gitkeep"):
         (thoth_dir / rel).write_text("", encoding="utf-8")
     compile_task_authority(project_dir)
@@ -242,7 +274,7 @@ def generate_scripts(config: dict[str, Any], project_dir: Path) -> None:
     scripts_dir.mkdir(parents=True, exist_ok=True)
     scripts = {
         "install-hooks.sh": "#!/usr/bin/env bash\nset -e\npre-commit install\n",
-        "check-required-files.sh": "#!/usr/bin/env bash\nset -e\nfor f in project-index.md requirements.md architecture-milestones.md todo.md cross-repo-mapping.md acceptance-report.md lessons-learned.md run-log.md change-decisions.md; do test -f \".agent-os/$f\" || { echo \"MISSING: .agent-os/$f\"; exit 1; }; done\n",
+        "check-required-files.sh": "#!/usr/bin/env bash\nset -e\nfor f in .thoth/objects/project/project.json .thoth/docs/agent-entry.md .thoth/docs/object-graph-summary.json .thoth/derived/codex-hooks.json; do test -f \"$f\" || { echo \"MISSING: $f\"; exit 1; }; done\n",
         "thoth-cli.sh": "#!/usr/bin/env bash\nset -euo pipefail\nROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"\ncd \"$ROOT\"\nif command -v thoth >/dev/null 2>&1; then\n  exec thoth \"$@\"\nfi\nif [ -n \"${THOTH_SOURCE_ROOT:-}\" ]; then\n  export PYTHONPATH=\"${THOTH_SOURCE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}\"\n  exec python -m thoth.cli \"$@\"\nfi\necho \"Missing Thoth shell wrapper. Install drift: expected 'thoth' on PATH or THOTH_SOURCE_ROOT for source-checkout fallback.\" >&2\nexit 1\n",
         "session-end-check.sh": "#!/usr/bin/env bash\nset -euo pipefail\nbash scripts/thoth-cli.sh sync\nbash scripts/thoth-cli.sh doctor\nbash scripts/check-required-files.sh\n",
         "validate-all.sh": "#!/usr/bin/env bash\nset -euo pipefail\nbash scripts/thoth-cli.sh sync\nbash scripts/thoth-cli.sh doctor\nbash scripts/check-required-files.sh\n",
@@ -258,29 +290,30 @@ def render_host_projection(config: dict[str, Any]) -> str:
     return textwrap.dedent(f"""\
 # AGENTS.md
 
-This file is generated from `.thoth/project/instructions.md` for `{config["name"]}`.
+This file is a thin generated shim for `{config["name"]}`.
 
 ## Mission
 
 - Preserve user-defined goals, requirements, and acceptance boundaries.
 - Recover context from files rather than chat history.
-- Treat `.thoth` as the only runtime authority.
+- Treat `.thoth/objects` as the only project/runtime authority.
 
 ## Recovery Order
 
 1. Read this file.
-2. Read `.thoth/project/instructions.md`.
-3. Read `.agent-os/project-index.md`, `.agent-os/requirements.md`, `.agent-os/architecture-milestones.md`, `.agent-os/todo.md`.
-4. Read `.agent-os/run-log.md` last.
+2. Read `.thoth/docs/agent-entry.md`.
+3. Read `.thoth/docs/object-graph-summary.json`.
+4. Read `.thoth/objects/project/project.json` and relevant linked objects.
 
 ## Runtime Rules
 
-- Planning authority lives in `.thoth/project/decisions`, `.thoth/project/contracts`, and generated `.thoth/project/tasks`.
-- TaskResult authority lives in `.thoth/project/tasks/*.result.json`.
-- `run` and `loop` execute by `--task-id` only; free-form goals belong in `discuss`.
+- Planning authority lives in `.thoth/objects/discussion`, `.thoth/objects/decision`, and `.thoth/objects/work_item`.
+- There is no standalone Contract kind; goal, constraints, execution plan, eval, runtime policy, and decisions live inside `work_item.payload`.
+- `run` and `loop` execute by `--work-id` only; free-form goals belong in `discuss`.
+- Active run/controller references lock the target work item until terminal state.
 - `run` and `loop` are durable by default and support attach/watch/stop lifecycle.
 - Hooks and subagents may enhance throughput but are never correctness dependencies.
-- Dashboard truth comes from `.thoth/runs/*`, not host session state.
+- Dashboard truth is derived from `.thoth/objects` and `.thoth/runs/*`, not host session state.
 - New feature work must keep Claude Code and Codex project surfaces in sync.
 """)
 
@@ -355,10 +388,10 @@ from pathlib import Path
 REQUIRED_FILES = [
     "AGENTS.md",
     "CLAUDE.md",
-    ".thoth/project/project.json",
-    ".thoth/project/instructions.md",
-    ".thoth/project/compiler-state.json",
-    ".thoth/project/legacy-audit.json",
+    ".thoth/objects/project/project.json",
+    ".thoth/docs/agent-entry.md",
+    ".thoth/docs/object-graph-summary.json",
+    ".thoth/docs/legacy-audit.json",
     ".thoth/derived/codex-hooks.json",
 ]
 

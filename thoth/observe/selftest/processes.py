@@ -173,9 +173,18 @@ class _SelftestBudget:
         self._previous_deadline = _SELFTEST_DEADLINE
         self._previous_label = _SELFTEST_DEADLINE_LABEL
         self._previous_seconds = _SELFTEST_DEADLINE_SECONDS
-        _SELFTEST_DEADLINE = None if self.seconds is None else time.time() + self.seconds
+        if self.seconds is None:
+            _SELFTEST_DEADLINE = self._previous_deadline
+            _SELFTEST_DEADLINE_SECONDS = self._previous_seconds
+        else:
+            requested_deadline = time.time() + self.seconds
+            if self._previous_deadline is not None:
+                _SELFTEST_DEADLINE = min(self._previous_deadline, requested_deadline)
+                _SELFTEST_DEADLINE_SECONDS = max(0.0, _SELFTEST_DEADLINE - time.time())
+            else:
+                _SELFTEST_DEADLINE = requested_deadline
+                _SELFTEST_DEADLINE_SECONDS = self.seconds
         _SELFTEST_DEADLINE_LABEL = self.label
-        _SELFTEST_DEADLINE_SECONDS = self.seconds
 
     def __exit__(self, exc_type, exc, tb) -> None:
         global _SELFTEST_DEADLINE, _SELFTEST_DEADLINE_LABEL, _SELFTEST_DEADLINE_SECONDS

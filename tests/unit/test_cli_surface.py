@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from thoth.plan.compiler import compile_task_authority
+from thoth.plan.store import upsert_work_item, upsert_decision
 from thoth.run.phases import default_validate_output_schema
 
 
@@ -30,73 +30,56 @@ def _run_cli(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def _write_task(
     project_dir: Path,
-    task_id: str = "task-1",
+    work_id: str = "task-1",
     *,
     title: str = "Lifecycle Validation",
-    goal_statement: str = "State stays inspectable under real execution.",
+    work_goal: str = "State stays inspectable under real execution.",
     module: str = "f1",
     direction: str = "frontend",
     eval_command: str = "pytest -q tests/unit/test_cli_surface.py",
 ) -> None:
-    decisions = project_dir / ".thoth" / "project" / "decisions"
-    contracts = project_dir / ".thoth" / "project" / "contracts"
-    decisions.mkdir(parents=True, exist_ok=True)
-    contracts.mkdir(parents=True, exist_ok=True)
-    decision_id = f"DEC-{task_id}"
-    contract_id = f"CTR-{task_id}"
-    (decisions / f"{decision_id}.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "kind": "decision",
-                "decision_id": decision_id,
-                "scope_id": f"{module}-{task_id}",
-                "question": "Which runtime validation method should be executed?",
-                "candidate_method_ids": ["real-process-lifecycle"],
-                "selected_values": {"candidate_method_id": "real-process-lifecycle"},
-                "status": "frozen",
-                "unresolved_gaps": [],
-                "created_at": "2026-04-24T00:00:00Z",
-                "updated_at": "2026-04-24T00:00:00Z",
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+    decision_id = f"DEC-{work_id}"
+    upsert_decision(
+        project_dir,
+        {
+            "schema_version": 1,
+            "kind": "decision",
+            "decision_id": decision_id,
+            "scope_id": f"{module}-{work_id}",
+            "question": "Which runtime validation method should be executed?",
+            "candidate_method_ids": ["real-process-lifecycle"],
+            "selected_values": {"candidate_method_id": "real-process-lifecycle"},
+            "status": "frozen",
+            "unresolved_gaps": [],
+        },
     )
-    (contracts / f"{contract_id}.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "kind": "contract",
-                "contract_id": contract_id,
-                "task_id": task_id,
-                "scope_id": f"{module}-{task_id}",
-                "direction": direction,
-                "module": module,
-                "title": title,
-                "decision_ids": [decision_id],
-                "candidate_method_id": "real-process-lifecycle",
-                "goal_statement": goal_statement,
-                "implementation_recipe": ["Create runtime packet.", "Observe protocol updates."],
-                "baseline_ids": ["temp-project"],
-                "eval_entrypoint": {"command": eval_command},
+    upsert_work_item(
+        project_dir,
+        {
+            "schema_version": 1,
+            "kind": "work_item",
+            "work_id": work_id,
+            "direction": direction,
+            "module": module,
+            "title": title,
+            "status": "ready",
+            "work_type": "task",
+            "runnable": True,
+            "goal": work_goal,
+            "context": f"{module}-{work_id}",
+            "constraints": ["temp-project"],
+            "execution_plan": ["Create runtime packet.", "Observe protocol updates."],
+            "eval_contract": {
+                "entrypoint": {"command": eval_command},
                 "primary_metric": {"name": "lifecycle_checks", "direction": "gte", "threshold": 1},
                 "failure_classes": ["runtime_drift"],
                 "validate_output_schema": default_validate_output_schema(),
-                "status": "frozen",
-                "blocking_gaps": [],
-                "created_at": "2026-04-24T00:00:00Z",
-                "updated_at": "2026-04-24T00:00:00Z",
             },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+            "runtime_policy": {"loop": {"max_iterations": 10, "max_runtime_seconds": 28800}},
+            "decisions": [decision_id],
+            "missing_questions": [],
+        },
     )
-    compile_task_authority(project_dir)
 
 
 def _extract_envelope(text: str) -> dict:
@@ -127,7 +110,8 @@ def _extract_json_object(text: str) -> dict:
 def test_cli_init_creates_project_layer(tmp_path):
     result = _run_cli(tmp_path, "init")
     assert result.returncode == 0, result.stderr
-    assert (tmp_path / ".thoth" / "project" / "project.json").exists()
+    assert (tmp_path / ".thoth" / "objects" / "project" / "project.json").exists()
+    assert (tmp_path / ".thoth" / "docs" / "project.json").exists()
     assert (tmp_path / "AGENTS.md").exists()
     assert (tmp_path / ".thoth" / "derived" / "codex-hooks.json").exists()
 
@@ -136,13 +120,12 @@ def test_cli_discuss_records_note(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
     result = _run_cli(tmp_path, "discuss", "planning", "note")
     assert result.returncode == 0
-    note_path = tmp_path / ".thoth" / "project" / "conversations.jsonl"
-    assert note_path.exists()
-    payload = json.loads(note_path.read_text(encoding="utf-8").splitlines()[-1])
-    assert payload["type"] == "discuss"
-    assert payload["content"] == "planning note"
-    decisions = list((tmp_path / ".thoth" / "project" / "decisions").glob("*.json"))
-    assert decisions, "Discuss should materialize an open decision placeholder"
+    discussions = list((tmp_path / ".thoth" / "objects" / "discussion").glob("*.json"))
+    assert discussions, "Discuss should materialize an inquiring discussion object"
+    payload = json.loads(discussions[-1].read_text(encoding="utf-8"))
+    assert payload["kind"] == "discussion"
+    assert payload["status"] == "inquiring"
+    assert payload["payload"]["messages"][-1]["content"] == "planning note"
 
 
 def test_cli_discuss_accepts_structured_decision_payload(tmp_path):
@@ -161,10 +144,10 @@ def test_cli_discuss_accepts_structured_decision_payload(tmp_path):
     )
     result = _run_cli(tmp_path, "discuss", "--decision-json", payload)
     assert result.returncode == 0, result.stderr
-    decision_path = tmp_path / ".thoth" / "project" / "decisions" / "DEC-host-real-selftest.json"
+    decision_path = tmp_path / ".thoth" / "objects" / "decision" / "DEC-host-real-selftest.json"
     assert decision_path.exists()
     stored = json.loads(decision_path.read_text(encoding="utf-8"))
-    assert stored["status"] == "frozen"
+    assert stored["status"] == "accepted"
     payload = json.loads(result.stdout)
     assert payload["command"] == "discuss"
     assert payload["status"] == "ok"
@@ -174,9 +157,6 @@ def test_cli_review_records_note(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
     result = _run_cli(tmp_path, "review", "audit", "this")
     assert result.returncode == 0
-    note_path = tmp_path / ".thoth" / "project" / "conversations.jsonl"
-    payload = json.loads(note_path.read_text(encoding="utf-8").splitlines()[-1])
-    assert payload["type"] == "review"
     packet = _extract_json_object(result.stdout)
     assert packet["command_id"] == "review"
     assert packet["dispatch_mode"] == "live_native"
@@ -197,7 +177,7 @@ def test_cli_status_json(tmp_path):
     assert result.returncode == 0
     payload = _extract_json_object(result.stdout)
     assert payload["active_run_count"] == 0
-    assert payload["compiler"]["task_counts"]["total"] == 0
+    assert payload["compiler"]["work_item_counts"]["total"] == 0
 
 
 def test_cli_doctor_quick(tmp_path):
@@ -209,22 +189,22 @@ def test_cli_doctor_quick(tmp_path):
 
 def test_cli_run_rejects_free_form_execution(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
-    _write_task(tmp_path, "task-auth-fix", title="Fix Auth Session", goal_statement="Repair session persistence bug in auth flow.")
-    _write_task(tmp_path, "task-dashboard", title="Dashboard Polish", goal_statement="Polish dashboard filters and layout.")
+    _write_task(tmp_path, "task-auth-fix", title="Fix Auth Session", work_goal="Repair session persistence bug in auth flow.")
+    _write_task(tmp_path, "task-dashboard", title="Dashboard Polish", work_goal="Polish dashboard filters and layout.")
     result = _run_cli(tmp_path, "run", "legacy free text")
     assert result.returncode == 2
     payload = _extract_envelope(result.stdout)
     assert payload["status"] == "needs_input"
     assert payload["command"] == "run"
     assert payload["body"]["candidates"]
-    assert "No task was created" in payload["summary"]
+    assert "No work item was created" in payload["summary"]
 
 
-def test_cli_run_without_task_id_suggests_closest_tasks_and_stops(tmp_path):
+def test_cli_run_without_work_id_suggests_closest_work_items_and_stops(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
-    _write_task(tmp_path, "task-auth-fix", title="Fix Auth Session", goal_statement="Repair session persistence bug in auth flow.")
-    _write_task(tmp_path, "task-dashboard", title="Dashboard Polish", goal_statement="Polish dashboard filters and layout.")
-    _write_task(tmp_path, "task-report", title="Report Cleanup", goal_statement="Clean report rendering and summary wording.")
+    _write_task(tmp_path, "task-auth-fix", title="Fix Auth Session", work_goal="Repair session persistence bug in auth flow.")
+    _write_task(tmp_path, "task-dashboard", title="Dashboard Polish", work_goal="Polish dashboard filters and layout.")
+    _write_task(tmp_path, "task-report", title="Report Cleanup", work_goal="Clean report rendering and summary wording.")
     result = _run_cli(tmp_path, "run", "fix", "auth", "session")
     assert result.returncode == 2
     payload = _extract_envelope(result.stdout)
@@ -232,25 +212,25 @@ def test_cli_run_without_task_id_suggests_closest_tasks_and_stops(tmp_path):
     assert payload["body"]["query"] == "fix auth session"
     candidates = payload["body"]["candidates"]
     assert len(candidates) == 3
-    assert candidates[0]["task_id"] == "task-auth-fix"
+    assert candidates[0]["work_id"] == "task-auth-fix"
 
 
-def test_cli_loop_without_task_id_uses_goal_to_suggest_tasks_and_stops(tmp_path):
+def test_cli_loop_without_work_id_uses_goal_to_suggest_work_items_and_stops(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
-    _write_task(tmp_path, "task-column-persist", title="Persist Column Settings", goal_statement="Persist dashboard column selections across reloads.")
-    _write_task(tmp_path, "task-auth-fix", title="Fix Auth Session", goal_statement="Repair session persistence bug in auth flow.")
+    _write_task(tmp_path, "task-column-persist", title="Persist Column Settings", work_goal="Persist dashboard column selections across reloads.")
+    _write_task(tmp_path, "task-auth-fix", title="Fix Auth Session", work_goal="Repair session persistence bug in auth flow.")
     result = _run_cli(tmp_path, "loop", "--goal", "persist dashboard column", "--sleep")
     assert result.returncode == 2
     payload = _extract_envelope(result.stdout)
     assert payload["status"] == "needs_input"
     assert payload["body"]["query"] == "persist dashboard column"
-    assert payload["body"]["candidates"][0]["task_id"] == "task-column-persist"
+    assert payload["body"]["candidates"][0]["work_id"] == "task-column-persist"
 
 
 def test_cli_runtime_defaults_and_prepare_packet(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
     _write_task(tmp_path)
-    result = _run_cli(tmp_path, "run", "--task-id", "task-1")
+    result = _run_cli(tmp_path, "run", "--work-id", "task-1")
     assert result.returncode == 0, result.stderr
     packet = _extract_json_object(result.stdout)
     assert packet["command_id"] == "run"
@@ -262,7 +242,7 @@ def test_cli_runtime_defaults_and_prepare_packet(tmp_path):
 def test_cli_sleep_mode_auto_backgrounds(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
     _write_task(tmp_path)
-    result = _run_cli(tmp_path, "loop", "--task-id", "task-1", "--sleep")
+    result = _run_cli(tmp_path, "loop", "--work-id", "task-1", "--sleep")
     assert result.returncode == 0, result.stderr
     packet = _extract_json_object(result.stdout)
     assert packet["dispatch_mode"] == "external_worker"
@@ -272,6 +252,6 @@ def test_cli_sleep_mode_auto_backgrounds(tmp_path):
 def test_cli_live_mode_rejects_removed_detach_flag(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
     _write_task(tmp_path)
-    result = _run_cli(tmp_path, "run", "--task-id", "task-1", "--detach")
+    result = _run_cli(tmp_path, "run", "--work-id", "task-1", "--detach")
     assert result.returncode == 2
     assert "--detach" in result.stderr

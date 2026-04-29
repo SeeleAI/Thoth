@@ -34,7 +34,7 @@ def test_executor_mode_documents_exist():
     """Public commands should advertise executor-mode routing instead."""
     for relpath in ["commands/run.md", "commands/loop.md", "commands/review.md"]:
         content = (ROOT / relpath).read_text(encoding="utf-8")
-        assert "Codex executor allowed: yes" in content
+        assert "--executor claude|codex" in content
 
 
 def test_plugin_does_not_force_default_agent_activation():

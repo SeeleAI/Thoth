@@ -1,10 +1,14 @@
-"""Shared pytest fixtures and tier helpers for Thoth plugin tests."""
+"""Shared pytest fixtures and targeted-selection helpers for Thoth tests."""
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from typing import Sequence
 
 import pytest
+
+from thoth.test_targets import known_target_ids, selectors_for_targets
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "golden"
 THOTH_ROOT = Path(__file__).parent.parent
@@ -42,15 +46,115 @@ def _closest_tier_marker(item: pytest.Item) -> str | None:
     return None
 
 
+def allow_broad_tests(*, cli_flag: bool, env: dict[str, str] | None = None) -> bool:
+    variables = env or os.environ
+    value = str(variables.get("THOTH_ALLOW_BROAD_TESTS", "")).strip().lower()
+    return bool(cli_flag) or value in {"1", "true", "yes", "on"}
+
+
+def classify_explicit_pytest_targets(invocation_args: Sequence[str], *, repo_root: Path) -> dict[str, list[str]]:
+    explicit: list[str] = []
+    directories: list[str] = []
+    unknown: list[str] = []
+    for raw_arg in invocation_args:
+        arg = str(raw_arg).strip()
+        if not arg or arg.startswith("-"):
+            continue
+        path_part = arg.split("::", 1)[0]
+        candidate = Path(path_part)
+        if not candidate.is_absolute():
+            candidate = repo_root / candidate
+        if "::" in arg or candidate.is_file() or path_part.endswith(".py"):
+            explicit.append(arg)
+            continue
+        if candidate.is_dir():
+            directories.append(arg)
+            continue
+        unknown.append(arg)
+    return {
+        "explicit": explicit,
+        "directories": directories,
+        "unknown": unknown,
+    }
+
+
+def validate_pytest_invocation(
+    invocation_args: Sequence[str],
+    *,
+    repo_root: Path,
+    selected_targets: Sequence[str],
+    selected_tier: str | None,
+    broad_allowed: bool,
+) -> str | None:
+    if broad_allowed:
+        return None
+    if selected_targets:
+        return None
+    if selected_tier:
+        return (
+            "Broad tier runs are disabled by default. Use explicit file/nodeid targets, "
+            "`--thoth-target <target_id>`, or opt in with `--thoth-allow-broad` / "
+            "`THOTH_ALLOW_BROAD_TESTS=1`."
+        )
+    classification = classify_explicit_pytest_targets(invocation_args, repo_root=repo_root)
+    if classification["explicit"]:
+        return None
+    if classification["directories"]:
+        return (
+            "Directory-wide pytest runs are disabled by default. Use an explicit file/nodeid, "
+            "`--thoth-target <target_id>`, or opt in with `--thoth-allow-broad` / "
+            "`THOTH_ALLOW_BROAD_TESTS=1`."
+        )
+    if classification["unknown"]:
+        return (
+            "Pytest invocation must name explicit test files/nodeids or `--thoth-target <target_id>` "
+            "unless broad runs are explicitly allowed."
+        )
+    return (
+        "Bare pytest runs are disabled by default. Use an explicit file/nodeid, "
+        "`--thoth-target <target_id>`, or opt in with `--thoth-allow-broad` / "
+        "`THOTH_ALLOW_BROAD_TESTS=1`."
+    )
+
+
+def item_matches_target_selectors(nodeid: str, selectors: Sequence[str]) -> bool:
+    normalized = nodeid.replace("\\", "/")
+    path = normalized.split("::", 1)[0]
+    for selector in selectors:
+        normalized_selector = selector.replace("\\", "/")
+        if "::" in normalized_selector:
+            if normalized == normalized_selector or normalized.startswith(f"{normalized_selector}::"):
+                return True
+            continue
+        if path == normalized_selector or normalized.startswith(f"{normalized_selector}::"):
+            return True
+    return False
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("thoth")
+    group.addoption(
+        "--thoth-target",
+        action="append",
+        default=[],
+        metavar="TARGET_ID",
+        help=(
+            "Run one named Thoth test target. "
+            f"Known targets: {', '.join(known_target_ids())}."
+        ),
+    )
+    group.addoption(
+        "--thoth-allow-broad",
+        action="store_true",
+        help="Explicitly allow directory-wide or bare pytest runs for release/CI situations.",
+    )
     group.addoption(
         "--thoth-tier",
         action="store",
         choices=tuple(TEST_TIER_ORDER.keys()),
         help=(
-            "Run a bounded Thoth test tier: light (<=20s target), "
-            "medium (<=2m target, includes light), or heavy (full suite)."
+            "Run a bounded Thoth tier only when broad runs are explicitly allowed. "
+            "This flag is reserved for CI/release-style sweeps, not normal development."
         ),
     )
 
@@ -60,9 +164,28 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "light: fast in-process developer smoke tier")
     config.addinivalue_line("markers", "medium: repo-real but bounded developer tier")
     config.addinivalue_line("markers", "heavy: full suite including the slowest process-real coverage")
+    selected_targets = list(config.getoption("--thoth-target") or [])
+    try:
+        selectors_for_targets(selected_targets)
+    except ValueError as exc:
+        raise pytest.UsageError(str(exc)) from exc
+    broad_allowed = allow_broad_tests(
+        cli_flag=bool(config.getoption("--thoth-allow-broad")),
+    )
+    failure = validate_pytest_invocation(
+        config.invocation_params.args,
+        repo_root=THOTH_ROOT,
+        selected_targets=selected_targets,
+        selected_tier=config.getoption("--thoth-tier"),
+        broad_allowed=broad_allowed,
+    )
+    if failure:
+        raise pytest.UsageError(failure)
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    selected_targets = list(config.getoption("--thoth-target") or [])
+    selected_selectors = selectors_for_targets(selected_targets) if selected_targets else ()
     selected_tier = config.getoption("--thoth-tier")
     kept: list[pytest.Item] = []
     deselected: list[pytest.Item] = []
@@ -70,11 +193,17 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         item_tier = _closest_tier_marker(item) or resolve_test_tier(item.nodeid)
         if _closest_tier_marker(item) is None:
             item.add_marker(getattr(pytest.mark, item_tier))
-        if selected_tier and not tier_includes(selected_tier, item_tier):
-            deselected.append(item)
-        else:
+        target_ok = True
+        if selected_selectors:
+            target_ok = item_matches_target_selectors(item.nodeid, selected_selectors)
+        tier_ok = True
+        if selected_tier:
+            tier_ok = tier_includes(selected_tier, item_tier)
+        if target_ok and tier_ok:
             kept.append(item)
-    if selected_tier and deselected:
+        else:
+            deselected.append(item)
+    if (selected_tier or selected_selectors) and deselected:
         config.hook.pytest_deselected(items=deselected)
         items[:] = kept
 

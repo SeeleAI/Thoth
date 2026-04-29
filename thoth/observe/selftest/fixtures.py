@@ -23,7 +23,9 @@ from urllib.request import urlopen
 import yaml
 
 from thoth.init.render import render_codex_hooks_payload
+from thoth.objects import Store
 from thoth.plan.compiler import compile_task_authority
+from thoth.plan.store import load_project_manifest, upsert_work_item, upsert_decision
 from thoth.run.ledger import complete_run, heartbeat_run
 from thoth.run.phases import default_validate_output_schema
 from thoth.selftest_seed import seed_host_real_app
@@ -78,67 +80,65 @@ def _host_real_contract_payloads() -> list[dict[str, Any]]:
     return [
         {
             "schema_version": 1,
-            "kind": "contract",
-            "contract_id": "CTR-host-real-runtime",
-            "task_id": "task-runtime-probe",
-            "scope_id": "command-probe-repo",
+            "kind": "work_item",
+            "work_id": "task-runtime-probe",
             "direction": "backend",
             "module": "selftest",
             "title": "Exercise durable sleep handoff without source edits",
-            "decision_ids": ["DEC-host-real-selftest"],
-            "candidate_method_id": "runtime-probe",
-            "goal_statement": "Public `run --sleep` and `loop --sleep` must create durable ledgers, remain attachable, and stop cleanly without touching source files.",
-            "implementation_recipe": [
+            "status": "ready",
+            "work_type": "task",
+            "runnable": True,
+            "goal": "Public `run --sleep` and `loop --sleep` must create durable ledgers, remain attachable, and stop cleanly without touching source files.",
+            "context": "command-probe-repo",
+            "constraints": ["selftest-command-probe-repo"],
+            "execution_plan": [
                 "Treat this task as a runtime protocol probe rather than a product-development task.",
                 "Do not modify repo source files.",
                 "Do not invent feature work, fallback validators, or review closure work.",
                 "If an external worker is handed off successfully, stop there.",
             ],
-            "baseline_ids": ["selftest-command-probe-repo"],
-            "eval_entrypoint": {"command": "python scripts/runtime_probe.py"},
-            "primary_metric": {"name": "runtime_contract_ok", "direction": "gte", "threshold": 1},
-            "failure_classes": ["runtime_handoff_gap"],
-            "validate_output_schema": default_validate_output_schema(),
-            "acceptance_contract": {
-                "usable_question": "Does the runtime handoff create an attachable external-worker ledger?",
-                "goal_question": "Does the runtime probe stop cleanly without source edits or fallback paths?",
+            "eval_contract": {
+                "entrypoint": {"command": "python scripts/runtime_probe.py"},
+                "primary_metric": {"name": "runtime_contract_ok", "direction": "gte", "threshold": 1},
+                "failure_classes": ["runtime_handoff_gap"],
+                "validate_output_schema": default_validate_output_schema(),
             },
-            "status": "frozen",
-            "blocking_gaps": [],
+            "runtime_policy": {"loop": {"max_iterations": 10, "max_runtime_seconds": 28800}},
+            "decisions": ["DEC-host-real-selftest"],
+            "missing_questions": [],
             "created_at": now,
             "updated_at": now,
         },
         {
             "schema_version": 1,
-            "kind": "contract",
-            "contract_id": "CTR-host-real-review",
-            "task_id": "task-review-probe",
-            "scope_id": "command-probe-repo",
+            "kind": "work_item",
+            "work_id": "task-review-probe",
             "direction": "backend",
             "module": "selftest",
             "title": "Return the fixed single finding for the known review defect",
-            "decision_ids": ["DEC-host-real-selftest"],
-            "candidate_method_id": "review-probe",
-            "goal_statement": "Review `tracker/review_probe.py`, emit exactly one structured finding, and do not modify source files.",
-            "review_binding": {"target": "tracker/review_probe.py"},
-            "review_expectation": _expected_host_review_result(),
-            "implementation_recipe": [
+            "status": "ready",
+            "work_type": "task",
+            "runnable": True,
+            "goal": "Review `tracker/review_probe.py`, emit exactly one structured finding, and do not modify source files.",
+            "context": "command-probe-repo",
+            "constraints": ["selftest-command-probe-repo"],
+            "execution_plan": [
                 "Inspect only the review target and any imports needed to understand it.",
                 "Return exactly the expected structured finding.",
                 "Do not emit prose outside the structured review result.",
                 "Do not modify code.",
             ],
-            "baseline_ids": ["selftest-command-probe-repo"],
-            "eval_entrypoint": {"command": "python scripts/runtime_probe.py"},
-            "primary_metric": {"name": "review_exact_match", "direction": "gte", "threshold": 1},
-            "failure_classes": ["review_output_drift"],
-            "validate_output_schema": default_validate_output_schema(),
-            "acceptance_contract": {
-                "usable_question": "Does the review output match the fixed expected finding exactly?",
-                "goal_question": "Does the review probe finish with one exact finding and no code edits?",
+            "eval_contract": {
+                "entrypoint": {"command": "python scripts/runtime_probe.py"},
+                "primary_metric": {"name": "review_exact_match", "direction": "gte", "threshold": 1},
+                "failure_classes": ["review_output_drift"],
+                "validate_output_schema": default_validate_output_schema(),
+                "review_binding": {"target": "tracker/review_probe.py"},
+                "review_expectation": _expected_host_review_result(),
             },
-            "status": "frozen",
-            "blocking_gaps": [],
+            "runtime_policy": {"loop": {"max_iterations": 10, "max_runtime_seconds": 28800}},
+            "decisions": ["DEC-host-real-selftest"],
+            "missing_questions": [],
             "created_at": now,
             "updated_at": now,
         },
@@ -146,14 +146,9 @@ def _host_real_contract_payloads() -> list[dict[str, Any]]:
 
 
 def _seed_host_real_tasks(project_dir: Path) -> None:
-    decision_dir = project_dir / ".thoth" / "project" / "decisions"
-    contract_dir = project_dir / ".thoth" / "project" / "contracts"
-    decision_dir.mkdir(parents=True, exist_ok=True)
-    contract_dir.mkdir(parents=True, exist_ok=True)
-    decision = _host_real_decision_payload()
-    _write_json(decision_dir / f"{decision['decision_id']}.json", decision)
+    upsert_decision(project_dir, _host_real_decision_payload())
     for item in _host_real_contract_payloads():
-        _write_json(contract_dir / f"{item['contract_id']}.json", item)
+        upsert_work_item(project_dir, item)
     compile_task_authority(project_dir)
 
 
@@ -224,7 +219,7 @@ def _latest_run_id(
     project_dir: Path,
     *,
     kind: str,
-    task_id: str | None = None,
+    work_id: str | None = None,
     exclude_run_ids: set[str] | None = None,
 ) -> str:
     exclude = exclude_run_ids or set()
@@ -241,7 +236,7 @@ def _latest_run_id(
             continue
         if run.get("kind") != kind:
             continue
-        if task_id is not None and run.get("task_id") != task_id:
+        if work_id is not None and run.get("work_id") != work_id:
             continue
         candidates.append((str(run.get("created_at") or ""), run_id))
     candidates.sort()
@@ -269,13 +264,9 @@ def _init_git_repo(project_dir: Path) -> None:
     _run_command(["git", "config", "user.name", "Thoth Selftest"], cwd=project_dir, timeout=20)
 
 
-def _seed_task(project_dir: Path, *, task_id: str = "task-1") -> None:
-    decision_dir = project_dir / ".thoth" / "project" / "decisions"
-    contract_dir = project_dir / ".thoth" / "project" / "contracts"
-    decision_dir.mkdir(parents=True, exist_ok=True)
-    contract_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(
-        decision_dir / "DEC-selftest-runtime.json",
+def _seed_task(project_dir: Path, *, work_id: str = "task-1") -> None:
+    upsert_decision(
+        project_dir,
         {
             "schema_version": 1,
             "kind": "decision",
@@ -290,36 +281,35 @@ def _seed_task(project_dir: Path, *, task_id: str = "task-1") -> None:
             "updated_at": utc_now(),
         },
     )
-    _write_json(
-        contract_dir / "CTR-selftest-runtime.json",
+    upsert_work_item(
+        project_dir,
         {
             "schema_version": 1,
-            "kind": "contract",
-            "contract_id": "CTR-selftest-runtime",
-            "task_id": task_id,
-            "scope_id": "frontend-runtime",
+            "kind": "work_item",
+            "work_id": work_id,
             "direction": "frontend",
             "module": "f1",
             "title": "Dashboard lifecycle validation",
-            "decision_ids": ["DEC-selftest-runtime"],
-            "candidate_method_id": "real-cli-runtime-check",
-            "goal_statement": "Verify that runtime state remains inspectable under real process execution.",
-            "implementation_recipe": [
+            "status": "ready",
+            "work_type": "task",
+            "runnable": True,
+            "goal": "Verify that runtime state remains inspectable under real process execution.",
+            "context": "frontend-runtime",
+            "constraints": ["selftest-temp-project"],
+            "execution_plan": [
                 "Initialize a temp Thoth project.",
                 "Start detached run and loop lifecycles.",
                 "Observe dashboard runtime freshness and hook behavior.",
             ],
-            "baseline_ids": ["selftest-temp-project"],
-            "eval_entrypoint": {"command": "python scripts/selftest.py --tier hard --hosts none"},
-            "primary_metric": {"name": "selftest_checks_passed", "direction": "gte", "threshold": 1},
-            "failure_classes": ["runtime_unstable", "dashboard_drift", "hook_failure"],
-            "validate_output_schema": default_validate_output_schema(),
-            "acceptance_contract": {
-                "usable_question": "Does the lifecycle remain attachable and observable?",
-                "goal_question": "Do hard selftest checks pass without ambiguity?",
+            "eval_contract": {
+                "entrypoint": {"command": "python -m thoth.selftest --case run.phase_contract"},
+                "primary_metric": {"name": "selftest_checks_passed", "direction": "gte", "threshold": 1},
+                "failure_classes": ["runtime_unstable", "dashboard_drift", "hook_failure"],
+                "validate_output_schema": default_validate_output_schema(),
             },
-            "status": "frozen",
-            "blocking_gaps": [],
+            "runtime_policy": {"loop": {"max_iterations": 10, "max_runtime_seconds": 28800}},
+            "decisions": ["DEC-selftest-runtime"],
+            "missing_questions": [],
             "created_at": utc_now(),
             "updated_at": utc_now(),
         },
@@ -328,11 +318,25 @@ def _seed_task(project_dir: Path, *, task_id: str = "task-1") -> None:
 
 
 def _set_dashboard_port(project_dir: Path, port: int) -> None:
-    manifest_path = project_dir / ".thoth" / "project" / "project.json"
-    manifest = _read_json(manifest_path)
+    manifest_path = project_dir / ".thoth" / "docs" / "project.json"
+    manifest = load_project_manifest(project_dir)
     manifest.setdefault("dashboard", {})
     manifest["dashboard"]["port"] = port
     _write_json(manifest_path, manifest)
+    store = Store(project_dir)
+    project = store.read("project", "project")
+    if project:
+        payload = dict(project.get("payload") if isinstance(project.get("payload"), dict) else {})
+        payload.setdefault("dashboard", {})
+        payload["dashboard"]["port"] = port
+        store.update(
+            "project",
+            "project",
+            expected_revision=int(project.get("revision", 0)),
+            updates={"payload": payload},
+            history_summary=f"dashboard port -> {port}",
+            source="selftest",
+        )
 
 
 def _snapshot_runtime(recorder: Recorder, project_dir: Path, label: str) -> list[str]:

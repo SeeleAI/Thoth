@@ -65,10 +65,10 @@ class TestInitWorkflow:
         for rel in [
             "AGENTS.md",
             "CLAUDE.md",
-            ".thoth/project/project.json",
-            ".thoth/project/instructions.md",
-            ".thoth/project/source-map.json",
-            ".thoth/project/compiler-state.json",
+            ".thoth/objects/project/project.json",
+            ".thoth/docs/agent-entry.md",
+            ".thoth/docs/source-map.json",
+            ".thoth/docs/object-graph-summary.json",
             ".thoth/derived/codex-hooks.json",
             "tools/dashboard/backend/app.py",
             "tools/dashboard/frontend/src/generated/locale.ts",
@@ -77,26 +77,16 @@ class TestInitWorkflow:
 
     def test_project_manifest_is_canonical(self, init_project):
         project_dir, _ = init_project
-        manifest = json.loads((project_dir / ".thoth" / "project" / "project.json").read_text(encoding="utf-8"))
-        assert manifest["project"]["name"] == "TestProject"
-        assert len(manifest["project"]["directions"]) == 2
-        assert manifest["dashboard"]["port"] == 8501
+        manifest = json.loads((project_dir / ".thoth" / "objects" / "project" / "project.json").read_text(encoding="utf-8"))
+        assert manifest["payload"]["project"]["name"] == "TestProject"
+        assert len(manifest["payload"]["project"]["directions"]) == 2
+        assert manifest["payload"]["dashboard"]["port"] == 8501
         assert not (project_dir / ".research-config.yaml").exists()
 
-    def test_agent_os_docs_exist(self, init_project):
+    def test_agent_os_docs_are_not_generated_as_authority(self, init_project):
         project_dir, _ = init_project
-        required = [
-            "project-index.md",
-            "requirements.md",
-            "architecture-milestones.md",
-            "todo.md",
-            "change-decisions.md",
-            "acceptance-report.md",
-            "lessons-learned.md",
-            "run-log.md",
-        ]
-        for fname in required:
-            assert (project_dir / ".agent-os" / fname).exists()
+        assert not (project_dir / ".agent-os").exists()
+        assert (project_dir / ".thoth" / "docs" / "agent-entry.md").exists()
 
     def test_validation_scripts_are_strict_only(self, init_project):
         project_dir, _ = init_project
@@ -168,5 +158,5 @@ class TestInitWorkflow:
         assert result.returncode == 0, f"re-init failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
         assert not (project_dir / ".research-config.yaml").exists()
         assert not (project_dir / ".agent-os" / "research-tasks").exists()
-        assert (project_dir / ".thoth" / "project" / "tasks" / "legacy-task.json").exists()
-        assert (project_dir / ".thoth" / "project" / "tasks" / "legacy-task.result.json").exists()
+        assert (project_dir / ".thoth" / "objects" / "work_item" / "legacy-task.json").exists()
+        assert (project_dir / ".thoth" / "docs" / "work-results" / "legacy-task.result.json").exists()

@@ -1,4 +1,4 @@
-"""RunResult -> TaskResult projection helpers."""
+"""RunResult -> work_result projection helpers."""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ from typing import Any
 from .paths import SCHEMA_VERSION
 from .store import (
     _normalize_string_list,
-    _normalize_task_result,
-    _remove_stale_task_results,
+    _normalize_work_result,
+    _remove_stale_work_results,
     _read_json,
-    ensure_task_authority_tree,
-    load_compiled_tasks,
-    load_task_result,
-    load_task_result_map,
-    tasks_dir,
-    upsert_task_result,
+    ensure_work_authority_tree,
+    load_work_items,
+    load_work_result,
+    load_work_result_map,
+    work_items_dir,
+    upsert_work_result,
     utc_now,
 )
 
@@ -40,17 +40,17 @@ def _merge_recent_refs(existing: Any, new_ref: str) -> list[str]:
     return merged[:5]
 
 
-def apply_run_result_to_task_result(
+def apply_run_result_to_work_result(
     current: dict[str, Any],
     *,
     run_payload: dict[str, Any],
     run_result: dict[str, Any],
     artifacts_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    task_id = str(run_payload.get("task_id") or run_result.get("task_id") or "").strip()
-    if not task_id:
+    work_id = str(run_payload.get("work_id") or run_result.get("work_id") or "").strip()
+    if not work_id:
         return current
-    result = _normalize_task_result(task_id, current)
+    result = _normalize_work_result(work_id, current)
     artifacts = artifacts_payload.get("artifacts", []) if isinstance(artifacts_payload, dict) else []
     evidence_paths = [
         str(row.get("path"))
@@ -102,32 +102,32 @@ def apply_run_result_to_task_result(
     return result
 
 
-def update_task_result_from_run_result(
+def update_work_result_from_run_result(
     project_root: Path,
     *,
     run_payload: dict[str, Any],
     run_result: dict[str, Any],
     artifacts_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    task_id = str(run_payload.get("task_id") or run_result.get("task_id") or "").strip()
-    if not task_id:
+    work_id = str(run_payload.get("work_id") or run_result.get("work_id") or "").strip()
+    if not work_id:
         return {}
-    current = load_task_result(project_root, task_id)
-    next_payload = apply_run_result_to_task_result(
+    current = load_work_result(project_root, work_id)
+    next_payload = apply_run_result_to_work_result(
         current,
         run_payload=run_payload,
         run_result=run_result,
         artifacts_payload=artifacts_payload,
     )
-    return upsert_task_result(project_root, task_id, next_payload)
+    return upsert_work_result(project_root, work_id, next_payload)
 
 
-def rebuild_task_results_from_runs(project_root: Path) -> dict[str, Any]:
-    ensure_task_authority_tree(project_root)
-    active_task_ids = {
-        str(task.get("task_id"))
-        for task in load_compiled_tasks(project_root)
-        if isinstance(task.get("task_id"), str) and task.get("task_id")
+def rebuild_work_results_from_runs(project_root: Path) -> dict[str, Any]:
+    ensure_work_authority_tree(project_root)
+    active_work_ids = {
+        str(work.get("work_id"))
+        for work in load_work_items(project_root)
+        if isinstance(work.get("work_id"), str) and work.get("work_id")
     }
     rebuilt: dict[str, dict[str, Any]] = {}
     run_root = project_root / ".thoth" / "runs"
@@ -138,25 +138,25 @@ def rebuild_task_results_from_runs(project_root: Path) -> dict[str, Any]:
         )
         for run_dir in run_dirs:
             run_payload = _read_json(run_dir / "run.json")
-            task_id = run_payload.get("task_id")
-            if not isinstance(task_id, str) or task_id not in active_task_ids:
+            work_id = run_payload.get("work_id")
+            if not isinstance(work_id, str) or work_id not in active_work_ids:
                 continue
             run_result = _read_json(run_dir / "result.json")
             if not run_result:
                 continue
-            current = rebuilt.get(task_id, load_task_result(project_root, task_id))
-            rebuilt[task_id] = apply_run_result_to_task_result(
+            current = rebuilt.get(work_id, load_work_result(project_root, work_id))
+            rebuilt[work_id] = apply_run_result_to_work_result(
                 current,
                 run_payload=run_payload,
                 run_result=run_result,
                 artifacts_payload=_read_json(run_dir / "artifacts.json"),
             )
 
-    _remove_stale_task_results(project_root, active_task_ids)
-    for task_id, payload in rebuilt.items():
-        upsert_task_result(project_root, task_id, payload)
+    _remove_stale_work_results(project_root, active_work_ids)
+    for work_id, payload in rebuilt.items():
+        upsert_work_result(project_root, work_id, payload)
     return {
-        "rebuilt_task_result_count": len(rebuilt),
-        "active_task_count": len(active_task_ids),
+        "rebuilt_work_result_count": len(rebuilt),
+        "active_work_count": len(active_work_ids),
         "generated_at": utc_now(),
     }

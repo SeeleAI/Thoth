@@ -79,10 +79,10 @@ def test_generate_codex_hook_projection(tmp_path):
 
 def test_generate_thoth_runtime(base_config, tmp_path):
     generate_thoth_runtime(base_config, tmp_path)
-    manifest = json.loads((tmp_path / ".thoth" / "project" / "project.json").read_text(encoding="utf-8"))
-    assert manifest["project"]["name"] == "UnitTestProject"
-    assert manifest["dashboard"]["port"] == 8501
-    assert (tmp_path / ".thoth" / "project" / "compiler-state.json").exists()
+    manifest = json.loads((tmp_path / ".thoth" / "objects" / "project" / "project.json").read_text(encoding="utf-8"))
+    assert manifest["payload"]["project"]["name"] == "UnitTestProject"
+    assert manifest["payload"]["dashboard"]["port"] == 8501
+    assert (tmp_path / ".thoth" / "docs" / "object-graph-summary.json").exists()
 
 
 def test_generate_pre_commit_config(base_config, tmp_path):
@@ -115,7 +115,7 @@ def test_generate_scripts(base_config, tmp_path):
 def test_generate_tests(base_config, tmp_path):
     generate_tests(base_config, tmp_path)
     content = (tmp_path / "tests" / "test_structure.py").read_text(encoding="utf-8")
-    assert ".thoth/project/project.json" in content
+    assert ".thoth/objects/project/project.json" in content
     assert ".research-config.yaml" not in content
 
 
@@ -138,7 +138,7 @@ def test_build_init_preview_marks_legacy_for_removal(tmp_path):
     preview = build_init_preview(tmp_path, audit)
     assert ".research-config.yaml" in preview["remove"]
     assert ".agent-os/research-tasks" in preview["remove"]
-    assert ".thoth/project/project.json" in preview["create"]
+    assert ".thoth/objects/project/project.json" in preview["create"]
 
 
 def test_build_init_preview_ignores_host_owned_codex_root(tmp_path):
@@ -201,10 +201,10 @@ def test_initialize_project_strict_cut_imports_legacy_and_removes_old_surface(ba
 
     assert not (tmp_path / ".research-config.yaml").exists()
     assert not (tmp_path / ".agent-os" / "research-tasks").exists()
-    task = json.loads((tmp_path / ".thoth" / "project" / "tasks" / "legacy-task.json").read_text(encoding="utf-8"))
-    verdict = json.loads((tmp_path / ".thoth" / "project" / "tasks" / "legacy-task.result.json").read_text(encoding="utf-8"))
-    assert task["ready_state"] == "imported_resolved"
-    assert task["runnable"] is False
+    task = json.loads((tmp_path / ".thoth" / "objects" / "work_item" / "legacy-task.json").read_text(encoding="utf-8"))
+    verdict = json.loads((tmp_path / ".thoth" / "docs" / "work-results" / "legacy-task.result.json").read_text(encoding="utf-8"))
+    assert task["payload"]["source_contract_id"] == "CTR-import-legacy-task"
+    assert task["payload"]["runnable"] is True
     assert verdict["source"] == "legacy_import"
     import_index = json.loads(
         (tmp_path / ".thoth" / "migrations" / result["migration_id"] / "legacy-import" / "index.json").read_text(encoding="utf-8")
@@ -241,9 +241,9 @@ def test_sync_project_layer_refreshes_dashboard_locale(tmp_path):
         "theme": "warm-bear",
     }
     initialize_project(config, tmp_path)
-    manifest_path = tmp_path / ".thoth" / "project" / "project.json"
+    manifest_path = tmp_path / ".thoth" / "objects" / "project" / "project.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["project"]["language"] = "en"
+    manifest["payload"]["project"]["language"] = "en"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     sync_project_layer(tmp_path)

@@ -10,10 +10,10 @@ from typing import Any
 import yaml
 
 from thoth.plan.store import (
-    load_compiled_tasks,
+    load_work_items,
     load_compiler_state,
     load_project_manifest,
-    load_task_result,
+    load_work_result,
 )
 from thoth.run.service import list_active_runs
 
@@ -25,13 +25,13 @@ def load_config(project_root: Path) -> dict[str, Any]:
 
 def load_tasks(project_root: Path) -> list[dict[str, Any]]:
     tasks = []
-    for task in load_compiled_tasks(project_root):
-        item = dict(task)
-        task_id = item.get("task_id")
-        if isinstance(task_id, str) and task_id:
-            task_result = load_task_result(project_root, task_id)
-            if task_result:
-                item["task_result"] = task_result
+    for work in load_work_items(project_root):
+        item = dict(work)
+        work_id = item.get("work_id")
+        if isinstance(work_id, str) and work_id:
+            work_result = load_work_result(project_root, work_id)
+            if work_result:
+                item["work_result"] = work_result
         tasks.append(item)
     return tasks
 
@@ -69,13 +69,13 @@ def load_todo_next(project_root: Path) -> list[tuple[str, str, str]]:
 
 
 def is_task_completed(task: dict[str, Any]) -> bool:
-    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
-    return bool(task_result.get("updated_at"))
+    work_result = task.get("work_result") if isinstance(task.get("work_result"), dict) else {}
+    return bool(work_result.get("updated_at"))
 
 
 def task_completed_in_range(task: dict[str, Any], from_date: datetime, to_date: datetime) -> bool:
-    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
-    updated_at = task_result.get("updated_at")
+    work_result = task.get("work_result") if isinstance(task.get("work_result"), dict) else {}
+    updated_at = work_result.get("updated_at")
     if not isinstance(updated_at, str) or not updated_at:
         return False
     try:
@@ -98,10 +98,10 @@ def blocking_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def quick_health(project_root: Path) -> tuple[bool, str]:
-    manifest = project_root / ".thoth" / "project" / "project.json"
-    compiler = project_root / ".thoth" / "project" / "compiler-state.json"
+    manifest = project_root / ".thoth" / "objects" / "project" / "project.json"
+    compiler = project_root / ".thoth" / "docs" / "object-graph-summary.json"
     if not manifest.exists() or not compiler.exists():
-        return False, "Missing strict Thoth authority files"
+        return False, "Missing canonical Thoth object authority files"
     entries = load_run_log_recent(project_root, 1)
     if entries:
         match = re.match(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})", entries[-1])
@@ -145,9 +145,9 @@ def parse_iso_timestamp(value: Any) -> datetime | None:
 
 
 def task_updated_at(task: dict[str, Any]) -> str | None:
-    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+    work_result = task.get("work_result") if isinstance(task.get("work_result"), dict) else {}
     for key in ("updated_at", "last_closure_at", "last_attempt_at"):
-        value = task_result.get(key)
+        value = work_result.get(key)
         if isinstance(value, str) and value:
             return value
     return None
@@ -162,9 +162,9 @@ def task_created_at(task: dict[str, Any]) -> str | None:
 
 
 def task_runtime_status(task: dict[str, Any]) -> str:
-    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
-    if task_result.get("updated_at"):
-        if task_result.get("usable") is True and task_result.get("meets_goal") is True:
+    work_result = task.get("work_result") if isinstance(task.get("work_result"), dict) else {}
+    if work_result.get("updated_at"):
+        if work_result.get("usable") is True and work_result.get("meets_goal") is True:
             return "completed"
         return "failed"
     ready_state = str(task.get("ready_state") or "blocked")
@@ -178,8 +178,8 @@ def task_runtime_status(task: dict[str, Any]) -> str:
 
 
 def task_progress_pct(task: dict[str, Any]) -> float:
-    task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
-    if task_result.get("updated_at"):
+    work_result = task.get("work_result") if isinstance(task.get("work_result"), dict) else {}
+    if work_result.get("updated_at"):
         return 100.0
     ready_state = str(task.get("ready_state") or "blocked")
     if ready_state == "imported_resolved":
@@ -191,29 +191,29 @@ def task_progress_pct(task: dict[str, Any]) -> float:
     return 0.0
 
 
-def recent_task_result_summaries(tasks: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
+def recent_work_result_summaries(tasks: list[dict[str, Any]], *, limit: int = 5) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for task in tasks:
-        task_result = task.get("task_result") if isinstance(task.get("task_result"), dict) else {}
+        work_result = task.get("work_result") if isinstance(task.get("work_result"), dict) else {}
         updated_at = task_updated_at(task)
         conclusion = (
-            task_result.get("conclusion")
-            or task_result.get("current_summary")
+            work_result.get("conclusion")
+            or work_result.get("current_summary")
         )
-        evidence_paths = task_result.get("evidence_paths")
+        evidence_paths = work_result.get("evidence_paths")
         if not isinstance(evidence_paths, list):
             evidence_paths = []
         if not updated_at and not conclusion and not evidence_paths:
             continue
         rows.append(
             {
-                "task_id": task.get("task_id") or task.get("id"),
+                "work_id": task.get("work_id") or task.get("id"),
                 "title": task.get("title", ""),
                 "module": task.get("module", ""),
                 "direction": task.get("direction", ""),
                 "status": task_runtime_status(task),
                 "updated_at": updated_at,
-                "source": task_result.get("source") or "task_result",
+                "source": work_result.get("source") or "work_result",
                 "conclusion": conclusion,
                 "evidence_paths": evidence_paths,
             }
@@ -266,13 +266,13 @@ def derive_gantt_rows(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if isinstance(dependency_rows, list):
             for dep in dependency_rows:
                 if isinstance(dep, dict):
-                    task_id = dep.get("task_id")
-                    if isinstance(task_id, str) and task_id:
-                        dependencies.append(task_id)
+                    work_id = dep.get("work_id")
+                    if isinstance(work_id, str) and work_id:
+                        dependencies.append(work_id)
 
         rows.append(
             {
-                "id": task.get("task_id") or task.get("id"),
+                "id": task.get("work_id") or task.get("id"),
                 "title": task.get("title", ""),
                 "module": task.get("module", ""),
                 "direction": task.get("direction", ""),
@@ -298,6 +298,7 @@ def overview_summary_read_model(project_root: Path) -> dict[str, Any]:
     blocked_count = len(blocking_tasks(tasks))
     overall_progress = round((100 * completed_count / total_count), 1) if total_count else 0.0
     compiler_summary = compiler_state.get("summary", {}) if isinstance(compiler_state, dict) else {}
+    decision_counts = compiler_summary.get("decision_counts", {}) if isinstance(compiler_summary.get("decision_counts"), dict) else {}
     return {
         "project": config.get("project", {}),
         "headline": {
@@ -306,10 +307,10 @@ def overview_summary_read_model(project_root: Path) -> dict[str, Any]:
             "blocked_tasks": blocked_count,
             "ready_tasks": ready_count,
             "overall_progress": overall_progress,
-            "decision_queue_count": compiler_summary.get("decision_queue_count", 0),
+            "decision_queue_count": decision_counts.get("proposed", 0),
         },
         "compiler_summary": compiler_summary,
-        "recent_conclusions": recent_task_result_summaries(tasks, limit=6),
+        "recent_conclusions": recent_work_result_summaries(tasks, limit=6),
         "recent_activity": load_run_log_recent(project_root, 6),
         "todo_next": [
             {"id": item_id, "status": item_status, "description": description}

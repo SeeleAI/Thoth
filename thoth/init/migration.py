@@ -89,8 +89,8 @@ def _write_source_map(project_dir: Path, audit: dict[str, Any], preview: dict[st
         "generated_at": _utc_iso(),
         "mode": preview.get("mode", _detect_init_mode(audit)),
         "authority": {
-            "project_manifest": ".thoth/project/project.json",
-            "instructions": ".thoth/project/instructions.md",
+            "project_manifest": ".thoth/objects/project/project.json",
+            "instructions": ".thoth/docs/agent-entry.md",
         },
         "projections": {
             "claude": "CLAUDE.md",
@@ -108,6 +108,6 @@ def _write_source_map(project_dir: Path, audit: dict[str, Any], preview: dict[st
         "legacy_agentos_files": audit.get("legacy_agentos_files", []),
         "code_roots": audit.get("code_roots", []),
     }
-    path = project_dir / ".thoth" / "project" / "source-map.json"
+    path = project_dir / ".thoth" / "docs" / "source-map.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

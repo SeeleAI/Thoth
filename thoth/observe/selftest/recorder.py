@@ -86,6 +86,17 @@ class Recorder:
     def add(self, name: str, status: str, detail: str, artifacts: Iterable[str] | None = None) -> None:
         self.checks.append(CheckResult(name=name, status=status, detail=detail, artifacts=list(artifacts or [])))
 
+    def checks_payload(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": item.name,
+                "status": item.status,
+                "detail": item.detail,
+                "artifacts": item.artifacts,
+            }
+            for item in self.checks
+        ]
+
     def summary_payload(self, *, tier: str, capabilities: dict[str, Any], work_root: str) -> dict[str, Any]:
         counts = {"passed": 0, "failed": 0, "degraded": 0}
         for item in self.checks:
@@ -99,15 +110,7 @@ class Recorder:
             "counts": counts,
             "capabilities": capabilities,
             "work_root": work_root,
-            "checks": [
-                {
-                    "name": item.name,
-                    "status": item.status,
-                    "detail": item.detail,
-                    "artifacts": item.artifacts,
-                }
-                for item in self.checks
-            ],
+            "checks": self.checks_payload(),
         }
 
 __all__ = [
