@@ -99,6 +99,11 @@
    - 将应发布的代码提交按默认策略集成到 `main`（默认 `cherry-pick`）
    - `push origin dev` 与 `push origin main`
    - 更新当前机器上的本地 `Claude Code` 与 `Codex` 的 `Thoth` 安装，使其与仓库最新状态一致
+11. 本机 `Claude Code` / `Codex` 的 `Thoth` 安装刷新只能使用远端 marketplace upgrade/update 流程：
+   - Claude Code: `claude plugin marketplace update thoth` 后执行 `claude plugin update thoth --scope user`
+   - Codex: `codex plugin marketplace upgrade thoth`
+   - 禁止用本机 checkout、cache、临时目录、`rsync` 或其他本地覆盖方式刷新安装
+   - 若远端 upgrade/update 因网络、认证、marketplace 状态或宿主 CLI 行为失败，只能记录 blocker 与真实输出，不得改走本地兜底覆盖
 
 ## 6. 当前项目真相边界
 
@@ -110,7 +115,10 @@
    - 当前已实现事实
    - 已锁定但尚未实现的目标架构
 6. `/thoth:init` 必须按 audit-first adopt/init 语义工作：先审查当前 repo 的代码、文档与现有控制平面状态，再通过 migration ledger 进行受管更新，不得假设目标 repo 是空白仓库。
-7. 当前 checkout 已新增 strict execution planning authority：`.thoth/project/decisions/`、`.thoth/project/contracts/` 与编译生成的 `.thoth/project/tasks/`；`run` / `loop` 默认只接受 `--task-id`，不允许自由文本直接进入执行。
+7. 当前 checkout 的 strict execution planning authority 已收敛到统一对象图：`.thoth/objects/discussion/`、`.thoth/objects/decision/`、`.thoth/objects/work_item/`、`.thoth/objects/controller/`、`.thoth/objects/run/`、`.thoth/objects/phase_result/` 与 `.thoth/objects/artifact/`；不再存在独立 `Contract` kind 或 `.thoth/project/tasks` authority。
+8. `run` 是最小执行单元，固定绑定 `work_id@revision`；`loop` / `orchestration` / `auto` 属于 controller service；`run` / `loop` 默认只接受 `--work-id`，不允许自由文本直接进入执行。
+9. 当前 checkout 的公开 selftest 合同已收敛为 atomic case registry：`python -m thoth.selftest` 必须显式传一个或多个 `--case`；`--tier`、`--hosts`、`--only-host`、`--from-step`、`--to-step` 不再属于公共 CLI。
+10. 当前 checkout 的默认开发测试合同已收敛为 targeted-only：`pytest` 必须使用显式文件/nodeid 或 `--thoth-target`；裸 `pytest`、目录级 `pytest` 与 `--thoth-tier` broad runs 默认禁止，除非显式携带 `--thoth-allow-broad` 或设置 `THOTH_ALLOW_BROAD_TESTS=1`。
 
 ## 7. 升级给用户的条件
 
@@ -195,4 +203,5 @@
 - 对 `init` / `sync` / `run` / `loop` / `review` 等 public commands，不允许用宿主自然语言补齐缺失执行证据。
 - 对 `thoth:init`，必须坚持 `audit-first adopt/init`：先审查现状，再生成 preview / migration 证据，再做受管更新。
 - 对双宿主 surface、bridge、plugin、skill、dashboard、hook 等改动，默认同时检查 Claude Code 与 Codex，不允许单侧漂移。
+- 对 selftest 与 pytest 的收口、回归和发布门，必须显式记录 case IDs 与 target/file 列表，不允许再把 `hard` / `heavy` 或 `light` / `medium` / `heavy` 当默认开发验证语义。
 - 对治理文档或 prompt 合同的修改，同样遵循“最小改动、目标驱动、证据优先”，不要把行为准则写成与项目真实边界相冲突的口号。

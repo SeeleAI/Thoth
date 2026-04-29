@@ -83,6 +83,20 @@
   - Related items: `WS-003`, `WS-005`, `MS-005`, `REQ-019`, `REQ-023`, `REQ-024`
   - Evidence: 更新 `thoth/{command_specs,projections,prompt_specs,prompt_validators}.py`、`thoth/run/{packets,phases,worker}.py`、`commands/*.md`、`plugins/thoth/skills/thoth/{SKILL.md,commands/*}` 与 targeted tests；`env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/unit/test_command_spec_generation.py tests/unit/test_runtime_protocol.py tests/unit/test_run_state_machine.py` 为 `22 passed in 8.10s`，`python -m pytest -q tests/unit/test_claude_bridge.py` 为 `6 passed in 235.80s`，`python -m pytest -q tests/unit/test_cli_surface.py` 为 `13 passed in 530.10s`；Codex 根 skill `10832 -> 3258` bytes，Claude `run/loop/review` projection 分别 `4118 -> 2984`、`4053 -> 2969`、`3593 -> 2790`
 
+- `TD-028` `[verified]`: 将 selftest 公共接口原子化，并把默认开发验证收敛为 targeted pytest + explicit case list
+  - Related items: `WS-003`, `WS-005`, `REQ-017`, `REQ-021`, `REQ-025`, `REQ-029`
+  - Evidence: 新增 `thoth/observe/selftest/{registry,atomic_cases}.py`、`thoth/test_targets.py`、`scripts/recommend_tests.py`，更新 `thoth/observe/selftest/{runner,processes,recorder,host_common,host_codex,host_claude}.py` 与 `tests/conftest.py`；`env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/unit/test_selftest_helpers.py tests/unit/test_selftest_registry.py tests/unit/test_runtime_protocol.py tests/integration/test_runtime_lifecycle_e2e.py` 为 `51 passed`；`python -m thoth.selftest` 无 `--case` 按预期失败；`python -m pytest -q` 按预期失败；`env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q --thoth-target selftest-core` 为 `39 passed`；repo-local atomic selftest matrix 结果见 `/tmp/thoth-atomic-repo-cases-20260428.json`；Codex host-surface 抽样 `surface.codex.run.live_prepare + surface.codex.loop.sleep_prepare` 结果见 `/tmp/thoth-atomic-codex-sample-20260428e.json`
+
+- `TD-029` `[verified]`: 将 planning authority 与 runtime kernel 收敛为统一 `.thoth/objects` 对象图，并切换 public execution surface 到 `--work-id`
+  - Related items: `WS-002`, `WS-003`, `WS-005`, `REQ-030`, `REQ-031`, `REQ-032`, `REQ-033`
+  - Evidence: 当前 `dev` checkout 已新增 `thoth/objects.py` 与 `thoth/run/controllers.py`，`run` / `loop` / `review` public surface 切到 `--work-id`，dashboard/backend、hook、自测 fixture 与 init 读写面同步到 `.thoth/objects` / `.thoth/docs`；验证见 `EV-024`
+  - Related items: `WS-002`, `WS-005`, `REQ-030`, `REQ-031`, `REQ-032`, `REQ-033`, `AC-022`, `AC-023`, `AC-024`
+  - Evidence: 新增 `thoth/objects.py` 与 `thoth/run/controllers.py`；`run` / `loop` / `review` 改为 `--work-id`；`discuss` 改为 `--work-json`；`orchestration` / `auto` 写入 controller object；active work mutation 返回 `blocked_by_active_execution`；`python -m py_compile ...` 通过；targeted pytest `33 passed in 2.64s`；selftest `discuss.subtree.close` 与 `run.phase_contract` 均为 `overall_status=passed`
+
+- `TD-030` `[verified]`: 完成 Runtime Kernel closeout，删除旧 `Contract` / `TaskResult` / `task_id` runtime fallback，并把普通 `run` 与 controller service 分层
+  - Related items: `WS-002`, `WS-003`, `WS-005`, `REQ-030`, `REQ-031`, `REQ-032`, `REQ-033`, `REQ-034`, `AC-022`, `AC-023`, `AC-025`
+  - Evidence: `upsert_contract`、`load_task_for_execution`、`suggest_tasks_for_query`、`task_result_path`、`tasks_dir`、`initialize_run_controller` 等旧主路径命名已从代码主链删除；`discuss --work-json` 拒绝 legacy contract-shaped payload；普通 `run` 写 run-local `phase_state.json` 而不写 controller object；`loop` 仍写 controller object；核心五项 selftest 已通过，见 `EV-024`
+
 ## Abandoned
 
 - `TD-008` `[abandoned]`: 使用 bare command 名作为公共命令前缀
