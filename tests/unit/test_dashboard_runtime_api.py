@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from thoth.plan.store import upsert_work_item, upsert_decision
 from thoth.run.phases import default_validate_output_schema
 
 ROOT = Path(__file__).parent.parent.parent
@@ -35,9 +36,6 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(dashboard_app, "DIRECTIONS", ("frontend",))
     monkeypatch.setattr(dashboard_data_loader, "DIRECTIONS", ("frontend",))
 
-    (tmp_path / ".thoth" / "project" / "tasks").mkdir(parents=True, exist_ok=True)
-    (tmp_path / ".thoth" / "project" / "decisions").mkdir(parents=True, exist_ok=True)
-    (tmp_path / ".thoth" / "project" / "contracts").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".agent-os").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".agent-os" / "milestones.yaml").write_text("milestones: []\n", encoding="utf-8")
     (tmp_path / "tools" / "dashboard" / "frontend" / "dist").mkdir(parents=True, exist_ok=True)
@@ -46,63 +44,74 @@ def _setup_project(tmp_path: Path, monkeypatch) -> None:
         encoding="utf-8",
     )
     _write_json(
-        tmp_path / ".thoth" / "project" / "project.json",
+        tmp_path / ".thoth" / "objects" / "project" / "project.json",
         {
-            "schema_version": 2,
-            "project": {
-                "name": "RuntimeDemo",
-                "directions": [{"id": "frontend", "label_en": "Frontend"}],
-                "phases": [],
+            "schema_version": 1,
+            "object_id": "project",
+            "kind": "project",
+            "status": "active",
+            "title": "RuntimeDemo",
+            "summary": "Runtime dashboard test project",
+            "revision": 1,
+            "created_at": "2026-04-23T01:00:00Z",
+            "updated_at": "2026-04-23T01:00:00Z",
+            "source": "test",
+            "links": [],
+            "payload": {
+                "project": {
+                    "name": "RuntimeDemo",
+                    "directions": [{"id": "frontend", "label_en": "Frontend"}],
+                    "phases": [],
+                },
+                "dashboard": {"port": 8501},
             },
-            "dashboard": {"port": 8501},
+            "history": [],
         },
     )
 
-    task = {
-        "schema_version": 1,
-        "kind": "task",
-        "task_id": "task-1",
-        "id": "task-1",
-        "title": "Long running task",
-        "module": "f1",
-        "direction": "frontend",
-        "contract_id": "CTR-runtime",
-        "decision_ids": ["DEC-runtime"],
-        "candidate_method_id": "real-process-lifecycle",
-        "ready_state": "ready",
-        "blocking_reason": "",
-        "goal_statement": "Test runtime binding",
-        "implementation_recipe": ["Run lifecycle integration"],
-        "eval_entrypoint": {"command": "pytest"},
-        "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
-        "failure_classes": ["runtime_drift"],
-        "validate_output_schema": default_validate_output_schema(),
-    }
-    _write_json(
-        tmp_path / ".thoth" / "project" / "tasks" / "task-1.json",
-        task,
-    )
-    _write_json(
-        tmp_path / ".thoth" / "project" / "compiler-state.json",
+    upsert_decision(
+        tmp_path,
         {
             "schema_version": 1,
-            "generated_at": "2026-04-23T01:00:00Z",
-            "summary": {
-                "decision_counts": {"open": 0, "frozen": 1},
-                "contract_counts": {"draft": 0, "frozen": 1},
-                "task_counts": {"ready": 1, "blocked": 0, "invalid": 0, "total": 1},
-                "legacy_task_count": 0,
-                "decision_queue_count": 0,
+            "kind": "decision",
+            "decision_id": "DEC-runtime",
+            "question": "Which runtime binding should be tested?",
+            "candidate_method_ids": ["real-process-lifecycle"],
+            "selected_values": {"candidate_method_id": "real-process-lifecycle"},
+            "status": "frozen",
+            "unresolved_gaps": [],
+        },
+    )
+    upsert_work_item(
+        tmp_path,
+        {
+            "schema_version": 1,
+            "kind": "work_item",
+            "work_id": "task-1",
+            "title": "Long running task",
+            "module": "f1",
+            "direction": "frontend",
+            "status": "ready",
+            "work_type": "task",
+            "runnable": True,
+            "goal": "Test runtime binding",
+            "context": "frontend-runtime",
+            "constraints": ["dashboard"],
+            "execution_plan": ["Run lifecycle integration"],
+            "eval_contract": {
+                "entrypoint": {"command": "pytest"},
+                "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
+                "failure_classes": ["runtime_drift"],
+                "validate_output_schema": default_validate_output_schema(),
             },
-            "decision_queue": [],
-            "blocked_task_ids": [],
-            "invalid_task_ids": [],
-            "problems": [],
+            "runtime_policy": {"loop": {"max_iterations": 10, "max_runtime_seconds": 28800}},
+            "decisions": ["DEC-runtime"],
+            "missing_questions": [],
         },
     )
 
     runs_dir = tmp_path / ".thoth" / "runs"
-    _write_json(runs_dir / "run-1" / "run.json", {"run_id": "run-1", "task_id": "task-1", "host": "codex", "executor": "claude", "attachable": True, "created_at": "2026-04-23T01:00:00Z"})
+    _write_json(runs_dir / "run-1" / "run.json", {"run_id": "run-1", "work_id": "task-1", "host": "codex", "executor": "claude", "attachable": True, "created_at": "2026-04-23T01:00:00Z"})
     _write_json(runs_dir / "run-1" / "state.json", {"status": "running", "phase": "experiment", "progress_pct": 61, "last_event_seq": 2, "updated_at": "2026-04-23T01:10:00Z", "supervisor_state": "running", "last_heartbeat_at": "2026-04-23T01:11:00Z"})
     _write_jsonl(runs_dir / "run-1" / "events.jsonl", [
         {"seq": 1, "ts": "2026-04-23T01:01:00Z", "kind": "log", "message": "started"},

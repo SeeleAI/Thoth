@@ -38,7 +38,7 @@ def _host_claude(
 
     decision_arg = _shell_quote(_compact_json(_host_real_decision_payload()))
     contract_commands = [
-        f"/thoth:discuss --contract-json {_shell_quote(_compact_json(contract))}"
+        f"/thoth:discuss --work-json {_shell_quote(_compact_json(contract))}"
         for contract in _host_real_contract_payloads()
     ]
     flow_artifacts, command_results = _run_host_real_flow(
@@ -52,13 +52,15 @@ def _host_claude(
             "doctor": "/thoth:doctor --quick",
             "discuss_decision": f"/thoth:discuss --decision-json {decision_arg}",
             "discuss_contracts": contract_commands,
-            "run_sleep": "/thoth:run --sleep --task-id task-runtime-probe",
+            "run_live": "/thoth:run --work-id task-runtime-probe",
+            "run_sleep": "/thoth:run --sleep --work-id task-runtime-probe",
             "run_watch": lambda run_id: f"/thoth:run --watch {run_id}",
             "run_stop": lambda run_id: f"/thoth:run --stop {run_id}",
-            "review": "/thoth:review --task-id task-review-probe --executor codex tracker/review_probe.py",
+            "review": "/thoth:review --work-id task-review-probe --executor codex tracker/review_probe.py",
+            "loop_live": "/thoth:loop --work-id task-runtime-probe",
             "dashboard_start": "/thoth:dashboard start",
             "dashboard_stop": "/thoth:dashboard stop",
-            "loop_sleep": "/thoth:loop --sleep --task-id task-runtime-probe",
+            "loop_sleep": "/thoth:loop --sleep --work-id task-runtime-probe",
             "loop_stop": lambda run_id: f"/thoth:loop --stop {run_id}",
             "sync": "/thoth:sync",
         },

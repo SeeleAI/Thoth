@@ -181,7 +181,7 @@ def test_host_real_payloads_define_frozen_decision_and_two_probe_contracts():
 
     assert decision["decision_id"] == "DEC-host-real-selftest"
     assert decision["status"] == "frozen"
-    assert [item["task_id"] for item in contracts] == [
+    assert [item["work_id"] for item in contracts] == [
         "task-runtime-probe",
         "task-review-probe",
     ]
@@ -199,7 +199,7 @@ def test_codex_prompt_uses_literal_shell_command_for_public_surface():
 
 
 def test_codex_review_prompt_requires_exact_probe_result():
-    prompt = _codex_prompt_for_public_command("$thoth review --task-id task-review-probe tracker/review_probe.py", "DONE_TOKEN")
+    prompt = _codex_prompt_for_public_command("$thoth review --work-id task-review-probe tracker/review_probe.py", "DONE_TOKEN")
     assert "heavy selftest review probe" in prompt
     assert "stay inside the Thoth review protocol only" in prompt
     assert "packet.strict_task.review_expectation" in prompt
@@ -220,15 +220,15 @@ def test_claude_expected_args_preserves_quoted_json_payload():
 
 
 def test_claude_arguments_match_accepts_injected_host_prefix():
-    expected = ["--sleep", "--task-id", "task-runtime-probe"]
-    event_arguments = ["--host", "claude", "--sleep", "--task-id", "task-runtime-probe"]
+    expected = ["--sleep", "--work-id", "task-runtime-probe"]
+    event_arguments = ["--host", "claude", "--sleep", "--work-id", "task-runtime-probe"]
 
     assert _claude_arguments_match(event_arguments, expected) is True
 
 
 def test_normalize_claude_public_command_result_accepts_timeout_after_successful_bridge():
     command_result = type("CommandResultLike", (), {})()
-    command_result.argv = ["claude", "-p", "/thoth:run --sleep --task-id task-runtime-probe"]
+    command_result.argv = ["claude", "-p", "/thoth:run --sleep --work-id task-runtime-probe"]
     command_result.cwd = "/tmp/project"
     command_result.returncode = 124
     command_result.duration_seconds = 25.0
@@ -288,8 +288,8 @@ def test_transient_host_outage_recognizes_partial_api_retry_stream():
 def test_effective_host_command_timeout_caps_claude_bridge_only_commands():
     assert _effective_host_command_timeout("claude", "/thoth:init", 240) == 25.0
     assert _effective_host_command_timeout("claude", "/thoth:discuss --decision-json '{}'", 240) == 25.0
-    assert _effective_host_command_timeout("claude", "/thoth:run --task-id task-1", 240) == 240
-    assert _effective_host_command_timeout("claude", "/thoth:run --sleep --task-id task-runtime-probe", 240) == 25.0
+    assert _effective_host_command_timeout("claude", "/thoth:run --work-id task-1", 240) == 240
+    assert _effective_host_command_timeout("claude", "/thoth:run --sleep --work-id task-runtime-probe", 240) == 25.0
     assert _effective_host_command_timeout("codex", "$thoth init", 240) == 240
 
 
@@ -336,7 +336,7 @@ def test_normalize_codex_public_command_result_allows_followup_commands_for_revi
                     "item": {
                         "id": "item_0",
                         "type": "command_execution",
-                        "command": "/bin/bash -lc 'thoth review --task-id task-review-probe tracker/review_probe.py'",
+                        "command": "/bin/bash -lc 'thoth review --work-id task-review-probe tracker/review_probe.py'",
                         "aggregated_output": "{\"status\":\"ok\"}",
                         "exit_code": 0,
                         "status": "completed",
@@ -362,7 +362,7 @@ def test_normalize_codex_public_command_result_allows_followup_commands_for_revi
 
     normalized = _normalize_codex_public_command_result(
         command_result,
-        public_command="$thoth review --task-id task-review-probe tracker/review_probe.py",
+        public_command="$thoth review --work-id task-review-probe tracker/review_probe.py",
         done_token="DONE",
         allow_followup_commands=True,
     )
@@ -514,7 +514,7 @@ def test_normalize_codex_public_command_result_still_requires_done_token_for_rev
                     "item": {
                         "id": "item_0",
                         "type": "command_execution",
-                        "command": "/bin/bash -lc 'thoth review --task-id task-review-probe tracker/review_probe.py'",
+                        "command": "/bin/bash -lc 'thoth review --work-id task-review-probe tracker/review_probe.py'",
                         "aggregated_output": "{\"command\":\"review\",\"status\":\"ok\"}",
                         "exit_code": 0,
                         "status": "completed",
@@ -536,7 +536,7 @@ def test_normalize_codex_public_command_result_still_requires_done_token_for_rev
 
     normalized = _normalize_codex_public_command_result(
         command_result,
-        public_command="$thoth review --task-id task-review-probe tracker/review_probe.py",
+        public_command="$thoth review --work-id task-review-probe tracker/review_probe.py",
         done_token="DONE",
         allow_followup_commands=True,
     )
@@ -560,7 +560,7 @@ def test_normalize_codex_public_command_result_fails_when_requested_shell_step_f
                     "item": {
                         "id": "item_0",
                         "type": "command_execution",
-                        "command": "/bin/bash -lc 'thoth run --host codex --task-id task-1'",
+                        "command": "/bin/bash -lc 'thoth run --host codex --work-id task-1'",
                         "aggregated_output": "boom",
                         "exit_code": 1,
                         "status": "failed",
@@ -573,7 +573,7 @@ def test_normalize_codex_public_command_result_fails_when_requested_shell_step_f
 
     normalized = _normalize_codex_public_command_result(
         command_result,
-        public_command="$thoth run --host codex --task-id task-1",
+        public_command="$thoth run --host codex --work-id task-1",
         done_token="DONE",
     )
 
@@ -693,7 +693,7 @@ def test_verify_host_review_accepts_findings_from_review_events(tmp_path):
             {
                 "run_id": run_id,
                 "kind": "review",
-                "task_id": None,
+                "work_id": None,
                 "host": "claude",
                 "executor": "codex",
             }
@@ -705,7 +705,7 @@ def test_verify_host_review_accepts_findings_from_review_events(tmp_path):
         json.dumps(
             {
                 "run_id": run_id,
-                "task_id": None,
+                "work_id": None,
                 "status": "completed",
             }
         )
@@ -825,11 +825,11 @@ def test_verify_host_run_rejects_fallback_or_degraded_language(tmp_path):
     run_dir = project_dir / ".thoth" / "runs" / run_id
     run_dir.mkdir(parents=True)
     (run_dir / "run.json").write_text(
-        json.dumps({"run_id": run_id, "kind": "run", "task_id": "task-1", "host": "codex", "dispatch_mode": "live_native"}) + "\n",
+        json.dumps({"run_id": run_id, "kind": "run", "work_id": "task-1", "host": "codex", "dispatch_mode": "live_native"}) + "\n",
         encoding="utf-8",
     )
     (run_dir / "state.json").write_text(
-        json.dumps({"run_id": run_id, "task_id": "task-1", "status": "completed"}) + "\n",
+        json.dumps({"run_id": run_id, "work_id": "task-1", "status": "completed"}) + "\n",
         encoding="utf-8",
     )
     (run_dir / "result.json").write_text(
@@ -848,7 +848,7 @@ def test_verify_host_run_rejects_fallback_or_degraded_language(tmp_path):
             check_name="host.codex.feature_run",
             run_id=run_id,
             expected_kind="run",
-            expected_task_id="task-1",
+            expected_work_id="task-1",
             expected_host="codex",
             expected_dispatch_mode="live_native",
             timeout=0.1,

@@ -1,4 +1,9 @@
-"""Read/write store for Decision, Contract, Task, and TaskResult authority."""
+"""Planning helpers backed by the canonical Thoth object store.
+
+The durable planning authority is `.thoth/objects`. This module exposes
+work-item and work-result helpers without reintroducing legacy contract/task
+authority names.
+"""
 
 from __future__ import annotations
 
@@ -11,21 +16,25 @@ from typing import Any
 
 import yaml
 
+from thoth.objects import (
+    Store,
+    flatten_work_item,
+    slugify,
+    utc_now,
+    work_item_from_payload,
+)
 from .paths import (
     SCHEMA_VERSION,
-    TASK_RESULT_SUFFIX,
+    WORK_RESULT_SUFFIX,
     authority_root,
     compiler_state_path,
     contracts_dir,
     decisions_dir,
     legacy_audit_path,
     project_manifest_path,
-    task_result_path,
-    tasks_dir,
+    work_result_path,
+    work_items_dir,
 )
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -61,13 +70,13 @@ def _iter_json_files(path: Path) -> list[Path]:
     return sorted(candidate for candidate in path.glob("*.json") if candidate.is_file())
 
 
-def _iter_task_files(path: Path) -> list[Path]:
+def _iter_work_item_files(path: Path) -> list[Path]:
     if not path.is_dir():
         return []
     return sorted(
         candidate
         for candidate in path.glob("*.json")
-        if candidate.is_file() and not candidate.name.endswith(TASK_RESULT_SUFFIX)
+        if candidate.is_file() and not candidate.name.endswith(WORK_RESULT_SUFFIX)
     )
 
 
@@ -91,24 +100,31 @@ def _normalize_string_list(value: Any) -> list[str]:
     return items
 
 
-def _iter_task_result_files(project_root: Path) -> list[Path]:
-    task_dir = tasks_dir(project_root)
-    if not task_dir.is_dir():
+def _iter_work_result_files(project_root: Path) -> list[Path]:
+    result_dir = work_result_path(project_root, ".keep").parent
+    if not result_dir.is_dir():
         return []
     return sorted(
         candidate
-        for candidate in task_dir.glob(f"*{TASK_RESULT_SUFFIX}")
+        for candidate in result_dir.glob(f"*{WORK_RESULT_SUFFIX}")
         if candidate.is_file()
     )
 
 
 def load_project_manifest(project_root: Path) -> dict[str, Any]:
-    return _read_json(project_manifest_path(project_root))
+    payload = Store(project_root).read("project", "project")
+    if payload:
+        project_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+        if "project" in project_payload or "dashboard" in project_payload:
+            return project_payload
+    docs_manifest = project_root / ".thoth" / "docs" / "project.json"
+    return _read_json(docs_manifest)
 
 
-def ensure_task_authority_tree(project_root: Path) -> None:
-    for path in (decisions_dir(project_root), contracts_dir(project_root), tasks_dir(project_root)):
-        path.mkdir(parents=True, exist_ok=True)
+def ensure_work_authority_tree(project_root: Path) -> None:
+    Store(project_root).ensure_tree()
+    compiler_state_path(project_root).parent.mkdir(parents=True, exist_ok=True)
+    work_result_path(project_root, ".keep").parent.mkdir(parents=True, exist_ok=True)
     if not compiler_state_path(project_root).exists():
         _write_json(
             compiler_state_path(project_root),
@@ -116,15 +132,23 @@ def ensure_task_authority_tree(project_root: Path) -> None:
                 "schema_version": SCHEMA_VERSION,
                 "generated_at": utc_now(),
                 "summary": {
-                    "decision_counts": {"open": 0, "frozen": 0},
-                    "contract_counts": {"draft": 0, "frozen": 0},
-                    "task_counts": {"ready": 0, "blocked": 0, "invalid": 0, "imported_resolved": 0, "total": 0},
-                    "legacy_task_count": 0,
-                    "decision_queue_count": 0,
+                    "decision_counts": {"proposed": 0, "accepted": 0, "superseded": 0},
+                    "work_item_counts": {
+                        "ready": 0,
+                        "blocked": 0,
+                        "draft": 0,
+                        "active": 0,
+                        "validated": 0,
+                        "failed": 0,
+                        "abandoned": 0,
+                        "total": 0,
+                    },
+                    "ready_work_count": 0,
+                    "blocked_work_count": 0,
+                    "active_work_count": 0,
                 },
-                "decision_queue": [],
-                "blocked_task_ids": [],
-                "invalid_task_ids": [],
+                "blocked_work_ids": [],
+                "invalid_work_ids": [],
                 "problems": [],
             },
         )
@@ -141,18 +165,20 @@ def ensure_task_authority_tree(project_root: Path) -> None:
 
 
 def load_decisions(project_root: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for path in _iter_json_files(decisions_dir(project_root)):
-        payload = _read_json(path)
-        if payload:
-            payload.setdefault("_path", str(path))
-            rows.append(payload)
-    return rows
+    return Store(project_root).list("decision")
 
 
 def load_contracts(project_root: Path) -> list[dict[str, Any]]:
+    return []
+
+
+def load_work_items(project_root: Path) -> list[dict[str, Any]]:
+    return [flatten_work_item(work) for work in Store(project_root).list("work_item")]
+
+
+def load_work_results(project_root: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for path in _iter_json_files(contracts_dir(project_root)):
+    for path in _iter_work_result_files(project_root):
         payload = _read_json(path)
         if payload:
             payload.setdefault("_path", str(path))
@@ -160,49 +186,29 @@ def load_contracts(project_root: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def load_compiled_tasks(project_root: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for path in _iter_task_files(tasks_dir(project_root)):
-        payload = _read_json(path)
-        if payload:
-            payload.setdefault("_path", str(path))
-            rows.append(payload)
-    return rows
-
-
-def load_task_results(project_root: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for path in _iter_task_result_files(project_root):
-        payload = _read_json(path)
-        if payload:
-            payload.setdefault("_path", str(path))
-            rows.append(payload)
-    return rows
-
-
-def load_task_result_map(project_root: Path) -> dict[str, dict[str, Any]]:
+def load_work_result_map(project_root: Path) -> dict[str, dict[str, Any]]:
     rows: dict[str, dict[str, Any]] = {}
-    for payload in load_task_results(project_root):
-        task_id = payload.get("task_id")
-        if isinstance(task_id, str) and task_id and task_id not in rows:
-            rows[task_id] = payload
+    for payload in load_work_results(project_root):
+        work_id = payload.get("work_id")
+        if isinstance(work_id, str) and work_id and work_id not in rows:
+            rows[work_id] = payload
     return rows
 
 
-def load_task_result(project_root: Path, task_id: str) -> dict[str, Any]:
-    return _read_json(task_result_path(project_root, task_id))
+def load_work_result(project_root: Path, work_id: str) -> dict[str, Any]:
+    return _read_json(work_result_path(project_root, work_id))
 
 
 def load_compiler_state(project_root: Path) -> dict[str, Any]:
-    ensure_task_authority_tree(project_root)
+    ensure_work_authority_tree(project_root)
     return _read_json(compiler_state_path(project_root))
 
 
-def _default_task_result(task_id: str) -> dict[str, Any]:
+def _default_work_result(work_id: str) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
-        "kind": "task_result",
-        "task_id": task_id,
+        "kind": "work_result",
+        "work_id": work_id,
         "status": "idle",
         "source": "none",
         "usable": None,
@@ -223,12 +229,12 @@ def _default_task_result(task_id: str) -> dict[str, Any]:
     }
 
 
-def _normalize_task_result(task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    result = _default_task_result(task_id)
+def _normalize_work_result(work_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    result = _default_work_result(work_id)
     result.update(payload)
     result["schema_version"] = SCHEMA_VERSION
-    result["kind"] = "task_result"
-    result["task_id"] = task_id
+    result["kind"] = "work_result"
+    result["work_id"] = work_id
     result["reasons"] = _normalize_string_list(result.get("reasons"))
     evidence_paths = result.get("evidence_paths")
     if not isinstance(evidence_paths, list):
@@ -251,77 +257,77 @@ def _normalize_task_result(task_id: str, payload: dict[str, Any]) -> dict[str, A
     return result
 
 
-def upsert_task_result(project_root: Path, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    ensure_task_authority_tree(project_root)
-    result = _normalize_task_result(task_id, payload)
-    _write_json(task_result_path(project_root, task_id), result)
+def upsert_work_result(project_root: Path, work_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_work_authority_tree(project_root)
+    result = _normalize_work_result(work_id, payload)
+    _write_json(work_result_path(project_root, work_id), result)
     return result
 
 
-def _remove_stale_task_results(project_root: Path, active_task_ids: set[str]) -> None:
-    for path in _iter_task_result_files(project_root):
+def _remove_stale_work_results(project_root: Path, active_work_ids: set[str]) -> None:
+    for path in _iter_work_result_files(project_root):
         payload = _read_json(path)
-        task_id = payload.get("task_id")
-        if not isinstance(task_id, str) or task_id not in active_task_ids:
+        work_id = payload.get("work_id")
+        if not isinstance(work_id, str) or work_id not in active_work_ids:
             path.unlink()
 
 
-def load_task_for_execution(project_root: Path, task_id: str, *, require_ready: bool = True) -> dict[str, Any]:
+def load_work_for_execution(project_root: Path, work_id: str, *, require_ready: bool = True) -> dict[str, Any]:
     from .compiler import compile_task_authority
 
     compile_task_authority(project_root)
-    payload = _read_json(tasks_dir(project_root) / f"{task_id}.json")
+    payload = Store(project_root).read("work_item", work_id)
     if not payload:
-        raise FileNotFoundError(f"Strict task {task_id} not found in .thoth/project/tasks")
+        raise FileNotFoundError(f"Work item {work_id} not found in .thoth/objects/work_item")
+    payload = flatten_work_item(payload)
     ready_state = payload.get("ready_state")
     if require_ready and ready_state != "ready":
         reason = payload.get("blocking_reason") or f"task is {ready_state}"
-        raise ValueError(f"Strict task {task_id} is not executable: {reason}")
+        raise ValueError(f"Work item {work_id} is not executable: {reason}")
     if require_ready and payload.get("runnable") is not True:
-        raise ValueError(f"Strict task {task_id} is not executable: task is non-runnable")
+        raise ValueError(f"Work item {work_id} is not executable: work item is non-runnable")
     return payload
 
 
-def _tokenize_task_query(value: str) -> list[str]:
+def _tokenize_work_query(value: str) -> list[str]:
     return [token for token in re.findall(r"[a-zA-Z0-9]+", value.lower()) if token]
 
 
-def _task_search_text(task: dict[str, Any]) -> str:
+def _work_search_text(work: dict[str, Any]) -> str:
     parts: list[str] = []
     for field in (
-        "task_id",
+        "work_id",
         "title",
         "goal_statement",
         "module",
         "direction",
-        "contract_id",
         "candidate_method_id",
         "blocking_reason",
     ):
-        value = task.get(field)
+        value = work.get(field)
         if isinstance(value, str) and value.strip():
             parts.append(value.strip())
     for field in ("decision_ids", "failure_classes", "baseline_ids"):
-        values = task.get(field)
+        values = work.get(field)
         if isinstance(values, list):
             parts.extend(str(item).strip() for item in values if isinstance(item, str) and item.strip())
     return " ".join(parts)
 
 
-def suggest_tasks_for_query(project_root: Path, query: str, *, limit: int = 3) -> list[dict[str, Any]]:
+def suggest_work_items_for_query(project_root: Path, query: str, *, limit: int = 3) -> list[dict[str, Any]]:
     from .compiler import compile_task_authority
 
     compile_task_authority(project_root)
-    tasks = load_compiled_tasks(project_root)
+    work_items = load_work_items(project_root)
     normalized_query = " ".join(query.strip().lower().split())
-    query_tokens = _tokenize_task_query(normalized_query)
+    query_tokens = _tokenize_work_query(normalized_query)
     scored: list[tuple[float, dict[str, Any]]] = []
-    for task in tasks:
-        ready_state = str(task.get("ready_state") or "")
-        runnable = task.get("runnable") is True
-        text = _task_search_text(task)
+    for work in work_items:
+        ready_state = str(work.get("ready_state") or "")
+        runnable = work.get("runnable") is True
+        text = _work_search_text(work)
         haystack = text.lower()
-        text_tokens = set(_tokenize_task_query(text))
+        text_tokens = set(_tokenize_work_query(text))
         score = 0.0
         if ready_state == "ready":
             score += 3.0
@@ -335,83 +341,139 @@ def suggest_tasks_for_query(project_root: Path, query: str, *, limit: int = 3) -
                     score += 3.0
                 elif token in haystack:
                     score += 1.0
-        scored.append((score, task))
+        scored.append((score, work))
     scored.sort(
         key=lambda item: (
             item[0],
             1 if str(item[1].get("ready_state") or "") == "ready" else 0,
             1 if item[1].get("runnable") is True else 0,
             str(item[1].get("title") or ""),
-            str(item[1].get("task_id") or ""),
+            str(item[1].get("work_id") or ""),
         ),
         reverse=True,
     )
-    picks = [task for _score, task in scored[: max(0, limit)]]
+    picks = [work for _score, work in scored[: max(0, limit)]]
     return [
         {
-            "task_id": str(task.get("task_id") or ""),
-            "title": str(task.get("title") or task.get("task_id") or ""),
-            "ready_state": str(task.get("ready_state") or ""),
-            "module": str(task.get("module") or ""),
-            "direction": str(task.get("direction") or ""),
-            "goal_statement": str(task.get("goal_statement") or ""),
+            "work_id": str(work.get("work_id") or ""),
+            "title": str(work.get("title") or work.get("work_id") or ""),
+            "ready_state": str(work.get("ready_state") or ""),
+            "module": str(work.get("module") or ""),
+            "direction": str(work.get("direction") or ""),
+            "goal_statement": str(work.get("goal_statement") or ""),
         }
-        for task in picks
-        if str(task.get("task_id") or "").strip()
+        for work in picks
+        if str(work.get("work_id") or "").strip()
     ]
 
 
 def upsert_decision(project_root: Path, payload: dict[str, Any]) -> dict[str, Any]:
-    ensure_task_authority_tree(project_root)
     payload = dict(payload)
-    payload.setdefault("schema_version", SCHEMA_VERSION)
-    payload.setdefault("kind", "decision")
-    payload.setdefault("status", "open")
-    payload.setdefault("host", "codex")
-    payload.setdefault("created_at", utc_now())
-    payload["updated_at"] = utc_now()
-    decision_id = payload.get("decision_id")
+    store = Store(project_root)
+    store.ensure_tree()
+    decision_id = payload.get("object_id") or payload.get("decision_id")
     if not isinstance(decision_id, str) or not decision_id.strip():
         question = payload.get("question") if isinstance(payload.get("question"), str) else "discussion"
-        decision_id = f"DEC-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{_slugify(question)[:24]}"
+        decision_id = f"DEC-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{slugify(question)[:24]}"
         payload["decision_id"] = decision_id
-    _write_json(decisions_dir(project_root) / f"{decision_id}.json", payload)
-    return payload
+    status = str(payload.get("status") or "proposed")
+    if status == "frozen":
+        status = "accepted"
+    if status == "open":
+        status = "proposed"
+    if status not in {"proposed", "accepted", "superseded"}:
+        status = "proposed"
+    title = str(payload.get("title") or payload.get("question") or decision_id)
+    summary = str(payload.get("summary") or payload.get("question") or title)
+    obj = store.upsert(
+        kind="decision",
+        object_id=decision_id,
+        status=status,
+        title=title,
+        summary=summary,
+        source=str(payload.get("source") or "discuss"),
+        payload={
+            "question": payload.get("question") or title,
+            "selected_values": payload.get("selected_values", {}),
+            "candidate_method_ids": payload.get("candidate_method_ids", []),
+            "unresolved_gaps": payload.get("unresolved_gaps", []),
+            "raw": payload,
+        },
+    )
+    flattened = dict(payload)
+    flattened.update(
+        {
+            "schema_version": SCHEMA_VERSION,
+            "kind": "decision",
+            "decision_id": obj["object_id"],
+            "object_id": obj["object_id"],
+            "status": "frozen" if obj["status"] == "accepted" else "open",
+            "created_at": obj["created_at"],
+            "updated_at": obj["updated_at"],
+            "_path": str(store.path("decision", obj["object_id"])),
+        }
+    )
+    return flattened
 
 
-def upsert_contract(project_root: Path, payload: dict[str, Any]) -> dict[str, Any]:
-    ensure_task_authority_tree(project_root)
+def upsert_work_item(project_root: Path, payload: dict[str, Any]) -> dict[str, Any]:
     payload = dict(payload)
-    payload.setdefault("schema_version", SCHEMA_VERSION)
-    payload.setdefault("kind", "contract")
-    payload.setdefault("status", "draft")
-    payload.setdefault("created_at", utc_now())
-    payload["updated_at"] = utc_now()
-    contract_id = payload.get("contract_id")
-    if not isinstance(contract_id, str) or not contract_id.strip():
-        title = payload.get("title") if isinstance(payload.get("title"), str) else "contract"
-        contract_id = f"CTR-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{_slugify(title)[:24]}"
-        payload["contract_id"] = contract_id
-    _write_json(contracts_dir(project_root) / f"{contract_id}.json", payload)
-    return payload
+    store = Store(project_root)
+    store.ensure_tree()
+    work_id, status, work_payload = work_item_from_payload(payload)
+    links = [
+        {"type": "decided_by", "target": f"decision:{decision_id}"}
+        for decision_id in _normalize_string_list(payload.get("decisions"))
+        if store.read("decision", decision_id)
+    ]
+    obj = store.upsert(
+        kind="work_item",
+        object_id=work_id,
+        status=status,
+        title=str(payload.get("title") or work_id),
+        summary=str(payload.get("goal") or payload.get("title") or work_id),
+        source=str(payload.get("source_kind") or "discuss"),
+        links=links,
+        payload=work_payload,
+        history_summary=f"upserted work_item {work_id}",
+    )
+    flattened = dict(payload)
+    flattened.update(flatten_work_item(obj))
+    return flattened
 
 
 def create_discussion_placeholder(project_root: Path, content: str, *, host: str = "codex") -> dict[str, Any]:
     summary = content.strip() or "discussion"
-    return upsert_decision(
-        project_root,
-        {
-            "question": summary,
-            "scope_id": "general",
-            "candidate_method_ids": [],
-            "selected_values": {},
-            "status": "open",
-            "unresolved_gaps": [
+    store = Store(project_root)
+    store.ensure_tree()
+    discussion_id = f"DISC-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{slugify(summary)[:24]}"
+    obj = store.create(
+        kind="discussion",
+        object_id=discussion_id,
+        status="inquiring",
+        title=summary,
+        summary=summary,
+        source=f"discuss:{host}",
+        payload={
+            "messages": [{"role": "user", "content": content, "created_at": utc_now()}],
+            "facts": [],
+            "constraints": [],
+            "decisions": [],
+            "open_questions": [
                 "candidate method universe not frozen",
-                "implementation contract not frozen",
-                "task cannot be generated until decisions are resolved",
+                "execution plan not closed",
+                "eval contract not closed",
             ],
-            "host": host,
-            "source": "discuss",
+            "closure_summary": None,
         },
     )
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "kind": "discussion",
+        "discussion_id": obj["object_id"],
+        "object_id": obj["object_id"],
+        "status": obj["status"],
+        "question": summary,
+        "unresolved_gaps": obj["payload"]["open_questions"],
+        "_path": str(store.path("discussion", obj["object_id"])),
+    }

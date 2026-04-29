@@ -112,7 +112,7 @@ def list_runs(project_root: Path) -> list[dict[str, Any]]:
         events.sort(key=lambda item: item["seq"])
 
         run_id = str(run_data.get("run_id") or run_data.get("id") or state_data.get("run_id") or run_dir.name)
-        task_id = run_data.get("task_id") or state_data.get("task_id")
+        work_id = run_data.get("work_id") or state_data.get("work_id") or run_data.get("task_id") or state_data.get("task_id")
         status = str(state_data.get("status") or run_data.get("status") or result_data.get("status") or "unknown")
         progress_pct = state_data.get("progress_pct")
         if not isinstance(progress_pct, (int, float)):
@@ -139,7 +139,8 @@ def list_runs(project_root: Path) -> list[dict[str, Any]]:
 
         runs.append({
             "run_id": run_id,
-            "task_id": task_id,
+            "work_id": work_id,
+            "task_id": work_id,
             "title": run_data.get("title") or run_id,
             "host": run_data.get("host"),
             "status": status,
@@ -172,7 +173,11 @@ def list_runs(project_root: Path) -> list[dict[str, Any]]:
 
 
 def get_task_runs(project_root: Path, task_id: str) -> list[dict[str, Any]]:
-    return [run for run in list_runs(project_root) if run.get("task_id") == task_id]
+    return [
+        run
+        for run in list_runs(project_root)
+        if run.get("work_id") == task_id or run.get("task_id") == task_id
+    ]
 
 
 def get_active_run_for_task(project_root: Path, task_id: str) -> Optional[dict[str, Any]]:

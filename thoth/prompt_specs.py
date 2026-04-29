@@ -43,7 +43,7 @@ COMMAND_PROMPT_SPECS: dict[str, CommandPromptSpec] = {
         packet_authority_mode="phase_controller",
         objective="Finish the current strict task through the validator-centered controller.",
         hard_stops=(
-            "Do not invent or compile a new task when --task-id is missing.",
+            "Do not invent or compile a new work item when --work-id is missing.",
             "Do not stop after reading the packet; terminalize through controller commands only.",
             "Do not hand-edit .thoth ledgers.",
         ),
@@ -136,6 +136,34 @@ COMMAND_PROMPT_SPECS: dict[str, CommandPromptSpec] = {
         reply_budget_utf8=56,
         result_style="brief operator receipt",
         validator_policy="dashboard is read-only over .thoth ledgers",
+    ),
+    "orchestration": CommandPromptSpec(
+        command_id="orchestration",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
+        objective="Create a controller object with dependency batches for ready work items.",
+        hard_stops=(
+            "Do not execute work while creating the controller.",
+            "Do not invent missing work items.",
+        ),
+        reply_budget_utf8=56,
+        result_style="brief controller receipt",
+        validator_policy="object graph dependencies define batch order",
+    ),
+    "auto": CommandPromptSpec(
+        command_id="auto",
+        route_class="mechanical_fast",
+        intelligence_tier="none",
+        packet_authority_mode="result_envelope",
+        objective="Create a linear controller queue over ready work items.",
+        hard_stops=(
+            "Do not create private queue files.",
+            "Do not execute work while creating the controller.",
+        ),
+        reply_budget_utf8=56,
+        result_style="brief queue receipt",
+        validator_policy="controller object cursor defines queue state",
     ),
     "init": CommandPromptSpec(
         command_id="init",

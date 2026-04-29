@@ -37,7 +37,7 @@ def render_status(project_root: Path, *, full: bool = False) -> str:
     lines.append("")
 
     if not tasks:
-        lines.append("  No strict tasks found.")
+        lines.append("  No ready work items found.")
         lines.append("")
         healthy, health_msg = quick_health(project_root)
         lines.append(f"▸ Health: {'●' if healthy else '○'} {'ALL CHECKS PASSED' if healthy else 'ISSUES DETECTED'} | {health_msg}")
@@ -56,8 +56,8 @@ def render_status(project_root: Path, *, full: bool = False) -> str:
     lines.append("▸ Recent:")
     if completed:
         for task in completed[-3:]:
-            task_result = task.get("task_result", {})
-            lines.append(f"  ✓ {task.get('task_id')} {task.get('title', '')} -- {task_result.get('source', 'recorded')} {time_ago(task_result.get('updated_at'))}")
+            work_result = task.get("work_result", {})
+            lines.append(f"  ✓ {task.get('work_id')} {task.get('title', '')} -- {work_result.get('source', 'recorded')} {time_ago(work_result.get('updated_at'))}")
     else:
         lines.append("  (none)")
     lines.append("")
@@ -66,9 +66,9 @@ def render_status(project_root: Path, *, full: bool = False) -> str:
     lines.append("▸ Next:")
     if blocked:
         for task in blocked[:5]:
-            lines.append(f"  - {task.get('task_id')} {task.get('blocking_reason') or task.get('ready_state')}")
+            lines.append(f"  - {task.get('work_id')} {task.get('blocking_reason') or task.get('ready_state')}")
     else:
-        lines.append("  - No blocked strict tasks.")
+        lines.append("  - No blocked work items.")
     lines.append("")
 
     healthy, health_msg = quick_health(project_root)
@@ -89,7 +89,7 @@ def render_status(project_root: Path, *, full: bool = False) -> str:
 def main() -> int:
     import sys
     project_root = Path.cwd()
-    if not (project_root / ".thoth" / "project" / "project.json").exists():
+    if not (project_root / ".thoth" / "objects" / "project" / "project.json").exists():
         print("Not a Thoth project. Run /thoth:init to set up.")
         return 1
     print(render_status(project_root, full="--full" in sys.argv))

@@ -7,7 +7,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from thoth.plan.results import update_task_result_from_run_result
+from thoth.objects import Store
+from thoth.plan.results import update_work_result_from_run_result
 from thoth.prompt_validators import validate_review_result_payload
 
 from .io import _append_jsonl, _read_json, _write_json, ensure_runtime_tree
@@ -19,7 +20,8 @@ def create_run(
     *,
     kind: str,
     title: str,
-    task_id: str | None,
+    work_id: str | None = None,
+    work_revision: int | None = None,
     host: str,
     executor: str,
     durable: bool = True,
@@ -41,7 +43,8 @@ def create_run(
         "run_id": run_id,
         "kind": kind,
         "title": title,
-        "task_id": task_id,
+        "work_id": work_id,
+        "work_revision": work_revision,
         "target": target,
         "host": host,
         "executor": executor,
@@ -61,7 +64,8 @@ def create_run(
     }
     state_payload = {
         "run_id": run_id,
-        "task_id": task_id,
+        "work_id": work_id,
+        "work_revision": work_revision,
         "status": "queued",
         "phase": "queued",
         "progress_pct": 0,
@@ -80,7 +84,8 @@ def create_run(
             "schema_version": PROTOCOL_VERSION,
             "kind": kind,
             "run_id": run_id,
-            "task_id": task_id,
+            "work_id": work_id,
+            "work_revision": work_revision,
             "status": "pending",
             "summary": None,
             "checks": [],
@@ -96,6 +101,29 @@ def create_run(
     )
     _write_json(handle.run_dir / "artifacts.json", {"artifacts": [], "updated_at": now})
     _append_jsonl(handle.run_dir / "events.jsonl", {"seq": 1, "ts": now, "kind": "log", "message": "run created"})
+    store = Store(project_root)
+    work_links = [{"type": "spawned_by", "target": f"work_item:{work_id}"}] if work_id and store.read("work_item", work_id) else []
+    store.create(
+        kind="run",
+        object_id=run_id,
+        status="queued",
+        title=title,
+        summary=f"{kind} prepared for {work_id or 'unbound work'}",
+        source="run",
+        links=work_links,
+        payload={
+            "run_id": run_id,
+            "kind": kind,
+            "work_id": work_id,
+            "work_revision": work_revision,
+            "ledger_dir": str(handle.run_dir),
+            "host": host,
+            "executor": executor,
+            "dispatch_mode": dispatch_mode,
+            "parent_run_id": parent_run_id,
+            "iteration_index": iteration_index,
+        },
+    )
     return handle
 
 
@@ -112,6 +140,34 @@ def _update_state(handle: RunHandle, **fields: Any) -> dict[str, Any]:
     state.update(fields)
     state["updated_at"] = utc_now()
     _write_json(handle.run_dir / "state.json", state)
+    status = fields.get("status")
+    if isinstance(status, str):
+        store = Store(handle.project_root)
+        current = store.read("run", handle.run_id)
+        if current:
+            payload = dict(current.get("payload") if isinstance(current.get("payload"), dict) else {})
+            payload["state"] = state
+            store.update(
+                "run",
+                handle.run_id,
+                expected_revision=int(current.get("revision", 0)),
+                updates={"status": status, "payload": payload},
+                history_summary=f"run state -> {status}",
+                source="run",
+            )
+        controller_id = f"controller-{handle.run_id}"
+        controller = store.read("controller", controller_id)
+        if controller:
+            payload = dict(controller.get("payload") if isinstance(controller.get("payload"), dict) else {})
+            payload["state"] = state
+            store.update(
+                "controller",
+                controller_id,
+                expected_revision=int(controller.get("revision", 0)),
+                updates={"status": status, "payload": payload},
+                history_summary=f"controller state -> {status}",
+                source="run",
+            )
     return state
 
 
@@ -195,6 +251,22 @@ def record_artifact(
     artifacts["artifacts"] = rows
     artifacts["updated_at"] = utc_now()
     _write_json(handle.run_dir / "artifacts.json", artifacts)
+    Store(project_root).upsert(
+        kind="artifact",
+        object_id=f"{run_id}-{uuid.uuid4().hex[:8]}",
+        status="available",
+        title=label or Path(path).name,
+        summary=path,
+        source="run",
+        links=[{"type": "produced_by", "target": f"run:{run_id}"}],
+        payload={
+            "run_id": run_id,
+            "path": path,
+            "label": label or Path(path).name,
+            "artifact_kind": artifact_kind,
+            "metadata": metadata or {},
+        },
+    )
     _append_event(handle, f"artifact recorded: {label or path}", kind="artifact", payload={"path": path, "label": label, "kind": artifact_kind})
     _write_heartbeat(handle)
     return handle
@@ -244,7 +316,8 @@ def _normalize_run_result(
     payload = {
         "schema_version": PROTOCOL_VERSION,
         "run_id": handle.run_id,
-        "task_id": run.get("task_id"),
+        "work_id": run.get("work_id"),
+        "work_revision": run.get("work_revision"),
         "kind": run.get("kind"),
         "status": status,
         "summary": summary,
@@ -289,7 +362,7 @@ def complete_run(
     _update_run(handle, attachable=False)
     release_repo_lease(project_root, run_id)
     _write_json(handle.local_dir / "supervisor.json", {"pid": os.getpid(), "state": "completed", "updated_at": utc_now()})
-    update_task_result_from_run_result(
+    update_work_result_from_run_result(
         project_root,
         run_payload=run_payload,
         run_result=run_result,
@@ -330,7 +403,7 @@ def fail_run(
     _update_run(handle, attachable=False)
     release_repo_lease(project_root, run_id)
     _write_json(handle.local_dir / "supervisor.json", {"pid": os.getpid(), "state": "failed", "updated_at": utc_now()})
-    update_task_result_from_run_result(
+    update_work_result_from_run_result(
         project_root,
         run_payload=run_payload,
         run_result=run_result,
@@ -346,7 +419,8 @@ def _write_stopped_result(handle: RunHandle) -> None:
         {
             "schema_version": PROTOCOL_VERSION,
             "run_id": handle.run_id,
-            "task_id": run.get("task_id"),
+            "work_id": run.get("work_id"),
+            "work_revision": run.get("work_revision"),
             "kind": run.get("kind"),
             "status": "stopped",
             "summary": "Run stopped before completion.",

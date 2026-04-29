@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from thoth.plan.store import load_task_result
+from thoth.plan.store import load_work_result
 
 from .io import _read_json
 from .model import _parse_iso8601
@@ -14,13 +14,13 @@ from .model import _parse_iso8601
 def latest_fresh_review_context(
     project_root: Path,
     *,
-    task_id: str | None,
+    work_id: str | None,
     target: str | None,
 ) -> dict[str, Any]:
-    if not task_id or not target:
+    if not work_id or not target:
         return {}
-    task_result = load_task_result(project_root, task_id)
-    last_closure_ts = _parse_iso8601(task_result.get("last_closure_at"))
+    work_result = load_work_result(project_root, work_id)
+    last_closure_ts = _parse_iso8601(work_result.get("last_closure_at"))
     best: dict[str, Any] = {}
     runs_root = project_root / ".thoth" / "runs"
     if not runs_root.is_dir():
@@ -31,7 +31,7 @@ def latest_fresh_review_context(
         run_payload = _read_json(run_dir / "run.json")
         if run_payload.get("kind") != "review":
             continue
-        if run_payload.get("task_id") != task_id or run_payload.get("target") != target:
+        if run_payload.get("work_id") != work_id or run_payload.get("target") != target:
             continue
         result_payload = _read_json(run_dir / "result.json")
         if result_payload.get("status") != "completed":

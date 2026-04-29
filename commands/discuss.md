@@ -24,8 +24,8 @@ executed before Claude sees this prompt.
 
 - Treat the structured bridge payload above as the only authority for this command invocation.
 - If `bridge_success` is `false`, report the exact bridge failure and stop.
-- If `run` or `loop` is missing `--task-id`, show the returned candidate tasks exactly as provided and stop.
-- If `run` or `loop` is missing `--task-id`, do not invent, create, compile, or guess a task.
+- If `run` or `loop` is missing `--work-id`, show the returned candidate work items exactly as provided and stop.
+- If `run` or `loop` is missing `--work-id`, do not invent, create, compile, or guess a work item.
 - If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, fetch `packet.controller_commands.next_phase`, execute exactly that phase, and submit exactly one JSON object through `packet.controller_commands.submit_phase` until terminal state.
 - While executing a live packet, do not hand-edit `.thoth`; advance only through the Python controller commands included in `packet.controller_commands`.
 - If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up only.

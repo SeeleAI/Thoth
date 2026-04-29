@@ -6,7 +6,7 @@
 
 - 维护 `/thoth:init` 与 `sync` 的 canonical repo-local 实现。
 - 坚持 `audit-first adopt/init`，禁止把目标仓库默认为空白脚手架。
-- 保证所有受管写入都能落到 `.thoth/migrations/*` 与 `.thoth/project/*` 的证据链中。
+- 保证所有受管写入都能落到 `.thoth/migrations/*` 与 `.thoth/objects/*` 的证据链中。
 - 保证 Claude / Codex 两个宿主面的投影来自同一 canonical authority，而不是分叉模板。
 
 ## 2. 恢复顺序

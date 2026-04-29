@@ -22,9 +22,9 @@ def _prepare_project(tmp_path: Path) -> Path:
 
 def _strict_task(*, runtime_contract: dict | None = None) -> dict:
     payload = {
-        "task_id": "task-1",
+        "work_id": "task-1",
         "title": "Demo task",
-        "goal_statement": "Ship the demo task.",
+        "work_goal": "Ship the demo work.",
         "implementation_recipe": ["Plan edits", "Execute edits", "Run validator"],
         "eval_entrypoint": {"command": "pytest -q"},
         "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
@@ -42,7 +42,7 @@ def test_run_state_machine_completes_after_validate_pass(tmp_path):
         project,
         command_id="run",
         title="Demo task",
-        task_id="task-1",
+        work_id="task-1",
         host="codex",
         executor="claude",
         sleep_requested=False,
@@ -87,7 +87,7 @@ def test_run_state_machine_forces_reflect_after_validate_failure(tmp_path):
         project,
         command_id="run",
         title="Broken task",
-        task_id="task-1",
+        work_id="task-1",
         host="codex",
         executor="claude",
         sleep_requested=False,
@@ -141,7 +141,7 @@ def test_loop_parent_stops_on_iteration_budget(tmp_path):
         project,
         command_id="loop",
         title="Loop task",
-        task_id="task-1",
+        work_id="task-1",
         host="codex",
         executor="claude",
         sleep_requested=False,

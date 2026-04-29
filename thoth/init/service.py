@@ -8,8 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from thoth.plan.compiler import compile_task_authority
-from thoth.plan.legacy_import import import_legacy_tasks
-from thoth.plan.results import rebuild_task_results_from_runs
+from thoth.plan.results import rebuild_work_results_from_runs
 from thoth.plan.store import load_project_manifest
 
 from .audit import (
@@ -112,10 +111,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
             )
 
     (project_dir / "reports").mkdir(exist_ok=True)
-    generate_agent_os_docs(normalized, project_dir)
-    generate_milestones(normalized, project_dir)
     generate_thoth_runtime(normalized, project_dir)
-    legacy_import = import_legacy_tasks(project_dir, migration_dir)
     generate_dashboard(normalized, project_dir)
     generate_pre_commit_config(normalized, project_dir)
     generate_scripts(normalized, project_dir)
@@ -128,7 +124,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
 
     _write_source_map(project_dir, audit, preview)
     compile_task_authority(project_dir)
-    rebuild_task_results_from_runs(project_dir)
+    rebuild_work_results_from_runs(project_dir)
 
     rollback_payload = {
         "schema_version": 1,
@@ -168,7 +164,7 @@ def initialize_project(config: dict[str, Any], project_dir: Path) -> dict[str, A
         "audit": audit,
         "preview": preview,
         "apply": apply_payload,
-        "legacy_import": legacy_import,
+        "legacy_import": {"status": "disabled", "reason": "legacy task/contract runtime import removed"},
         "claude_permissions": detect_claude_bridge_permission(project_dir),
         "displaced_conflicts": displaced_conflicts,
     }

@@ -410,14 +410,16 @@ def _run_host_real_flow(
         "doctor",
         "discuss-decision",
         *[f"discuss-contract-{index}" for index, _ in enumerate(commands["discuss_contracts"], start=1)],
+        "run-live",
         "run-sleep",
         "run-watch",
         "run-stop",
         "review",
-        "dashboard-start",
-        "dashboard-stop",
+        "loop-live",
         "loop-sleep",
         "loop-stop",
+        "dashboard-start",
+        "dashboard-stop",
     ]
     ordered_step_ids.append("sync")
     step_index = {step_id: index for index, step_id in enumerate(ordered_step_ids)}
@@ -438,14 +440,13 @@ def _run_host_real_flow(
 
     def step_mode(step_id: str) -> str:
         index = step_index[step_id]
-        if index < start_index:
-            return "prereq"
-        if index > end_index:
+        if index < start_index or index > end_index:
             return "skipped"
         return "selected"
 
     def should_run(step_id: str) -> bool:
-        return step_index[step_id] <= end_index
+        index = step_index[step_id]
+        return start_index <= index <= end_index
 
     def check_name(base: str, mode: str) -> str:
         if mode == "selected":
@@ -500,7 +501,7 @@ def _run_host_real_flow(
         mode: str,
         run_id: str,
         expected_kind: str,
-        expected_task_id: str,
+        expected_work_id: str,
         public_command: str,
     ) -> None:
         _wait_until(
@@ -516,7 +517,7 @@ def _run_host_real_flow(
         worker_started = any("external worker" in str(event.get("message") or "").lower() for event in events)
         ok = (
             run.get("kind") == expected_kind
-            and run.get("task_id") == expected_task_id
+            and run.get("work_id") == expected_work_id
             and run.get("host") == host_name
             and run.get("dispatch_mode") == expected_dispatch(public_command)
             and bool(run.get("attachable", False))
@@ -540,6 +541,55 @@ def _run_host_real_flow(
         ])
         if not ok:
             raise RuntimeError(f"{host_name} step {step_id} did not establish the expected runtime contract")
+        _guard_source(step_id, mode)
+
+    def _verify_live_probe_prepared(
+        *,
+        step_id: str,
+        mode: str,
+        run_id: str,
+        expected_kind: str,
+        expected_work_id: str,
+        public_command: str,
+        expected_executor: str | None = None,
+    ) -> None:
+        _wait_until(
+            lambda: _state_payload(project_dir, run_id).get("status") in {"running", "completed", "failed", "stopped"},
+            timeout=20,
+            interval=0.5,
+            description=f"{host_name} {step_id} {run_id} to prepare",
+        )
+        run = _run_payload(project_dir, run_id)
+        state = _state_payload(project_dir, run_id)
+        packet = _read_json(project_dir / ".thoth" / "runs" / run_id / "packet.json")
+        ok = (
+            run.get("kind") == expected_kind
+            and run.get("work_id") == expected_work_id
+            and run.get("host") == host_name
+            and run.get("dispatch_mode") == expected_dispatch(public_command)
+            and bool(run.get("attachable", False))
+            and state.get("status") == "running"
+            and packet.get("dispatch_mode") == expected_dispatch(public_command)
+        )
+        if expected_executor is not None:
+            ok = ok and run.get("executor") == expected_executor
+        detail = (
+            f"Verified {expected_kind} live probe {run_id}: "
+            f"status={state.get('status')} attachable={run.get('attachable')} "
+            f"dispatch={run.get('dispatch_mode')} executor={run.get('executor')}"
+        )
+        recorder.add(
+            _runtime_check_name(step_id, mode),
+            "passed" if ok else "failed",
+            detail,
+            [
+                str(project_dir / ".thoth" / "runs" / run_id / "run.json"),
+                str(project_dir / ".thoth" / "runs" / run_id / "state.json"),
+                str(project_dir / ".thoth" / "runs" / run_id / "packet.json"),
+            ],
+        )
+        if not ok:
+            raise RuntimeError(f"{host_name} step {step_id} did not prepare the expected live packet")
         _guard_source(step_id, mode)
 
     def _verify_sleep_probe_stopped(
@@ -729,13 +779,45 @@ def _run_host_real_flow(
         if not compiler_ok:
             raise RuntimeError("compiled host-real tasks were not ready after structured discuss")
 
+    run_live_id = ""
+    if should_run("run-live"):
+        run_live_result = execute("run-live", commands["run_live"], timeout=45)
+        run_live_id = _latest_run_id(
+            project_dir,
+            kind="run",
+            work_id="task-runtime-probe",
+            exclude_run_ids=seen_run_ids,
+        )
+        if not run_live_id:
+            raise RuntimeError("run live probe did not create a new run ledger")
+        seen_run_ids.add(run_live_id)
+        if run_live_result is None:
+            raise RuntimeError("run live result was unexpectedly missing")
+        _verify_live_probe_prepared(
+            step_id="run-live",
+            mode=step_mode("run-live"),
+            run_id=run_live_id,
+            expected_kind="run",
+            expected_work_id="task-runtime-probe",
+            expected_executor=review_expected_executor if host_name == "codex" else None,
+            public_command=commands["run_live"],
+        )
+        cleanup_live_stop = _run_thoth(project_dir, "run", "--stop", run_live_id, timeout=20)
+        if cleanup_live_stop.returncode != 0:
+            raise RuntimeError("repo-local cleanup stop for host run-live probe failed")
+        _wait_until(
+            lambda: _state_payload(project_dir, run_live_id).get("status") in {"stopped", "completed"},
+            timeout=15,
+            description=f"cleanup stop for live run {run_live_id}",
+        )
+
     run_sleep_id = ""
     if should_run("run-sleep"):
         run_sleep_result = execute("run-sleep", commands["run_sleep"], timeout=45)
         run_sleep_id = _latest_run_id(
             project_dir,
             kind="run",
-            task_id="task-runtime-probe",
+            work_id="task-runtime-probe",
             exclude_run_ids=seen_run_ids,
         )
         if not run_sleep_id:
@@ -748,9 +830,18 @@ def _run_host_real_flow(
             mode=step_mode("run-sleep"),
             run_id=run_sleep_id,
             expected_kind="run",
-            expected_task_id="task-runtime-probe",
+            expected_work_id="task-runtime-probe",
             public_command=commands["run_sleep"],
         )
+        if not should_run("run-watch") and not should_run("run-stop"):
+            cleanup_sleep_stop = _run_thoth(project_dir, "run", "--stop", run_sleep_id, timeout=20)
+            if cleanup_sleep_stop.returncode != 0:
+                raise RuntimeError("repo-local cleanup stop for host run-sleep probe failed")
+            _wait_until(
+                lambda: _state_payload(project_dir, run_sleep_id).get("status") in {"stopped", "completed"},
+                timeout=15,
+                description=f"cleanup stop for sleep run {run_sleep_id}",
+            )
 
     if should_run("run-watch"):
         run_watch_command = commands["run_watch"](run_sleep_id) if callable(commands["run_watch"]) else str(commands["run_watch"]).format(run_id=run_sleep_id)
@@ -764,6 +855,15 @@ def _run_host_real_flow(
             public_command=run_watch_command,
             result=run_watch_result,
         )
+        if not should_run("run-stop"):
+            cleanup_watch_stop = _run_thoth(project_dir, "run", "--stop", run_sleep_id, timeout=20)
+            if cleanup_watch_stop.returncode != 0:
+                raise RuntimeError("repo-local cleanup stop for host run-watch probe failed")
+            _wait_until(
+                lambda: _state_payload(project_dir, run_sleep_id).get("status") in {"stopped", "completed"},
+                timeout=15,
+                description=f"cleanup stop for watched run {run_sleep_id}",
+            )
 
     if should_run("run-stop"):
         run_stop_command = commands["run_stop"](run_sleep_id) if callable(commands["run_stop"]) else str(commands["run_stop"]).format(run_id=run_sleep_id)
@@ -777,7 +877,7 @@ def _run_host_real_flow(
 
     if should_run("review"):
         execute("review", commands["review"], timeout=120)
-        review_run_id = _latest_run_id(project_dir, kind="review", task_id="task-review-probe", exclude_run_ids=seen_run_ids)
+        review_run_id = _latest_run_id(project_dir, kind="review", work_id="task-review-probe", exclude_run_ids=seen_run_ids)
         if not review_run_id:
             raise RuntimeError("review did not create a new run ledger")
         seen_run_ids.add(review_run_id)
@@ -788,7 +888,7 @@ def _run_host_real_flow(
                 check_name=_runtime_check_name("review", step_mode("review")),
                 run_id=review_run_id,
                 expected_kind="review",
-                expected_task_id="task-review-probe",
+                expected_work_id="task-review-probe",
                 expected_host=host_name,
                 expected_executor=review_expected_executor,
                 expected_dispatch_mode=expected_dispatch(commands["review"]),
@@ -842,11 +942,40 @@ def _run_host_real_flow(
         )
         if not dashboard_ready:
             raise RuntimeError(f"{host_name} dashboard did not become ready")
+        if not should_run("dashboard-stop"):
+            _stop_dashboard(project_dir, recorder=recorder)
+
+    loop_live_id = ""
+    if should_run("loop-live"):
+        loop_live_result = execute("loop-live", commands["loop_live"], timeout=45)
+        loop_live_id = _latest_run_id(project_dir, kind="loop", work_id="task-runtime-probe", exclude_run_ids=seen_run_ids)
+        if not loop_live_id:
+            raise RuntimeError("loop live probe did not create a new run ledger")
+        seen_run_ids.add(loop_live_id)
+        if loop_live_result is None:
+            raise RuntimeError("loop live result was unexpectedly missing")
+        _verify_live_probe_prepared(
+            step_id="loop-live",
+            mode=step_mode("loop-live"),
+            run_id=loop_live_id,
+            expected_kind="loop",
+            expected_work_id="task-runtime-probe",
+            expected_executor=review_expected_executor if host_name == "codex" else None,
+            public_command=commands["loop_live"],
+        )
+        cleanup_loop_live_stop = _run_thoth(project_dir, "loop", "--stop", loop_live_id, timeout=20)
+        if cleanup_loop_live_stop.returncode != 0:
+            raise RuntimeError("repo-local cleanup stop for host loop-live probe failed")
+        _wait_until(
+            lambda: _state_payload(project_dir, loop_live_id).get("status") in {"stopped", "completed"},
+            timeout=15,
+            description=f"cleanup stop for live loop {loop_live_id}",
+        )
 
     loop_run_id = ""
     if should_run("loop-sleep"):
         loop_sleep_result = execute("loop-sleep", commands["loop_sleep"], timeout=45)
-        loop_run_id = _latest_run_id(project_dir, kind="loop", task_id="task-runtime-probe", exclude_run_ids=seen_run_ids)
+        loop_run_id = _latest_run_id(project_dir, kind="loop", work_id="task-runtime-probe", exclude_run_ids=seen_run_ids)
         if not loop_run_id:
             raise RuntimeError("loop --sleep did not create a new run ledger")
         seen_run_ids.add(loop_run_id)
@@ -857,9 +986,18 @@ def _run_host_real_flow(
             mode=step_mode("loop-sleep"),
             run_id=loop_run_id,
             expected_kind="loop",
-            expected_task_id="task-runtime-probe",
+            expected_work_id="task-runtime-probe",
             public_command=commands["loop_sleep"],
         )
+        if not should_run("loop-stop"):
+            cleanup_loop_sleep_stop = _run_thoth(project_dir, "loop", "--stop", loop_run_id, timeout=20)
+            if cleanup_loop_sleep_stop.returncode != 0:
+                raise RuntimeError("repo-local cleanup stop for host loop-sleep probe failed")
+            _wait_until(
+                lambda: _state_payload(project_dir, loop_run_id).get("status") in {"stopped", "completed"},
+                timeout=15,
+                description=f"cleanup stop for sleep loop {loop_run_id}",
+            )
 
     if should_run("loop-stop"):
         loop_stop_command = commands["loop_stop"](loop_run_id) if callable(commands["loop_stop"]) else str(commands["loop_stop"]).format(run_id=loop_run_id)

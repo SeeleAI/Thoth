@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from thoth.objects import Store, slugify
 from thoth.run.io import _read_json
 from thoth.run.model import utc_now
 from thoth.run.service import list_active_runs
@@ -38,27 +39,39 @@ def _read_hook_input() -> dict[str, Any]:
 
 
 def _is_thoth_project(project_root: Path) -> bool:
-    return (project_root / ".thoth" / "project" / "project.json").exists()
+    return (project_root / ".thoth" / "objects" / "project" / "project.json").exists()
 
 
 def _load_project_name(project_root: Path) -> str:
-    manifest = _read_json(project_root / ".thoth" / "project" / "project.json")
-    name = manifest.get("project", {}).get("name")
+    manifest = _read_json(project_root / ".thoth" / "objects" / "project" / "project.json")
+    payload = manifest.get("payload") if isinstance(manifest.get("payload"), dict) else {}
+    name = payload.get("project", {}).get("name") if isinstance(payload.get("project"), dict) else None
     if isinstance(name, str) and name.strip():
         return name.strip()
     return ""
 
 
 def _append_project_note(project_root: Path, payload: dict[str, Any]) -> None:
-    note_path = project_root / ".thoth" / "project" / "conversations.jsonl"
-    note_path.parent.mkdir(parents=True, exist_ok=True)
-    record = {
-        "ts": utc_now(),
-        "type": "hook",
-        **payload,
-    }
-    with note_path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    store = Store(project_root)
+    store.ensure_tree()
+    event = str(payload.get("event") or "hook")
+    discussion_id = f"HOOK-{utc_now().replace(':', '').replace('-', '')}-{slugify(event)[:20]}"
+    store.create(
+        kind="discussion",
+        object_id=discussion_id,
+        status="inquiring",
+        title=f"Hook {event}",
+        summary=f"Host hook event {event}",
+        source=f"hook:{payload.get('host') or 'unknown'}",
+        payload={
+            "messages": [{"role": "system", "content": json.dumps(payload, ensure_ascii=False), "created_at": utc_now()}],
+            "facts": [{"type": "hook", **payload}],
+            "constraints": [],
+            "decisions": [],
+            "open_questions": [],
+            "closure_summary": None,
+        },
+    )
 
 
 def _truncate(value: str, *, limit: int = 160) -> str:
@@ -69,8 +82,8 @@ def _truncate(value: str, *, limit: int = 160) -> str:
 
 def _lightweight_issues(project_root: Path) -> list[str]:
     issues: list[str] = []
-    if not (project_root / ".thoth" / "project" / "project.json").exists():
-        issues.append("missing .thoth/project/project.json")
+    if not (project_root / ".thoth" / "objects" / "project" / "project.json").exists():
+        issues.append("missing .thoth/objects/project/project.json")
     if (project_root / ".agent-os").exists() and not (project_root / ".agent-os" / "project-index.md").exists():
         issues.append("missing .agent-os/project-index.md")
     return issues

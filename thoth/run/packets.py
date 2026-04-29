@@ -16,7 +16,7 @@ from .model import LIVE_DISPATCH_MODE, SLEEP_DISPATCH_MODE, PROTOCOL_VERSION, Ru
 from .phases import (
     build_live_packet,
     initialize_loop_controller,
-    initialize_run_controller,
+    initialize_run_phase_state,
     normalize_runtime_contract,
 )
 from .review_context import latest_fresh_review_context
@@ -73,7 +73,8 @@ def _build_execution_packet(
         "run_id": handle.run_id,
         "kind": run.get("kind"),
         "command_id": command_id,
-        "task_id": run.get("task_id"),
+        "work_id": run.get("work_id"),
+        "work_revision": run.get("work_revision"),
         "title": run.get("title"),
         "target": target or run.get("target"),
         "goal": goal,
@@ -134,7 +135,7 @@ def _build_execution_packet(
         review_target = review_binding.get("target") if isinstance(review_binding, dict) else None
         review_context = latest_fresh_review_context(
             handle.project_root,
-            task_id=str(run.get("task_id") or "") or None,
+            work_id=str(run.get("work_id") or "") or None,
             target=review_target if isinstance(review_target, str) else None,
         )
         if review_context:
@@ -165,7 +166,7 @@ def prepare_execution(
     *,
     command_id: str,
     title: str,
-    task_id: str | None,
+    work_id: str | None,
     host: str,
     executor: str,
     sleep_requested: bool,
@@ -184,7 +185,8 @@ def prepare_execution(
         project_root,
         kind=command_id,
         title=title,
-        task_id=task_id,
+        work_id=work_id,
+        work_revision=int(strict_task.get("revision") or 0) if isinstance(strict_task, dict) and strict_task.get("revision") else None,
         host=host,
         executor=executor,
         durable=command_id in {"run", "loop", "review"},
@@ -203,7 +205,7 @@ def prepare_execution(
         raise
     _mark_prepare_started(handle)
     if command_id == "run" and isinstance(strict_task, dict):
-        initialize_run_controller(handle, strict_task=strict_task, goal=goal or title, target=target)
+        initialize_run_phase_state(handle, strict_task=strict_task, goal=goal or title, target=target)
     elif command_id == "loop" and isinstance(strict_task, dict):
         initialize_loop_controller(handle, strict_task=strict_task, goal=goal or title, target=target)
     packet = _build_execution_packet(

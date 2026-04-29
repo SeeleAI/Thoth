@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from thoth.plan.compiler import compile_task_authority
+from thoth.plan.store import upsert_work_item, upsert_decision
 from thoth.run.phases import default_validate_output_schema
 
 
@@ -42,67 +42,57 @@ def _run_bridge(tmp_path: Path, command_id: str, *args: str) -> subprocess.Compl
 
 def _write_task(
     project_dir: Path,
-    task_id: str,
+    work_id: str,
     *,
     title: str,
-    goal_statement: str,
+    work_goal: str,
     review_binding: dict[str, object] | None = None,
     review_expectation: dict[str, object] | None = None,
 ) -> None:
-    decisions = project_dir / ".thoth" / "project" / "decisions"
-    contracts = project_dir / ".thoth" / "project" / "contracts"
-    decisions.mkdir(parents=True, exist_ok=True)
-    contracts.mkdir(parents=True, exist_ok=True)
-    decision_id = f"DEC-{task_id}"
-    contract_id = f"CTR-{task_id}"
-    (decisions / f"{decision_id}.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "kind": "decision",
-                "decision_id": decision_id,
-                "scope_id": f"scope-{task_id}",
-                "question": "Which strict task should be executed?",
-                "candidate_method_ids": ["repo-change"],
-                "selected_values": {"candidate_method_id": "repo-change"},
-                "status": "frozen",
-                "unresolved_gaps": [],
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+    decision_id = f"DEC-{work_id}"
+    upsert_decision(
+        project_dir,
+        {
+            "schema_version": 1,
+            "kind": "decision",
+            "decision_id": decision_id,
+            "scope_id": f"scope-{work_id}",
+            "question": "Which strict task should be executed?",
+            "candidate_method_ids": ["repo-change"],
+            "selected_values": {"candidate_method_id": "repo-change"},
+            "status": "frozen",
+            "unresolved_gaps": [],
+        },
     )
     contract_payload = {
         "schema_version": 1,
-        "kind": "contract",
-        "contract_id": contract_id,
-        "task_id": task_id,
-        "scope_id": f"scope-{task_id}",
+        "kind": "work_item",
+        "work_id": work_id,
         "direction": "frontend",
         "module": "f1",
         "title": title,
-        "decision_ids": [decision_id],
-        "candidate_method_id": "repo-change",
-        "goal_statement": goal_statement,
-        "implementation_recipe": ["Make the requested repo change."],
-        "eval_entrypoint": {"command": "pytest -q"},
-        "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
-        "failure_classes": ["runtime_drift"],
-        "validate_output_schema": default_validate_output_schema(),
-        "status": "frozen",
-        "blocking_gaps": [],
+        "status": "ready",
+        "work_type": "task",
+        "runnable": True,
+        "goal": work_goal,
+        "context": f"scope-{work_id}",
+        "constraints": ["repo"],
+        "execution_plan": ["Make the requested repo change."],
+        "eval_contract": {
+            "entrypoint": {"command": "pytest -q"},
+            "primary_metric": {"name": "checks", "direction": "gte", "threshold": 1},
+            "failure_classes": ["runtime_drift"],
+            "validate_output_schema": default_validate_output_schema(),
+        },
+        "runtime_policy": {"loop": {"max_iterations": 10, "max_runtime_seconds": 28800}},
+        "decisions": [decision_id],
+        "missing_questions": [],
     }
     if review_binding is not None:
-        contract_payload["review_binding"] = review_binding
+        contract_payload["eval_contract"]["review_binding"] = review_binding
     if review_expectation is not None:
-        contract_payload["review_expectation"] = review_expectation
-    (contracts / f"{contract_id}.json").write_text(
-        json.dumps(contract_payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    compile_task_authority(project_dir)
+        contract_payload["eval_contract"]["review_expectation"] = review_expectation
+    upsert_work_item(project_dir, contract_payload)
 
 
 def test_bridge_executes_repo_local_init_and_records_event(tmp_path):
@@ -168,14 +158,14 @@ def test_bridge_rewrites_review_positional_target_for_prepare(tmp_path):
     assert "protocol_commands" in payload["packet"]
 
 
-def test_bridge_review_packet_includes_strict_task_when_task_id_is_ready(tmp_path):
+def test_bridge_review_packet_includes_strict_work_when_work_id_is_ready(tmp_path):
     init_result = _run_bridge(tmp_path, "init")
     assert json.loads(init_result.stdout)["bridge_success"] is True
     _write_task(
         tmp_path,
         "task-review-probe",
         title="Return fixed review finding",
-        goal_statement="Inspect tracker/review_probe.py and emit one exact structured finding.",
+        work_goal="Inspect tracker/review_probe.py and emit one exact structured finding.",
         review_binding={"target": "tracker/review_probe.py"},
         review_expectation={
             "summary": "1 issue",
@@ -191,19 +181,19 @@ def test_bridge_review_packet_includes_strict_task_when_task_id_is_ready(tmp_pat
         },
     )
 
-    result = _run_bridge(tmp_path, "review", "--task-id", "task-review-probe", "tracker/review_probe.py")
+    result = _run_bridge(tmp_path, "review", "--work-id", "task-review-probe", "tracker/review_probe.py")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["bridge_success"] is True
-    assert payload["packet"]["strict_task"]["task_id"] == "task-review-probe"
+    assert payload["packet"]["strict_task"]["work_id"] == "task-review-probe"
     assert payload["packet"]["strict_task"]["review_expectation"]["summary"] == "1 issue"
 
 
-def test_bridge_run_without_task_id_returns_candidate_tasks_and_stops(tmp_path):
+def test_bridge_run_without_work_id_returns_candidate_work_items_and_stops(tmp_path):
     init_result = _run_bridge(tmp_path, "init")
     assert json.loads(init_result.stdout)["bridge_success"] is True
-    _write_task(tmp_path, "task-auth-fix", title="Fix Auth Session", goal_statement="Repair session persistence bug in auth flow.")
-    _write_task(tmp_path, "task-dashboard", title="Dashboard Polish", goal_statement="Polish dashboard filters and layout.")
+    _write_task(tmp_path, "task-auth-fix", title="Fix Auth Session", work_goal="Repair session persistence bug in auth flow.")
+    _write_task(tmp_path, "task-dashboard", title="Dashboard Polish", work_goal="Polish dashboard filters and layout.")
 
     result = _run_bridge(tmp_path, "run", "fix", "auth", "session")
     assert result.returncode == 0, result.stderr
@@ -211,4 +201,4 @@ def test_bridge_run_without_task_id_returns_candidate_tasks_and_stops(tmp_path):
     assert payload["command_id"] == "run"
     assert payload["bridge_success"] is False
     assert "task-auth-fix" in payload["stdout"]
-    assert "No task was created" in payload["stdout"]
+    assert "No work item was created" in payload["stdout"]

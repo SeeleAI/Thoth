@@ -8,6 +8,7 @@ from pathlib import Path
 
 from thoth.init.render import parse_config
 from thoth.init.service import initialize_project, sync_project_layer
+from thoth.projections import sync_repository_surfaces
 from thoth.surface.envelope import output_refs, print_envelope
 from thoth.surface.hooks import run_host_hook
 
@@ -35,13 +36,14 @@ def handle_init(args, parser, *, project_root: Path) -> int:
         if sources
         else "Claude bridge permission: missing"
     )
-    print_envelope(command="init", status="ok", summary=f"Initialized Thoth project at {project_root}; {permission_guidance}", body={"result": result, "permission_guidance": permission_guidance}, refs=output_refs(project_root / ".thoth" / "project" / "project.json", project_root / ".thoth" / "project" / "instructions.md", project_root / ".thoth" / "project" / "source-map.json", project_root / ".thoth" / "derived" / "codex-hooks.json"), checks=[{"name": "migration_id", "ok": bool(result.get("migration_id")), "detail": str(result.get("migration_id"))}])
+    print_envelope(command="init", status="ok", summary=f"Initialized Thoth project at {project_root}; {permission_guidance}", body={"result": result, "permission_guidance": permission_guidance}, refs=output_refs(project_root / ".thoth" / "objects" / "project" / "project.json", project_root / ".thoth" / "docs" / "agent-entry.md", project_root / ".thoth" / "derived" / "codex-hooks.json"), checks=[{"name": "migration_id", "ok": bool(result.get("migration_id")), "detail": str(result.get("migration_id"))}])
     return 0
 
 
 def handle_sync(args, parser, *, project_root: Path) -> int:
     result = sync_project_layer(project_root)
-    print_envelope(command="sync", status="ok", summary="Sync completed", body={"result": result}, refs=output_refs(project_root / ".thoth" / "project" / "compiler-state.json", project_root / ".thoth" / "project" / "source-map.json"))
+    written = sync_repository_surfaces(Path(__file__).resolve().parents[2])
+    print_envelope(command="sync", status="ok", summary="Sync completed", body={"result": result, "repository_surfaces": [str(path) for path in written]}, refs=output_refs(project_root / ".thoth" / "docs" / "object-graph-summary.json", project_root / ".thoth" / "derived" / "codex-hooks.json"))
     return 0
 
 

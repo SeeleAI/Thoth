@@ -23,7 +23,7 @@ def _prepare_project(tmp_path: Path) -> None:
 
 def test_create_run_writes_full_ledger(tmp_path):
     _prepare_project(tmp_path)
-    handle = create_run(tmp_path, kind="run", title="demo", task_id="task-1", host="codex", executor="codex")
+    handle = create_run(tmp_path, kind="run", title="demo", work_id="task-1", host="codex", executor="codex")
     assert (handle.run_dir / "run.json").exists()
     assert (handle.run_dir / "state.json").exists()
     assert (handle.run_dir / "events.jsonl").exists()
@@ -39,7 +39,7 @@ def test_spawn_and_stop_supervisor(tmp_path, monkeypatch):
     _prepare_project(tmp_path)
     monkeypatch.setenv("THOTH_LOCAL_STATE_DIR", str(tmp_path / ".machine-state"))
     monkeypatch.chdir(tmp_path)
-    handle = create_run(tmp_path, kind="run", title="demo", task_id=None, host="codex", executor="codex")
+    handle = create_run(tmp_path, kind="run", title="demo", work_id=None, host="codex", executor="codex")
     pid = spawn_supervisor(handle)
     assert isinstance(pid, int)
 

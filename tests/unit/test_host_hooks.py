@@ -30,7 +30,7 @@ def test_claude_start_hook_injects_context_and_records_events(hook_project: Path
         hook_project,
         kind="run",
         title="Hook event test",
-        task_id="task-1",
+        work_id="task-1",
         host="claude",
         executor="claude",
     )

@@ -14,7 +14,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     run_parser = sub.add_parser("run")
-    run_parser.add_argument("--task-id")
+    run_parser.add_argument("--work-id")
     run_parser.add_argument("--host", default="codex")
     run_parser.add_argument("--executor", default=default_executor())
     run_parser.add_argument("--sleep", action="store_true")
@@ -24,7 +24,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
 
     loop_parser = sub.add_parser("loop")
     loop_parser.add_argument("--goal", default="loop")
-    loop_parser.add_argument("--task-id")
+    loop_parser.add_argument("--work-id")
     loop_parser.add_argument("--host", default="codex")
     loop_parser.add_argument("--executor", default=default_executor())
     loop_parser.add_argument("--sleep", action="store_true")
@@ -32,6 +32,17 @@ def build_cli_parser() -> argparse.ArgumentParser:
     loop_parser.add_argument("--resume")
     loop_parser.add_argument("--watch")
     loop_parser.add_argument("--stop")
+
+    orchestration_parser = sub.add_parser("orchestration")
+    orchestration_parser.add_argument("--work-id", action="append", dest="work_ids", default=[])
+    orchestration_parser.add_argument("--host", default="codex")
+    orchestration_parser.add_argument("--executor", default=default_executor())
+
+    auto_parser = sub.add_parser("auto")
+    auto_parser.add_argument("--work-id", action="append", dest="work_ids", default=[])
+    auto_parser.add_argument("--mode", choices=("run", "loop"), default="run")
+    auto_parser.add_argument("--host", default="codex")
+    auto_parser.add_argument("--executor", default=default_executor())
 
     status_parser = sub.add_parser("status")
     status_parser.add_argument("--json", action="store_true")
@@ -55,7 +66,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
     discuss = sub.add_parser("discuss")
     discuss.add_argument("--goal")
     discuss.add_argument("--decision-json")
-    discuss.add_argument("--contract-json")
+    discuss.add_argument("--work-json")
     discuss.add_argument("rest", nargs="*")
 
     extend = sub.add_parser("extend")
@@ -63,7 +74,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
 
     review = sub.add_parser("review")
     review.add_argument("--goal")
-    review.add_argument("--task-id")
+    review.add_argument("--work-id")
     review.add_argument("--host", default="codex")
     review.add_argument("--executor", default=default_executor())
     review.add_argument("rest", nargs="*")
@@ -83,7 +94,7 @@ def build_cli_parser() -> argparse.ArgumentParser:
     prepare = sub.add_parser("prepare")
     prepare.add_argument("--project-root")
     prepare.add_argument("--command-id", required=True, choices=("run", "loop", "review"))
-    prepare.add_argument("--task-id")
+    prepare.add_argument("--work-id")
     prepare.add_argument("--goal")
     prepare.add_argument("--target")
     prepare.add_argument("--host", default="codex")

@@ -63,7 +63,8 @@ def local_registry_root(project_root: Path) -> Path:
 
 def ensure_runtime_tree(project_root: Path) -> None:
     for rel in (
-        ".thoth/project",
+        ".thoth/objects",
+        ".thoth/docs",
         ".thoth/runs",
         ".thoth/migrations",
         ".thoth/derived",

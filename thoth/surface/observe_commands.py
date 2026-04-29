@@ -16,7 +16,7 @@ from thoth.surface.envelope import output_refs, print_envelope
 def handle_status(args, parser, *, project_root: Path) -> int:
     payload = build_status_payload(project_root)
     if args.json:
-        print_envelope(command="status", status="ok", summary=f"Loaded status for {payload['project_root']}", body={"status": payload}, refs=output_refs(project_root / ".thoth" / "project" / "project.json"), checks=[{"name": "active_run_count", "ok": True, "detail": str(payload.get("active_run_count", 0))}])
+        print_envelope(command="status", status="ok", summary=f"Loaded status for {payload['project_root']}", body={"status": payload}, refs=output_refs(project_root / ".thoth" / "objects" / "project" / "project.json"), checks=[{"name": "active_run_count", "ok": True, "detail": str(payload.get("active_run_count", 0))}])
     else:
         print(render_status(project_root, full=False))
     return 0
@@ -25,7 +25,7 @@ def handle_status(args, parser, *, project_root: Path) -> int:
 def handle_doctor(args, parser, *, project_root: Path) -> int:
     payload = build_doctor_payload(project_root)
     if args.json:
-        print_envelope(command="doctor", status="ok" if payload.get("overall_ok") else "failed", summary="Doctor checks completed", body={"doctor": payload}, refs=output_refs(project_root / ".thoth" / "project" / "compiler-state.json"), checks=payload.get("checks") if isinstance(payload.get("checks"), list) else [])
+        print_envelope(command="doctor", status="ok" if payload.get("overall_ok") else "failed", summary="Doctor checks completed", body={"doctor": payload}, refs=output_refs(project_root / ".thoth" / "docs" / "object-graph-summary.json"), checks=payload.get("checks") if isinstance(payload.get("checks"), list) else [])
     else:
         print(render_doctor_text(payload), end="")
     return 0 if payload.get("overall_ok") else 1

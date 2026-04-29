@@ -87,13 +87,13 @@ def test_status_empty_project(tmp_path, monkeypatch):
 
 
 def test_task_current_phase_with_verdict():
-    phase, status = task_current_phase({"task_result": {"updated_at": "2026-04-24T00:00:00Z", "source": "legacy_import"}})
-    assert phase == "task_result"
-    assert status == "task_result:legacy_import"
+    phase, status = task_current_phase({"work_result": {"updated_at": "2026-04-24T00:00:00Z", "source": "legacy_import"}})
+    assert phase == "work_result"
+    assert status == "work_result:legacy_import"
 
 
 def test_is_task_completed():
-    assert is_task_completed({"task_result": {"updated_at": "2026-04-24T00:00:00Z"}})
+    assert is_task_completed({"work_result": {"updated_at": "2026-04-24T00:00:00Z"}})
     assert not is_task_completed({"ready_state": "blocked"})
 
 
