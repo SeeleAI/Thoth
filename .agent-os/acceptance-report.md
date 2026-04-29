@@ -107,6 +107,11 @@
   - Evidence: `main` 上发布验证通过：`timeout 300s python -m py_compile ...` 通过；`timeout 1200s env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/unit/test_task_contracts.py tests/unit/test_runtime_protocol.py tests/unit/test_run_state_machine.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/unit/test_dashboard_runtime_api.py tests/integration/test_runtime_lifecycle_e2e.py` 为 `44 passed in 716.46s`；核心五项 selftest 报告 `.tmp_pytest/thoth-selftest-main-core-closeout.json` 为 `overall_status=passed`，报告生成时间 `2026-04-29T13:46:19Z`
   - Conclusion: 当前核心 authority 已从 `.thoth/project/decisions|contracts|tasks` 切到 `.thoth/objects`；`discuss` 可生成 `discussion/decision/work_item`，`run` 绑定 `work_id@revision` 并产生 `run/phase_result/artifact` 对象，普通 run 不再混入 controller service；`loop`、`orchestration` 与 `auto` 才以 controller object 表达多轮、DAG batch 与 queue cursor；dashboard / hooks / selftest 已切到 object graph read/write surface，active work mutation 会返回 `blocked_by_active_execution`
 
+- `EV-025` related to `WS-001`, `REQ-005`, `REQ-011`, `REQ-020`: Runtime Kernel 发布面已按 `dev -> main` cherry-pick 与双分支 push 收尾
+  - Evidence: `dev` 已推送 `0b5d722..bc36eba` 到 `origin/dev`，其中发布面提交为 `eebe032 refactor: close runtime object kernel`，dev-only 治理提交为 `bc36eba docs: record runtime kernel closeout`
+  - Evidence: `main` 已推送 `57f5aa0..b15e2b3` 到 `origin/main`，其中 `b15e2b3 refactor: close runtime object kernel` 是 `eebe032` 的发布面 cherry-pick；root `AGENTS.md` / `CLAUDE.md` / `.agent-os/` 未进入 `main`
+  - Conclusion: 代码与发布面生成物已集成到 `main` 并推送；开发态治理文档只保留在 `dev`
+
 ## Open Checks
 
 - `EV-010` related to `WS-002`: 完整 `.thoth` durable runtime 仍未闭环
@@ -117,3 +122,10 @@
 
 - `EV-012` related to `WS-003`: 当前回合未重跑 Claude host-surface atomic sample
   - Conclusion: `claude auth status` 在本机当前返回 `{"loggedIn": false, "authMethod": "none"}`；因此本轮 fresh sample 只验证了 Codex host-surface cases。历史双宿主 `heavy` gate 证据仍保留在 `EV-020`，但它不等于本回合的新 atomic Claude sample
+
+- `EV-026` related to `TD-031`, `REQ-020`, `REQ-034`: 远端 marketplace 安装刷新未闭合
+  - Evidence: `claude plugin marketplace update thoth` 成功，输出 `Successfully updated marketplace: thoth`
+  - Evidence: `claude plugin update thoth --scope user` 失败，输出 `Plugin "thoth" not found`
+  - Evidence: `claude plugin list --json` 仍显示 `thoth@thoth` `version=0.1.4`、`lastUpdated=2026-04-28T13:09:44.690Z`；`claude plugin marketplace list --json` 显示 marketplace `thoth` 来源为 GitHub `SeeleAI/Thoth`
+  - Evidence: `codex plugin marketplace upgrade thoth` 失败，输出 `marketplace thoth is not configured as a Git marketplace`；当前 `codex-cli` 版本为 `0.125.0`，`codex plugin marketplace` 仅提供 `add` / `upgrade` / `remove`，无 list 命令；`which thoth` 当前为空
+  - Conclusion: 按 `CD-035`，本轮未使用本地 checkout/cache/rsync 覆盖安装。代码和远端分支已保持真实状态，本机安装刷新保留为 blocker `TD-031`

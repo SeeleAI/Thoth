@@ -46,7 +46,10 @@
 
 ## Blocked
 
-- None
+- `TD-031` `[blocked]`: 只通过远端 marketplace upgrade/update 刷新本机 Claude/Codex 的 Thoth 安装
+  - Related items: `WS-001`, `WS-003`, `REQ-020`, `REQ-034`
+  - Blocker: Claude 侧 `claude plugin marketplace update thoth` 成功，但 `claude plugin update thoth --scope user` 返回 `Plugin "thoth" not found`；Codex 侧 `codex plugin marketplace upgrade thoth` 返回 `marketplace thoth is not configured as a Git marketplace`
+  - Constraint: 按 `CD-035` 不允许本地 checkout/cache/rsync 兜底覆盖，只能后续修正远端 marketplace / 宿主安装状态后重试
 
 ## Done
 

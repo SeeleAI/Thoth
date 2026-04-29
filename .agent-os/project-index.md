@@ -3,9 +3,9 @@
 ## Current Truth
 
 - Objective: `OBJ-001`
-- Top next action: `TD-001`
+- Top next action: `TD-031`
 - Active workstreams: `WS-001`, `WS-002`, `WS-003`, `WS-004`, `WS-005`
-- Active blockers: `none`
+- Active blockers: `TD-031`
 
 ## Objective Summary
 
@@ -23,11 +23,11 @@
 
 ## Top Next Action
 
-- `TD-001` `[ready]`: 将 `dev` / `main` 分流规则固化为仓库内可执行治理机制
+- `TD-031` `[blocked]`: 只通过远端 marketplace upgrade/update 刷新本机 Claude/Codex 的 Thoth 安装
 
 ## Active Blockers
 
-- None
+- `TD-031`: 远端安装刷新未闭合。`claude plugin marketplace update thoth` 成功，但 `claude plugin update thoth --scope user` 返回 `Plugin "thoth" not found`；`codex plugin marketplace upgrade thoth` 返回 `marketplace thoth is not configured as a Git marketplace`。按 `CD-035`，禁止本地 checkout/cache/rsync 兜底覆盖。
 
 ## Recent Important Changes
 
@@ -35,6 +35,7 @@
 - 2026-04-29: Runtime Kernel closeout 进一步删除旧主路径兼容命名与 fallback：`upsert_contract` / `load_task_for_execution` / `suggest_tasks_for_query` / `TaskResult` / `task_result` / `.thoth/project` 不再作为 runtime authority 或 public execution path；普通 `run` 只写 `run`、`phase_result`、`artifact` object 与 `.thoth/runs/<run_id>/phase_state.json` ledger，不再额外创建 controller object；`loop` 仍作为 controller service 写 controller lineage。
 - 2026-04-29: 本轮对象图重构验证已完成并扩展到 init / dashboard / hook / lifecycle 主链：targeted pytest `59 passed in 362.53s` 与 focused runtime suite `34 passed in 668.46s`；atomic selftest `discuss.subtree.close`、`run.phase_contract`、`run.locked_work`、`loop.controller`、`orchestration.controller`、`auto.queue`、`observe.object_graph` 单次执行为 `overall_status=passed`；临时 CLI probe 已确认 `init -> discuss decision -> discuss work -> run --work-id` 可生成 work/run/controller/phase/artifact 对象，active work mutation 返回 `blocked_by_active_execution`。
 - 2026-04-29: 本轮最终关闭门已收窄为核心五项 selftest：`discuss.subtree.close`、`run.phase_contract`、`run.locked_work`、`loop.controller`、`observe.object_graph`；`auto` / `orchestration` 保留现有 public surface 与测试覆盖，但不作为本轮 Runtime Kernel 关闭门。
+- 2026-04-29: 发布面已按治理流程集成并推送：`dev` 推送到 `bc36eba`，`main` 推送到 `b15e2b3`。远端安装刷新阶段出现宿主/marketplace blocker，且已按新规则停止在远端命令失败处，没有执行本地覆盖。
 - 2026-04-28: prompt router 已进一步收敛为“薄宿主投影 + 压缩 packet authority”：`CommandSpec` 新增 `route_class` / `intelligence_tier` / `packet_authority_mode`，Claude `commands/*.md` 收敛为 runtime-first 薄包装，Codex 根 `SKILL.md` 收敛为薄 dispatcher，并新增按命令拆分的 micro prompt files。
 - 2026-04-28: 公开 selftest 合同已从旧 `hard/heavy` 长链改为 atomic case registry：`python -m thoth.selftest` 现在必须显式传 `--case`，repo-local 首批 `10` 个 atomic cases 已在 `/tmp/thoth-atomic-repo-cases-20260428.json` 真实通过。
 - 2026-04-28: 仓库级 pytest 合同已改为 targeted-only：裸 `pytest`、目录级 `pytest` 与 broad `--thoth-tier` 默认失败；`--thoth-target` manifest 与 `scripts/recommend_tests.py` 已落地，`--thoth-target selftest-core` 与 focused runtime/selftest pytest 真实通过。
