@@ -187,7 +187,7 @@ $thoth dashboard
 
 | Host | First install | Stable upgrade | Important note |
 | --- | --- | --- | --- |
-| Claude Code | `claude plugin marketplace add SeeleAI/Thoth --scope user` then `claude plugin install thoth@thoth --scope user` | `claude plugin marketplace update thoth` then `claude plugin update thoth --scope user` | Restart Claude Code after `plugin update` so the new version is applied. |
+| Claude Code | `claude plugin marketplace add SeeleAI/Thoth --scope user` then `claude plugin install thoth@thoth --scope user` | `claude plugin marketplace update thoth` then `claude plugin update thoth@thoth --scope user` | Restart Claude Code after `plugin update` so the new version is applied. |
 | Codex | `codex plugin marketplace add SeeleAI/Thoth`, then install or enable `thoth` from the Codex plugin directory | `codex plugin marketplace upgrade thoth` | `add` takes a source such as `SeeleAI/Thoth`; `upgrade` takes the configured marketplace name, which is `thoth` in this repo. |
 
 ## Verification

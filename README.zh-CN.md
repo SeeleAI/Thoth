@@ -187,7 +187,7 @@ $thoth dashboard
 
 | 宿主 | 首次安装 | 稳定升级 | 关键说明 |
 | --- | --- | --- | --- |
-| Claude Code | `claude plugin marketplace add SeeleAI/Thoth --scope user`，然后 `claude plugin install thoth@thoth --scope user` | `claude plugin marketplace update thoth`，然后 `claude plugin update thoth --scope user` | `plugin update` 之后需要重启 Claude Code，新版本才会真正生效。 |
+| Claude Code | `claude plugin marketplace add SeeleAI/Thoth --scope user`，然后 `claude plugin install thoth@thoth --scope user` | `claude plugin marketplace update thoth`，然后 `claude plugin update thoth@thoth --scope user` | `plugin update` 之后需要重启 Claude Code，新版本才会真正生效。 |
 | Codex | `codex plugin marketplace add SeeleAI/Thoth`，然后在 Codex 的 plugin directory 里安装或启用 `thoth` | `codex plugin marketplace upgrade thoth` | `add` 接受的是 `SeeleAI/Thoth` 这类 source；`upgrade` 接受的是已配置的 marketplace 名，也就是本仓库里的 `thoth`。 |
 
 ## 验证方式
