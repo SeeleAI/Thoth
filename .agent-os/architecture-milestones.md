@@ -25,15 +25,15 @@
 - 当前 work 级当前结论写入 `.thoth/docs/work-results/*.result.json` 只读视图；原始执行真相来自 `.thoth/objects/run`、`.thoth/objects/phase_result`、`.thoth/objects/artifact` 与 `.thoth/runs/*` ledger
 - 当前单次运行结果同时写入 object graph 与 `.thoth/runs/<run_id>/result.json`，不再把 `acceptance.json` 当主结果文件
 - 当前 run ledger 的长期 canonical 文件集已收敛为 `run.json`、`state.json`、`events.jsonl`、`result.json`、`artifacts.json`
-- 当前 `run` 已收敛为 validator-centered Python phase engine：默认 `execute -> validate`，只有 validator 失败时才进入 `reflect`
-- 当前 phase 产物固定为 `execute.json`、`validate.json`、条件性的 `reflect.json`；`result.json.result` 固定包含 `phase_statuses`、`validate_passed`、`final_summary`、`artifacts`、`next_hint`
-- 当前 `loop` 已收敛为 controller service：controller 记录预算与 child lineage，每轮显式创建独立 child `run`，并仅在失败后通过上一轮 `reflect` 结果影响下一轮
+- 当前 `run` 已收敛为统一 RuntimeDriver 四阶段链：`plan -> execute -> validate -> reflect`；四个 agentic phase 均通过宿主 executor 运行，`validate.passed` 决定 terminal success/failure，`reflect` 总是总结证据、风险与下一步建议
+- 当前 phase 产物固定为 `plan.json`、`execute.json`、`validate.json`、`reflect.json`；`result.json.result` 固定包含 `phase_statuses`、`validate_passed`、`final_summary`、`artifacts`、`next_hint`
+- 当前 `loop` 已收敛为 controller service：controller 记录预算与 child lineage，每轮显式创建独立 child `run`，child run 与普通 run 复用同一 `plan -> execute -> validate -> reflect` RuntimeDriver
 - heartbeat 当前写入 `state.json.last_heartbeat_at`，而不是单独的 `heartbeat.json`
 - active run/controller 引用的 `work_item` 完全锁定；`Store.update/tombstone/link/unlink` 对该 work item 必须拒绝，直到执行进入 terminal 状态
 - 当前 prompt authority 已显式拆成 `thoth/prompt_specs.py` 与 `thoth/prompt_validators.py`：前者现已收敛为压缩 authority source，只保存 `route_class` / `intelligence_tier` / `packet_authority_mode` / `objective` / `hard_stops` / `reply_budget` 等最小字段，后者只负责 phase/review 输出校验
 - Claude `commands/*.md` 当前已收敛为 runtime-first 薄包装：保留 bridge 执行、最小 fail-fast 规则与一条结果约束，不再重复展开大段 scope/runtime/shared-authority 文本
 - Codex 当前已收敛为“薄 dispatcher + per-command micro prompt files”：根 `plugins/thoth/skills/thoth/SKILL.md` 不再内联全量命令合同，按命令拆分的 micro prompt surface 固定生成到 `plugins/thoth/skills/thoth/commands/*.md`
-- `review` packet 当前显式区分 `exact_match` 与 `open_ended` 两条内部路由；`run/loop` packet 当前显式声明 validator-centered short lifecycle
+- `review` packet 当前显式区分 `exact_match` 与 `open_ended` 两条内部路由；`run/loop` packet 当前只声明 RuntimeDriver 生命周期，不再把 `next-phase` / `submit-phase` 作为 live 宿主手动协议暴露
 - dashboard 模板可以把 `.thoth/runs/*` 与 `.thoth/objects/*` 的 active run、history run 和事件日志绑定回 work item 视图
 - dashboard 前端主壳已从旧多页导航切到单一 workbench shell，并保留 `/overview`、`/tasks`、`/milestones`、`/dag`、`/timeline`、`/todo`、`/activity` 的兼容入口
 - dashboard 已新增 `overview-summary` 与 `gantt` 只读读面；驾驶舱、Work Detail 与时间线面板均只消费 `.thoth/objects` authority、work result read view、runtime ledger 与 `.agent-os` 派生结果
@@ -84,7 +84,7 @@
    - 不直接承载运行结果，也不管理 work result read view
 3. `Run`
   - 包含 runtime protocol、minimal run phase chain、controller service 与 project materialization
-  - `run` 固定绑定 `work_id@revision` 并执行一次 `plan -> execute -> validate -> reflect-on-failure`
+  - `run` 固定绑定 `work_id@revision` 并执行一次 `plan -> execute -> validate -> reflect`
   - `loop`、`orchestration`、`auto` 均通过 `controller` object 表达，不扩展 `run` 语义
   - 这是唯一承接 prompt-bearing control commands 与 packet authority 的核心实现层
 4. `Observe`
@@ -128,7 +128,7 @@
 - `Plan` 不再是 `Decision -> Contract -> Task` compiler；它现在只通过 `Store` 写 `discussion`、`decision`、`work_item` 对象，并生成 `.thoth/docs` 只读视图。
 - `Contract` 不再是对象 kind；原 contract 的 goal、context、constraints、execution plan、eval contract、runtime policy 与 decisions 已并入 `work_item.payload`。
 - `work_result` 不再是 `.thoth/project/tasks` authority；work-level 当前结论只作为 `.thoth/docs/work-results/*.result.json` read view，原始执行真相仍来自 `run`、`phase_result` 与 `artifact` 对象及 `.thoth/runs/*` ledger。
-- `run` 固定绑定 `work_id@revision`，只做一次 `execute -> validate -> reflect-on-failure` 最小执行尝试。
+- `run` 固定绑定 `work_id@revision`，只做一次 `plan -> execute -> validate -> reflect` 最小执行尝试。
 - `loop`、`orchestration`、`auto` 是 `controller` service：loop 产生 child runs，orchestration 记录 depends_on DAG batches，auto 记录线性 queue cursor。
 - active run/controller 引用的 `work_item` 完全锁定；`Store.update/tombstone/link/unlink` 对该 work item 必须拒绝。
 

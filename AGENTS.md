@@ -117,8 +117,10 @@
 6. `/thoth:init` 必须按 audit-first adopt/init 语义工作：先审查当前 repo 的代码、文档与现有控制平面状态，再通过 migration ledger 进行受管更新，不得假设目标 repo 是空白仓库。
 7. 当前 checkout 的 strict execution planning authority 已收敛到统一对象图：`.thoth/objects/discussion/`、`.thoth/objects/decision/`、`.thoth/objects/work_item/`、`.thoth/objects/controller/`、`.thoth/objects/run/`、`.thoth/objects/phase_result/` 与 `.thoth/objects/artifact/`；不再存在独立 `Contract` kind 或 `.thoth/project/tasks` authority。
 8. `run` 是最小执行单元，固定绑定 `work_id@revision`；`loop` / `orchestration` / `auto` 属于 controller service；`run` / `loop` 默认只接受 `--work-id`，不允许自由文本直接进入执行。
-9. 当前 checkout 的公开 selftest 合同已收敛为 atomic case registry：`python -m thoth.selftest` 必须显式传一个或多个 `--case`；`--tier`、`--hosts`、`--only-host`、`--from-step`、`--to-step` 不再属于公共 CLI。
-10. 当前 checkout 的默认开发测试合同已收敛为 targeted-only：`pytest` 必须使用显式文件/nodeid 或 `--thoth-target`；裸 `pytest`、目录级 `pytest` 与 `--thoth-tier` broad runs 默认禁止，除非显式携带 `--thoth-allow-broad` 或设置 `THOTH_ALLOW_BROAD_TESTS=1`。
+9. `run` 与 `loop` child run 共用同一 RuntimeDriver，固定执行 `plan -> execute -> validate -> reflect`；`plan` 只做具体执行计划，不得改写目标、work item 或 validator；`validate.passed` 决定 terminal success/failure，`reflect` 总是记录证据、风险与建议。
+10. `live` 与 `sleep` 只允许在 monitor/placement 上分叉：`live` 是前台阻塞 RuntimeDriver，并向 stdout 输出 `thoth.*` JSONL monitor events；`--sleep` 是 detached RuntimeDriver，返回 run id 后通过 `.thoth/runs/*`、watch/attach/stop 观察。不得再把宿主手动 `next-phase` / `submit-phase` 当作 public live 协议。
+11. 当前 checkout 的公开 selftest 合同已收敛为 atomic case registry：`python -m thoth.selftest` 必须显式传一个或多个 `--case`；`--tier`、`--hosts`、`--only-host`、`--from-step`、`--to-step` 不再属于公共 CLI。
+12. 当前 checkout 的默认开发测试合同已收敛为 targeted-only：`pytest` 必须使用显式文件/nodeid 或 `--thoth-target`；裸 `pytest`、目录级 `pytest` 与 `--thoth-tier` broad runs 默认禁止，除非显式携带 `--thoth-allow-broad` 或设置 `THOTH_ALLOW_BROAD_TESTS=1`。
 
 ## 7. 升级给用户的条件
 

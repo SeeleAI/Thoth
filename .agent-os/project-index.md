@@ -31,6 +31,7 @@
 
 ## Recent Important Changes
 
+- 2026-04-30: Runtime 执行层已收敛为统一 RuntimeDriver：`run` 与 `loop` child run 固定执行 `plan -> execute -> validate -> reflect`，四个 agentic phase 均通过 `codex exec` / `claude -p` phase worker 返回结构化 JSON；`validate.passed` 决定 terminal success/failure，`reflect` 总是记录证据、风险与下一步建议。`live` 现在是前台阻塞 monitor，向 stdout 输出 `thoth.*` JSONL 事件；`--sleep` 是 detached RuntimeDriver，返回 run id 后通过 `.thoth/runs/*`、watch/attach/stop 观察。关闭验证见 `EV-027`；真实 Codex phase-worker smoke 已通过，Claude Code 当前仍因未登录无法执行 fresh host-real smoke。
 - 2026-04-29: 统一对象图与 Agent Runtime Kernel 已在 `dev` 当前 checkout 落地：新增 `.thoth/objects/<kind>/<object_id>.json` canonical Store，删除独立 `Contract` kind 的 authority 语义，`work_item.payload` 承载 goal / constraints / execution_plan / eval_contract / runtime_policy / decisions，`run` 绑定 `work_id@revision`，`loop` / `orchestration` / `auto` 改为 controller service；public `run` / `loop` / `review` 已切到 `--work-id`，`discuss` 切到 `--work-json`。
 - 2026-04-29: Runtime Kernel closeout 进一步删除旧主路径兼容命名与 fallback：`upsert_contract` / `load_task_for_execution` / `suggest_tasks_for_query` / `TaskResult` / `task_result` / `.thoth/project` 不再作为 runtime authority 或 public execution path；普通 `run` 只写 `run`、`phase_result`、`artifact` object 与 `.thoth/runs/<run_id>/phase_state.json` ledger，不再额外创建 controller object；`loop` 仍作为 controller service 写 controller lineage。
 - 2026-04-29: 本轮对象图重构验证已完成并扩展到 init / dashboard / hook / lifecycle 主链：targeted pytest `59 passed in 362.53s` 与 focused runtime suite `34 passed in 668.46s`；atomic selftest `discuss.subtree.close`、`run.phase_contract`、`run.locked_work`、`loop.controller`、`orchestration.controller`、`auto.queue`、`observe.object_graph` 单次执行为 `overall_status=passed`；临时 CLI probe 已确认 `init -> discuss decision -> discuss work -> run --work-id` 可生成 work/run/controller/phase/artifact 对象，active work mutation 返回 `blocked_by_active_execution`。
@@ -40,7 +41,7 @@
 - 2026-04-28: 公开 selftest 合同已从旧 `hard/heavy` 长链改为 atomic case registry：`python -m thoth.selftest` 现在必须显式传 `--case`，repo-local 首批 `10` 个 atomic cases 已在 `/tmp/thoth-atomic-repo-cases-20260428.json` 真实通过。
 - 2026-04-28: 仓库级 pytest 合同已改为 targeted-only：裸 `pytest`、目录级 `pytest` 与 broad `--thoth-tier` 默认失败；`--thoth-target` manifest 与 `scripts/recommend_tests.py` 已落地，`--thoth-target selftest-core` 与 focused runtime/selftest pytest 真实通过。
 - 2026-04-28: host-surface atomic case 已按“最小 authority materialization + ready-task seeding + explicit window”重构；Codex 抽样 `surface.codex.run.live_prepare` 与 `surface.codex.loop.sleep_prepare` 已在 `/tmp/thoth-atomic-codex-sample-20260428e.json` 真实通过，而当前机器的 `claude auth status` 仍为未登录。
-- 2026-04-28: `run` / `loop` live 路径已从固定 `plan -> exec -> validate -> reflect` 收敛为 validator-centered 短链：默认 `execute -> validate`，仅在 validator 失败时进入 `reflect`；review packet 现显式区分 `exact_match` 与 `open_ended`。
+- 2026-04-28: `run` / `loop` live 路径曾从固定 `plan -> exec -> validate -> reflect` 收敛为 validator-centered 短链；该记录为历史阶段证据，已被 2026-04-30 的统一 RuntimeDriver / 固定 `plan -> execute -> validate -> reflect` 方案替换。
 - 2026-04-28: 本轮 prompt/packet 体积压缩已落账：Codex 根 skill `10832 -> 3258` bytes，Claude `run` projection `4118 -> 2984` bytes，`loop` `4053 -> 2969` bytes，`review` `3593 -> 2790` bytes；相关 targeted pytest `22 + 6 + 13` 条均通过。
 - 2026-04-23: `/thoth:init` 已升级为 audit-first adopt/init，并生成最小 `.thoth` authority tree。
 - 2026-04-23: 仓库已明确双宿主同步开发与固定收尾流程。

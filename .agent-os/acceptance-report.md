@@ -112,6 +112,17 @@
   - Evidence: `main` 已推送 `57f5aa0..b15e2b3` 到 `origin/main`，其中 `b15e2b3 refactor: close runtime object kernel` 是 `eebe032` 的发布面 cherry-pick；root `AGENTS.md` / `CLAUDE.md` / `.agent-os/` 未进入 `main`
   - Conclusion: 代码与发布面生成物已集成到 `main` 并推送；开发态治理文档只保留在 `dev`
 
+- `EV-027` related to `TD-032`, `WS-002`, `WS-003`, `WS-005`, `REQ-023`, `REQ-024`, `REQ-030`, `REQ-034`: 统一 RuntimeDriver 与固定 `plan -> execute -> validate -> reflect` 生命周期已落地
+  - Evidence: 新增 `thoth/run/driver.py` 与 `thoth/run/driver_process.py`；`run` / `loop` live 路径调用前台 RuntimeDriver 并输出 `thoth.*` JSONL monitor events；`--sleep` 通过私有 `thoth.run.driver_process` 启动 detached RuntimeDriver；`packet.json` 不再暴露 `controller_commands`
+  - Evidence: `plan` phase 已加入 `thoth/prompt_specs.py`、`thoth/prompt_validators.py`、`thoth/run/phases.py` 与 runtime tests；`validate` 总是进入 `reflect`，`reflect` 根据 `validate_passed` terminalize completed/failed；phase worker 输出校验已放宽为结构化优先，避免真实 Codex 因合理的结构化 plan 文本被过短字节预算误拒
+  - Evidence: `python -m py_compile thoth/objects.py thoth/plan/*.py thoth/run/*.py thoth/surface/*.py thoth/observe/selftest/*.py templates/dashboard/backend/*.py` 通过
+  - Evidence: `env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/unit/test_task_contracts.py tests/unit/test_runtime_protocol.py tests/unit/test_run_state_machine.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/unit/test_dashboard_runtime_api.py tests/integration/test_runtime_lifecycle_e2e.py` 为 `45 passed in 699.23s`
+  - Evidence: 补充回归 `env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m pytest -q tests/unit/test_command_spec_generation.py tests/unit/test_runtime_supervisor.py` 为 `13 passed in 1.64s`
+  - Evidence: 核心五项 selftest `env TMPDIR=/mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest python -m thoth.selftest --case discuss.subtree.close --case run.phase_contract --case run.locked_work --case loop.controller --case observe.object_graph --artifact-dir /mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest/thoth-selftest-runtime-driver-closeout-final --json-report /mnt/cfs/5vr0p6/yzy/thoth/.tmp_pytest/thoth-selftest-runtime-driver-closeout-final.json` 为 `overall_status=passed`，报告生成时间 `2026-04-30T07:22:46Z`
+  - Evidence: 真实 Codex phase-worker smoke 在 `.tmp_pytest/host-real-codex-smoke/project` 执行 `python -m thoth.cli run --work-id work-codex-smoke-pass --executor codex`，run `run-3e93b5cc16c5` 完成 `plan`、`execute`、`validate`、`reflect` 四阶段，`result.json.status=completed` 且 `result.validate_passed=true`
+  - Evidence: 当前宿主 `codex-cli 0.125.0` 可用；`claude --version` 为 `2.1.123 (Claude Code)`，但 `claude auth status` 返回 `{"loggedIn": false, "authMethod": "none", "apiProvider": "firstParty"}`，因此本轮 fresh Claude phase-worker smoke 未执行
+  - Conclusion: Runtime 执行层已收敛为同一底座，live/sleep 只在 foreground/detached monitor placement 上分叉；Codex 真实执行链路已验证，Claude 真实执行链路保留为当前机器认证 blocker
+
 ## Open Checks
 
 - `EV-010` related to `WS-002`: 完整 `.thoth` durable runtime 仍未闭环
