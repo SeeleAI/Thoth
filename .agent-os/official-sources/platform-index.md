@@ -17,7 +17,7 @@
 
 ## Verification Snapshot
 
-- `verified_at_utc`: `2026-04-26T12:11:33Z`
+- `verified_at_utc`: `2026-04-30T09:36:50Z`
 - `verified_by`: `Codex`
 - `policy`: `high-volatility 30 days / concept-and-best-practice 60 days`
 
@@ -34,7 +34,7 @@
 | `SRC-OAI-007` | OpenAI | Codex Automations | https://developers.openai.com/codex/app/automations | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于自动化触发、GitHub 集成、计划任务判断时 | 产品工作流可能快速变化 |
 | `SRC-OAI-008` | OpenAI | Codex Local environments | https://developers.openai.com/codex/app/local-environments | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T04:04:51Z` | 用于本地环境接入、权限/连接方式、宿主边界判断时 | 与 cloud/web/codex app 的边界要最新核对 |
 | `SRC-OAI-009` | OpenAI | Codex Skills | https://developers.openai.com/codex/skills | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T14:55:53Z` | 用于 skills 目录、`SKILL.md`、`agents/openai.yaml`、skill 命名与公开 surface 判断时 | 直接影响 Thoth 的 Codex public skill 投影 |
-| `SRC-OAI-010` | OpenAI | Codex Plugins Build | https://developers.openai.com/codex/plugins/build | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-26T12:11:33Z` | 用于 `.codex-plugin/plugin.json` schema、component namespace、plugin metadata 判断时 | 2026-04-26 live-check 后补充：repo marketplace 应放在 `.agents/plugins/marketplace.json`，entry `source.path` 指向 `./plugins/<plugin-name>` 的 installable package |
+| `SRC-OAI-010` | OpenAI | Codex Plugins Build | https://developers.openai.com/codex/plugins/build | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-30T09:36:50Z` | 用于 `.codex-plugin/plugin.json` schema、component namespace、plugin metadata 判断时 | 2026-04-30 live-check 后仍确认 repo marketplace 与 installable plugin package 分层；具体 `codex plugin marketplace` CLI 参数以本机官方 CLI help 为准 |
 | `SRC-OAI-011` | OpenAI | Codex Plugins Install | https://developers.openai.com/codex/plugins/install-plugins | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-23T14:55:53Z` | 用于 marketplace 安装/升级路径、GitHub source 安装行为判断时 | 直接影响 README 安装与更新文案 |
 | `SRC-OAI-012` | OpenAI | Codex Config Basics | https://developers.openai.com/codex/config-basic | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-24T14:14:03Z` | 用于 config 层级、`~/.codex/config.toml`、`<repo>/.codex/config.toml`、`hooks.json` 路径与 protected path 判断时 | 直接影响 Thoth 是否把 repo-root `.codex` 当成受管目录 |
 | `SRC-OAI-013` | OpenAI | Codex Config Reference | https://developers.openai.com/codex/config-reference | `openai-codex-and-api.md` | `active` | `high` | `30` | `2026-04-24T14:14:03Z` | 用于 config 字段、project-scoped override 与 hooks file shape 判断时 | 直接影响 Thoth 的 Codex hooks 配置与 selftest preflight 设计 |
@@ -54,7 +54,8 @@
 | `SRC-ANT-013` | Anthropic | Claude Code Agent SDK sessions | https://code.claude.com/docs/en/agent-sdk/sessions | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T16:40:14Z` | 用于 session lifecycle、resume、tool continuity 判断时 | 直接回答 live session 稳定性与恢复边界 |
 | `SRC-ANT-014` | Anthropic | Claude Code Agent SDK session storage | https://code.claude.com/docs/en/agent-sdk/session-storage | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-24T16:40:14Z` | 用于 durable session persistence、crash recovery 与 storage backend 判断时 | 对比 `.thoth/runs/*` 的 repo authority 很关键 |
 | `SRC-ANT-015` | Anthropic | Claude Code Discover plugins | https://code.claude.com/docs/en/discover-plugins | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-26T12:11:33Z` | 用于插件发现、marketplace 添加/更新与升级路径判断时 | 2026-04-26 live-check 直接覆盖官方 plugin directory 与 marketplace update 流程 |
-| `SRC-ANT-016` | Anthropic | Claude Code Plugins reference | https://code.claude.com/docs/en/plugins-reference | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-26T12:11:33Z` | 用于 `claude plugin install/update`、CLI 子命令与重启要求判断时 | 2026-04-26 live-check 明确 `plugin update` 后需要 restart 才会生效，并与 Codex marketplace schema 保持分离 |
+| `SRC-ANT-016` | Anthropic | Claude Code Plugins reference | https://code.claude.com/docs/en/plugins-reference | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-30T09:36:50Z` | 用于 `claude plugin install/update`、CLI 子命令与重启要求判断时 | 2026-04-30 live-check 与本机 CLI help 均确认 `plugin update` 参数应是已安装 plugin id，例如 `thoth@thoth` |
+| `SRC-ANT-017` | Anthropic | Claude Code Plugin marketplaces | https://code.claude.com/docs/en/plugin-marketplaces | `claude-code-runtime-and-platforms.md` | `active` | `high` | `30` | `2026-04-30T09:36:50Z` | 用于 marketplace add/remove/update、GitHub source 与 marketplace 生命周期判断时 | 2026-04-30 live-check 后确认 `marketplace add <source>` 可接 GitHub source，`marketplace remove <name>` 用于移除 marketplace |
 
 ## Read Path
 

@@ -46,10 +46,7 @@
 
 ## Blocked
 
-- `TD-031` `[blocked]`: 只通过远端 marketplace upgrade/update 刷新本机 Claude/Codex 的 Thoth 安装
-  - Related items: `WS-001`, `WS-003`, `REQ-020`, `REQ-034`
-  - Blocker: Claude 侧 `claude plugin marketplace update thoth` 成功，但 `claude plugin update thoth --scope user` 返回 `Plugin "thoth" not found`；Codex 侧 `codex plugin marketplace upgrade thoth` 返回 `marketplace thoth is not configured as a Git marketplace`
-  - Constraint: 按 `CD-035` 不允许本地 checkout/cache/rsync 兜底覆盖，只能后续修正远端 marketplace / 宿主安装状态后重试
+- None
 
 ## Done
 
@@ -59,6 +56,12 @@
 
 - `TD-015` `[verified]`: 冻结 Thoth 的高维分层架构与层间协议，并把用户本轮“简化、不丢功能、不改语义、最终 heavy 双宿主通过”的要求翻译成可执行重构主线
   - Related items: `WS-005`, `MS-005`, `REQ-022`, `REQ-023`, `REQ-024`, `REQ-025`
+- `TD-031` `[verified]`: 只通过远端 marketplace upgrade/update 刷新本机 Claude/Codex 的 Thoth 安装
+  - Related items: `WS-001`, `WS-003`, `REQ-020`, `REQ-034`
+  - Evidence: Claude Code 侧已卸载旧 `thoth@thoth` 与 marketplace `thoth`，重新从远端 `SeeleAI/Thoth` 添加 marketplace 并安装 `thoth@thoth`；`claude plugin marketplace update thoth` 成功，`claude plugin update thoth@thoth --scope user` 返回已是最新 `0.1.4`
+  - Evidence: Codex 侧 `codex plugin marketplace remove thoth` 返回原先未配置；随后 `codex plugin marketplace add SeeleAI/Thoth` 成功，`codex plugin marketplace upgrade thoth` 成功
+  - Evidence: `claude plugin list --json` 显示 `thoth@thoth` `version=0.1.4`、`scope=user`、`enabled=true`、`lastUpdated=2026-04-30T09:32:39.090Z`；`claude plugin marketplace list --json` 显示 marketplace `thoth` 来源为 GitHub `SeeleAI/Thoth`
+  - Constraint: 全程只使用远端 marketplace / host CLI 路径，未用本机 checkout、cache、临时目录或 `rsync` 覆盖安装
 - `TD-002` `[verified]`: 当前插件公开 surface、README 与安装行为已重新对齐
 - `TD-007` `[verified]`: `dev` 状态文档系统已初始化
 - `TD-010` `[verified]`: 官方平台资料治理层已建立

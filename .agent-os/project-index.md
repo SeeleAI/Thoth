@@ -3,9 +3,9 @@
 ## Current Truth
 
 - Objective: `OBJ-001`
-- Top next action: `TD-031`
+- Top next action: `TD-001`
 - Active workstreams: `WS-001`, `WS-002`, `WS-003`, `WS-004`, `WS-005`
-- Active blockers: `TD-031`
+- Active blockers: None
 
 ## Objective Summary
 
@@ -23,14 +23,15 @@
 
 ## Top Next Action
 
-- `TD-031` `[blocked]`: 只通过远端 marketplace upgrade/update 刷新本机 Claude/Codex 的 Thoth 安装
+- `TD-001` `[ready]`: 将 `dev` / `main` 分流规则固化为仓库内可执行治理机制
 
 ## Active Blockers
 
-- `TD-031`: 远端安装刷新未闭合。`claude plugin marketplace update thoth` 成功，但 `claude plugin update thoth --scope user` 返回 `Plugin "thoth" not found`；`codex plugin marketplace upgrade thoth` 返回 `marketplace thoth is not configured as a Git marketplace`。按 `CD-035`，禁止本地 checkout/cache/rsync 兜底覆盖。
+- None.
 
 ## Recent Important Changes
 
+- 2026-04-30: `TD-031` 安装刷新 blocker 已解除：按官方资料与本机 CLI help 修正命令后，Claude Code 侧完成 `plugin uninstall thoth@thoth --scope user`、`plugin marketplace remove thoth`、`plugin marketplace add SeeleAI/Thoth`、`plugin install thoth@thoth --scope user`、`plugin marketplace update thoth`、`plugin update thoth@thoth --scope user`；Codex 侧 `plugin marketplace remove thoth` 显示原先未配置，随后 `plugin marketplace add SeeleAI/Thoth` 与 `plugin marketplace upgrade thoth` 成功。全程未使用本地 checkout/cache/rsync 覆盖。
 - 2026-04-30: Runtime 执行层已收敛为统一 RuntimeDriver：`run` 与 `loop` child run 固定执行 `plan -> execute -> validate -> reflect`，四个 agentic phase 均通过 `codex exec` / `claude -p` phase worker 返回结构化 JSON；`validate.passed` 决定 terminal success/failure，`reflect` 总是记录证据、风险与下一步建议。`live` 现在是前台阻塞 monitor，向 stdout 输出 `thoth.*` JSONL 事件；`--sleep` 是 detached RuntimeDriver，返回 run id 后通过 `.thoth/runs/*`、watch/attach/stop 观察。关闭验证见 `EV-027`；真实 Codex phase-worker smoke 已通过，Claude Code 当前仍因未登录无法执行 fresh host-real smoke。
 - 2026-04-30: RuntimeDriver 发布收尾已完成：`dev` 推送到 `f7f2b82`，`main` 推送到 `5403bd2`；`main` 发布验证 targeted pytest `45 passed in 719.19s` 且核心五项 selftest `overall_status=passed`。远端-only 安装刷新仍卡在 `TD-031`：Claude marketplace update 成功但 plugin update 找不到 `thoth`，Codex marketplace upgrade 仍提示 `thoth` 不是 Git marketplace。
 - 2026-04-29: 统一对象图与 Agent Runtime Kernel 已在 `dev` 当前 checkout 落地：新增 `.thoth/objects/<kind>/<object_id>.json` canonical Store，删除独立 `Contract` kind 的 authority 语义，`work_item.payload` 承载 goal / constraints / execution_plan / eval_contract / runtime_policy / decisions，`run` 绑定 `work_id@revision`，`loop` / `orchestration` / `auto` 改为 controller service；public `run` / `loop` / `review` 已切到 `--work-id`，`discuss` 切到 `--work-json`。

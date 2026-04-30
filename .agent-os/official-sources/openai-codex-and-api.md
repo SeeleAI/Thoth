@@ -8,7 +8,7 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 
 ## Verification Snapshot
 
-- `last_verified_utc`: `2026-04-26T12:11:33Z`
+- `last_verified_utc`: `2026-04-30T09:36:50Z`
 - `sources`: `SRC-OAI-001` ~ `SRC-OAI-014`
 
 ## 1. OpenAI API primitives

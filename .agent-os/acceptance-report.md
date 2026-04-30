@@ -147,4 +147,11 @@
   - Evidence: `claude plugin list --json` 仍显示 `thoth@thoth` `version=0.1.4`、`lastUpdated=2026-04-28T13:09:44.690Z`；`claude plugin marketplace list --json` 显示 marketplace `thoth` 来源为 GitHub `SeeleAI/Thoth`
   - Evidence: `codex plugin marketplace upgrade thoth` 失败，输出 `marketplace thoth is not configured as a Git marketplace`；当前 `codex-cli` 版本为 `0.125.0`，`codex plugin marketplace` 仅提供 `add` / `upgrade` / `remove`，无 list 命令；`which thoth` 当前为空
   - Evidence: 2026-04-30 RuntimeDriver 发布后按远端-only 规则重试：`env https_proxy=http://10.0.3.5:7899 http_proxy=http://10.0.3.5:7899 claude plugin marketplace update thoth` 成功；`claude plugin update thoth --scope user` 仍失败为 `Plugin "thoth" not found`；`codex plugin marketplace upgrade thoth` 仍失败为 `marketplace thoth is not configured as a Git marketplace`；`claude plugin list --json` 中 `thoth@thoth` 仍为 `version=0.1.4` 且 `lastUpdated=2026-04-28T13:09:44.690Z`
-  - Conclusion: 按 `CD-035`，本轮未使用本地 checkout/cache/rsync 覆盖安装。代码和远端分支已保持真实状态，本机安装刷新保留为 blocker `TD-031`
+  - Conclusion: 按 `CD-035`，当轮未使用本地 checkout/cache/rsync 覆盖安装。代码和远端分支已保持真实状态，本机安装刷新当时保留为 blocker `TD-031`；该 blocker 后续已由 `EV-028` 关闭。
+
+- `EV-028` related to `TD-031`, `REQ-020`, `REQ-034`: 远端 marketplace 安装刷新已闭合
+  - Evidence: 按官方 Claude 插件资料与本机 CLI help 修正命令后，Claude Code 侧执行 `claude plugin uninstall thoth@thoth --scope user` 成功，`claude plugin marketplace remove thoth` 成功，`claude plugin marketplace add SeeleAI/Thoth` 成功，`claude plugin install thoth@thoth --scope user` 成功，`claude plugin marketplace update thoth` 成功，`claude plugin update thoth@thoth --scope user` 返回 `thoth is already at the latest version (0.1.4)`
+  - Evidence: Codex 侧 `codex plugin marketplace remove thoth` 返回 `marketplace 'thoth' is not configured or installed`，说明此前没有可卸载的 Codex marketplace；随后 `codex plugin marketplace add SeeleAI/Thoth` 成功添加 `thoth`，`codex plugin marketplace upgrade thoth` 成功升级到最新 configured revision
+  - Evidence: `claude plugin list --json` 显示 `thoth@thoth` `version=0.1.4`、`scope=user`、`enabled=true`、`installedAt=2026-04-30T09:32:39.090Z`、`lastUpdated=2026-04-30T09:32:39.090Z`；`claude plugin marketplace list --json` 显示 marketplace `thoth` 来源为 GitHub `SeeleAI/Thoth`
+  - Evidence: `codex --version` 为 `codex-cli 0.125.0`，`claude --version` 为 `2.1.123 (Claude Code)`
+  - Conclusion: 本机双端 Thoth 安装刷新已通过远端 marketplace / host CLI 路径闭合；未使用本地 checkout、cache、临时目录或 `rsync` 覆盖安装

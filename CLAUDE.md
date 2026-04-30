@@ -100,7 +100,7 @@
    - `push origin dev` 与 `push origin main`
    - 更新当前机器上的本地 `Claude Code` 与 `Codex` 的 `Thoth` 安装，使其与仓库最新状态一致
 11. 本机 `Claude Code` / `Codex` 的 `Thoth` 安装刷新只能使用远端 marketplace upgrade/update 流程：
-   - Claude Code: `claude plugin marketplace update thoth` 后执行 `claude plugin update thoth --scope user`
+   - Claude Code: `claude plugin marketplace update thoth` 后执行 `claude plugin update thoth@thoth --scope user`
    - Codex: `codex plugin marketplace upgrade thoth`
    - 禁止用本机 checkout、cache、临时目录、`rsync` 或其他本地覆盖方式刷新安装
    - 若远端 upgrade/update 因网络、认证、marketplace 状态或宿主 CLI 行为失败，只能记录 blocker 与真实输出，不得改走本地兜底覆盖
