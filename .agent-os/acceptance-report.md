@@ -123,6 +123,13 @@
   - Evidence: 当前宿主 `codex-cli 0.125.0` 可用；`claude --version` 为 `2.1.123 (Claude Code)`，但 `claude auth status` 返回 `{"loggedIn": false, "authMethod": "none", "apiProvider": "firstParty"}`，因此本轮 fresh Claude phase-worker smoke 未执行
   - Conclusion: Runtime 执行层已收敛为同一底座，live/sleep 只在 foreground/detached monitor placement 上分叉；Codex 真实执行链路已验证，Claude 真实执行链路保留为当前机器认证 blocker
 
+- `EV-028` related to `WS-001`, `REQ-005`, `REQ-011`, `REQ-020`: RuntimeDriver 发布面已完成 `dev -> main` cherry-pick、双分支推送与发布验证
+  - Evidence: `dev` 上拆分提交为 `5617a34 refactor: unify runtime driver phases` 与 `f7f2b82 docs: record runtime driver closeout`
+  - Evidence: `main` 仅 cherry-pick 发布面提交，得到 `5403bd2 refactor: unify runtime driver phases`；未夹带 root `AGENTS.md` / `CLAUDE.md` / `.agent-os/` dev-only 控制面文档
+  - Evidence: `main` 发布验证通过：`python -m py_compile thoth/objects.py thoth/plan/*.py thoth/run/*.py thoth/surface/*.py thoth/observe/selftest/*.py templates/dashboard/backend/*.py` 通过；targeted pytest 为 `45 passed in 719.19s`；核心五项 selftest 报告 `.tmp_pytest/thoth-selftest-main-runtime-driver.json` 为 `overall_status=passed`，报告生成时间 `2026-04-30T07:43:35Z`
+  - Evidence: 直连 `git push origin dev` 与 escalated retry 均因 GitHub 443 超时失败；使用显式 Git proxy 后 `dev` 已推送 `0d0d4a6..f7f2b82`，`main` 已推送 `b15e2b3..5403bd2`
+  - Conclusion: 代码与发布面生成物已集成到 `main` 并推送；开发态治理文档只保留在 `dev`
+
 ## Open Checks
 
 - `EV-010` related to `WS-002`: 完整 `.thoth` durable runtime 仍未闭环
@@ -139,4 +146,5 @@
   - Evidence: `claude plugin update thoth --scope user` 失败，输出 `Plugin "thoth" not found`
   - Evidence: `claude plugin list --json` 仍显示 `thoth@thoth` `version=0.1.4`、`lastUpdated=2026-04-28T13:09:44.690Z`；`claude plugin marketplace list --json` 显示 marketplace `thoth` 来源为 GitHub `SeeleAI/Thoth`
   - Evidence: `codex plugin marketplace upgrade thoth` 失败，输出 `marketplace thoth is not configured as a Git marketplace`；当前 `codex-cli` 版本为 `0.125.0`，`codex plugin marketplace` 仅提供 `add` / `upgrade` / `remove`，无 list 命令；`which thoth` 当前为空
+  - Evidence: 2026-04-30 RuntimeDriver 发布后按远端-only 规则重试：`env https_proxy=http://10.0.3.5:7899 http_proxy=http://10.0.3.5:7899 claude plugin marketplace update thoth` 成功；`claude plugin update thoth --scope user` 仍失败为 `Plugin "thoth" not found`；`codex plugin marketplace upgrade thoth` 仍失败为 `marketplace thoth is not configured as a Git marketplace`；`claude plugin list --json` 中 `thoth@thoth` 仍为 `version=0.1.4` 且 `lastUpdated=2026-04-28T13:09:44.690Z`
   - Conclusion: 按 `CD-035`，本轮未使用本地 checkout/cache/rsync 覆盖安装。代码和远端分支已保持真实状态，本机安装刷新保留为 blocker `TD-031`
