@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from time import time
@@ -27,11 +26,12 @@ from .review_context import latest_fresh_review_context
 
 DEFAULT_LOOP_MAX_ITERATIONS = 10
 DEFAULT_LOOP_MAX_RUNTIME_SECONDS = 8 * 60 * 60
-RUN_PHASE_ORDER = ("execute", "validate", "reflect")
+RUN_PHASE_ORDER = ("plan", "execute", "validate", "reflect")
 RUN_PHASE_PROGRESS = {
+    "plan": 20,
     "execute": 45,
     "validate": 80,
-    "reflect": 92,
+    "reflect": 95,
 }
 
 
@@ -170,7 +170,7 @@ def initialize_run_phase_state(
         "goal": goal,
         "target": target,
         "strict_task": minimal_task_authority(strict_task),
-        "current_phase": "execute",
+        "current_phase": "plan",
         "phase_statuses": {},
         "artifacts": {},
         "validate_passed": False,
@@ -181,7 +181,7 @@ def initialize_run_phase_state(
         "command_authority": command_prompt_authority("run"),
         "created_at": utc_now(),
     }
-    _update_state(handle, status="running", phase="execute", progress_pct=1)
+    _update_state(handle, status="running", phase="plan", progress_pct=1)
     _append_event(handle, "run phase state initialized", kind="prepare")
     return _write_phase_state(handle, phase_state)
 
@@ -222,36 +222,11 @@ def initialize_loop_controller(
         "command_authority": command_prompt_authority("loop"),
         "created_at": utc_now(),
     }
-    _update_state(handle, status="running", phase="execute", progress_pct=1)
+    _update_state(handle, status="running", phase="plan", progress_pct=1)
     _append_event(handle, "loop controller initialized", kind="prepare")
     payload = _write_phase_state(handle, controller)
     _upsert_loop_controller_object(handle, payload)
     return payload
-
-
-def _controller_commands(project_root: Path, run_id: str) -> dict[str, str]:
-    cli = json.dumps
-
-    def render(command: str, *extra: str) -> str:
-        argv = [
-            "python",
-            "-m",
-            "thoth.cli",
-            command,
-            "--project-root",
-            str(project_root),
-            "--run-id",
-            run_id,
-            *extra,
-        ]
-        return " ".join(cli(part) for part in argv)
-
-    return {
-        "next_phase": render("next-phase"),
-        "submit_phase": render("submit-phase", "--phase", "execute", "--output-json", "{\"summary\":\"...\"}"),
-        "status": render("status"),
-        "watch": render("run", "--watch", run_id),
-    }
 
 
 def build_live_packet(handle: RunHandle) -> dict[str, Any]:
@@ -281,7 +256,6 @@ def build_live_packet(handle: RunHandle) -> dict[str, Any]:
             "current_phase": controller.get("current_phase"),
             "phase_statuses": controller.get("phase_statuses", {}),
         },
-        "controller_commands": _controller_commands(handle.project_root, handle.run_id),
         "paths": {
             "run_dir": str(handle.run_dir),
             "state": str(handle.run_dir / "state.json"),
@@ -296,7 +270,7 @@ def build_live_packet(handle: RunHandle) -> dict[str, Any]:
 
 
 def _phase_input_for_run(handle: RunHandle, controller: dict[str, Any]) -> dict[str, Any]:
-    phase = str(controller.get("current_phase") or "execute")
+    phase = str(controller.get("current_phase") or "plan")
     strict_task = controller.get("strict_task") if isinstance(controller.get("strict_task"), dict) else {}
     packet = {
         "schema_version": 1,
@@ -345,7 +319,7 @@ def _maybe_activate_next_child(handle: RunHandle, controller: dict[str, Any]) ->
     child_ids = loop.get("child_run_ids") if isinstance(loop.get("child_run_ids"), list) else []
     loop["child_run_ids"] = [*child_ids, child_handle.run_id]
     controller["loop"] = loop
-    _update_state(handle, phase="execute", progress_pct=max(1, int(handle.state_json().get("progress_pct") or 1)))
+    _update_state(handle, phase="plan", progress_pct=max(1, int(handle.state_json().get("progress_pct") or 1)))
     _append_event(
         handle,
         f"loop iteration {iteration_index} started",
@@ -454,30 +428,32 @@ def _phase_outcome_for_run(handle: RunHandle, controller: dict[str, Any], phase:
     controller["final_summary"] = str(payload.get("summary") or controller.get("final_summary") or "").strip() or None
     controller["next_hint"] = payload.get("next_plan_hint") if phase == "reflect" else controller.get("next_hint")
     _write_phase_state(handle, controller)
+    if phase == "plan":
+        _update_state(handle, phase="execute", progress_pct=RUN_PHASE_PROGRESS["plan"])
+        return PhaseOutcome(False, "running", str(payload.get("summary") or "plan complete"), "execute")
     if phase == "execute":
         _update_state(handle, phase="validate", progress_pct=RUN_PHASE_PROGRESS["execute"])
         return PhaseOutcome(False, "running", str(payload.get("summary") or "execute complete"), "validate")
     if phase == "validate":
         passed = bool(payload.get("passed"))
         controller["validate_passed"] = passed
-        if passed:
-            phase_statuses["validate"] = "completed"
-            controller["phase_statuses"] = phase_statuses
-            _write_phase_state(handle, controller)
-            result_payload = _build_run_result_payload(controller)
-            return PhaseOutcome(True, "completed", str(payload.get("summary") or "validation passed"), None, result_payload=result_payload)
-        phase_statuses["validate"] = "failed"
+        phase_statuses["validate"] = "completed" if passed else "failed"
         controller["phase_statuses"] = phase_statuses
-        controller["next_hint"] = "reflect before deciding next iteration"
+        controller["next_hint"] = "reflect on validation evidence" if passed else "reflect before deciding next iteration"
         _write_phase_state(handle, controller)
         _update_state(handle, phase="reflect", progress_pct=RUN_PHASE_PROGRESS["validate"])
-        return PhaseOutcome(False, "running", str(payload.get("summary") or "validation failed"), "reflect")
+        return PhaseOutcome(False, "running", str(payload.get("summary") or "validation complete"), "reflect")
     if phase == "reflect":
         phase_statuses["reflect"] = "completed"
         controller["phase_statuses"] = phase_statuses
-        controller["next_hint"] = payload.get("next_plan_hint")
+        if payload.get("next_plan_hint"):
+            controller["next_hint"] = payload.get("next_plan_hint")
+        elif payload.get("next_recommendation"):
+            controller["next_hint"] = payload.get("next_recommendation")
         _write_phase_state(handle, controller)
         result_payload = _build_run_result_payload(controller)
+        if bool(controller.get("validate_passed")):
+            return PhaseOutcome(True, "completed", str(payload.get("summary") or "reflection complete"), None, result_payload=result_payload)
         reason = str(payload.get("failure_class") or "validation_failed")
         return PhaseOutcome(True, "failed", str(payload.get("summary") or "reflection complete"), None, result_payload=result_payload, reason=reason)
     raise ValueError(f"unsupported phase: {phase}")
@@ -662,11 +638,11 @@ def _submit_phase_to_loop_parent(handle: RunHandle, *, phase: str, payload: dict
         level="warning",
         payload={"failed_child_run_id": active_child_id},
     )
-    _update_state(handle, phase="execute", progress_pct=max(1, int(handle.state_json().get("progress_pct") or 1)))
+    _update_state(handle, phase="plan", progress_pct=max(1, int(handle.state_json().get("progress_pct") or 1)))
     return {
         "terminal": False,
         "status": "running",
-        "next_phase": "execute",
+        "next_phase": "plan",
         "summary": child_result.get("summary"),
         "iteration_index": loop.get("iterations_attempted"),
     }

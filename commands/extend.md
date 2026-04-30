@@ -26,10 +26,10 @@ executed before Claude sees this prompt.
 - If `bridge_success` is `false`, report the exact bridge failure and stop.
 - If `run` or `loop` is missing `--work-id`, show the returned candidate work items exactly as provided and stop.
 - If `run` or `loop` is missing `--work-id`, do not invent, create, compile, or guess a work item.
-- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, fetch `packet.controller_commands.next_phase`, execute exactly that phase, and submit exactly one JSON object through `packet.controller_commands.submit_phase` until terminal state.
-- While executing a live packet, do not hand-edit `.thoth`; advance only through the Python controller commands included in `packet.controller_commands`.
+- If `bridge_success` is `true` and runtime events are present, summarize progress, terminal status, and risk from those events only.
+- Do not hand-edit `.thoth` or manually call runtime protocol commands; the Thoth RuntimeDriver advances phases.
 - If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up only.
-- If you only summarize the packet, list the task, or describe what should happen next without executing it, treat that as failure.
+- If you only describe what should happen next instead of reporting the executed runtime result, treat that as failure.
 
 ## Authority Summary
 

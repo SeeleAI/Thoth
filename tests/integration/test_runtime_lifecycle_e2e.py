@@ -66,6 +66,18 @@ def _extract_json(stdout: str) -> dict:
     return payload
 
 
+def _extract_runtime_run_id(stdout: str) -> str:
+    for raw in stdout.splitlines():
+        if not raw.strip():
+            continue
+        payload = json.loads(raw)
+        if isinstance(payload, dict) and str(payload.get("type") or "").startswith("thoth."):
+            run_id = payload.get("run_id")
+            if isinstance(run_id, str) and run_id:
+                return run_id
+    raise AssertionError(f"No runtime run id found in output: {stdout!r}")
+
+
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as handle:
         handle.bind(("127.0.0.1", 0))
@@ -136,30 +148,16 @@ def thoth_project(tmp_path, monkeypatch):
 
 @pytest.mark.integration
 def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
-    run_result = _run_cli(thoth_project, "run", "--work-id", "task-1")
+    run_result = _run_cli(thoth_project, "run", "--work-id", "task-1", env={"THOTH_TEST_EXTERNAL_WORKER_MODE": "complete"})
     assert run_result.returncode == 0, run_result.stderr
-    run_packet = _extract_json(run_result.stdout)
-    run_id = run_packet["run_id"]
-    assert run_packet["dispatch_mode"] == "live_native"
+    run_id = _extract_runtime_run_id(run_result.stdout)
     run_json = _read_json(thoth_project / ".thoth" / "runs" / run_id / "run.json")
     assert run_json["work_id"] == "task-1"
-    assert run_json["executor"] == "claude"
+    assert run_json["executor"] == "codex"
 
     watch_result = _run_cli(thoth_project, "run", "--watch", run_id, timeout=20)
     assert watch_result.returncode == 0
-    assert "status=running" in watch_result.stdout
-
-    conflict_result = _run_cli(thoth_project, "run", "--work-id", "task-1")
-    assert conflict_result.returncode == 1
-    assert "Active lease already held" in conflict_result.stderr
-
-    stop_result = _run_cli(thoth_project, "run", "--stop", run_id)
-    assert stop_result.returncode == 0
-    _wait_until(
-        lambda: _read_json(thoth_project / ".thoth" / "runs" / run_id / "state.json").get("status") == "stopped",
-        timeout=15,
-        description="live run to stop",
-    )
+    assert "status=completed" in watch_result.stdout
 
     run_sleep_result = _run_cli(
         thoth_project,
@@ -180,21 +178,12 @@ def test_run_and_loop_lifecycle_end_to_end(thoth_project: Path):
         description="sleep run to complete",
     )
 
-    loop_live_result = _run_cli(thoth_project, "loop", "--work-id", "task-1")
+    loop_live_result = _run_cli(thoth_project, "loop", "--work-id", "task-1", env={"THOTH_TEST_EXTERNAL_WORKER_MODE": "complete"})
     assert loop_live_result.returncode == 0, loop_live_result.stderr
-    loop_live_packet = _extract_json(loop_live_result.stdout)
-    loop_live_id = loop_live_packet["run_id"]
-    assert loop_live_packet["dispatch_mode"] == "live_native"
+    loop_live_id = _extract_runtime_run_id(loop_live_result.stdout)
     loop_live_watch = _run_cli(thoth_project, "loop", "--watch", loop_live_id, timeout=20)
     assert loop_live_watch.returncode == 0
-    assert "status=running" in loop_live_watch.stdout
-    loop_live_stop = _run_cli(thoth_project, "loop", "--stop", loop_live_id)
-    assert loop_live_stop.returncode == 0
-    _wait_until(
-        lambda: _read_json(thoth_project / ".thoth" / "runs" / loop_live_id / "state.json").get("status") == "stopped",
-        timeout=15,
-        description="live loop to stop",
-    )
+    assert "status=completed" in loop_live_watch.stdout
 
     loop_result = _run_cli(
         thoth_project,
@@ -232,10 +221,9 @@ def test_dashboard_process_and_hooks_are_observable(thoth_project: Path):
     config["payload"]["dashboard"]["port"] = port
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    run_result = _run_cli(thoth_project, "run", "--work-id", "task-1")
+    run_result = _run_cli(thoth_project, "run", "--work-id", "task-1", "--sleep", env={"THOTH_TEST_EXTERNAL_WORKER_MODE": "hold"})
     assert run_result.returncode == 0
-    run_packet = _extract_json(run_result.stdout)
-    run_id = run_packet["run_id"]
+    run_id = _extract_json(run_result.stdout)["run_id"]
 
     dashboard_env = {"THOTH_HEARTBEAT_STALE_MINUTES": "1"}
     start = _run_cli(thoth_project, "dashboard", "start", env=dashboard_env, timeout=60)

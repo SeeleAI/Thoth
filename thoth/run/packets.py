@@ -141,14 +141,14 @@ def _build_execution_packet(
         if review_context:
             packet["review_context"] = review_context
         packet["loop_lifecycle"] = {
-            "default_phases": ["execute", "validate"],
-            "reflect_on_failure": True,
+            "default_phases": ["plan", "execute", "validate", "reflect"],
+            "reflect_on_failure": False,
             "validator_centered": True,
         }
     elif command_id == "run":
         packet["run_lifecycle"] = {
-            "default_phases": ["execute", "validate"],
-            "reflect_on_failure": True,
+            "default_phases": ["plan", "execute", "validate", "reflect"],
+            "reflect_on_failure": False,
             "validator_centered": True,
         }
     _write_json(handle.run_dir / "packet.json", packet)

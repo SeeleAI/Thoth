@@ -15,16 +15,18 @@ from thoth.run.phases import default_validate_output_schema
 ROOT = Path(__file__).parent.parent.parent
 
 
-def _run_cli(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    env = dict(os.environ)
-    existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = str(ROOT) if not existing else f"{ROOT}:{existing}"
+def _run_cli(tmp_path: Path, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    merged_env = dict(os.environ)
+    existing = merged_env.get("PYTHONPATH", "")
+    merged_env["PYTHONPATH"] = str(ROOT) if not existing else f"{ROOT}:{existing}"
+    if env:
+        merged_env.update(env)
     return subprocess.run(
         [sys.executable, "-m", "thoth.cli", *args],
         cwd=str(tmp_path),
         text=True,
         capture_output=True,
-        env=env,
+        env=merged_env,
     )
 
 
@@ -105,6 +107,17 @@ def _extract_json_object(text: str) -> dict:
         if isinstance(body.get("result"), dict):
             return body["result"]
     return payload
+
+
+def _jsonl_events(text: str) -> list[dict]:
+    rows: list[dict] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        payload = json.loads(line)
+        if isinstance(payload, dict):
+            rows.append(payload)
+    return rows
 
 
 def test_cli_init_creates_project_layer(tmp_path):
@@ -230,13 +243,13 @@ def test_cli_loop_without_work_id_uses_goal_to_suggest_work_items_and_stops(tmp_
 def test_cli_runtime_defaults_and_prepare_packet(tmp_path):
     assert _run_cli(tmp_path, "init").returncode == 0
     _write_task(tmp_path)
-    result = _run_cli(tmp_path, "run", "--work-id", "task-1")
+    result = _run_cli(tmp_path, "run", "--work-id", "task-1", env={"THOTH_TEST_EXTERNAL_WORKER_MODE": "complete"})
     assert result.returncode == 0, result.stderr
-    packet = _extract_json_object(result.stdout)
-    assert packet["command_id"] == "run"
-    assert packet["executor"] == "claude"
-    assert packet["dispatch_mode"] == "live_native"
-    assert "next_phase" in packet["controller_commands"]
+    events = _jsonl_events(result.stdout)
+    assert events[0]["type"] == "thoth.run.started"
+    assert events[0]["executor"] == "codex"
+    assert events[-1]["type"] == "thoth.run.terminal"
+    assert events[-1]["status"] == "completed"
 
 
 def test_cli_sleep_mode_auto_backgrounds(tmp_path):

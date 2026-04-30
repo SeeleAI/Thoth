@@ -9,19 +9,22 @@ from .prompt_specs import phase_prompt_spec
 
 
 PHASE_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+    "plan": ("summary", "execution_steps", "files_expected", "commands_expected", "validation_plan", "risk_assessment"),
     "execute": ("summary", "files_touched", "commands_run", "artifacts"),
     "validate": ("summary", "passed", "metric_name", "metric_value", "threshold", "checks"),
-    "reflect": ("summary", "failure_class", "root_cause", "next_plan_hint"),
+    "reflect": ("summary", "outcome", "residual_risks", "evidence", "next_recommendation"),
 }
 
 REVIEW_SUMMARY_LIMIT = 48
 REVIEW_TITLE_LIMIT = 32
-LIST_SHORT_ITEM_LIMIT = 24
-COMMAND_ITEM_LIMIT = 40
-NEXT_HINT_LIMIT = 40
-ROOT_CAUSE_LIMIT = 80
+LIST_SHORT_ITEM_LIMIT = 96
+COMMAND_ITEM_LIMIT = 160
+PLAN_ITEM_LIMIT = 240
+NEXT_HINT_LIMIT = 160
+ROOT_CAUSE_LIMIT = 240
 FAILURE_CLASS_LIMIT = 32
-METRIC_NAME_LIMIT = 24
+METRIC_NAME_LIMIT = 80
+RISK_LIMIT = 240
 
 
 def utf8_len(text: str) -> int:
@@ -54,6 +57,20 @@ def _require_string_list(field: str, value: Any, limit: int) -> list[str]:
     if not isinstance(value, list):
         raise ValueError(f"{field} must be a list")
     return [_require_short_text(f"{field}[{index}]", item, limit) for index, item in enumerate(value)]
+
+
+def _require_plan_field(field: str, value: Any, limit: int) -> Any:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        normalized: list[Any] = []
+        for index, item in enumerate(value):
+            if isinstance(item, dict):
+                normalized.append(item)
+            else:
+                normalized.append(_require_short_text(f"{field}[{index}]", item, limit))
+        return normalized
+    return _require_short_text(field, value, limit)
 
 
 def _require_check_list(field: str, value: Any, *, limit: int) -> list[dict[str, Any]]:
@@ -102,6 +119,21 @@ def validate_phase_output(
         payload.get("summary"),
         phase_prompt_spec(phase).summary_budget_utf8,
     )
+    if phase == "plan":
+        normalized["execution_steps"] = _require_string_list(
+            "plan.execution_steps",
+            payload.get("execution_steps"),
+            PLAN_ITEM_LIMIT,
+        )
+        normalized["files_expected"] = _require_plan_field("plan.files_expected", payload.get("files_expected"), COMMAND_ITEM_LIMIT)
+        normalized["commands_expected"] = _require_plan_field("plan.commands_expected", payload.get("commands_expected"), COMMAND_ITEM_LIMIT)
+        validation_plan = payload.get("validation_plan")
+        if isinstance(validation_plan, dict):
+            normalized["validation_plan"] = validation_plan
+        else:
+            normalized["validation_plan"] = _require_short_text("plan.validation_plan", validation_plan, ROOT_CAUSE_LIMIT)
+        normalized["risk_assessment"] = _require_plan_field("plan.risk_assessment", payload.get("risk_assessment"), RISK_LIMIT)
+        return normalized
     if phase == "execute":
         if not isinstance(payload.get("files_touched"), list):
             raise ValueError("execute.files_touched must be a list")
@@ -135,21 +167,42 @@ def validate_phase_output(
                     )
         return normalized
     if phase == "reflect":
-        normalized["failure_class"] = _require_short_text(
-            "reflect.failure_class",
-            payload.get("failure_class"),
-            FAILURE_CLASS_LIMIT,
-        )
-        normalized["root_cause"] = _require_short_text(
-            "reflect.root_cause",
-            payload.get("root_cause"),
+        outcome = str(payload.get("outcome") or "").strip().lower()
+        if outcome not in {"passed", "failed"}:
+            raise ValueError("reflect.outcome must be passed|failed")
+        normalized["outcome"] = outcome
+        normalized["residual_risks"] = _require_string_list(
+            "reflect.residual_risks",
+            payload.get("residual_risks"),
             ROOT_CAUSE_LIMIT,
         )
-        normalized["next_plan_hint"] = _require_short_text(
-            "reflect.next_plan_hint",
-            payload.get("next_plan_hint"),
-            NEXT_HINT_LIMIT,
+        normalized["evidence"] = _require_string_list(
+            "reflect.evidence",
+            payload.get("evidence"),
+            ROOT_CAUSE_LIMIT,
         )
+        normalized["next_recommendation"] = _require_short_text(
+            "reflect.next_recommendation",
+            payload.get("next_recommendation"),
+            ROOT_CAUSE_LIMIT,
+        )
+        if outcome == "failed":
+            for field, limit in (
+                ("failure_class", FAILURE_CLASS_LIMIT),
+                ("root_cause", ROOT_CAUSE_LIMIT),
+                ("next_plan_hint", NEXT_HINT_LIMIT),
+            ):
+                if field not in payload:
+                    raise ValueError(f"reflect output missing required failure field: {field}")
+                normalized[field] = _require_short_text(f"reflect.{field}", payload.get(field), limit)
+        elif any(field in payload for field in ("failure_class", "root_cause", "next_plan_hint")):
+            for field, limit in (
+                ("failure_class", FAILURE_CLASS_LIMIT),
+                ("root_cause", ROOT_CAUSE_LIMIT),
+                ("next_plan_hint", NEXT_HINT_LIMIT),
+            ):
+                if field in payload:
+                    normalized[field] = _require_short_text(f"reflect.{field}", payload.get(field), limit)
         return normalized
     raise ValueError(f"unsupported phase: {phase}")
 

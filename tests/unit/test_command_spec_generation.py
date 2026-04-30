@@ -28,12 +28,12 @@ def test_claude_surface_renders_from_spec():
     assert "disable-model-invocation: false" in rendered
     assert "allowed-tools: Read, Glob, Grep, Edit, Write, Bash, Task" in rendered
     assert 'scripts/thoth-claude-command.sh" run --host claude $ARGUMENTS' in rendered
-    assert "packet.dispatch_mode` is `live_native`" in rendered
+    assert "RuntimeDriver advances phases" in rendered
     assert "do not invent, create, compile, or guess a work item" in rendered
     assert "## Authority Summary" in rendered
     assert "route_class: `live_intelligent`" in rendered
     assert "packet_authority_mode: `phase_controller`" in rendered
-    assert "Default child lifecycle is `execute -> validate`" in rendered
+    assert "plan -> execute -> validate -> reflect" in rendered
 
 
 def test_claude_discuss_surface_preserves_structured_arguments():
