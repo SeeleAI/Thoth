@@ -58,11 +58,14 @@ def _canonical_checks(project_root: Path, command_id: str, command_args: list[st
     if command_id in {"run", "loop", "review"} and not any(flag in command_args for flag in ("--attach", "--watch", "--stop")):
         packet = _parse_packet(stdout)
         candidate = str(packet.get("run_id") or "").strip()
+        if not candidate:
+            candidate = _parse_runtime_run_id(stdout)
         checks["run_id"] = candidate
         checks["packet_kind"] = packet.get("packet_kind")
         checks["dispatch_mode"] = packet.get("dispatch_mode")
         checks["run_ledger_exists"] = bool(candidate) and (project_root / ".thoth" / "runs" / candidate / "run.json").exists()
         checks["packet_exists"] = bool(candidate) and (project_root / ".thoth" / "runs" / candidate / "packet.json").exists()
+        checks["runtime_event_stream"] = _has_runtime_events(stdout)
 
     return checks
 
@@ -85,6 +88,26 @@ def _parse_packet(stdout: str) -> dict[str, Any]:
     return payload
 
 
+def _has_runtime_events(stdout: str) -> bool:
+    return any('"type":"thoth.' in line or '"type": "thoth.' in line for line in stdout.splitlines())
+
+
+def _parse_runtime_run_id(stdout: str) -> str:
+    for raw in stdout.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and str(payload.get("type") or "").startswith("thoth."):
+            run_id = payload.get("run_id")
+            if isinstance(run_id, str) and run_id.strip():
+                return run_id.strip()
+    return ""
+
+
 def _bridge_success(command_id: str, returncode: int, checks: dict[str, Any]) -> bool:
     if returncode != 0:
         return False
@@ -98,7 +121,7 @@ def _bridge_success(command_id: str, returncode: int, checks: dict[str, Any]) ->
     if command_id == "status":
         return bool(checks.get("project_object_exists") or checks.get("project_manifest_exists"))
     if command_id in {"run", "loop", "review"} and "run_ledger_exists" in checks:
-        return bool(checks.get("run_ledger_exists") and checks.get("packet_exists"))
+        return bool(checks.get("run_ledger_exists") and (checks.get("packet_exists") or checks.get("runtime_event_stream")))
     return True
 
 
@@ -165,14 +188,9 @@ def run_bridge(command_id: str, command_args: list[str], *, project_root: Path |
 
     actual_command = command_id
     actual_args = list(command_args)
-    if command_id in {"run", "loop", "review"} and not any(flag in command_args for flag in ("--attach", "--watch", "--stop")):
+    if command_id == "review" and not any(flag in command_args for flag in ("--attach", "--watch", "--stop")):
         actual_command = "prepare"
-        if command_id == "review":
-            prepare_args = _rewrite_review_prepare_args(command_args)
-        elif command_id in {"run", "loop"}:
-            prepare_args = _rewrite_run_loop_prepare_args(command_args)
-        else:
-            prepare_args = list(command_args)
+        prepare_args = _rewrite_review_prepare_args(command_args)
         actual_args = ["--command-id", command_id, *prepare_args]
     argv = [sys.executable, str(cli_entry), actual_command, *actual_args]
     started = time.time()

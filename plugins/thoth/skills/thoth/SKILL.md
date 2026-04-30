@@ -15,8 +15,8 @@ Use the single public entrypoint:
 
 Supported commands:
 - `$thoth init`: Initialize canonical .thoth authority and render both host projections without taking ownership of repo-root `.codex`.
-- `$thoth run`: Start one validator-centered strict run bound to `work_id@revision`, or use `--sleep` to hand the same controller to an external worker.
-- `$thoth loop`: Start one bounded controller service whose parent creates validator-centered child runs.
+- `$thoth run`: Start one strict run bound to `work_id@revision`; live runs foreground and `--sleep` detaches the same runtime driver.
+- `$thoth loop`: Start one bounded controller service whose parent creates four-phase child runs.
 - `$thoth review`: Prepare a structured live review packet through the shared Thoth surface.
 - `$thoth orchestration`: Create a controller object that schedules ready work items by object-graph dependencies.
 - `$thoth auto`: Create a linear controller queue for multiple ready work items.
@@ -57,5 +57,5 @@ Supported commands:
 - `init`, `status`, `doctor`, `dashboard`, `sync`, and `report` are mechanical fast-path commands and should return only short receipts.
 - `discuss`, `extend`, `run`, `loop`, and open-ended `review` are high-intelligence paths.
 - `review` exact-match/probe flows are protocol-fast: if the packet exposes an exact result, do not improvise.
-- `run` and `loop` are validator-centered: default lifecycle is `execute -> validate`, and `reflect` appears only after validator failure.
+- `run` and `loop` use one RuntimeDriver: lifecycle is `plan -> execute -> validate -> reflect`; live is foreground monitor, `--sleep` is detached monitor.
 - Host hooks and subagents may improve throughput but are never correctness requirements.

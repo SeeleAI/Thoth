@@ -17,8 +17,9 @@ from thoth.init.generators import (
 )
 from thoth.init.render import render_codex_hooks_payload
 from thoth.plan.compiler import compile_task_authority
-from thoth.run.phases import execute_background_controller
-from thoth.run.worker import TestPhaseDriver
+from thoth.plan.store import load_work_for_execution
+from thoth.run.packets import prepare_execution
+from thoth.run.service import stop_run
 from thoth.selftest_seed import seed_host_real_app
 
 from .fixtures import (
@@ -52,6 +53,29 @@ def _artifact_paths_for_run(project_dir: Path, run_id: str) -> list[str]:
         str(run_dir / "packet.json"),
         str(run_dir / "phase_state.json"),
     ]
+
+
+def _stop_runtime_for_cleanup(project_dir: Path, run_id: str, recorder: Recorder, *, label: str, command: str = "run") -> None:
+    stop_result = _run_command([PYTHON, "-m", "thoth.cli", command, "--stop", run_id], cwd=project_dir, env={"PYTHONPATH": str(ROOT)}, timeout=20)
+    _save_command(recorder, label, stop_result)
+    if stop_result.returncode == 0:
+        return
+    stop_run(project_dir, run_id)
+
+
+def _extract_runtime_run_id(stdout: str) -> str:
+    for raw in stdout.splitlines():
+        if not raw.strip():
+            continue
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and str(payload.get("type") or "").startswith("thoth."):
+            run_id = payload.get("run_id")
+            if isinstance(run_id, str) and run_id.strip():
+                return run_id.strip()
+    return ""
 
 
 def _materialize_selftest_project(
@@ -195,33 +219,30 @@ def case_plan_discuss_compile(work_root: Path, recorder: Recorder, _capabilities
 
 def case_runtime_run_live(work_root: Path, recorder: Recorder, _capabilities: dict[str, Any]) -> None:
     project_dir = _prepare_runtime_project(work_root, recorder)
-    run_result = _run_command([PYTHON, "-m", "thoth.cli", "run", "--work-id", "task-1"], cwd=project_dir, env={"PYTHONPATH": str(ROOT)}, timeout=60)
+    run_result = _run_command([PYTHON, "-m", "thoth.cli", "run", "--work-id", "task-1"], cwd=project_dir, env={"PYTHONPATH": str(ROOT), "THOTH_TEST_EXTERNAL_WORKER_MODE": "complete"}, timeout=60)
     run_artifacts = _save_command(recorder, "runtime-run-live", run_result)
-    packet = _extract_json(run_result.stdout)
-    run_id = str(packet.get("run_id") or "")
+    run_id = _extract_runtime_run_id(run_result.stdout)
     if run_result.returncode != 0 or not run_id:
-        recorder.add("runtime.run.live", "failed", "Live run packet preparation failed.", run_artifacts)
-        raise RuntimeError("live run packet preparation failed")
-    driver_rc = execute_background_controller(project_dir, run_id, driver=TestPhaseDriver("complete"))
+        recorder.add("runtime.run.live", "failed", "Live run execution failed.", run_artifacts)
+        raise RuntimeError("live run execution failed")
     phase_state = _read_json(project_dir / ".thoth" / "runs" / run_id / "phase_state.json")
     state = _state_payload(project_dir, run_id)
     result = _result_payload(project_dir, run_id)
     phase_statuses = phase_state.get("phase_statuses") if isinstance(phase_state.get("phase_statuses"), dict) else {}
     reflect_exists = (project_dir / ".thoth" / "runs" / run_id / "reflect.json").exists()
     ok = (
-        driver_rc == 0
-        and packet.get("dispatch_mode") == "live_native"
-        and state.get("status") == "completed"
+        state.get("status") == "completed"
         and result.get("status") == "completed"
         and result.get("result", {}).get("validate_passed") is True
+        and phase_statuses.get("plan") == "completed"
         and phase_statuses.get("execute") == "completed"
         and phase_statuses.get("validate") == "completed"
-        and not reflect_exists
+        and reflect_exists
     )
     recorder.add(
         "runtime.run.live",
         "passed" if ok else "failed",
-        f"Live run executed execute->validate and terminalized with status={state.get('status')}.",
+        f"Live run executed plan->execute->validate->reflect and terminalized with status={state.get('status')}.",
         run_artifacts + _artifact_paths_for_run(project_dir, run_id),
     )
     if not ok:
@@ -262,22 +283,19 @@ def case_runtime_run_sleep(work_root: Path, recorder: Recorder, _capabilities: d
 
 def case_runtime_run_validate_fail(work_root: Path, recorder: Recorder, _capabilities: dict[str, Any]) -> None:
     project_dir = _prepare_runtime_project(work_root, recorder)
-    run_result = _run_command([PYTHON, "-m", "thoth.cli", "run", "--work-id", "task-1"], cwd=project_dir, env={"PYTHONPATH": str(ROOT)}, timeout=60)
+    run_result = _run_command([PYTHON, "-m", "thoth.cli", "run", "--work-id", "task-1"], cwd=project_dir, env={"PYTHONPATH": str(ROOT), "THOTH_TEST_EXTERNAL_WORKER_MODE": "fail"}, timeout=60)
     run_artifacts = _save_command(recorder, "runtime-run-validate-fail", run_result)
-    packet = _extract_json(run_result.stdout)
-    run_id = str(packet.get("run_id") or "")
-    if run_result.returncode != 0 or not run_id:
-        recorder.add("runtime.run.validate_fail", "failed", "Live run packet preparation failed.", run_artifacts)
-        raise RuntimeError("validate-fail live run preparation failed")
-    driver_rc = execute_background_controller(project_dir, run_id, driver=TestPhaseDriver("fail"))
+    run_id = _extract_runtime_run_id(run_result.stdout)
+    if run_result.returncode != 1 or not run_id:
+        recorder.add("runtime.run.validate_fail", "failed", "Live run validate failure did not terminalize as expected.", run_artifacts)
+        raise RuntimeError("validate-fail live run failed")
     phase_state = _read_json(project_dir / ".thoth" / "runs" / run_id / "phase_state.json")
     state = _state_payload(project_dir, run_id)
     result = _result_payload(project_dir, run_id)
     phase_statuses = phase_state.get("phase_statuses") if isinstance(phase_state.get("phase_statuses"), dict) else {}
     reflect_exists = (project_dir / ".thoth" / "runs" / run_id / "reflect.json").exists()
     ok = (
-        driver_rc == 1
-        and state.get("status") == "failed"
+        state.get("status") == "failed"
         and result.get("status") == "failed"
         and result.get("result", {}).get("validate_passed") is False
         and phase_statuses.get("validate") == "failed"
@@ -296,23 +314,19 @@ def case_runtime_run_validate_fail(work_root: Path, recorder: Recorder, _capabil
 
 def case_runtime_loop_live(work_root: Path, recorder: Recorder, _capabilities: dict[str, Any]) -> None:
     project_dir = _prepare_runtime_project(work_root, recorder)
-    loop_result = _run_command([PYTHON, "-m", "thoth.cli", "loop", "--work-id", "task-1"], cwd=project_dir, env={"PYTHONPATH": str(ROOT)}, timeout=60)
+    loop_result = _run_command([PYTHON, "-m", "thoth.cli", "loop", "--work-id", "task-1"], cwd=project_dir, env={"PYTHONPATH": str(ROOT), "THOTH_TEST_EXTERNAL_WORKER_MODE": "complete"}, timeout=60)
     loop_artifacts = _save_command(recorder, "runtime-loop-live", loop_result)
-    packet = _extract_json(loop_result.stdout)
-    run_id = str(packet.get("run_id") or "")
+    run_id = _extract_runtime_run_id(loop_result.stdout)
     if loop_result.returncode != 0 or not run_id:
-        recorder.add("runtime.loop.live", "failed", "Live loop packet preparation failed.", loop_artifacts)
-        raise RuntimeError("loop live preparation failed")
-    driver_rc = execute_background_controller(project_dir, run_id, driver=TestPhaseDriver("complete"))
+        recorder.add("runtime.loop.live", "failed", "Live loop execution failed.", loop_artifacts)
+        raise RuntimeError("loop live execution failed")
     phase_state = _read_json(project_dir / ".thoth" / "runs" / run_id / "phase_state.json")
     state = _state_payload(project_dir, run_id)
     result = _result_payload(project_dir, run_id)
     loop_state = phase_state.get("loop") if isinstance(phase_state.get("loop"), dict) else {}
     child_run_ids = loop_state.get("child_run_ids") if isinstance(loop_state.get("child_run_ids"), list) else []
     ok = (
-        driver_rc == 0
-        and packet.get("dispatch_mode") == "live_native"
-        and state.get("status") == "completed"
+        state.get("status") == "completed"
         and result.get("status") == "completed"
         and len(child_run_ids) >= 1
         and result.get("result", {}).get("validate_passed") is True
@@ -354,9 +368,7 @@ def case_runtime_loop_sleep(work_root: Path, recorder: Recorder, _capabilities: 
         f"Sleep loop established an attachable external-worker ledger with status={state.get('status')}.",
         loop_artifacts + _artifact_paths_for_run(project_dir, run_id),
     )
-    stop_result = _run_command([PYTHON, "-m", "thoth.cli", "loop", "--stop", run_id], cwd=project_dir, env={"PYTHONPATH": str(ROOT)}, timeout=20)
-    if stop_result.returncode != 0:
-        raise RuntimeError("sleep loop cleanup stop failed")
+    _stop_runtime_for_cleanup(project_dir, run_id, recorder, label="runtime-loop-sleep-cleanup-stop", command="loop")
     if not ok:
         raise RuntimeError("runtime.loop.sleep failed")
 
@@ -389,9 +401,7 @@ def case_runtime_loop_lease_conflict(work_root: Path, recorder: Recorder, _capab
         f"Second run was rejected while loop {run_id} held the lease.",
         loop_artifacts + conflict_artifacts + _artifact_paths_for_run(project_dir, run_id),
     )
-    stop_result = _run_command([PYTHON, "-m", "thoth.cli", "loop", "--stop", run_id], cwd=project_dir, env={"PYTHONPATH": str(ROOT)}, timeout=20)
-    if stop_result.returncode != 0:
-        raise RuntimeError("lease conflict cleanup stop failed")
+    _stop_runtime_for_cleanup(project_dir, run_id, recorder, label="runtime-loop-lease-conflict-cleanup-stop", command="loop")
     if not ok:
         raise RuntimeError("runtime.loop.lease_conflict failed")
 
@@ -430,15 +440,25 @@ def case_review_exact_match(work_root: Path, recorder: Recorder, _capabilities: 
 
 def case_observe_dashboard(work_root: Path, recorder: Recorder, _capabilities: dict[str, Any]) -> None:
     project_dir = _prepare_runtime_project(work_root, recorder, include_dashboard=True)
-    run_result = _run_command([PYTHON, "-m", "thoth.cli", "run", "--work-id", "task-1"], cwd=project_dir, env={"PYTHONPATH": str(ROOT)}, timeout=60)
-    run_artifacts = _save_command(recorder, "observe-dashboard-run", run_result)
-    packet = _extract_json(run_result.stdout)
-    run_id = str(packet.get("run_id") or "")
-    if run_result.returncode != 0 or not run_id:
-        recorder.add("observe.dashboard", "failed", "Dashboard probe could not prepare a live run.", run_artifacts)
-        raise RuntimeError("observe.dashboard live run preparation failed")
+    task = load_work_for_execution(project_dir, "task-1", require_ready=True)
+    handle, packet = prepare_execution(
+        project_dir,
+        command_id="run",
+        title=str(task.get("title") or "task-1"),
+        work_id="task-1",
+        host="codex",
+        executor="codex",
+        sleep_requested=True,
+        strict_task=task,
+        goal=str(task.get("title") or "task-1"),
+    )
+    run_id = handle.run_id
+    run_artifact = recorder.write_json("dashboard/prepared-run-packet.json", packet)
     state_path = project_dir / ".thoth" / "runs" / run_id / "state.json"
     state = _state_payload(project_dir, run_id)
+    state["status"] = "running"
+    state["phase"] = "runtime_driver_test_hold"
+    state["supervisor_state"] = "running"
     state["last_heartbeat_at"] = "2000-01-01T00:00:00Z"
     state["updated_at"] = utc_now()
     _write_json(state_path, state)
@@ -452,9 +472,9 @@ def case_observe_dashboard(work_root: Path, recorder: Recorder, _capabilities: d
         "observe.dashboard",
         "passed" if stale else "failed",
         "Dashboard backend reported the stale runtime state from the shared ledger.",
-        run_artifacts + dashboard_artifacts + [status_artifact, task_artifact, str(project_dir / ".thoth" / "runs" / run_id / "state.json")],
+        [run_artifact] + dashboard_artifacts + [status_artifact, task_artifact, str(project_dir / ".thoth" / "runs" / run_id / "state.json")],
     )
-    _run_command([PYTHON, "-m", "thoth.cli", "run", "--stop", run_id], cwd=project_dir, env={"PYTHONPATH": str(ROOT)}, timeout=20)
+    _stop_runtime_for_cleanup(project_dir, run_id, recorder, label="observe-dashboard-cleanup-stop")
     _stop_dashboard(project_dir, recorder=recorder)
     if not stale:
         raise RuntimeError("observe.dashboard failed")

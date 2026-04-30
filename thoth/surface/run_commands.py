@@ -9,9 +9,19 @@ from thoth.plan.doctor import infer_review_work_id
 from thoth.plan.paths import compiler_state_path, work_items_dir
 from thoth.plan.store import load_work_for_execution, suggest_work_items_for_query
 from thoth.run.controllers import create_auto_controller, create_orchestration_controller
+from thoth.run.driver import JsonlStdoutSink, execute_runtime_controller
 from thoth.run.packets import LIVE_DISPATCH_MODE, prepare_execution
 from thoth.run.service import attach_run, resume_run, stop_run
-from thoth.run.worker import spawn_supervisor, supervisor_main, worker_main
+from thoth.run.worker import (
+    ExternalWorkerPhaseDriver,
+    TestPhaseDriver,
+    _normalize_worker_executor,
+    _test_external_worker_mode,
+    _worker_timeout_seconds,
+    spawn_supervisor,
+    supervisor_main,
+    worker_main,
+)
 from thoth.surface.envelope import output_refs, print_envelope
 from thoth.surface.plan_commands import append_project_note
 
@@ -64,6 +74,22 @@ def _reject_missing_work_id(*, command_id: str, args, project_root: Path) -> int
     return 2
 
 
+def _resolve_executor(args) -> str:
+    explicit = str(getattr(args, "executor", "") or "").strip().lower()
+    if explicit:
+        return "codex" if explicit == "codex" else "claude"
+    host = str(getattr(args, "host", "") or "").strip().lower()
+    return "codex" if host == "codex" else "claude"
+
+
+def _driver_for_handle(handle):
+    test_mode = _test_external_worker_mode()
+    if test_mode in {"complete", "fail"}:
+        return TestPhaseDriver(test_mode)
+    executor = _normalize_worker_executor(handle.run_json().get("executor"))
+    return ExternalWorkerPhaseDriver(executor=executor, timeout_seconds=_worker_timeout_seconds(handle.run_json()))
+
+
 def handle_prepare(args, parser, *, project_root: Path) -> int:
     root = Path(args.project_root).resolve() if getattr(args, "project_root", None) else project_root
     work_id = getattr(args, "work_id", None)
@@ -79,7 +105,7 @@ def handle_prepare(args, parser, *, project_root: Path) -> int:
         title = str(strict_task.get("title") or f"Review: {work_id}")
     elif args.command_id == "review" and not (args.target or args.goal):
         parser.exit(2, "thoth: error: Review prepare requires --target or --goal.\n")
-    handle, packet = prepare_execution(root, command_id=args.command_id, title=title, work_id=work_id, host=args.host, executor=args.executor, sleep_requested=bool(args.sleep), strict_task=strict_task, target=args.target, goal=args.goal or title)
+    handle, packet = prepare_execution(root, command_id=args.command_id, title=title, work_id=work_id, host=args.host, executor=_resolve_executor(args), sleep_requested=bool(args.sleep), strict_task=strict_task, target=args.target, goal=args.goal or title)
     if packet.get("dispatch_mode") != LIVE_DISPATCH_MODE:
         spawn_supervisor(handle)
         packet["worker_spawned"] = True
@@ -103,7 +129,7 @@ def handle_review(args, parser, *, project_root: Path) -> int:
         title=f"Review: {content}",
         work_id=review_work_id,
         host=args.host,
-        executor=args.executor,
+        executor=_resolve_executor(args),
         sleep_requested=False,
         strict_task=strict_task,
         target=content,
@@ -136,12 +162,13 @@ def handle_run_or_loop(args, parser, *, project_root: Path) -> int:
     if not work_id:
         return _reject_missing_work_id(command_id=args.command, args=args, project_root=project_root)
     task = load_work_for_execution(project_root, work_id, require_ready=True)
-    handle, packet = prepare_execution(project_root, command_id=args.command, title=str(task.get("title") or work_id), work_id=work_id, host=args.host, executor=args.executor, sleep_requested=bool(args.sleep), strict_task=task, goal=getattr(args, "goal", None) or str(task.get("title") or work_id))
+    handle, packet = prepare_execution(project_root, command_id=args.command, title=str(task.get("title") or work_id), work_id=work_id, host=args.host, executor=_resolve_executor(args), sleep_requested=bool(args.sleep), strict_task=task, goal=getattr(args, "goal", None) or str(task.get("title") or work_id))
     if packet.get("dispatch_mode") != LIVE_DISPATCH_MODE:
         spawn_supervisor(handle)
         packet["worker_spawned"] = True
-    print_envelope(command=args.command, status="ok", summary=f"Prepared {args.command} packet for {work_id}", body={"packet": packet}, refs=output_refs(handle.run_dir, handle.run_dir / "packet.json"), checks=[{"name": "dispatch_mode", "ok": True, "detail": str(packet.get("dispatch_mode"))}])
-    return 0
+        print_envelope(command=args.command, status="ok", summary=f"Started sleeping {args.command} for {work_id}", body={"packet": packet}, refs=output_refs(handle.run_dir, handle.run_dir / "packet.json"), checks=[{"name": "dispatch_mode", "ok": True, "detail": str(packet.get("dispatch_mode"))}])
+        return 0
+    return execute_runtime_controller(project_root, handle.run_id, driver=_driver_for_handle(handle), sink=JsonlStdoutSink())
 
 
 def handle_orchestration(args, parser, *, project_root: Path) -> int:
@@ -149,7 +176,7 @@ def handle_orchestration(args, parser, *, project_root: Path) -> int:
         project_root,
         work_ids=list(getattr(args, "work_ids", []) or []),
         host=args.host,
-        executor=args.executor,
+        executor=_resolve_executor(args),
     )
     print_envelope(
         command="orchestration",
@@ -168,7 +195,7 @@ def handle_auto(args, parser, *, project_root: Path) -> int:
         work_ids=list(getattr(args, "work_ids", []) or []),
         mode=args.mode,
         host=args.host,
-        executor=args.executor,
+        executor=_resolve_executor(args),
     )
     print_envelope(
         command="auto",

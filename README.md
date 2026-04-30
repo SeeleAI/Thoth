@@ -103,7 +103,7 @@ Key invariants:
 - .agent-os is the human governance layer
 - run and loop are strict --work-id surfaces
 - dashboard, status, report, and doctor are read surfaces, not authority writers
-- every live packet must end in complete or fail
+- run and loop progress through the RuntimeDriver until terminal
 ```
 
 ## Why Thoth

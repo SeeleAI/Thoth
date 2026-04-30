@@ -41,22 +41,22 @@ COMMAND_PROMPT_SPECS: dict[str, CommandPromptSpec] = {
         route_class="live_intelligent",
         intelligence_tier="high",
         packet_authority_mode="phase_controller",
-        objective="Finish the current strict task through the validator-centered controller.",
+        objective="Finish the current strict task through the four-phase RuntimeDriver.",
         hard_stops=(
             "Do not invent or compile a new work item when --work-id is missing.",
-            "Do not stop after reading the packet; terminalize through controller commands only.",
+            "Do not stop after starting the runtime; monitor RuntimeDriver events until terminal.",
             "Do not hand-edit .thoth ledgers.",
         ),
         reply_budget_utf8=36,
         result_style="terminal receipt only",
-        validator_policy="execute first, validator decides completion, reflect only after validator failure",
+        validator_policy="plan first, validate decides completion, reflect always summarizes evidence and risk",
     ),
     "loop": CommandPromptSpec(
         command_id="loop",
         route_class="live_intelligent",
         intelligence_tier="high",
         packet_authority_mode="phase_controller",
-        objective="Advance the current bounded loop without bypassing the parent controller.",
+        objective="Advance the current bounded loop through foreground or sleeping RuntimeDriver monitoring.",
         hard_stops=(
             "Do not decide extra iterations outside the recorded loop budget.",
             "Do not skip validator output when judging success.",
@@ -64,7 +64,7 @@ COMMAND_PROMPT_SPECS: dict[str, CommandPromptSpec] = {
         ),
         reply_budget_utf8=40,
         result_style="terminal receipt only",
-        validator_policy="parent loop budget controls retries; child validator decides pass/fail",
+        validator_policy="parent loop budget controls retries; each child runs plan -> execute -> validate -> reflect",
     ),
     "review": CommandPromptSpec(
         command_id="review",
@@ -227,17 +227,29 @@ COMMAND_PROMPT_SPECS: dict[str, CommandPromptSpec] = {
 
 
 PHASE_PROMPT_SPECS: dict[str, PhasePromptSpec] = {
+    "plan": PhasePromptSpec(
+        phase="plan",
+        objective="Produce the concrete execution plan for the frozen strict task without changing the goal or validation contract.",
+        hard_stops=(
+            "Do not modify project files.",
+            "Do not change the work item goal, constraints, or validation entrypoint.",
+            "Do not hand-edit .thoth ledgers.",
+        ),
+        required_fields=("summary", "execution_steps", "files_expected", "commands_expected", "validation_plan", "risk_assessment"),
+        summary_budget_utf8=240,
+        validator_policy="plan is read-only and may only prepare the concrete execution path",
+    ),
     "execute": PhasePromptSpec(
         phase="execute",
-        objective="Perform the smallest execution slice needed for the strict task before validation.",
+        objective="Perform the smallest execution slice needed for the strict task and the approved plan before validation.",
         hard_stops=(
             "Do not hand-edit .thoth ledgers.",
             "Do not terminalize the full run from inside execute.",
-            "Do not drift into retrospective prose.",
+            "Do not run destructive delete/reset commands.",
         ),
         required_fields=("summary", "files_touched", "commands_run", "artifacts"),
-        summary_budget_utf8=24,
-        validator_policy="execute may plan internally, but validator remains the acceptance authority",
+        summary_budget_utf8=240,
+        validator_policy="execute follows the plan artifact; validator remains the acceptance authority",
     ),
     "validate": PhasePromptSpec(
         phase="validate",
@@ -248,20 +260,20 @@ PHASE_PROMPT_SPECS: dict[str, PhasePromptSpec] = {
             "Do not skip eval_entrypoint.command when it exists.",
         ),
         required_fields=("summary", "passed", "metric_name", "metric_value", "threshold", "checks"),
-        summary_budget_utf8=20,
+        summary_budget_utf8=240,
         validator_policy="validator output alone decides whether the run completes or enters reflect",
     ),
     "reflect": PhasePromptSpec(
         phase="reflect",
-        objective="Compress validator failure into one root cause and one next hint.",
+        objective="Summarize the validation outcome, evidence, residual risks, and the next recommendation.",
         hard_stops=(
             "Do not keep executing.",
             "Do not run extra commands.",
-            "Do not emit multiple competing next steps.",
+            "Do not change validation verdicts.",
         ),
-        required_fields=("summary", "failure_class", "root_cause", "next_plan_hint"),
-        summary_budget_utf8=32,
-        validator_policy="reflect exists only after validator failure",
+        required_fields=("summary", "outcome", "residual_risks", "evidence", "next_recommendation"),
+        summary_budget_utf8=240,
+        validator_policy="reflect always runs after validate and never overrides validate.passed",
     ),
 }
 
@@ -347,7 +359,7 @@ def render_phase_worker_prompt(
         f"Run id: {run_id}",
         f"Work only inside `{project_root}`.",
         f"Execute exactly one phase: `{phase}`.",
-        f"Write exactly one JSON object to `{output_path}`.",
+        "Finish with exactly one JSON object and no surrounding prose.",
         "Do not create or edit `.thoth` ledgers by hand.",
         "Do not invoke `$thoth run`, `$thoth loop`, or `$thoth review`.",
         f"Objective: {authority.get('objective')}",
@@ -355,6 +367,8 @@ def render_phase_worker_prompt(
         f"Summary budget utf8: {authority.get('summary_budget_utf8')}",
         f"Validator policy: {authority.get('validator_policy')}",
     ]
+    if output_path:
+        lines.append(f"Runtime driver capture path: `{output_path}`.")
     lines.extend(f"Hard stop: {item}" for item in hard_stops)
     if correction_error:
         lines.append(f"Previous output failed validation: {correction_error}")
@@ -395,10 +409,10 @@ def build_codex_public_command_prompt(
     if command_id in {"run", "loop"}:
         lines.extend(
             (
-                "If the command returns a live packet, the work is not finished yet.",
-                "Stay in the same session and obey only the packet plus controller outputs.",
-                "Default lifecycle is execute -> validate; reflect appears only after validator failure.",
-                "Do not hand-edit `.thoth`; advance through protocol commands only.",
+                "If the command streams runtime events, report progress and risks from those events only.",
+                "Stay in the same session until the RuntimeDriver reaches terminal state unless --sleep was requested.",
+                "Runtime lifecycle is plan -> execute -> validate -> reflect.",
+                "Do not hand-edit `.thoth`; let the Thoth runtime driver advance phases.",
             )
         )
     elif command_id == "review":
@@ -444,7 +458,7 @@ def build_codex_selftest_command_probe_prompt(*, public_command: str, shell_comm
             f"The Codex public surface is `{public_command}`, but in the workspace shell you must execute it literally as `{shell_command}`.",
             "Execute that shell command immediately as your first meaningful action.",
             "Do not inspect files, search memories, explain, retry, or execute any second shell command.",
-            "Do not continue a live packet locally and do not substitute a different entrypoint.",
+            "Do not manually continue runtime protocol phases and do not substitute a different entrypoint.",
             "If the literal `thoth` shell command is missing, treat that as host install drift.",
             f"After the shell command exits successfully, reply with `{done_token}` only.",
         )

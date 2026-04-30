@@ -38,6 +38,7 @@ def test_create_run_writes_full_ledger(tmp_path):
 def test_spawn_and_stop_supervisor(tmp_path, monkeypatch):
     _prepare_project(tmp_path)
     monkeypatch.setenv("THOTH_LOCAL_STATE_DIR", str(tmp_path / ".machine-state"))
+    monkeypatch.setenv("THOTH_TEST_EXTERNAL_WORKER_MODE", "hold")
     monkeypatch.chdir(tmp_path)
     handle = create_run(tmp_path, kind="run", title="demo", work_id=None, host="codex", executor="codex")
     pid = spawn_supervisor(handle)

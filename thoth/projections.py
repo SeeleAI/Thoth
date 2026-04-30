@@ -34,16 +34,16 @@ def _claude_bridge_rules(spec: CommandSpec) -> str:
         "- If `bridge_success` is `false`, report the exact bridge failure and stop.",
         "- If `run` or `loop` is missing `--work-id`, show the returned candidate work items exactly as provided and stop.",
         "- If `run` or `loop` is missing `--work-id`, do not invent, create, compile, or guess a work item.",
-        "- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, fetch `packet.controller_commands.next_phase`, execute exactly that phase, and submit exactly one JSON object through `packet.controller_commands.submit_phase` until terminal state.",
-        "- While executing a live packet, do not hand-edit `.thoth`; advance only through the Python controller commands included in `packet.controller_commands`.",
+        "- If `bridge_success` is `true` and runtime events are present, summarize progress, terminal status, and risk from those events only.",
+        "- Do not hand-edit `.thoth` or manually call runtime protocol commands; the Thoth RuntimeDriver advances phases.",
         "- If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up only.",
-        "- If you only summarize the packet, list the task, or describe what should happen next without executing it, treat that as failure.",
+        "- If you only describe what should happen next instead of reporting the executed runtime result, treat that as failure.",
     ]
     if spec.command_id in {"run", "loop"}:
         rules.extend(
             (
                 "- If `packet.executor == codex`, the substantive execution must really flow through Codex rather than being silently done by Claude.",
-                "- Default child lifecycle is `execute -> validate`; `reflect` appears only after validator failure.",
+                "- Runtime lifecycle is `plan -> execute -> validate -> reflect`.",
                 "- Use `packet.strict_task.goal_statement`, `packet.strict_task.implementation_recipe`, and `packet.strict_task.eval_entrypoint` as the only task authority.",
                 "- Prefer running `packet.strict_task.eval_entrypoint.command` exactly as provided rather than inventing a parallel validator lifecycle.",
             )
@@ -144,7 +144,7 @@ Supported commands:
 - `init`, `status`, `doctor`, `dashboard`, `sync`, and `report` are mechanical fast-path commands and should return only short receipts.
 - `discuss`, `extend`, `run`, `loop`, and open-ended `review` are high-intelligence paths.
 - `review` exact-match/probe flows are protocol-fast: if the packet exposes an exact result, do not improvise.
-- `run` and `loop` are validator-centered: default lifecycle is `execute -> validate`, and `reflect` appears only after validator failure.
+- `run` and `loop` use one RuntimeDriver: lifecycle is `plan -> execute -> validate -> reflect`; live is foreground monitor, `--sleep` is detached monitor.
 - Host hooks and subagents may improve throughput but are never correctness requirements.
 """
 

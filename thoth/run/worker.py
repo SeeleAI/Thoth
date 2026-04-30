@@ -27,7 +27,8 @@ from .ledger import (
     heartbeat_run,
     record_artifact,
 )
-from .phases import PhaseDriver, execute_background_controller, next_phase_payload
+from .driver import SilentSink, execute_runtime_controller
+from .phases import PhaseDriver, next_phase_payload
 from .model import (
     CLAUDE_EXTERNAL_WORKER_ALLOWED_TOOLS,
     DEFAULT_EXTERNAL_WORKER_TIMEOUT_SECONDS,
@@ -49,8 +50,7 @@ def spawn_supervisor(handle: RunHandle) -> int:
     cmd = [
         sys.executable,
         "-m",
-        "thoth.cli",
-        "worker",
+        "thoth.run.driver_process",
         "--project-root",
         str(handle.project_root),
         "--run-id",
@@ -193,6 +193,51 @@ def _tail_text(path: Path, *, limit: int = 4000) -> str:
     return text[-limit:]
 
 
+def _destructive_guard_bin(handle: RunHandle) -> Path:
+    guard_dir = handle.local_dir / "guard-bin"
+    guard_dir.mkdir(parents=True, exist_ok=True)
+    rm_path = guard_dir / "rm"
+    rm_path.write_text(
+        "#!/usr/bin/env bash\n"
+        "echo 'thoth destructive-command guard: rm is disabled in execute workers' >&2\n"
+        "exit 126\n",
+        encoding="utf-8",
+    )
+    git_path = guard_dir / "git"
+    git_path.write_text(
+        "#!/usr/bin/env bash\n"
+        "case \"${1:-}\" in\n"
+        "  clean|reset) echo \"thoth destructive-command guard: git $1 is disabled in execute workers\" >&2; exit 126 ;;\n"
+        "esac\n"
+        "GIT_BIN=\"$(PATH=/usr/bin:/bin command -v git)\"\n"
+        "exec \"${GIT_BIN}\" \"$@\"\n",
+        encoding="utf-8",
+    )
+    for path in (rm_path, git_path):
+        path.chmod(0o755)
+    return guard_dir
+
+
+def _deleted_tracked_files(project_root: Path) -> list[str]:
+    git_dir = project_root / ".git"
+    if not git_dir.exists():
+        return []
+    proc = subprocess.run(
+        ["git", "diff", "--name-status"],
+        cwd=str(project_root),
+        text=True,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        return []
+    deleted: list[str] = []
+    for raw in proc.stdout.splitlines():
+        parts = raw.split("\t", 1)
+        if len(parts) == 2 and parts[0].strip() == "D":
+            deleted.append(parts[1].strip())
+    return deleted
+
+
 def _protocol_cli_commands(project_root: Path, run_id: str) -> dict[str, str]:
     return {
         "append_event": f"{shlex.quote(sys.executable)} -m thoth.cli append-event --project-root {shlex.quote(str(project_root))} --run-id {shlex.quote(run_id)} --message \"message\" --kind log",
@@ -219,31 +264,100 @@ def build_phase_worker_prompt(handle: RunHandle, phase_packet: dict[str, Any], o
     )
 
 
-def external_worker_command(executor: str, project_root: Path, prompt: str) -> list[str]:
+def external_worker_command(
+    executor: str,
+    project_root: Path,
+    prompt: str,
+    *,
+    phase: str = "execute",
+    output_path: Path | None = None,
+) -> list[str]:
     if executor == "codex":
-        return [
+        cmd = [
             "codex",
             "exec",
             "-m",
             codex_exec_model(),
             "--json",
-            "--full-auto",
             "-C",
             str(project_root),
-            prompt,
         ]
+        if phase in {"plan", "validate"}:
+            cmd.extend(["--sandbox", "read-only"])
+        else:
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
+        if output_path is not None:
+            cmd.extend(["--output-last-message", str(output_path)])
+        cmd.append(prompt)
+        return cmd
+    if phase == "execute":
+        permission_args = ["--dangerously-skip-permissions"]
+        tool_args = ["--tools", "default"]
+    elif phase == "plan":
+        permission_args = ["--permission-mode", "plan"]
+        tool_args = ["--tools", "Read,Glob,Grep,Bash"]
+    else:
+        permission_args = ["--permission-mode", "dontAsk"]
+        tool_args = ["--allowed-tools", "Read,Glob,Grep,Bash", "--disallowed-tools", "Edit,Write,Task"]
     return [
         "claude",
         "-p",
-        "--permission-mode",
-        "dontAsk",
-        "--allowed-tools",
-        CLAUDE_EXTERNAL_WORKER_ALLOWED_TOOLS,
+        *permission_args,
+        *tool_args,
         "--verbose",
         "--output-format",
         "stream-json",
         prompt,
     ]
+
+
+def _extract_json_object_from_text(text: str) -> dict[str, Any]:
+    stripped = text.strip()
+    if not stripped:
+        return {}
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict):
+        return payload
+    candidates: list[str] = []
+    for raw in stripped.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            candidates.append(line)
+            continue
+        if isinstance(event, dict):
+            for key in ("result", "text", "content", "message", "last_message"):
+                value = event.get(key)
+                if isinstance(value, str):
+                    candidates.append(value)
+                elif isinstance(value, dict):
+                    candidates.append(json.dumps(value, ensure_ascii=False))
+            choices = event.get("choices")
+            if isinstance(choices, list):
+                candidates.extend(json.dumps(item, ensure_ascii=False) for item in choices if isinstance(item, dict))
+    candidates.append(stripped)
+    for candidate in reversed(candidates):
+        text_candidate = candidate.strip()
+        if text_candidate.startswith("```"):
+            text_candidate = text_candidate.strip("`").strip()
+            if text_candidate.startswith("json"):
+                text_candidate = text_candidate[4:].strip()
+        start = text_candidate.find("{")
+        end = text_candidate.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                parsed = json.loads(text_candidate[start : end + 1])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+    return {}
 
 
 class TestPhaseDriver:
@@ -254,6 +368,15 @@ class TestPhaseDriver:
 
     def execute_phase(self, *, handle: RunHandle, phase_packet: dict[str, Any]) -> dict[str, Any]:
         phase = str(phase_packet.get("phase") or "")
+        if phase == "plan":
+            return {
+                "summary": "plan done",
+                "execution_steps": ["make change", "run validator"],
+                "files_expected": [],
+                "commands_expected": [],
+                "validation_plan": "run deterministic validator",
+                "risk_assessment": "low deterministic test risk",
+            }
         if phase == "execute":
             return {
                 "summary": "exec done",
@@ -272,8 +395,21 @@ class TestPhaseDriver:
                 "checks": [{"name": "deterministic_acceptance", "ok": passed}],
             }
         if phase == "reflect":
+            passed = self.mode != "fail"
+            if passed:
+                return {
+                    "summary": "reflect done",
+                    "outcome": "passed",
+                    "residual_risks": [],
+                    "evidence": ["validator passed"],
+                    "next_recommendation": "close run",
+                }
             return {
                 "summary": "reflect done",
+                "outcome": "failed",
+                "residual_risks": ["validator still failing"],
+                "evidence": ["validator failed"],
+                "next_recommendation": "retry implementation",
                 "failure_class": "deterministic_validation_failed",
                 "root_cause": "test phase driver forced validation failure",
                 "next_plan_hint": "adjust implementation before retrying",
@@ -299,9 +435,13 @@ class ExternalWorkerPhaseDriver:
         repo_root = Path(__file__).resolve().parent.parent
         env["PYTHONPATH"] = str(repo_root) if not existing else f"{repo_root}:{existing}"
         env["THOTH_EXTERNAL_WORKER"] = "1"
+        if phase == "execute":
+            guard_dir = _destructive_guard_bin(handle)
+            env["PATH"] = f"{guard_dir}:{env.get('PATH', '')}"
         validate_schema = phase_packet.get("output_contract", {}).get("validate_output_schema")
         max_attempts = max(1, int(WORKER_RETRY_LIMIT))
         last_error = ""
+        before_deleted = _deleted_tracked_files(handle.project_root) if phase == "execute" else []
         for attempt_index in range(1, max_attempts + 1):
             correction_error = last_error if attempt_index > 1 else None
             prompt = render_phase_worker_prompt(
@@ -321,7 +461,7 @@ class ExternalWorkerPhaseDriver:
             )
             if output_path.exists():
                 output_path.unlink()
-            command = external_worker_command(self.executor, handle.project_root, prompt)
+            command = external_worker_command(self.executor, handle.project_root, prompt, phase=phase, output_path=output_path)
             with stdout_path.open("w", encoding="utf-8") as stdout_handle, stderr_path.open("w", encoding="utf-8") as stderr_handle:
                 proc = subprocess.run(
                     command,
@@ -334,12 +474,21 @@ class ExternalWorkerPhaseDriver:
                 )
             record_artifact(handle.project_root, handle.run_id, path=str(stdout_path), label=stdout_path.name, artifact_kind="log")
             record_artifact(handle.project_root, handle.run_id, path=str(stderr_path), label=stderr_path.name, artifact_kind="log")
+            if phase == "execute":
+                after_deleted = _deleted_tracked_files(handle.project_root)
+                new_deleted = [path for path in after_deleted if path not in before_deleted]
+                if new_deleted:
+                    raise RuntimeError("execute deleted tracked files: " + ", ".join(new_deleted[:8]))
             if proc.returncode != 0:
                 stdout_tail = _tail_text(stdout_path)
                 stderr_tail = _tail_text(stderr_path)
                 raise RuntimeError(
                     f"phase worker failed for {phase}: executor={self.executor} returncode={proc.returncode}\n{stdout_tail}\n{stderr_tail}".strip()
                 )
+            if not output_path.exists():
+                extracted = _extract_json_object_from_text(_tail_text(stdout_path, limit=20000))
+                if extracted:
+                    _write_json(output_path, extracted)
             if not output_path.exists():
                 last_error = f"{output_path.name} was not written"
                 if attempt_index < max_attempts:
@@ -431,7 +580,7 @@ def worker_main(project_root: Path, run_id: str) -> int:
         driver = ExternalWorkerPhaseDriver(executor=executor, timeout_seconds=_worker_timeout_seconds(run_payload))
 
     try:
-        status = execute_background_controller(project_root, run_id, driver=driver)
+        status = execute_runtime_controller(project_root, run_id, driver=driver, sink=SilentSink())
     except Exception as exc:
         fail_run(
             project_root,

@@ -1,6 +1,6 @@
 ---
 name: thoth:run
-description: Start one validator-centered strict run bound to `work_id@revision`, or use `--sleep` to hand the same controller to an external worker.
+description: Start one strict run bound to `work_id@revision`; live runs foreground and `--sleep` detaches the same runtime driver.
 argument-hint: "[--executor claude|codex] [--host claude|codex] [--sleep] [--attach <run_id>] [--watch <run_id>] [--stop <run_id>] --work-id <work_id>"
 disable-model-invocation: false
 allowed-tools: Read, Glob, Grep, Edit, Write, Bash, Task
@@ -27,12 +27,12 @@ executed before Claude sees this prompt.
 - If `bridge_success` is `false`, report the exact bridge failure and stop.
 - If `run` or `loop` is missing `--work-id`, show the returned candidate work items exactly as provided and stop.
 - If `run` or `loop` is missing `--work-id`, do not invent, create, compile, or guess a work item.
-- If `bridge_success` is `true` and `packet.dispatch_mode` is `live_native`, fetch `packet.controller_commands.next_phase`, execute exactly that phase, and submit exactly one JSON object through `packet.controller_commands.submit_phase` until terminal state.
-- While executing a live packet, do not hand-edit `.thoth`; advance only through the Python controller commands included in `packet.controller_commands`.
+- If `bridge_success` is `true` and runtime events are present, summarize progress, terminal status, and risk from those events only.
+- Do not hand-edit `.thoth` or manually call runtime protocol commands; the Thoth RuntimeDriver advances phases.
 - If `packet.dispatch_mode` is `external_worker`, do not duplicate the work locally; report the run id, worker mode, and the correct follow-up only.
-- If you only summarize the packet, list the task, or describe what should happen next without executing it, treat that as failure.
+- If you only describe what should happen next instead of reporting the executed runtime result, treat that as failure.
 - If `packet.executor == codex`, the substantive execution must really flow through Codex rather than being silently done by Claude.
-- Default child lifecycle is `execute -> validate`; `reflect` appears only after validator failure.
+- Runtime lifecycle is `plan -> execute -> validate -> reflect`.
 - Use `packet.strict_task.goal_statement`, `packet.strict_task.implementation_recipe`, and `packet.strict_task.eval_entrypoint` as the only task authority.
 - Prefer running `packet.strict_task.eval_entrypoint.command` exactly as provided rather than inventing a parallel validator lifecycle.
 
@@ -46,16 +46,16 @@ executed before Claude sees this prompt.
 
 ### Objective
 
-Finish the current strict task through the validator-centered controller.
+Finish the current strict task through the four-phase RuntimeDriver.
 
 ### Hard Stops
 
 - Do not invent or compile a new work item when --work-id is missing.
-- Do not stop after reading the packet; terminalize through controller commands only.
+- Do not stop after starting the runtime; monitor RuntimeDriver events until terminal.
 - Do not hand-edit .thoth ledgers.
 
 ### Reply Contract
 
 - reply_budget_utf8: `36`
 - result_style: terminal receipt only
-- validator_policy: execute first, validator decides completion, reflect only after validator failure
+- validator_policy: plan first, validate decides completion, reflect always summarizes evidence and risk

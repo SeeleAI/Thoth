@@ -51,14 +51,27 @@ def test_run_state_machine_completes_after_validate_pass(tmp_path):
     )
 
     phase = next_phase_payload(project, handle.run_id)
-    assert phase["phase"] == "execute"
+    assert phase["phase"] == "plan"
+    submit_phase_output(
+        project,
+        handle.run_id,
+        phase="plan",
+        payload={
+            "summary": "plan ok",
+            "execution_steps": ["edit", "test"],
+            "files_expected": [],
+            "commands_expected": ["pytest -q"],
+            "validation_plan": "run pytest",
+            "risk_assessment": "low risk",
+        },
+    )
     submit_phase_output(
         project,
         handle.run_id,
         phase="execute",
         payload={"summary": "exec ok", "files_touched": [], "commands_run": [], "artifacts": []},
     )
-    result = submit_phase_output(
+    interim = submit_phase_output(
         project,
         handle.run_id,
         phase="validate",
@@ -71,6 +84,20 @@ def test_run_state_machine_completes_after_validate_pass(tmp_path):
             "checks": [{"name": "checks", "ok": True}],
         },
     )
+    assert interim["terminal"] is False
+    assert interim["next_phase"] == "reflect"
+    result = submit_phase_output(
+        project,
+        handle.run_id,
+        phase="reflect",
+        payload={
+            "summary": "reflect ok",
+            "outcome": "passed",
+            "residual_risks": [],
+            "evidence": ["checks passed"],
+            "next_recommendation": "close run",
+        },
+    )
 
     assert result["terminal"] is True
     run_result = json.loads((handle.run_dir / "result.json").read_text(encoding="utf-8"))
@@ -78,7 +105,7 @@ def test_run_state_machine_completes_after_validate_pass(tmp_path):
     assert run_result["result"]["validate_passed"] is True
     assert run_result["result"]["phase_statuses"]["execute"] == "completed"
     assert run_result["result"]["phase_statuses"]["validate"] == "completed"
-    assert not (handle.run_dir / "reflect.json").exists()
+    assert run_result["result"]["phase_statuses"]["reflect"] == "completed"
 
 
 def test_run_state_machine_forces_reflect_after_validate_failure(tmp_path):
@@ -93,6 +120,19 @@ def test_run_state_machine_forces_reflect_after_validate_failure(tmp_path):
         sleep_requested=False,
         strict_task=_strict_task(),
         goal="ship demo",
+    )
+    submit_phase_output(
+        project,
+        handle.run_id,
+        phase="plan",
+        payload={
+            "summary": "plan ok",
+            "execution_steps": ["edit", "test"],
+            "files_expected": [],
+            "commands_expected": ["pytest -q"],
+            "validation_plan": "run pytest",
+            "risk_assessment": "low risk",
+        },
     )
     submit_phase_output(
         project,
@@ -122,6 +162,10 @@ def test_run_state_machine_forces_reflect_after_validate_failure(tmp_path):
         phase="reflect",
         payload={
             "summary": "reflect ok",
+            "outcome": "failed",
+            "residual_risks": ["checks failed"],
+            "evidence": ["checks failed"],
+            "next_recommendation": "retry",
             "failure_class": "checks",
             "root_cause": "validator failed",
             "next_plan_hint": "change implementation before retrying",
@@ -153,7 +197,20 @@ def test_loop_parent_stops_on_iteration_budget(tmp_path):
 
     for _ in range(2):
         phase = next_phase_payload(project, handle.run_id)
-        assert phase["phase"] == "execute"
+        assert phase["phase"] == "plan"
+        submit_phase_output(
+            project,
+            handle.run_id,
+            phase="plan",
+            payload={
+                "summary": "plan ok",
+                "execution_steps": ["edit", "test"],
+                "files_expected": [],
+                "commands_expected": ["pytest -q"],
+                "validation_plan": "run pytest",
+                "risk_assessment": "low risk",
+            },
+        )
         submit_phase_output(
             project,
             handle.run_id,
@@ -179,6 +236,10 @@ def test_loop_parent_stops_on_iteration_budget(tmp_path):
             phase="reflect",
             payload={
                 "summary": "reflect ok",
+                "outcome": "failed",
+                "residual_risks": ["checks failed"],
+                "evidence": ["checks failed"],
+                "next_recommendation": "retry",
                 "failure_class": "checks",
                 "root_cause": "validator failed",
                 "next_plan_hint": "retry with a better plan",
