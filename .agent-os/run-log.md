@@ -932,3 +932,10 @@
   - Evidence produced: 按用户后续要求将 GitHub release body 改为全英文，并移除中文 `数字员工` 表述；回读 `gh release view ... --json body` 验证正文已更新，`grep "数字员工"` 无匹配。
   - Evidence produced: 按用户后续命名要求将 GitHub release name 与正文 H1 从 `Thoth Plugin Final Archive` 改为 `Thoth Plugin Archive`；回读 `gh release view ... --json name,body` 验证展示名与标题已更新。
   - Residual: 当前工作树在本轮前已有 `.agent-os/run-log.md` 修改与 `.agent-os/designs/` 未跟踪目录；本轮只追加了本条 run-log 记录，没有改动源码或未跟踪设计目录。
+
+- 2026-06-27 08:23 UTC [Rename dev to plugin migration branch]
+  - Worked on: `CD-20260627-PLUGIN-ARCHIVE`, `TD-003`
+  - State changes: 按用户要求，不再保留 `dev` 作为公开分支语义；将本地 `dev` 重命名为 `port/from-old-thoth-plugin`，用于承载从旧 Thoth plugin 形态向全新 Thoth 迁移时可参考、可提取的设计与历史材料。
+  - State changes: 在重命名前提交迁移设计与归档记录：`68132b7 docs: preserve new thoth migration plan`。该提交纳入 `.agent-os/designs/new-thoth-migration-architecture-20260625.md`，并将新增设计文档中的本机绝对路径脱敏为 `<thoth-repo>`、`<harness-workspace>` 与 `<codex-skills>`。
+  - Evidence produced: 已推送远端分支 `origin/port/from-old-thoth-plugin`，并删除远端旧分支 `origin/dev`。GitHub 返回新分支 PR 入口 `https://github.com/SeeleAI/Thoth/pull/new/port/from-old-thoth-plugin`。
+  - Residual: 本轮未改动 runtime 源码、release tag、archive branch、main branch 或 release assets；远端默认分支仍有 GitHub 提示的 dependabot vulnerability，不属于本轮分支 rename/publish 处理范围。
