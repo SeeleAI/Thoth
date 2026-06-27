@@ -2,6 +2,14 @@
 
 ## Entries
 
+- 2026-06-25 00:00 UTC [New Thoth migration architecture design capture]
+  - Worked on: `OBJ-001`, `WS-002`, `WS-004`, `WS-005`
+  - State changes: 按用户要求，将“全新版本 Thoth”的原始目标、输入、参考资料、调研结论与当前方案压缩沉淀为单一详细设计文档，重点覆盖数字员工入口、clarification-to-contract、loop registration、宿主无关、多端同步、独立 role/session 与对抗式 review。
+  - State changes: 本轮未修改当前 Thoth runtime / dashboard / plugin 代码；主要产物是规划与架构冻结材料，用于后续 `TD-003` / `MS-004` 设计推进。
+  - Evidence produced: 新增设计文档 `.agent-os/designs/new-thoth-migration-architecture-20260625.md`，汇总了用户原始需求、`Multica`/`Paseo`/`OpenTUI` 本地源码调研结论、当前 Thoth 基线、new Thoth 对象模型、三阶段生命周期、prompt 套件、memory/context、host-neutral driver、timeline sync、不变式、多端路线与 MVP 分期。
+  - Evidence produced: 参考源码锚点来自本地 clone：`<harness-workspace>/multica` `HEAD=343ace8`、`<harness-workspace>/paseo` `HEAD=507345d`，以及本机 OpenTUI skill docs。
+  - Next likely action: 以该设计文档为入口，把 `TD-003` 继续推进为 decision-complete 的 new Thoth 迁移主线，并单独拍板 daemon/store、首发 provider、APP 时机与长期 authority 物化策略。
+
 - 2026-05-27 04:47 UTC [0.2.8.4 compact runtime defaults release]
   - Worked on: `OBJ-001`, `WS-001`, `WS-002`, `WS-003`, `WS-005`
   - State changes: 按用户新增要求发布 `0.2.8.4`。`run` / `loop` RuntimeDriver 的 foreground heartbeat / live observation 默认从短周期改为 `288s`，`auto` watch snapshot 与 idle heartbeat 同步使用同一节奏；terminal/error、worker-invalid、missing receipt、runtime mismatch 与用户 live guidance 仍可即时输出或注入，不把等待变成失明。
@@ -913,3 +921,14 @@
   - Evidence produced: 下游已 init 项目只做安装态 extension experiment + TUI smoke，结果为通过；公开记录仅保留脱敏状态，不写真实路径、实验名、metrics 数量、work/run id、artifact path 或截图。
   - Blocker / residual: 当前机器 Claude host-real selftest 仍因 `claude_authenticated=false` 未运行；Claude 安装态版本已通过 plugin list 与 cache runtime 核验。Dashboard selftest start 在组合运行中仍可能偶发启动窗口失败，保留 workdir 后复跑通过，未发现 0.4.3 代码确定性回归。
   - Next likely action: 回到 `TD-001`，继续将 `dev` / `main` 分流规则固化为仓库内可执行治理机制，并把 experiment registry/extension privacy scanner 纳入后续默认发布门。
+
+- 2026-06-27 07:52 UTC [Plugin final archive release]
+  - Worked on: `CD-20260627-PLUGIN-ARCHIVE`, `EV-20260627-PLUGIN-FINAL-RELEASE`
+  - State changes: 按用户最新分支治理决策封存当前 `main` 发布面为 `archive/main-20260627`，不再区分 V1/V2；旧 plugin 形态作为历史 archive，不再继续维护。`dev` 本轮未删除，后续等提取足够信息后再处理。
+  - State changes: 删除旧 release tag `v0.2.0` 的本地与远端引用；新建并推送 annotated tag `thoth-plugin-final-archive`，tag 解引用到 `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`。
+  - Evidence produced: 远端 `archive/main-20260627` 与 `main` 均指向 `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`；远端 tag 仅显示 `thoth-plugin-final-archive`，未再显示 `v0.2.0`。
+  - Evidence produced: GitHub release `Thoth Plugin Archive` 已创建，URL 为 `https://github.com/SeeleAI/Thoth/releases/tag/thoth-plugin-final-archive`，release body 明确说明这是 Thoth 作为 Claude Code / Codex plugin 形态的最后一个归档版本，旧 plugin 形态不再维护，后续转向全新的 Thoth。
+  - Evidence produced: Release assets 上传完成：`thoth-plugin-final-archive-source.tar.gz`，`thoth-plugin-final-archive-source.zip`，`SHA256SUMS`。本地生成包位于 `/tmp/thoth-plugin-final-release/`，SHA256 为 `9962744fff19c68698a84af91128b24d59aea61dc7da48276b42968fde9b2439` 和 `4803f2d7c52b5e44fb21fe4fe0d5c7e68c93c7755147f55ba14f8b6862816213`。
+  - Evidence produced: 按用户后续要求将 GitHub release body 改为全英文，并移除中文 `数字员工` 表述；回读 `gh release view ... --json body` 验证正文已更新，`grep "数字员工"` 无匹配。
+  - Evidence produced: 按用户后续命名要求将 GitHub release name 与正文 H1 从 `Thoth Plugin Final Archive` 改为 `Thoth Plugin Archive`；回读 `gh release view ... --json name,body` 验证展示名与标题已更新。
+  - Residual: 当前工作树在本轮前已有 `.agent-os/run-log.md` 修改与 `.agent-os/designs/` 未跟踪目录；本轮只追加了本条 run-log 记录，没有改动源码或未跟踪设计目录。
