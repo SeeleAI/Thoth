@@ -1,101 +1,44 @@
 # Requirements
 
+## Objective
+
+`NTH-OBJ-001`: New Thoth must become a host-neutral task control plane for AI work. It should behave like a reliable private secretary for a high-authority user: remember context, understand vague intent, ask only the important golden questions, register durable tasks when needed, run asynchronous loops, and report results with evidence.
+
 ## Goals
 
-- `OBJ-001`: 把 `Thoth` 做成一个公开、可恢复、可验证的 Agent Project OS：
-  - 当前阶段提供可发布的 Claude Code / Codex 双宿主插件
-  - 后续继续向 `.thoth` authority runtime 收敛
-
-## Requirements
-
-- `REQ-001`: `dev` 分支必须保留完整的项目状态文档系统，根路径包含 `AGENTS.md`、`CLAUDE.md` 和 `.agent-os/`。
-- `REQ-002`: 项目状态必须可从仓库文档恢复，不能依赖聊天记录。
-- `REQ-003`: 当前 checkout 的实现事实必须与未来目标架构清晰区分。
-- `REQ-004`: `main` 分支不保留 `AGENTS.md`、`CLAUDE.md`、`.agent-os/` 等动态开发态文档。
-- `REQ-005`: `dev -> main` 的默认集成策略是 `cherry-pick`。
-- `REQ-006`: 当前插件公开 surface 必须保持干净：只暴露真正的 `/thoth:*` 公共命令与单一 `$thoth <command>` 公共入口。
-- `REQ-007`: 公开仓库不保留私人本地路径、个人敏感信息或无运行必要的外部项目来源链。
-- `REQ-013`: 对 `Codex` / `Claude Code` 特性、运行机制和产品限制的长期文档化，必须以官方 docs 为 authority，并受 freshness policy 约束。
-- `REQ-014`: dashboard 监控长时运行时，必须采用 `task-first UI + run-ledger truth` 模型。
-- `REQ-017`: 仓库必须具备可机械化执行的原子化自测试系统；公开 selftest 入口必须按 case registry 工作，且单个 case 不得依赖前一个 case 的副作用。
-- `REQ-018`: `/thoth:init` 不能假设目标仓库为空；必须先审计当前 repo 状态，再以 audit-first adopt/init 流程补齐 Thoth 架构。
-- `REQ-019`: 任何新功能开发都必须同时兼顾 `Claude Code` 与 `Codex` 两个宿主面。
-- `REQ-020`: 每次开发完成后，必须按仓库治理约束完成：`dev` 验证、发布代码集成到 `main`、push `dev` 与 `main`、更新本机插件安装。
-- `REQ-021`: 仓库级 pytest 默认必须是 targeted-only：只允许显式 file/nodeid 或 `--thoth-target`；broad/full runs 只有在显式豁免时才允许。
-- `REQ-022`: 本轮重构的首要目标是在不丢失既有功能、不违反既有治理边界、不放松既有验收语义的前提下，显著简化 Thoth 的整体实现，删除冗余设计、重复包装和工程上不优雅的实现。
-- `REQ-023`: Thoth 必须有一套独立于当前代码目录结构的高维分层架构定义；每一层的职责、允许依赖方向、输入输出协议和 authority 边界都必须清晰、稳定、可解释。
-- `REQ-024`: 层与层之间传递的协议和数据必须高度确定：同一语义只能有一个 canonical shape；host 适配、dashboard 读面、worker 执行、validator/selftest 都必须围绕同一 authority 数据模型运转。
-- `REQ-025`: 发布门、关闭门与回归门必须以显式 selftest case 列表和显式 pytest target/file 列表记账，不再以 `hard` / `heavy` 或 `light` / `medium` / `heavy` 作为默认公共验证语义。
-- `REQ-026`: 结果模型固定为 `RunResult + work-level current result` 双层：单次尝试详细结果写入 `.thoth/runs/<run_id>/result.json` 与 `run` / `phase_result` objects，work 当前结论作为 `.thoth/docs/work-results/<work_id>.result.json` 只读派生视图，并可由 `init --sync` 按 canonical run/object 历史重建。
-- `REQ-027`: `Observe` 读面必须保持纯读；`status`、`doctor`、`dashboard`、`report`、hooks、validators/read-model 不得偷偷修 authority。`argue` 只记录 adversarial evidence / patch preview，默认不得静默修改 authority。
-- `REQ-028`: 旧的内部主路径 `thoth/runtime.py`、`thoth/task_contracts.py`、`thoth/project_init.py`、`thoth/claude_bridge.py`、`thoth/host_hooks.py` 不得继续保留为实现主入口；主实现必须集中到 `thoth/surface`、`thoth/plan`、`thoth/run`、`thoth/init`、`thoth/observe`。
-- `REQ-029`: 仓库必须提供固定 target manifest 与 changed-path 推荐入口，用于把改动路径翻译成精确 pytest targets 和 selftest cases。
-- `REQ-030`: `.thoth` authority 必须收敛为统一对象图：canonical storage 固定为 `.thoth/objects/<kind>/<object_id>.json`，所有 authority 写入必须经过 `Store` API；`.agent-os`、`.thoth/project/contracts`、`.thoth/project/tasks` 与 dashboard SQLite 不得再作为平行 authority。
-- `REQ-031`: `Contract` 不再是长期对象 kind；`work_item.payload` 必须采用 compact shape，只允许 `goal`、`context`、`constraints`、`acceptance_spec`、`approach_notes`、`scheduling`、`run_limits` 与 `missing_questions`。`decisions` / `depends_on` 只允许作为 public input convenience，并必须存为 canonical links；新写入路径不得再存 `work_kind`、`runnable`、`module`、`direction`、`summary`、`execution_plan`、`eval_contract`、`runtime_policy`、`validate_output_schema`、`hidden`、`superseded_by` 或 `scheduling.priority`。
-- `REQ-032`: `run` 是最小执行单元，必须固定绑定 `work_id@revision`；`loop`、`orchestration`、`auto` 属于 controller service，不得把多轮、DAG 或 queue 语义塞回 `run`。
-- `REQ-033`: 被 active run/controller 引用的 work item 必须完全锁定；任何 update/tombstone/link mutation 都必须失败，直到 active execution terminal。
-- `REQ-034`: 本机 Claude Code / Codex 的 Thoth 安装刷新必须只走远端 marketplace upgrade/update；不得用本机 checkout、cache、临时目录、`rsync` 或其他本地覆盖方式兜底。远端刷新失败时只能记录 blocker 与真实输出。
-- `REQ-035`: `auto` 的长时执行必须由 Thoth-owned durable background worker 持有，live / sleep / Claude Monitor / Codex foreground watch 只能作为观察器；正确性与恢复点必须落在 `.thoth/objects/controller`、`.thoth/local/controllers/*/supervisor.json`、child run ledger 与 watch JSONL 中。
-- `REQ-036`: Codex 安装态插件必须包含 Thoth runtime entrypoint 与生成 skill，不能是 skill-only package；Codex host-real selftest 必须从已安装 marketplace cache 或 PATH 解析 runtime，不得回退到当前本地 checkout。
-- `REQ-037`: `auto` 必须按 DAG-first semantics 选择 work：依赖只在 dependency work item status 为 `validated` 时满足，`abandoned` 不满足；不再使用 priority / priority-top 语义，只允许可选 `scheduling.order` 做同层排序；`all-open` scope 顺序为 active、ready、failed，`ready` scope 只消费 ready。`run --reconcile` 不再是 public flag；历史 run 进度恢复必须由 `plan` phase 的 `history_context` / `history_action` 驱动。
-- `REQ-038`: live foreground observation 默认必须稀疏化为 `288` 秒节奏，以降低前台宿主 token 消耗；terminal/error、worker-invalid、missing receipt、runtime mismatch 与用户纠偏必须能绕过安静观察间隔。
-- `REQ-039`: public execution 默认必须宿主对齐：Claude 宿主默认 Claude executor，Codex 宿主默认 Codex executor；显式 `--executor claude|codex` 仍作为有意跨宿主执行覆盖口保留。
-- `REQ-040`: `run` / `loop` / `auto` phase prompts 必须采用 evidence-production first 执行哲学：当验收依赖 canonical artifact、metric、log、receipt、benchmark output、service state 或文件时，缺失 evidence 不能被 prompt 鼓励为最终解释，而必须先作为 execute 可继续生成、修复、插桩、续跑、重跑或 root-cause capture 的执行工作处理；健康进程不得因自设短观察窗口未见 evidence 被私自终止。
-- `REQ-041`: 长程任务的 first-artifact evidence 只能证明启动或最小产物路径可用，不能替代 acceptance evidence。训练、benchmark sweep、data generation、service warmup 等 work 在只看到 partial metric stream、missing eval interval、`threshold_record=null`、`record_counts` 未闭合或类似证据时，`reflect` 与 runtime retry synthesis 必须保留 technical continuation guidance，推动下一轮继续/resume canonical execution，而不是把失败收窄成 validator receipt cleanup。
+1. `NTH-REQ-001`: Reduce user cognitive burden and entry barrier as the first design principle.
+2. `NTH-REQ-002`: Compile natural-language intent into clear task contracts with goal, non-goals, constraints, assumptions, risks and acceptance.
+3. `NTH-REQ-003`: Treat formal tasks as recoverable, reviewable, long-running loops rather than one-off agent runs.
+4. `NTH-REQ-004`: Make success depend on frozen acceptance and evidence, not executor self-report.
+5. `NTH-REQ-005`: Keep Thoth host-neutral across Claude Code, Codex, ACP-compatible tools and future harnesses.
+6. `NTH-REQ-006`: Keep UI shells thin. TUI, desktop app, mobile app and CLI must see the same authority.
+7. `NTH-REQ-007`: Use OpenTUI for the TUI shell.
+8. `NTH-REQ-008`: Use a TypeScript / Node monorepo for the new runtime. The new core must not use Python as the main product runtime.
+9. `NTH-REQ-009`: Preserve old plugin history through archive release and archive branch, not through legacy code in the active working tree.
 
 ## Acceptance Criteria
 
-- `AC-001`: 仓库根存在 `AGENTS.md` 与 `CLAUDE.md`。
-- `AC-002`: `.agent-os/` 中存在完整状态文档集。
-- `AC-003`: `project-index.md` 中始终存在唯一 top next action。
-- `AC-004`: 文档明确记录 `dev` 与 `main` 的边界，以及 `cherry-pick` 为默认集成策略。
-- `AC-005`: 文档准确描述当前插件代码面：
-  - 当前公开命令包括 Claude `/thoth:*` 与 Codex `$thoth <command>`
-  - 当前公开命令集合固定为 `init`、`discuss`、`run`、`loop`、`argue`、`auto`、`status`、`doctor`、`dashboard`
-  - Claude 侧 `--executor codex` 继续存在，但默认 executor 与宿主对齐
-  - 当前已实现最小 `.thoth/objects` authority tree、durable run/controller runtime 与 dashboard run-ledger / object-graph 读面
-- `AC-006`: `architecture-milestones.md` 中明确分开“当前实现结构”与“目标 V2 架构”。
-- `AC-007`: `.agent-os/official-sources/` 中存在平台真源治理文档。
-- `AC-008`: `/thoth:init` 生成的项目包含最小 `.thoth/objects` authority tree 与 `.thoth/docs` 只读视图；dashboard backend 能读取 `.thoth/runs/*` 与 `.thoth/objects/*`。
-- `AC-009`: `python -m thoth.selftest` 的公开接口只接受显式 `--case` 列表；无 `--case` 时会失败并输出可用 case catalog 与推荐用法；结果报告按 `selected_cases` 与 `results[case_id]` 记账。
-- `AC-010`: `/thoth:init` 能在空白 repo、漂移 repo 和已有 `.thoth` / `.agent-os` 的 repo 上执行 audit-first adopt/init。
-- `AC-011`: `/thoth:init` 每次执行都会写出 migration ledger 和 `.thoth/docs/source-map.json`。
-- `AC-012`: `AGENTS.md` 中明确要求新功能同步兼顾 Claude Code 与 Codex，并按固定流程收尾。
-- `AC-013`: 仓库提供可执行的 pytest targeted 选择器：显式 file/nodeid 与 `--thoth-target` 默认允许；裸 `pytest`、目录级 `pytest` 与 `--thoth-tier` broad runs 默认失败；只有 `--thoth-allow-broad` 或 `THOTH_ALLOW_BROAD_TESTS=1` 时才允许 broad sweeps。
-- `AC-014`: 文档中明确写出本轮认可的 Thoth 高维分层架构，且区分“层”与“代码目录”；每层都具备清晰职责说明和层间协议说明。
-- `AC-015`: `run` / `loop` / `argue` / dashboard / selftest / host projections 共享同一 authority 数据模型，不再依赖多套平行 shape 或隐式宿主状态。
-- `AC-016`: 本轮结束时必须具有真实证据证明 repo-local atomic selftest matrix 可独立通过，且至少一组显式 target 的 pytest 命令可通过；同时 `python -m thoth.selftest` 无 `--case` 与裸 `pytest` 默认失败，并按分支治理完成 `dev` 验证与状态记账。
-- `AC-017`: 当前代码与文档明确共享同一 run ledger canonical 形态：`.thoth/runs/<run_id>/run.json`、`state.json`、`events.jsonl`、`result.json`、`artifacts.json`。
-- `AC-018`: 当前代码与文档明确共享同一 work 当前态读视图：`.thoth/docs/work-results/<work_id>.result.json` 作为可重建 current-result view，`status --report` / `dashboard` 读当前结论时优先从对象图和该派生视图消费，`init --sync` 能按 run/object 历史重建它。
-- `AC-019`: `argue` 明确为 adversarial discussion / evidence surface，不是代码 review 或 PASS/WARN/FAIL 打分器；`loop` 只通过 controller 对同一个 `work_id@revision` 反复创建 child run，不得回退到旧 `task_id + target` / `TaskResult.last_closure_at` 语义。
-- `AC-020`: 当前仓库文档准确反映新的 canonical 包级骨架：`thoth/surface`、`thoth/plan`、`thoth/run`、`thoth/init`、`thoth/observe`，且不再把已删除的旧顶层内部模块描述成主实现。
-- `AC-021`: 仓库提供 `thoth/test_targets.py` target manifest 与 `scripts/recommend_tests.py` changed-path 推荐入口，能生成精确 pytest/selftest 建议命令。
-- `AC-022`: `Store` 覆盖 create/read/update/tombstone/list/link/unlink、revision conflict、active work lock、schema failure 与 invalid link target；核心对象 kinds 至少覆盖 `project`、`discussion`、`decision`、`work_item`、`controller`、`run`、`phase_result`、`artifact`、`doc_view`。
-- `AC-023`: public `run` / `loop` 接口使用 `--work-id`；缺少 `--work-id` 时只能返回现有 work item 候选并停止，不允许创建 work item 或触碰代码。`argue` 可针对 idea / work item / decision 记录论证，但不得把论证结果当成 run acceptance。
-- `AC-024`: selftest case registry 包含并可执行 `discuss.subtree.close`、`run.phase_contract`、`run.locked_work`、`loop.controller`、`orchestration.controller`、`auto.queue`、`observe.object_graph`。
-- `AC-025`: 本轮关闭门只包含核心五项 selftest：`discuss.subtree.close`、`run.phase_contract`、`run.locked_work`、`loop.controller`、`observe.object_graph`；`auto` / `orchestration` 保留 public surface 与现有测试覆盖，但不作为本轮 runtime kernel 关闭门。
-- `AC-026`: `auto` live 默认启动或复用 durable background worker 后只观察 controller；`auto --sleep` 与 Claude bridge 默认返回 `monitor_command`；session 中断不得直接中断 worker，worker stale/missing 时可由同一 controller 恢复；`--min-runtime-seconds` 的默认 `28800` 必须按真实 wall-clock 执行。
-- `AC-027`: 安装态 host-real selftest 覆盖 9 个公开命令与关键模式：Codex `$thoth` 命令从安装态 runtime 执行并默认使用 Codex executor；Claude `/thoth:*` 对 `run`、`loop`、`argue`、`auto` 默认使用 Claude executor，同时保留显式 `--executor codex` 覆盖路径；Codex hooks 只允许写入一次性测试仓库 `.codex/`，不得修改全局 `~/.codex`。
-- `AC-028`: 新 public work-json 若缺 `acceptance_spec` 必须以 blocked / needs-input 形态保存或拒绝，不得写空 schema 伪装 ready；dashboard/status 只能把 `module` / `direction` 作为派生读模型字段，不得要求 compact authority payload 存储这些 dashboard-only 字段。
-- `AC-029`: `run` / `loop` / `auto` / `argue` 在没有显式 `--executor` 时必须把 executor 解析为当前 host；Claude projection 传入 `--host claude` 即应得到 Claude executor，Codex public entry 默认得到 Codex executor。
-- `AC-030`: auto controller payload 不得长期重复保存可派生的 queue/count/attempted/completed/failed 列表；dashboard/status 必须从 `work_refs`、`attempts`、cursor、supervisor 与 object graph 派生这些读面。
-- `AC-031`: `plan` prompt 必须要求列出 canonical evidence ladder；`execute` prompt 必须明确 missing evidence is execution work、禁止 self-imposed observation-window kill、允许有理由的 debugging stop/restart 并要求保存日志/下一步、预算到期时保存 continuation evidence；`reflect` prompt 必须在 missing evidence 且无 concrete root cause 时给出继续 evidence production/root-cause capture 的 corrective_prompt。
-- `AC-032`: `reflect` failed 输出缺少机械 retry 字段时，runtime 合成的 `corrective_prompt` 必须保留 `review` / `summary` 中已有的技术方向；对明确 long-running evidence continuation 的 `metric_not_reached` / `evidence_insufficient` 场景，runtime 可记录 `retry_mode=evidence_continuation` 并给出最多 2 次 execute retry budget。
-
-## Non-Goals
-
-- 不把当前仓库描述成已完整实现 `Thoth V2`。
-- 不在本次状态文档中保存历史私有路径、私人环境细节或外部项目背景。
-- 不把 `main` 的隔离机制错误描述成已经完全自动化。
-- 不把“更少代码”本身当成目标；本轮追求的是在保持语义和验收不变时的更清晰抽象、更少冗余源和更确定的协议。
+1. `NTH-AC-001`: The active working tree no longer contains old Python runtime, plugin projection, dashboard template, Textual TUI or old tests.
+2. `NTH-AC-002`: The active working tree contains exactly the 10 approved package skeletons under `packages/`.
+3. `NTH-AC-003`: Root and package metadata use `GPL-3.0-only`, package version `0.0.0`, and `npm workspaces`.
+4. `NTH-AC-004`: The recovery path from `AGENTS.md` to `.agent-os/project-index.md` to `.agent-os/todo.md` can explain the current New Thoth state without the chat transcript.
+5. `NTH-AC-005`: The canonical design set is present under `.agent-os/designs/`.
+6. `NTH-AC-006`: The old plugin archive release and branch are documented for traceability.
+7. `NTH-AC-007`: No document claims the current checkout provides a runnable Thoth product.
 
 ## Hard Constraints
 
-- `REQ-008`: 项目状态文档主语言为中文。
-- `REQ-009`: 代码注释与脚本 `print` 输出保持英文。
-- `REQ-010`: 没有证据不得宣称“完成”“验证通过”或“V2 已实现”。
-- `REQ-011`: 面向 `main` 的代码集成默认只允许 `cherry-pick`。
+1. Do not push unless explicitly requested.
+2. Do not touch `main`, archive branches, release tags, GitHub release assets or marketplace installs in this reset.
+3. Do not reintroduce old plugin runtime compatibility.
+4. Do not add fake build/test/typecheck scripts before implementation exists.
+5. Do not add a new package outside the approved 10 packages without a tracked decision.
+6. Do not expose internal multi-agent/team/squad concepts to the user-facing product model.
 
-## Source Note
+## Non-Goals
 
-本文件保存用户定义的目标、治理边界和验收语义。允许精简公开表述，但不允许私自改变含义。
+1. Implementing daemon, SQLite authority, drivers, TUI, desktop app, mobile app, relay or CLI.
+2. Producing runnable MVP behavior.
+3. Porting old plugin commands.
+4. Preserving old 0.4.x changelog as the active product history.
+5. Maintaining the old Python package for compatibility.

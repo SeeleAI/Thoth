@@ -1,0 +1,13 @@
+{
+  "name": "thoth",
+  "version": "0.0.0",
+  "private": true,
+  "description": "New Thoth task control-plane monorepo skeleton",
+  "author": "SeeleAI",
+  "license": "GPL-3.0-only",
+  "packageManager": "npm@11.9.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ]
+}

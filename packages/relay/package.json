@@ -1,0 +1,8 @@
+{
+  "name": "@thoth/relay",
+  "version": "0.0.0",
+  "private": true,
+  "description": "E2EE WebSocket relay for New Thoth",
+  "license": "GPL-3.0-only",
+  "type": "module"
+}

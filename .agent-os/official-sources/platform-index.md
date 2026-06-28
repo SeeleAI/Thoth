@@ -1,5 +1,9 @@
 # Platform Source Index
 
+## New Thoth Reset Note
+
+This file is a historical cache from the old Thoth plugin line. Its rows may still say `active` because that was their status when originally verified, not because they are current New Thoth implementation authority. For New Thoth work, treat every entry as stale reference material until the corresponding official page, local source checkout, or live tool behavior has been revalidated.
+
 ## Purpose
 
 本文件是 `Codex` 与 `Claude Code` 官方资料在本仓库内的统一登记表。它的职责是：

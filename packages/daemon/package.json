@@ -1,0 +1,8 @@
+{
+  "name": "@thoth/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local authority daemon for New Thoth",
+  "license": "GPL-3.0-only",
+  "type": "module"
+}

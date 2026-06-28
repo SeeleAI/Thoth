@@ -2,170 +2,38 @@
 
 ## Backlog
 
-- `TD-004` `[backlog]`: 明确 `main` 分支对开发态文档路径的拒收机制
-  - Related items: `WS-001`, `MS-002`, `REQ-004`, `REQ-005`
-
-- `TD-005` `[backlog]`: 对照当前 `scripts/init.py` 与目标 audit-first adopt/init 语义整理差距清单
-  - Related items: `WS-002`, `MS-004`, `REQ-003`
-
-- `TD-006` `[backlog]`: 梳理当前 repo 结构到未来 `.thoth/` authority layout 的迁移映射
-  - Related items: `WS-002`, `MS-004`, `REQ-003`
+1. `NTH-TD-003` `[backlog]`: Write the first SQLite authority schema and migration policy.
+   - Related: `NTH-MS-002`, `NTH-REQ-002`, `NTH-REQ-004`
+2. `NTH-TD-004` `[backlog]`: Design the first Claude Code, Codex and ACP driver capability contract.
+   - Related: `NTH-MS-004`, `NTH-REQ-005`
+3. `NTH-TD-005` `[backlog]`: Run an OpenTUI spike to decide Node FFI vs Bun runtime for `packages/tui`.
+   - Related: `NTH-MS-005`, `NTH-REQ-007`
+4. `NTH-TD-006` `[backlog]`: Design E2EE relay deployment path for Cloudflare prototype and seeles.ai hosted/self-hosted service.
+   - Related: `NTH-MS-005`, `NTH-REQ-006`
 
 ## Ready
 
-- `TD-001` `[ready]`: 将 `dev` / `main` 分流规则固化为仓库内可执行治理机制
-  - Related items: `WS-001`, `MS-002`, `REQ-004`, `REQ-005`
-
-- `TD-003` `[ready]`: 把 V2 架构问题整理成 decision-complete 的迁移主线
-  - Related items: `WS-002`, `MS-004`, `REQ-003`
-
-- `TD-016` `[ready]`: 梳理当前冗余抽象、重复状态源与过度包装清单，明确哪些必须删除、合并或下沉
-  - Related items: `WS-005`, `MS-005`, `REQ-022`, `REQ-023`, `REQ-024`
-
-- `TD-017` `[ready]`: 收敛公开命令层、宿主投影层与 bridge/skill surface，使 host difference 只停留在交互适配而非语义分叉
-  - Related items: `WS-003`, `WS-005`, `MS-005`, `REQ-006`, `REQ-019`, `REQ-023`, `REQ-024`
-
-- `TD-018` `[ready]`: 收敛 planning authority 与 task compiler，把 Decision / Contract / Task / Verdict 之间的 canonical 数据模型压实
-  - Related items: `WS-002`, `WS-005`, `MS-004`, `MS-005`, `REQ-023`, `REQ-024`
-
-- `TD-019` `[ready]`: 收敛 runtime protocol 与 run state machine，明确 live / sleep / attach / resume / stop 的唯一状态流
-  - Related items: `WS-002`, `WS-005`, `MS-005`, `REQ-023`, `REQ-024`
-
-- `TD-020` `[ready]`: 收敛 execution orchestration，实现 host-neutral runtime core 与最小 host adapter
-  - Related items: `WS-002`, `WS-003`, `WS-005`, `MS-005`, `REQ-019`, `REQ-023`, `REQ-024`
-
-- `TD-021` `[ready]`: 收敛 project materialization 流程，简化 init / sync / render / migrate 的责任边界
-  - Related items: `WS-002`, `WS-005`, `MS-005`, `REQ-018`, `REQ-022`, `REQ-023`
-
-- `TD-022` `[ready]`: 收敛 observability/read-model，把 status / doctor / report / dashboard / hooks 统一为 authority 的只读派生层
-  - Related items: `WS-002`, `WS-003`, `WS-005`, `MS-005`, `REQ-014`, `REQ-022`, `REQ-024`
+1. `NTH-TD-002` `[ready]`: Design the first implementation slice for Router, Clarify, authority store and task lifecycle without reintroducing old plugin runtime compatibility.
+   - Related: `NTH-MS-002`, `NTH-MS-003`, `NTH-REQ-001`, `NTH-REQ-002`
 
 ## Doing
 
-- None
+None.
 
 ## Blocked
 
-- None
+None.
 
 ## Done
 
-- None
+1. `NTH-TD-001` `[done]`: Reset the active working tree from old plugin runtime to New Thoth monorepo skeleton.
+   - Related: `NTH-MS-001`
+   - Verification: See `NTH-EV-001` after reset checks.
 
 ## Verified
 
-- `TD-015` `[verified]`: 冻结 Thoth 的高维分层架构与层间协议，并把用户本轮“简化、不丢功能、不改语义、最终 heavy 双宿主通过”的要求翻译成可执行重构主线
-  - Related items: `WS-005`, `MS-005`, `REQ-022`, `REQ-023`, `REQ-024`, `REQ-025`
-- `TD-031` `[verified]`: 只通过远端 marketplace upgrade/update 刷新本机 Claude/Codex 的 Thoth 安装
-  - Related items: `WS-001`, `WS-003`, `REQ-020`, `REQ-034`
-  - Evidence: Claude Code 侧已卸载旧 `thoth@thoth` 与 marketplace `thoth`，重新从远端 `SeeleAI/Thoth` 添加 marketplace 并安装 `thoth@thoth`；`claude plugin marketplace update thoth` 成功，`claude plugin update thoth@thoth --scope user` 返回已是最新 `0.1.4`
-  - Evidence: Codex 侧 `codex plugin marketplace remove thoth` 返回原先未配置；随后 `codex plugin marketplace add SeeleAI/Thoth` 成功，`codex plugin marketplace upgrade thoth` 成功
-  - Evidence: `claude plugin list --json` 显示 `thoth@thoth` `version=0.1.4`、`scope=user`、`enabled=true`、`lastUpdated=2026-04-30T09:32:39.090Z`；`claude plugin marketplace list --json` 显示 marketplace `thoth` 来源为 GitHub `SeeleAI/Thoth`
-  - Constraint: 全程只使用远端 marketplace / host CLI 路径，未用本机 checkout、cache、临时目录或 `rsync` 覆盖安装
-- `TD-033` `[verified]`: 将公开命令面收敛为最小组合，并补齐 `auto` 与旧项目迁移入口
-  - Related items: `WS-002`, `WS-003`, `WS-005`, `REQ-018`, `REQ-020`, `REQ-023`, `REQ-034`
-  - Evidence: 公开命令面已收敛为 `init / discuss / run / loop / review / auto / status / doctor / dashboard`；`sync` 改为 `init --sync`，`report` 改为 `status --report`，`doctor` / `dashboard` 为 `status` 读面别名，`extend` / `orchestration` 从公开投影删除
-  - Evidence: `auto` 默认 live，可 `--sleep`，按 priority/order/updated_at/work_id 选择 actionable work，通过 child `loop` 推进 ready/active/failed work，忽略 blocked/draft，`--rounds` 预算耗尽返回 paused/exit `2`，`--stop` 会写入 controller stop
-  - Evidence: `init --migrate --preview|--apply` 写 `.thoth/migrations/<id>/audit.json` 与 `preview.json`，apply 将 legacy `.agent-os/research-tasks/*.yml` 导入 `work_item` / `work_result`；`doctor --fix --preview|--apply` 作为显式迁移快捷入口，裸 doctor 仍只读严格审计
-  - Evidence: 发布面提交 `4da135a refactor: minimize public runtime surface` 已 cherry-pick 到 `main` 为 `a53559c`；`main` 上 `py_compile` 通过，targeted pytest `50 passed in 927.28s`，核心五项 selftest `overall_status=passed`
-  - Evidence: `origin/main` 已推送 `658e428..a53559c`；Claude Code 远端-only upgrade 输出 `updated from 0.1.5 to 0.1.6`，Codex `plugin marketplace upgrade thoth` 成功，`claude plugin list --json` 显示 `thoth@thoth` `version=0.1.6`
-- `TD-034` `[verified]`: 将 `auto` 收紧为 durable background worker 与 live/sleep 观察器分层
-  - Related items: `WS-002`, `WS-003`, `WS-005`, `REQ-020`, `REQ-023`, `REQ-024`, `REQ-034`
-  - Evidence: `auto` live 路径启动/复用 durable controller worker 后只通过 `auto --watch <controller_id> --follow --stream-json` 观察；`--sleep` 与 Claude bridge `--monitor-packet` 返回 `monitor_command`，不让宿主会话持有 8 小时执行权
-  - Evidence: `.thoth/local/controllers/<controller_id>/supervisor.json` 记录 auto worker pid/state；worker stale/missing 时可复用 active controller 并重启；Ctrl-C/session loss 只影响观察器，不直接停止 controller
-  - Evidence: `--min-runtime-seconds` 默认 `28800` 按真实 wall-clock 约束执行；idle 时 heartbeat/rescan；`--rounds` 只在达到最小运行时间后作为退出上限；显式 `--work-id` 队列固定，非显式队列 idle scan 会拾取新 ready/actionable work
-  - Evidence: 同一 auto controller 内 `attempted_work_ids` / `failed_work_ids` 防止失败 work 被重复尝试；child failure 记录 `thoth.auto.risk` 后继续队列；无自动 executor fallback；同一 repo/worktree 严格串行执行
-  - Evidence: Claude prompt surface 允许 `Monitor` 但只作为可选观察增强；Codex 继续消费同一 watch JSONL 协议，不引入 hooks/subagents 作为正确性依赖
-  - Evidence: `python -m py_compile thoth/run/auto.py thoth/surface/run_commands.py thoth/surface/cli.py thoth/surface/bridges/claude.py thoth/run/controllers.py thoth/observe/read_model.py thoth/observe/status.py templates/dashboard/backend/runtime_loader.py thoth/command_specs.py thoth/prompt_specs.py thoth/projections.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/unit/test_command_spec_generation.py tests/unit/test_dashboard_runtime_api.py tests/unit/test_object_controllers.py` 通过；targeted pytest `tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/unit/test_command_spec_generation.py tests/unit/test_dashboard_runtime_api.py tests/unit/test_object_controllers.py` 为 `48 passed in 698.29s`
-- `TD-035` `[verified]`: 同步 `.agent-os` 当前状态文档，修正 `0.1.11` durable auto 发布后的文档漂移
-  - Related items: `WS-002`, `WS-003`, `WS-004`, `WS-005`, `REQ-002`, `REQ-003`, `REQ-013`, `REQ-035`
-  - Evidence: 已同步 `requirements.md` 的 `work_id` / `init --sync` / durable `auto` 验收语义，补充 `change-decisions.md` 的 `CD-037` ~ `CD-039`，修正 `acceptance-report.md` 中历史 `--task-id` 结论和 closed blocker 归类，并刷新 `architecture-milestones.md`、`codex-vs-claude-code.md` 与本次 `run-log.md`；验收证据见 `EV-037`
-- `TD-036` `[verified]`: 收紧安装态 Codex 全命令测试与 Claude 宿主委派 Codex worker 回归矩阵
-  - Related items: `WS-003`, `REQ-019`, `REQ-020`, `REQ-034`, `REQ-036`, `AC-027`
-  - Evidence: Codex plugin package 已从 skill-only 改为 runtime package；Codex micro prompt 与 selftest 从 PATH 或安装态 plugin cache 解析 runtime，不回退本地 checkout；host-real Codex hooks 只写 disposable test repo `.codex/`；新增 Codex/Claude `auto` sleep/stop selftest cases；Claude `run` / `loop` / `review` / `auto` 均以 `--executor codex` 覆盖真实委派；验证见 `EV-038`
-- `TD-037` `[verified]`: 完成 `0.1.12` 远端-only Claude/Codex 安装刷新与安装态矩阵重跑
-  - Related items: `WS-003`, `REQ-020`, `REQ-034`, `REQ-036`, `AC-027`
-  - Evidence: 使用 repo-local credential 与远端 marketplace 流程刷新后，Claude `thoth@thoth` 已从 `0.1.11` 逐步更新到 `0.1.13`，Codex marketplace 已通过远端 sparse `SeeleAI/Thoth` 根刷新到可执行 runtime root；未用本地 checkout/cache/rsync 覆盖安装。
-  - Evidence: 本轮发布 `0.1.14` 进一步修复 installed-state selftest 剩余阻塞：fixture 生成 strict doctor 所需读面，host-real command 注入 project-local `THOTH_LOCAL_STATE_DIR`，验证器读取同一 local registry，`auto.stop` case 预算覆盖两次 host exec。
-  - Evidence: `python -m py_compile ...` 通过；focused pytest `tests/unit/test_selftest_registry.py tests/unit/test_selftest_helpers.py tests/unit/test_command_spec_generation.py tests/unit/test_plugin_surface.py` 为 `67 passed`；`python -m thoth.cli doctor --version` 输出 `version=0.1.14`；installed-state Codex slice `surface.codex.init/status/doctor/init_sync/auto.sleep_prepare/auto.stop` 为 `overall_status=passed`。
-  - Evidence: 远端-only 安装刷新完成：Claude `plugin update thoth@thoth --scope user` 输出从 `0.1.13` 更新到 `0.1.14`；Codex `plugin marketplace upgrade thoth` 成功，installed marketplace root 的 `doctor --version` 输出 `version=0.1.14`；post-upgrade installed-state Codex slice 同组 6 项继续 `overall_status=passed`。
-- `TD-038` `[verified]`: 强化 `discuss` 长对话语义 authority 保存与 runtime `plan` 防漂移 gate
-  - Related items: `WS-002`, `WS-003`, `WS-005`, `REQ-024`, `REQ-030`, `REQ-031`, `REQ-034`
-  - Evidence: 新增 `thoth/plan/discuss.py` 的 draft checkpoint / close authority service；`discuss` packet 暴露 hidden checkpoint/close protocol command，close 后写入 `work_item.payload.authority_context`，并保持 `discussion -> decision -> work_item` 三对象模型。
-  - Evidence: Runtime `plan` phase 现在必须输出 `authority_complete`、`authority_coverage`、`open_gaps`、`forbidden_assumptions_used`；存在缺口或未授权假设时以 `needs_input` terminal failed，不进入 `execute`。`execute` phase 必须读取 `plan.json` 并报告 `plan_artifact_read=true` 与 `plan_deviations`。
-  - Evidence: `python -m py_compile thoth/objects.py thoth/plan/discuss.py thoth/plan/store.py thoth/surface/plan_commands.py thoth/surface/cli.py thoth/surface/handlers.py thoth/prompt_specs.py thoth/prompt_validators.py thoth/run/phases.py thoth/run/worker.py thoth/projections.py` 通过；targeted pytest `64 passed in 597.00s` 与 lifecycle/bridge/dashboard pytest `14 passed in 266.40s`；核心五项 selftest 为 `overall_status=passed`，报告路径 `.tmp_pytest/thoth-selftest-discuss-plan-authority.json`，生成时间 `2026-05-09T06:20:41Z`。
-  - Evidence: 发布面提交 `48ddebf feat: preserve discussion authority for runtime planning` 已 cherry-pick 到 `main` 为 `1176483` 并推送；dev-only 治理提交 `7fc54bd` 已推送 `origin/dev`。`main` 上 `py_compile` 通过，targeted pytest `64 passed in 473.94s`，核心五项 selftest `.tmp_pytest/thoth-selftest-main-discuss-plan-authority.json` 为 `overall_status=passed`。远端-only 安装刷新完成：Claude `thoth@thoth` 从 `0.1.14` 更新到 `0.1.15`，Codex `plugin marketplace upgrade thoth` 成功。
-- `TD-039` `[verified]`: 完成 `v0.2.0` stable compact release 的分支集成、tag、push 与远端-only 安装刷新
-  - Related items: `WS-001`, `WS-002`, `WS-003`, `WS-005`, `REQ-020`, `REQ-030`, `REQ-031`, `REQ-034`, `CD-042`, `EV-040`
-  - Evidence: `dev` release-surface commit `010c339 release: compact work item authority for 0.2.0` 与 dev-only governance commit `f296eeb docs: record 0.2.0 compact release verification` 已完成并推送；release-surface commit 已 cherry-pick 到 `main` 为 `094609c`。
-  - Evidence: `main` 发布验证通过：targeted `py_compile`、`cd templates/dashboard/frontend && npm run build`、targeted pytest `112 passed in 632.30s`、核心五项 selftest `.tmp_pytest/thoth-selftest-v020-main-core.json` 为 `overall_status=passed`，生成时间 `2026-05-14T14:13:11Z`。
-  - Evidence: tag `v0.2.0` 已打在 `main` 发布提交 `094609c`；`origin/dev` 已推送到 `f296eeb`，`origin/main` 已推送到 `094609c`，`origin/v0.2.0` 已创建。
-  - Evidence: 远端-only 安装刷新完成：`claude plugin marketplace update thoth` 成功；`claude plugin update thoth@thoth --scope user` 输出从 `0.1.15` 更新到 `0.2.0`；`codex plugin marketplace upgrade thoth` 成功。`claude plugin list --json` 显示 `thoth@thoth version=0.2.0`；Claude cache 与 Codex marketplace root 的 `doctor --version` 均输出 `version=0.2.0`。
-- `TD-040` `[verified]`: 强化 `loop` bounded retry 与 `auto` durable controller 运行稳定性
-  - Related items: `WS-002`, `WS-003`, `WS-005`, `REQ-024`, `REQ-032`, `REQ-035`
-  - Evidence: `loop` controller 现在记录 `retry_history` / `last_retry_decision` / `final_outcome`，失败 child run 会基于 non-retryable reason、`next_plan_hint` 与 repeat failure signature 做有限重试决策；下一轮 child run 的 phase packet 带 compact `loop_context`，用于避免重复上轮失败。
-  - Evidence: `auto` controller 现在通过 `.thoth/local/controllers/<controller_id>/worker.lock` 锁住 worker alive-check + spawn，worker 事件持久写入 `.thoth/local/controllers/<controller_id>/events.jsonl`，watch 会读取该事件流；idle 状态更新按 heartbeat 节流，`auto --stop` 会级联 stop 当前 active child run。
-  - Evidence: 发布版本 bump 到 `0.2.4`，并重新生成 Claude/Codex plugin manifests 与 marketplace metadata；`CHANGELOG.md`、`README.md`、`README.zh-CN.md` 已同步补丁版本。
-  - Evidence: `dev` 验证通过：`py_compile`、`git diff --check`、plugin manifest JSON 校验、`python -m thoth.cli sync`、`bin/thoth doctor --version` 输出 `version=0.2.4`；targeted pytest `tests/unit/test_run_state_machine.py tests/unit/test_runtime_protocol.py tests/unit/test_cli_surface.py` 为 `46 passed in 65.14s`，`tests/unit/test_command_spec_generation.py tests/unit/test_plugin_surface.py tests/unit/test_claude_bridge.py tests/unit/test_dashboard_runtime_api.py tests/unit/test_object_controllers.py` 为 `41 passed in 23.69s`。
-  - Evidence: 发布面提交 `fa72d22 feat: harden loop and auto controllers` 已推送到 `dev`；此前 `0.2.3` 发布面提交 `4989e50` 与本次 `fa72d22` 已按顺序 cherry-pick 到 `main`，分别为 `384c6ff` 与 `3afd5c8`。
-  - Evidence: `main` 发布验证通过：同组 `py_compile`、`git diff --check`、manifest JSON、`bin/thoth doctor --version` 输出 `version=0.2.4`；targeted pytest 为 `46 passed in 66.45s` 与 `41 passed in 24.89s`。
-  - Evidence: `origin/dev` 已推送 `caf8c5b..fa72d22`，`origin/main` 已推送 `65e0176..3afd5c8`；远端-only 安装刷新完成，Claude `thoth@thoth` 从 `0.2.2` 更新到 `0.2.4`，Codex marketplace root runtime `doctor --version` 输出 `version=0.2.4`。
-- `TD-041` `[verified]`: 优化 `dashboard` 一键启动、端口归属检测与前端依赖 / build 自恢复
-  - Related items: `WS-002`, `WS-003`, `WS-005`, `REQ-014`, `REQ-024`, `REQ-027`
-  - Evidence: `dashboard start` 现在会读取首选端口并检查端口 owner：同 workspace dashboard 会复用并补 metadata；其他 workspace dashboard、其他服务或未知占用会被视为冲突并继续扫描后续端口，直到找到可用端口。
-  - Evidence: 前端启动前会检查 `node_modules`、`.bin/vue-tsc` / `.bin/vite` symlink、`vue-tsc` / `vite` / `typescript` / `@vitejs/plugin-vue` 包完整性；缺失或 copytree 破坏 symlink 时自动执行 `npm ci --legacy-peer-deps`，无 lockfile 时执行 `npm install --legacy-peer-deps`；缺 dist、force rebuild 或源码新于 dist 时自动 `npm run build`。
-  - Evidence: 启动后不仅等待 `/api/status`，还会读取 `/` 并确认返回真实 Vue shell `<div id="app">`，避免再次出现 fallback HTML 被误报成功；`/api/status` 现在包含 `project_root` 便于 workspace 归属识别。
-  - Evidence: 后端启动从 `nohup bash -lc ... & echo $!` 改为 Python `subprocess.Popen(..., start_new_session=True)` 直接管理 uvicorn pid，stop 能按正确 PID 终止进程。
-  - Evidence: 发布版本 bump 到 `0.2.5`；`dev` 验证通过：`py_compile`、`git diff --check`、plugin manifest JSON 校验、`bin/thoth doctor --version` 输出 `version=0.2.5`、`templates/dashboard/frontend` 的 `npm run build` 通过；targeted pytest `15 passed in 22.80s` 与 `60 passed in 66.07s`。
-  - Evidence: 真实 smoke 在 `/tmp/thoth-dashboard-smoke-20260519-1708` 执行 `init -> dashboard start -> curl /api/status -> curl / -> dashboard stop`：默认 `8501` 被 `/tmp/thoth-demo-workspace` dashboard 占用，Thoth 自动选择 `8502`；首次启动自动 `npm ci --legacy-peer-deps` 与 `npm run build`；重启后 PID `585298` 保持运行，`/api/status` 返回当前临时 `project_root`，根页面包含 Vue shell，stop 成功。
-  - Evidence: 发布面提交 `663d0ca feat: harden dashboard startup` 已推送到 `dev`，并 cherry-pick 到 `main` 为 `2a8008b`；`main` 发布验证通过：py_compile、diff check、manifest JSON、`bin/thoth doctor --version` 输出 `version=0.2.5`、frontend build、targeted pytest `75 passed in 81.51s`；`origin/dev` 与 `origin/main` 已推送。
-  - Evidence: 远端-only 安装刷新完成：Claude `thoth@thoth` 从 `0.2.4` 更新到 `0.2.5`，Codex marketplace upgrade 成功；Claude cache runtime 与 Codex marketplace root runtime `doctor --version` 均输出 `version=0.2.5`。
-- `TD-002` `[verified]`: 当前插件公开 surface、README 与安装行为已重新对齐
-- `TD-007` `[verified]`: `dev` 状态文档系统已初始化
-- `TD-010` `[verified]`: 官方平台资料治理层已建立
-- `TD-011` `[verified]`: task-first 的 run-ledger dashboard contract 已落地
-- `TD-012` `[verified]`: 双层重型自测试系统已落地
-- `TD-013` `[verified]`: `/thoth:init` 的 audit-first adopt/init 主流程已落地
-- `TD-014` `[verified]`: strict `Decision -> Contract -> Task` 编译执行体系已落地
-- `TD-024` `[verified]`: 以 `Codex-only` closing gate 作为本轮唯一结束门槛，并按用户最新计划完成 `dev` 收口；本轮不执行 `main` 集成、不刷新本机 Claude/Codex 安装
-  - Related items: `WS-001`, `WS-003`, `WS-005`, `MS-005`, `REQ-020`, `REQ-025`
-  - Evidence: WSL Node LTS `v20.20.2` 与 Codex CLI `0.125.0` 可用；`py_compile`、pytest `light` / `medium`、targeted integration、`hard --hosts none`、真实 Codex-only fast contract gate 均通过
-
-- `TD-025` `[verified]`: 将 `run` / `loop` 收敛为 Python 机械化四阶段状态机，并让 `loop` 以父 orchestrator 复用 child `run`
-  - Related items: `WS-002`, `WS-005`, `MS-005`, `REQ-023`, `REQ-024`
-  - Evidence: `thoth/run/phases.py`、`thoth/run/{packets,worker,ledger}.py`、`thoth/plan/{compiler,validators}.py`、`tests/unit/test_run_state_machine.py`；`python -m pytest -q tests/unit/test_task_contracts.py tests/unit/test_run_state_machine.py tests/unit/test_runtime_protocol.py tests/unit/test_cli_surface.py tests/unit/test_claude_bridge.py tests/integration/test_runtime_lifecycle_e2e.py tests/unit/test_dashboard_runtime_api.py` 为 `37 passed`
-
-- `TD-023` `[verified]`: 收敛验证体系，明确 `hard` 与 `heavy` 的职责边界，并把 `heavy` 收口为双宿主 public-command conformance gate
-  - Related items: `WS-003`, `WS-005`, `MS-005`, `REQ-017`, `REQ-021`, `REQ-022`
-  - Evidence: `python -m thoth.cli sync` 未引入新的 tracked projection 漂移；`python -m py_compile thoth/observe/selftest/{fixtures,hard_suite,host_claude,host_codex,host_common,model,runner}.py thoth/{projections,prompt_specs,selftest_seed}.py thoth/surface/run_commands.py tests/unit/test_{selftest_helpers,command_spec_generation,claude_bridge}.py tests/integration/test_runtime_lifecycle_e2e.py` 通过；`env TMPDIR=<thoth-repo>/.tmp_pytest python -m pytest -q tests/unit/test_selftest_helpers.py tests/unit/test_command_spec_generation.py tests/unit/test_claude_bridge.py tests/unit/test_cli_surface.py tests/integration/test_runtime_lifecycle_e2e.py` 为 `54 passed in 705.84s`；`python -m thoth.selftest --tier hard --hosts none --artifact-dir /tmp/thoth-hard-command-gate-artifacts-20260428 --json-report /tmp/thoth-hard-command-gate-summary-20260428.json` 为 `25 passed / 0 failed / 0 degraded`
-
-- `TD-026` `[verified]`: 收掉 `heavy` 双宿主命令协议门剩余的 host-real 阻塞，并把真实 `heavy --hosts both` 跑绿
-  - Related items: `WS-003`, `WS-005`, `MS-005`, `REQ-017`, `REQ-019`, `REQ-025`
-  - Evidence: 用户提供的 Claude 登录态环境下执行 `env PATH=<thoth-repo>/bin:$PATH ANTHROPIC_BASE_URL='https://api.deepseek.com/anthropic' ANTHROPIC_AUTH_TOKEN='***' ANTHROPIC_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_OPUS_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_SONNET_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_HAIKU_MODEL='deepseek-v4-flash' CLAUDE_CODE_SUBAGENT_MODEL='deepseek-v4-flash' CLAUDE_CODE_EFFORT_LEVEL='max' TMPDIR=<thoth-repo>/.tmp_pytest python -m thoth.selftest --tier heavy --hosts both --artifact-dir /tmp/thoth-heavy-both-command-gate-artifacts-20260428-rerun --json-report /tmp/thoth-heavy-both-command-gate-summary-20260428-rerun.json`，结果 `104 passed / 0 failed / 0 degraded`
-
-- `TD-027` `[verified]`: 历史阶段收敛 Thoth prompt router、双宿主投影与 live packet authority，删除宿主常驻合同冗余并曾把 `run/loop` 收敛为 validator-centered 短链；runtime 链路已被 `TD-032` 替换为统一 RuntimeDriver
-  - Related items: `WS-003`, `WS-005`, `MS-005`, `REQ-019`, `REQ-023`, `REQ-024`
-  - Evidence: 更新 `thoth/{command_specs,projections,prompt_specs,prompt_validators}.py`、`thoth/run/{packets,phases,worker}.py`、`commands/*.md`、`plugins/thoth/skills/thoth/{SKILL.md,commands/*}` 与 targeted tests；`env TMPDIR=<thoth-repo>/.tmp_pytest python -m pytest -q tests/unit/test_command_spec_generation.py tests/unit/test_runtime_protocol.py tests/unit/test_run_state_machine.py` 为 `22 passed in 8.10s`，`python -m pytest -q tests/unit/test_claude_bridge.py` 为 `6 passed in 235.80s`，`python -m pytest -q tests/unit/test_cli_surface.py` 为 `13 passed in 530.10s`；Codex 根 skill `10832 -> 3258` bytes，Claude `run/loop/review` projection 分别 `4118 -> 2984`、`4053 -> 2969`、`3593 -> 2790`
-
-- `TD-028` `[verified]`: 将 selftest 公共接口原子化，并把默认开发验证收敛为 targeted pytest + explicit case list
-  - Related items: `WS-003`, `WS-005`, `REQ-017`, `REQ-021`, `REQ-025`, `REQ-029`
-  - Evidence: 新增 `thoth/observe/selftest/{registry,atomic_cases}.py`、`thoth/test_targets.py`、`scripts/recommend_tests.py`，更新 `thoth/observe/selftest/{runner,processes,recorder,host_common,host_codex,host_claude}.py` 与 `tests/conftest.py`；`env TMPDIR=<thoth-repo>/.tmp_pytest python -m pytest -q tests/unit/test_selftest_helpers.py tests/unit/test_selftest_registry.py tests/unit/test_runtime_protocol.py tests/integration/test_runtime_lifecycle_e2e.py` 为 `51 passed`；`python -m thoth.selftest` 无 `--case` 按预期失败；`python -m pytest -q` 按预期失败；`env TMPDIR=<thoth-repo>/.tmp_pytest python -m pytest -q --thoth-target selftest-core` 为 `39 passed`；repo-local atomic selftest matrix 结果见 `/tmp/thoth-atomic-repo-cases-20260428.json`；Codex host-surface 抽样 `surface.codex.run.live_prepare + surface.codex.loop.sleep_prepare` 结果见 `/tmp/thoth-atomic-codex-sample-20260428e.json`
-
-- `TD-029` `[verified]`: 将 planning authority 与 runtime kernel 收敛为统一 `.thoth/objects` 对象图，并切换 public execution surface 到 `--work-id`
-  - Related items: `WS-002`, `WS-003`, `WS-005`, `REQ-030`, `REQ-031`, `REQ-032`, `REQ-033`
-  - Evidence: 当前 `dev` checkout 已新增 `thoth/objects.py` 与 `thoth/run/controllers.py`，`run` / `loop` / `review` public surface 切到 `--work-id`，dashboard/backend、hook、自测 fixture 与 init 读写面同步到 `.thoth/objects` / `.thoth/docs`；验证见 `EV-024`
-  - Related items: `WS-002`, `WS-005`, `REQ-030`, `REQ-031`, `REQ-032`, `REQ-033`, `AC-022`, `AC-023`, `AC-024`
-  - Evidence: 新增 `thoth/objects.py` 与 `thoth/run/controllers.py`；`run` / `loop` / `review` 改为 `--work-id`；`discuss` 改为 `--work-json`；`orchestration` / `auto` 写入 controller object；active work mutation 返回 `blocked_by_active_execution`；`python -m py_compile ...` 通过；targeted pytest `33 passed in 2.64s`；selftest `discuss.subtree.close` 与 `run.phase_contract` 均为 `overall_status=passed`
-
-- `TD-030` `[verified]`: 完成 Runtime Kernel closeout，删除旧 `Contract` / `TaskResult` / `task_id` runtime fallback，并把普通 `run` 与 controller service 分层
-  - Related items: `WS-002`, `WS-003`, `WS-005`, `REQ-030`, `REQ-031`, `REQ-032`, `REQ-033`, `REQ-034`, `AC-022`, `AC-023`, `AC-025`
-  - Evidence: `upsert_contract`、`load_task_for_execution`、`suggest_tasks_for_query`、`task_result_path`、`tasks_dir`、`initialize_run_controller` 等旧主路径命名已从代码主链删除；`discuss --work-json` 拒绝 legacy contract-shaped payload；普通 `run` 写 run-local `phase_state.json` 而不写 controller object；`loop` 仍写 controller object；核心五项 selftest 已通过，见 `EV-024`
-
-- `TD-032` `[verified]`: 将 `run` / `loop` 收敛为统一 RuntimeDriver，并把 live / sleep 改为前台/后台 monitor 差异
-  - Related items: `WS-002`, `WS-003`, `WS-005`, `REQ-023`, `REQ-024`, `REQ-030`, `REQ-034`
-  - Evidence: 新增固定 `plan` phase；`plan` / `execute` / `validate` / `reflect` 均走 phase worker；live CLI 前台阻塞并输出 `thoth.*` JSONL monitor events，`--sleep` detached 后台 RuntimeDriver；packet/public prompt 不再暴露宿主手动 `next-phase` / `submit-phase` live 协议；验证见 `EV-027`
+None yet.
 
 ## Abandoned
 
-- `TD-008` `[abandoned]`: 使用 bare command 名作为公共命令前缀
-  - Reason: 实际宿主行为验证后不符合目标，公共命令已恢复为显式 `/thoth:*`
+None.

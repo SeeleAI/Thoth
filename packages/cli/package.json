@@ -1,0 +1,8 @@
+{
+  "name": "@thoth/cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Advanced scriptable CLI client for New Thoth",
+  "license": "GPL-3.0-only",
+  "type": "module"
+}

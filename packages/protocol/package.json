@@ -1,0 +1,8 @@
+{
+  "name": "@thoth/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared protocol and event contracts for New Thoth",
+  "license": "GPL-3.0-only",
+  "type": "module"
+}

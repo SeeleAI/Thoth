@@ -1,0 +1,8 @@
+{
+  "name": "@thoth/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pure domain model and lifecycle rules for New Thoth",
+  "license": "GPL-3.0-only",
+  "type": "module"
+}

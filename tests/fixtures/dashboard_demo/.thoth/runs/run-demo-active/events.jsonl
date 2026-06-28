@@ -1,5 +1,0 @@
-{"seq":1,"ts":"2026-05-28T08:18:00Z","kind":"phase","level":"info","message":"plan phase completed for WID-demo-train","data":{"phase":"plan"}}
-{"seq":2,"ts":"2026-05-28T08:30:00Z","kind":"metric","level":"info","message":"training reached step 160 with eval loss_total=3.18","data":{"step":160}}
-{"seq":3,"ts":"2026-05-28T09:10:00Z","kind":"metric","level":"info","message":"training reached step 360 with loss_total=2.19","data":{"step":360}}
-{"seq":4,"ts":"2026-05-28T12:00:00Z","kind":"heartbeat","level":"info","message":"worker heartbeat received; acceptance evidence still in progress","data":{"phase":"execute"}}
-

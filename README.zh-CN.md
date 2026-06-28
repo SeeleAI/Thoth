@@ -1,339 +1,63 @@
-[English](./README.md) | [简体中文](./README.zh-CN.md)
+# Thoth
 
-<div align="center">
-  <h1>🐦 Thoth — Dashboard-First Runtime for Autoresearch</h1>
-  <img src="assets/thoth.png" width="80%" alt="Thoth 标志" />
-  <p><strong>面向 autoresearch 的 dashboard-first 编排运行时。</strong></p>
-  <p>把容易漂移的 agent 工作收敛成 durable runs、locked work items 和带论证证据的结果。</p>
-  <p>
-    <img alt="运行时 Dashboard First" src="https://img.shields.io/badge/runtime-dashboard--first-4B5563?style=for-the-badge&labelColor=3F3F46&color=0F766E" />
-    <img alt="模式 Autoresearch" src="https://img.shields.io/badge/mode-autoresearch-4B5563?style=for-the-badge&labelColor=3F3F46&color=B45309" />
-    <img alt="引擎 Orchestration" src="https://img.shields.io/badge/engine-orchestration-4B5563?style=for-the-badge&labelColor=3F3F46&color=2563EB" />
-    <img alt="可信 Work Locked" src="https://img.shields.io/badge/trust-work--locked-4B5563?style=for-the-badge&labelColor=3F3F46&color=6D28D9" />
-  </p>
-  <p>
-    <img alt="Claude Code Plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-4B5563?style=flat-square&labelColor=3F3F46&color=0284C7" />
-    <img alt="Codex Plugin" src="https://img.shields.io/badge/Codex-plugin-4B5563?style=flat-square&labelColor=3F3F46&color=65A30D" />
-    <img alt="Ready Work --work-id" src="https://img.shields.io/badge/work-strict%20--work--id-4B5563?style=flat-square&labelColor=3F3F46&color=7C3AED" />
-    <img alt="Version 0.4.3" src="https://img.shields.io/badge/version-0.4.3-4B5563?style=flat-square&labelColor=3F3F46&color=0369A1" />
-    <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-4B5563?style=flat-square&labelColor=3F3F46&color=84CC16" />
-  </p>
-  <h2>🚀 最新动态</h2>
-  <p><strong>v0.4.3 Experiment Workbench</strong> · 实验 registry、extension 命令、Dashboard compare 与受控 TUI viewport</p>
-  <img src="assets/thoth-dashboard-teaser-v4.png" width="100%" alt="Thoth Dashboard v2 live cockpit" />
-  <br />
-  <img src="assets/thoth-tui-teaser-v4.png" width="100%" alt="Thoth TUI v2 live cockpit 快照" />
-</div>
+Thoth 正在被重建为一个 local-first 的 AI 任务控制平面。
 
-## 控制平面一览
+旧的 Claude Code / Codex plugin runtime 已经归档，当前分支不再维护旧 plugin 形态。本仓库现在只包含 New Thoth 的设计 authority 和 TypeScript / Node monorepo skeleton。当前 checkout 还没有可运行的 CLI、daemon、TUI、桌面 app、手机 app、relay 或 harness driver。
 
-```text
-                               THOTH CONTROL PLANE
+## 当前状态
 
-                    Claude Code surfaces      Codex surfaces
-                 /thoth:* command set        $thoth command set
-                              \                 /
-                               \               /
-                                +-------------+
-                                              |
-                                              v
+- 当前分支重点：New Thoth reset 和 MVP 架构。
+- 当前实现状态：`packages/` 下的 `npm workspaces` 空骨架。
+- 当前 license：`GPL-3.0-only`。
+- 当前版权主体：`SeeleAI`。
+- 当前 public surface：文档和包边界。
+- 旧 plugin 归档 release：<https://github.com/SeeleAI/Thoth/releases/tag/thoth-plugin-final-archive>
+- 旧 plugin 归档分支：`archive/main-20260627`
 
-+----------------------------------------------------------------------------+
-| Layer 1. Host Surface                                                      |
-|                                                                            |
-|  init   discuss   run   loop   argue   auto   status                       |
-|  doctor dashboard tui extension                                           |
-+----------------------------------------------------------------------------+
-                                              |
-                                              v
-+----------------------------------------------------------------------------+
-| Layer 2. Planning Authority                                                |
-|                                                                            |
-|  init      -> bootstrap/migrate/resync 或打开 raw intent discussion        |
-|  discuss   -> record discussions, decisions, work items, and work_graphs   |
-|                                                                            |
-|  Discuss -> Decision -> Work Item Object Graph                             |
-|                                         |                                  |
-|                                         v                                  |
-|                               Ready Work (--work-id)                      |
-+----------------------------------------------------------------------------+
-                                              |
-                                              v
-+----------------------------------------------------------------------------+
-| Layer 3. Execution Runtime                                                 |
-|                                                                            |
-|  run      -> one durable execution packet                                  |
-|  loop     -> one durable recoverable loop packet                           |
-|  argue    -> adversarial discussion and authority patch preview            |
-|  auto     -> DAG-first child loops for actionable work                     |
-|                                                                            |
-|                           +---------------------------+                    |
-|                           | Ready Work (--work-id)   |                    |
-|                           +-------------+-------------+                    |
-|                                         |                                  |
-|                              +----------+----------+                       |
-|                              |                     |                       |
-|                              v                     v                       |
-|                            Run                   Loop                      |
-|                              |                     |                       |
-|                              +----------+----------+                       |
-|                                         |                                  |
-|                                         v                                  |
-|                 Run Ledger / Events / Artifacts / Result                   |
-|                                         |                                  |
-|                                         v                                  |
-|                  Mechanical Validation / Acceptance                        |
-|                                                                            |
-|  attach   watch   resume   stop                                            |
-+----------------------------------------------------------------------------+
-                                              |
-                                              v
-+----------------------------------------------------------------------------+
-| Layer 4. Read Surfaces                                                     |
-|                                                                            |
-|  dashboard -> human-visible runtime workbench                              |
-|  tui       -> terminal snapshots over the same read providers              |
-|  status    -> active / stale / attachable run summaries                    |
-|  doctor    -> strict health, projection, and runtime-shape audit           |
-|  report    -> available through status --report                           |
-|                                                                            |
-|                +-----------+-----------+-----------+-----------+------+    |
-|                |           |           |           |           |           |
-|                v           v           v           v           v           |
-|             Dashboard      TUI       Status      Report      Doctor        |
-+----------------------------------------------------------------------------+
+## New Thoth 要解决什么
 
-关键约束:
-- `.thoth` 是共享 machine/runtime authority
-- `.agent-os` 是 human governance layer
-- `run` 和 `loop` 都是 strict `--work-id` surface
-- `auto` 只执行 ready/active/failed 这类可行动 work；blocked 和 draft 必须由人做决策
-- `dashboard`、`tui`、`status`、`report`、`doctor` 是 read surfaces，不写 authority
-- `run`、`loop`、`auto` 必须进入 terminal 或 paused
-```
+New Thoth 的第一目标是最大程度降低用户心智负担和使用门槛。用户应该可以自然表达意图；Thoth 应该只追问真正影响方向、风险和验收的少量黄金问题，在需要时注册可恢复任务，异步运行 loop，通过独立审查验证结果，并用证据汇报。
 
-## 为什么是 Thoth
+核心方向是：
 
-Thoth 是一个 dashboard-first orchestration runtime for autoresearch。它的前提很简单：聊天记录本身不是操作系统，真实状态必须能跨会话保留，执行过程必须可见，完成与否必须能被机械裁决。
+1. 用户面对的是 One Thoth，而不是可见 agent dashboard。
+2. UI 是壳，authority 在 Thoth。
+3. 任务是可恢复、可审查、可异步执行的 loop。
+4. 成功基于验收和证据，不基于执行者自述。
+5. Claude Code、Codex、ACP-compatible tools 和未来 provider 都只是 adapter，不是任务真相。
 
-## 失败模式表
-
-| 问题 | 为什么重要 |
-| --- | --- |
-| 工作不持久 | 长时间任务会随着会话结束一起死亡，人去睡觉后 agent 也无法继续工作，而且没有可恢复、可审计的持久状态。 |
-| 并行工作不可见 | 多个线程或委托运行会彼此漂移，而人很难知道当前究竟什么在运行。 |
-| Agent 会过早宣称完成 | 一段流畅的总结可能掩盖了其实没有任何机械验证通过。 |
-| 文档和状态会持续腐化漂移 | 决策、契约和运行时事实会慢慢脱节，最后没人知道哪个层才是 authority。 |
-
-## Thoth 修正机制表
-
-| 机制 | 它做什么 | 对应修正 |
-| --- | --- | --- |
-| Hooks + watchdog + runtime | 让执行过程始终挂靠到 durable ledger 和可观察的生命周期事件上。 | 工作不持久 |
-| Dashboard-first visibility | 在一个统一读面里显示 live、stale、attachable 和 host-specific 的运行时真相。 | 并行工作不可见 |
-| Mechanical yes/no acceptance | 用 validator、ledger 和 result payload 强制裁决工作是否真的通过。 | Agent 会过早宣称完成 |
-| Object graph + execution system + locked work items | 先冻结边界，再编译成可运行工作项，并防止 authority 各层继续漂移。 | 文档和状态会持续腐化漂移 |
-
-## Smart Init 与 Compact DAG
-
-`thoth init` 现在有两个明确人格。没有自然语言 intent 时，它仍然是 audit-first 的机械 bootstrap、sync 或 migration 命令。带 intent 时，例如 `thoth init -- "做一个多模态科研项目..."`，它会先物化基础 `.thoth` 项目，再把用户原文保存到一个 open 的 `source=init:*` discussion。它不会从这段原文直接编造 ready work，也不会把未经确认的总结写进生成的 `AGENTS.md` 或 `CLAUDE.md`。
-
-discussion 真正可以 close 时，agent 可以使用一个 compact `work_item`，也可以使用 compact `work_graph` blueprint。`work_graph` 只有以显式稳定 `work_id` 为 key 的 `nodes` 和 `edges`；每条 edge 表示 `to` depends on `from`，最终存成 canonical `depends_on` links。节点只接受 `title`、`goal`、`context`、`constraints`、`acceptance_spec`、`approach_notes`、`missing_questions`。只有 init discussion 可以额外带一个小 `project_patch`，字段只能是 `name`、`description`、`directions`；普通 discussion 不能修改项目身份。
-
-Dashboard DAG 会保留 authority status。一个 hard dependency 尚未 `validated` 的 ready work item 仍然显示为 `ready`，同时 DAG 侧栏会显示 `actionability=waiting_on` 和具体 upstream work ids。
-
-## 系统一览
-
-人不应该把注意力花在漏斗里每一粒沙子上。Thoth 让 AI 负责沙漏中段，而 dashboard 只展示最后留下来的金子：decisions、work items、runs、results，以及当前可裁决的结论。
-
-## 架构流程表
-
-| 阶段 | 目的 | 输入 | 输出 |
-| --- | --- | --- | --- |
-| Intent | 捕获用户请求和操作边界。 | 人类目标、约束、仓库上下文 | 用于规划的方向 |
-| Decision | 在执行漂移之前先锁定关键选择。 | Intent、未决问题、治理约束 | 已记录的 decisions |
-| Work Item | 冻结 goal、context、constraints、acceptance spec、approach notes、scheduling、run limits 和 missing questions。 | Discussion、decisions、requirements、acceptance 规则 | Ready 或 blocked work item |
-| Run | 执行一个 frozen `work_id@revision`。 | Work item、controller policy、host surface | `.thoth/objects/run` 与 `.thoth/runs/<run_id>` ledger |
-| Result | 产出机械裁决，而不只是叙述性总结。 | Validator 输出、artifacts、runtime checks | Structured result 和 acceptance evidence |
-| Dashboard / TUI | 让人无需回放聊天记录就能读取最终状态。 | Portable authority 加本地 ledgers、extensions 和 read providers | 浏览器或终端里的可检查项目真相 |
-
-## Portable Authority 与本机状态
-
-Thoth 项目状态明确分为三层。
-
-Portable authority 是换电脑后继续工作的 Git 状态。应提交 `AGENTS.md`、启用 Claude surface 时的 `CLAUDE.md`、`.thoth/objects/project/`、`.thoth/objects/work_item/`、`.thoth/objects/discussion/`、`.thoth/objects/decision/`、`.thoth/extensions/`、`.thoth/docs/agent-entry.md`、`.thoth/docs/project.json` 和 `.thoth/docs/source-map.json`。这些文件定义项目、讨论历史、决策、可运行 work item graph，以及项目级读面扩展。
-
-Runtime evidence 默认是本机状态。新项目会生成 `.thoth/.gitignore`，忽略 `.thoth/runs/`、`.thoth/derived/`、`.thoth/docs/work-results/`、`.thoth/objects/run/`、`.thoth/objects/artifact/`、`.thoth/objects/controller/` 和 `.thoth/objects/phase_result/`。这些 ledger 仍保留在磁盘上供本机复盘，但新机器应该从 authority 启动新的 run，而不是接管旧机器上的 PID、lease、worker、supervisor 或 dashboard 进程。
-
-Dashboard 依赖与缓存也默认是本机状态。Thoth 会幂等写入 ignore 规则，忽略 `tools/dashboard/frontend/node_modules/`、`tools/dashboard/frontend/dist/`、Vite cache、backend Python cache，以及 `.thoth/derived/dashboard/` 下的 dashboard SQLite read model。如果团队确实需要把某个 run 带到另一台机器，应显式用 `thoth status --report` 导出简明报告，或手动归档指定 `.thoth/runs/<run_id>` evidence bundle；Thoth 不会默认把全部 runtime ledger 加进 Git。
-
-Dashboard 默认只绑定 `127.0.0.1`。trigger、sync、health-check、todo 更新等本地写动作需要项目级 action token，token 存在 `.thoth/local/dashboard/action-token`；纯读取接口不需要这个 token。
-
-`thoth init --sync` 会在已安装插件包含新的 runtime/read-model 修复时刷新受管 dashboard scaffold。覆盖前旧 scaffold 会备份到已忽略的 `.thoth/derived/dashboard-sync-backups/`，因此可以恢复旧文件，但不会让本地备份污染 Git 状态。可提交的 `.thoth/extensions/manifest.json` 与 `.thoth/extensions/plugins/` 会被保留；metrics / loss 曲线必须通过启用的 extension provider 接入，而不是扫描任意项目目录猜测。
-
-Fresh clone 的恢复语义是：
-
-```bash
-git clone <repo>
-cd <repo>
-codex plugin marketplace upgrade thoth
-thoth doctor --version
-thoth status --json
-thoth run --work-id <ready-work-id>
-```
-
-这表示从已提交 authority 继续启动新的本机 runtime evidence，不表示接管旧机器 live process。
-
-## 快速开始
-
-1. 在你使用的宿主面安装 Thoth。
-
-```bash
-claude plugin marketplace add SeeleAI/Thoth --scope user
-claude plugin install thoth@thoth --scope user
-codex plugin marketplace add SeeleAI/Thoth
-```
-
-对 Codex 来说，`marketplace add` 只是把 marketplace 源接进来。然后还需要在 Codex 的 plugin directory 里安装或启用 `thoth` 插件。
-
-插件安装完成后，这里有意区分两层入口：
-
-- 公开插件入口：`Claude /thoth:*`、`Codex $thoth <command>`，以及插件提供的 shell wrapper `thoth <command>`
-- 源码仓开发回退入口：`python -m thoth.cli <command>`
-
-在全新仓库或空目录里，应优先使用插件安装出来的 `thoth` wrapper；`python -m thoth.cli` 只用于你明确想绑定到某个 checked-out Thoth 源码树时。
-
-2. 初始化你希望由 Thoth 接管的仓库。
+## 仓库结构
 
 ```text
-/thoth:init
-$thoth init
+packages/
+  protocol/   共享协议和事件合同
+  client/     共享 client SDK 和 transport
+  core/       纯领域模型和生命周期规则
+  daemon/     本地 authority server 和 scheduler
+  drivers/    harness adapters
+  tui/        OpenTUI workspace 控制台
+  app/        桌面/手机共享 app surface
+  desktop/    Electron shell 和 daemon 生命周期
+  relay/      E2EE WebSocket relay
+  cli/        高级脚本化 client
 ```
 
-3. 从一个已编译任务启动第一次 strict run。
+所有 package 目录都是占位骨架，当前刻意不包含业务实现。
 
-```text
-/thoth:run --work-id task-1
-$thoth run --work-id task-1
-```
+## 设计 authority
 
-4. 打开读面。
+从这里开始读：
 
-```text
-/thoth:dashboard
-$thoth dashboard
-/thoth:tui --snapshot-json
-$thoth tui --snapshot-json
-```
+- [最核心的设计理念](.agent-os/designs/最核心的设计理念.md)
+- [High-Level Design](.agent-os/designs/new-thoth-high-level-design.md)
+- [MVP User Journey](.agent-os/designs/new-thoth-mvp-user-journey.md)
+- [Engineering Architecture](.agent-os/designs/new-thoth-engineering-architecture.md)
+- [Prompt Contract Seeds](.agent-os/designs/new-thoth-prompt-contract-seeds.md)
 
-任何已经完成 `thoth init` 的仓库，都可以在项目根目录直接启动交互式 TUI：
+旧的长篇迁移笔记保留在 `.agent-os/designs/new-thoth-migration-architecture-20260625.md`，仅用于历史追溯。
 
-```bash
-cd /path/to/your/project
-thoth tui
-```
+## 开发提示
 
-`thoth tui` 是只读观察面。它读取和 dashboard 相同的 shared providers，因此 loss/metrics 必须来自已注册实验和启用的 `.thoth/extensions/manifest.json` provider。交互键位包括 `Left` / `Right` 切换顶层 view、`Tab` / `Shift+Tab` 在当前 view 内切换 pane 或 metric source、方向键选择、`Enter` 进入详情、`Esc` 返回、`/` 搜索、`s` 切换 EMA emphasis、`d` 切换小数位、`?` 帮助、`r` 刷新。Python TUI 扩展只有在 manifest 中启用、面向 `tui` surface、声明 `tui_python_plugin` 或 `tui_panel`，并显式设置 `trusted: true` 时才会加载；需要 renderer-free 安全启动时使用 `--no-python-plugins`。
+当前 checkout 不是可运行产品。不要把它当作旧 plugin runtime 安装，也不要期待当前分支提供 `thoth`、`/thoth:*` 或 `$thoth` 命令。
 
-`thoth extension validate` 会对 extension manifest 和 extension 源文件执行隐私 lint。官方 teaser asset 只能由 `tests/fixtures/dashboard_demo` 生成；下游任务项目截图、真实路径和任务专属数据必须留在 tracked release assets 之外。
-
-## 宿主安装与升级
-
-| 宿主 | 首次安装 | 稳定升级 | 关键说明 |
-| --- | --- | --- | --- |
-| Claude Code | `claude plugin marketplace add SeeleAI/Thoth --scope user`，然后 `claude plugin install thoth@thoth --scope user` | `claude plugin marketplace update thoth`，然后 `claude plugin update thoth@thoth --scope user` | `plugin update` 之后需要重启 Claude Code，新版本才会真正生效。 |
-| Codex | `codex plugin marketplace add SeeleAI/Thoth`，然后在 Codex 的 plugin directory 里安装或启用 `thoth` | `codex plugin marketplace upgrade thoth` | `add` 接受的是 `SeeleAI/Thoth` 这类 source；`upgrade` 接受的是已配置的 marketplace 名，也就是本仓库里的 `thoth`。 |
-
-## 验证方式
-
-默认开发验证现在是“只跑按需 target”，而不是 broad/full sweep。
-
-### Atomic selftest
-
-- 公开 selftest 入口已经收敛为 atomic-only：
-
-```bash
-python -m thoth.selftest --case plan.discuss.compile --case runtime.run.live
-```
-
-- 不带 `--case` 直接执行 `python -m thoth.selftest` 会故意失败，并打印当前可用 case catalog。
-- 每个 case 都有自己独立的 workdir 和 artifact 目录，JSON 报告按 `case_id` 分项记账，而且任何 case 都不能依赖前一个 case 的副作用。
-- 发布门、回归门和关闭门都必须记录显式 case ID 列表，不能再用 `hard`、`heavy` 这类聚合别名代替。
-- 当前 catalog 分为两类：一类是 repo-local capability probe，例如 `plan.discuss.compile`、`runtime.run.live`、`runtime.loop.sleep`、`argue.adversarial`、`observe.dashboard`、`hooks.codex`；另一类是 host-surface probe，例如 `surface.codex.run.live_prepare`、`surface.claude.loop.stop`。
-
-### Targeted pytest
-
-- 允许的开发态入口：
-
-```bash
-python -m pytest -q tests/unit/test_selftest_registry.py
-python -m pytest -q tests/unit/test_selftest_helpers.py::test_validate_pytest_invocation
-python -m pytest -q --thoth-target selftest-core
-```
-
-- 默认禁止：裸 `pytest`、目录级调用例如 `pytest tests/unit`，以及 `pytest --thoth-tier heavy` 这种 broad tier sweep。
-- broad runs 只保留给显式的发布/CI 场景，必须额外带 `--thoth-allow-broad`，或设置 `THOTH_ALLOW_BROAD_TESTS=1`。
-- `--thoth-tier` 只作为这些豁免 broad runs 的覆盖入口保留，不再是默认开发接口。
-- target manifest 固定在 `thoth/test_targets.py`。
-- 如需把改动路径翻译成推荐测试，可使用下面的辅助脚本：
-
-```bash
-python scripts/recommend_tests.py thoth/observe/selftest/runner.py tests/conftest.py
-```
-
-## 命令总表
-
-| 命令 | 宿主入口 | 目的 | 输入 | 结果 |
-| --- | --- | --- | --- | --- |
-| `init` | `Claude: /thoth:init`<br>`Codex: $thoth init` | 审查、初始化、迁移、刷新 canonical Thoth authority，或把自然语言项目 intent 捕获为 `source=init:*` discussion。 | `--sync`、`--migrate preview`、`--migrate apply`、`--migrate --preview`、`--migrate --apply`、`--config-json`、`--intent`、`--intent-file`、`[--] [intent...]` | Portable `.thoth` authority、迁移账本、raw intent discussion packet、ignore 规则、生成投影、dashboard 脚手架、脚本与测试 |
-| `discuss` | `Claude: /thoth:discuss`<br>`Codex: $thoth discuss` | 在不进入代码执行的前提下记录规划决策。 | 主题、decision payload、compact work payload 或 compact work_graph payload | 更新后的 discussion、decision、work_item 对象、canonical dependency links，以及生成 docs view |
-| `run` | `Claude: /thoth:run`<br>`Codex: $thoth run` | 通过 durable runtime packet 执行一个 ready work item。 | `--work-id`，可选 host 或 executor 控制，以及 attach/watch/stop | 含 state、events、phase results、artifacts 和 terminal result 的 durable run ledger |
-| `loop` | `Claude: /thoth:loop`<br>`Codex: $thoth loop` | 通过 controller service 对一个 ready work item 做迭代执行。 | `--work-id`，可选 resume 或 sleep 控制 | Controller object、child run lineage 和有边界的迭代历史 |
-| `argue` | `Claude: /thoth:argue`<br>`Codex: $thoth argue` | 对 idea、work item 或 decision 发起 attacker/adjudicator 对抗讨论，默认不静默改 authority。 | `--work-id`、`--decision-id`、`--target-kind`、`--target-id`、free-text idea，或已确认的 `--apply-artifact` | 带完整 attack/adjudication artifact、`decision_impact` 和需确认 authority patch preview 的 argument ledger |
-| `auto` | `Claude: /thoth:auto`<br>`Codex: $thoth auto` | 用户离开时运行 DAG-first actionable queue。 | 可选 `--sleep`、`--rounds`、`--scope all-open|ready` 或显式 `--work-id` | Auto controller、durable background worker、稀疏 foreground watch events、child loop lineage，以及 terminal 或 paused 摘要 |
-| `status` | `Claude: /thoth:status`<br>`Codex: $thoth status` | 展示项目健康、活动 runs、doctor、report 或 dashboard 读面。 | 可选 `--json`、`--doctor`、`--report` 或 `--dashboard` | 基于 authority 和本机 registry 派生出的共享状态快照与读面 |
-| `doctor` | `Claude: /thoth:doctor`<br>`Codex: $thoth doctor` | `status --doctor` 的别名；严格审计健康状态和 runtime shape。 | 可选 `--quick` 或 `--json` | 含验证结论的健康报告 |
-| `dashboard` | `Claude: /thoth:dashboard`<br>`Codex: $thoth dashboard` | `status --dashboard` 的别名；管理本地 dashboard runtime。 | 可选动作：`start`、`stop` 或 `rebuild` | 由 authority 与本机 `.thoth` ledgers 驱动的本地 dashboard 进程和读接口 |
-| `tui` | `Claude: /thoth:tui`<br>`Codex: $thoth tui` | 打开或导出基于 shared providers 的只读终端 dashboard。 | 可选 `--snapshot-json`、`--export-snapshots`、`--snapshot-dir`、`--no-gpu`、`--no-python-plugins`、loss 详情与刷新控制 | 覆盖 authority、runs、experiments、metrics、extensions、tools 和 system state 的无 ANSI JSON 或视觉快照 |
-| `extension` | `Claude: /thoth:extension`<br>`Codex: $thoth extension` | 创建、列出、验证并管理项目本地 Dashboard/TUI extensions 与实验 registry 对象。 | `create <extension_id>`、`list`、`validate [--fix]`，以及 `experiment register|update|attach-source|detach-source|list|show|select|validate|discover` | `.thoth/extensions/manifest.json`、`.thoth/extensions/plugins/<extension_id>/`、`.thoth/objects/experiment/<experiment_id>.json` 和本地 action receipts |
-
-## 为什么值得信任
-
-| 信号 | 你可以检查什么 |
-| --- | --- |
-| Local runtime truth | `.thoth/runs/*` 默认在当前机器保留 run、state、events、artifacts 和 result payload。 |
-| Locked planning authority | `.thoth/objects/discussion/`、`.thoth/objects/decision/` 和 `.thoth/objects/work_item/` 定义了执行允许做什么。 |
-| Script-backed verification | Validators、doctor checks 和 selftests 以机械方式裁决 pass 或 fail。 |
-| Shared read model | `status`、`report`、`dashboard` 和 `tui` 都读取 shared providers，而不是依赖聊天记忆。 |
-| 宿主对齐执行 | Claude 默认使用 Claude worker，Codex 默认使用 Codex worker；显式 `--executor claude|codex` 仍可用于有意的跨宿主执行。 |
-
-## 适用对象
-
-| 适合谁 | 为什么 |
-| --- | --- |
-| 研究和实验型仓库 | 它们需要 durable memory、可回放结果，以及可见的长运行工作。 |
-| 用 AI 做真实改动的工程团队 | 它们需要让代码执行、对抗性审视和 acceptance 始终可审计。 |
-| 想同时保持 Claude Code 与 Codex 一致性的团队 | 它们需要一个 host-neutral command model，而不是两套不断漂移的工作流。 |
-
-## 当前限制
-
-| 当前边界 | 含义 |
-| --- | --- |
-| `run` 和 `loop` 是 strict `--work-id` surface | 自由文本执行会被有意拒绝。 |
-| Host parity 是语义一致，不是 UX 完全一致 | Claude 和 Codex 仍然各自需要安装和本地运行时接线。 |
-| Dashboard 是本地服务，不是托管控制平面 | 操作者需要一台能运行 backend 和 frontend 资产的机器。 |
-| 首屏 logo 当前主要以 PNG 形态发布 | 后续仍适合补一版干净的 SVG 和 icon family，用于更小尺寸与插件包装场景。 |
-
----
-
-## 贡献者
-
-由一群希望 AI 工作始终可检查的人公开构建。
-
-[![Contributors](https://contrib.rocks/image?repo=SeeleAI/Thoth)](https://github.com/SeeleAI/Thoth/graphs/contributors)
-
-参与路径：[发起一个 pull request](https://github.com/SeeleAI/Thoth/pulls) 或 [开启一个 discussion](https://github.com/SeeleAI/Thoth/discussions)。
-
-## 许可证
-
-MIT。详见 [LICENSE](LICENSE)。
+后续实现应以 `.agent-os/project-index.md`、`.agent-os/todo.md` 和上面的 canonical 设计文档为准。

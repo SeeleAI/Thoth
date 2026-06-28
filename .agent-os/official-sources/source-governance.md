@@ -1,5 +1,9 @@
 # External Source Governance
 
+## New Thoth Reset Note
+
+This directory is now a historical cache from the old Thoth plugin line. It remains useful as a source map, but it is not current product truth for New Thoth. Any new implementation decision must revalidate the relevant official page, local source checkout, or live tool behavior before relying on these notes.
+
 ## Purpose
 
 本文件定义 `Codex` 与 `Claude Code` 外部官方资料在本仓库中的真源治理协议。它是 `.agent-os/official-sources/` 的根合同。

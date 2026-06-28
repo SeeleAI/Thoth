@@ -1,4 +1,0 @@
-{"seq":1,"ts":"2026-05-28T09:00:00Z","kind":"phase","level":"info","message":"oversized batch experiment started","data":{"phase":"execute"}}
-{"seq":2,"ts":"2026-05-28T09:38:00Z","kind":"error","level":"error","message":"resource_limit: demo memory budget exceeded","data":{"failure_class":"resource_limit"}}
-{"seq":3,"ts":"2026-05-28T09:40:00Z","kind":"terminal","level":"error","message":"validation failed with oom_events=1","data":{"status":"failed"}}
-

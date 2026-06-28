@@ -1,4 +1,0 @@
-{"seq":1,"ts":"2026-05-28T11:00:00Z","kind":"phase","level":"info","message":"provider snapshot check started","data":{"phase":"plan"}}
-{"seq":2,"ts":"2026-05-28T11:30:00Z","kind":"phase","level":"info","message":"dashboard and tui providers returned metrics/plugins/tools","data":{"phase":"validate"}}
-{"seq":3,"ts":"2026-05-28T11:50:00Z","kind":"terminal","level":"info","message":"provider wiring validated","data":{"status":"completed"}}
-
