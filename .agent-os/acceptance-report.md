@@ -2343,8 +2343,9 @@ Release:
 
 ### `NTH-EV-039` Packaged Product API Journey
 
-Status: `verified` locally for the rebuilt Linux AppImage and real Codex; Relay, native controls and public
-downloaded-asset repetition remain part of the release gate.
+Status: `verified` for the local and publicly downloaded Linux AppImage product journey, native packaging and
+fixed MVP Release replacement. A combined installed-AppImage-through-Relay UI journey remains outside this
+evidence item.
 
 Evidence recorded on `2026-07-18`:
 
@@ -2383,9 +2384,28 @@ Evidence recorded on `2026-07-18`:
    simulation and Loop golden independent Codex judges all passed. The Loop dataset now explicitly rejects
    Review permission denial, provider crash and timeout being modeled as semantic Review failures or consuming
    failed-Review budget.
+10. GitHub Actions run `29639444687` passed clean preflight, real Relay v3, server CLI packaging and Linux/macOS/
+    Windows installation smokes, unsigned macOS arm64/x64, unsigned Windows, Linux x64, signed universal Android
+    and publish. The Linux native job built the final AppImage and ran the packaged Clarify/Loop product journey
+    before upload.
+11. Public prerelease `356074788` contains exactly `28` assets and targets
+    `5f196637316d945651645cebf22eee52724ece53`. Remote `agent/dev/mvp`, `release/mvp-actions` and tag
+    `v0.0.0-mvp-beta` all pointed to that commit at publication; `main` remained
+    `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`, and `thoth-plugin-final-archive` remained the only other Release.
+12. Publicly re-downloaded assets matched `SHA256SUMS`: AppImage
+    `603076f874c8c0c0f653f703b97a6ed60a4d7b2e470030b99eb9a8deafe4ca81`, Android APK
+    `484f4835afbe771e71b093c3de82273f5c555fb94b3a4ab4a16ea86c1c07149a` and server CLI tgz
+    `6e72b9525a82bbea78151cdb9bf5b96f4cffdf5e1014b021a43466565d4f913a`. `MVP-UPDATE.json` and
+    `BUILD-SOURCE.txt` identify the same commit and workflow run.
+13. The publicly downloaded AppImage repeated the deterministic public API journey successfully: five hot-switch
+    foreground turns on one visible session, session-scoped Clarify/Loop skills, three PlanExec calls, three
+    Review calls, one failed-Review retry and final background `done`. The public APK is `sh.thoth`
+    `0.0.0-mvp-beta`, verifies with APK Signature v2, requests update installation, and requests neither recording
+    nor overlay permission. The exact one-line GitHub URL installed the CLI into an isolated prefix; version,
+    packaged skills and isolated daemon start/status/stop passed.
 
 Boundary:
 
-This evidence validates the local rebuilt Linux package and establishes the under-ten-minute feedback loop. It
-does not replace final Relay, Pause/Resume/Stop, restart/reconnect, native-platform or downloaded public Release
-acceptance.
+This evidence validates the local and public Linux package, public CLI/APK contracts and native release matrix.
+It does not claim a combined installed-AppImage-through-Relay UI journey or manual device interaction for
+Pause/Resume/Stop and restart/reconnect.

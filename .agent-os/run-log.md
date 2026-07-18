@@ -3329,3 +3329,21 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   `src|dist/runtime-skills` locations. Loop covered PlanExec permission denial but not Review permission denial,
   provider crashes or timeout. Provider-neutral positive and negative scenarios now prove those operational
   exits cannot fabricate a Review verdict or consume failed-Review budget.
+
+## 2026-07-18 [Installed Thoth product path MVP Release replacement]
+
+- Committed the installed product path as `94b25419` and the clean-checkout audit correction as `5f196637`, then
+  fast-forwarded both `agent/dev/mvp` and `release/mvp-actions` using Royalvice repo-local GitHub credentials.
+  Remote `main` stayed at `e74c6e0d`; no merge, npm publish or Relay deployment occurred.
+- GitHub Actions run `29639444687` passed all jobs. Clean preflight, real Relay v3, three-OS server CLI install,
+  macOS arm64/x64, Windows, Linux, signed Android and publish succeeded. The Linux job ran the packaged
+  Clarify/Loop public API journey before artifact upload. An initial run `29639377394` failed safely before native
+  jobs because the binary audit script's forbidden sentinel strings were self-detected; the scanner now has a
+  two-file audit-only allowlist while product source remains zero-tolerance.
+- Publish replaced only `v0.0.0-mvp-beta`. Public prerelease `356074788` has `28` assets and targets `5f196637`;
+  `thoth-plugin-final-archive` remains untouched. Re-downloaded AppImage, APK and CLI tgz matched public
+  `SHA256SUMS`, while `MVP-UPDATE.json` and `BUILD-SOURCE.txt` matched the release commit and workflow.
+- The public AppImage repeated raw -> Quick -> raw -> Loop with one visible session, mounted packaged skills,
+  consumed one failed Review and reached done. The public APK passed package/version, Signature v2 and permission
+  checks. The exact GitHub one-line CLI URL installed into an isolated prefix and passed version, skill presence
+  and daemon start/status/stop.
