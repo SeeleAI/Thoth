@@ -127,7 +127,22 @@ function assertRemovedProductPathIsAbsent(appImage, runRoot) {
   assert(extracted.status === 0, "Failed to extract AppImage for product-path inspection");
   const asarPath = path.join(inspectRoot, "squashfs-root", "resources", "app.asar");
   assert(existsSync(asarPath), `Packaged app.asar not found: ${asarPath}`);
-  const asar = readFileSync(asarPath);
+  const appDistPath = path.join(inspectRoot, "squashfs-root", "resources", "app-dist");
+  assert(existsSync(appDistPath), `Packaged app-dist not found: ${appDistPath}`);
+  const productFiles = [asarPath];
+  const pendingDirectories = [appDistPath];
+  while (pendingDirectories.length > 0) {
+    const directory = pendingDirectories.pop();
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        pendingDirectories.push(entryPath);
+      } else {
+        productFiles.push(entryPath);
+      }
+    }
+  }
+  const productBuffers = productFiles.map((file) => readFileSync(file));
   for (const term of [
     "workspace_secretary.send",
     "workspace_secretary.cancel",
@@ -137,10 +152,15 @@ function assertRemovedProductPathIsAbsent(appImage, runRoot) {
     "prepareForegroundAgentForThoth",
     "emitMirroredAgentStream",
     "workspace_secretary_runtime_context",
+    "arcade-inventory/brand/app-icon-source.png",
+    "arcade-inventory/brand/avatar-light.png",
+    "arcade-inventory/brand/brand-mark.png",
+    "arcade-inventory/brand/thoth-seal.png",
+    "M291.495 91.399",
   ]) {
     assert(
-      !asar.includes(Buffer.from(term)),
-      `Removed foreground path remains in app.asar: ${term}`,
+      productBuffers.every((contents) => !contents.includes(Buffer.from(term))),
+      `Removed product path or brand remains in packaged resources: ${term}`,
     );
   }
 }

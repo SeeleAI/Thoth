@@ -3368,3 +3368,16 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   GitHub Actions run `29683323966`. Preflight, real Relay, three-OS server CLI smokes, Linux, Windows, macOS
   x64/arm64, signed Android and publish all succeeded. The workflow replaced the sole
   `v0.0.0-mvp-beta` prerelease at commit `00b470a7`; the archive Release and `main` remained unchanged.
+
+## 2026-07-19 [Startup brand geometry cleanup]
+
+- Traced the remaining first-load Paseo silhouette to the Web-only startup shimmer, which embedded its own SVG
+  mask while native startup already used `ThothLogo`. Replaced it with the shared transparent Thoth brand mark
+  and retained only an opacity/brightness animation.
+- Deleted all four archived feather brand images under `assets/icons/arcade-inventory/brand/`. Extended the brand
+  gate with path, content-hash and embedded-vector checks, and extended packaged AppImage inspection to include
+  Electron's external `resources/app-dist` renderer tree in addition to `app.asar`.
+- Brand, format, Web build and diff checks passed. A fresh local AppImage contains the Thoth mark and none of the
+  archived paths or old vector fingerprint; a clean isolated launch displayed the Thoth welcome mark. The Metro
+  startup E2E remained blocked before app mount by its existing `import.meta` module error, and the transient
+  startup frame completed before CDP attachment, so neither is overstated as screenshot evidence.

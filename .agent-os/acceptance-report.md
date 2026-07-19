@@ -2445,3 +2445,25 @@ Evidence recorded on `2026-07-19`:
    `MVP-UPDATE.json` identify commit `00b470a7a552997ec0f5cbcc921b00cabf25fa06` and workflow
    `29683323966`, while `SHA256SUMS` contains all 27 downloadable payload/update assets. The repository retains
    only this MVP prerelease and `thoth-plugin-final-archive`; `main` remains `e74c6e0d`.
+
+### `NTH-EV-041` Startup Brand Asset Unification
+
+Status: `verified` for source, Web export and local Linux AppImage resources. A macOS cold-start screenshot from
+the next native package remains the visual platform confirmation.
+
+Evidence recorded on `2026-07-19`:
+
+1. The desktop/Web branch of `StartupSplashScreen` contained a standalone embedded SVG silhouette instead of the
+   shared `ThothLogo`. It now renders the same transparent `thoth-brand-mark.png` used by welcome and project
+   screens; animation changes only opacity and brightness and no longer owns brand geometry.
+2. Four archived feather brand images under `assets/icons/arcade-inventory/brand/` were deleted. The brand gate
+   rejects their former paths and SHA-256 hashes, so renaming or relocating those exact assets cannot restore
+   them.
+3. `npm run check:brand-assets`, `npm run format:check`, `npm run build:web` and `git diff --check` passed. The Web
+   export asset list contains `thoth-brand-mark` and no archived brand asset or old embedded-path fingerprint.
+4. A fresh `Thoth-x86_64.AppImage` was built and extracted. Its `resources/app.asar` and
+   `resources/app-dist` contain none of the four archived paths or the old SVG fingerprint. A clean HOME/XDG/
+   THOTH_HOME launch reached the welcome screen with the Thoth moon-and-pen mark.
+5. The dev Metro startup E2E was attempted but did not mount the application because its existing renderer path
+   raised `Cannot use 'import.meta' outside a module`; it is not counted as branding evidence. CDP attached after
+   the short startup splash had already completed, so no transient-frame screenshot is claimed.

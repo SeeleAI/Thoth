@@ -773,3 +773,25 @@ the terminal event is inside the generator can still observe `hasInFlightRun=tru
 the only wake-up and forces the user to type `continue`. Schedule against the durable lifecycle until cleanup is
 actually complete, fence old provider-turn output independently of the current turn, and never use an unscoped
 deferred agent cancel that can hit the newly started continuation.
+
+## `NTH-EXP-028` Brand Geometry Must Have One Runtime Source
+
+Observed on `2026-07-19`:
+
+The visible Thoth logo component and generated native assets were correct, while the desktop startup wait still
+showed the previous silhouette. The Web startup animation had copied a complete SVG path into CSS masking, so it
+bypassed both `ThothLogo` and the asset-path brand check. Electron also packages the Web export as the separate
+`resources/app-dist` tree, so scanning only `app.asar` cannot prove renderer branding.
+
+Conclusion:
+
+Animation may transform a shared brand asset but must never duplicate its geometry. Brand gates need both
+semantic checks and content checks: reject known legacy paths, reject hashes of renamed legacy bitmaps, reject
+embedded legacy vector fingerprints, and inspect every packaged renderer resource root rather than assuming all
+product code lives in `app.asar`.
+
+Retry condition:
+
+For every icon or splash change, build the Web export, inspect its emitted asset list, build one native package,
+scan both executable code and external renderer resources, and capture a cold-start frame on each native OS at
+the next release promotion.
