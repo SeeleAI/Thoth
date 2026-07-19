@@ -2440,3 +2440,8 @@ Evidence recorded on `2026-07-19`:
    turns; Loop task `loop-task-86fa278d-357c-44de-9861-9e4c318eee8d` ran three PlanExec and three Review calls,
    consumed exactly one failed Review and reached `done`. The packaged foreground and internal phase sessions
    mounted the expected Clarify/Loop skills.
+8. GitHub Actions run `29683323966` completed successfully at `00b470a7`. All native, Android, CLI, Relay and
+   publish jobs passed. Public prerelease `356321706` contains 28 assets; its `BUILD-SOURCE.txt` and
+   `MVP-UPDATE.json` identify commit `00b470a7a552997ec0f5cbcc921b00cabf25fa06` and workflow
+   `29683323966`, while `SHA256SUMS` contains all 27 downloadable payload/update assets. The repository retains
+   only this MVP prerelease and `thoth-plugin-final-archive`; `main` remains `e74c6e0d`.

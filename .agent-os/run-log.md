@@ -3363,5 +3363,8 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   `3124/3124`, full App passed `2692/2692`, and App Card/state tests passed `12/12`. Daemon/Web builds,
   `check:foundation`, format and diff hygiene passed; full lint reported the existing warning-only baseline with
   zero errors. A final rebuilt AppImage passed the isolated Product API Journey with one visible session, nine
-  foreground turns, three PlanExec, three Review, one failed-Review retry and background `done`. Release
-  replacement was not performed in this debugging slice.
+  foreground turns, three PlanExec, three Review, one failed-Review retry and background `done`.
+- Committed the fix as `00b470a7`, fast-forwarded both `agent/dev/mvp` and `release/mvp-actions`, and completed
+  GitHub Actions run `29683323966`. Preflight, real Relay, three-OS server CLI smokes, Linux, Windows, macOS
+  x64/arm64, signed Android and publish all succeeded. The workflow replaced the sole
+  `v0.0.0-mvp-beta` prerelease at commit `00b470a7`; the archive Release and `main` remained unchanged.
