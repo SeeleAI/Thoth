@@ -23,7 +23,7 @@ function state(lifecycle: AgentThothState["lifecycle"]): AgentThothState {
 }
 
 describe("foreground Agent Thoth projection", () => {
-  it.each(["running", "awaiting_card", "quick_exec"] as const)(
+  it.each(["running", "quick_exec"] as const)(
     "keeps %s cancellable through the ordinary Agent control",
     (lifecycle) => {
       expect(resolveForegroundAgentStatus("idle", state(lifecycle))).toBe("running");
@@ -43,7 +43,7 @@ describe("foreground Agent Thoth projection", () => {
   it("keeps an open Card active without showing a provider spinner", () => {
     const projection = state("awaiting_card");
     const effective = resolveForegroundAgentStatus("idle", projection);
-    expect(effective).toBe("running");
+    expect(effective).toBe("idle");
     expect(shouldShowForegroundTurnSpinner(projection, effective)).toBe(false);
   });
 

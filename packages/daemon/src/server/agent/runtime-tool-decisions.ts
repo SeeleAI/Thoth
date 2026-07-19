@@ -4,9 +4,7 @@ import type {
   ClarifyFrontierLedger,
 } from "@thoth/protocol/thoth-runtime-contract";
 import type {
-  RegisteredTaskModel,
   ThothApprovalGoalCardModel,
-  ThothCardAnswerPayload,
   ThothClarifyCardModel,
   ThothTaskCardModel,
 } from "@thoth/protocol/thoth/rpc-schemas";
@@ -47,21 +45,6 @@ export interface RuntimeAuthorityDecisionRecord {
   decisionDelta?: ClarifyDecisionDelta;
   convergenceReview?: ClarifyConvergenceReview;
 }
-
-interface PendingRuntimeAuthorityDecision {
-  record: RuntimeAuthorityDecisionRecord;
-  resolve: (result: RuntimeAuthorityDecisionAnswerResult) => void;
-  reject: (error: Error) => void;
-}
-
-export interface RuntimeAuthorityDecisionAnswerResult {
-  answer: ThothCardAnswerPayload;
-  submittedSummary: string;
-  registeredTask?: RegisteredTaskModel;
-}
-
-const pendingByDecisionId = new Map<string, PendingRuntimeAuthorityDecision>();
-const pendingByCardId = new Map<string, PendingRuntimeAuthorityDecision>();
 
 function toStoreCard(card: RuntimeAuthorityCard): ForegroundAuthorityCard {
   if (card.kind === "clarify_card" || card.kind === "task_card") {
@@ -131,7 +114,6 @@ export function createRuntimeAuthorityDecision(input: {
   convergenceReview?: ClarifyConvergenceReview;
 }): {
   record: RuntimeAuthorityDecisionRecord;
-  waitForAnswer: Promise<RuntimeAuthorityDecisionAnswerResult>;
 } {
   const turn = input.store.getActiveTurn(input.agentId);
   if (!turn || turn.kind !== "thoth") {
@@ -164,22 +146,7 @@ export function createRuntimeAuthorityDecision(input: {
     ...(input.decisionDelta ? { decisionDelta: input.decisionDelta } : {}),
     ...(input.convergenceReview ? { convergenceReview: input.convergenceReview } : {}),
   };
-  const waitForAnswer = new Promise<RuntimeAuthorityDecisionAnswerResult>((resolve, reject) => {
-    const pending = { record, resolve, reject };
-    pendingByDecisionId.set(record.id, pending);
-    pendingByCardId.set(record.cardId, pending);
-  });
-  return { record, waitForAnswer };
-}
-
-export function getPendingRuntimeAuthorityDecisionByCardId(
-  cardId: string,
-): RuntimeAuthorityDecisionRecord | null {
-  return pendingByCardId.get(cardId)?.record ?? null;
-}
-
-export function listPendingRuntimeAuthorityDecisions(): RuntimeAuthorityDecisionRecord[] {
-  return Array.from(pendingByDecisionId.values()).map((pending) => pending.record);
+  return { record };
 }
 
 export function listRuntimeAuthorityDecisionRecords(
@@ -199,40 +166,6 @@ export function listRuntimeAuthorityDecisionRecordsForAgent(
     .flatMap((card) => (fromStoreRecord(store, card.id) ? [fromStoreRecord(store, card.id)!] : []));
 }
 
-export function resolveRuntimeAuthorityDecision(input: {
-  cardId: string;
-  answer: ThothCardAnswerPayload;
-  submittedSummary: string;
-  registeredTask?: RegisteredTaskModel;
-}): { record: RuntimeAuthorityDecisionRecord | null; live: boolean } {
-  const pending = pendingByCardId.get(input.cardId);
-  if (!pending) {
-    return { record: null, live: false };
-  }
-  pendingByDecisionId.delete(pending.record.id);
-  pendingByCardId.delete(input.cardId);
-  pending.resolve({
-    answer: input.answer,
-    submittedSummary: input.submittedSummary,
-    ...(input.registeredTask ? { registeredTask: input.registeredTask } : {}),
-  });
-  return { record: { ...pending.record, status: "answered" }, live: true };
-}
-
-export function rejectRuntimeAuthorityDecision(input: {
-  cardId: string;
-  message: string;
-}): RuntimeAuthorityDecisionRecord | null {
-  const pending = pendingByCardId.get(input.cardId);
-  if (!pending) {
-    return null;
-  }
-  pendingByDecisionId.delete(pending.record.id);
-  pendingByCardId.delete(input.cardId);
-  pending.reject(new Error(input.message));
-  return { ...pending.record, status: "rejected" };
-}
-
 export function getLatestRuntimeTaskCardForAgent(
   store: ForegroundAuthorityStore,
   agentId: string,
@@ -243,9 +176,4 @@ export function getLatestRuntimeTaskCardForAgent(
       .filter((record) => record.kind === "task_card")
       .at(-1)?.card as ThothTaskCardModel | undefined) ?? null
   );
-}
-
-export function resetRuntimeAuthorityDecisionsForTest(): void {
-  pendingByDecisionId.clear();
-  pendingByCardId.clear();
 }

@@ -7,6 +7,7 @@ interface ForegroundTurnFenceRecord {
   kind: ForegroundTurnFenceKind;
   foregroundTurnId: string;
   providerTurnId: string | null;
+  parked: boolean;
 }
 
 /**
@@ -15,6 +16,7 @@ interface ForegroundTurnFenceRecord {
  * registry fences authority calls at the per-turn boundary instead.
  */
 const fences = new Map<string, ForegroundTurnFenceRecord>();
+const parkedProviderTurns = new Map<string, Set<string>>();
 
 export function beginForegroundTurnFence(input: {
   agentId: string;
@@ -27,6 +29,7 @@ export function beginForegroundTurnFence(input: {
     kind: input.kind,
     foregroundTurnId: input.foregroundTurnId,
     providerTurnId: null,
+    parked: false,
   });
 }
 
@@ -53,6 +56,40 @@ export function endForegroundTurnFence(input: { agentId: string; generation: str
   }
 }
 
+export function parkForegroundTurnFence(input: { agentId: string; providerTurnId: string }): void {
+  const current = fences.get(input.agentId);
+  if (!current || current.providerTurnId !== input.providerTurnId) {
+    return;
+  }
+  fences.set(input.agentId, { ...current, parked: true });
+  const parked = parkedProviderTurns.get(input.agentId) ?? new Set<string>();
+  parked.add(input.providerTurnId);
+  parkedProviderTurns.set(input.agentId, parked);
+}
+
+export function isParkedForegroundProviderTurn(input: {
+  agentId: string;
+  providerTurnId: string | undefined;
+}): boolean {
+  return Boolean(
+    input.providerTurnId && parkedProviderTurns.get(input.agentId)?.has(input.providerTurnId),
+  );
+}
+
+export function releaseParkedForegroundProviderTurn(input: {
+  agentId: string;
+  providerTurnId: string | undefined;
+}): void {
+  if (!input.providerTurnId) {
+    return;
+  }
+  const parked = parkedProviderTurns.get(input.agentId);
+  parked?.delete(input.providerTurnId);
+  if (parked?.size === 0) {
+    parkedProviderTurns.delete(input.agentId);
+  }
+}
+
 export function assertForegroundAuthorityTurn(input: {
   agentId: string;
   context: ThothToolExecutionContext;
@@ -63,6 +100,9 @@ export function assertForegroundAuthorityTurn(input: {
   }
   if (fence.kind === "raw_provider") {
     throw new Error("Thoth authority tools are disabled for this raw provider turn");
+  }
+  if (fence.parked) {
+    throw new Error("A parked provider turn cannot submit another Agent authority card");
   }
   const providerTurnId = input.context.providerToolCall?.turnId;
   if (fence.providerTurnId === null) {
@@ -79,4 +119,5 @@ export function assertForegroundAuthorityTurn(input: {
 
 export function resetForegroundTurnFencesForTest(): void {
   fences.clear();
+  parkedProviderTurns.clear();
 }

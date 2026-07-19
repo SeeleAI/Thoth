@@ -2409,3 +2409,34 @@ Boundary:
 This evidence validates the local and public Linux package, public CLI/APK contracts and native release matrix.
 It does not claim a combined installed-AppImage-through-Relay UI journey or manual device interaction for
 Pause/Resume/Stop and restart/reconnect.
+
+### `NTH-EV-040` Durable Card Suspension And Automatic Continuation
+
+Status: `verified` for deterministic daemon authority, provider-stream fencing and App Card interaction. A newly
+packaged AppImage/manual five-hour wall-clock run remains a promotion check, not evidence claimed here.
+
+Evidence recorded on `2026-07-19`:
+
+1. Runtime authority Card tools no longer keep a process-local Promise pending until the user answers. Card
+   creation commits SQLite authority, marks the provider turn parked, completes the semantic tool call and
+   interrupts that exact run. Card authority remains pending without an elapsed-time expiry.
+2. AgentManager suppresses reasoning and assistant timeline events from every parked provider turn until its
+   terminal event is processed. The fence remains valid even if a newer continuation turn becomes active.
+3. Card answers append the submitted Card and start a new same-session continuation from durable Task Truth.
+   If the old run is still in generator cleanup, ForegroundTurnCoordinator keeps polling its provider-neutral
+   in-flight contract and starts the continuation after release; it cannot silently return and require a manual
+   `continue` prompt.
+4. The deterministic public foreground API journey passed `5/5` and completed raw -> Clarify -> Task -> Goals ->
+   Quick -> raw on one visible provider session. Its provider fixture deliberately emitted late reasoning and
+   assistant text during Card interrupts; neither marker appeared in the durable timeline.
+5. Authority/tool/fence focused suites passed `22/22`; App Card/state suites passed `12/12`. They cover a Card
+   remaining pending across a simulated year, process-memory loss, CAS answer persistence, old-turn fencing,
+   immediate `recommend` submission and idle/no-spinner projection while awaiting a Card.
+6. Full daemon unit passed `3124/3124`; full App passed `2692/2692`; daemon/Web builds and
+   `check:foundation` passed. Full lint completed with zero errors and the repository's existing warning-only
+   baseline.
+7. A newly rebuilt `packages/desktop/release/Thoth-x86_64.AppImage` passed the isolated packaged Product API
+   Journey. One visible Agent kept provider session `scripted-thread-2463126` across nine raw/Card/Quick/Loop
+   turns; Loop task `loop-task-86fa278d-357c-44de-9861-9e4c318eee8d` ran three PlanExec and three Review calls,
+   consumed exactly one failed Review and reached `done`. The packaged foreground and internal phase sessions
+   mounted the expected Clarify/Loop skills.

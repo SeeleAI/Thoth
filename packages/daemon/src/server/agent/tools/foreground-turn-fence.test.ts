@@ -5,6 +5,9 @@ import {
   bindForegroundProviderTurn,
   endForegroundTurnFence,
   getActiveForegroundAuthorityTurnId,
+  isParkedForegroundProviderTurn,
+  parkForegroundTurnFence,
+  releaseParkedForegroundProviderTurn,
   resetForegroundTurnFencesForTest,
 } from "./foreground-turn-fence.js";
 
@@ -78,5 +81,62 @@ describe("foreground turn fence", () => {
     expect(() => assertForegroundAuthorityTurn({ agentId: "agent-1", context: {} })).toThrow(
       "disabled for this raw provider turn",
     );
+  });
+
+  it("keeps an old parked provider turn fenced while a continuation becomes active", () => {
+    beginForegroundTurnFence({
+      agentId: "agent-1",
+      generation: "generation-1",
+      kind: "thoth_clarify",
+      foregroundTurnId: "foreground-turn-1",
+    });
+    bindForegroundProviderTurn({
+      agentId: "agent-1",
+      generation: "generation-1",
+      providerTurnId: "provider-turn-1",
+    });
+    parkForegroundTurnFence({ agentId: "agent-1", providerTurnId: "provider-turn-1" });
+    expect(() =>
+      assertForegroundAuthorityTurn({
+        agentId: "agent-1",
+        context: { providerToolCall: { turnId: "provider-turn-1" } },
+      }),
+    ).toThrow("parked provider turn");
+
+    beginForegroundTurnFence({
+      agentId: "agent-1",
+      generation: "generation-1",
+      kind: "thoth_clarify",
+      foregroundTurnId: "foreground-turn-1",
+    });
+    bindForegroundProviderTurn({
+      agentId: "agent-1",
+      generation: "generation-1",
+      providerTurnId: "provider-turn-2",
+    });
+
+    expect(
+      isParkedForegroundProviderTurn({
+        agentId: "agent-1",
+        providerTurnId: "provider-turn-1",
+      }),
+    ).toBe(true);
+    expect(
+      isParkedForegroundProviderTurn({
+        agentId: "agent-1",
+        providerTurnId: "provider-turn-2",
+      }),
+    ).toBe(false);
+
+    releaseParkedForegroundProviderTurn({
+      agentId: "agent-1",
+      providerTurnId: "provider-turn-1",
+    });
+    expect(
+      isParkedForegroundProviderTurn({
+        agentId: "agent-1",
+        providerTurnId: "provider-turn-1",
+      }),
+    ).toBe(false);
   });
 });

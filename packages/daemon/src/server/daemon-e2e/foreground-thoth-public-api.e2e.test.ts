@@ -30,7 +30,6 @@ import type {
   ThothGoalsCardModel,
   ThothTaskCardModel,
 } from "@thoth/protocol/thoth/rpc-schemas";
-import { resetRuntimeAuthorityDecisionsForTest } from "../agent/runtime-tool-decisions.js";
 import { resetForegroundAuthorityStoresForTest } from "../agent/foreground-authority-runtime.js";
 
 const capabilities: AgentCapabilityFlags = {
@@ -121,6 +120,20 @@ class ScriptedThothSession implements AgentSession {
   async interrupt(): Promise<void> {
     const turnId = this.activeTurnId;
     if (!turnId) return;
+    this.emit({
+      type: "timeline",
+      provider: "codex",
+      turnId,
+      providerTurnId: turnId,
+      item: { type: "reasoning", text: `LATE_REASONING_AFTER_AUTHORITY_CARD:${turnId}` },
+    });
+    this.emit({
+      type: "timeline",
+      provider: "codex",
+      turnId,
+      providerTurnId: turnId,
+      item: { type: "assistant_message", text: `LATE_TEXT_AFTER_AUTHORITY_CARD:${turnId}` },
+    });
     this.activeTurnId = null;
     this.emit({
       type: "turn_canceled",
@@ -574,13 +587,14 @@ describe("public foreground Thoth router", () => {
     await approveTaskAndGoals({ client, agentId: agent.id, mode: "quick" });
     await waitForThothLifecycle(client, agent.id, "done");
     await waitForAgentIdle(client, agent.id);
-    expect(visibleSession.turnCount).toBe(3);
+    expect(visibleSession.turnCount).toBe(6);
     expect(await timelineContains(client, agent.id, script.finalMarker)).toBe(true);
+    expect(await timelineContains(client, agent.id, "LATE_TEXT_AFTER_AUTHORITY_CARD")).toBe(false);
 
     await client.sendAgentMessage(agent.id, "RAW_LAST", { thoth: { enabled: false } });
     await waitForThothLifecycle(client, agent.id, "done");
     await waitForAgentIdle(client, agent.id);
-    expect(visibleSession.turnCount).toBe(4);
+    expect(visibleSession.turnCount).toBe(7);
     expect(provider.sessions[0]).toBe(visibleSession);
   }, 45_000);
 
@@ -623,7 +637,6 @@ describe("public foreground Thoth router", () => {
     client = null;
     daemon = null;
     rmSync(firstStaticDir, { recursive: true, force: true });
-    resetRuntimeAuthorityDecisionsForTest();
     resetForegroundAuthorityStoresForTest();
 
     daemon = await createTestThothDaemon({

@@ -13,11 +13,6 @@ import {
 } from "../clarify-audit-broker.js";
 import type { ThothLoopTaskService } from "../../thoth-loop/task-service.js";
 import {
-  listPendingRuntimeAuthorityDecisions,
-  resetRuntimeAuthorityDecisionsForTest,
-  resolveRuntimeAuthorityDecision,
-} from "../runtime-tool-decisions.js";
-import {
   beginForegroundTurnFence,
   bindForegroundProviderTurn,
   resetForegroundTurnFencesForTest,
@@ -83,6 +78,7 @@ function createCatalog(
       agentId === "agent-1" && callerRegistered ? primaryAgent : null,
     getTimeline: (agentId: string) => (agentId === "agent-1" ? [...timeline] : []),
     getProviderCapabilities: () => ({ supportsNativeThothTools: true }),
+    cancelAgentRun: vi.fn(async () => true),
     createAgent: vi.fn(async (config: Parameters<AgentManager["createAgent"]>[0]) => {
       const auditAgent = {
         id: "clarify-audit-agent",
@@ -183,7 +179,6 @@ function answerPendingRuntimeDecision(input: {
     nextLifecycle: "running",
   });
   expect(result.accepted).toBe(true);
-  resolveRuntimeAuthorityDecision(input);
 }
 
 function readyConvergenceReview() {
@@ -239,12 +234,26 @@ async function submitApprovedTaskCard(
     },
   });
   await toolResult;
+  const turn = currentAuthorityStore?.getActiveTurn("agent-1");
+  if (!turn) throw new Error("Missing foreground turn after Task Card answer");
+  beginForegroundTurnFence({
+    agentId: "agent-1",
+    generation: turn.generation,
+    kind: "thoth_clarify",
+    foregroundTurnId: turn.id,
+  });
+  bindForegroundProviderTurn({
+    agentId: "agent-1",
+    generation: turn.generation,
+    providerTurnId: "turn-1",
+  });
 }
 
 function takeOnlyPendingCardId(): string {
-  const pending = listPendingRuntimeAuthorityDecisions();
+  const pending =
+    currentAuthorityStore?.listAllCards().filter((card) => card.status === "pending") ?? [];
   expect(pending).toHaveLength(1);
-  return pending[0]!.cardId;
+  return pending[0]!.id;
 }
 
 async function submitAnsweredClarifyCard(
@@ -322,11 +331,24 @@ async function submitAnsweredClarifyCard(
       raw_answer: "选择第一项",
     },
   });
-  return await toolResult;
+  const result = await toolResult;
+  const turn = currentAuthorityStore?.getActiveTurn("agent-1");
+  if (!turn) throw new Error("Missing foreground turn after Clarify Card answer");
+  beginForegroundTurnFence({
+    agentId: "agent-1",
+    generation: turn.generation,
+    kind: "thoth_clarify",
+    foregroundTurnId: turn.id,
+  });
+  bindForegroundProviderTurn({
+    agentId: "agent-1",
+    generation: turn.generation,
+    providerTurnId: "turn-1",
+  });
+  return result;
 }
 
 afterEach(() => {
-  resetRuntimeAuthorityDecisionsForTest();
   resetForegroundTurnFencesForTest();
   resetForegroundAuthorityStoresForTest();
   currentAuthorityStore = null;
@@ -375,7 +397,7 @@ describe("Thoth runtime authority tools", () => {
       ),
     ).rejects.toThrow("disabled for this raw provider turn");
 
-    expect(listPendingRuntimeAuthorityDecisions()).toEqual([]);
+    expect(currentAuthorityStore?.listAllCards()).toEqual([]);
     expect(timeline).toEqual([]);
   });
 
@@ -402,7 +424,7 @@ describe("Thoth runtime authority tools", () => {
     expect(catalog.getTool("thoth_report_blocked")).toBeDefined();
   });
 
-  it("returns Task approval as a Goals Card handoff instead of Quick execution", async () => {
+  it("parks the provider after opening a Task Card", async () => {
     const { catalog } = createCatalog();
     const toolResult = catalog.executeTool(
       "thoth_submit_task_card",
@@ -446,11 +468,10 @@ describe("Thoth runtime authority tools", () => {
     });
 
     const result = await toolResult;
-    const text = result.content.map((item) => item.text ?? "").join("\n");
-    expect(text).toContain("Next required runtime tool: thoth_submit_goals_card.");
-    expect(text).toContain("Submit the Goals Card");
-    expect(text).toContain("Do not execute yet.");
-    expect(text).not.toContain("Continue in the same turn with normal execution.");
+    expect(result.structuredContent).toMatchObject({ status: "awaiting_user", cardId });
+    expect(result.content.map((item) => item.text ?? "").join("\n")).toContain(
+      "Stop this turn and wait for the user's answer",
+    );
   });
 
   it("resolves the live caller after catalog creation before starting a convergence audit", async () => {
@@ -491,17 +512,16 @@ describe("Thoth runtime authority tools", () => {
       },
     });
     await expect(toolResult).resolves.toMatchObject({
-      structuredContent: { status: "answered" },
+      structuredContent: { status: "awaiting_user" },
     });
   });
 
-  it("directs a converged Clarify card to the Task Card before Goals", async () => {
+  it("parks a converged Clarify Card without continuing provider prose", async () => {
     const { catalog } = createCatalog();
     const result = await submitAnsweredClarifyCard(catalog, "light", { converged: true });
     const text = result.content.map((item) => item.text ?? "").join("\n");
 
-    expect(text).toContain("Next required runtime tool: thoth_submit_task_card.");
-    expect(text).toContain("Do not submit a Goals Card");
+    expect(text).toContain("Stop this turn and wait for the user's answer");
   });
 
   it("requires an explicit convergence review when Task is submitted below a strength soft target", async () => {
@@ -570,7 +590,9 @@ describe("Thoth runtime authority tools", () => {
       },
     );
 
-    expect(listPendingRuntimeAuthorityDecisions()).toHaveLength(0);
+    expect(
+      currentAuthorityStore?.listAllCards().filter((card) => card.status === "pending"),
+    ).toHaveLength(0);
     expect(result.structuredContent).toMatchObject({ status: "revise_frontier" });
     expect(result.content.map((item) => item.text).join("\n")).toContain("性能验收基线");
   });
@@ -605,7 +627,9 @@ describe("Thoth runtime authority tools", () => {
     expect(result.content.map((item) => item.text).join("\n")).toContain(
       "Task Card was not created",
     );
-    expect(listPendingRuntimeAuthorityDecisions()).toHaveLength(0);
+    expect(
+      currentAuthorityStore?.listAllCards().filter((card) => card.status === "pending"),
+    ).toHaveLength(0);
   });
 
   it("rejects Task convergence reviews that downgrade the latest Clarify strength", async () => {
@@ -651,7 +675,7 @@ describe("Thoth runtime authority tools", () => {
     ).rejects.toThrow("Clarify convergence review strength mismatch");
   });
 
-  it("returns Goals Card approval as the Quick execution handoff", async () => {
+  it("parks the provider after opening a Goals Card", async () => {
     const { catalog } = createCatalog();
     await submitApprovedTaskCard(catalog);
     const toolResult = catalog.executeTool(
@@ -702,10 +726,10 @@ describe("Thoth runtime authority tools", () => {
     });
 
     const result = await toolResult;
-    const text = result.content.map((item) => item.text ?? "").join("\n");
-    expect(text).toContain("executing the approved task in the current workspace");
-    expect(text).toContain("create or edit the necessary files and verify the result");
-    expect(text).not.toContain("Next required runtime tool: thoth_submit_goals_card.");
+    expect(result.structuredContent).toMatchObject({ status: "awaiting_user", cardId });
+    expect(result.content.map((item) => item.text ?? "").join("\n")).toContain(
+      "Stop this turn and wait for the user's answer",
+    );
   });
 
   it("rejects a Goals Card before the user has approved a Task Card", async () => {
@@ -751,7 +775,9 @@ describe("Thoth runtime authority tools", () => {
     expect(result.content.map((item) => item.text).join("\n")).toContain(
       "no user-approved Task Card",
     );
-    expect(listPendingRuntimeAuthorityDecisions()).toHaveLength(0);
+    expect(
+      currentAuthorityStore?.listAllCards().filter((card) => card.status === "pending"),
+    ).toHaveLength(0);
     expect(appendTimelineItem).toHaveBeenCalledWith(
       "agent-1",
       expect.objectContaining({ type: "tool_call", status: "failed", name: "goals_approval" }),

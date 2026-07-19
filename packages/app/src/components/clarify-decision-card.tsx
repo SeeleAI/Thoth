@@ -34,7 +34,6 @@ type Question = {
   note?: string;
 };
 
-const RECOMMEND_NOTE = "你根据当前我的选择和倾向，自行推荐这个选项";
 const NOTE_PLACEHOLDER = "可补说明也可以只写备注。";
 
 function getQuestions(card: ThothClarifyCardModel["card"]): Question[] {
@@ -232,15 +231,8 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
     void submit(intent);
   }, [selections, submit]);
   const handleRecommend = useCallback(() => {
-    if (readonly || isSubmitting || !activeQuestion) return;
-    setQuestionNotes((current) => ({
-      ...current,
-      [activeQuestion.id]: current[activeQuestion.id]?.trim()
-        ? current[activeQuestion.id]
-        : RECOMMEND_NOTE,
-    }));
-    moveToNextQuestion();
-  }, [activeQuestion, isSubmitting, moveToNextQuestion, readonly]);
+    void submit("recommend");
+  }, [submit]);
   const handleStop = useCallback(() => {
     void submit("stop");
   }, [submit]);

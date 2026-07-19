@@ -30,10 +30,6 @@ import {
   bindForegroundProviderTurn,
   endForegroundTurnFence,
 } from "./tools/foreground-turn-fence.js";
-import {
-  rejectRuntimeAuthorityDecision,
-  resolveRuntimeAuthorityDecision,
-} from "./runtime-tool-decisions.js";
 import type { ThothLoopTaskService } from "../thoth-loop/task-service.js";
 
 const USER_CANCELED_SUMMARY = "已中断当前请求，可继续输入。";
@@ -343,6 +339,7 @@ function continuationKey(cards: ForegroundCardAuthorityRecord[]): string | null 
 
 export class ForegroundTurnCoordinator {
   private readonly activeRunTokens = new Map<string, string>();
+  private readonly deferredRunTokens = new Map<string, string>();
 
   constructor(private readonly options: ForegroundTurnCoordinatorOptions) {}
 
@@ -493,29 +490,16 @@ export class ForegroundTurnCoordinator {
     }
 
     if (cancelRequested) {
-      resolveRuntimeAuthorityDecision({
-        cardId: request.cardId,
-        answer: request.answer,
-        submittedSummary: summary,
-      });
+      await this.appendSubmittedCard(request.agentId, result.card);
       await this.options.agentManager.cancelAgentRun(request.agentId).catch(() => false);
     } else if (record.kind === "goal_card" && request.answer.intent === "accept_loop") {
-      await this.registerLoop(turn, request.answer, summary);
+      await this.registerLoop(turn, request.answer);
     } else {
-      const resolved = resolveRuntimeAuthorityDecision({
-        cardId: request.cardId,
-        answer: request.answer,
-        submittedSummary: summary,
-      });
-      if (!resolved.live) {
-        await this.appendSubmittedCard(request.agentId, result.card);
-        if (quickApproved) {
-          await this.launchQuickExecution(turn, true);
-        } else {
-          await this.launchAuthorityContinuation(turn);
-        }
-      } else if (quickApproved) {
-        await this.launchQuickExecution(turn, false);
+      await this.appendSubmittedCard(request.agentId, result.card);
+      if (quickApproved) {
+        await this.launchQuickExecution(turn, true);
+      } else {
+        await this.launchAuthorityContinuation(turn);
       }
     }
 
@@ -540,39 +524,16 @@ export class ForegroundTurnCoordinator {
       submittedSummary: USER_CANCELED_SUMMARY,
     });
     for (const card of canceled.pendingCards) {
-      const answer: ThothCardAnswerPayload =
-        card.kind === "clarify_card"
-          ? {
-              intent: "stop",
-              question_card_id: card.id,
-              title: card.card.title,
-              answers: [],
-              note: USER_CANCELED_SUMMARY,
-              raw_answer: USER_CANCELED_SUMMARY,
-            }
-          : {
-              intent: "cancel",
-              card_id: card.id,
-              title: card.card.title,
-              note: USER_CANCELED_SUMMARY,
-              raw_answer: USER_CANCELED_SUMMARY,
-            };
-      const resolved = resolveRuntimeAuthorityDecision({
-        cardId: card.id,
-        answer,
-        submittedSummary: USER_CANCELED_SUMMARY,
+      await this.appendSubmittedCard(agentId, {
+        ...card,
+        card: { ...card.card, submitted: true, submittedSummary: USER_CANCELED_SUMMARY },
       });
-      if (!resolved.live) {
-        await this.appendSubmittedCard(agentId, {
-          ...card,
-          card: { ...card.card, submitted: true, submittedSummary: USER_CANCELED_SUMMARY },
-        });
-      }
     }
     if (turn) {
       endForegroundTurnFence({ agentId, generation: turn.generation });
     }
     this.activeRunTokens.delete(agentId);
+    this.deferredRunTokens.delete(agentId);
     await this.options.agentManager.cancelAgentRun(agentId).catch(() => false);
     return this.options.authorityStore.getState(agentId);
   }
@@ -703,6 +664,7 @@ export class ForegroundTurnCoordinator {
       logger: this.options.logger,
     });
     if (this.options.agentManager.hasInFlightRun(agent.id)) {
+      this.deferUntilProviderIdle(turn, () => this.launchAuthorityContinuation(turn));
       return;
     }
     if (
@@ -741,6 +703,10 @@ export class ForegroundTurnCoordinator {
     turn: ForegroundTurnAuthorityRecord,
     resume: boolean,
   ): Promise<void> {
+    if (this.options.agentManager.hasInFlightRun(turn.agentId)) {
+      this.deferUntilProviderIdle(turn, () => this.launchQuickExecution(turn, resume));
+      return;
+    }
     const cards = this.options.authorityStore.listCardsForTurn(turn.id);
     this.options.authorityStore.markLifecycle({
       agentId: turn.agentId,
@@ -753,14 +719,47 @@ export class ForegroundTurnCoordinator {
     this.startProviderRun(
       this.options.authorityStore.getTurn(turn.id) ?? turn,
       buildQuickExecutionPrompt({ turn, cards, resume }),
-      { replace: true, structured: false },
+      { replace: false, structured: false },
     );
+  }
+
+  private deferUntilProviderIdle(
+    turn: ForegroundTurnAuthorityRecord,
+    resume: () => Promise<void>,
+  ): void {
+    const token = randomUUID();
+    this.deferredRunTokens.set(turn.agentId, token);
+    const poll = (): void => {
+      if (this.deferredRunTokens.get(turn.agentId) !== token) {
+        return;
+      }
+      const current = this.options.authorityStore.getActiveTurn(turn.agentId);
+      if (!current || current.id !== turn.id || current.generation !== turn.generation) {
+        this.deferredRunTokens.delete(turn.agentId);
+        return;
+      }
+      if (this.options.agentManager.hasInFlightRun(turn.agentId)) {
+        setTimeout(poll, 25).unref();
+        return;
+      }
+      this.deferredRunTokens.delete(turn.agentId);
+      void resume().catch((error) => {
+        this.options.authorityStore.markLifecycle({
+          agentId: turn.agentId,
+          turnId: turn.id,
+          generation: turn.generation,
+          lifecycle: "interrupted",
+          reason: "turn_interrupted",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    };
+    setTimeout(poll, 0).unref();
   }
 
   private async registerLoop(
     turn: ForegroundTurnAuthorityRecord,
     answer: ThothCardAnswerPayload,
-    submittedSummary: string,
   ): Promise<void> {
     try {
       if (!this.options.loopTaskService) {
@@ -829,30 +828,17 @@ export class ForegroundTurnCoordinator {
         backgroundTaskId: loopTask.id,
         error: null,
       });
-      const resolved = resolveRuntimeAuthorityDecision({
-        cardId: (answer as { card_id: string }).card_id,
-        answer,
-        submittedSummary,
-        registeredTask,
-      });
-      if (!resolved.live) {
-        const goalCard = this.options.authorityStore.getCard(
-          (answer as { card_id: string }).card_id,
-        );
-        await this.appendSubmittedCard(turn.agentId, goalCard);
-      }
+      const goalCard = this.options.authorityStore.getCard((answer as { card_id: string }).card_id);
+      await this.appendSubmittedCard(turn.agentId, goalCard);
       await this.options.agentManager.appendTimelineItem(turn.agentId, {
         type: "assistant_message",
         text: BACKGROUND_HANDOFF_SUMMARY,
       });
       this.activeRunTokens.delete(turn.agentId);
+      this.deferredRunTokens.delete(turn.agentId);
       endForegroundTurnFence({ agentId: turn.agentId, generation: turn.generation });
       await this.options.agentManager.cancelAgentRun(turn.agentId).catch(() => false);
     } catch (error) {
-      rejectRuntimeAuthorityDecision({
-        cardId: "card_id" in answer ? answer.card_id : "",
-        message: error instanceof Error ? error.message : String(error),
-      });
       this.options.authorityStore.markLifecycle({
         agentId: turn.agentId,
         turnId: turn.id,
@@ -881,7 +867,7 @@ export class ForegroundTurnCoordinator {
     if (goal && turn.controls?.mode === "loop" && !state.backgroundTaskId) {
       const answer = goal.answer;
       if (answer?.intent === "accept_loop") {
-        await this.registerLoop(turn, answer, goal.submittedSummary ?? "Approved");
+        await this.registerLoop(turn, answer);
       }
       return;
     }

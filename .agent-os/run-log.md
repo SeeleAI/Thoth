@@ -3347,3 +3347,21 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   consumed one failed Review and reached done. The public APK passed package/version, Signature v2 and permission
   checks. The exact GitHub one-line CLI URL installed into an isolated prefix and passed version, skill presence
   and daemon start/status/stop.
+
+## 2026-07-19 [Durable Card suspension and continuation recovery]
+
+- Reproduced the common root behind provider prose continuing under an open Card, five-hour Card answers doing
+  nothing and Task approval failing to produce the next Goals Card: Card tools held a process-local Promise, and
+  continuation launch returned once while the old provider generator still reported in flight.
+- Replaced the waiter with a durable suspension boundary. Card creation parks and interrupts the provider turn;
+  answer commits independently and ForegroundTurnCoordinator waits for actual run release before starting the
+  next same-session turn. Parked provider-turn output remains fenced even after a new turn is active.
+- Changed `你推荐` to submit the standard `recommend` answer immediately and projected `awaiting_card` as idle,
+  removing the false provider spinner/stop state. No provider-name branch or old Workspace Secretary fallback was
+  introduced.
+- Focused authority/tool/fence tests passed `22/22`, public foreground E2E passed `5/5`, full daemon unit passed
+  `3124/3124`, full App passed `2692/2692`, and App Card/state tests passed `12/12`. Daemon/Web builds,
+  `check:foundation`, format and diff hygiene passed; full lint reported the existing warning-only baseline with
+  zero errors. A final rebuilt AppImage passed the isolated Product API Journey with one visible session, nine
+  foreground turns, three PlanExec, three Review, one failed-Review retry and background `done`. Release
+  replacement was not performed in this debugging slice.

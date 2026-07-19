@@ -760,3 +760,16 @@ during development or copied `dist` inside a package; both must satisfy the same
 contract, while global installation remains forbidden. Likewise, a Review semantic failure exists only after a
 valid Review verdict. Permission denial, provider crash, timeout, transport loss and runtime-tool failure are
 operational exits and cannot consume failed-Review budget or synthesize `continue`/`reframe`.
+
+### Card authority must not suspend a provider call stack
+
+A user decision can remain open for hours or survive daemon restart; a dynamic-tool Promise, provider run and
+JavaScript callback cannot. Binding Card completion to that process-local stack produced two coupled failures:
+providers emitted extra prose while waiting, and accepted answers stopped advancing after the old callback or
+run disappeared. Commit the Card first, park the provider turn, and resume from durable authority in a new turn.
+
+Provider terminal delivery is not the same instant as foreground-run cleanup. A continuation attempt made while
+the terminal event is inside the generator can still observe `hasInFlightRun=true`. Returning at that point loses
+the only wake-up and forces the user to type `continue`. Schedule against the durable lifecycle until cleanup is
+actually complete, fence old provider-turn output independently of the current turn, and never use an unscoped
+deferred agent cancel that can hit the newly started continuation.

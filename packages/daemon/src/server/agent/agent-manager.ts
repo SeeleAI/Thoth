@@ -16,6 +16,7 @@ import type { TerminalManager } from "../../terminal/terminal-manager.js";
 
 import {
   getAgentStreamEventTurnId,
+  getAgentStreamEventProviderTurnId,
   type AgentCapabilityFlags,
   type AgentClient,
   type AgentCreateSessionOptions,
@@ -72,6 +73,10 @@ import { resolveCreateAgentTitles } from "./create-agent-title.js";
 import { readThothRuntimeToolsConfig } from "./thoth-runtime-tools-config.js";
 import type { ThothToolCatalogFactory } from "./tools/types.js";
 import type { ForegroundThothSessionProvisioner } from "./foreground-thoth-session-provisioner.js";
+import {
+  isParkedForegroundProviderTurn,
+  releaseParkedForegroundProviderTurn,
+} from "./tools/foreground-turn-fence.js";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
@@ -3185,6 +3190,22 @@ export class AgentManager {
     options?: HandleStreamEventOptions,
   ): Promise<boolean> {
     const eventTurnId = getAgentStreamEventTurnId(event);
+    if (
+      event.type === "timeline" &&
+      isParkedForegroundProviderTurn({
+        agentId: agent.id,
+        providerTurnId: getAgentStreamEventProviderTurnId(event) ?? eventTurnId,
+      })
+    ) {
+      this.logger.debug(
+        {
+          agentId: agent.id,
+          providerTurnId: getAgentStreamEventProviderTurnId(event) ?? eventTurnId,
+        },
+        "Suppressing timeline emitted after a foreground authority card parked the provider turn",
+      );
+      return false;
+    }
     const isForegroundEvent = Boolean(eventTurnId && agent.activeForegroundTurnId === eventTurnId);
     this.traceHandleStreamEventStart(agent, event, eventTurnId, isForegroundEvent);
     if (
@@ -3225,6 +3246,13 @@ export class AgentManager {
 
     if (!options?.fromHistory && flags.shouldDispatchEvent) {
       this.dispatchStream(agent.id, event, { timestamp: new Date().toISOString() });
+    }
+
+    if (!options?.fromHistory && isTurnTerminalEvent(event)) {
+      releaseParkedForegroundProviderTurn({
+        agentId: agent.id,
+        providerTurnId: getAgentStreamEventProviderTurnId(event) ?? eventTurnId,
+      });
     }
 
     this.traceHandleStreamEventEnd(agent, event, eventTurnId, flags);

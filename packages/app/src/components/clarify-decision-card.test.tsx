@@ -176,8 +176,9 @@ describe("ClarifyDecisionCard", () => {
     });
   });
 
-  it("replaces single-choice selections, keeps multi-choice selections, and supports per-question recommendation", () => {
-    render(<ClarifyDecisionCard card={card()} onSubmit={vi.fn()} />);
+  it("replaces single-choice selections, keeps multi-choice selections, and submits recommendation immediately", async () => {
+    const onSubmit = vi.fn();
+    render(<ClarifyDecisionCard card={card()} onSubmit={onSubmit} />);
 
     fireEvent.click(screen.getByTestId("clarify-card-choice-scope-ship"));
     fireEvent.click(screen.getByTestId("clarify-card-question-tab-1"));
@@ -195,12 +196,13 @@ describe("ClarifyDecisionCard", () => {
 
     fireEvent.click(screen.getByTestId("clarify-card-question-tab-2"));
     fireEvent.click(screen.getByTestId("clarify-card-recommend"));
-    expect(screen.getByTestId("clarify-card-question-evidence").textContent).toContain(
-      "需要哪些验收？",
-    );
-    fireEvent.click(screen.getByTestId("clarify-card-question-tab-2"));
-    expect(screen.getByTestId("clarify-card-question-note-risk").getAttribute("value")).toContain(
-      "自行推荐这个选项",
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: "recommend",
+        question_card_id: "clarify-card-1",
+        raw_answer: "你推荐",
+      }),
     );
   });
 

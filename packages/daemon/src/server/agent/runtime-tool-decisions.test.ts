@@ -10,10 +10,7 @@ import { createTestLogger } from "../../test-utils/test-logger.js";
 import { ForegroundAuthorityStore } from "./foreground-authority-store.js";
 import {
   createRuntimeAuthorityDecision,
-  getPendingRuntimeAuthorityDecisionByCardId,
-  listPendingRuntimeAuthorityDecisions,
   listRuntimeAuthorityDecisionRecords,
-  resetRuntimeAuthorityDecisionsForTest,
 } from "./runtime-tool-decisions.js";
 
 const temporaryHomes: string[] = [];
@@ -109,7 +106,6 @@ function createDecision(store: ForegroundAuthorityStore) {
 }
 
 afterEach(() => {
-  resetRuntimeAuthorityDecisionsForTest();
   for (const home of temporaryHomes.splice(0)) {
     rmSync(home, { recursive: true, force: true });
   }
@@ -121,14 +117,10 @@ describe("runtime authority decision persistence", () => {
     const { home, store } = createStore();
     startThothTurn(store);
     const { record } = createDecision(store);
-    expect(listPendingRuntimeAuthorityDecisions()).toHaveLength(1);
     store.close();
-    resetRuntimeAuthorityDecisionsForTest();
 
     const recovered = createStore(home).store;
     try {
-      expect(listPendingRuntimeAuthorityDecisions()).toEqual([]);
-      expect(getPendingRuntimeAuthorityDecisionByCardId(record.cardId)).toBeNull();
       expect(listRuntimeAuthorityDecisionRecords(recovered)).toContainEqual(
         expect.objectContaining({
           cardId: record.cardId,

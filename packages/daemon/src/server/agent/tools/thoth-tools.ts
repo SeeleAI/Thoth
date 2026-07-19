@@ -105,6 +105,7 @@ import { createRuntimeAuthorityDecision } from "../runtime-tool-decisions.js";
 import {
   assertForegroundAuthorityTurn,
   getActiveForegroundAuthorityTurnId,
+  parkForegroundTurnFence,
 } from "./foreground-turn-fence.js";
 import { getForegroundAuthorityStore } from "../foreground-authority-runtime.js";
 import type { ForegroundAuthorityStore } from "../foreground-authority-store.js";
@@ -300,7 +301,7 @@ function summarizeRuntimeAuthorityAnswer(answer: ThothCardAnswerPayload): string
   }
 }
 
-function runtimeToolResultText(input: {
+export function runtimeToolResultText(input: {
   answer: ThothCardAnswerPayload;
   submittedSummary: string;
   cardKind: "clarify_card" | "task_card" | "goals_card" | "blocked_card";
@@ -1077,7 +1078,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       | { kind: "goals_card"; card: ThothApprovalGoalCardModel }
       | { kind: "blocked_card"; title: string; reason: string };
     appendOpenCard: () => Promise<void>;
-    appendSubmittedCard?: (summary: string) => Promise<void>;
   }): Promise<ThothToolResult> => {
     if (!callerAgentId) {
       throw new Error("Thoth runtime authority tools require an agent-scoped caller");
@@ -1090,7 +1090,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     if (!foregroundTurnId) {
       throw new Error("No active Agent-scoped Thoth turn owns this authority card");
     }
-    const { record, waitForAnswer } = createRuntimeAuthorityDecision({
+    const { record } = createRuntimeAuthorityDecision({
       store: foregroundAuthorityStore,
       provider: call.provider,
       agentId: callerAgentId,
@@ -1127,75 +1127,54 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       },
     });
     await input.appendOpenCard();
-    try {
-      const result = await waitForAnswer;
-      await input.appendSubmittedCard?.(result.submittedSummary);
-      await appendRuntimeAuthorityToolCall({
-        callId: call.callId,
-        safeName: input.safeName,
-        label: input.label,
-        text: result.submittedSummary,
-        status: "completed",
-        metadata: {
-          thothAuthorityDecision: true,
-          pendingAuthorityDecision: false,
-          cardKind: input.card.kind,
-          authorityDecisionId: record.id,
-          cardId: record.cardId,
-          status: "answered",
-          ...(input.metadata ?? {}),
+    parkForegroundTurnFence({ agentId: callerAgentId, providerTurnId: call.turnId });
+    await appendRuntimeAuthorityToolCall({
+      callId: call.callId,
+      safeName: input.safeName,
+      label: input.label,
+      text: "等待用户决定",
+      status: "completed",
+      metadata: {
+        thothAuthorityDecision: true,
+        pendingAuthorityDecision: true,
+        cardKind: input.card.kind,
+        authorityDecisionId: record.id,
+        cardId: record.cardId,
+        status: "awaiting_user",
+        ...(input.metadata ?? {}),
+      },
+    });
+    void agentManager.cancelAgentRun(callerAgentId).catch((error) => {
+      logger.warn(
+        { err: error, agentId: callerAgentId },
+        "Failed to park provider turn after authority card",
+      );
+    });
+    return {
+      content: [
+        {
+          type: "text",
+          text: "The authority card is durable. Stop this turn and wait for the user's answer.",
         },
-      });
-      return {
-        content: [
-          {
-            type: "text",
-            text: runtimeToolResultText({
-              answer: result.answer,
-              submittedSummary: result.submittedSummary,
-              cardKind: input.card.kind,
-              clarifyConverged:
-                input.card.kind === "clarify_card" &&
-                input.frontierLedger?.convergence_state === "ready_for_task",
-            }),
-          },
-        ],
-        structuredContent: {
-          ok: true,
-          status: "answered",
-          authorityDecisionId: record.id,
-          cardId: record.cardId,
-        },
-      };
-    } catch (error) {
-      await appendRuntimeAuthorityToolCall({
-        callId: call.callId,
-        safeName: input.safeName,
-        label: input.label,
-        text: "Authority decision did not complete.",
-        status: "failed",
-        error: { message: error instanceof Error ? error.message : String(error) },
-        metadata: {
-          thothAuthorityDecision: true,
-          pendingAuthorityDecision: false,
-          cardKind: input.card.kind,
-          authorityDecisionId: record.id,
-          cardId: record.cardId,
-          status: "failed",
-        },
-      });
-      throw error;
-    }
+      ],
+      structuredContent: {
+        ok: true,
+        status: "awaiting_user",
+        authorityDecisionId: record.id,
+        cardId: record.cardId,
+      },
+    };
   };
 
   const requireApprovedTaskCardForGoals = async (
     context: ThothToolExecutionContext,
   ): Promise<ThothToolResult | null> => {
-    const hasApprovedTaskCard = callerAgentId
-      ? agentManager
-          .getTimeline(callerAgentId)
-          .some((item) => item.type === "task_card" && item.card.submitted === true)
-      : false;
+    const hasApprovedTaskCard = Boolean(
+      callerAgentId &&
+      foregroundAuthorityStore
+        ?.listCardsForAgent(callerAgentId)
+        .some((record) => record.kind === "task_card" && record.status === "answered"),
+    );
     if (hasApprovedTaskCard) {
       return null;
     }
@@ -1237,7 +1216,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         outputSchema: z
           .object({
             ok: z.boolean(),
-            status: z.enum(["answered"]),
+            status: z.enum(["awaiting_user"]),
             authorityDecisionId: z.string(),
             cardId: z.string(),
           })
@@ -1296,14 +1275,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
               await agentManager.appendTimelineItem(callerAgentId, { type: "clarify_card", card });
             }
           },
-          appendSubmittedCard: async (summary) => {
-            if (callerAgentId) {
-              await agentManager.appendTimelineItem(callerAgentId, {
-                type: "clarify_card",
-                card: { ...card, submitted: true, submittedSummary: summary },
-              });
-            }
-          },
         });
       },
     );
@@ -1318,7 +1289,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         outputSchema: z
           .object({
             ok: z.boolean(),
-            status: z.enum(["answered", "revise_frontier", "blocked"]),
+            status: z.enum(["awaiting_user", "revise_frontier", "blocked"]),
             authorityDecisionId: z.string().optional(),
             cardId: z.string().optional(),
           })
@@ -1425,14 +1396,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
               await agentManager.appendTimelineItem(callerAgentId, { type: "task_card", card });
             }
           },
-          appendSubmittedCard: async (summary) => {
-            if (callerAgentId) {
-              await agentManager.appendTimelineItem(callerAgentId, {
-                type: "task_card",
-                card: { ...card, submitted: true, submittedSummary: summary },
-              });
-            }
-          },
         });
       },
     );
@@ -1447,7 +1410,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         outputSchema: z
           .object({
             ok: z.boolean(),
-            status: z.enum(["answered", "rejected"]),
+            status: z.enum(["awaiting_user", "rejected"]),
             authorityDecisionId: z.string().optional(),
             cardId: z.string().optional(),
           })
@@ -1479,14 +1442,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           appendOpenCard: async () => {
             if (callerAgentId) {
               await agentManager.appendTimelineItem(callerAgentId, { type: "goal_card", card });
-            }
-          },
-          appendSubmittedCard: async (summary) => {
-            if (callerAgentId) {
-              await agentManager.appendTimelineItem(callerAgentId, {
-                type: "goal_card",
-                card: { ...card, submitted: true, submittedSummary: summary },
-              });
             }
           },
         });

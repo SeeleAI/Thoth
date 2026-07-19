@@ -285,7 +285,7 @@ async function main() {
     const toolCalls = capture.filter((entry) => entry.kind === "tool_call");
     const threadStarts = capture.filter((entry) => entry.kind === "thread_start");
     const turnErrors = capture.filter((entry) => entry.kind === "turn_error");
-    let visibleTurnCount = 5;
+    let visibleTurnCount = 9;
     if (!realCodex) {
       assert(
         turnErrors.length === 0,
@@ -314,8 +314,8 @@ async function main() {
         (entry) => entry.kind === "turn_start" && entry.threadId === quickThreadStart.threadId,
       ).length;
       assert(
-        visibleTurnCount === 5,
-        `Expected five hot-switch turns, received ${visibleTurnCount}`,
+        visibleTurnCount === 9,
+        `Expected nine hot-switch turns, received ${visibleTurnCount}`,
       );
     }
 

@@ -309,9 +309,13 @@ async function runTurn(params, turnId) {
       dynamicToolNames.includes("thoth_submit_clarify_card") &&
       inputText.includes("Follow the installed thoth.clarify skill")
     ) {
-      await requireTool("thoth_submit_clarify_card", clarifyCard, turnId);
-      await requireTool("thoth_submit_task_card", taskCard, turnId);
-      await requireTool("thoth_submit_goals_card", goalsCard, turnId);
+      if (inputText.includes("Approved Task Card:")) {
+        await requireTool("thoth_submit_goals_card", goalsCard, turnId);
+      } else if (inputText.includes("Clarification:")) {
+        await requireTool("thoth_submit_task_card", taskCard, turnId);
+      } else {
+        await requireTool("thoth_submit_clarify_card", clarifyCard, turnId);
+      }
     }
     record({ kind: "turn_complete", threadId, turnId });
     writeMessage({

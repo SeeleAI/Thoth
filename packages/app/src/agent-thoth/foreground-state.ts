@@ -1,11 +1,7 @@
 import type { AgentLifecycleStatus } from "@thoth/protocol/agent-lifecycle";
 import type { AgentThothState } from "@thoth/protocol/thoth/rpc-schemas";
 
-const ACTIVE_LIFECYCLES = new Set<AgentThothState["lifecycle"]>([
-  "running",
-  "awaiting_card",
-  "quick_exec",
-]);
+const ACTIVE_LIFECYCLES = new Set<AgentThothState["lifecycle"]>(["running", "quick_exec"]);
 
 export function resolveForegroundAgentStatus(
   agentStatus: AgentLifecycleStatus | null,
