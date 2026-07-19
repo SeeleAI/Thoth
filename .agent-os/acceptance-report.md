@@ -2467,3 +2467,11 @@ Evidence recorded on `2026-07-19`:
 5. The dev Metro startup E2E was attempted but did not mount the application because its existing renderer path
    raised `Cannot use 'import.meta' outside a module`; it is not counted as branding evidence. CDP attached after
    the short startup splash had already completed, so no transient-frame screenshot is claimed.
+6. GitHub Actions run `29688512132` completed successfully at
+   `b19191ba39cd9c65f497abdf92e4b629a348337b`. Preflight, real Relay, server CLI plus three native CLI smokes,
+   Linux, Windows, macOS x64/arm64, signed Android and publish all passed. The sole MVP prerelease was replaced as
+   Release `356353956` with exactly 28 assets; `main` remained `e74c6e0d`.
+7. Public `BUILD-SOURCE.txt` and `MVP-UPDATE.json` identify commit `b19191ba` and workflow `29688512132`, while
+   `SHA256SUMS` covers 27 downloadable payload/update assets. The re-downloaded public AppImage matched its
+   checksum, embedded the same build identity, contained `thoth-brand-mark`, and contained none of the four
+   archived paths or old SVG fingerprint in either `app.asar` or `resources/app-dist`.

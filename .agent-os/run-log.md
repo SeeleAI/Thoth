@@ -3381,3 +3381,7 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   archived paths or old vector fingerprint; a clean isolated launch displayed the Thoth welcome mark. The Metro
   startup E2E remained blocked before app mount by its existing `import.meta` module error, and the transient
   startup frame completed before CDP attachment, so neither is overstated as screenshot evidence.
+- Committed the cleanup as `b19191ba`, fast-forwarded both `agent/dev/mvp` and `release/mvp-actions`, and completed
+  GitHub Actions run `29688512132`. All native/Relay/CLI jobs and publish passed; the fixed MVP prerelease now
+  targets `b19191ba` with 28 assets. Public metadata and checksums agree, and the re-downloaded AppImage repeats
+  the packaged old-logo absence checks. The archive Release and `main` remain unchanged.
