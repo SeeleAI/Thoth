@@ -3385,3 +3385,17 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   GitHub Actions run `29688512132`. All native/Relay/CLI jobs and publish passed; the fixed MVP prerelease now
   targets `b19191ba` with 28 assets. Public metadata and checksums agree, and the re-downloaded AppImage repeats
   the packaged old-logo absence checks. The archive Release and `main` remain unchanged.
+
+## 2026-07-20 [PR #12 Windows Runtime Skill CRLF release]
+
+- Reviewed and fenced PR `#12` at contributor commit `f2d442e5`, then verified its clean merge against current
+  release `b19191ba`. Drivers, foundation, clean release runtime build, release/brand contracts and diff hygiene
+  passed before publication.
+- Merged through GitHub as two-parent commit `1b6c0164` and synchronized it into `agent/dev/mvp` as equivalent
+  two-parent commit `544c0893`, preserving both contributor history and the dev-only release evidence lineage.
+- GitHub Actions run `29724438993` passed every native, Relay, Android, CLI and publish job. Release `356572010`
+  replaced the sole MVP prerelease with 28 assets at `1b6c0164`; `main`, npm, Relay deployment and the archive
+  Release were untouched.
+- Public Windows x64 ZIP, Linux AppImage and server CLI tgz matched `SHA256SUMS`; release metadata matched the
+  merge commit and workflow. The Windows package's actual Clarify and Loop skills use CRLF and were both parsed
+  successfully by the parser extracted from the same `app.asar`.

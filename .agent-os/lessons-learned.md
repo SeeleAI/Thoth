@@ -795,3 +795,22 @@ Retry condition:
 For every icon or splash change, build the Web export, inspect its emitted asset list, build one native package,
 scan both executable code and external renderer resources, and capture a cold-start frame on each native OS at
 the next release promotion.
+
+## `NTH-EXP-029` Cross-Worktree Builds Need Independent Workspace Links
+
+Observed on `2026-07-20`:
+
+A temporary PR merge worktree reused the main checkout's root `node_modules`. npm could launch the tools, but
+workspace package symlinks still resolved to the main checkout, mixing two commits in one TypeScript graph and
+producing an unrelated daemon implicit-any error after all focused and foundation checks had passed.
+
+Conclusion:
+
+A symlink to another checkout's `node_modules` is acceptable only for narrow tools that do not resolve workspace
+packages. Release-graph verification requires an independent `npm ci` in the tested worktree; otherwise a mixed
+dependency graph can create false failures or, more dangerously, false passes.
+
+Packaged ASAR verification should also prefer targeted reads. Full extraction follows `asarUnpack` references
+and can fail when platform packaging deliberately prunes optional native files. Reading the exact parser and
+Runtime Skill entries directly proves the intended contract without treating absent unrelated native binaries
+as archive corruption.

@@ -2475,3 +2475,27 @@ Evidence recorded on `2026-07-19`:
    `SHA256SUMS` covers 27 downloadable payload/update assets. The re-downloaded public AppImage matched its
    checksum, embedded the same build identity, contained `thoth-brand-mark`, and contained none of the four
    archived paths or old SVG fingerprint in either `app.asar` or `resources/app-dist`.
+
+### `NTH-EV-042` Windows Runtime Skill CRLF Compatibility
+
+Status: `verified` for merged source, Windows-native release build and publicly downloaded packaged skills.
+
+Evidence recorded on `2026-07-20`:
+
+1. PR `#12` was merged with merge commit `1b6c016479846952dd44543743373392295a78ab`. Its parents are the exact
+   previous release `b19191ba` and reviewed contributor commit `f2d442e5`; the PR is recorded as merged rather
+   than squashed or rebased.
+2. The merged parser accepts LF and CRLF YAML frontmatter. Runtime Skill containment and Clarify/Loop mount-path
+   checks use platform-native `relative`, `sep`, `isAbsolute` and `join` behavior instead of POSIX-only string
+   separators.
+3. The isolated merge result passed drivers `7/7`, foundation `549/549`, a clean dependency-graph
+   `build:release-runtime`, MVP release contract, brand contract and diff hygiene. The first shared-node_modules
+   release build was rejected as cross-worktree dependency contamination and was not counted as code evidence.
+4. GitHub Actions run `29724438993` passed preflight, real Relay, Linux, Windows, macOS x64/arm64, signed Android,
+   server CLI and all three native CLI smokes. Publish replaced only `v0.0.0-mvp-beta` as Release `356572010`
+   with 28 assets; `main` remained `e74c6e0d` and the archive Release remained intact.
+5. Public `BUILD-SOURCE.txt` and `MVP-UPDATE.json` identify commit `1b6c0164` and workflow `29724438993`;
+   `SHA256SUMS` verified the re-downloaded Windows x64 ZIP, Linux AppImage and server CLI tgz.
+6. Both Runtime Skills extracted from the public Windows x64 `app.asar` have real CRLF line endings. The parser
+   extracted from that same package parsed `thoth.clarify` and `thoth.loop` successfully, with non-empty bodies
+   of `13876` and `6977` characters respectively.
