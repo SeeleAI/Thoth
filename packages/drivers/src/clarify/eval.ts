@@ -13,6 +13,7 @@ import {
   buildClarifyProviderInputEnvelope,
   buildClarifyRepairInputPacket,
   buildClarifyTransitionInputPacket,
+  isInsideGlobalProviderSkillDir,
   loadRuntimeSkillArtifact,
   mountRuntimeSkillForSession,
   validateClarifyRuntimeSkillArtifact,
@@ -193,7 +194,11 @@ function evaluateMountChecks(): ClarifyEvalScenarioResult[] {
     }
 
     const visibleFailures: string[] = [];
-    if (!mount.mountedPath.includes("provider-sessions/sec_eval/skills/thoth-clarify/SKILL.md")) {
+    if (
+      !mount.mountedPath.endsWith(
+        join("provider-sessions", "sec_eval", "skills", "thoth-clarify", "SKILL.md"),
+      )
+    ) {
       visibleFailures.push(`unexpected session mount path: ${mount.mountedPath}`);
     }
     if (mount.skillRef.id !== "thoth.clarify") {
@@ -201,14 +206,8 @@ function evaluateMountChecks(): ClarifyEvalScenarioResult[] {
     }
 
     const bareFailures: string[] = [];
-    if (mount.mountedPath.includes(`${fakeHome}/.codex/skills`)) {
-      bareFailures.push("bare Codex skill home can see mounted thoth.clarify");
-    }
-    if (mount.mountedPath.includes(`${fakeHome}/.claude/skills`)) {
-      bareFailures.push("bare Claude skill home can see mounted thoth.clarify");
-    }
-    if (mount.mountedPath.includes(`${fakeHome}/.agents/skills`)) {
-      bareFailures.push("bare Agents skill home can see mounted thoth.clarify");
+    if (isInsideGlobalProviderSkillDir(mount.mountedPath, fakeHome)) {
+      bareFailures.push("bare provider skill home can see mounted thoth.clarify");
     }
 
     return [

@@ -168,7 +168,11 @@ function evaluateSessionMount(): LoopEvalScenarioResult {
       home: join(tempRoot, "bare-provider-home"),
     });
     const failures: string[] = [];
-    if (!mount.mountedPath.includes("provider-sessions/loop_eval/skills/thoth-loop/SKILL.md")) {
+    if (
+      !mount.mountedPath.endsWith(
+        join("provider-sessions", "loop_eval", "skills", "thoth-loop", "SKILL.md"),
+      )
+    ) {
       failures.push(`unexpected mounted path: ${mount.mountedPath}`);
     }
     if (mount.skillRef.id !== "thoth.loop") {
