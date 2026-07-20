@@ -1,7 +1,11 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildClarifyProviderInputEnvelope,
   loadRuntimeSkillArtifact,
+  mountRuntimeSkillForSession,
+  parseRuntimeSkillFrontmatter,
   validateClarifyRuntimeSkillArtifact,
 } from "./contract.js";
 import { evaluateClarifyGoldenDataset } from "./eval.js";
@@ -31,11 +35,43 @@ describe("thoth.clarify harness", () => {
 
   it("loads thoth.clarify from the standard SKILL.md artifact", () => {
     const artifact = loadRuntimeSkillArtifact("thoth.clarify");
-    expect(artifact.path).toContain("runtime-skills/thoth-clarify/SKILL.md");
+    expect(artifact.path).toMatch(/runtime-skills[\\/]thoth-clarify[\\/]SKILL\.md$/);
     expect(artifact.frontmatter.name).toBe("thoth.clarify");
     expect(artifact.frontmatter.userInvocable).toBe(false);
     expect(artifact.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(validateClarifyRuntimeSkillArtifact(artifact)).toEqual([]);
+  });
+
+  it("accepts Windows CRLF runtime skill frontmatter", () => {
+    const parsed = parseRuntimeSkillFrontmatter(
+      [
+        "---",
+        "name: thoth.clarify",
+        "description: Windows-compatible runtime skill",
+        "user-invocable: false",
+        "---",
+        "## Runtime Context",
+      ].join("\r\n"),
+    );
+
+    expect(parsed.frontmatter).toMatchObject({
+      name: "thoth.clarify",
+      description: "Windows-compatible runtime skill",
+      userInvocable: false,
+    });
+    expect(parsed.body).toBe("## Runtime Context");
+  });
+
+  it("refuses runtime skill mounts below a provider global skill root", () => {
+    const fakeHome = join(tmpdir(), "thoth-global-skill-home");
+
+    expect(() =>
+      mountRuntimeSkillForSession({
+        thothSessionHome: join(fakeHome, ".codex", "skills"),
+        sessionId: "sec_global_guard",
+        home: fakeHome,
+      }),
+    ).toThrow("Refusing to mount a Thoth runtime skill inside a global provider skill dir");
   });
 
   it("keeps the golden dataset broad enough for NTH-TD-015 acceptance", () => {

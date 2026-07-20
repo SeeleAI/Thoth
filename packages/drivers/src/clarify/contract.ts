@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ClarifyProviderRuntimeInputPacketSchema,
@@ -180,7 +180,7 @@ export function parseRuntimeSkillFrontmatter(source: string): {
   frontmatter: RuntimeSkillFrontmatter;
   body: string;
 } {
-  const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(source);
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(source);
   if (!match) {
     throw new Error("Runtime skill must start with YAML frontmatter");
   }
@@ -315,7 +315,13 @@ export function isInsideGlobalProviderSkillDir(
   const resolvedTarget = resolve(targetPath);
   return getGlobalProviderSkillDirs(home).some((globalDir) => {
     const resolvedGlobal = resolve(globalDir);
-    return resolvedTarget === resolvedGlobal || resolvedTarget.startsWith(`${resolvedGlobal}/`);
+    const relativeTarget = relative(resolvedGlobal, resolvedTarget);
+    return (
+      relativeTarget === "" ||
+      (relativeTarget !== ".." &&
+        !relativeTarget.startsWith(`..${sep}`) &&
+        !isAbsolute(relativeTarget))
+    );
   });
 }
 
