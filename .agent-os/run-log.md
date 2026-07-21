@@ -3443,6 +3443,11 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   scanner correctly exposed that its audit-only allowlist had not been extended. The smoke was added to that
   narrow allowlist while product source remained zero-tolerance, and the tracked-state repository validation
   passed again. The existing public Release was untouched.
+- The second run `29836687123` passed clean foundation, runtime build and App unit tests before daemon unit found
+  a duplicate provider-termination integration test left under `packages/daemon`. Its detached-descendant
+  assertion contradicted the new owner/process-group contract and the implementation had already moved to
+  drivers. The daemon duplicate was deleted rather than weakened or restored with process scanning; the exact CI
+  daemon command then passed `188` files / `2519` tests with `26` explicit skips. Publish again did not run.
 - The implementation commit `6eda6f08` was pushed to `agent/dev/mvp` and fast-forwarded to
   `release/mvp-actions`. No tag or Release mutation is claimed yet. The sole top next action is to push the narrow
   preflight correction to both branches, wait for every native job and then revalidate the publicly downloaded

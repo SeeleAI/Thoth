@@ -2537,10 +2537,11 @@ Evidence recorded on `2026-07-21`:
    processes use native process-group signals, stale-lock reachable shutdown uses lifecycle RPC and forced stop
    does not scan unrelated descendants. The full CLI suite passed `40/40`, including supervisor restart,
    ownership, stale lock and worker-disconnect regressions.
-9. Final local gates passed: full App `327` files / `2688` tests, drivers `46` files / `583` tests, desktop `26`
-   files / `171` tests, foundation `552` tests, AppImage and hosted Relay journeys, daemon/client/protocol builds
-   and typechecks, release/brand contracts, secret and removed-path scans, formatting and diff hygiene. Clarify
-   golden, Clarify user simulation and Loop golden independent Codex judges all passed.
+9. Final local gates passed: full App `327` files / `2688` tests, daemon `188` files / `2519` tests, drivers
+   `46` files / `583` tests, desktop `26` files / `171` tests, foundation `552` tests, AppImage and hosted Relay
+   journeys, daemon/client/protocol builds and typechecks, release/brand contracts, secret and removed-path scans,
+   formatting and diff hygiene. Clarify golden, Clarify user simulation and Loop golden independent Codex judges
+   all passed.
 
 Boundary:
 
