@@ -3452,3 +3452,25 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   `release/mvp-actions`. No tag or Release mutation is claimed yet. The sole top next action is to push the narrow
   preflight correction to both branches, wait for every native job and then revalidate the publicly downloaded
   fixed MVP assets.
+
+## 2026-07-21 [Workspace / Task authority public MVP Release acceptance]
+
+- Pushed the final audit correction as `9aa1367a` and removed the duplicate daemon-owned provider process test as
+  `a705bbe8`; both `agent/dev/mvp` and `release/mvp-actions` reached the latter by normal fast-forward. Remote
+  `main` remained `e74c6e0d`; npm and Relay deployment were untouched.
+- GitHub Actions run `29837814594` passed preflight, Linux packaged Clarify/Loop acceptance, Windows, macOS
+  x64/arm64, signed Android, server CLI, three native CLI install smokes, hosted Relay and publish. It replaced
+  only `v0.0.0-mvp-beta` as public prerelease `357429846` with `28` assets at `a705bbe8`; the archive Release
+  remained intact.
+- Re-downloaded `BUILD-SOURCE.txt`, `MVP-UPDATE.json`, AppImage, APK and CLI tgz all matched public
+  `SHA256SUMS`. The AppImage build identity is `a705bbe8` and its empty-home journey repeated `13` hot-switch
+  turns, migration, structured `@Task`, one failed Review retry, six Loop receipts and Stop without an active
+  execution at `6,382,454` durable bytes.
+- The public CLI tgz repeated hosted Relay v3 + E2EE, Card continuation across daemon restart, reconnect,
+  Pause/Resume, Stop, five PlanExec and five Review calls. Direct Cloudflare egress from this verifier was
+  intermittent; the final pass used an ignored HTTP CONNECT tunnel below TLS, while Actions had already passed
+  the same journey directly. The exact public URL also installed into a separate prefix and passed version plus
+  daemon start/status/stop.
+- The public APK is `sh.thoth` version `0.0.0-mvp-beta`, verifies with Signature v2, matches the fixed MVP signing
+  certificate and requests neither microphone nor overlay permission. `NTH-EV-043` and `NTH-TD-023` are now
+  verified; the sole top next action returns to the distinct `NTH-TD-021` browser/device evidence boundary.

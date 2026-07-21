@@ -863,3 +863,32 @@ Retry condition:
 Run daemon start/restart/stop from the final CLI tgz in a non-root minimal image without `ps`, plus stale-lock,
 decoy-process, supervisor-disconnect and detached-descendant tests. Acceptance requires no unrelated kill, no
 daemon reachability and no retained owner lock; zombie visibility alone must not keep the command spinning.
+
+## `NTH-EXP-032` Public Artifact Failure Must Be Classified Below The Product Boundary
+
+Observed on `2026-07-21`:
+
+1. The re-downloaded public CLI tgz installed and started its daemon, but the first hosted Relay repetition failed
+   while the daemon opened a data socket. Logs showed direct Cloudflare IPv4 `ETIMEDOUT` and IPv6 `ENETUNREACH`;
+   the Relay `/health` endpoint still returned protocol `3` through the required host proxy.
+2. A second direct attempt completed the core Clarify/Loop journey before the same host route failed during
+   reconnect. The identical packaged Relay journey had already passed directly in GitHub Actions.
+3. An ignored environment-level HTTP CONNECT tunnel stabilized this host's route. The public tgz then passed the
+   full TLS/SNI/WebSocket, Relay v3, application E2EE, restart, control and Loop journey without changing product
+   code or bypassing any public API or authority state machine.
+4. An initial keystore comparison shell command omitted `set -euo pipefail`; a failed `keytool` stage therefore
+   allowed `openssl` to hash empty input and the final `printf` returned success. Strict rerun with the explicit
+   ignored keystore path proved the public APK signer really matched the fixed MVP key.
+
+Conclusion:
+
+Public-artifact acceptance must separate package/product failure from the verifier's network and shell boundary.
+External routing may be replaced only below TLS and product transport, while all Thoth APIs, state machines and
+cryptographic checks remain real. Multi-stage evidence commands require strict failure propagation.
+
+Retry condition:
+
+On hosted transport failure, inspect daemon socket errors, service health and direct TLS independently before
+changing code. If only the verifier route is broken, use a documented environment-level tunnel and repeat the
+same public journey. Run certificate/checksum pipelines under `set -euo pipefail` and compare the final digest
+explicitly before recording evidence.

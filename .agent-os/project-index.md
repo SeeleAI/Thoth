@@ -3,11 +3,11 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-023`
+2. Top next action: `NTH-TD-021`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: None. `NTH-EV-043` records the locally verified `NTH-CD-060` implementation, fresh AppImage journey, real Codex journey and packaged CLI Relay journey. The remaining step is the authorized branch push, native GitHub Actions matrix and public-asset revalidation.
+4. Active blockers: None. `NTH-EV-043` verifies the complete `NTH-CD-060` implementation, native GitHub Actions matrix, replacement MVP Release and re-downloaded public AppImage/APK/CLI journeys.
 5. Current branch: `agent/dev/mvp`
-6. Current implementation state: `NTH-CD-060` is the only local product path. One Workspace authority shard owns visible Agents, Cards, immutable Human Decisions, unified Quick/Loop Tasks, Goals, PhaseRuns, ExecutionAttempts, RuntimeBundle receipts, Task Blackboard and structured same-Workspace `@Task` context. Provider code lives behind the common HarnessAdapter/ToolGateway contract; `.thoth/provider-sessions`, copied provider homes, legacy Loop RPCs and internal-Agent phase authority are removed. Fresh packaged AppImage, real Codex and packaged CLI through hosted Relay all pass locally. The fixed MVP Release still points at the previous build until the current native Actions run succeeds.
+6. Current implementation state: `NTH-CD-060` is the only product path. One Workspace authority shard owns visible Agents, Cards, immutable Human Decisions, unified Quick/Loop Tasks, Goals, PhaseRuns, ExecutionAttempts, RuntimeBundle receipts, Task Blackboard and structured same-Workspace `@Task` context. Provider code lives behind the common HarnessAdapter/ToolGateway contract; `.thoth/provider-sessions`, copied provider homes, legacy Loop RPCs and internal-Agent phase authority are removed. The fixed MVP Release and both target branches point at verified commit `a705bbe8`; public AppImage, APK and CLI assets match its release receipts.
 
 ## Objective Summary
 
@@ -24,7 +24,7 @@
 
 ## Top Next Action
 
-`NTH-TD-023` `[doing]`: Commit and fast-forward the locally verified `NTH-CD-060` implementation to `agent/dev/mvp` and `release/mvp-actions`, wait for the complete native workflow, then re-download and verify the sole fixed MVP beta Release before closing the task.
+`NTH-TD-021` `[doing]`: Close the remaining real browser/device evidence for Loop `budget_wait`, control and daemon restart/reconnect projections without reintroducing internal-Agent authority or a parallel execution path.
 
 ## Active Blockers
 
@@ -97,7 +97,7 @@ None.
 63. `NTH-EV-038`: GitHub Actions run `29571377829` rebuilt every native target and replaced the sole MVP prerelease at commit `3ff79cad`; public manifest/build-source/checksum receipts and re-downloaded AppImage/APK/CLI assets match that commit.
 64. `NTH-CD-059`: `Simply Is First` is now the highest engineering priority: code must land as final architecture modules through real production boundaries, with no simplified substitute, parallel implementation, fallback, semantic downgrade or hidden acceptance rewrite; failing metrics remain evidence to solve on the final path.
 65. `NTH-CD-060`: Workspace and Task are now the durable orchestration units. Provider threads and attempts are runtime evidence only; RuntimeBundles and HarnessAdapters replace copied provider session homes; human decisions are append-only; same-Workspace `@Task` supplies semantic Task context without provider-session merging.
-66. `NTH-EV-043`: The Workspace/Task authority and universal HarnessAdapter implementation is locally verified through adapter conformance, real Codex, a fresh AppImage, migration, hosted Relay, restart, Pause/Resume/Stop, failed-Review retry, storage limits and full local gates. Native Actions and public-download verification remain pending.
+66. `NTH-EV-043`: The Workspace/Task authority and universal HarnessAdapter implementation is fully verified through adapter conformance, real Codex, migration, public AppImage and CLI Relay journeys, native Actions, signed APK checks, restart, Pause/Resume/Stop, failed-Review retry, storage limits and fixed Release replacement at `a705bbe8`.
 
 ## Read Next
 

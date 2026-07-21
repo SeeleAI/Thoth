@@ -2502,8 +2502,8 @@ Evidence recorded on `2026-07-20`:
 
 ### `NTH-EV-043` Workspace / Task Authority And Universal HarnessAdapter
 
-Status: `local_verified_release_pending`. The final product architecture and local packaged journeys are
-verified. Native GitHub Actions and verification of the replacement public Release are not yet claimed.
+Status: `verified`. The final product architecture, native GitHub Actions matrix and re-downloaded public
+AppImage/APK/CLI journeys are verified at commit `a705bbe831ba192528a8a4d0d66add1e364699a0`.
 
 Evidence recorded on `2026-07-21`:
 
@@ -2542,9 +2542,36 @@ Evidence recorded on `2026-07-21`:
    journeys, daemon/client/protocol builds and typechecks, release/brand contracts, secret and removed-path scans,
    formatting and diff hygiene. Clarify golden, Clarify user simulation and Loop golden independent Codex judges
    all passed.
+10. Commits `6eda6f08`, `9aa1367a` and `a705bbe8` were fast-forwarded without force to both
+    `agent/dev/mvp` and `release/mvp-actions`. GitHub Actions run `29837814594` passed preflight, Linux packaged
+    Clarify/Loop acceptance, Windows, macOS x64/arm64, signed Android, server CLI, all three native CLI install
+    smokes, hosted Relay and publish. Remote `main` remained
+    `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+11. Publish replaced only prerelease `v0.0.0-mvp-beta` as Release `357429846`, with `28` assets targeting
+    `a705bbe831ba192528a8a4d0d66add1e364699a0`. Archive Release `thoth-plugin-final-archive` remained intact.
+    Public `BUILD-SOURCE.txt` and `MVP-UPDATE.json` identify workflow `29837814594` and the same commit;
+    `SHA256SUMS` verified both receipts plus the re-downloaded AppImage, signed APK and server CLI tgz.
+12. The public AppImage carries build identity `a705bbe8` and repeated the empty-home product journey: `13`
+    hot-switch turns on one visible provider thread, one failed Review followed by retry, three PlanExec, three
+    Review, six durable `thoth.loop` attachment receipts, one-shot legacy migration, structured `@Task` context
+    and Stop with no active execution. It created exactly two RuntimeBundles, no live `provider-sessions` tree,
+    and used `6,382,454` durable bytes.
+13. The public CLI tgz repeated the complete hosted Relay v3 + E2EE journey after installation into a fresh
+    prefix: Card submission across daemon restart, client reconnect, one failed Review retry, Pause/Resume, Stop,
+    five PlanExec, five Review and six Loop receipts all passed. This host's direct Cloudflare route was unstable,
+    so the final repetition used an ignored environment-level HTTP CONNECT tunnel; TLS, SNI, WebSocket,
+    application E2EE, public APIs and product state machines remained unchanged. The same journey also passed
+    directly in GitHub Actions.
+14. The documented one-line GitHub URL installed `0.0.0-mvp-beta` into another isolated prefix. Its daemon
+    started on an isolated port, reported matching CLI/daemon versions, stopped through the lifecycle RPC and
+    subsequently reported stopped/unreachable.
+15. The re-downloaded APK is package `sh.thoth`, version `0.0.0-mvp-beta`, universal across arm64-v8a,
+    armeabi-v7a, x86 and x86_64, and verifies with APK Signature Scheme v2. Its signer certificate SHA-256 is
+    `a97a129d4090fdc436d327947f6e0838453bb7b769bce6d6970b77487300c7f4`, matching the ignored fixed MVP
+    keystore backup. It requests update installation but neither microphone nor overlay permission.
 
 Boundary:
 
-The fixed public `v0.0.0-mvp-beta` Release still contains the prior commit. `NTH-EV-043` becomes fully verified
-only after both target branches are pushed, every native workflow job succeeds, the sole MVP Release is replaced
-and the public AppImage/APK/CLI plus source/update/checksum receipts are downloaded and revalidated.
+`NTH-EV-043` verifies the released `NTH-CD-060` architecture and public MVP assets. It does not close the separate
+`NTH-TD-021` requirement for additional human-visible browser/device evidence of `budget_wait` and phase-detail
+recovery, and it does not claim real authenticated provider runs for providers other than Codex.
