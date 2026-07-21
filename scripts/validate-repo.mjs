@@ -250,6 +250,7 @@ function checkRemovedProviderSessionAndLoopPaths() {
     "packages/drivers/src/loop/eval.ts",
     "scripts/judge-clarify-user-simulation.mjs",
     "scripts/smoke-packaged-appimage-thoth-flow.mjs",
+    "scripts/smoke-packaged-server-cli-relay.mjs",
     "scripts/validate-repo.mjs",
   ]);
   const forbidden = [

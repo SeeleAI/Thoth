@@ -3438,6 +3438,12 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - Gates passed: adapter transports `583`, adapter lifecycle `5`, authority `30`, App Task surface `19`, full App
   `2688`, desktop `171`, CLI `40`, foundation `552`, AppImage/Relay package smokes, release/brand/secret/removed-path
   contracts, format/diff checks and all three independent Clarify/Loop judges.
-- Current boundary: no commit, push, tag or Release mutation is claimed by this entry. The sole top next action is
-  to push the verified implementation to `agent/dev/mvp`, fast-forward `release/mvp-actions`, wait for every
-  native job and then revalidate the publicly downloaded fixed MVP assets.
+- The first remote run `29836140383` failed safely in preflight before any native or publish job. The tracked
+  packaged Relay smoke contains the literal removed-path sentinel solely to assert its absence; the clean checkout
+  scanner correctly exposed that its audit-only allowlist had not been extended. The smoke was added to that
+  narrow allowlist while product source remained zero-tolerance, and the tracked-state repository validation
+  passed again. The existing public Release was untouched.
+- The implementation commit `6eda6f08` was pushed to `agent/dev/mvp` and fast-forwarded to
+  `release/mvp-actions`. No tag or Release mutation is claimed yet. The sole top next action is to push the narrow
+  preflight correction to both branches, wait for every native job and then revalidate the publicly downloaded
+  fixed MVP assets.
