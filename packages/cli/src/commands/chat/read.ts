@@ -35,9 +35,10 @@ export async function runReadCommand(
   options: ChatReadOptions,
   _command: Command,
 ): Promise<ListResult<ChatMessageRow>> {
-  const { client } = await connectChatClient(options.host);
+  const { client, workspaceId } = await connectChatClient(options.host, options.workspace);
   try {
     const payload = await client.readChatMessages({
+      workspaceId,
       room,
       limit: parseLimit(options.limit),
       since: parseSinceValue(options.since),

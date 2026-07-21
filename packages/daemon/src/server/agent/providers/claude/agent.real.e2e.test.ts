@@ -9,17 +9,17 @@ import type {
   AgentSession,
   AgentStreamEvent,
   ToolCallTimelineItem,
-} from "../../agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import {
   canRunRealProvider,
   createRealProviderClient,
   getRealProviderConfig,
   getRealProviderRuntimeSettings,
 } from "../../../daemon-e2e/real-provider-test-config.js";
-import { findExecutable } from "../../../../executable-resolution/executable-resolution.js";
-import { withTimeout } from "../../../../utils/promise-timeout.js";
-import { claudeQuery } from "./query.js";
-import { streamSession } from "../test-utils/session-stream-adapter.js";
+import { findExecutable } from "@thoth/drivers/internal/executable-resolution/executable-resolution";
+import { withTimeout } from "@thoth/drivers/internal/utils/promise-timeout";
+import { claudeQuery } from "@thoth/drivers/internal/server/agent/providers/claude/query";
+import { streamSession } from "@thoth/drivers/internal/server/agent/providers/test-utils/session-stream-adapter";
 
 const logger = pino({ level: "silent" });
 const client = createRealProviderClient("claude", logger);

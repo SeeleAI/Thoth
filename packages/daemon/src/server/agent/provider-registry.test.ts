@@ -6,7 +6,7 @@ import type {
   AgentModelDefinition,
   AgentMode,
   ProviderCatalog,
-} from "./agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 
 const mockState = vi.hoisted(() => {
   interface ConstructorEntry {
@@ -50,11 +50,11 @@ const mockState = vi.hoisted(() => {
   };
 });
 
-vi.mock("../../executable-resolution/executable-resolution.js", () => ({
+vi.mock("@thoth/drivers/internal/executable-resolution/executable-resolution", () => ({
   isCommandAvailable: mockState.isCommandAvailable,
 }));
 
-vi.mock("./providers/claude/agent.js", () => ({
+vi.mock("@thoth/drivers/internal/server/agent/providers/claude/agent", () => ({
   ClaudeAgentClient: class ClaudeAgentClient {
     readonly capabilities = {
       supportsStreaming: true,
@@ -96,7 +96,7 @@ vi.mock("./providers/claude/agent.js", () => ({
           : undefined;
       if (command?.mode === "replace") {
         const { isCommandAvailable } =
-          await import("../../executable-resolution/executable-resolution.js");
+          await import("@thoth/drivers/internal/executable-resolution/executable-resolution");
         return await isCommandAvailable(command.argv?.[0] ?? "");
       }
       return true;
@@ -104,7 +104,7 @@ vi.mock("./providers/claude/agent.js", () => ({
   },
 }));
 
-vi.mock("./providers/codex-app-server-agent.js", () => ({
+vi.mock("@thoth/drivers/internal/server/agent/providers/codex-app-server-agent", () => ({
   CodexAppServerAgentClient: class CodexAppServerAgentClient {
     readonly capabilities = {
       supportsStreaming: true,
@@ -144,7 +144,7 @@ vi.mock("./providers/codex-app-server-agent.js", () => ({
           : undefined;
       if (command?.mode === "replace") {
         const { isCommandAvailable } =
-          await import("../../executable-resolution/executable-resolution.js");
+          await import("@thoth/drivers/internal/executable-resolution/executable-resolution");
         return await isCommandAvailable(command.argv?.[0] ?? "");
       }
       return true;
@@ -152,7 +152,7 @@ vi.mock("./providers/codex-app-server-agent.js", () => ({
   },
 }));
 
-vi.mock("./providers/copilot-acp-agent.js", () => ({
+vi.mock("@thoth/drivers/internal/server/agent/providers/copilot-acp-agent", () => ({
   CopilotACPAgentClient: class CopilotACPAgentClient {
     readonly capabilities = {
       supportsStreaming: true,
@@ -194,7 +194,7 @@ vi.mock("./providers/copilot-acp-agent.js", () => ({
           : undefined;
       if (command?.mode === "replace") {
         const { isCommandAvailable } =
-          await import("../../executable-resolution/executable-resolution.js");
+          await import("@thoth/drivers/internal/executable-resolution/executable-resolution");
         return await isCommandAvailable(command.argv?.[0] ?? "");
       }
       return true;
@@ -202,7 +202,7 @@ vi.mock("./providers/copilot-acp-agent.js", () => ({
   },
 }));
 
-vi.mock("./providers/pi/agent.js", () => ({
+vi.mock("@thoth/drivers/internal/server/agent/providers/pi/agent", () => ({
   PiRpcAgentClient: class PiRpcAgentClient {
     readonly capabilities = {
       supportsStreaming: true,
@@ -252,7 +252,7 @@ vi.mock("./providers/pi/agent.js", () => ({
   },
 }));
 
-vi.mock("./providers/generic-acp-agent.js", () => ({
+vi.mock("@thoth/drivers/internal/server/agent/providers/generic-acp-agent", () => ({
   GenericACPAgentClient: class GenericACPAgentClient {
     capabilities = {
       supportsStreaming: true,
@@ -322,7 +322,7 @@ vi.mock("./providers/generic-acp-agent.js", () => ({
   },
 }));
 
-vi.mock("./providers/cursor-acp-agent.js", () => ({
+vi.mock("@thoth/drivers/internal/server/agent/providers/cursor-acp-agent", () => ({
   CursorACPAgentClient: class CursorACPAgentClient {
     readonly capabilities = {
       supportsStreaming: true,
@@ -379,7 +379,7 @@ import {
   AGENT_PROVIDER_DEFINITIONS,
   buildProviderRegistry,
   createAllClients,
-} from "./provider-registry.js";
+} from "@thoth/drivers/internal/server/agent/provider-registry";
 
 const logger = createTestLogger();
 

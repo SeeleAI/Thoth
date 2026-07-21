@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { AgentPermissionResponse, AgentPermissionResult } from "./agent-sdk-types.js";
+import type { AgentPermissionResponse, AgentPermissionResult } from "@thoth/drivers/agent-runtime";
 import { startAgentRun, type AgentRunController } from "./agent-prompt.js";
 
 export interface PermissionResponseAgentManager extends AgentRunController {

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { UserMessageImageAttachment } from "@/types/stream";
 import type { AgentAttachment } from "@thoth/protocol/messages";
+import type { TaskContextReference } from "@thoth/protocol/task-authority";
 
 export type CreateFlowLifecycleState = "active" | "abandoned" | "sent";
 
@@ -15,6 +16,7 @@ export interface PendingCreateAttempt {
   lifecycle: CreateFlowLifecycleState;
   images?: UserMessageImageAttachment[];
   attachments?: AgentAttachment[];
+  contextRefs?: TaskContextReference[];
 }
 
 export function isActiveCreateFlowForDraft(input: {

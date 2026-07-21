@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import path from "node:path";
 import type { Logger } from "pino";
 import type { AgentAttachment, ThothTurnAck, ThothTurnSnapshot } from "@thoth/protocol/messages";
+import type { TaskContextReference } from "@thoth/protocol/task-authority";
 import type {
   AgentThothCardAnswerRequest,
   AgentThothCardAnswerResponse,
@@ -14,8 +14,12 @@ import type {
   ThothTurnControlSnapshot,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type { AgentManager } from "./agent-manager.js";
-import type { AgentStorage } from "./agent-storage.js";
-import type { AgentPromptInput, AgentRunOptions, AgentStreamEvent } from "./agent-sdk-types.js";
+import type { AgentRegistry } from "./agent-storage.js";
+import type {
+  AgentPromptInput,
+  AgentRunOptions,
+  AgentStreamEvent,
+} from "@thoth/drivers/agent-runtime";
 import { ensureAgentLoaded } from "./agent-loading.js";
 import { formatSystemNotificationPrompt } from "./agent-prompt.js";
 import { readThothRuntimeToolsConfig } from "./thoth-runtime-tools-config.js";
@@ -23,21 +27,22 @@ import {
   type ForegroundAuthorityCard,
   type ForegroundCardAuthorityRecord,
   type ForegroundTurnAuthorityRecord,
-  ForegroundAuthorityStore,
-} from "./foreground-authority-store.js";
+  type WorkspaceForegroundAuthority,
+} from "../workspace-authority/foreground-authority.js";
 import {
   beginForegroundTurnFence,
   bindForegroundProviderTurn,
   endForegroundTurnFence,
 } from "./tools/foreground-turn-fence.js";
-import type { ThothLoopTaskService } from "../thoth-loop/task-service.js";
+import type { WorkspaceTaskCoordinator } from "../workspace-authority/task-coordinator.js";
+import type { TaskContextBroker } from "../workspace-authority/task-context-broker.js";
 
 const USER_CANCELED_SUMMARY = "已中断当前请求，可继续输入。";
 const BACKGROUND_HANDOFF_SUMMARY = "后台任务已注册；前台会话可以继续新的对话。";
 
 interface StartForegroundTurnInput {
   agentId: string;
-  workspaceId?: string;
+  workspaceId: string;
   workspacePath: string;
   text: string;
   messageId?: string;
@@ -46,13 +51,15 @@ interface StartForegroundTurnInput {
   thoth?: ThothTurnSnapshot;
   rawPrompt: AgentPromptInput;
   rawRunOptions?: AgentRunOptions;
+  contextRefs?: TaskContextReference[];
 }
 
 interface ForegroundTurnCoordinatorOptions {
-  authorityStore: ForegroundAuthorityStore;
+  authorityStore: WorkspaceForegroundAuthority;
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
-  loopTaskService: ThothLoopTaskService | null;
+  agentStorage: AgentRegistry;
+  taskCoordinator: WorkspaceTaskCoordinator;
+  taskContextBroker: TaskContextBroker;
   logger: Logger;
 }
 
@@ -79,6 +86,20 @@ function withPromptAttachments(input: {
     ...(input.images ?? []).map((image) => ({ type: "image" as const, ...image })),
     ...(input.attachments ?? []),
   ];
+}
+
+function appendPromptContext(prompt: AgentPromptInput, context: string | null): AgentPromptInput {
+  if (!context) {
+    return prompt;
+  }
+  if (typeof prompt === "string") {
+    return `${prompt}\n\n${context}`;
+  }
+  return [...prompt, { type: "text", text: context }];
+}
+
+function appendTextContext(text: string, context: string | null): string {
+  return context ? `${text}\n\n${context}` : text;
 }
 
 function summarizeAnswer(answer: ThothCardAnswerPayload): string {
@@ -361,7 +382,7 @@ export class ForegroundTurnCoordinator {
       kind,
       ...(input.thoth?.enabled === true ? { controls: toControls(input.thoth) } : {}),
       ...(input.messageId ? { sourceMessageId: input.messageId } : {}),
-      ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+      workspaceId: input.workspaceId,
       workspacePath: input.workspacePath,
       userText: input.text,
     });
@@ -373,10 +394,34 @@ export class ForegroundTurnCoordinator {
       };
     }
 
+    let taskContextPrompt: string | null = null;
+    try {
+      const prepared = this.options.taskContextBroker.prepare(
+        input.workspaceId,
+        input.contextRefs ?? [],
+      );
+      this.options.taskContextBroker.bindTurn({
+        workspaceId: input.workspaceId,
+        agentId: agent.id,
+        turnId: started.turn.id,
+        prepared,
+      });
+      taskContextPrompt = prepared.prompt;
+    } catch (error) {
+      this.options.authorityStore.markLifecycle({
+        agentId: agent.id,
+        turnId: started.turn.id,
+        generation: started.turn.generation,
+        lifecycle: "interrupted",
+        reason: "turn_interrupted",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+
     if (kind === "thoth") {
-      const capabilities = this.options.agentManager.getProviderCapabilities(agent.provider);
       const runtime = readThothRuntimeToolsConfig(agent.config);
-      if (capabilities?.supportsNativeThothTools !== true || runtime?.scope !== "clarify") {
+      if (runtime?.scope !== "clarify") {
         const state = this.options.authorityStore.markLifecycle({
           agentId: agent.id,
           turnId: started.turn.id,
@@ -399,13 +444,16 @@ export class ForegroundTurnCoordinator {
         });
       }
       const prompt = withPromptAttachments({
-        text: buildThothAuthorityPrompt({ turn: started.turn, cards: [] }),
+        text: appendTextContext(
+          buildThothAuthorityPrompt({ turn: started.turn, cards: [] }),
+          taskContextPrompt,
+        ),
         images: input.images,
         attachments: input.attachments,
       });
       this.startProviderRun(started.turn, prompt, { replace: false, structured: true });
     } else {
-      this.startProviderRun(started.turn, input.rawPrompt, {
+      this.startProviderRun(started.turn, appendPromptContext(input.rawPrompt, taskContextPrompt), {
         replace: false,
         structured: false,
         runOptions: input.rawRunOptions,
@@ -426,6 +474,7 @@ export class ForegroundTurnCoordinator {
 
   async answerCard(
     request: AgentThothCardAnswerRequest,
+    actor: { actorId: string; clientId: string; deviceId?: string | null },
   ): Promise<AgentThothCardAnswerResponse["payload"]> {
     const record = this.options.authorityStore.getCard(request.cardId);
     const turn = record ? this.options.authorityStore.getTurn(record.turnId) : null;
@@ -468,6 +517,9 @@ export class ForegroundTurnCoordinator {
       expectedRevision: request.expectedRevision,
       commandId: request.commandId,
       nextLifecycle: cancelRequested ? "canceled" : quickApproved ? "quick_exec" : "running",
+      actorId: actor.actorId,
+      clientId: actor.clientId,
+      deviceId: actor.deviceId ?? null,
     });
     if (!result.accepted) {
       return {
@@ -497,6 +549,7 @@ export class ForegroundTurnCoordinator {
     } else {
       await this.appendSubmittedCard(request.agentId, result.card);
       if (quickApproved) {
+        await this.registerApprovedTask(turn, "quick");
         await this.launchQuickExecution(turn, true);
       } else {
         await this.launchAuthorityContinuation(turn);
@@ -658,11 +711,8 @@ export class ForegroundTurnCoordinator {
     if (!key) {
       return;
     }
-    const agent = await ensureAgentLoaded(turn.agentId, {
-      agentManager: this.options.agentManager,
-      agentStorage: this.options.agentStorage,
-      logger: this.options.logger,
-    });
+    const agent = await this.ensureRunnableAgent(turn);
+    if (!agent) return;
     if (this.options.agentManager.hasInFlightRun(agent.id)) {
       this.deferUntilProviderIdle(turn, () => this.launchAuthorityContinuation(turn));
       return;
@@ -694,7 +744,10 @@ export class ForegroundTurnCoordinator {
     });
     this.startProviderRun(
       this.options.authorityStore.getTurn(turn.id) ?? turn,
-      buildThothAuthorityPrompt({ turn, cards }),
+      appendTextContext(
+        buildThothAuthorityPrompt({ turn, cards }),
+        this.options.taskContextBroker.renderTurn(turn.id),
+      ),
       { replace: false, structured: true },
     );
   }
@@ -703,6 +756,7 @@ export class ForegroundTurnCoordinator {
     turn: ForegroundTurnAuthorityRecord,
     resume: boolean,
   ): Promise<void> {
+    if (!(await this.ensureRunnableAgent(turn))) return;
     if (this.options.agentManager.hasInFlightRun(turn.agentId)) {
       this.deferUntilProviderIdle(turn, () => this.launchQuickExecution(turn, resume));
       return;
@@ -718,7 +772,10 @@ export class ForegroundTurnCoordinator {
     });
     this.startProviderRun(
       this.options.authorityStore.getTurn(turn.id) ?? turn,
-      buildQuickExecutionPrompt({ turn, cards, resume }),
+      appendTextContext(
+        buildQuickExecutionPrompt({ turn, cards, resume }),
+        this.options.taskContextBroker.renderTurn(turn.id),
+      ),
       { replace: false, structured: false },
     );
   }
@@ -762,70 +819,14 @@ export class ForegroundTurnCoordinator {
     answer: ThothCardAnswerPayload,
   ): Promise<void> {
     try {
-      if (!this.options.loopTaskService) {
-        throw new Error("Thoth Loop background task service is unavailable.");
-      }
-      const cards = this.options.authorityStore.listCardsForTurn(turn.id);
-      const taskCard = cards.filter((card) => card.kind === "task_card").at(-1)?.card as
-        | ThothTaskCardModel
-        | undefined;
-      const goalsCard = cards.filter((card) => card.kind === "goal_card").at(-1)?.card as
-        | ThothApprovalGoalCardModel
-        | undefined;
-      if (!taskCard || !goalsCard || !("goals" in goalsCard) || !turn.controls) {
-        throw new Error("Loop registration requires approved Task and linear Goals cards.");
-      }
-      const agent = await ensureAgentLoaded(turn.agentId, {
-        agentManager: this.options.agentManager,
-        agentStorage: this.options.agentStorage,
-        logger: this.options.logger,
-      });
-      const loopTask = await this.options.loopTaskService.register({
-        workspaceName: path.basename(turn.workspacePath),
-        workspacePath: turn.workspacePath,
-        sourceAgentId: turn.agentId,
-        taskCard,
-        goalsCard: goalsCard as ThothGoalsCardModel,
-        clarifyTranscript: renderTaskTruth({ turn, cards }),
-        loopStrength: turn.controls.loop ?? "one_plan_one_do",
-        provider: {
-          provider: agent.config.provider,
-          ...(agent.config.model ? { model: agent.config.model } : {}),
-          ...(agent.config.modeId ? { modeId: agent.config.modeId } : {}),
-          ...(agent.config.thinkingOptionId
-            ? { thinkingOptionId: agent.config.thinkingOptionId }
-            : {}),
-          ...(agent.config.featureValues ? { featureValues: agent.config.featureValues } : {}),
-        },
-      });
-      const registeredTask = {
-        id: loopTask.id,
-        title: loopTask.title,
-        workspaceName: loopTask.workspaceName,
-        workspacePath: loopTask.workspacePath,
-        sourceAgentId: turn.agentId,
-        status: "queued",
-        summary: loopTask.summary,
-        taskCard,
-        goalCard: goalsCard,
-        ...(loopTask.goals.find((goal) => goal.id === loopTask.currentGoalId)?.title
-          ? {
-              currentGoalTitle: loopTask.goals.find((goal) => goal.id === loopTask.currentGoalId)!
-                .title,
-            }
-          : {}),
-      } as const;
-      await this.options.agentManager.appendTimelineItem(turn.agentId, {
-        type: "registered_task",
-        task: registeredTask,
-      });
+      const task = await this.registerApprovedTask(turn, "loop");
       this.options.authorityStore.markLifecycle({
         agentId: turn.agentId,
         turnId: turn.id,
         generation: turn.generation,
         lifecycle: "background_handoff",
         reason: "background_handoff",
-        backgroundTaskId: loopTask.id,
+        backgroundTaskId: task.id,
         error: null,
       });
       const goalCard = this.options.authorityStore.getCard((answer as { card_id: string }).card_id);
@@ -849,6 +850,53 @@ export class ForegroundTurnCoordinator {
       });
       await this.options.agentManager.cancelAgentRun(turn.agentId).catch(() => false);
     }
+  }
+
+  private async registerApprovedTask(turn: ForegroundTurnAuthorityRecord, mode: "quick" | "loop") {
+    const cards = this.options.authorityStore.listCardsForTurn(turn.id);
+    const taskCard = cards.filter((card) => card.kind === "task_card").at(-1)?.card as
+      | ThothTaskCardModel
+      | undefined;
+    const goalsCard = cards.filter((card) => card.kind === "goal_card").at(-1)?.card as
+      | ThothApprovalGoalCardModel
+      | undefined;
+    if (!taskCard || !goalsCard || !("goals" in goalsCard) || !turn.controls) {
+      throw new Error("Task registration requires approved Task and linear Goals cards.");
+    }
+    const agent = await ensureAgentLoaded(turn.agentId, {
+      agentManager: this.options.agentManager,
+      agentStorage: this.options.agentStorage,
+      logger: this.options.logger,
+    });
+    const registration = this.options.taskCoordinator.register({
+      workspaceId: turn.workspaceId,
+      sourceAgentId: turn.agentId,
+      sourceTurnId: turn.id,
+      sourceGoalsCardId: goalsCard.id,
+      mode,
+      loopStrength: mode === "loop" ? (turn.controls.loop ?? "one_plan_one_do") : null,
+      taskCard,
+      goalsCard: goalsCard as ThothGoalsCardModel,
+      providerProfile: {
+        adapterId: agent.config.provider,
+        config: {
+          provider: agent.config.provider,
+          ...(agent.config.model ? { model: agent.config.model } : {}),
+          ...(agent.config.modeId ? { modeId: agent.config.modeId } : {}),
+          ...(agent.config.thinkingOptionId
+            ? { thinkingOptionId: agent.config.thinkingOptionId }
+            : {}),
+          ...(agent.config.featureValues ? { featureValues: agent.config.featureValues } : {}),
+        },
+      },
+    });
+    if (registration.created) {
+      await this.options.agentManager.appendTimelineItem(turn.agentId, {
+        type: "registered_task",
+        task: registration.task,
+      });
+    }
+    return registration.task;
   }
 
   private async recover(agentId: string): Promise<void> {
@@ -887,6 +935,26 @@ export class ForegroundTurnCoordinator {
     if (!record) {
       return;
     }
+    try {
+      await ensureAgentLoaded(agentId, {
+        agentManager: this.options.agentManager,
+        agentStorage: this.options.agentStorage,
+        logger: this.options.logger,
+      });
+    } catch (error) {
+      this.options.logger.warn(
+        { error, agentId, cardId: record.id },
+        "Card decision committed without a live Agent timeline projection",
+      );
+      return;
+    }
+    if (!this.options.agentManager.hasRunnableSession(agentId)) {
+      this.options.logger.warn(
+        { agentId, cardId: record.id },
+        "Card decision committed while the provider thread is unavailable",
+      );
+      return;
+    }
     if (record.kind === "clarify_card") {
       await this.options.agentManager.appendTimelineItem(agentId, {
         type: "clarify_card",
@@ -902,6 +970,40 @@ export class ForegroundTurnCoordinator {
         type: "goal_card",
         card: record.card as ThothApprovalGoalCardModel,
       });
+    }
+  }
+
+  private async ensureRunnableAgent(
+    turn: ForegroundTurnAuthorityRecord,
+  ): Promise<Awaited<ReturnType<typeof ensureAgentLoaded>> | null> {
+    try {
+      const agent = await ensureAgentLoaded(turn.agentId, {
+        agentManager: this.options.agentManager,
+        agentStorage: this.options.agentStorage,
+        logger: this.options.logger,
+      });
+      if (this.options.agentManager.hasRunnableSession(turn.agentId)) {
+        return agent;
+      }
+      this.options.authorityStore.markLifecycle({
+        agentId: turn.agentId,
+        turnId: turn.id,
+        generation: turn.generation,
+        lifecycle: "interrupted",
+        reason: "turn_interrupted",
+        error: "The provider thread is unavailable; the committed decision is safe to resume.",
+      });
+      return null;
+    } catch (error) {
+      this.options.authorityStore.markLifecycle({
+        agentId: turn.agentId,
+        turnId: turn.id,
+        generation: turn.generation,
+        lifecycle: "interrupted",
+        reason: "turn_interrupted",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
     }
   }
 }

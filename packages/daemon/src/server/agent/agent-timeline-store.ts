@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { AgentTimelineItem } from "./agent-sdk-types.js";
+import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import type {
   AgentTimelineFetchOptions,
   AgentTimelineFetchResult,
   AgentTimelineRow,
-} from "./agent-timeline-store-types.js";
+} from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
 
 export interface SeedAgentTimelineOptions {
   items?: readonly AgentTimelineItem[];

@@ -1,6 +1,6 @@
 import { getErrorMessage } from "@thoth/protocol/error-utils";
 import { z } from "zod";
-import { execCommand } from "../../../utils/spawn.js";
+import { execCommand } from "@thoth/drivers/internal/utils/spawn";
 
 export const THOTH_CLI_PACKAGE = "@thoth/cli";
 

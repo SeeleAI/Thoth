@@ -6,7 +6,7 @@ import type {
   AgentPermissionResult,
   AgentRunOptions,
   AgentPermissionResponse,
-} from "./agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import type { AgentStreamEvent } from "../messages.js";
 import { respondToAgentPermission } from "./permission-response.js";
 

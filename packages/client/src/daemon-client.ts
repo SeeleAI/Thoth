@@ -99,14 +99,10 @@ import type {
   AgentThothCardAnswerResponse,
   AgentThothStateResponse,
   AgentThothStateUpdate,
-  BackgroundTaskAction,
-  BackgroundTaskActionResponse,
-  BackgroundTaskDecisionResponse,
-  BackgroundTaskInspectResponse,
-  BackgroundTaskListResponse,
   ThothCardAnswerPayload,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type { MutableDaemonConfig, MutableDaemonConfigPatch } from "@thoth/protocol/messages";
+import type { TaskCommand } from "@thoth/protocol/task-authority";
 import { isRelayClientWebSocketUrl } from "@thoth/protocol/daemon-endpoints";
 import { terminalSubscriptionKey } from "@thoth/protocol/terminal-subscription-key";
 import {
@@ -234,6 +230,11 @@ export type DaemonEvent =
       type: "agent_thoth_state_update";
       payload: AgentThothStateUpdate["payload"];
     }
+  | {
+      type: "workspace_authority_update";
+      workspaceId: string;
+      payload: Extract<SessionOutboundMessage, { type: "workspace.authority.update" }>["payload"];
+    }
   | { type: "error"; message: string };
 
 export type DaemonEventHandler = (event: DaemonEvent) => void;
@@ -270,6 +271,7 @@ export interface SendMessageOptions {
   images?: Array<{ data: string; mimeType: string }>;
   attachments?: SendAgentMessageRequest["attachments"];
   thoth?: SendAgentMessageRequest["thoth"];
+  contextRefs?: SendAgentMessageRequest["contextRefs"];
 }
 
 type AgentConfigOverrides = Partial<Omit<AgentSessionConfig, "provider" | "cwd">>;
@@ -282,6 +284,7 @@ export interface CreateAgentRequestOptions extends AgentConfigOverrides {
   workspaceId?: string;
   initialPrompt?: string;
   thoth?: CreateAgentRequestMessage["thoth"];
+  contextRefs?: CreateAgentRequestMessage["contextRefs"];
   clientMessageId?: string;
   outputSchema?: Record<string, unknown>;
   images?: CreateAgentRequestMessage["images"];
@@ -345,10 +348,28 @@ type WorkspaceCreatePayload = Extract<
 type AgentThothStatePayload = AgentThothStateResponse["payload"];
 type AgentThothCardAnswerPayload = AgentThothCardAnswerResponse["payload"];
 type AgentThothStateUpdatePayload = AgentThothStateUpdate["payload"];
-type BackgroundTaskListPayload = BackgroundTaskListResponse["payload"];
-type BackgroundTaskInspectPayload = BackgroundTaskInspectResponse["payload"];
-type BackgroundTaskActionPayload = BackgroundTaskActionResponse["payload"];
-type BackgroundTaskDecisionPayload = BackgroundTaskDecisionResponse["payload"];
+type TaskListPayload = Extract<SessionOutboundMessage, { type: "task.list.response" }>["payload"];
+type TaskGetPayload = Extract<SessionOutboundMessage, { type: "task.get.response" }>["payload"];
+type TaskCommandPayload = Extract<
+  SessionOutboundMessage,
+  { type: "task.command.response" }
+>["payload"];
+type TaskDecisionAnswerPayload = Extract<
+  SessionOutboundMessage,
+  { type: "task.decision.answer.response" }
+>["payload"];
+type TaskContextSearchPayload = Extract<
+  SessionOutboundMessage,
+  { type: "task.context.search.response" }
+>["payload"];
+type TaskContextGetPayload = Extract<
+  SessionOutboundMessage,
+  { type: "task.context.get.response" }
+>["payload"];
+type ExecutionTimelinePayload = Extract<
+  SessionOutboundMessage,
+  { type: "execution.timeline.response" }
+>["payload"];
 type FileExplorerPayload = FileExplorerResponse["payload"];
 export type FileExplorerDirectoryPayload = NonNullable<FileExplorerPayload["directory"]>;
 type LegacyFileExplorerFilePayload = NonNullable<FileExplorerPayload["file"]>;
@@ -439,14 +460,6 @@ type ChatDeletePayload = Extract<
 type ChatPostPayload = Extract<SessionOutboundMessage, { type: "chat/post/response" }>["payload"];
 type ChatReadPayload = Extract<SessionOutboundMessage, { type: "chat/read/response" }>["payload"];
 type ChatWaitPayload = Extract<SessionOutboundMessage, { type: "chat/wait/response" }>["payload"];
-type LoopRunPayload = Extract<SessionOutboundMessage, { type: "loop/run/response" }>["payload"];
-type LoopListPayload = Extract<SessionOutboundMessage, { type: "loop/list/response" }>["payload"];
-type LoopInspectPayload = Extract<
-  SessionOutboundMessage,
-  { type: "loop/inspect/response" }
->["payload"];
-type LoopLogsPayload = Extract<SessionOutboundMessage, { type: "loop/logs/response" }>["payload"];
-type LoopStopPayload = Extract<SessionOutboundMessage, { type: "loop/stop/response" }>["payload"];
 type ScheduleCreatePayload = Extract<
   SessionOutboundMessage,
   { type: "schedule/create/response" }
@@ -606,19 +619,23 @@ export type FetchWorkspacesOptions = Omit<FetchWorkspacesRequest, "type" | "requ
 export type FetchWorkspacesEntry = FetchWorkspacesPayload["entries"][number];
 export type FetchWorkspacesPageInfo = FetchWorkspacesPayload["pageInfo"];
 export interface CreateChatRoomOptions {
+  workspaceId: string;
   name: string;
   purpose?: string | null;
   requestId?: string;
 }
 export interface InspectChatRoomOptions {
+  workspaceId: string;
   room: string;
   requestId?: string;
 }
 export interface DeleteChatRoomOptions {
+  workspaceId: string;
   room: string;
   requestId?: string;
 }
 export interface PostChatMessageOptions {
+  workspaceId: string;
   room: string;
   body: string;
   authorAgentId?: string;
@@ -626,6 +643,7 @@ export interface PostChatMessageOptions {
   requestId?: string;
 }
 export interface ReadChatMessagesOptions {
+  workspaceId: string;
   room: string;
   limit?: number;
   since?: string;
@@ -634,42 +652,14 @@ export interface ReadChatMessagesOptions {
   timeout?: number;
 }
 export interface WaitForChatMessagesOptions {
+  workspaceId: string;
   room: string;
   afterMessageId?: string | null;
   timeoutMs?: number;
   requestId?: string;
 }
-export interface RunLoopOptions {
-  prompt: string;
-  cwd: string;
-  provider?: string;
-  model?: string;
-  modeId?: string;
-  verifierProvider?: string;
-  verifierModel?: string;
-  verifierModeId?: string;
-  verifyPrompt?: string | null;
-  verifyChecks?: string[];
-  name?: string | null;
-  sleepMs?: number;
-  maxIterations?: number;
-  maxTimeMs?: number;
-  requestId?: string;
-}
-export interface InspectLoopOptions {
-  id: string;
-  requestId?: string;
-}
-export interface LoopLogsOptions {
-  id: string;
-  afterSeq?: number;
-  requestId?: string;
-}
-export interface StopLoopOptions {
-  id: string;
-  requestId?: string;
-}
 export interface CreateScheduleOptions {
+  workspaceId: string;
   prompt: string;
   name?: string | null;
   cadence:
@@ -695,7 +685,6 @@ export interface CreateScheduleOptions {
         type: "new-agent";
         config: {
           provider: AgentProvider;
-          cwd: string;
           modeId?: string;
           model?: string;
           thinkingOptionId?: string;
@@ -715,6 +704,7 @@ export interface CreateScheduleOptions {
   requestId?: string;
 }
 export interface InspectScheduleOptions {
+  workspaceId: string;
   id: string;
   requestId?: string;
 }
@@ -722,9 +712,9 @@ export interface UpdateScheduleNewAgentConfig {
   provider?: string;
   model?: string | null;
   modeId?: string | null;
-  cwd?: string;
 }
 export interface UpdateScheduleOptions {
+  workspaceId: string;
   id: string;
   name?: string | null;
   prompt?: string;
@@ -2073,92 +2063,142 @@ export class DaemonClient {
     return this.on("agent.thoth.state.update", (message) => handler(message.payload));
   }
 
-  async listBackgroundTasks(
-    input: { workspaceId?: string; workspacePath?: string; requestId?: string } = {},
-  ): Promise<BackgroundTaskListPayload> {
+  async listTasks(workspaceId: string, requestId?: string): Promise<TaskListPayload> {
     return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "background_task.list.request",
-        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-        ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
-      },
-      responseType: "background_task.list.response",
+      requestId,
+      message: { type: "task.list.request", workspaceId },
+      responseType: "task.list.response",
     });
   }
 
-  async inspectBackgroundTask(input: {
+  async getTask(input: {
+    workspaceId: string;
     taskId: string;
-    workspaceId?: string;
-    workspacePath?: string;
     requestId?: string;
-  }): Promise<BackgroundTaskInspectPayload> {
+  }): Promise<TaskGetPayload> {
     return this.sendCorrelatedSessionRequest({
       requestId: input.requestId,
       message: {
-        type: "background_task.inspect.request",
+        type: "task.get.request",
+        workspaceId: input.workspaceId,
         taskId: input.taskId,
-        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-        ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
       },
-      responseType: "background_task.inspect.response",
+      responseType: "task.get.response",
     });
   }
 
-  async actOnBackgroundTask(input: {
+  async commandTask(input: {
+    workspaceId: string;
     taskId: string;
-    action: BackgroundTaskAction;
-    workspaceId?: string;
-    workspacePath?: string;
-    expectedAuthorityRevision?: number;
-    commandId?: string;
+    command: TaskCommand;
+    expectedRevision: number;
+    commandId: string;
     requestId?: string;
-  }): Promise<BackgroundTaskActionPayload> {
+  }): Promise<TaskCommandPayload> {
     return this.sendCorrelatedSessionRequest({
       requestId: input.requestId,
       message: {
-        type: "background_task.action.request",
+        type: "task.command.request",
+        workspaceId: input.workspaceId,
         taskId: input.taskId,
-        action: input.action,
-        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-        ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
-        ...(input.expectedAuthorityRevision !== undefined
-          ? { expectedAuthorityRevision: input.expectedAuthorityRevision }
-          : {}),
-        ...(input.commandId ? { commandId: input.commandId } : {}),
+        command: input.command,
+        expectedRevision: input.expectedRevision,
+        commandId: input.commandId,
       },
-      responseType: "background_task.action.response",
+      responseType: "task.command.response",
     });
   }
 
-  async answerBackgroundTaskDecision(input: {
+  async answerTaskDecision(input: {
+    workspaceId: string;
     taskId: string;
     decisionId: string;
-    choiceId: string;
+    optionId: string;
     note?: string;
-    workspaceId?: string;
-    workspacePath?: string;
-    expectedAuthorityRevision?: number;
-    commandId?: string;
+    expectedRevision: number;
+    commandId: string;
     requestId?: string;
-  }): Promise<BackgroundTaskDecisionPayload> {
+  }): Promise<TaskDecisionAnswerPayload> {
     return this.sendCorrelatedSessionRequest({
       requestId: input.requestId,
       message: {
-        type: "background_task.decision.request",
+        type: "task.decision.answer.request",
+        workspaceId: input.workspaceId,
         taskId: input.taskId,
         decisionId: input.decisionId,
-        choiceId: input.choiceId,
-        ...(input.note?.trim() ? { note: input.note.trim() } : {}),
-        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-        ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
-        ...(input.expectedAuthorityRevision !== undefined
-          ? { expectedAuthorityRevision: input.expectedAuthorityRevision }
-          : {}),
-        ...(input.commandId ? { commandId: input.commandId } : {}),
+        optionId: input.optionId,
+        ...(input.note === undefined ? {} : { note: input.note }),
+        expectedRevision: input.expectedRevision,
+        commandId: input.commandId,
       },
-      responseType: "background_task.decision.response",
+      responseType: "task.decision.answer.response",
     });
+  }
+
+  async searchTaskContext(input: {
+    workspaceId: string;
+    query: string;
+    limit?: number;
+    requestId?: string;
+  }): Promise<TaskContextSearchPayload> {
+    return this.sendCorrelatedSessionRequest({
+      requestId: input.requestId,
+      message: {
+        type: "task.context.search.request",
+        workspaceId: input.workspaceId,
+        query: input.query,
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+      },
+      responseType: "task.context.search.response",
+    });
+  }
+
+  async getTaskContext(input: {
+    workspaceId: string;
+    taskId: string;
+    revision?: number;
+    requestId?: string;
+  }): Promise<TaskContextGetPayload> {
+    return this.sendCorrelatedSessionRequest({
+      requestId: input.requestId,
+      message: {
+        type: "task.context.get.request",
+        workspaceId: input.workspaceId,
+        taskId: input.taskId,
+        ...(input.revision === undefined ? {} : { revision: input.revision }),
+      },
+      responseType: "task.context.get.response",
+    });
+  }
+
+  async getExecutionTimeline(input: {
+    workspaceId: string;
+    taskId: string;
+    executionId: string;
+    beforeSeq?: number;
+    limit?: number;
+    requestId?: string;
+  }): Promise<ExecutionTimelinePayload> {
+    return this.sendCorrelatedSessionRequest({
+      requestId: input.requestId,
+      message: {
+        type: "execution.timeline.request",
+        workspaceId: input.workspaceId,
+        taskId: input.taskId,
+        executionId: input.executionId,
+        ...(input.beforeSeq === undefined ? {} : { beforeSeq: input.beforeSeq }),
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+      },
+      responseType: "execution.timeline.response",
+    });
+  }
+
+  subscribeWorkspaceAuthorityUpdates(
+    handler: (
+      payload: Extract<SessionOutboundMessage, { type: "workspace.authority.update" }>["payload"],
+    ) => void,
+  ): () => void {
+    return this.on("workspace.authority.update", (message) => handler(message.payload));
   }
 
   async fetchAgent(options: FetchAgentOptions): Promise<FetchAgentResult | null>;
@@ -2249,6 +2289,7 @@ export class DaemonClient {
       ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
       ...(options.initialPrompt ? { initialPrompt: options.initialPrompt } : {}),
       ...(options.thoth ? { thoth: options.thoth } : {}),
+      ...(options.contextRefs ? { contextRefs: options.contextRefs } : {}),
       ...(options.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
       ...(options.outputSchema ? { outputSchema: options.outputSchema } : {}),
       ...(options.images && options.images.length > 0 ? { images: options.images } : {}),
@@ -2628,6 +2669,7 @@ export class DaemonClient {
       ...(options?.images ? { images: options.images } : {}),
       ...(options?.attachments ? { attachments: options.attachments } : {}),
       ...(options?.thoth ? { thoth: options.thoth } : {}),
+      ...(options?.contextRefs ? { contextRefs: options.contextRefs } : {}),
     });
     const payload = await this.sendRequest({
       requestId,
@@ -4498,6 +4540,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "chat/create",
+        workspaceId: options.workspaceId,
         name: options.name,
         ...(options.purpose ? { purpose: options.purpose } : {}),
       },
@@ -4505,11 +4548,15 @@ export class DaemonClient {
     });
   }
 
-  async listChatRooms(requestId?: string): Promise<ChatListPayload> {
+  async listChatRooms(options: {
+    workspaceId: string;
+    requestId?: string;
+  }): Promise<ChatListPayload> {
     return this.sendCorrelatedSessionRequest({
-      requestId,
+      requestId: options.requestId,
       message: {
         type: "chat/list",
+        workspaceId: options.workspaceId,
       },
       responseType: "chat/list/response",
     });
@@ -4520,6 +4567,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "chat/inspect",
+        workspaceId: options.workspaceId,
         room: options.room,
       },
       responseType: "chat/inspect/response",
@@ -4531,6 +4579,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "chat/delete",
+        workspaceId: options.workspaceId,
         room: options.room,
       },
       responseType: "chat/delete/response",
@@ -4542,6 +4591,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "chat/post",
+        workspaceId: options.workspaceId,
         room: options.room,
         body: options.body,
         ...(options.authorAgentId ? { authorAgentId: options.authorAgentId } : {}),
@@ -4556,6 +4606,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "chat/read",
+        workspaceId: options.workspaceId,
         room: options.room,
         ...(typeof options.limit === "number" ? { limit: options.limit } : {}),
         ...(options.since ? { since: options.since } : {}),
@@ -4571,6 +4622,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "chat/wait",
+        workspaceId: options.workspaceId,
         room: options.room,
         ...(options.afterMessageId ? { afterMessageId: options.afterMessageId } : {}),
         ...(typeof options.timeoutMs === "number" ? { timeoutMs: options.timeoutMs } : {}),
@@ -4585,6 +4637,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "schedule/create",
+        workspaceId: options.workspaceId,
         prompt: options.prompt,
         cadence: options.cadence,
         target: options.target,
@@ -4597,11 +4650,15 @@ export class DaemonClient {
     });
   }
 
-  async scheduleList(requestId?: string): Promise<ScheduleListPayload> {
+  async scheduleList(options: {
+    workspaceId: string;
+    requestId?: string;
+  }): Promise<ScheduleListPayload> {
     return this.sendCorrelatedSessionRequest({
-      requestId,
+      requestId: options.requestId,
       message: {
         type: "schedule/list",
+        workspaceId: options.workspaceId,
       },
       responseType: "schedule/list/response",
     });
@@ -4612,6 +4669,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "schedule/inspect",
+        workspaceId: options.workspaceId,
         scheduleId: options.id,
       },
       responseType: "schedule/inspect/response",
@@ -4623,6 +4681,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "schedule/logs",
+        workspaceId: options.workspaceId,
         scheduleId: options.id,
       },
       responseType: "schedule/logs/response",
@@ -4634,6 +4693,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "schedule/pause",
+        workspaceId: options.workspaceId,
         scheduleId: options.id,
       },
       responseType: "schedule/pause/response",
@@ -4645,6 +4705,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "schedule/resume",
+        workspaceId: options.workspaceId,
         scheduleId: options.id,
       },
       responseType: "schedule/resume/response",
@@ -4656,6 +4717,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "schedule/delete",
+        workspaceId: options.workspaceId,
         scheduleId: options.id,
       },
       responseType: "schedule/delete/response",
@@ -4667,6 +4729,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "schedule/run-once",
+        workspaceId: options.workspaceId,
         scheduleId: options.id,
       },
       responseType: "schedule/run-once/response",
@@ -4678,6 +4741,7 @@ export class DaemonClient {
       requestId: options.requestId,
       message: {
         type: "schedule/update",
+        workspaceId: options.workspaceId,
         scheduleId: options.id,
         ...(options.name !== undefined ? { name: options.name } : {}),
         ...(options.prompt !== undefined ? { prompt: options.prompt } : {}),
@@ -4687,81 +4751,6 @@ export class DaemonClient {
         ...(options.expiresAt !== undefined ? { expiresAt: options.expiresAt } : {}),
       },
       responseType: "schedule/update/response",
-    });
-  }
-
-  async loopRun(options: RunLoopOptions): Promise<LoopRunPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "loop/run",
-        prompt: options.prompt,
-        cwd: options.cwd,
-        ...(options.provider ? { provider: options.provider } : {}),
-        ...(options.model ? { model: options.model } : {}),
-        ...(options.modeId ? { modeId: options.modeId } : {}),
-        ...(options.verifierProvider ? { verifierProvider: options.verifierProvider } : {}),
-        ...(options.verifierModel ? { verifierModel: options.verifierModel } : {}),
-        ...(options.verifierModeId ? { verifierModeId: options.verifierModeId } : {}),
-        ...(options.verifyPrompt ? { verifyPrompt: options.verifyPrompt } : {}),
-        ...(options.verifyChecks && options.verifyChecks.length > 0
-          ? { verifyChecks: options.verifyChecks }
-          : {}),
-        ...(options.name ? { name: options.name } : {}),
-        ...(typeof options.sleepMs === "number" ? { sleepMs: options.sleepMs } : {}),
-        ...(typeof options.maxIterations === "number"
-          ? { maxIterations: options.maxIterations }
-          : {}),
-        ...(typeof options.maxTimeMs === "number" ? { maxTimeMs: options.maxTimeMs } : {}),
-      },
-      responseType: "loop/run/response",
-    });
-  }
-
-  async loopList(requestId?: string): Promise<LoopListPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "loop/list",
-      },
-      responseType: "loop/list/response",
-    });
-  }
-
-  async loopInspect(options: string | InspectLoopOptions): Promise<LoopInspectPayload> {
-    const normalized = typeof options === "string" ? { id: options } : options;
-    return this.sendCorrelatedSessionRequest({
-      requestId: normalized.requestId,
-      message: {
-        type: "loop/inspect",
-        id: normalized.id,
-      },
-      responseType: "loop/inspect/response",
-    });
-  }
-
-  async loopLogs(options: string | LoopLogsOptions, afterSeq?: number): Promise<LoopLogsPayload> {
-    const normalized = typeof options === "string" ? { id: options, afterSeq } : options;
-    return this.sendCorrelatedSessionRequest({
-      requestId: normalized.requestId,
-      message: {
-        type: "loop/logs",
-        id: normalized.id,
-        ...(typeof normalized.afterSeq === "number" ? { afterSeq: normalized.afterSeq } : {}),
-      },
-      responseType: "loop/logs/response",
-    });
-  }
-
-  async loopStop(options: string | StopLoopOptions): Promise<LoopStopPayload> {
-    const normalized = typeof options === "string" ? { id: options } : options;
-    return this.sendCorrelatedSessionRequest({
-      requestId: normalized.requestId,
-      message: {
-        type: "loop/stop",
-        id: normalized.id,
-      },
-      responseType: "loop/stop/response",
     });
   }
 
@@ -5313,6 +5302,12 @@ export class DaemonClient {
       case "agent.thoth.state.update":
         return {
           type: "agent_thoth_state_update",
+          payload: msg.payload,
+        };
+      case "workspace.authority.update":
+        return {
+          type: "workspace_authority_update",
+          workspaceId: msg.payload.workspaceId,
           payload: msg.payload,
         };
       default:

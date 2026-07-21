@@ -20,9 +20,10 @@ import type {
   AgentSlashCommand,
   AgentUsage,
   FetchCatalogOptions,
-} from "../agent/agent-sdk-types.js";
-import type { AgentPermissionRequest, AgentPermissionResponse } from "../agent/agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
+import type { AgentPermissionRequest, AgentPermissionResponse } from "@thoth/drivers/agent-runtime";
 import { isLikelyExternalToolName } from "@thoth/protocol/tool-name-normalization";
+import { NO_HARNESS_CAPABILITIES } from "@thoth/drivers/harness";
 
 const TEST_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
@@ -1155,6 +1156,7 @@ class FakeAgentSession implements AgentSession {
 
 class FakeAgentClient implements AgentClient {
   readonly capabilities = TEST_CAPABILITIES;
+  readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
   constructor(public readonly provider: string) {}
 
   async createSession(

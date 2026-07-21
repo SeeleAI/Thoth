@@ -1,9 +1,9 @@
 import { z } from "zod";
 import type { GitHubSearchKind } from "@thoth/protocol/messages";
-import { findExecutable } from "../executable-resolution/executable-resolution.js";
+import { findExecutable } from "@thoth/drivers/internal/executable-resolution/executable-resolution";
 import { resolveGitHubRemote } from "../utils/github-remote.js";
 import { runGitCommand } from "../utils/run-git-command.js";
-import { execCommand } from "../utils/spawn.js";
+import { execCommand } from "@thoth/drivers/internal/utils/spawn";
 
 const DEFAULT_GITHUB_CACHE_TTL_MS = 30_000;
 const CHECK_ANNOTATION_PAGE_MAX = 20;

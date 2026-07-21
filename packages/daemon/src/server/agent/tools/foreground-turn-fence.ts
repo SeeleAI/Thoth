@@ -1,4 +1,4 @@
-import type { ThothToolExecutionContext } from "./types.js";
+import type { ThothToolExecutionContext } from "@thoth/drivers/agent-runtime";
 
 export type ForegroundTurnFenceKind = "raw_provider" | "thoth_clarify";
 
@@ -36,6 +36,14 @@ export function beginForegroundTurnFence(input: {
 export function getActiveForegroundAuthorityTurnId(agentId: string): string | null {
   const fence = fences.get(agentId);
   return fence?.kind === "thoth_clarify" ? fence.foregroundTurnId : null;
+}
+
+export function getActiveForegroundTurnId(agentId: string): string | null {
+  return fences.get(agentId)?.foregroundTurnId ?? null;
+}
+
+export function getBoundForegroundProviderTurnId(agentId: string): string | null {
+  return fences.get(agentId)?.providerTurnId ?? null;
 }
 
 export function bindForegroundProviderTurn(input: {
@@ -101,15 +109,39 @@ export function assertForegroundAuthorityTurn(input: {
   if (fence.kind === "raw_provider") {
     throw new Error("Thoth authority tools are disabled for this raw provider turn");
   }
-  if (fence.parked) {
-    throw new Error("A parked provider turn cannot submit another Agent authority card");
+  assertCurrentProviderTurn(input.agentId, fence, input.context);
+}
+
+/**
+ * Read-only context tools are available to raw and Thoth turns, but only for
+ * the provider turn currently bound to the daemon-owned foreground generation.
+ */
+export function assertForegroundContextTurn(input: {
+  agentId: string;
+  context: ThothToolExecutionContext;
+}): string {
+  const fence = fences.get(input.agentId);
+  if (!fence) {
+    throw new Error("No active foreground turn owns this context tool call");
   }
-  const providerTurnId = input.context.providerToolCall?.turnId;
+  assertCurrentProviderTurn(input.agentId, fence, input.context);
+  return fence.foregroundTurnId;
+}
+
+function assertCurrentProviderTurn(
+  agentId: string,
+  fence: ForegroundTurnFenceRecord,
+  context: ThothToolExecutionContext,
+): void {
+  if (fence.parked) {
+    throw new Error("A parked provider turn cannot call foreground Thoth tools");
+  }
+  const providerTurnId = context.providerToolCall?.turnId;
   if (fence.providerTurnId === null) {
-    if (!providerTurnId || input.context.providerToolCall?.isActiveProviderTurn !== true) {
+    if (!providerTurnId || context.providerToolCall?.isActiveProviderTurn !== true) {
       throw new Error("Provider turn is not bound to the active foreground generation");
     }
-    fences.set(input.agentId, { ...fence, providerTurnId });
+    fences.set(agentId, { ...fence, providerTurnId });
     return;
   }
   if (!providerTurnId || providerTurnId !== fence.providerTurnId) {

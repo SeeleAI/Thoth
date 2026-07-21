@@ -2,7 +2,7 @@ import type {
   AgentModelDefinition,
   AgentProvider,
   ProviderSnapshotEntry,
-} from "./agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import type { StructuredGenerationProvider } from "./agent-response-loop.js";
 import type { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
 

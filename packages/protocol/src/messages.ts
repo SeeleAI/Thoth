@@ -5,12 +5,29 @@ import { AGENT_LIFECYCLE_STATUSES } from "./agent-lifecycle.js";
 import { MAX_EXPLICIT_AGENT_TITLE_CHARS } from "@thoth/protocol/agent-title-limits";
 import { AgentProviderSchema } from "@thoth/protocol/provider-manifest";
 import { normalizeAgentModelDefinition, TOOL_CALL_ICON_NAMES } from "./agent-types.js";
+import { TaskContextReferenceSchema, TaskProjectionSchema } from "./task-authority.js";
+import {
+  ExecutionTimelineRequestSchema,
+  ExecutionTimelineResponseSchema,
+  TaskCommandRequestSchema,
+  TaskCommandResponseSchema,
+  TaskContextGetRequestSchema,
+  TaskContextGetResponseSchema,
+  TaskContextSearchRequestSchema,
+  TaskContextSearchResponseSchema,
+  TaskDecisionAnswerRequestSchema,
+  TaskDecisionAnswerResponseSchema,
+  TaskGetRequestSchema,
+  TaskGetResponseSchema,
+  TaskListRequestSchema,
+  TaskListResponseSchema,
+  WorkspaceAuthorityUpdateSchema,
+} from "./task-authority.js";
 import {
   ThothRuntimeClarifyStrengthSchema,
   ThothRuntimeLoopStrengthSchema,
   ThothRuntimeModeSchema,
 } from "./thoth-runtime-contract.js";
-import { RegisteredTaskModelSchema } from "./thoth/rpc-schemas.js";
 import {
   ThothClarifyCardModelSchema,
   ThothApprovalGoalCardModelSchema,
@@ -53,32 +70,11 @@ import {
   ScheduleUpdateResponseSchema,
 } from "@thoth/protocol/schedule/rpc-schemas";
 import {
-  LoopRunRequestSchema,
-  LoopListRequestSchema,
-  LoopInspectRequestSchema,
-  LoopLogsRequestSchema,
-  LoopStopRequestSchema,
-  LoopRunResponseSchema,
-  LoopListResponseSchema,
-  LoopInspectResponseSchema,
-  LoopLogsResponseSchema,
-  LoopStopResponseSchema,
-} from "@thoth/protocol/loop/rpc-schemas";
-import {
   AgentThothStateRequestSchema,
   AgentThothCardAnswerRequestSchema,
-  BackgroundTaskListRequestSchema,
-  BackgroundTaskInspectRequestSchema,
-  BackgroundTaskActionRequestSchema,
-  BackgroundTaskDecisionRequestSchema,
   AgentThothStateResponseSchema,
   AgentThothCardAnswerResponseSchema,
   AgentThothStateUpdateSchema,
-  BackgroundTaskListResponseSchema,
-  BackgroundTaskInspectResponseSchema,
-  BackgroundTaskActionResponseSchema,
-  BackgroundTaskDecisionResponseSchema,
-  BackgroundTaskUpdateSchema,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import {
   ThothConfigRawSchema,
@@ -643,7 +639,7 @@ export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknow
   }),
   z.object({
     type: z.literal("registered_task"),
-    task: RegisteredTaskModelSchema,
+    task: TaskProjectionSchema,
   }),
   ToolCallTimelineItemPayloadSchema,
   z.object({
@@ -1131,6 +1127,7 @@ export const SendAgentMessageRequestSchema = z.object({
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: AgentAttachmentsSchema,
   thoth: ThothTurnSnapshotSchema.optional(),
+  contextRefs: z.array(TaskContextReferenceSchema).default([]),
 });
 
 export const WaitForFinishRequestSchema = z.object({
@@ -1255,6 +1252,7 @@ export const CreateAgentRequestMessageSchema = z
     worktreeName: z.string().optional(),
     initialPrompt: z.string().optional(),
     thoth: ThothTurnSnapshotSchema.optional(),
+    contextRefs: z.array(TaskContextReferenceSchema).default([]),
     clientMessageId: z.string().optional(),
     outputSchema: z.record(z.string(), z.unknown()).optional(),
     images: z.array(ImageAttachmentSchema).optional(),
@@ -2254,17 +2252,15 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ScheduleDeleteRequestSchema,
   ScheduleRunOnceRequestSchema,
   ScheduleUpdateRequestSchema,
-  LoopRunRequestSchema,
-  LoopListRequestSchema,
-  LoopInspectRequestSchema,
-  LoopLogsRequestSchema,
-  LoopStopRequestSchema,
   AgentThothStateRequestSchema,
   AgentThothCardAnswerRequestSchema,
-  BackgroundTaskListRequestSchema,
-  BackgroundTaskInspectRequestSchema,
-  BackgroundTaskActionRequestSchema,
-  BackgroundTaskDecisionRequestSchema,
+  TaskListRequestSchema,
+  TaskGetRequestSchema,
+  TaskCommandRequestSchema,
+  TaskContextSearchRequestSchema,
+  TaskContextGetRequestSchema,
+  TaskDecisionAnswerRequestSchema,
+  ExecutionTimelineRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -4420,19 +4416,17 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ScheduleDeleteResponseSchema,
   ScheduleRunOnceResponseSchema,
   ScheduleUpdateResponseSchema,
-  LoopRunResponseSchema,
-  LoopListResponseSchema,
-  LoopInspectResponseSchema,
-  LoopLogsResponseSchema,
-  LoopStopResponseSchema,
   AgentThothStateResponseSchema,
   AgentThothCardAnswerResponseSchema,
   AgentThothStateUpdateSchema,
-  BackgroundTaskListResponseSchema,
-  BackgroundTaskInspectResponseSchema,
-  BackgroundTaskActionResponseSchema,
-  BackgroundTaskDecisionResponseSchema,
-  BackgroundTaskUpdateSchema,
+  TaskListResponseSchema,
+  TaskGetResponseSchema,
+  TaskCommandResponseSchema,
+  TaskContextSearchResponseSchema,
+  TaskContextGetResponseSchema,
+  TaskDecisionAnswerResponseSchema,
+  ExecutionTimelineResponseSchema,
+  WorkspaceAuthorityUpdateSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
 ]);
@@ -4572,12 +4566,6 @@ export type ScheduleResumeResponse = z.infer<typeof ScheduleResumeResponseSchema
 export type ScheduleDeleteResponse = z.infer<typeof ScheduleDeleteResponseSchema>;
 export type ScheduleRunOnceResponse = z.infer<typeof ScheduleRunOnceResponseSchema>;
 export type ScheduleUpdateResponse = z.infer<typeof ScheduleUpdateResponseSchema>;
-export type LoopRunResponse = z.infer<typeof LoopRunResponseSchema>;
-export type LoopListResponse = z.infer<typeof LoopListResponseSchema>;
-export type LoopInspectResponse = z.infer<typeof LoopInspectResponseSchema>;
-export type LoopLogsResponse = z.infer<typeof LoopLogsResponseSchema>;
-export type LoopStopResponse = z.infer<typeof LoopStopResponseSchema>;
-
 // Type exports for payload types
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;
 
@@ -4637,11 +4625,6 @@ export type ScheduleResumeRequest = z.infer<typeof ScheduleResumeRequestSchema>;
 export type ScheduleDeleteRequest = z.infer<typeof ScheduleDeleteRequestSchema>;
 export type ScheduleRunOnceRequest = z.infer<typeof ScheduleRunOnceRequestSchema>;
 export type ScheduleUpdateRequest = z.infer<typeof ScheduleUpdateRequestSchema>;
-export type LoopRunRequest = z.infer<typeof LoopRunRequestSchema>;
-export type LoopListRequest = z.infer<typeof LoopListRequestSchema>;
-export type LoopInspectRequest = z.infer<typeof LoopInspectRequestSchema>;
-export type LoopLogsRequest = z.infer<typeof LoopLogsRequestSchema>;
-export type LoopStopRequest = z.infer<typeof LoopStopRequestSchema>;
 export type ResumeAgentRequestMessage = z.infer<typeof ResumeAgentRequestMessageSchema>;
 export type DeleteAgentRequestMessage = z.infer<typeof DeleteAgentRequestMessageSchema>;
 export type UpdateAgentRequestMessage = z.infer<typeof UpdateAgentRequestMessageSchema>;

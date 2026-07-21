@@ -12,7 +12,7 @@ import { resolve, sep } from "node:path";
 
 import type { Logger } from "pino";
 
-import type { AgentStorage } from "../agent/agent-storage.js";
+import type { AgentRegistry } from "../agent/agent-storage.js";
 import type { PersistedWorkspaceRecord, WorkspaceRegistry } from "../workspace-registry.js";
 
 // Picks the workspace that owned `cwd` for a legacy, unstamped agent record.
@@ -64,7 +64,7 @@ function oldestWorkspace(workspaces: PersistedWorkspaceRecord[]): PersistedWorks
 }
 
 export async function backfillWorkspaceIdForLegacyAgents(options: {
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   workspaceRegistry: WorkspaceRegistry;
   logger: Logger;
 }): Promise<number> {

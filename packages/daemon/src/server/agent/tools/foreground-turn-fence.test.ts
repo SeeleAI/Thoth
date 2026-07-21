@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   assertForegroundAuthorityTurn,
+  assertForegroundContextTurn,
   beginForegroundTurnFence,
   bindForegroundProviderTurn,
   endForegroundTurnFence,
@@ -81,6 +82,14 @@ describe("foreground turn fence", () => {
     expect(() => assertForegroundAuthorityTurn({ agentId: "agent-1", context: {} })).toThrow(
       "disabled for this raw provider turn",
     );
+    expect(() =>
+      assertForegroundContextTurn({
+        agentId: "agent-1",
+        context: {
+          providerToolCall: { turnId: "provider-turn-raw", isActiveProviderTurn: true },
+        },
+      }),
+    ).not.toThrow();
   });
 
   it("keeps an old parked provider turn fenced while a continuation becomes active", () => {

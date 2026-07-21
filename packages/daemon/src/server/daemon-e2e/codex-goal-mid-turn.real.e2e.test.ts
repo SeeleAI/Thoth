@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import pino from "pino";
 
-import { resolveBinaryVersion } from "../agent/providers/diagnostic-utils.js";
+import { resolveBinaryVersion } from "@thoth/drivers/internal/server/agent/providers/diagnostic-utils";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon } from "../test-utils/thoth-daemon.js";
 import {

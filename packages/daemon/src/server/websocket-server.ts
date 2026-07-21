@@ -5,14 +5,12 @@ import { hostname as getHostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import type { AgentManager, AgentMetricsSnapshot } from "./agent/agent-manager.js";
-import type { AgentStorage } from "./agent/agent-storage.js";
+import type { AgentRegistry } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
 import type pino from "pino";
 import type { ProjectRegistry, WorkspaceRegistry } from "./workspace-registry.js";
-import type { FileBackedChatService } from "./chat/chat-service.js";
-import type { LoopService } from "./loop-service.js";
-import type { ThothLoopTaskService } from "./thoth-loop/task-service.js";
+import type { WorkspaceChatService } from "./chat/chat-service.js";
 import type { ScheduleService } from "./schedule/service.js";
 import type { CheckoutDiffManager, CheckoutDiffMetrics } from "./checkout-diff-manager.js";
 import type { DaemonConfigStore, MutableDaemonConfig } from "./daemon-config-store.js";
@@ -32,7 +30,7 @@ import type { TerminalActivity } from "@thoth/protocol/terminal-activity";
 import type { HostnamesConfig } from "./hostnames.js";
 import { isHostnameAllowed } from "./hostnames.js";
 import { Session, type SessionLifecycleIntent, type SessionRuntimeMetrics } from "./session.js";
-import type { AgentProvider } from "./agent/agent-sdk-types.js";
+import type { AgentProvider } from "@thoth/drivers/agent-runtime";
 import { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import type { WorkspaceGitRuntimeSnapshot, WorkspaceGitService } from "./workspace-git-service.js";
 import { buildWorkspaceGitMetadataFromSnapshot } from "./workspace-git-metadata.js";
@@ -71,6 +69,10 @@ import {
   normalizeClientRestartRpcReason,
 } from "./lifecycle-reasons.js";
 import type { RelayCredentialsManager } from "./relay-credentials.js";
+import {
+  WorkspaceAuthorityManager,
+  WorkspaceTaskCoordinator,
+} from "./workspace-authority/index.js";
 
 const WS_CLOSE_DAEMON_AUTH_FAILED = 4401;
 
@@ -342,25 +344,19 @@ export class MissingDaemonVersionError extends Error {
 }
 
 interface RequiredWebSocketServices {
-  chatService: FileBackedChatService;
-  loopService: LoopService;
-  loopTaskService?: ThothLoopTaskService | null;
+  chatService: WorkspaceChatService;
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
 }
 
 function requireWebSocketServices(params: {
-  chatService?: FileBackedChatService;
-  loopService?: LoopService;
+  chatService?: WorkspaceChatService;
   scheduleService?: ScheduleService;
   checkoutDiffManager?: CheckoutDiffManager;
 }): RequiredWebSocketServices {
-  const { chatService, loopService, scheduleService, checkoutDiffManager } = params;
+  const { chatService, scheduleService, checkoutDiffManager } = params;
   if (!chatService) {
     throw new Error("VoiceAssistantWebSocketServer requires a chat service.");
-  }
-  if (!loopService) {
-    throw new Error("VoiceAssistantWebSocketServer requires a loop service.");
   }
   if (!scheduleService) {
     throw new Error("VoiceAssistantWebSocketServer requires a schedule service.");
@@ -368,7 +364,7 @@ function requireWebSocketServices(params: {
   if (!checkoutDiffManager) {
     throw new Error("VoiceAssistantWebSocketServer requires a checkout diff manager.");
   }
-  return { chatService, loopService, scheduleService, checkoutDiffManager };
+  return { chatService, scheduleService, checkoutDiffManager };
 }
 
 /**
@@ -397,12 +393,13 @@ export class VoiceAssistantWebSocketServer {
       }
     | undefined;
   private readonly agentManager: AgentManager;
-  private readonly agentStorage: AgentStorage;
+  private readonly agentStorage: AgentRegistry;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
-  private readonly chatService: FileBackedChatService;
-  private readonly loopService: LoopService;
-  private readonly loopTaskService: ThothLoopTaskService | null;
+  private readonly chatService: WorkspaceChatService;
+  private readonly workspaceAuthorityManager: WorkspaceAuthorityManager;
+  private readonly ownsWorkspaceAuthorityManager: boolean;
+  private readonly workspaceTaskCoordinator: WorkspaceTaskCoordinator;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: GitHubService;
@@ -450,7 +447,7 @@ export class VoiceAssistantWebSocketServer {
     logger: pino.Logger,
     serverId: string,
     agentManager: AgentManager,
-    agentStorage: AgentStorage,
+    agentStorage: AgentRegistry,
     downloadTokenStore: DownloadTokenStore,
     thothHome: string,
     daemonConfigStore: DaemonConfigStore,
@@ -466,9 +463,7 @@ export class VoiceAssistantWebSocketServer {
     onLifecycleIntent?: (intent: SessionLifecycleIntent) => void,
     projectRegistry?: ProjectRegistry,
     workspaceRegistry?: WorkspaceRegistry,
-    chatService?: FileBackedChatService,
-    loopService?: LoopService,
-    loopTaskService?: ThothLoopTaskService | null,
+    chatService?: WorkspaceChatService,
     scheduleService?: ScheduleService,
     checkoutDiffManager?: CheckoutDiffManager,
     serviceProxy?: ServiceProxySubsystem | null,
@@ -500,6 +495,10 @@ export class VoiceAssistantWebSocketServer {
     serviceProxyPublicBaseUrl?: string | null,
     relayCredentials?: RelayCredentialsManager | null,
     refreshRelayRegistration?: (() => void) | null,
+    workspaceAuthority?: {
+      manager: WorkspaceAuthorityManager;
+      coordinator: WorkspaceTaskCoordinator;
+    },
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.serverId = serverId;
@@ -514,19 +513,25 @@ export class VoiceAssistantWebSocketServer {
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
     const requiredServices = requireWebSocketServices({
       chatService,
-      loopService,
       scheduleService,
       checkoutDiffManager,
     });
     this.chatService = requiredServices.chatService;
-    this.loopService = requiredServices.loopService;
-    this.loopTaskService = loopTaskService ?? null;
     this.scheduleService = requiredServices.scheduleService;
     this.checkoutDiffManager = requiredServices.checkoutDiffManager;
     this.github = github ?? createGitHubService();
     this.workspaceGitService = workspaceGitService ?? createFallbackWorkspaceGitService();
     this.downloadTokenStore = downloadTokenStore;
     this.thothHome = thothHome;
+    this.ownsWorkspaceAuthorityManager = workspaceAuthority === undefined;
+    this.workspaceAuthorityManager =
+      workspaceAuthority?.manager ?? new WorkspaceAuthorityManager(this.thothHome);
+    this.workspaceTaskCoordinator =
+      workspaceAuthority?.coordinator ??
+      new WorkspaceTaskCoordinator(
+        this.workspaceAuthorityManager,
+        this.logger.child({ component: "workspace-task-coordinator" }),
+      );
     this.worktreesRoot = daemonRuntimeConfig?.worktreesRoot;
     this.daemonConfigStore = daemonConfigStore;
     this.mcpBaseUrl = mcpBaseUrl;
@@ -847,6 +852,10 @@ export class VoiceAssistantWebSocketServer {
     }
 
     await Promise.all(cleanupPromises);
+    this.workspaceTaskCoordinator.runtimes.clear();
+    if (this.ownsWorkspaceAuthorityManager) {
+      this.workspaceAuthorityManager.close();
+    }
     this.providerSnapshotManager.destroy();
     this.checkoutDiffManager.dispose();
     this.workspaceGitService.dispose();
@@ -998,8 +1007,8 @@ export class VoiceAssistantWebSocketServer {
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,
       chatService: this.chatService,
-      loopService: this.loopService,
-      loopTaskService: this.loopTaskService,
+      workspaceAuthorityManager: this.workspaceAuthorityManager,
+      workspaceTaskCoordinator: this.workspaceTaskCoordinator,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
       github: this.github,

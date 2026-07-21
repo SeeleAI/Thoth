@@ -770,6 +770,7 @@ export const RuntimeToolBridgeDescriptorSchema = z
   .strict();
 
 export const THOTH_CLARIFY_RUNTIME_TOOL_NAMES = [
+  "thoth_get_bound_task_progress",
   "thoth_submit_clarify_card",
   "thoth_submit_task_card",
   "thoth_submit_goals_card",
@@ -916,6 +917,8 @@ export const ThothSubmitTaskCardInputSchema = z
       });
     }
   });
+
+export const ThothGetBoundTaskProgressInputSchema = z.object({}).strict();
 
 export const ThothSubmitClarifyConvergenceAuditInputSchema = ClarifyConvergenceAuditSchema;
 
@@ -1095,6 +1098,10 @@ export const ThothReportBlockedInputSchema = z
 
 export const ThothClarifyRuntimeToolInputSchema = z.discriminatedUnion("tool", [
   z.object({
+    tool: z.literal("thoth_get_bound_task_progress"),
+    input: ThothGetBoundTaskProgressInputSchema,
+  }),
+  z.object({
     tool: z.literal("thoth_submit_clarify_card"),
     input: ThothSubmitClarifyCardInputSchema,
   }),
@@ -1260,6 +1267,7 @@ export type ClarifyConvergenceAudit = z.infer<typeof ClarifyConvergenceAuditSche
 export type ContractPreservationAudit = z.infer<typeof ContractPreservationAuditSchema>;
 export type ClarifyConvergenceReview = z.infer<typeof ClarifyConvergenceReviewSchema>;
 export type ThothSubmitClarifyCardInput = z.infer<typeof ThothSubmitClarifyCardInputSchema>;
+export type ThothGetBoundTaskProgressInput = z.infer<typeof ThothGetBoundTaskProgressInputSchema>;
 export type ThothSubmitTaskCardInput = z.infer<typeof ThothSubmitTaskCardInputSchema>;
 export type ThothSubmitClarifyConvergenceAuditInput = z.infer<
   typeof ThothSubmitClarifyConvergenceAuditInputSchema

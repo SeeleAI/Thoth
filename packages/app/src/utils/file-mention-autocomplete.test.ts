@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applyFileMentionReplacement, findActiveFileMention } from "./file-mention-autocomplete";
+import {
+  applyFileMentionReplacement,
+  findActiveFileMention,
+  removeFileMention,
+} from "./file-mention-autocomplete";
 
 describe("findActiveFileMention", () => {
   it("detects mentions at the start of input", () => {
@@ -65,5 +69,16 @@ describe("applyFileMentionReplacement", () => {
       relativePath: 'src/"quoted".ts',
     });
     expect(next).toBe('"src/\\"quoted\\".ts"');
+  });
+});
+
+describe("removeFileMention", () => {
+  it("removes only the selected Task mention token", () => {
+    expect(
+      removeFileMention({
+        text: "compare @background with the current plan",
+        mention: { start: 8, end: 19, query: "background" },
+      }),
+    ).toBe("compare  with the current plan");
   });
 });

@@ -20,7 +20,7 @@ import {
   createNoGitWorkspaceRuntimeSnapshot,
   createNoopWorkspaceGitService,
 } from "../../test-utils/workspace-git-service-stub.js";
-import { expandTilde } from "../../../utils/path.js";
+import { expandTilde } from "@thoth/drivers/internal/utils/path";
 import type { GitMetadataGenerator } from "./git-metadata-generator.js";
 
 interface FakeDiffSubscription {

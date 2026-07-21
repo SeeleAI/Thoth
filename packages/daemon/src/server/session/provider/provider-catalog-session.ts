@@ -10,10 +10,10 @@ import type {
   AgentProvider,
   AgentSessionConfig,
   ProviderSnapshotEntry,
-} from "../../agent/agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import type { ProviderAvailability } from "../../agent/agent-manager.js";
 import type { ProviderUsageService } from "../../../services/quota-fetcher/service.js";
-import { expandTilde } from "../../../utils/path.js";
+import { expandTilde } from "@thoth/drivers/internal/utils/path";
 
 // COMPAT(customModeIcons): the only mode icons known to clients before v0.1.84. Any
 // other icon name is downgraded to "ShieldCheck" for those clients.

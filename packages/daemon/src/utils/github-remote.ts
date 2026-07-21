@@ -5,8 +5,8 @@ import {
   parseGitRemoteLocation,
   type GitHubRemoteIdentity as ResolvedGitHubRemoteIdentity,
 } from "@thoth/protocol/git-remote";
-import { findExecutable } from "../executable-resolution/executable-resolution.js";
-import { execCommand } from "./spawn.js";
+import { findExecutable } from "@thoth/drivers/internal/executable-resolution/executable-resolution";
+import { execCommand } from "@thoth/drivers/internal/utils/spawn";
 
 let sshExecutableLookup: Promise<string | null> | null = null;
 const sshHostnameResolutionCache = new Map<string, Promise<string | null>>();

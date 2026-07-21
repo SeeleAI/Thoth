@@ -4,6 +4,7 @@ import { ChatMessageSchema, ChatRoomDetailSchema } from "./types.js";
 export const ChatCreateRequestSchema = z.object({
   type: z.literal("chat/create"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   name: z.string(),
   purpose: z.string().optional(),
 });
@@ -11,23 +12,27 @@ export const ChatCreateRequestSchema = z.object({
 export const ChatListRequestSchema = z.object({
   type: z.literal("chat/list"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
 });
 
 export const ChatInspectRequestSchema = z.object({
   type: z.literal("chat/inspect"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   room: z.string(),
 });
 
 export const ChatDeleteRequestSchema = z.object({
   type: z.literal("chat/delete"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   room: z.string(),
 });
 
 export const ChatPostRequestSchema = z.object({
   type: z.literal("chat/post"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   room: z.string(),
   body: z.string(),
   authorAgentId: z.string().optional(),
@@ -37,6 +42,7 @@ export const ChatPostRequestSchema = z.object({
 export const ChatReadRequestSchema = z.object({
   type: z.literal("chat/read"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   room: z.string(),
   limit: z.number().int().nonnegative().optional(),
   since: z.string().optional(),
@@ -46,6 +52,7 @@ export const ChatReadRequestSchema = z.object({
 export const ChatWaitRequestSchema = z.object({
   type: z.literal("chat/wait"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   room: z.string(),
   afterMessageId: z.string().optional(),
   timeoutMs: z.number().int().nonnegative().optional(),

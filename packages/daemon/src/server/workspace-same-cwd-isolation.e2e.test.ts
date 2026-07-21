@@ -8,7 +8,7 @@ import { createTestThothDaemon } from "./test-utils/thoth-daemon.js";
 import { createTestLogger } from "../test-utils/test-logger.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { getAskModeConfig } from "./daemon-e2e/agent-configs.js";
-import { MockLoadTestAgentClient } from "./agent/providers/mock-load-test-agent.js";
+import { MockLoadTestAgentClient } from "@thoth/drivers/internal/server/agent/providers/mock-load-test-agent";
 import type {
   AgentCapabilityFlags,
   AgentClient,
@@ -17,7 +17,7 @@ import type {
   AgentPersistenceHandle,
   AgentSession,
   AgentSessionConfig,
-} from "./agent/agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import {
   createPersistedProjectRecord,
   createPersistedWorkspaceRecord,

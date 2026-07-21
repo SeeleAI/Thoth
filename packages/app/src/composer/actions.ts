@@ -1,5 +1,4 @@
 import type { GitHubSearchItem, ThothTurnSnapshot } from "@thoth/protocol/messages";
-import type { LoopTaskModel } from "@thoth/protocol/thoth/rpc-schemas";
 import type {
   AttachmentMetadata,
   ComposerAttachment,
@@ -48,6 +47,7 @@ export interface ComposerSendClient {
       messageId: string;
       images: Array<{ data: string; mimeType: string }>;
       attachments: ReturnType<typeof splitComposerAttachmentsForSubmit>["attachments"];
+      contextRefs: ReturnType<typeof splitComposerAttachmentsForSubmit>["contextRefs"];
       thoth?: ThothTurnSnapshot;
     },
   ) => Promise<void>;
@@ -183,43 +183,8 @@ export async function dispatchComposerAgentMessage(
     messageId,
     images: imagesData ?? [],
     attachments: wirePayload.attachments,
+    contextRefs: wirePayload.contextRefs,
     ...(input.thoth ? { thoth: input.thoth } : {}),
-  });
-}
-
-/**
- * Project a durable task-scoped decision into its originating Agent timeline without granting
- * the timeline a second authority write path. The task remains the sole source of decision state.
- */
-export function applyLoopTaskDecisionToAgentStream(input: {
-  agentId: string;
-  task: LoopTaskModel;
-  stream: AgentStreamWriter;
-}): void {
-  const decision = input.task.pendingUserDecision;
-  if (!decision) {
-    return;
-  }
-  const item: StreamItem = {
-    kind: "loop_decision",
-    id: `loop_decision_${input.task.id}`,
-    timestamp: new Date(decision.createdAt),
-    taskId: input.task.id,
-    decision,
-  };
-  input.stream.setTail((prev) => {
-    const next = new Map(prev);
-    const current = next.get(input.agentId) ?? [];
-    const index = current.findIndex((candidate) => candidate.id === item.id);
-    if (index < 0) {
-      next.set(input.agentId, [...current, item]);
-      return next;
-    }
-    const updated = [...current];
-    // Preserve the first-rendered time so answer/status updates cannot reorder the transcript.
-    updated[index] = { ...item, timestamp: current[index]!.timestamp };
-    next.set(input.agentId, updated);
-    return next;
   });
 }
 
@@ -367,6 +332,9 @@ export function openComposerAttachment(input: OpenComposerAttachmentInput): void
     return;
   }
   if (input.attachment.kind === "file") {
+    return;
+  }
+  if (input.attachment.kind === "task_context") {
     return;
   }
   if (isWorkspaceAttachment(input.attachment)) {

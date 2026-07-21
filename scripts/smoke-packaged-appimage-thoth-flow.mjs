@@ -14,6 +14,7 @@ import {
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 import { DaemonClient } from "../packages/client/dist/daemon-client.js";
@@ -35,6 +36,7 @@ const appImagePath = option(
 const outputDir = option("--output-dir", path.join(root, ".dev/packaged-appimage-thoth-flow"));
 const quickPromptPath = option("--quick-prompt-file", null);
 const loopPromptPath = option("--loop-prompt-file", null);
+const legacyAgentId = "packaged-legacy-agent";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -84,22 +86,181 @@ async function configureRealCodexFixture(client, fixturePrompt) {
   assert(!configured.error, `Failed to configure real Codex fixture: ${configured.error}`);
 }
 
-function collectSkillPaths(directory, result = []) {
-  if (!existsSync(directory)) return result;
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const candidate = path.join(directory, entry.name);
-    if (entry.isDirectory()) collectSkillPaths(candidate, result);
-    else if (entry.name === "SKILL.md") result.push(candidate);
-  }
-  return result;
-}
-
 function parseCapture(capturePath) {
   if (!existsSync(capturePath)) return [];
   return readFileSync(capturePath, "utf8")
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+}
+
+function directorySize(rootPath) {
+  if (!existsSync(rootPath)) return 0;
+  let total = 0;
+  const pending = [rootPath];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) pending.push(entryPath);
+      else if (entry.isFile()) total += readFileSync(entryPath).byteLength;
+    }
+  }
+  return total;
+}
+
+function seedLegacyStorage(thothHome, workspacePath) {
+  const createdAt = "2026-07-20T00:00:00.000Z";
+  const agentsRoot = path.join(thothHome, "agents");
+  mkdirSync(agentsRoot, { recursive: true });
+  writeFileSync(
+    path.join(agentsRoot, `${legacyAgentId}.json`),
+    `${JSON.stringify({
+      id: legacyAgentId,
+      provider: "codex",
+      cwd: workspacePath,
+      createdAt,
+      updatedAt: createdAt,
+      labels: {},
+      lastStatus: "closed",
+    })}\n`,
+  );
+  const timelineRoot = path.join(thothHome, "agent-timeline");
+  mkdirSync(timelineRoot, { recursive: true });
+  const timeline = new DatabaseSync(path.join(timelineRoot, "timeline.sqlite"));
+  timeline.exec(`
+    CREATE TABLE agent_timeline_rows (
+      agent_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      timestamp TEXT NOT NULL,
+      item_json TEXT NOT NULL,
+      PRIMARY KEY(agent_id, seq)
+    ) STRICT;
+  `);
+  timeline
+    .prepare("INSERT INTO agent_timeline_rows VALUES (?, 1, ?, ?)")
+    .run(
+      legacyAgentId,
+      createdAt,
+      JSON.stringify({ type: "assistant_message", text: "Packaged legacy timeline" }),
+    );
+  timeline.close();
+  const legacyProviderRoot = path.join(thothHome, "provider-sessions", "legacy-session");
+  mkdirSync(legacyProviderRoot, { recursive: true });
+  writeFileSync(path.join(legacyProviderRoot, "legacy-runtime.txt"), "legacy session copy\n");
+  writeFileSync(path.join(thothHome, "config.json"), "{}\n");
+}
+
+function inspectStorageMigration(thothHome) {
+  const marker = JSON.parse(readFileSync(path.join(thothHome, "storage-layout.json"), "utf8"));
+  assert(marker.migrated === true, "Packaged legacy storage was not marked as migrated");
+  assert(
+    marker.counts?.agents === 1,
+    `Expected one migrated Agent, received ${marker.counts?.agents}`,
+  );
+  assert(
+    marker.counts?.timelineRows === 1,
+    `Expected one migrated timeline row, received ${marker.counts?.timelineRows}`,
+  );
+  assert(
+    !existsSync(`${thothHome}.migration-source-v1`),
+    "Packaged migration source remained after successful provider-thread finalization",
+  );
+  const catalog = new DatabaseSync(path.join(thothHome, "catalog.sqlite"), { readOnly: true });
+  const locator = catalog
+    .prepare("SELECT workspace_id FROM catalog_agent_locator WHERE agent_id = ?")
+    .get(legacyAgentId);
+  catalog.close();
+  assert(locator?.workspace_id, "Migrated Agent is missing from the global locator");
+  const authorityPath = path.join(
+    thothHome,
+    "workspaces",
+    String(locator.workspace_id),
+    "authority.sqlite",
+  );
+  const authority = new DatabaseSync(authorityPath, { readOnly: true });
+  const timeline = authority
+    .prepare("SELECT item_json FROM agent_timeline_rows WHERE agent_id = ? AND seq = 1")
+    .get(legacyAgentId);
+  authority.close();
+  assert(
+    typeof timeline?.item_json === "string" &&
+      timeline.item_json.includes("Packaged legacy timeline"),
+    "Migrated Agent timeline was not preserved in Workspace authority",
+  );
+  return {
+    workspaceId: String(locator.workspace_id),
+    agents: marker.counts.agents,
+    timelineRows: marker.counts.timelineRows,
+  };
+}
+
+function inspectRuntimeAuthority(thothHome, workspaceId, taskId) {
+  assert(
+    !existsSync(path.join(thothHome, "provider-sessions")),
+    "Packaged daemon recreated the removed provider-sessions tree",
+  );
+  const bundleRoot = path.join(thothHome, "runtime-bundles", "sha256");
+  const bundleDirectories = readdirSync(bundleRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  assert(
+    bundleDirectories.length === 2,
+    `Expected exactly two deduplicated RuntimeBundles, received ${bundleDirectories.length}`,
+  );
+  const bundles = bundleDirectories.map((digest) => {
+    const bundle = JSON.parse(readFileSync(path.join(bundleRoot, digest, "bundle.json"), "utf8"));
+    assert(
+      bundle.digest === `sha256:${digest}`,
+      `RuntimeBundle directory digest mismatch: ${digest}`,
+    );
+    assert(
+      !JSON.stringify(bundle).includes("provider-sessions"),
+      `RuntimeBundle ${bundle.id} contains a removed session-home path`,
+    );
+    return bundle;
+  });
+  assert(
+    JSON.stringify(bundles.map((bundle) => bundle.id).sort()) ===
+      JSON.stringify(["thoth.clarify", "thoth.loop"]),
+    `Unexpected RuntimeBundle ids: ${bundles.map((bundle) => bundle.id).join(", ")}`,
+  );
+
+  const authorityPath = path.join(thothHome, "workspaces", workspaceId, "authority.sqlite");
+  assert(existsSync(authorityPath), `Workspace authority database not found: ${authorityPath}`);
+  const database = new DatabaseSync(authorityPath, { readOnly: true });
+  try {
+    const attachments = database
+      .prepare(
+        `SELECT e.execution_id, e.phase_kind, e.status AS execution_status,
+                a.bundle_id, a.bundle_digest, a.status AS attachment_status
+           FROM execution_attempts e
+           LEFT JOIN runtime_attachments a ON a.execution_id = e.execution_id
+          WHERE e.task_id = ? AND e.phase_kind IN ('planexec', 'review')
+          ORDER BY e.started_at ASC`,
+      )
+      .all(taskId);
+    assert(
+      attachments.length === 6,
+      `Expected six packaged PlanExec/Review attempts, received ${attachments.length}`,
+    );
+    assert(
+      attachments.every(
+        (entry) =>
+          entry.bundle_id === "thoth.loop" &&
+          entry.attachment_status === "attached" &&
+          typeof entry.bundle_digest === "string",
+      ),
+      "A packaged Loop execution started without a durable thoth.loop attachment receipt",
+    );
+    return {
+      bundles: bundles.map((bundle) => ({ id: bundle.id, digest: bundle.digest })),
+      loopAttachmentCount: attachments.length,
+    };
+  } finally {
+    database.close();
+  }
 }
 
 function waitForProcessExit(child, timeoutMs) {
@@ -190,10 +351,20 @@ async function main() {
   const desktopStdoutPath = path.join(runRoot, "desktop.stdout.log");
   const desktopStderrPath = path.join(runRoot, "desktop.stderr.log");
   const quickWorkspace = path.join(runRoot, "quick-workspace");
-  for (const directory of [home, thothHome, xdgConfigHome, xdgCacheHome, fakeBin, quickWorkspace]) {
+  const legacyWorkspace = path.join(runRoot, "legacy-workspace");
+  for (const directory of [
+    home,
+    thothHome,
+    xdgConfigHome,
+    xdgCacheHome,
+    fakeBin,
+    quickWorkspace,
+    legacyWorkspace,
+  ]) {
     mkdirSync(directory, { recursive: true });
   }
   if (!realCodex) {
+    seedLegacyStorage(thothHome, legacyWorkspace);
     writeFileSync(statePath, JSON.stringify({ planExec: 0, review: 0 }));
     const fakeCodexPath = path.join(fakeBin, "codex");
     copyFileSync(path.join(root, "scripts/fixtures/scripted-codex-app-server.mjs"), fakeCodexPath);
@@ -244,6 +415,7 @@ async function main() {
 
   let client = null;
   let report = null;
+  let failure = null;
   try {
     await waitFor(
       async () => (stdout.includes("desktop-daemon-smoke-started") ? true : null),
@@ -301,11 +473,97 @@ async function main() {
       JSON.stringify(core.task, null, 2),
     );
 
+    let stopTask = null;
+    if (!realCodex) {
+      const fixtureState = JSON.parse(readFileSync(statePath, "utf8"));
+      writeFileSync(statePath, JSON.stringify({ ...fixtureState, holdPlanExec: true }));
+      await client.sendAgentMessage(core.agent.id, "PACKAGED_LOOP_STOP", {
+        thoth: {
+          enabled: true,
+          executionMode: "loop",
+          clarifyStrength: "light",
+          loopStrength: "light",
+        },
+      });
+      await journey.approveCardChain(core.agent.id, "loop");
+      await journey.waitForLifecycle(core.agent.id, "background_handoff");
+      stopTask = await waitFor(
+        async () => {
+          const listed = await client.listTasks(quickWorkspaceId);
+          const task = listed.tasks.find(
+            (candidate) =>
+              candidate.id !== core.task.id && candidate.title === "Packaged Stop lifecycle flow",
+          );
+          if (!task) return null;
+          const detail = await client.getTask({ taskId: task.id, workspaceId: quickWorkspaceId });
+          return detail.executions.some((execution) =>
+            ["starting", "running", "awaiting_provider"].includes(execution.status),
+          )
+            ? task
+            : null;
+        },
+        30_000,
+        "held packaged PlanExec",
+      );
+      const stopped = await client.commandTask({
+        workspaceId: quickWorkspaceId,
+        taskId: stopTask.id,
+        command: "stop",
+        expectedRevision: stopTask.revision,
+        commandId: "packaged-stop-command",
+      });
+      assert(!stopped.error && !stopped.conflict, `Packaged Stop failed: ${stopped.error}`);
+      const stoppedDetail = await waitFor(
+        async () => {
+          const detail = await client.getTask({
+            taskId: stopTask.id,
+            workspaceId: quickWorkspaceId,
+          });
+          if (detail.task?.status !== "stopped") return null;
+          return detail;
+        },
+        30_000,
+        "packaged Stop settlement",
+      );
+      assert(
+        stoppedDetail.executions.every(
+          (execution) => !["starting", "running", "awaiting_provider"].includes(execution.status),
+        ),
+        "Stopped packaged Task retained a running execution spinner state",
+      );
+      writeFileSync(
+        path.join(runRoot, "stopped-task-detail.json"),
+        JSON.stringify(stoppedDetail, null, 2),
+      );
+    }
+
+    const visibleSessionIds = [core.sessionId];
+    if (!realCodex) {
+      for (let ordinal = 2; ordinal <= 6; ordinal += 1) {
+        const agent = await client.createAgent({
+          provider: "codex",
+          model: "gpt-5.4",
+          modeId: "auto",
+          workspaceId: quickWorkspaceId,
+          initialPrompt: `PACKAGED_STORAGE_SESSION_${ordinal}`,
+          thoth: { enabled: false },
+        });
+        await journey.waitForAgentIdle(agent.id);
+        const sessionId = await journey.sessionId(agent.id);
+        assert(sessionId, `Packaged storage session ${ordinal} has no provider thread`);
+        visibleSessionIds.push(sessionId);
+      }
+      assert(
+        new Set(visibleSessionIds).size === 6,
+        "Six visible packaged sessions did not receive independent provider threads",
+      );
+    }
+
     const capture = realCodex ? [] : parseCapture(capturePath);
     const toolCalls = capture.filter((entry) => entry.kind === "tool_call");
     const threadStarts = capture.filter((entry) => entry.kind === "thread_start");
     const turnErrors = capture.filter((entry) => entry.kind === "turn_error");
-    let visibleTurnCount = 9;
+    let visibleTurnCount = realCodex ? 10 : 13;
     if (!realCodex) {
       assert(
         turnErrors.length === 0,
@@ -334,29 +592,24 @@ async function main() {
         (entry) => entry.kind === "turn_start" && entry.threadId === quickThreadStart.threadId,
       ).length;
       assert(
-        visibleTurnCount === 9,
-        `Expected nine hot-switch turns, received ${visibleTurnCount}`,
+        visibleTurnCount === 13,
+        `Expected thirteen hot-switch, @Task and Stop-probe turns, received ${visibleTurnCount}`,
       );
     }
 
-    const skillPaths = collectSkillPaths(path.join(thothHome, "provider-sessions"));
-    const thothSkillPaths = skillPaths.filter(
-      (skillPath) => skillPath.includes("thoth-clarify") || skillPath.includes("thoth-loop"),
-    );
-    assert(
-      skillPaths.some((skillPath) => skillPath.includes("thoth-clarify")),
-      "Packaged daemon did not mount thoth.clarify SKILL.md",
-    );
-    assert(
-      skillPaths.some((skillPath) => skillPath.includes("thoth-loop")),
-      "Packaged daemon did not mount thoth.loop SKILL.md",
-    );
+    const runtimeAuthority = inspectRuntimeAuthority(thothHome, quickWorkspaceId, core.task.id);
     const daemonLogPath = path.join(thothHome, "daemon.log");
     const daemonLog = readFileSync(daemonLogPath, "utf8");
     assert(
       /dynamicToolCount["':=\s]+[1-9][0-9]*/u.test(daemonLog),
       "Packaged daemon log never reported a non-zero dynamicToolCount",
     );
+    const durableBytes = directorySize(thothHome);
+    assert(
+      durableBytes < 25 * 1024 * 1024,
+      `Packaged durable Thoth state exceeded 25MB: ${durableBytes} bytes`,
+    );
+    const migration = realCodex ? null : inspectStorageMigration(thothHome);
 
     report = {
       ok: true,
@@ -369,6 +622,10 @@ async function main() {
       loopAgentId: core.agent.id,
       backgroundTaskId: core.task.id,
       usedFailedReviews: core.task.budget.usedFailedReviews,
+      stoppedTaskId: stopTask?.id ?? null,
+      visibleSessionCount: visibleSessionIds.length,
+      durableBytes,
+      migration,
       ...(realCodex
         ? {}
         : {
@@ -382,8 +639,12 @@ async function main() {
               (entry) => Array.isArray(entry.dynamicToolNames) && entry.dynamicToolNames.length > 0,
             ).length,
           }),
-      skillPaths: thothSkillPaths,
+      runtimeBundles: runtimeAuthority.bundles,
+      loopAttachmentCount: runtimeAuthority.loopAttachmentCount,
     };
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
     await client?.close().catch(() => undefined);
     if (child.exitCode === null) {
@@ -399,8 +660,25 @@ async function main() {
       desktopStderrPath,
       path.join(thothHome, "daemon.log"),
       path.join(runRoot, "background-task-detail.json"),
+      path.join(runRoot, "stopped-task-detail.json"),
     ]) {
       if (existsSync(filePath)) cpSync(filePath, path.join(outputDir, path.basename(filePath)));
+    }
+    if (failure) {
+      writeFileSync(
+        path.join(outputDir, "failure.json"),
+        `${JSON.stringify(
+          {
+            message: failure instanceof Error ? failure.message : String(failure),
+            stack: failure instanceof Error ? failure.stack : null,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      if (existsSync(thothHome)) {
+        cpSync(thothHome, path.join(outputDir, "thoth-home"), { recursive: true });
+      }
     }
     if (report) writeFileSync(path.join(outputDir, "report.json"), JSON.stringify(report, null, 2));
     rmSync(runRoot, { recursive: true, force: true });

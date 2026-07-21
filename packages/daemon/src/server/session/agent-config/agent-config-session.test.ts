@@ -5,7 +5,7 @@ import {
   type AgentConfigOperations,
   type AgentConfigSessionHost,
 } from "./agent-config-session.js";
-import type { AgentProviderNotice } from "../../agent/agent-sdk-types.js";
+import type { AgentProviderNotice } from "@thoth/drivers/agent-runtime";
 import type { SessionOutboundMessage } from "../../messages.js";
 
 class FakeAgentConfigOperations implements AgentConfigOperations {

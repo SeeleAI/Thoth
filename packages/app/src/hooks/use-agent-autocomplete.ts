@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
+import type { TaskProjection } from "@thoth/protocol/task-authority";
 import { useTranslation } from "react-i18next";
 import type { AutocompleteOption } from "@/components/ui/autocomplete";
 import {
@@ -23,6 +24,7 @@ import {
 import {
   applyFileMentionReplacement,
   findActiveFileMention,
+  removeFileMention,
   type FileMentionRange,
 } from "@/utils/file-mention-autocomplete";
 
@@ -32,18 +34,26 @@ interface UseAgentAutocompleteInput {
   setUserInput: (nextValue: string) => void;
   serverId: string;
   agentId: string;
+  workspaceId?: string;
+  selectedTaskIds?: readonly string[];
+  onTaskContextSelected?: (task: TaskProjection) => void;
   draftConfig?: DraftCommandConfig;
   onAutocompleteApplied?: () => void;
   onClientSlashCommand?: (command: ClientSlashCommand) => void;
   canExecuteClientSlashCommand?: boolean;
 }
 
-type AgentAutocompleteOption =
+export type AgentAutocompleteOption =
   | (AutocompleteOption & { type: "client_command"; command: ClientSlashCommand })
   | (AutocompleteOption & { type: "provider_command" })
   | (AutocompleteOption & {
       type: "workspace_entry";
       entryPath: string;
+      mention: FileMentionRange;
+    })
+  | (AutocompleteOption & {
+      type: "task_context";
+      task: TaskProjection;
       mention: FileMentionRange;
     });
 
@@ -142,7 +152,7 @@ function mapCommandToOption(entry: AvailableCommand, t: TFunction): AgentAutocom
 
 type AutocompleteMode = "command" | "file" | null;
 
-interface BuildAutocompleteOptionsInput {
+export interface BuildAgentAutocompleteOptionsInput {
   isVisible: boolean;
   mode: AutocompleteMode;
   commands: AgentSlashCommand[];
@@ -151,10 +161,12 @@ interface BuildAutocompleteOptionsInput {
   activeSlashCommand: SlashCommandRange | null;
   activeFileMention: FileMentionRange | null;
   fileSuggestions: DirectorySuggestionEntry[];
+  taskSuggestions: TaskProjection[];
+  selectedTaskIds: ReadonlySet<string>;
   t: TFunction;
 }
 
-function buildCommandAutocompleteOptions(input: BuildAutocompleteOptionsInput) {
+export function buildAgentAutocompleteOptions(input: BuildAgentAutocompleteOptionsInput) {
   if (!input.isVisible) {
     return [];
   }
@@ -187,14 +199,28 @@ function buildCommandAutocompleteOptions(input: BuildAutocompleteOptionsInput) {
   const activeFileMention = input.activeFileMention;
   if (input.mode === "file" && activeFileMention) {
     const orderedEntries = orderAutocompleteOptions(input.fileSuggestions);
-    return orderedEntries.map((entry) => ({
-      type: "workspace_entry" as const,
-      id: `${entry.kind}:${entry.path}`,
-      label: entry.path,
-      kind: entry.kind,
-      entryPath: entry.path,
-      mention: activeFileMention,
-    }));
+    return [
+      ...input.taskSuggestions
+        .filter((task) => !input.selectedTaskIds.has(task.id))
+        .map((task) => ({
+          type: "task_context" as const,
+          id: `task:${task.id}`,
+          label: task.title,
+          detail: task.status,
+          description: `Task | ${task.summary}`,
+          kind: "task" as const,
+          task,
+          mention: activeFileMention,
+        })),
+      ...orderedEntries.map((entry) => ({
+        type: "workspace_entry" as const,
+        id: `${entry.kind}:${entry.path}`,
+        label: entry.path,
+        kind: entry.kind,
+        entryPath: entry.path,
+        mention: activeFileMention,
+      })),
+    ];
   }
 
   return [];
@@ -218,12 +244,15 @@ function resolveAutocompleteIsVisible(args: {
   canLoadCommands: boolean;
   serverId: string;
   autocompleteCwd: string;
+  workspaceId: string;
 }): boolean {
   if (args.mode === "command") {
     return args.canLoadCommands;
   }
   if (args.mode === "file") {
-    return Boolean(args.serverId) && args.autocompleteCwd.length > 0;
+    return (
+      Boolean(args.serverId) && (args.autocompleteCwd.length > 0 || args.workspaceId.length > 0)
+    );
   }
   return false;
 }
@@ -244,6 +273,8 @@ function resolveAutocompleteIsLoading(args: {
   isCommandsLoading: boolean;
   fileSuggestionsIsPending: boolean;
   fileSuggestionsIsLoading: boolean;
+  taskSuggestionsIsPending: boolean;
+  taskSuggestionsIsLoading: boolean;
   optionsLength: number;
 }): boolean {
   if (args.mode === "command") {
@@ -251,7 +282,9 @@ function resolveAutocompleteIsLoading(args: {
   }
   if (args.mode === "file") {
     return (
-      args.fileSuggestionsIsPending || (args.fileSuggestionsIsLoading && args.optionsLength === 0)
+      args.fileSuggestionsIsPending ||
+      args.taskSuggestionsIsPending ||
+      ((args.fileSuggestionsIsLoading || args.taskSuggestionsIsLoading) && args.optionsLength === 0)
     );
   }
   return false;
@@ -262,6 +295,7 @@ function resolveAutocompleteErrorMessage(args: {
   isCommandError: boolean;
   commandError: Error | null;
   fileSuggestionsError: unknown;
+  taskSuggestionsError: unknown;
   t: TFunction;
 }): string | undefined {
   if (args.mode === "command") {
@@ -270,9 +304,8 @@ function resolveAutocompleteErrorMessage(args: {
       : undefined;
   }
   if (args.mode === "file") {
-    return args.fileSuggestionsError instanceof Error
-      ? args.fileSuggestionsError.message
-      : undefined;
+    const candidate = args.taskSuggestionsError ?? args.fileSuggestionsError;
+    return candidate instanceof Error ? candidate.message : undefined;
   }
   return undefined;
 }
@@ -285,6 +318,9 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     setUserInput,
     serverId,
     agentId,
+    workspaceId: inputWorkspaceId,
+    selectedTaskIds = [],
+    onTaskContextSelected,
     draftConfig,
     onAutocompleteApplied,
     onClientSlashCommand,
@@ -328,9 +364,9 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
   const queryDraftConfig = normalizedDraftConfig;
   const canLoadCommands = resolveCanLoadCommands({ serverId, agentId, isDraftContext });
 
-  const agentCwd = useSessionStore(
-    (state) => state.sessions[serverId]?.agents?.get(agentId)?.cwd ?? "",
-  );
+  const agentContext = useSessionStore((state) => state.sessions[serverId]?.agents?.get(agentId));
+  const agentCwd = agentContext?.cwd ?? "";
+  const workspaceId = inputWorkspaceId?.trim() || agentContext?.workspaceId?.trim() || "";
   const autocompleteCwd = useMemo(() => {
     if (isDraftContext) {
       return queryDraftConfig?.cwd ?? "";
@@ -347,6 +383,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     canLoadCommands,
     serverId,
     autocompleteCwd,
+    workspaceId,
   });
 
   const {
@@ -399,14 +436,43 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     placeholderData: keepPreviousData,
   });
 
+  const taskSuggestionsQuery = useQuery({
+    queryKey: ["taskContextSuggestions", serverId, workspaceId, debouncedFileFilterQuery],
+    queryFn: async (): Promise<TaskProjection[]> => {
+      if (!client || !workspaceId) {
+        return [];
+      }
+      const response = await client.searchTaskContext({
+        workspaceId,
+        query: debouncedFileFilterQuery,
+        limit: 20,
+      });
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      return response.tasks;
+    },
+    enabled:
+      mode === "file" &&
+      Boolean(client) &&
+      isConnected &&
+      Boolean(serverId) &&
+      Boolean(workspaceId),
+    retry: false,
+    staleTime: 5_000,
+    placeholderData: keepPreviousData,
+  });
+
   const options = useMemo<AgentAutocompleteOption[]>(
     () =>
-      buildCommandAutocompleteOptions({
+      buildAgentAutocompleteOptions({
         activeFileMention,
         commandFilterQuery,
         commands,
         activeSlashCommand,
         fileSuggestions: fileSuggestionsQuery.data ?? [],
+        taskSuggestions: taskSuggestionsQuery.data ?? [],
+        selectedTaskIds: new Set(selectedTaskIds),
         isDraftContext,
         isVisible,
         mode,
@@ -418,6 +484,8 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
       commandFilterQuery,
       commands,
       fileSuggestionsQuery.data,
+      selectedTaskIds,
+      taskSuggestionsQuery.data,
       isDraftContext,
       isVisible,
       mode,
@@ -455,6 +523,13 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
         return;
       }
 
+      if (selected.type === "task_context") {
+        setUserInput(removeFileMention({ text: userInput, mention: selected.mention }));
+        onTaskContextSelected?.(selected.task);
+        onAutocompleteApplied?.();
+        return;
+      }
+
       const nextInput = applyFileMentionReplacement({
         text: userInput,
         mention: selected.mention,
@@ -467,6 +542,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
       canExecuteClientSlashCommand,
       onAutocompleteApplied,
       onClientSlashCommand,
+      onTaskContextSelected,
       setUserInput,
       userInput,
       activeSlashCommand,
@@ -489,6 +565,8 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     isCommandsLoading,
     fileSuggestionsIsPending: fileSuggestionsQuery.isPending,
     fileSuggestionsIsLoading: fileSuggestionsQuery.isLoading,
+    taskSuggestionsIsPending: taskSuggestionsQuery.isPending,
+    taskSuggestionsIsLoading: taskSuggestionsQuery.isLoading,
     optionsLength: options.length,
   });
   const errorMessage = resolveAutocompleteErrorMessage({
@@ -496,6 +574,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     isCommandError: isError,
     commandError: error,
     fileSuggestionsError: fileSuggestionsQuery.error,
+    taskSuggestionsError: taskSuggestionsQuery.error,
     t,
   });
 

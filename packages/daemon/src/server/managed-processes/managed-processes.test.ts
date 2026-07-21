@@ -13,12 +13,12 @@ import {
   type ManagedProcessSnapshot,
   type ManagedProcessTable,
 } from "./managed-processes.js";
-import { spawnProcess } from "../../utils/spawn.js";
+import { spawnProcess } from "@thoth/drivers/internal/utils/spawn";
 import {
   terminateWithTreeKill,
   type ProcessTerminator,
   type TreeKillTarget,
-} from "../../utils/tree-kill.js";
+} from "@thoth/drivers/internal/utils/tree-kill";
 
 let tempHome: string | null = null;
 

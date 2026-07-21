@@ -7,14 +7,14 @@ import {
   toStoredAgentRecord,
   type ManagedAgent,
 } from "./agent-projections.js";
-import type { AgentSession } from "./agent-sdk-types.js";
+import type { AgentSession } from "@thoth/drivers/agent-runtime";
 import type {
   AgentFeature,
   ImportableProviderSession,
   AgentPermissionRequest,
   AgentPersistenceHandle,
   AgentSessionConfig,
-} from "./agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 
 type ManagedAgentOverrides = Omit<Partial<ManagedAgent>, "config" | "pendingPermissions"> & {
   config?: Partial<AgentSessionConfig>;

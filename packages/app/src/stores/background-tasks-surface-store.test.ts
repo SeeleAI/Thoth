@@ -92,7 +92,7 @@ describe("background tasks surface store", () => {
       ...input,
       selectedTaskId: "task-1",
       selectedGoalId: "goal-1",
-      selectedPhaseId: "planexec",
+      selectedExecutionId: "execution-1",
     });
 
     useBackgroundTasksSurfaceStore.getState().closeSurface(input);
@@ -102,7 +102,7 @@ describe("background tasks surface store", () => {
       closedByUser: true,
       selectedTaskId: "task-1",
       selectedGoalId: "goal-1",
-      selectedPhaseId: "planexec",
+      selectedExecutionId: "execution-1",
     });
   });
 

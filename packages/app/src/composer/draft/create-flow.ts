@@ -11,6 +11,7 @@ import {
   type UserMessageImageAttachment,
 } from "@/types/stream";
 import type { AgentAttachment } from "@thoth/protocol/messages";
+import type { TaskContextReference } from "@thoth/protocol/task-authority";
 
 const EMPTY_STREAM_ITEMS: StreamItem[] = [];
 
@@ -20,6 +21,7 @@ interface CreateAttempt {
   timestamp: Date;
   images?: UserMessageImageAttachment[];
   attachments?: AgentAttachment[];
+  contextRefs?: TaskContextReference[];
 }
 
 type DraftAgentMachineState =
@@ -76,6 +78,7 @@ interface CreateRequestContext {
   text: string;
   images?: UserMessageImageAttachment[];
   attachments?: AgentAttachment[];
+  contextRefs?: TaskContextReference[];
   cwd: string;
 }
 
@@ -175,6 +178,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
         text: attempt.text,
         images: attempt.images,
         attachments: attempt.attachments,
+        contextRefs: attempt.contextRefs,
         cwd,
       });
 
@@ -184,6 +188,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
           text: attempt.text,
           images: attempt.images,
           attachments: attempt.attachments,
+          contextRefs: attempt.contextRefs,
           cwd,
         });
 
@@ -241,7 +246,10 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
       const images = wirePayload.images;
 
       const trimmedPrompt = text.trim();
-      const hasAttachmentContent = images.length > 0 || wirePayload.attachments.length > 0;
+      const hasAttachmentContent =
+        images.length > 0 ||
+        wirePayload.attachments.length > 0 ||
+        wirePayload.contextRefs.length > 0;
       if (!trimmedPrompt && !hasAttachmentContent && !allowEmptyText) {
         const error = new Error(t("composer.errors.initialPromptRequired"));
         dispatch({ type: "DRAFT_SET_ERROR", message: error.message });
@@ -272,6 +280,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
         timestamp: new Date(),
         ...(images && images.length > 0 ? { images } : {}),
         ...(wirePayload.attachments.length > 0 ? { attachments: wirePayload.attachments } : {}),
+        ...(wirePayload.contextRefs.length > 0 ? { contextRefs: wirePayload.contextRefs } : {}),
       };
 
       setPendingCreateAttempt({
@@ -284,6 +293,9 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
         ...(attempt.images && attempt.images.length > 0 ? { images: attempt.images } : {}),
         ...(attempt.attachments && attempt.attachments.length > 0
           ? { attachments: attempt.attachments }
+          : {}),
+        ...(attempt.contextRefs && attempt.contextRefs.length > 0
+          ? { contextRefs: attempt.contextRefs }
           : {}),
       });
 

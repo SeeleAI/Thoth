@@ -1,10 +1,7 @@
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildClarifyProviderInputEnvelope,
   loadRuntimeSkillArtifact,
-  mountRuntimeSkillForSession,
   parseRuntimeSkillFrontmatter,
   validateClarifyRuntimeSkillArtifact,
 } from "./contract.js";
@@ -62,18 +59,6 @@ describe("thoth.clarify harness", () => {
     expect(parsed.body).toBe("## Runtime Context");
   });
 
-  it("refuses runtime skill mounts below a provider global skill root", () => {
-    const fakeHome = join(tmpdir(), "thoth-global-skill-home");
-
-    expect(() =>
-      mountRuntimeSkillForSession({
-        thothSessionHome: join(fakeHome, ".codex", "skills"),
-        sessionId: "sec_global_guard",
-        home: fakeHome,
-      }),
-    ).toThrow("Refusing to mount a Thoth runtime skill inside a global provider skill dir");
-  });
-
   it("keeps the golden dataset broad enough for NTH-TD-015 acceptance", () => {
     expect(CLARIFY_GOLDEN_SCENARIOS.map((scenario) => scenario.id)).toEqual(
       expect.arrayContaining([
@@ -108,9 +93,9 @@ describe("thoth.clarify harness", () => {
     expect(report.results.map((scenario) => scenario.id)).toEqual(
       expect.arrayContaining([
         "packaged-runtime-skill-authority",
-        "skill-not-global-installed",
-        "session-scoped-skill-visible",
-        "bare-provider-skill-invisible",
+        "runtime-bundle-content-addressed",
+        "runtime-bundle-tool-catalog",
+        "runtime-bundle-provider-home-independent",
         "normal-turn-does-not-repeat-skill-rules",
         "transition-turn-carries-skill-reference",
         "skill-rules-live-in-skill-md",

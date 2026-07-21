@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import pino from "pino";
 
-import type { AgentStreamEvent } from "../agent-sdk-types.js";
+import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 import {
   canRunRealProvider,
   createRealProviderClient,
   getRealProviderConfig,
 } from "../../daemon-e2e/real-provider-test-config.js";
-import { OpenCodeServerManager } from "./opencode/server-manager.js";
+import { OpenCodeServerManager } from "@thoth/drivers/internal/server/agent/providers/opencode/server-manager";
 
 const OPENCODE_REAL_TEST_MODEL = getRealProviderConfig("opencode").model;
 const logger = pino({ level: "silent" });

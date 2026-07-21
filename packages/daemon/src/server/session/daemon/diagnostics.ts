@@ -7,7 +7,7 @@ import type pino from "pino";
 import type { ManagedAgent, ProviderAvailability } from "../../agent/agent-manager.js";
 import type { WebSocketRuntimeDiagnosticSnapshot } from "../../websocket/runtime-metrics.js";
 import type { PersistedProjectRecord, PersistedWorkspaceRecord } from "../../workspace-registry.js";
-import { execCommand } from "../../../utils/spawn.js";
+import { execCommand } from "@thoth/drivers/internal/utils/spawn";
 import type { DaemonRuntimeConfig } from "./daemon-session.js";
 
 interface DiagnosticEntry {

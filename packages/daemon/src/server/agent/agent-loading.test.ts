@@ -8,7 +8,7 @@ import { AgentManager } from "./agent-manager.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
 import { AgentStorage, type StoredAgentRecord } from "./agent-storage.js";
 import { SqliteAgentTimelineStore } from "./sqlite-agent-timeline-store.js";
-import type { AgentClient } from "./agent-sdk-types.js";
+import type { AgentClient } from "@thoth/drivers/agent-runtime";
 
 const roots: string[] = [];
 

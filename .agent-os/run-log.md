@@ -3399,3 +3399,45 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - Public Windows x64 ZIP, Linux AppImage and server CLI tgz matched `SHA256SUMS`; release metadata matched the
   merge commit and workflow. The Windows package's actual Clarify and Loop skills use CRLF and were both parsed
   successfully by the parser extracted from the same `app.asar`.
+
+## 2026-07-20 [Simply Is First engineering constraint]
+
+- Recorded user decision `NTH-CD-059` and requirement `NTH-REQ-019`: Thoth code development must implement the
+  locked final architecture as real, independently verifiable modules rather than a simplified end-to-end
+  substitute intended for later rewrite.
+- Updated the root agent contract, core philosophy, engineering architecture and executable development guide.
+  Rapid experiments now have to traverse the final production API, ownership boundary, state machine and product
+  lifecycle; fixtures may replace external uncertainty but cannot create a second implementation path.
+- Locked the failure posture: unmet acceptance values remain visible evidence to diagnose on the final path.
+  Fallbacks, semantic downgrades, provider-specific business branches, hidden success rewrites and implicit
+  architecture changes are forbidden. The existing top next action remains `NTH-TD-021`.
+
+## 2026-07-21 [Workspace / Task authority and universal HarnessAdapter local acceptance]
+
+- Worked on `NTH-TD-023`, `NTH-CD-060` and `NTH-EV-043`. Replaced session-shaped Thoth persistence with a global
+  catalog plus one authority SQLite shard per Workspace, deduplicated RuntimeBundles, normalized Human Decision,
+  Task/Goal/PhaseRun/ExecutionAttempt truth, Task Blackboard and structured same-Workspace `@Task` context.
+- Moved provider execution behind the common drivers HarnessAdapter and generation-scoped ToolGateway. Codex,
+  Claude Code, OpenCode, Pi and ACP traverse the same conformance journey; product orchestration no longer selects
+  behavior by provider name. `.thoth/provider-sessions`, copied provider homes, legacy Loop RPCs and internal
+  Agent phase authority are removed rather than retained as fallback.
+- Repaired restart and control defects exposed by the final journey: restore the visible Agent before Card
+  continuation, reattach dynamic tools on provider-thread resume, consume Pause at PlanExec commit, preserve
+  Review-only controls, and make Stop aggregate ownership prevent canceled terminals from restoring an
+  interrupted/running spinner.
+- Replaced CLI process discovery with explicit ownership. CLI signals the supervisor PID, POSIX adapters signal
+  their owned process group, Windows retains its platform implementation, and stop completion accepts owner-lock
+  release. Two stale tests were realigned to prove owner-only signals and lifecycle shutdown with a deliberately
+  stale PID lock; no `tree-kill` fallback was restored.
+- Packaged acceptance passed twice: the final AppImage completed `13` hot-switch turns, migration, `@Task`, one
+  failed Review retry, six `thoth.loop` receipts and Stop without an active execution at `6,428,194` durable
+  bytes; real Codex kept one visible thread through `10` turns with six receipts at `9,412,373` bytes.
+- The final server CLI tgz installed as a non-root user in `node:24-bookworm-slim` without `ps` and completed the
+  same authority path over hosted Relay v3 + E2EE, including Card submission across daemon restart, reconnect,
+  Pause/Resume, Stop, five PlanExec calls and five Review calls. No pairing credential entered evidence.
+- Gates passed: adapter transports `583`, adapter lifecycle `5`, authority `30`, App Task surface `19`, full App
+  `2688`, desktop `171`, CLI `40`, foundation `552`, AppImage/Relay package smokes, release/brand/secret/removed-path
+  contracts, format/diff checks and all three independent Clarify/Loop judges.
+- Current boundary: no commit, push, tag or Release mutation is claimed by this entry. The sole top next action is
+  to push the verified implementation to `agent/dev/mvp`, fast-forward `release/mvp-actions`, wait for every
+  native job and then revalidate the publicly downloaded fixed MVP assets.

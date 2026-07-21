@@ -11,7 +11,7 @@ import {
   resolveProviderLaunch,
   resolveProviderCommandPrefix,
   type ProviderRuntimeSettings,
-} from "./provider-launch-config.js";
+} from "@thoth/drivers/internal/server/agent/provider-launch-config";
 
 const originalPath = process.env.PATH;
 const tempDirs: string[] = [];

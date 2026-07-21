@@ -11,14 +11,14 @@ import type {
   AgentProvider,
   FetchCatalogOptions,
   ResolveAgentCreateConfigInput,
-} from "./agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import type { ManagedAgent } from "./agent-manager.js";
 import {
   GLOBAL_PROVIDER_SNAPSHOT_KEY,
   ProviderSnapshotManager,
   resolveSnapshotCwd,
 } from "./provider-snapshot-manager.js";
-import { OpenCodeAgentClient } from "./providers/opencode-agent.js";
+import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
 
 const TEST_CAPABILITIES = {
   supportsStreaming: false,
@@ -70,22 +70,18 @@ async function withEnv(key: string, value: string, run: () => Promise<void>): Pr
 }
 
 describe("ProviderSnapshotManager public surface", () => {
-  test("uses and disposes a writable provider runtime home for catalog probes", async () => {
+  test("probes the provider-owned catalog without copying its home into Thoth storage", async () => {
     const root = mkdtempSync(join(tmpdir(), "thoth-provider-probe-"));
     const sourceHome = join(root, "source-codex-home");
     const thothHome = join(root, "thoth-home");
     const previousCodexHome = process.env.CODEX_HOME;
-    let probeHome: string | undefined;
     try {
       mkdirSync(sourceHome, { recursive: true });
       writeFileSync(join(sourceHome, "auth.json"), '{"token":"readonly-source"}\n');
       writeFileSync(join(sourceHome, "config.toml"), 'model = "source"\n');
       process.env.CODEX_HOME = sourceHome;
       const fetchCatalog = vi.fn(async (options: FetchCatalogOptions) => {
-        probeHome = options.launchContext?.env?.CODEX_HOME;
-        expect(probeHome).toBeTruthy();
-        expect(probeHome).not.toBe(sourceHome);
-        writeFileSync(join(probeHome!, "probe.sqlite"), "writable\n");
+        expect(options.launchContext).toBeUndefined();
         return { models: [] as AgentModelDefinition[], modes: [] as AgentMode[] };
       });
       const manager = new ProviderSnapshotManager({
@@ -108,12 +104,11 @@ describe("ProviderSnapshotManager public surface", () => {
         const entry = await manager.getProvider({ provider: "codex", wait: true });
         expect(entry.status).toBe("ready");
         expect(fetchCatalog).toHaveBeenCalledTimes(1);
-        expect(probeHome).toBeTruthy();
-        expect(existsSync(probeHome!)).toBe(false);
         expect(readFileSync(join(sourceHome, "auth.json"), "utf8")).toBe(
           '{"token":"readonly-source"}\n',
         );
         expect(readFileSync(join(sourceHome, "config.toml"), "utf8")).toBe('model = "source"\n');
+        expect(existsSync(join(thothHome, "provider-sessions"))).toBe(false);
       } finally {
         manager.destroy();
       }

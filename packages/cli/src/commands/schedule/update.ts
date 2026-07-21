@@ -21,7 +21,6 @@ export interface ScheduleUpdateOptions extends ScheduleCommandOptions {
   provider?: string;
   model?: string;
   mode?: string;
-  cwd?: string;
   maxRuns?: string;
   noMaxRuns?: boolean;
   expiresIn?: string;
@@ -43,15 +42,14 @@ export async function runUpdateCommand(
     provider: options.provider,
     model: options.model,
     mode: options.mode,
-    cwd: options.cwd,
     maxRuns: options.maxRuns,
     expiresIn: options.expiresIn,
     clearMaxRuns: options.noMaxRuns,
     clearExpires: options.noExpiresIn,
   });
-  const { client } = await connectScheduleClient(options.host);
+  const { client, workspaceId } = await connectScheduleClient(options.host, options.workspace);
   try {
-    const payload = await client.scheduleUpdate(input);
+    const payload = await client.scheduleUpdate({ ...input, workspaceId });
     if (payload.error || !payload.schedule) {
       throw new Error(payload.error ?? `Failed to update schedule: ${id}`);
     }

@@ -4,13 +4,16 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
-import type { AgentProvider } from "../agent-sdk-types.js";
+import type { AgentProvider } from "@thoth/drivers/agent-runtime";
 import { AgentManager } from "../agent-manager.js";
 import { AgentStorage } from "../agent-storage.js";
 
-import { ClaudeAgentClient } from "./claude/agent.js";
-import { CodexAppServerAgentClient, findDefaultCodexBinary } from "./codex-app-server-agent.js";
-import { OpenCodeAgentClient } from "./opencode-agent.js";
+import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import {
+  CodexAppServerAgentClient,
+  findDefaultCodexBinary,
+} from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
+import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
 
 const originalEnv = {
   LOCALAPPDATA: process.env.LOCALAPPDATA,

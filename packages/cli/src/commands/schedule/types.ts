@@ -24,7 +24,6 @@ export type ScheduleTarget =
       type: "new-agent";
       config: {
         provider: string;
-        cwd: string;
         modeId?: string;
         model?: string;
         thinkingOptionId?: string;
@@ -141,7 +140,6 @@ export interface UpdateScheduleNewAgentConfig {
   provider?: string;
   model?: string | null;
   modeId?: string | null;
-  cwd?: string;
 }
 
 export interface UpdateScheduleInput {
@@ -161,14 +159,18 @@ export interface ScheduleUpdatePayload {
 }
 
 export interface ScheduleDaemonClient {
-  scheduleCreate(input: CreateScheduleInput): Promise<ScheduleCreatePayload>;
-  scheduleList(): Promise<ScheduleListPayload>;
-  scheduleInspect(input: { id: string }): Promise<ScheduleInspectPayload>;
-  scheduleLogs(input: { id: string }): Promise<ScheduleLogsPayload>;
-  schedulePause(input: { id: string }): Promise<SchedulePausePayload>;
-  scheduleResume(input: { id: string }): Promise<ScheduleResumePayload>;
-  scheduleDelete(input: { id: string }): Promise<ScheduleDeletePayload>;
-  scheduleRunOnce(input: { id: string }): Promise<ScheduleRunOncePayload>;
-  scheduleUpdate(input: UpdateScheduleInput): Promise<ScheduleUpdatePayload>;
+  scheduleCreate(
+    input: CreateScheduleInput & { workspaceId: string },
+  ): Promise<ScheduleCreatePayload>;
+  scheduleList(input: { workspaceId: string }): Promise<ScheduleListPayload>;
+  scheduleInspect(input: { workspaceId: string; id: string }): Promise<ScheduleInspectPayload>;
+  scheduleLogs(input: { workspaceId: string; id: string }): Promise<ScheduleLogsPayload>;
+  schedulePause(input: { workspaceId: string; id: string }): Promise<SchedulePausePayload>;
+  scheduleResume(input: { workspaceId: string; id: string }): Promise<ScheduleResumePayload>;
+  scheduleDelete(input: { workspaceId: string; id: string }): Promise<ScheduleDeletePayload>;
+  scheduleRunOnce(input: { workspaceId: string; id: string }): Promise<ScheduleRunOncePayload>;
+  scheduleUpdate(
+    input: UpdateScheduleInput & { workspaceId: string },
+  ): Promise<ScheduleUpdatePayload>;
   close(): Promise<void>;
 }

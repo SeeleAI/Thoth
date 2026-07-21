@@ -7,14 +7,14 @@ import type {
   AgentModelDefinition,
   AgentProvider,
   ProviderSnapshotEntry,
-} from "../agent/agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import type {
   AgentManagerProviderState,
   ProviderDiagnosticResult,
   ResolvedProviderCreateConfig,
 } from "../agent/provider-snapshot-manager.js";
 import { ProviderSnapshotManager } from "../agent/provider-snapshot-manager.js";
-import type { SessionOptions } from "../session.js";
+import { Session, type SessionOptions } from "../session.js";
 import type { SessionOutboundMessage } from "@thoth/protocol/messages";
 import { asInternals, createStub } from "./class-mocks.js";
 
@@ -56,16 +56,6 @@ export function asChatService(): SessionOptions["chatService"] {
 
 export function asScheduleService(): SessionOptions["scheduleService"] {
   return createStub<SessionOptions["scheduleService"]>({});
-}
-
-export function asLoopService(): SessionOptions["loopService"] {
-  return createStub<SessionOptions["loopService"]>({});
-}
-
-export function asLoopTaskService(stub: {
-  [K in keyof NonNullable<SessionOptions["loopTaskService"]>]?: unknown;
-}): NonNullable<SessionOptions["loopTaskService"]> {
-  return createStub<NonNullable<SessionOptions["loopTaskService"]>>(stub);
 }
 
 export function asCheckoutDiffManager(stub: {
@@ -111,6 +101,26 @@ export function asWorkspaceScriptRuntimeStore(stub: {
   [K in keyof SessionOptions["scriptRuntimeStore"]]?: unknown;
 }): SessionOptions["scriptRuntimeStore"] {
   return createStub<SessionOptions["scriptRuntimeStore"]>(stub);
+}
+
+export function createSessionAuthorityStubs(): Pick<
+  SessionOptions,
+  "workspaceAuthorityManager" | "workspaceTaskCoordinator"
+> {
+  return {
+    workspaceAuthorityManager: createStub<SessionOptions["workspaceAuthorityManager"]>({
+      subscribeForeground: () => () => {},
+      subscribe: () => () => {},
+    }),
+    workspaceTaskCoordinator: createStub<SessionOptions["workspaceTaskCoordinator"]>({}),
+  };
+}
+
+export function createSessionWithAuthority(
+  options: Omit<SessionOptions, "workspaceAuthorityManager" | "workspaceTaskCoordinator"> &
+    Partial<Pick<SessionOptions, "workspaceAuthorityManager" | "workspaceTaskCoordinator">>,
+): Session {
+  return new Session({ ...createSessionAuthorityStubs(), ...options } as SessionOptions);
 }
 
 // ---------------------------------------------------------------------------

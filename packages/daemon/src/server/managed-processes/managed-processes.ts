@@ -4,8 +4,8 @@ import path from "node:path";
 import type { Logger } from "pino";
 import { z } from "zod";
 import { writeJsonFileAtomic } from "../atomic-file.js";
-import { execCommand } from "../../utils/spawn.js";
-import type { ProcessTerminator, TreeKillTarget } from "../../utils/tree-kill.js";
+import { execCommand } from "@thoth/drivers/internal/utils/spawn";
+import type { ProcessTerminator, TreeKillTarget } from "@thoth/drivers/internal/utils/tree-kill";
 
 const MANAGED_PROCESS_GRACEFUL_SHUTDOWN_TIMEOUT_MS = 5_000;
 const MANAGED_PROCESS_FORCE_SHUTDOWN_TIMEOUT_MS = 1_000;

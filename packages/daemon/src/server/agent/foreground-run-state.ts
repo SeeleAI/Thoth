@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { getAgentStreamEventTurnId, type AgentStreamEvent } from "./agent-sdk-types.js";
+import { getAgentStreamEventTurnId, type AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 
 export interface ForegroundTurnWaiter {
   turnId: string;

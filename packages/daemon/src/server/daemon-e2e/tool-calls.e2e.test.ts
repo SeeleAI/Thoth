@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import path from "path";
 import { createDaemonTestContext, type DaemonTestContext } from "../test-utils/index.js";
 import { createMessageCollector } from "../test-utils/message-collector.js";
-import type { AgentTimelineItem } from "../agent/agent-sdk-types.js";
+import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import type { SessionOutboundMessage } from "../messages.js";
 
 function tmpCwd(): string {

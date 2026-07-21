@@ -1,7 +1,7 @@
 import type pino from "pino";
 import { v4 as uuidv4 } from "uuid";
 import { getErrorMessage, getErrorMessageOr } from "@thoth/protocol/error-utils";
-import type { AgentProviderNotice } from "../../agent/agent-sdk-types.js";
+import type { AgentProviderNotice } from "@thoth/drivers/agent-runtime";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../../messages.js";
 
 /**

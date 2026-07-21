@@ -10,7 +10,7 @@ import type {
   AgentPersistenceHandle,
   AgentStreamEvent,
   AgentTimelineItem,
-} from "../agent/agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon } from "../test-utils/thoth-daemon.js";
 import {

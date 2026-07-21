@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import pLimit from "p-limit";
 import type { Logger } from "pino";
-import type { ProcessEnvRecord } from "../server/thoth-env.js";
-import { spawnProcess } from "./spawn.js";
+import type { ProcessEnvRecord } from "@thoth/drivers/internal/server/thoth-env";
+import { spawnProcess } from "@thoth/drivers/internal/utils/spawn";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 20 * 1024 * 1024; // 20MB

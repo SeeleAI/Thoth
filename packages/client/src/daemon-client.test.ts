@@ -993,6 +993,7 @@ test("honors explicit readChatMessages timeout below the session RPC default", a
 
   const responsePromise = client.readChatMessages({
     requestId: "req-chat-read-1",
+    workspaceId: "workspace-chat-1",
     room: "room-1",
     limit: 1,
     timeout: 2_500,
@@ -1012,6 +1013,7 @@ test("honors explicit readChatMessages timeout below the session RPC default", a
   expect(parseSentFrame(mock.sent[0])).toEqual({
     type: "chat/read",
     requestId: "req-chat-read-1",
+    workspaceId: "workspace-chat-1",
     room: "room-1",
     limit: 1,
   });
@@ -2133,6 +2135,7 @@ test("omitting create_agent_request worktree base-ref fields preserves legacy wi
           provider: "codex",
           cwd: "/tmp/project",
         },
+        contextRefs: [],
         git: {
           createWorktree: true,
           worktreeSlug: "feature-a",
@@ -5193,7 +5196,7 @@ test("waitForFinish with timeout=0 omits timeoutMs and has no client deadline", 
   }
 });
 
-test("answerBackgroundTaskDecision sends the task-scoped command with authority fencing", async () => {
+test("answerTaskDecision sends the Workspace-scoped command with authority fencing", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();
   const client = new DaemonClient({
@@ -5209,14 +5212,13 @@ test("answerBackgroundTaskDecision sends the task-scoped command with authority 
   mock.triggerOpen();
   await connectPromise;
 
-  const responsePromise = client.answerBackgroundTaskDecision({
+  const responsePromise = client.answerTaskDecision({
     taskId: "loop-task-1",
     decisionId: "decision-1",
-    choiceId: "modern",
+    optionId: "modern",
     note: "  Prefer modern behavior.  ",
     workspaceId: "workspace-1",
-    workspacePath: "/workspace/thoth",
-    expectedAuthorityRevision: 12,
+    expectedRevision: 12,
     commandId: "decision-command-1",
     requestId: "req-loop-decision",
   });
@@ -5224,26 +5226,28 @@ test("answerBackgroundTaskDecision sends the task-scoped command with authority 
   expect(JSON.parse(assertStr(mock.sent[0]))).toEqual({
     type: "session",
     message: {
-      type: "background_task.decision.request",
+      type: "task.decision.answer.request",
       requestId: "req-loop-decision",
       taskId: "loop-task-1",
       decisionId: "decision-1",
-      choiceId: "modern",
-      note: "Prefer modern behavior.",
+      optionId: "modern",
+      note: "  Prefer modern behavior.  ",
       workspaceId: "workspace-1",
-      workspacePath: "/workspace/thoth",
-      expectedAuthorityRevision: 12,
+      expectedRevision: 12,
       commandId: "decision-command-1",
     },
   });
 
   mock.triggerMessage(
     wrapSessionMessage({
-      type: "background_task.decision.response",
+      type: "task.decision.answer.response",
       payload: {
         requestId: "req-loop-decision",
         task: null,
-        error: "Background task revision conflict: expected 12, found 13.",
+        decision: null,
+        conflict: true,
+        duplicate: false,
+        error: "Task revision conflict: expected 12, found 13.",
       },
     }),
   );
@@ -5251,6 +5255,9 @@ test("answerBackgroundTaskDecision sends the task-scoped command with authority 
   await expect(responsePromise).resolves.toEqual({
     requestId: "req-loop-decision",
     task: null,
-    error: "Background task revision conflict: expected 12, found 13.",
+    decision: null,
+    conflict: true,
+    duplicate: false,
+    error: "Task revision conflict: expected 12, found 13.",
   });
 });

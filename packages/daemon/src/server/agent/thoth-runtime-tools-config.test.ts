@@ -10,7 +10,7 @@ describe("Thoth runtime tools config", () => {
     expect(
       withThothRuntimeTools(
         { extra: { opencode: { providerVisibleOption: true } } },
-        { enabled: true, scope: "clarify", sessionHome: "/tmp/session-home" },
+        { enabled: true, scope: "clarify" },
       ),
     ).toEqual({
       extra: {
@@ -18,45 +18,22 @@ describe("Thoth runtime tools config", () => {
         thothRuntimeTools: {
           enabled: true,
           scope: "clarify",
-          sessionHome: "/tmp/session-home",
         },
       },
     });
   });
 
-  it("reads every pre-migration Codex runtime flag as parse-only compatibility", () => {
+  it("rejects pre-migration provider-private runtime flags", () => {
     expect(
       readThothRuntimeToolsConfig({
         extra: { codex: { thothClarifyRuntimeTools: true } },
       }),
-    ).toEqual({ enabled: true, scope: "clarify" });
+    ).toBeNull();
     expect(
       readThothRuntimeToolsConfig({
-        extra: { codex: { thothClarifyAuditRuntimeTools: true } },
+        extra: { codex: { thothLoopRuntimeTools: true } },
       }),
-    ).toEqual({ enabled: true, scope: "clarify_audit" });
-    expect(
-      readThothRuntimeToolsConfig({
-        extra: { codex: { thothContractAuditRuntimeTools: true } },
-      }),
-    ).toEqual({ enabled: true, scope: "contract_audit" });
-    expect(
-      readThothRuntimeToolsConfig(
-        {
-          extra: {
-            codex: {
-              thothLoopRuntimeTools: true,
-              thothLoopSessionHome: "/tmp/legacy-loop-home",
-            },
-          },
-        },
-        { legacyLoopScope: "loop_review" },
-      ),
-    ).toEqual({
-      enabled: true,
-      scope: "loop_review",
-      sessionHome: "/tmp/legacy-loop-home",
-    });
+    ).toBeNull();
   });
 
   it("does not infer runtime tools from an unknown provider-private field", () => {

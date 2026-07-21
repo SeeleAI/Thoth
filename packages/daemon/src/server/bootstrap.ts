@@ -4,7 +4,6 @@ import { constants, existsSync, unlinkSync } from "fs";
 import { open } from "fs/promises";
 import { randomUUID } from "node:crypto";
 import { hostname as getHostname } from "node:os";
-import path from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Logger } from "pino";
 import { z } from "zod";
@@ -103,25 +102,30 @@ import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { createSpeechService } from "./speech/speech-runtime.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { provisionForegroundThothSession } from "./agent/foreground-thoth-session-provisioner.js";
-import { AgentStorage } from "./agent/agent-storage.js";
-import { SqliteAgentTimelineStore } from "./agent/sqlite-agent-timeline-store.js";
+import type { AgentRegistry } from "./agent/agent-storage.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
 import {
   createThothToolCatalog,
   type ThothToolHostDependencies,
 } from "./agent/tools/thoth-tools.js";
-import type { ThothToolRuntimeContext } from "./agent/tools/types.js";
+import type { ThothToolRuntimeContext } from "@thoth/drivers/agent-runtime";
 import { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import { bootstrapWorkspaceRegistries } from "./workspace-registry-bootstrap.js";
 import { WorkspaceReconciliationService } from "./workspace-reconciliation-service.js";
-import { FileBackedProjectRegistry, FileBackedWorkspaceRegistry } from "./workspace-registry.js";
-import { FileBackedChatService } from "./chat/chat-service.js";
+import {
+  CatalogProjectRegistry,
+  CatalogWorkspaceRegistry,
+  type WorkspaceRegistry,
+} from "./workspace-registry.js";
+import { WorkspaceChatService } from "./chat/chat-service.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
-import { LoopService } from "./loop-service.js";
-import { summarizeLoopTask, ThothLoopTaskService } from "./thoth-loop/task-service.js";
 import { ScheduleService } from "./schedule/service.js";
 import { DaemonConfigStore } from "./daemon-config-store.js";
+import {
+  ensureThothStorageLayout,
+  finalizeThothStorageLayoutMigration,
+} from "./storage-layout-migration.js";
 import { WorkspaceGitServiceImpl } from "./workspace-git-service.js";
 import { resolveWorkspaceIdForPath } from "./resolve-workspace-id-for-path.js";
 import {
@@ -140,12 +144,12 @@ import { loadOrCreateRelayCredentials } from "./relay-credentials.js";
 import type { PushNotificationSender } from "./push/notifications.js";
 import { getOrCreateServerId } from "./server-id.js";
 import { resolveDaemonVersion } from "./daemon-version.js";
-import type { AgentClient, AgentProvider } from "./agent/agent-sdk-types.js";
+import type { AgentClient, AgentProvider } from "@thoth/drivers/agent-runtime";
 import type { TerminalProfile } from "@thoth/protocol/messages";
 import type {
   AgentProviderRuntimeSettingsMap,
   ProviderOverride,
-} from "./agent/provider-launch-config.js";
+} from "@thoth/drivers/internal/server/agent/provider-launch-config";
 import type { PersistedConfig } from "./persisted-config.js";
 import { createServiceProxySubsystem, type ServiceProxySubsystem } from "./service-proxy.js";
 import { ScriptHealthMonitor } from "./script-health-monitor.js";
@@ -156,7 +160,7 @@ import {
   createSystemManagedProcessTable,
   type ManagedProcessRegistry,
 } from "./managed-processes/managed-processes.js";
-import { terminateWithTreeKill } from "../utils/tree-kill.js";
+import { terminateWithTreeKill } from "@thoth/drivers/internal/utils/tree-kill";
 import { isHostnameAllowed, type HostnamesConfig } from "./hostnames.js";
 import {
   createRequireBearerMiddleware,
@@ -164,6 +168,21 @@ import {
   type DaemonAuthConfig,
 } from "./auth.js";
 import { createWebUiMiddleware } from "./web-ui.js";
+import {
+  AgentManagerHarnessHost,
+  RuntimeBundleStore,
+  WorkspaceAuthorityManager,
+  WorkspaceAgentStorage,
+  WorkspaceAgentTimelineStore,
+  WorkspaceTaskCoordinator,
+  WorkspaceTaskOrchestrator,
+} from "./workspace-authority/index.js";
+import {
+  HarnessAdapterRegistry,
+  HostedHarnessAdapter,
+  THOTH_RUNTIME_BUNDLE_CATALOG,
+  loadRuntimeBundle,
+} from "@thoth/drivers/harness";
 
 const MAX_MCP_DEBUG_BATCH_ITEMS = 10;
 const REDACTED_LOG_VALUE = "[redacted]";
@@ -384,7 +403,7 @@ export interface ThothDaemonConfig {
 export interface ThothDaemon {
   config: ThothDaemonConfig;
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   terminalManager: TerminalManager;
   serviceProxy: ServiceProxySubsystem;
   scriptRuntimeStore: WorkspaceScriptRuntimeStore;
@@ -442,6 +461,7 @@ export async function createThothDaemon(
   const bootstrapStart = performance.now();
   const elapsed = () => `${(performance.now() - bootstrapStart).toFixed(0)}ms`;
   const daemonVersion = resolveDaemonVersion(import.meta.url);
+  const storageLayout = await ensureThothStorageLayout(config.thothHome, logger);
   const daemonConfigStore = new DaemonConfigStore(
     config.thothHome,
     {
@@ -502,7 +522,7 @@ export async function createThothDaemon(
   const app = express();
   app.set("trust proxy", resolveExpressTrustProxySetting(config));
   let boundListenTarget: ListenTarget | null = null;
-  let workspaceRegistry: FileBackedWorkspaceRegistry | null = null;
+  let workspaceRegistry: WorkspaceRegistry | null = null;
   const terminalManager = createConfiguredTerminalManager({
     getTerminalActivityUrl: () => createTerminalActivityUrl(boundListenTarget),
   });
@@ -698,20 +718,12 @@ export async function createThothDaemon(
     serviceProxyListenTarget = parseListenString(config.serviceProxy.standaloneListen);
   }
 
-  const agentStorage = new AgentStorage(config.agentStoragePath, logger);
-  const durableTimelineStore = new SqliteAgentTimelineStore(config.thothHome);
-  const projectRegistry = new FileBackedProjectRegistry(
-    path.join(config.thothHome, "projects", "projects.json"),
-    logger,
-  );
-  workspaceRegistry = new FileBackedWorkspaceRegistry(
-    path.join(config.thothHome, "projects", "workspaces.json"),
-    logger,
-  );
-  const chatService = new FileBackedChatService({
-    thothHome: config.thothHome,
-    logger,
-  });
+  const workspaceAuthorityManager = new WorkspaceAuthorityManager(config.thothHome);
+  const agentStorage = new WorkspaceAgentStorage(workspaceAuthorityManager);
+  const durableTimelineStore = new WorkspaceAgentTimelineStore(workspaceAuthorityManager);
+  const projectRegistry = new CatalogProjectRegistry(workspaceAuthorityManager.catalog);
+  workspaceRegistry = new CatalogWorkspaceRegistry(workspaceAuthorityManager.catalog);
+  const chatService = new WorkspaceChatService(workspaceAuthorityManager);
   const github = createGitHubService();
   const workspaceGitService = new WorkspaceGitServiceImpl({
     logger,
@@ -763,6 +775,43 @@ export async function createThothDaemon(
     logger,
   });
   logger.info({ elapsed: elapsed() }, "Workspace registries bootstrapped");
+  for (const workspace of await workspaceRegistry.list()) {
+    workspaceAuthorityManager.registerWorkspace(workspace);
+  }
+  const workspaceTaskCoordinator = new WorkspaceTaskCoordinator(
+    workspaceAuthorityManager,
+    logger.child({ module: "workspace-task-coordinator" }),
+  );
+  const harnessHost = new AgentManagerHarnessHost(agentManager);
+  const harnessAdapters = new HarnessAdapterRegistry((adapterId) => {
+    const capabilities = agentManager.getProviderHarnessCapabilities(adapterId);
+    if (!capabilities) {
+      return null;
+    }
+    return new HostedHarnessAdapter(adapterId, capabilities, harnessHost);
+  });
+  for (const adapterId of Object.keys(initialAgentManagerState.clients)) {
+    harnessAdapters.get(adapterId);
+  }
+  if (storageLayout.requiresProviderThreadFinalization) {
+    await finalizeThothStorageLayoutMigration({
+      thothHome: config.thothHome,
+      logger,
+      authority: workspaceAuthorityManager,
+      adapters: harnessAdapters,
+    });
+  }
+  const workspaceTaskOrchestrator = new WorkspaceTaskOrchestrator(
+    workspaceAuthorityManager,
+    workspaceTaskCoordinator,
+    harnessAdapters,
+    new RuntimeBundleStore(config.thothHome),
+    logger.child({ module: "workspace-task-orchestrator" }),
+  );
+  const clarifyRuntimeBundle = loadRuntimeBundle("thoth.clarify", THOTH_RUNTIME_BUNDLE_CATALOG);
+  new RuntimeBundleStore(config.thothHome).persist(clarifyRuntimeBundle);
+  workspaceTaskOrchestrator.initialize();
+  logger.info({ elapsed: elapsed() }, "Workspace authority catalog initialized");
   const workspaceReconciliation = new WorkspaceReconciliationService({
     projectRegistry,
     workspaceRegistry,
@@ -807,32 +856,8 @@ export async function createThothDaemon(
   const emitExternalSessionMessage = (message: SessionOutboundMessage) => {
     wsServer?.broadcast(wrapSessionMessage(message));
   };
-  const loopService = new LoopService({
-    thothHome: config.thothHome,
-    logger,
-    agentManager,
-    providerSnapshotManager,
-  });
-  await loopService.initialize();
-  logger.info({ elapsed: elapsed() }, "Loop service initialized");
-  const loopTaskService = new ThothLoopTaskService({
-    thothHome: config.thothHome,
-    agentManager,
-    agentStorage,
-    logger: logger.child({ module: "thoth-loop-task-service" }),
-    onTaskUpdated: (task) => {
-      emitExternalSessionMessage({
-        type: "background_task.update",
-        payload: {
-          task,
-          summary: summarizeLoopTask(task),
-        },
-      });
-    },
-  });
-  logger.info({ elapsed: elapsed() }, "Thoth Loop task service initialized");
   const scheduleService = new ScheduleService({
-    thothHome: config.thothHome,
+    authority: workspaceAuthorityManager,
     logger,
     agentManager,
     agentStorage,
@@ -841,7 +866,10 @@ export async function createThothDaemon(
   await scheduleService.start();
   agentManager.setAgentArchivedCallback(async (agentId) => {
     try {
-      await scheduleService.deleteForAgent(agentId);
+      const record = await agentStorage.get(agentId);
+      if (record?.workspaceId) {
+        await scheduleService.deleteForAgent(record.workspaceId, agentId);
+      }
     } catch (error) {
       logger.warn({ err: error, agentId }, "Failed to delete schedules for archived agent");
     }
@@ -1007,21 +1035,18 @@ export async function createThothDaemon(
     voiceOnly: runtime.voiceOnly,
     resolveSpeakHandler: (agentId) => wsServer?.resolveVoiceSpeakHandler(agentId) ?? null,
     resolveCallerContext: (agentId) => wsServer?.resolveVoiceCallerContext(agentId) ?? null,
-    loopTaskService,
+    workspaceAuthorityManager,
+    taskToolGateway: workspaceTaskOrchestrator.toolGateway,
     logger,
   });
   const createAgentToolCatalog = (runtime: ThothToolRuntimeContext) =>
     createThothToolCatalog(createAgentToolHostDependencies(runtime));
   agentManager.setThothToolCatalogFactory(createAgentToolCatalog);
-  agentManager.setForegroundThothSessionProvisioner(({ agentId, config: agentConfig }) =>
+  agentManager.setForegroundThothSessionProvisioner(({ config: agentConfig }) =>
     provisionForegroundThothSession({
-      agentId,
       config: agentConfig,
-      thothHome: config.thothHome,
-      runtimeSessionProvider: agentManager.getProviderRuntimeSessionProvider(agentConfig.provider),
-      supportsNativeThothTools:
-        agentManager.getProviderCapabilities(agentConfig.provider)?.supportsNativeThothTools ===
-        true,
+      capabilities: harnessAdapters.get(agentConfig.provider).capabilities(),
+      bundle: clarifyRuntimeBundle,
     }),
   );
   // Native Thoth runtime tools are provider-session tools, not MCP injection.
@@ -1256,8 +1281,6 @@ export async function createThothDaemon(
               projectRegistry,
               workspaceRegistry,
               chatService,
-              loopService,
-              loopTaskService,
               scheduleService,
               checkoutDiffManager,
               serviceProxy,
@@ -1285,6 +1308,10 @@ export async function createThothDaemon(
               serviceProxyPublicBaseUrl,
               relayCredentials,
               () => relayTransport?.refreshRegistration(),
+              {
+                manager: workspaceAuthorityManager,
+                coordinator: workspaceTaskCoordinator,
+              },
             );
 
             if (relayEnabled) {
@@ -1352,6 +1379,9 @@ export async function createThothDaemon(
     if (wsServer) {
       await wsServer.close();
     }
+    scheduleService.close();
+    chatService.close();
+    workspaceAuthorityManager.close();
     await serviceProxy.stopStandalone();
     // Force-drop remaining sockets so httpServer.close() resolves promptly.
     // We've already closed wsServer (which sent ws-layer close frames) and

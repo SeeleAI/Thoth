@@ -11,7 +11,7 @@ import {
   GLOBAL_PROVIDER_SNAPSHOT_KEY,
   type ProviderSnapshotManager,
 } from "../../agent/provider-snapshot-manager.js";
-import type { ProviderSnapshotEntry } from "../../agent/agent-sdk-types.js";
+import type { ProviderSnapshotEntry } from "@thoth/drivers/agent-runtime";
 import type { ProviderUsageService } from "../../../services/quota-fetcher/service.js";
 
 type SnapshotChangeHandler = (entries: ProviderSnapshotEntry[], cwd: string) => void;

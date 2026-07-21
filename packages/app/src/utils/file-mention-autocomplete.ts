@@ -15,6 +15,11 @@ interface ApplyFileMentionReplacementInput {
   relativePath: string;
 }
 
+interface RemoveFileMentionInput {
+  text: string;
+  mention: FileMentionRange;
+}
+
 const INVALID_MENTION_QUERY_CHARS = /[\s\n\r\t"']/;
 
 export function findActiveFileMention(input: FindActiveFileMentionInput): FileMentionRange | null {
@@ -45,4 +50,10 @@ export function applyFileMentionReplacement(input: ApplyFileMentionReplacementIn
   const before = input.text.slice(0, input.mention.start);
   const after = input.text.slice(input.mention.end);
   return `${before}"${safePath}"${after}`;
+}
+
+export function removeFileMention(input: RemoveFileMentionInput): string {
+  const before = input.text.slice(0, input.mention.start);
+  const after = input.text.slice(input.mention.end);
+  return `${before}${after}`;
 }

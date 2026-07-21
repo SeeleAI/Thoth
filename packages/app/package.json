@@ -23,6 +23,7 @@
     "lint": "expo lint",
     "typecheck": "tsgo --noEmit",
     "test": "vitest run",
+    "test:thoth:surface": "vitest run src/panels/background-tasks-panel.test.tsx src/stores/background-tasks-surface-store.test.ts src/composer/task-context.test.ts",
     "test:browser": "vitest run --project browser",
     "test:e2e": "playwright test --project='Desktop Chrome'",
     "test:e2e:real": "cross-env E2E_FORK_THOTH_HOME_FROM=../../.dev/thoth-home playwright test --project=real-provider",

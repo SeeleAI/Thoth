@@ -30,7 +30,8 @@ import type {
   AgentSession,
   AgentSessionConfig,
   AgentStreamEvent,
-} from "./agent/agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
+import { NO_HARNESS_CAPABILITIES } from "@thoth/drivers/harness";
 import { createWorktree, UnknownBranchError } from "../utils/worktree.js";
 import { WorktreeRequestError, toWorktreeRequestError } from "./worktree-errors.js";
 import type { WorkspaceGitRuntimeSnapshot } from "./workspace-git-service.js";
@@ -45,12 +46,12 @@ import {
   asPushTokenStore,
   asChatService,
   asScheduleService,
-  asLoopService,
   asCheckoutDiffManager,
   asDaemonConfigStore,
   asTerminalManager,
   asSessionInternals,
   createProviderSnapshotManagerStub,
+  createSessionWithAuthority,
   isSessionOutboundMessage,
   filterByType,
   findByType,
@@ -63,6 +64,8 @@ import {
   type PersistedProjectRecord,
   type PersistedWorkspaceRecord,
 } from "./workspace-registry.js";
+import { WorkspaceAuthorityManager } from "./workspace-authority/workspace-authority-manager.js";
+import { WorkspaceTaskCoordinator } from "./workspace-authority/task-coordinator.js";
 
 const REPO_CWD = path.resolve("/tmp/repo");
 const UNREGISTERED_CWD = path.resolve("/tmp/unregistered");
@@ -488,6 +491,7 @@ class CreateAgentTestSession implements AgentSession {
 class CreateAgentTestClient implements AgentClient {
   readonly provider = "codex";
   readonly capabilities = CREATE_AGENT_TEST_CAPABILITIES;
+  readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
 
   async createSession(
     config: AgentSessionConfig,
@@ -547,7 +551,7 @@ function createSessionForWorkspaceTests(
   };
 
   const session = asTestSession(
-    new Session({
+    createSessionWithAuthority({
       clientId: "test-client",
       appVersion: options.appVersion ?? null,
       onMessage: options.onMessage ?? vi.fn(),
@@ -634,7 +638,6 @@ function createSessionForWorkspaceTests(
       filesystem: { isDirectory: async () => true },
       chatService: asChatService(),
       scheduleService: asScheduleService(),
-      loopService: asLoopService(),
       checkoutDiffManager: asCheckoutDiffManager({
         subscribe: async () => ({
           initial: { cwd: "/tmp", files: [], error: null },
@@ -699,6 +702,7 @@ test("client heartbeat clears attention for the focused terminal", async () => {
 
 test("create_agent_request resolves cwd from daemon workspace authority", async () => {
   const workdir = mkdtempSync(path.join(tmpdir(), "thoth-create-agent-cwd-"));
+  let workspaceAuthorityManager: WorkspaceAuthorityManager | null = null;
   try {
     const parent = path.join(workdir, "parent");
     const child = path.join(parent, "child");
@@ -738,6 +742,12 @@ test("create_agent_request resolves cwd from daemon workspace authority", async 
         mainRepoRoot: null,
       }),
     });
+    const thothHome = path.join(workdir, "thoth-home");
+    workspaceAuthorityManager = new WorkspaceAuthorityManager(thothHome);
+    const workspaceTaskCoordinator = new WorkspaceTaskCoordinator(
+      workspaceAuthorityManager,
+      asSessionLogger(logger),
+    );
 
     await projectRegistry.upsert(
       createPersistedProjectRecord({
@@ -763,21 +773,22 @@ test("create_agent_request resolves cwd from daemon workspace authority", async 
 
     const emitted: SessionOutboundMessage[] = [];
     const session = asTestSession(
-      new Session({
+      createSessionWithAuthority({
         clientId: "test-client",
         appVersion: null,
         onMessage: (message) => emitted.push(message),
         logger: asSessionLogger(logger),
         downloadTokenStore: asDownloadTokenStore(),
         pushTokenStore: asPushTokenStore(),
-        thothHome: path.join(workdir, "thoth-home"),
+        thothHome,
         agentManager,
         agentStorage,
         projectRegistry,
         workspaceRegistry,
         chatService: asChatService(),
         scheduleService: asScheduleService(),
-        loopService: asLoopService(),
+        workspaceAuthorityManager,
+        workspaceTaskCoordinator,
         checkoutDiffManager: asCheckoutDiffManager({
           subscribe: async () => ({
             initial: { cwd: child, files: [], error: null },
@@ -827,6 +838,7 @@ test("create_agent_request resolves cwd from daemon workspace authority", async 
       agent: { cwd: parent },
     });
   } finally {
+    workspaceAuthorityManager?.close();
     rmSync(workdir, { recursive: true, force: true });
   }
 });
@@ -834,6 +846,7 @@ test("create_agent_request resolves cwd from daemon workspace authority", async 
 test("create_agent_request does not title an existing workspace from the agent prompt", async () => {
   vi.useFakeTimers();
   const workdir = mkdtempSync(path.join(tmpdir(), "thoth-create-agent-existing-title-"));
+  let workspaceAuthorityManager: WorkspaceAuthorityManager | null = null;
   try {
     const cwd = path.join(workdir, "repo");
     mkdirSync(cwd, { recursive: true });
@@ -884,24 +897,31 @@ test("create_agent_request does not title an existing workspace from the agent p
         updatedAt: "2026-05-07T00:00:00.000Z",
       }),
     );
+    const thothHome = path.join(workdir, "thoth-home");
+    workspaceAuthorityManager = new WorkspaceAuthorityManager(thothHome);
+    const workspaceTaskCoordinator = new WorkspaceTaskCoordinator(
+      workspaceAuthorityManager,
+      asSessionLogger(logger),
+    );
 
     let generateCalls = 0;
     const session = asTestSession(
-      new Session({
+      createSessionWithAuthority({
         clientId: "test-client",
         appVersion: null,
         onMessage: vi.fn(),
         logger: asSessionLogger(logger),
         downloadTokenStore: asDownloadTokenStore(),
         pushTokenStore: asPushTokenStore(),
-        thothHome: path.join(workdir, "thoth-home"),
+        thothHome,
         agentManager,
         agentStorage,
         projectRegistry,
         workspaceRegistry,
         chatService: asChatService(),
         scheduleService: asScheduleService(),
-        loopService: asLoopService(),
+        workspaceAuthorityManager,
+        workspaceTaskCoordinator,
         checkoutDiffManager: asCheckoutDiffManager({
           subscribe: async () => ({
             initial: { cwd, files: [], error: null },
@@ -953,6 +973,7 @@ test("create_agent_request does not title an existing workspace from the agent p
     });
   } finally {
     vi.useRealTimers();
+    workspaceAuthorityManager?.close();
     rmSync(workdir, { recursive: true, force: true });
   }
 });
@@ -1209,7 +1230,7 @@ test("archive emits an authoritative agent_update upsert for subscribed clients"
   };
 
   const session = asTestSession(
-    new Session({
+    createSessionWithAuthority({
       clientId: "test-client",
       onMessage: (message) => emitted.push(message),
       logger: asSessionLogger(logger),
@@ -1283,7 +1304,6 @@ test("archive emits an authoritative agent_update upsert for subscribed clients"
       })(),
       chatService: asChatService(),
       scheduleService: asScheduleService(),
-      loopService: asLoopService(),
       checkoutDiffManager: asCheckoutDiffManager({
         subscribe: async () => ({
           initial: { cwd: REPO_CWD, files: [], error: null },
@@ -1574,7 +1594,7 @@ test("close_items_request archives agents and kills terminals in one batch", asy
   const killTerminal = vi.fn();
   const cancelAgentRun = vi.fn(async () => true);
   const session = asTestSession(
-    new Session({
+    createSessionWithAuthority({
       clientId: "test-client",
       onMessage: (message) => emitted.push(message),
       logger: asSessionLogger(sessionLogger),
@@ -1643,7 +1663,6 @@ test("close_items_request archives agents and kills terminals in one batch", asy
       })(),
       chatService: asChatService(),
       scheduleService: asScheduleService(),
-      loopService: asLoopService(),
       checkoutDiffManager: asCheckoutDiffManager({
         subscribe: async () => ({
           initial: { cwd: "/tmp", files: [], error: null },
@@ -1742,7 +1761,7 @@ test("close_items_request archives stored agents that are not currently loaded",
   });
 
   const session = asTestSession(
-    new Session({
+    createSessionWithAuthority({
       clientId: "test-client",
       onMessage: (message) => emitted.push(message),
       logger: asSessionLogger(sessionLogger),
@@ -1828,7 +1847,6 @@ test("close_items_request archives stored agents that are not currently loaded",
       })(),
       chatService: asChatService(),
       scheduleService: asScheduleService(),
-      loopService: asLoopService(),
       checkoutDiffManager: asCheckoutDiffManager({
         subscribe: async () => ({
           initial: { cwd: "/tmp", files: [], error: null },
@@ -1901,7 +1919,7 @@ test("close_items_request continues after an archive failure", async () => {
   };
   const killTerminalBestEffort = vi.fn();
   const session = asTestSession(
-    new Session({
+    createSessionWithAuthority({
       clientId: "test-client",
       onMessage: (message) => emitted.push(message),
       logger: asSessionLogger(sessionLogger),
@@ -1975,7 +1993,6 @@ test("close_items_request continues after an archive failure", async () => {
       })(),
       chatService: asChatService(),
       scheduleService: asScheduleService(),
-      loopService: asLoopService(),
       checkoutDiffManager: asCheckoutDiffManager({
         subscribe: async () => ({
           initial: { cwd: "/tmp", files: [], error: null },
@@ -2912,7 +2929,7 @@ test("workspace update stream keeps persisted workspace visible after agents sto
   };
 
   const session = asTestSession(
-    new Session({
+    createSessionWithAuthority({
       clientId: "test-client",
       onMessage: (message) => emitted.push(message),
       logger: asSessionLogger(logger),
@@ -2969,7 +2986,6 @@ test("workspace update stream keeps persisted workspace visible after agents sto
       },
       chatService: asChatService(),
       scheduleService: asScheduleService(),
-      loopService: asLoopService(),
       checkoutDiffManager: asCheckoutDiffManager({
         subscribe: async () => ({
           initial: { cwd: "/tmp", files: [], error: null },

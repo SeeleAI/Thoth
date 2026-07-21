@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentForkContextAttachment, curateAgentActivity } from "./activity-curator.js";
-import type { AgentTimelineItem } from "./agent-sdk-types.js";
-import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
+import {
+  buildAgentForkContextAttachment,
+  curateAgentActivity,
+} from "@thoth/drivers/internal/server/agent/activity-curator";
+import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
+import type { AgentTimelineRow } from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
 
 function toolCallItem(params: {
   callId: string;

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import pino from "pino";
 
-import { ClaudeAgentClient } from "../agent/providers/claude/agent.js";
+import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon, type TestThothDaemon } from "../test-utils/thoth-daemon.js";
 

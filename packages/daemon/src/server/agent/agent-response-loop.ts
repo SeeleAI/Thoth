@@ -1,6 +1,6 @@
 import { z } from "zod";
 import Ajv, { type ErrorObject, type Options as AjvOptions } from "ajv";
-import type { AgentProvider, AgentSessionConfig } from "./agent-sdk-types.js";
+import type { AgentProvider, AgentSessionConfig } from "@thoth/drivers/agent-runtime";
 import type { AgentManager } from "./agent-manager.js";
 
 export interface StructuredGenerationLogger {

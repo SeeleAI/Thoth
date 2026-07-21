@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager, type AgentManagerEvent } from "./agent-manager.js";
 import { AGENT_STREAM_COALESCE_DEFAULT_WINDOW_MS } from "./agent-stream-coalescer.js";
-import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
+import type { AgentTimelineRow } from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
 import type {
   AgentCapabilityFlags,
   AgentClient,
@@ -21,7 +21,8 @@ import type {
   AgentStreamEvent,
   AgentTimelineItem,
   ProviderCatalog,
-} from "./agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
+import { NO_HARNESS_CAPABILITIES } from "@thoth/drivers/harness";
 
 /**
  * Contract for AgentManager pre-record stream coalescing.
@@ -175,6 +176,7 @@ class TestAgentSession implements AgentSession {
 
 class TestAgentClient implements AgentClient {
   readonly capabilities = TEST_CAPABILITIES;
+  readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
   private sessionCounter = 0;
   readonly sessions = new Map<string, TestAgentSession>();
 

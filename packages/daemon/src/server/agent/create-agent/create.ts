@@ -18,8 +18,8 @@ import type {
   AgentPromptInput,
   AgentRunOptions,
   AgentSessionConfig,
-} from "../agent-sdk-types.js";
-import type { AgentStorage } from "../agent-storage.js";
+} from "@thoth/drivers/agent-runtime";
+import type { AgentRegistry } from "../agent-storage.js";
 import type { ProviderSnapshotManager } from "../provider-snapshot-manager.js";
 import { setupFinishNotification, startCreatedAgentInitialPrompt } from "../agent-prompt.js";
 import { normalizeClientMessageId, resolveClientMessageId } from "../../client-message-id.js";
@@ -39,7 +39,7 @@ export interface CreateAgentSessionWorktreeResult {
 
 interface CreateAgentCommandDependencies {
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   logger: Logger;
   thothHome?: string;
   worktreesRoot?: string;

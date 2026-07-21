@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 import type { Logger } from "pino";
 import { AgentManager } from "../agent/agent-manager.js";
-import type { AgentStorage } from "../agent/agent-storage.js";
-import type { AgentSessionConfig } from "../agent/agent-sdk-types.js";
-import { curateAgentActivity } from "../agent/activity-curator.js";
+import type { AgentRegistry } from "../agent/agent-storage.js";
+import type { AgentSessionConfig } from "@thoth/drivers/agent-runtime";
+import { curateAgentActivity } from "@thoth/drivers/internal/server/agent/activity-curator";
 import { ensureAgentLoaded } from "../agent/agent-loading.js";
 import { formatSystemNotificationPrompt } from "../agent/agent-prompt.js";
 import { resolveCreateAgentTitles } from "../agent/create-agent-title.js";
-import { ScheduleStore } from "./store.js";
 import { computeNextRunAt, validateScheduleCadence } from "./cron.js";
+import type { WorkspaceAuthorityManager } from "../workspace-authority/workspace-authority-manager.js";
+import type { WorkspaceCoordinationRepository } from "../workspace-authority/coordination-repository.js";
 import type {
   ProviderSnapshotManager,
   ResolvedProviderCreateConfig,
@@ -61,13 +61,6 @@ function applyNewAgentConfig(
       throw new Error("provider cannot be empty");
     }
     config.provider = trimmed;
-  }
-  if (patch.cwd !== undefined) {
-    const trimmed = patch.cwd.trim();
-    if (!trimmed) {
-      throw new Error("cwd cannot be empty");
-    }
-    config.cwd = trimmed;
   }
   if (patch.model !== undefined) {
     const trimmed = patch.model?.trim();
@@ -142,23 +135,28 @@ function buildRunOutput(params: {
 type CreateConfigResolver = Pick<ProviderSnapshotManager, "resolveCreateConfig">;
 
 export interface ScheduleServiceOptions {
-  thothHome: string;
+  authority: WorkspaceAuthorityManager;
   logger: Logger;
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   providerSnapshotManager: CreateConfigResolver;
   now?: () => Date;
-  runner?: (schedule: StoredSchedule, runId: string) => Promise<ScheduleExecutionResult>;
+  runner?: (
+    workspaceId: string,
+    schedule: StoredSchedule,
+    runId: string,
+  ) => Promise<ScheduleExecutionResult>;
 }
 
 export class ScheduleService {
-  private readonly store: ScheduleStore;
+  private readonly authority: WorkspaceAuthorityManager;
   private readonly logger: Logger;
   private readonly agentManager: AgentManager;
-  private readonly agentStorage: AgentStorage;
+  private readonly agentStorage: AgentRegistry;
   private readonly createConfigResolver: CreateConfigResolver;
   private readonly now: () => Date;
   private readonly runner: (
+    workspaceId: string,
     schedule: StoredSchedule,
     runId: string,
   ) => Promise<ScheduleExecutionResult>;
@@ -166,13 +164,15 @@ export class ScheduleService {
   private tickTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: ScheduleServiceOptions) {
-    this.store = new ScheduleStore(join(options.thothHome, "schedules"));
+    this.authority = options.authority;
     this.logger = options.logger.child({ module: "schedule-service" });
     this.agentManager = options.agentManager;
     this.agentStorage = options.agentStorage;
     this.createConfigResolver = options.providerSnapshotManager;
     this.now = options.now ?? (() => new Date());
-    this.runner = options.runner ?? ((schedule, runId) => this.executeSchedule(schedule, runId));
+    this.runner =
+      options.runner ??
+      ((workspaceId, schedule, runId) => this.executeSchedule(workspaceId, schedule, runId));
   }
 
   async start(): Promise<void> {
@@ -196,17 +196,20 @@ export class ScheduleService {
     }
   }
 
-  async create(input: CreateScheduleInput): Promise<StoredSchedule> {
+  close(): void {}
+
+  async create(workspaceId: string, input: CreateScheduleInput): Promise<StoredSchedule> {
     const now = this.now();
     const prompt = normalizePrompt(input.prompt);
     validateScheduleCadence(input.cadence);
     const runOnCreate = input.runOnCreate ?? input.cadence.type === "every";
     const nextRunAt = runOnCreate ? now : computeNextRunAt(input.cadence, now);
-    const schedule = await this.store.create({
+    const target = await this.normalizeTarget(workspaceId, input.target);
+    const schedule = this.repository(workspaceId).createSchedule({
       name: trimOptionalName(input.name),
       prompt,
       cadence: input.cadence,
-      target: input.target,
+      target,
       status: "active",
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -220,25 +223,25 @@ export class ScheduleService {
     return schedule;
   }
 
-  async list(): Promise<StoredSchedule[]> {
-    return this.store.list();
+  async list(workspaceId: string): Promise<StoredSchedule[]> {
+    return this.repository(workspaceId).listSchedules();
   }
 
-  async inspect(id: string): Promise<StoredSchedule> {
-    const schedule = await this.store.get(id);
+  async inspect(workspaceId: string, id: string): Promise<StoredSchedule> {
+    const schedule = this.repository(workspaceId).getSchedule(id);
     if (!schedule) {
       throw new Error(`Schedule not found: ${id}`);
     }
     return schedule;
   }
 
-  async logs(id: string): Promise<ScheduleRun[]> {
-    const schedule = await this.inspect(id);
+  async logs(workspaceId: string, id: string): Promise<ScheduleRun[]> {
+    const schedule = await this.inspect(workspaceId, id);
     return [...schedule.runs].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
   }
 
-  async pause(id: string): Promise<StoredSchedule> {
-    const schedule = await this.inspect(id);
+  async pause(workspaceId: string, id: string): Promise<StoredSchedule> {
+    const schedule = await this.inspect(workspaceId, id);
     if (schedule.status === "completed") {
       throw new Error(`Schedule ${id} is already completed`);
     }
@@ -253,12 +256,12 @@ export class ScheduleService {
       pausedAt: now.toISOString(),
       updatedAt: now.toISOString(),
     };
-    await this.store.put(paused);
+    this.repository(workspaceId).putSchedule(paused);
     return paused;
   }
 
-  async resume(id: string): Promise<StoredSchedule> {
-    const schedule = await this.inspect(id);
+  async resume(workspaceId: string, id: string): Promise<StoredSchedule> {
+    const schedule = await this.inspect(workspaceId, id);
     if (schedule.status === "completed") {
       throw new Error(`Schedule ${id} is already completed`);
     }
@@ -273,12 +276,12 @@ export class ScheduleService {
       nextRunAt: computeNextRunAt(schedule.cadence, now).toISOString(),
       updatedAt: now.toISOString(),
     };
-    await this.store.put(resumed);
+    this.repository(workspaceId).putSchedule(resumed);
     return resumed;
   }
 
-  async update(input: UpdateScheduleInput): Promise<StoredSchedule> {
-    const schedule = await this.inspect(input.id);
+  async update(workspaceId: string, input: UpdateScheduleInput): Promise<StoredSchedule> {
+    const schedule = await this.inspect(workspaceId, input.id);
     const now = this.now();
     let updated: StoredSchedule = schedule;
 
@@ -313,21 +316,21 @@ export class ScheduleService {
     }
 
     updated = { ...updated, updatedAt: now.toISOString() };
-    await this.store.put(updated);
+    this.repository(workspaceId).putSchedule(updated);
     return updated;
   }
 
-  async delete(id: string): Promise<void> {
-    await this.store.delete(id);
+  async delete(workspaceId: string, id: string): Promise<void> {
+    this.repository(workspaceId).deleteSchedule(id);
   }
 
-  async deleteForAgent(agentId: string): Promise<number> {
-    const schedules = await this.store.list();
+  async deleteForAgent(workspaceId: string, agentId: string): Promise<number> {
+    const schedules = this.repository(workspaceId).listSchedules();
     const matches = schedules.filter(
       (schedule) => schedule.target.type === "agent" && schedule.target.agentId === agentId,
     );
     const results = await Promise.allSettled(
-      matches.map((schedule) => this.store.delete(schedule.id)),
+      matches.map(async (schedule) => this.repository(workspaceId).deleteSchedule(schedule.id)),
     );
     let deleted = 0;
     for (const [index, result] of results.entries()) {
@@ -343,90 +346,102 @@ export class ScheduleService {
     return deleted;
   }
 
-  async runOnce(id: string): Promise<StoredSchedule> {
-    const schedule = await this.inspect(id);
+  async runOnce(workspaceId: string, id: string): Promise<StoredSchedule> {
+    const schedule = await this.inspect(workspaceId, id);
     if (schedule.status === "completed") {
       throw new Error(`Schedule ${id} is already completed`);
     }
-    if (this.runningScheduleIds.has(id)) {
+    if (this.runningScheduleIds.has(this.scheduleKey(workspaceId, id))) {
       throw new Error(`Schedule ${id} is already running`);
     }
-    await this.runSchedule(schedule, this.now(), { manual: true });
-    return this.inspect(id);
+    await this.runSchedule(workspaceId, schedule, this.now(), { manual: true });
+    return this.inspect(workspaceId, id);
   }
 
   async tick(): Promise<void> {
     const now = this.now();
-    const schedules = await this.store.list();
+    for (const workspace of this.authority.catalog.listWorkspaces()) {
+      await this.tickWorkspace(workspace.id, now);
+    }
+  }
+
+  private async tickWorkspace(workspaceId: string, now: Date): Promise<void> {
+    const repository = this.repository(workspaceId);
+    const schedules = repository.listSchedules();
     for (const schedule of schedules) {
       if (schedule.status !== "active" || !schedule.nextRunAt) {
         continue;
       }
-      if (this.runningScheduleIds.has(schedule.id)) {
+      if (this.runningScheduleIds.has(this.scheduleKey(workspaceId, schedule.id))) {
         continue;
       }
       if (shouldCompleteSchedule(schedule, now)) {
-        await this.store.put(completeSchedule(schedule, now));
+        repository.putSchedule(completeSchedule(schedule, now));
         continue;
       }
       if (new Date(schedule.nextRunAt).getTime() > now.getTime()) {
         continue;
       }
-      await this.runSchedule(schedule, now);
+      await this.runSchedule(workspaceId, schedule, now);
     }
   }
 
   private async recoverInterruptedRuns(): Promise<void> {
-    const schedules = await this.store.list();
     const now = this.now();
-    await Promise.all(
-      schedules.map(async (schedule) => {
-        let updated = { ...schedule };
-        let dirty = false;
+    for (const workspace of this.authority.catalog.listWorkspaces()) {
+      const repository = this.repository(workspace.id);
+      const schedules = repository.listSchedules();
+      await Promise.all(
+        schedules.map(async (schedule) => {
+          let updated = { ...schedule };
+          let dirty = false;
 
-        // Mark any in-flight runs as failed
-        const runningIndex = updated.runs.findIndex((run) => run.status === "running");
-        if (runningIndex !== -1) {
-          const runs = [...updated.runs];
-          runs[runningIndex] = {
-            ...runs[runningIndex],
-            status: "failed",
-            endedAt: now.toISOString(),
-            error: "Daemon restarted before the scheduled run completed",
-          };
-          updated = { ...updated, runs };
-          dirty = true;
-        }
-
-        // Advance stale nextRunAt for active schedules
-        if (
-          updated.status === "active" &&
-          updated.nextRunAt &&
-          new Date(updated.nextRunAt).getTime() <= now.getTime()
-        ) {
-          let nextRunAt = computeNextRunAt(updated.cadence, new Date(updated.nextRunAt));
-          while (nextRunAt.getTime() <= now.getTime()) {
-            nextRunAt = computeNextRunAt(updated.cadence, nextRunAt);
+          // Mark any in-flight runs as failed
+          const runningIndex = updated.runs.findIndex((run) => run.status === "running");
+          if (runningIndex !== -1) {
+            const runs = [...updated.runs];
+            runs[runningIndex] = {
+              ...runs[runningIndex],
+              status: "failed",
+              endedAt: now.toISOString(),
+              error: "Daemon restarted before the scheduled run completed",
+            };
+            updated = { ...updated, runs };
+            dirty = true;
           }
-          updated = { ...updated, nextRunAt: nextRunAt.toISOString() };
-          dirty = true;
-        }
 
-        if (dirty) {
-          updated = { ...updated, updatedAt: now.toISOString() };
-          await this.store.put(updated);
-        }
-      }),
-    );
+          // Advance stale nextRunAt for active schedules
+          if (
+            updated.status === "active" &&
+            updated.nextRunAt &&
+            new Date(updated.nextRunAt).getTime() <= now.getTime()
+          ) {
+            let nextRunAt = computeNextRunAt(updated.cadence, new Date(updated.nextRunAt));
+            while (nextRunAt.getTime() <= now.getTime()) {
+              nextRunAt = computeNextRunAt(updated.cadence, nextRunAt);
+            }
+            updated = { ...updated, nextRunAt: nextRunAt.toISOString() };
+            dirty = true;
+          }
+
+          if (dirty) {
+            updated = { ...updated, updatedAt: now.toISOString() };
+            repository.putSchedule(updated);
+          }
+        }),
+      );
+    }
   }
 
   private async runSchedule(
+    workspaceId: string,
     schedule: StoredSchedule,
     now: Date,
     options?: { manual?: boolean },
   ): Promise<void> {
     const manual = options?.manual === true;
-    this.runningScheduleIds.add(schedule.id);
+    const scheduleKey = this.scheduleKey(workspaceId, schedule.id);
+    this.runningScheduleIds.add(scheduleKey);
     const runId = randomUUID();
     const runningRun: ScheduleRun = {
       id: runId,
@@ -443,11 +458,12 @@ export class ScheduleService {
       updatedAt: now.toISOString(),
       runs: [...schedule.runs, runningRun],
     };
-    await this.store.put(scheduleWithRun);
+    this.repository(workspaceId).putSchedule(scheduleWithRun);
 
     try {
-      const result = await this.runner(scheduleWithRun, runId);
+      const result = await this.runner(workspaceId, scheduleWithRun, runId);
       await this.finishRun({
+        workspaceId,
         scheduleId: schedule.id,
         runId,
         status: "succeeded",
@@ -458,6 +474,7 @@ export class ScheduleService {
       });
     } catch (error) {
       await this.finishRun({
+        workspaceId,
         scheduleId: schedule.id,
         runId,
         status: "failed",
@@ -467,11 +484,12 @@ export class ScheduleService {
         manual,
       });
     } finally {
-      this.runningScheduleIds.delete(schedule.id);
+      this.runningScheduleIds.delete(scheduleKey);
     }
   }
 
   private async finishRun(params: {
+    workspaceId: string;
     scheduleId: string;
     runId: string;
     status: "succeeded" | "failed";
@@ -480,7 +498,7 @@ export class ScheduleService {
     error: string | null;
     manual: boolean;
   }): Promise<void> {
-    const schedule = await this.inspect(params.scheduleId);
+    const schedule = await this.inspect(params.workspaceId, params.scheduleId);
     const now = this.now();
     const completedRuns = schedule.runs.map((run) =>
       run.id === params.runId
@@ -522,16 +540,20 @@ export class ScheduleService {
       };
     }
 
-    await this.store.put(updated);
+    this.repository(params.workspaceId).putSchedule(updated);
   }
 
   private async executeSchedule(
+    workspaceId: string,
     schedule: StoredSchedule,
     runId: string,
   ): Promise<ScheduleExecutionResult> {
     if (schedule.target.type === "agent") {
       const wrappedPrompt = formatSystemNotificationPrompt(buildScheduleFireBody(schedule, runId));
       const record = await this.agentStorage.get(schedule.target.agentId);
+      if (record?.workspaceId !== workspaceId) {
+        throw new Error(`Agent ${schedule.target.agentId} is outside Workspace ${workspaceId}`);
+      }
       if (record?.archivedAt) {
         throw new Error(`Agent ${schedule.target.agentId} is archived`);
       }
@@ -556,7 +578,11 @@ export class ScheduleService {
       };
     }
 
-    const targetConfig = schedule.target.config;
+    const workspace = this.authority.catalog.getWorkspace(workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace ${workspaceId} is not registered`);
+    }
+    const targetConfig = { ...schedule.target.config, cwd: workspace.canonicalPath };
     const resolvedUnattendedConfig = targetConfig.modeId
       ? { modeId: targetConfig.modeId, featureValues: targetConfig.featureValues }
       : await this.resolveProviderCreateConfig({
@@ -595,6 +621,7 @@ export class ScheduleService {
       labels,
       initialPrompt: schedule.prompt,
       initialTitle: provisionalTitle,
+      workspaceId,
     });
     let result;
     try {
@@ -627,5 +654,31 @@ export class ScheduleService {
     input: ResolveProviderCreateConfigOptions,
   ): Promise<ResolvedProviderCreateConfig> {
     return this.createConfigResolver.resolveCreateConfig(input);
+  }
+
+  private repository(workspaceId: string): WorkspaceCoordinationRepository {
+    return this.authority.forWorkspace(workspaceId).coordination;
+  }
+
+  private scheduleKey(workspaceId: string, scheduleId: string): string {
+    return `${workspaceId}:${scheduleId}`;
+  }
+
+  private async normalizeTarget(
+    workspaceId: string,
+    target: ScheduleTarget,
+  ): Promise<ScheduleTarget> {
+    if (target.type === "agent") {
+      const record = await this.agentStorage.get(target.agentId);
+      if (!record || record.workspaceId !== workspaceId) {
+        throw new Error(`Agent ${target.agentId} is outside Workspace ${workspaceId}`);
+      }
+      return target;
+    }
+    const workspace = this.authority.catalog.getWorkspace(workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace ${workspaceId} is not registered`);
+    }
+    return target;
   }
 }

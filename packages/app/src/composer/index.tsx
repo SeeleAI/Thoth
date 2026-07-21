@@ -30,6 +30,7 @@ import {
   GitPullRequest,
   Github,
   Image as ImageIcon,
+  ListTodo,
   Paperclip,
 } from "lucide-react-native";
 import Animated from "react-native-reanimated";
@@ -118,6 +119,7 @@ import { useCheckoutStatusQuery } from "@/git/use-status-query";
 import { useComposerGithubAutoAttach } from "./github/auto-attach";
 import { resolveClientSlashCommand, type ClientSlashCommand } from "@/client-slash-commands";
 import { resolveForegroundAgentStatus } from "@/agent-thoth/foreground-state";
+import { appendTaskContextAttachment, listSelectedTaskContextIds } from "@/composer/task-context";
 
 type QueuedMessage = QueuedComposerMessage;
 
@@ -390,6 +392,25 @@ function renderComposerAttachmentPill(args: RenderComposerAttachmentPillArgs): R
         onRemove={onRemove}
         removeLabel={labels.removeFile}
       />
+    );
+  }
+  if (attachment.kind === "task_context") {
+    return (
+      <AttachmentPill
+        key={`task:${attachment.reference.taskId}`}
+        testID={`task-context-token-${attachment.reference.taskId}`}
+        disabled={disabled}
+        onOpen={() => onOpen(attachment)}
+        onRemove={() => onRemove(index)}
+        openAccessibilityLabel={`Task ${attachment.title}`}
+        removeAccessibilityLabel={`Remove Task ${attachment.title}`}
+      >
+        <AttachmentLabel
+          icon={taskPillIcon}
+          title={attachment.title}
+          subtitle={attachment.status}
+        />
+      </AttachmentPill>
     );
   }
   if (composerWorkspaceAttachment.is(attachment)) {
@@ -1079,6 +1100,16 @@ export function Composer({
   const [isGithubPickerOpen, setIsGithubPickerOpen] = useState(false);
   const [githubSearchQuery, setGithubSearchQuery] = useState("");
   const [lightboxMetadata, setLightboxMetadata] = useState<AttachmentMetadata | null>(null);
+  const selectedTaskIds = useMemo(
+    () => listSelectedTaskContextIds(selectedAttachments),
+    [selectedAttachments],
+  );
+  const handleTaskContextSelected = useCallback(
+    (task: import("@thoth/protocol/task-authority").TaskProjection) => {
+      setSelectedAttachments((current) => appendTaskContextAttachment(current, task));
+    },
+    [setSelectedAttachments],
+  );
   const attachButtonRef = useRef<View | null>(null);
   const messageInputRef = useRef<MessageInputRef>(null);
   const isComposerLocked = resolveIsComposerLocked(submitBehavior, isSubmitLoading);
@@ -1127,6 +1158,9 @@ export function Composer({
     setUserInput,
     serverId,
     agentId,
+    workspaceId,
+    selectedTaskIds,
+    onTaskContextSelected: handleTaskContextSelected,
     draftConfig: commandDraftConfig,
     canExecuteClientSlashCommand: buildOutgoingAttachments(attachments).length === 0,
     onClientSlashCommand: runClientSlashCommand,
@@ -2216,6 +2250,7 @@ const ThemedAudioLines = withUnistyles(AudioLines);
 const ThemedPaperclip = withUnistyles(Paperclip);
 const ThemedImageIcon = withUnistyles(ImageIcon);
 const ThemedFileText = withUnistyles(FileText);
+const ThemedListTodo = withUnistyles(ListTodo);
 const ThemedGithub = withUnistyles(Github);
 
 const iconForegroundMapping = (theme: Theme) => ({ color: theme.colors.foreground });
@@ -2229,3 +2264,4 @@ const githubIssuePillIcon = (
   <ThemedCircleDot size={ICON_SIZE.sm} uniProps={iconForegroundMutedMapping} />
 );
 const filePillIcon = <ThemedFileText size={ICON_SIZE.sm} uniProps={iconForegroundMutedMapping} />;
+const taskPillIcon = <ThemedListTodo size={ICON_SIZE.sm} uniProps={iconForegroundMutedMapping} />;

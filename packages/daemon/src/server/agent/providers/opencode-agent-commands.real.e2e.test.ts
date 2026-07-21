@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import pino from "pino";
 
-import { OpenCodeServerManager } from "./opencode/server-manager.js";
+import { OpenCodeServerManager } from "@thoth/drivers/internal/server/agent/providers/opencode/server-manager";
 import {
   canRunRealProvider,
   createRealProviderClient,

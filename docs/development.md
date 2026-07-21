@@ -39,6 +39,23 @@ The first development gate is the foundation set:
 
 The daemon, web app export, desktop packaged smoke, Android Debug APK, test relay deployment and Codex provider smoke now have verified development entrypoints. The Thoth MVP business chain is still not implemented, and broader non-foundation packages may still contain incomplete wiring. Do not delete promoted code simply because some broader paths remain expected-broken.
 
+## Architecture-First Development
+
+`Simply Is First` means the final architecture must be simple; it does not authorize a simplified implementation.
+
+Before a nontrivial code change, write down in the task or working update:
+
+1. The canonical final module being implemented.
+2. Its production API and state owner.
+3. The real milestone or architecture risk being tested.
+4. The command or product journey that will verify that exact boundary.
+
+Implement final modules in sequence. Prefer a production-correct module A with B still pending over a temporary `A' + B' + C'` path that imitates the complete product and must later be replaced.
+
+Rapid experiments may use fixtures at external provider, network or platform boundaries, but the fixture must enter through the same adapter contract and traverse the same public API, authority state machine and lifecycle as the real product. A test-only RPC, hidden UI, local success factory, provider-name business branch or fallback is not a valid experiment.
+
+When a real implementation misses a target, record the actual value and failure evidence. Diagnose and improve the final module. Do not lower the target, narrow the behavior, add a degraded path or reinterpret acceptance. If the locked architecture itself is wrong, update the canonical architecture decision before implementing a replacement.
+
 ## Runtime Isolation
 
 Thoth must run without taking over the reserved local legacy service port.

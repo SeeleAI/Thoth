@@ -18,7 +18,7 @@ import {
   getAgentStreamEventTurnId,
   type AgentSession,
   type AgentStreamEvent,
-} from "../../agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import {
   canRunRealProvider,
   createRealProviderClient,

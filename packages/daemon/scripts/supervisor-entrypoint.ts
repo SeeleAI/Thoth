@@ -1,6 +1,7 @@
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import pino from "pino";
 import {
   acquirePidLock,
   PidLockError,
@@ -89,6 +90,22 @@ function resolvePackagedNodeEntrypointRunnerPath(currentScriptPath: string): str
   return existsSync(runnerPath) ? runnerPath : null;
 }
 
+async function prepareStorageLayout(thothHome: string): Promise<void> {
+  const candidates = [
+    fileURLToPath(new URL("../server/server/storage-layout-migration.js", import.meta.url)),
+    fileURLToPath(new URL("../src/server/storage-layout-migration.ts", import.meta.url)),
+    fileURLToPath(new URL("../dist/server/server/storage-layout-migration.js", import.meta.url)),
+  ];
+  const entrypoint = candidates.find((candidate) => existsSync(candidate));
+  if (!entrypoint) {
+    throw new Error(`Storage layout migration module not found: ${candidates.join(", ")}`);
+  }
+  const migration = (await import(pathToFileURL(entrypoint).href)) as {
+    ensureThothStorageLayout: (home: string, logger: ReturnType<typeof pino>) => Promise<unknown>;
+  };
+  await migration.ensureThothStorageLayout(thothHome, pino({ level: "silent" }));
+}
+
 async function main(): Promise<void> {
   const config = parseConfig(process.argv.slice(2));
   const workerEntry = config.devMode ? resolveDevWorkerEntry() : resolveWorkerEntry();
@@ -100,6 +117,7 @@ async function main(): Promise<void> {
       : null;
 
   const thothHome = resolveThothHome(workerEnv);
+  await prepareStorageLayout(thothHome);
   const persistedConfig = loadPersistedConfig(thothHome);
   const supervisorLogFile = resolveSupervisorLogFile(thothHome, persistedConfig, workerEnv);
 

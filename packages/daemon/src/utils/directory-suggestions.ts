@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import { readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import { isPathInsideRoot } from "./path.js";
+import { isPathInsideRoot } from "@thoth/drivers/internal/utils/path";
 
 export interface SearchHomeDirectoriesOptions {
   homeDir: string;

@@ -5,7 +5,7 @@ import {
   createExternalProcessEnv,
   createThothInternalEnv,
   resolveThothNodeEnv,
-} from "./thoth-env.js";
+} from "@thoth/drivers/internal/server/thoth-env";
 
 describe("thoth env contract", () => {
   const ELECTRON_RUN_AS_NODE = "ELECTRON_RUN_AS_NODE";

@@ -8,8 +8,8 @@ import {
   findExecutable,
   quoteWindowsArgument,
   quoteWindowsCommand,
-} from "./executable-resolution.js";
-import { windowsExecutableResolution } from "./windows.js";
+} from "@thoth/drivers/internal/executable-resolution/executable-resolution";
+import { windowsExecutableResolution } from "@thoth/drivers/internal/executable-resolution/windows";
 import { isPlatform } from "../test-utils/platform.js";
 
 const originalEnv = {

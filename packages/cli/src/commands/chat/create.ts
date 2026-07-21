@@ -12,9 +12,10 @@ export async function runCreateCommand(
   options: ChatCreateOptions,
   _command: Command,
 ): Promise<SingleResult<ChatRoomRow>> {
-  const { client } = await connectChatClient(options.host);
+  const { client, workspaceId } = await connectChatClient(options.host, options.workspace);
   try {
     const payload = await client.createChatRoom({
+      workspaceId,
       name,
       purpose: options.purpose,
     });

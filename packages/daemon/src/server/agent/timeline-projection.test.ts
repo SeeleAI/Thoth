@@ -5,7 +5,7 @@ import {
   projectTimelineRows,
   selectProjectedTimelinePage,
   selectTimelineWindowByProjectedLimit,
-} from "./timeline-projection.js";
+} from "@thoth/drivers/internal/server/agent/timeline-projection";
 
 describe("projectTimelineRows", () => {
   test("merges adjacent assistant chunks in projected mode", () => {

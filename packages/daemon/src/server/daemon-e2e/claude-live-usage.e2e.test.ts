@@ -4,7 +4,7 @@ import path from "node:path";
 import pino from "pino";
 import { describe, expect, test, vi } from "vitest";
 
-import { ClaudeAgentClient } from "../agent/providers/claude/agent.js";
+import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon } from "../test-utils/thoth-daemon.js";
 

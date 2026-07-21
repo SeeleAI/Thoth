@@ -22,6 +22,10 @@ import type { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.
 import type { SessionOptions } from "./session.js";
 import type { SessionInboundMessage, SessionOutboundMessage } from "./messages.js";
 import {
+  WorkspaceAuthorityManager,
+  WorkspaceTaskCoordinator,
+} from "./workspace-authority/index.js";
+import {
   asSessionInternals as asSessionInternalsHelper,
   asAgentManager,
   asAgentStorage,
@@ -29,13 +33,12 @@ import {
   asPushTokenStore,
   asChatService,
   asScheduleService,
-  asLoopService,
-  asLoopTaskService,
   asCheckoutDiffManager,
   asGitHubService,
   asWorkspaceGitService,
   asDaemonConfigStore,
   createProviderSnapshotManagerStub,
+  createSessionWithAuthority,
 } from "./test-utils/session-stubs.js";
 import { isPlatform } from "../test-utils/platform.js";
 import type {
@@ -206,68 +209,31 @@ function createClosedManagedAgent(input: {
   };
 }
 
-describe("Loop phase live stream observation", () => {
-  test("forwards only the currently viewed internal phase and releases it on switch and cleanup", async () => {
-    const phaseOneId = "00000000-0000-4000-8000-000000000301";
-    const phaseTwoId = "00000000-0000-4000-8000-000000000302";
+describe("internal Task execution visibility", () => {
+  test("never exposes internal provider Agents through the foreground stream surface", async () => {
+    const internalId = "00000000-0000-4000-8000-000000000301";
     const foregroundId = "00000000-0000-4000-8000-000000000303";
-    const permissionId = "permission-apply-review-artifact";
     const agents = new Map<string, ManagedAgent>([
-      [
-        phaseOneId,
-        createClosedManagedAgent({
-          id: phaseOneId,
-          internal: true,
-          title: "Review: Goal 1",
-        }),
-      ],
-      [
-        phaseTwoId,
-        createClosedManagedAgent({
-          id: phaseTwoId,
-          internal: true,
-          title: "Review: Goal 2",
-        }),
-      ],
+      [internalId, createClosedManagedAgent({ id: internalId, internal: true, title: "Review" })],
       [foregroundId, createClosedManagedAgent({ id: foregroundId, title: "Foreground" })],
     ]);
     const subscriptions: Array<{
       agentId: string | null;
       emit: (event: AgentManagerEvent) => void;
-      unsubscribe: ReturnType<typeof vi.fn>;
     }> = [];
-    const subscribe = vi.fn(
-      (
-        callback: (event: AgentManagerEvent) => void,
-        options?: { agentId?: string; replayState?: boolean },
-      ) => {
-        let active = true;
-        const unsubscribe = vi.fn(() => {
-          active = false;
-        });
-        subscriptions.push({
-          agentId: options?.agentId ?? null,
-          emit: (event) => {
-            if (active) {
-              callback(event);
-            }
-          },
-          unsubscribe,
-        });
-        return unsubscribe;
-      },
-    );
     const messages: SessionOutboundMessage[] = [];
-    const recoverPhaseAgent = vi.fn(
-      async (agentId: string) => agents.get(agentId)?.internal === true,
-    );
     const session = createSessionForTest({
       messages,
       agentManager: {
-        subscribe,
+        subscribe: vi.fn(
+          (callback: (event: AgentManagerEvent) => void, options?: { agentId?: string }) => {
+            subscriptions.push({ agentId: options?.agentId ?? null, emit: callback });
+            return vi.fn();
+          },
+        ),
         getAgent: vi.fn((agentId: string) => agents.get(agentId) ?? null),
         fetchTimeline: vi.fn(() => ({
-          epoch: "loop-phase-epoch",
+          epoch: "internal-execution-epoch",
           reset: false,
           staleCursor: false,
           gap: false,
@@ -278,18 +244,17 @@ describe("Loop phase live stream observation", () => {
         })),
       },
       agentStorage: { get: vi.fn().mockResolvedValue(null) },
-      loopTaskService: { recoverPhaseAgent },
     });
 
     const globalSubscription = subscriptions.find((record) => record.agentId === null);
     expect(globalSubscription).toBeTruthy();
     globalSubscription?.emit({
       type: "agent_stream",
-      agentId: phaseOneId,
+      agentId: internalId,
       event: {
         type: "timeline",
         provider: "codex",
-        item: { type: "reasoning", text: "hidden before observation" },
+        item: { type: "reasoning", text: "internal phase" },
       },
     });
     expect(messages.some((message) => message.type === "agent_stream")).toBe(false);
@@ -308,179 +273,13 @@ describe("Loop phase live stream observation", () => {
 
     await session.handleMessage({
       type: "fetch_agent_timeline_request",
-      requestId: "fetch-phase-one",
-      agentId: phaseOneId,
+      requestId: "fetch-internal-agent",
+      agentId: internalId,
       projection: "projected",
     });
-    const phaseOneSubscription = subscriptions.find((record) => record.agentId === phaseOneId);
-    expect(phaseOneSubscription).toBeTruthy();
-    expect(recoverPhaseAgent).toHaveBeenCalledWith(phaseOneId);
-    await session.handleMessage({
-      type: "fetch_agent_timeline_request",
-      requestId: "fetch-phase-one-again",
-      agentId: phaseOneId,
-      projection: "projected",
-    });
-    expect(subscriptions.filter((record) => record.agentId === phaseOneId)).toHaveLength(1);
-    expect(phaseOneSubscription?.unsubscribe).not.toHaveBeenCalled();
-    messages.splice(0);
-
-    phaseOneSubscription?.emit({
-      type: "agent_state",
-      agent: agents.get(phaseOneId)!,
-    });
-    phaseOneSubscription?.emit({
-      type: "agent_stream",
-      agentId: phaseOneId,
-      event: {
-        type: "permission_requested",
-        provider: "codex",
-        request: {
-          id: permissionId,
-          provider: "codex",
-          name: "apply_patch",
-          kind: "tool",
-          title: "Apply file changes",
-          actions: [
-            { id: "reject", label: "Reject", behavior: "deny", variant: "danger" },
-            { id: "accept", label: "Accept", behavior: "allow", variant: "primary" },
-          ],
-        },
-      },
-    });
-    phaseOneSubscription?.emit({
-      type: "agent_stream",
-      agentId: phaseOneId,
-      event: {
-        type: "permission_resolved",
-        provider: "codex",
-        requestId: permissionId,
-        resolution: { behavior: "allow", selectedActionId: "accept" },
-      },
-    });
-    phaseOneSubscription?.emit({
-      type: "agent_stream",
-      agentId: phaseOneId,
-      event: {
-        type: "timeline",
-        provider: "codex",
-        item: {
-          type: "tool_call",
-          callId: "apply-review-artifact",
-          name: "apply_patch",
-          status: "completed",
-          error: null,
-          detail: {
-            type: "edit",
-            filePath: "/tmp/thoth-review-artifacts/core-contract.cpp",
-          },
-        },
-      },
-    });
-    phaseOneSubscription?.emit({
-      type: "agent_stream",
-      agentId: phaseOneId,
-      event: {
-        type: "timeline",
-        provider: "codex",
-        item: { type: "reasoning", text: "continued after approval" },
-      },
-    });
-
-    expect(messages.some((message) => message.type === "agent_update")).toBe(false);
-    expect(messages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "agent_stream",
-          payload: expect.objectContaining({ agentId: phaseOneId, internal: true }),
-        }),
-        expect.objectContaining({
-          type: "agent_permission_request",
-          payload: expect.objectContaining({ agentId: phaseOneId }),
-        }),
-        expect.objectContaining({
-          type: "agent_permission_resolved",
-          payload: expect.objectContaining({
-            agentId: phaseOneId,
-            requestId: permissionId,
-          }),
-        }),
-      ]),
-    );
-    const streamedItems = messages
-      .filter((message) => message.type === "agent_stream")
-      .map((message) => message.payload.event);
-    expect(streamedItems).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "permission_requested" }),
-        expect.objectContaining({ type: "permission_resolved", requestId: permissionId }),
-        expect.objectContaining({
-          type: "timeline",
-          item: expect.objectContaining({
-            type: "tool_call",
-            callId: "apply-review-artifact",
-            status: "completed",
-          }),
-        }),
-        expect.objectContaining({
-          type: "timeline",
-          item: expect.objectContaining({ type: "reasoning", text: "continued after approval" }),
-        }),
-      ]),
-    );
-
-    await session.handleMessage({
-      type: "fetch_agent_timeline_request",
-      requestId: "fetch-phase-two",
-      agentId: phaseTwoId,
-      projection: "projected",
-    });
-    const phaseTwoSubscription = subscriptions.find((record) => record.agentId === phaseTwoId);
-    expect(phaseOneSubscription?.unsubscribe).toHaveBeenCalledTimes(1);
-    expect(phaseTwoSubscription).toBeTruthy();
-    messages.splice(0);
-
-    phaseOneSubscription?.emit({
-      type: "agent_stream",
-      agentId: phaseOneId,
-      event: {
-        type: "timeline",
-        provider: "codex",
-        item: { type: "assistant_message", text: "stale phase" },
-      },
-    });
-    phaseTwoSubscription?.emit({
-      type: "agent_stream",
-      agentId: phaseTwoId,
-      event: {
-        type: "timeline",
-        provider: "codex",
-        item: { type: "assistant_message", text: "current phase" },
-      },
-    });
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({
-      type: "agent_stream",
-      payload: {
-        agentId: phaseTwoId,
-        internal: true,
-        event: { type: "timeline", item: { type: "assistant_message", text: "current phase" } },
-      },
-    });
-
+    expect(subscriptions.filter((record) => record.agentId !== null)).toEqual([]);
+    expect(messages.some((message) => message.type === "agent_stream")).toBe(false);
     await session.cleanup();
-    expect(phaseTwoSubscription?.unsubscribe).toHaveBeenCalledTimes(1);
-    messages.splice(0);
-    phaseTwoSubscription?.emit({
-      type: "agent_stream",
-      agentId: phaseTwoId,
-      event: {
-        type: "timeline",
-        provider: "codex",
-        item: { type: "assistant_message", text: "after cleanup" },
-      },
-    });
-    expect(messages).toEqual([]);
   });
 });
 
@@ -492,8 +291,8 @@ vi.mock("./thoth-worktree-service.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../utils/spawn.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../utils/spawn.js")>();
+vi.mock("@thoth/drivers/internal/utils/spawn", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@thoth/drivers/internal/utils/spawn")>();
   return {
     ...actual,
     execCommand: spawnMocks.execCommand,
@@ -548,14 +347,29 @@ interface SessionForTestOptions {
   serverId?: SessionOptions["serverId"];
   daemonVersion?: SessionOptions["daemonVersion"];
   daemonRuntimeConfig?: SessionOptions["daemonRuntimeConfig"];
-  loopTaskService?: { [K in keyof NonNullable<SessionOptions["loopTaskService"]>]?: unknown };
   downloadTokenStore?: SessionOptions["downloadTokenStore"];
   messages?: unknown[];
   binaryMessages?: Uint8Array[];
+  workspaceAuthorityManager?: WorkspaceAuthorityManager;
+  workspaceTaskCoordinator?: WorkspaceTaskCoordinator;
 }
+
+const sessionAuthorityManagers: WorkspaceAuthorityManager[] = [];
+const sessionAuthorityRoots: string[] = [];
 
 function createSessionForTest(options: SessionForTestOptions = {}): Session {
   const logger = pino({ level: "silent" });
+  const thothHome =
+    options.thothHome ?? mkdtempSync(join(tmpdir(), "thoth-session-authority-test-"));
+  if (!options.thothHome) {
+    sessionAuthorityRoots.push(thothHome);
+  }
+  const workspaceAuthorityManager =
+    options.workspaceAuthorityManager ?? new WorkspaceAuthorityManager(thothHome);
+  const workspaceTaskCoordinator =
+    options.workspaceTaskCoordinator ??
+    new WorkspaceTaskCoordinator(workspaceAuthorityManager, logger);
+  sessionAuthorityManagers.push(workspaceAuthorityManager);
   const github = options.github ?? {
     invalidate: vi.fn(),
     searchIssuesAndPrs: vi.fn(),
@@ -579,14 +393,14 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
   };
   const messages = options.messages ?? [];
 
-  return new Session({
+  return createSessionWithAuthority({
     clientId: "test-client",
     onMessage: (message) => messages.push(message),
     onBinaryMessage: createBinaryMessageHandler(options.binaryMessages),
     logger,
     downloadTokenStore: options.downloadTokenStore ?? asDownloadTokenStore(),
     pushTokenStore: asPushTokenStore(),
-    thothHome: options.thothHome ?? "/tmp/thoth-home",
+    thothHome,
     agentManager: asAgentManager({
       listAgents: vi.fn(() => []),
       subscribe: vi.fn(() => () => {}),
@@ -611,15 +425,13 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     },
     chatService: asChatService(),
     scheduleService: asScheduleService(),
-    loopService: asLoopService(),
-    loopTaskService: options.loopTaskService
-      ? asLoopTaskService(options.loopTaskService)
-      : undefined,
+    workspaceAuthorityManager,
+    workspaceTaskCoordinator,
     checkoutDiffManager: asCheckoutDiffManager(checkoutDiffManager),
     github: asGitHubService(github),
     workspaceGitService: asWorkspaceGitService(workspaceGitService),
     daemonConfigStore: asDaemonConfigStore({
-      getThothHome: vi.fn(() => options.thothHome ?? "/tmp/thoth-home"),
+      getThothHome: vi.fn(() => thothHome),
       get: vi.fn(() => ({
         mcp: { injectIntoAgents: false },
         providers: {},
@@ -1487,6 +1299,106 @@ function createTerminalManagerStub(options?: { setTerminalTitle?: ReturnType<typ
 
 afterEach(() => {
   vi.clearAllMocks();
+  for (const manager of sessionAuthorityManagers.splice(0)) {
+    manager.close();
+  }
+  for (const root of sessionAuthorityRoots.splice(0)) {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+describe("session provider permission authority", () => {
+  test("commits the exact human decision before forwarding a foreground permission", async () => {
+    const root = mkdtempSync(join(tmpdir(), "thoth-session-permission-authority-"));
+    const workspacePath = join(root, "workspace");
+    const workspaceId = "workspace-permission";
+    const agentId = "agent-permission";
+    const requestId = "permission-request";
+    sessionAuthorityRoots.push(root);
+
+    const logger = pino({ level: "silent" });
+    const authority = new WorkspaceAuthorityManager(root);
+    authority.registerWorkspace({
+      workspaceId,
+      projectId: "project-permission",
+      cwd: workspacePath,
+      kind: "directory",
+      displayName: "Permission Workspace",
+      title: null,
+      branch: null,
+      baseBranch: null,
+      createdAt: "2026-07-21T00:00:00.000Z",
+      updatedAt: "2026-07-21T00:00:00.000Z",
+      archivedAt: null,
+    });
+    const store = authority.forWorkspace(workspaceId);
+    const started = store.startForegroundTurn({
+      agentId,
+      kind: "raw",
+      sourceMessageId: "message-permission",
+      workspaceId,
+      workspacePath,
+      userText: "Run the action after approval.",
+    });
+    const initialRevision = started.state.revision;
+    const displayed = {
+      id: requestId,
+      provider: "codex" as const,
+      name: "workspace-write",
+      kind: "tool" as const,
+      title: "Allow workspace write?",
+      input: { path: "src/index.ts" },
+    };
+    const response = { behavior: "allow" as const, selectedActionId: "allow_once" };
+    const forwarded = vi.fn(async () => {
+      expect(store.getForegroundState(agentId).revision).toBe(initialRevision + 1);
+    });
+    const coordinator = new WorkspaceTaskCoordinator(authority, logger);
+    const session = createSessionForTest({
+      thothHome: root,
+      workspaceAuthorityManager: authority,
+      workspaceTaskCoordinator: coordinator,
+      agentManager: {
+        getAgent: vi.fn(() => ({
+          workspaceId,
+          pendingPermissions: new Map([[requestId, displayed]]),
+          labels: {},
+        })),
+        respondToPermission: forwarded,
+      },
+    });
+
+    await session.handleMessage({
+      type: "agent_permission_response",
+      agentId,
+      requestId,
+      response,
+    });
+
+    expect(forwarded).toHaveBeenCalledOnce();
+    const duplicate = store.recordProviderPermissionDecision({
+      agentId,
+      providerThreadId: null,
+      requestId,
+      displayed,
+      rawAnswer: response,
+      actorId: "user:test-client",
+      clientId: "test-client",
+      deviceId: null,
+    });
+    expect(duplicate).toMatchObject({
+      duplicate: true,
+      decision: {
+        turnId: started.turn.id,
+        kind: "provider_permission",
+        displayed,
+        rawAnswer: response,
+        expectedRevision: initialRevision,
+        resultRevision: initialRevision + 1,
+      },
+    });
+    expect(store.getForegroundState(agentId).revision).toBe(initialRevision + 1);
+  });
 });
 
 describe("session provider refresh cwd routing", () => {
@@ -1743,7 +1655,7 @@ describe("session checkout merge handling", () => {
         baseRef: "main",
         mode: "merge",
       },
-      { thothHome: "/tmp/thoth-home" },
+      expect.objectContaining({ thothHome: expect.any(String) }),
     );
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/base-worktree", {
       force: true,
@@ -4389,8 +4301,8 @@ describe("session pull request timeline handling", () => {
   });
 });
 
-describe("chat/schedule/loop dispatch routing (behavior preservation)", () => {
-  // Each chat/*, loop/*, and schedule/* type must reach its domain handler. The
+describe("chat/schedule dispatch routing (behavior preservation)", () => {
+  // Each chat/* and schedule/* type must reach its domain handler. The
   // injected service stubs are unstubbed, so every handler's own try/catch fires
   // and emits its domain rpc_error code — proving the message routed (a dropped
   // case would silently no-op and emit nothing). schedule/* historically routed
@@ -4399,84 +4311,141 @@ describe("chat/schedule/loop dispatch routing (behavior preservation)", () => {
   // satisfy the TS union here — zod parsing happens upstream at the transport.
   const routingCases: Array<{ msg: SessionInboundMessage; code: string }> = [
     {
-      msg: { type: "chat/create", requestId: "rt-chat-create", name: "room" },
-      code: "chat_request_failed",
-    },
-    { msg: { type: "chat/list", requestId: "rt-chat-list" }, code: "chat_request_failed" },
-    {
-      msg: { type: "chat/inspect", requestId: "rt-chat-inspect", room: "room" },
-      code: "chat_request_failed",
-    },
-    {
-      msg: { type: "chat/delete", requestId: "rt-chat-delete", room: "room" },
+      msg: {
+        type: "chat/create",
+        workspaceId: "workspace-routing",
+        requestId: "rt-chat-create",
+        name: "room",
+      },
       code: "chat_request_failed",
     },
     {
-      msg: { type: "chat/post", requestId: "rt-chat-post", room: "room", body: "hi" },
+      msg: { type: "chat/list", workspaceId: "workspace-routing", requestId: "rt-chat-list" },
       code: "chat_request_failed",
     },
     {
-      msg: { type: "chat/read", requestId: "rt-chat-read", room: "room" },
+      msg: {
+        type: "chat/inspect",
+        workspaceId: "workspace-routing",
+        requestId: "rt-chat-inspect",
+        room: "room",
+      },
       code: "chat_request_failed",
     },
     {
-      msg: { type: "chat/wait", requestId: "rt-chat-wait", room: "room" },
+      msg: {
+        type: "chat/delete",
+        workspaceId: "workspace-routing",
+        requestId: "rt-chat-delete",
+        room: "room",
+      },
       code: "chat_request_failed",
     },
     {
-      msg: { type: "loop/run", requestId: "rt-loop-run", prompt: "p", cwd: "/tmp/loop" },
-      code: "loop_request_failed",
-    },
-    { msg: { type: "loop/list", requestId: "rt-loop-list" }, code: "loop_request_failed" },
-    {
-      msg: { type: "loop/inspect", requestId: "rt-loop-inspect", id: "loop-1" },
-      code: "loop_request_failed",
-    },
-    {
-      msg: { type: "loop/logs", requestId: "rt-loop-logs", id: "loop-1" },
-      code: "loop_request_failed",
+      msg: {
+        type: "chat/post",
+        workspaceId: "workspace-routing",
+        requestId: "rt-chat-post",
+        room: "room",
+        body: "hi",
+      },
+      code: "chat_request_failed",
     },
     {
-      msg: { type: "loop/stop", requestId: "rt-loop-stop", id: "loop-1" },
-      code: "loop_request_failed",
+      msg: {
+        type: "chat/read",
+        workspaceId: "workspace-routing",
+        requestId: "rt-chat-read",
+        room: "room",
+      },
+      code: "chat_request_failed",
+    },
+    {
+      msg: {
+        type: "chat/wait",
+        workspaceId: "workspace-routing",
+        requestId: "rt-chat-wait",
+        room: "room",
+      },
+      code: "chat_request_failed",
     },
     {
       msg: {
         type: "schedule/create",
-        requestId: "rt-sched-create",
+        workspaceId: "workspace-routing",
+        requestId: "rt--create",
         prompt: "p",
         cadence: { type: "every", everyMs: 1000 },
         target: { type: "agent", agentId: "00000000-0000-0000-0000-000000000000" },
       },
       code: "schedule_request_failed",
     },
-    { msg: { type: "schedule/list", requestId: "rt-sched-list" }, code: "schedule_request_failed" },
     {
-      msg: { type: "schedule/inspect", requestId: "rt-sched-inspect", scheduleId: "s1" },
+      msg: { type: "schedule/list", workspaceId: "workspace-routing", requestId: "rt-sched-list" },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/logs", requestId: "rt-sched-logs", scheduleId: "s1" },
+      msg: {
+        type: "schedule/inspect",
+        workspaceId: "workspace-routing",
+        requestId: "rt-sched-inspect",
+        scheduleId: "s1",
+      },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/pause", requestId: "rt-sched-pause", scheduleId: "s1" },
+      msg: {
+        type: "schedule/logs",
+        workspaceId: "workspace-routing",
+        requestId: "rt-sched-logs",
+        scheduleId: "s1",
+      },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/resume", requestId: "rt-sched-resume", scheduleId: "s1" },
+      msg: {
+        type: "schedule/pause",
+        workspaceId: "workspace-routing",
+        requestId: "rt-sched-pause",
+        scheduleId: "s1",
+      },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/delete", requestId: "rt-sched-delete", scheduleId: "s1" },
+      msg: {
+        type: "schedule/resume",
+        workspaceId: "workspace-routing",
+        requestId: "rt-sched-resume",
+        scheduleId: "s1",
+      },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/run-once", requestId: "rt-sched-run-once", scheduleId: "s1" },
+      msg: {
+        type: "schedule/delete",
+        workspaceId: "workspace-routing",
+        requestId: "rt-sched-delete",
+        scheduleId: "s1",
+      },
       code: "schedule_request_failed",
     },
     {
-      msg: { type: "schedule/update", requestId: "rt-sched-update", scheduleId: "s1", name: "new" },
+      msg: {
+        type: "schedule/run-once",
+        workspaceId: "workspace-routing",
+        requestId: "rt-sched-run-once",
+        scheduleId: "s1",
+      },
+      code: "schedule_request_failed",
+    },
+    {
+      msg: {
+        type: "schedule/update",
+        workspaceId: "workspace-routing",
+        requestId: "rt-sched-update",
+        scheduleId: "s1",
+        name: "new",
+      },
       code: "schedule_request_failed",
     },
   ];

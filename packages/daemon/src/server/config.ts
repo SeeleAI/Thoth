@@ -1,8 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveThothNodeEnv } from "./thoth-env.js";
+import { resolveThothNodeEnv } from "@thoth/drivers/internal/server/thoth-env";
 import { z } from "zod";
-import { expandTilde } from "../utils/path.js";
+import { expandTilde } from "@thoth/drivers/internal/utils/path";
 
 import type { ThothDaemonConfig } from "./bootstrap.js";
 import {
@@ -11,12 +11,12 @@ import {
   LogLevelSchema,
   type PersistedConfig,
 } from "./persisted-config.js";
-import type { AgentProvider } from "./agent/agent-sdk-types.js";
+import type { AgentProvider } from "@thoth/drivers/agent-runtime";
 import type {
   AgentProviderRuntimeSettingsMap,
   ProviderOverride,
-} from "./agent/provider-launch-config.js";
-import { ProviderOverrideSchema } from "./agent/provider-launch-config.js";
+} from "@thoth/drivers/internal/server/agent/provider-launch-config";
+import { ProviderOverrideSchema } from "@thoth/drivers/internal/server/agent/provider-launch-config";
 import { AgentProviderSchema } from "@thoth/protocol/provider-manifest";
 import {
   DEFAULT_APP_BASE_URL,

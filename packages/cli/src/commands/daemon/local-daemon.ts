@@ -4,7 +4,6 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { loadConfig, resolveThothHome, spawnProcess } from "@thoth/daemon";
 import { DEFAULT_RELAY_ENDPOINT } from "@thoth/protocol/daemon-endpoints";
-import treeKill from "tree-kill";
 import { tryConnectToDaemon } from "../../utils/client.js";
 
 export interface DaemonStartOptions {
@@ -328,52 +327,36 @@ function signalProcessSafely(pid: number, signal: NodeJS.Signals): boolean {
   }
 }
 
-async function signalProcessTreeSafely(pid: number, signal: NodeJS.Signals): Promise<boolean> {
-  if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) {
-    return false;
-  }
-
-  return new Promise((resolve, reject) => {
-    treeKill(pid, signal, (err) => {
-      if (!err) {
-        resolve(true);
-        return;
-      }
-
-      const code = readNodeErrnoCode(err);
-      if (code === "ESRCH") {
-        resolve(false);
-        return;
-      }
-      if (code === "EPERM") {
-        resolve(true);
-        return;
-      }
-      reject(err);
-    });
-  });
+async function signalDaemonOwnerSafely(pid: number, signal: NodeJS.Signals): Promise<boolean> {
+  // The PID file identifies the Thoth supervisor. It owns and forwards signals to
+  // the worker, so no platform process-tree utility is required.
+  return signalProcessSafely(pid, signal);
 }
 
-async function signalProcessTreeOrOwnerSafely(
+async function waitForDaemonOwnerRelease(
+  state: LocalDaemonState,
   pid: number,
-  signal: NodeJS.Signals,
+  timeoutMs: number,
 ): Promise<boolean> {
-  try {
-    return await signalProcessTreeSafely(pid, signal);
-  } catch {
-    return signalProcessSafely(pid, signal);
-  }
-}
-
-async function waitForPidExit(pid: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   async function poll(): Promise<boolean> {
-    if (!isProcessRunning(pid)) return true;
-    if (Date.now() >= deadline) return !isProcessRunning(pid);
+    if (!existsSync(state.pidPath) || !isProcessRunning(pid)) return true;
+    if (Date.now() >= deadline) {
+      return !existsSync(state.pidPath) || !isProcessRunning(pid);
+    }
     await sleep(PID_POLL_INTERVAL_MS);
     return poll();
   }
   return poll();
+}
+
+function removeOwnedPidFile(state: LocalDaemonState, pid: number): void {
+  try {
+    const current = readPidFile(state.pidPath);
+    if (current?.pid === pid) unlinkSync(state.pidPath);
+  } catch {
+    // The supervisor may have removed its lock concurrently.
+  }
 }
 
 async function waitForDaemonUnreachable(
@@ -465,7 +448,7 @@ async function signalDaemonOwnerForStop(
     return createNotRunningStopResult(state, null, "Daemon is not running");
   }
 
-  const signaled = await signalProcessTreeOrOwnerSafely(pid, "SIGTERM");
+  const signaled = await signalDaemonOwnerSafely(pid, "SIGTERM");
   if (signaled) {
     return null;
   }
@@ -483,12 +466,16 @@ async function waitForStopAfterRequest(args: {
   const { state, pid, timeoutMs, killTimeoutMs, force } = args;
   let stopped =
     state.running && pid !== null
-      ? await waitForPidExit(pid, timeoutMs)
+      ? await waitForDaemonOwnerRelease(state, pid, timeoutMs)
       : await waitForDaemonUnreachable(state, timeoutMs);
 
   if (!stopped && force && state.running && pid !== null) {
-    await signalProcessTreeOrOwnerSafely(pid, "SIGKILL");
-    stopped = await waitForPidExit(pid, killTimeoutMs);
+    await signalDaemonOwnerSafely(pid, "SIGKILL");
+    stopped = await waitForDaemonOwnerRelease(state, pid, killTimeoutMs);
+    if (!stopped && (await waitForDaemonUnreachable(state, killTimeoutMs))) {
+      removeOwnedPidFile(state, pid);
+      stopped = true;
+    }
     return { stopped, forced: true };
   }
 

@@ -6,8 +6,8 @@ import {
   AgentProviderRuntimeSettingsMapSchema,
   migrateProviderSettings,
   ProviderOverridesSchema,
-} from "./agent/provider-launch-config.js";
-import type { AgentProviderRuntimeSettingsMap } from "./agent/provider-launch-config.js";
+} from "@thoth/drivers/internal/server/agent/provider-launch-config";
+import type { AgentProviderRuntimeSettingsMap } from "@thoth/drivers/internal/server/agent/provider-launch-config";
 import { ensurePrivateFile, writePrivateFileAtomicSync } from "./private-files.js";
 import { TerminalProfileSchema } from "@thoth/protocol/messages";
 import { DEFAULT_DIRECT_DAEMON_ENDPOINT } from "@thoth/protocol/daemon-endpoints";

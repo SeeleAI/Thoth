@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import { basename } from "node:path";
 
-import type { AgentSessionConfig } from "./agent/agent-sdk-types.js";
+import type { AgentSessionConfig } from "@thoth/drivers/agent-runtime";
 import {
   type GitSetupOptions,
   type FirstAgentContext,
@@ -24,7 +24,7 @@ import type { ServiceProxySubsystem } from "./service-proxy.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
 import type { GitHubService } from "../services/github-service.js";
 import type { CheckoutExistingBranchResult } from "../utils/checkout-git.js";
-import { expandTilde } from "../utils/path.js";
+import { expandTilde } from "@thoth/drivers/internal/utils/path";
 import {
   getWorktreeSetupCommands,
   resolveWorktreeRuntimeEnv,

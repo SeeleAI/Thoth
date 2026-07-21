@@ -1,8 +1,8 @@
 import type { Logger } from "pino";
 
-import type { AgentPromptInput, AgentRunOptions } from "./agent-sdk-types.js";
+import type { AgentPromptInput, AgentRunOptions } from "@thoth/drivers/agent-runtime";
 import type { AgentManager, ManagedAgent } from "./agent-manager.js";
-import type { AgentStorage } from "./agent-storage.js";
+import type { AgentRegistry } from "./agent-storage.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
 
 export type AgentRunController = Pick<
@@ -90,7 +90,7 @@ export function startAgentRun(
  * an archived agent unarchives it the same way.
  */
 export async function unarchiveAgentState(
-  _agentStorage: AgentStorage,
+  _agentStorage: AgentRegistry,
   agentManager: AgentManager,
   agentId: string,
 ): Promise<boolean> {
@@ -117,7 +117,7 @@ export function isSystemInjectedEnvelope(text: string): boolean {
 
 export interface SendPromptToAgentParams {
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   agentId: string;
   /** Prompt to dispatch to the provider (may include image blocks or wrapped text). */
   prompt: AgentPromptInput;
@@ -238,7 +238,7 @@ export async function startCreatedAgentInitialPrompt(
 
 export interface SetupFinishNotificationParams {
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   childAgentId: string;
   callerAgentId: string;
   logger: Logger;

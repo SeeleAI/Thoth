@@ -10,8 +10,8 @@ import {
   canRunRealProvider,
   getRealProviderRuntimeSettings,
 } from "../../../daemon-e2e/real-provider-test-config.js";
-import { findExecutable } from "../../../../executable-resolution/executable-resolution.js";
-import { claudeQuery } from "./query.js";
+import { findExecutable } from "@thoth/drivers/internal/executable-resolution/executable-resolution";
+import { claudeQuery } from "@thoth/drivers/internal/server/agent/providers/claude/query";
 
 class Pushable<T> implements AsyncIterable<T> {
   private queue: T[] = [];

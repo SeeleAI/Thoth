@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import type { AgentProvider, AgentStreamEvent } from "./agent-sdk-types.js";
+import type { AgentProvider, AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 import {
   AGENT_STREAM_COALESCE_DEFAULT_WINDOW_MS,
   AgentStreamCoalescer,

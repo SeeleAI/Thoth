@@ -19,13 +19,13 @@ import type {
   SessionOutboundMessage,
 } from "../messages.js";
 import type { AgentManager } from "./agent-manager.js";
-import type { AgentStorage } from "./agent-storage.js";
+import type { AgentRegistry } from "./agent-storage.js";
 
 interface CreateAgentLifecycleDispatchDependencies {
   thothHome: string;
   worktreesRoot?: string;
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   github: GitHubService;
   workspaceGitService: WorkspaceGitService;
   createThothWorktreeWorkflow: CreateThothWorktreeWorkflowFn;

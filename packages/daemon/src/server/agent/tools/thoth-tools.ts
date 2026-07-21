@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ensureValidJson } from "../../json-utils.js";
 import type { Logger } from "pino";
 
-import type { AgentMode, AgentProvider, AgentTimelineItem } from "../agent-sdk-types.js";
+import type { AgentMode, AgentProvider, AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import type { AgentManager, WaitForAgentResult } from "../agent-manager.js";
 import {
   AgentFeatureSchema,
@@ -18,9 +18,9 @@ import {
   toAgentListItemPayload,
   toAgentPayload,
 } from "../agent-projections.js";
-import { curateAgentActivity } from "../activity-curator.js";
-import { selectItemsByProjectedLimit } from "../timeline-projection.js";
-import type { AgentStorage } from "../agent-storage.js";
+import { curateAgentActivity } from "@thoth/drivers/internal/server/agent/activity-curator";
+import { selectItemsByProjectedLimit } from "@thoth/drivers/internal/server/agent/timeline-projection";
+import type { AgentRegistry } from "../agent-storage.js";
 import { ensureAgentLoaded } from "../agent-loading.js";
 import { isStoredAgentProviderAvailable } from "../../persistence-hooks.js";
 import {
@@ -57,6 +57,7 @@ import {
 } from "../mcp-shared.js";
 import {
   ThothReportBlockedInputSchema,
+  ThothGetBoundTaskProgressInputSchema,
   ThothSubmitClarifyCardInputSchema,
   ThothSubmitClarifyConvergenceAuditInputSchema,
   ThothSubmitContractPreservationAuditInputSchema,
@@ -93,10 +94,8 @@ import type {
   ThothTaskCardModel,
   ThothCardAnswerPayload,
 } from "@thoth/protocol/thoth/rpc-schemas";
-import type { ThothLoopTaskService } from "../../thoth-loop/task-service.js";
 import { sendPromptToAgent, setupFinishNotification } from "../agent-prompt.js";
 import { respondToAgentPermission } from "../permission-response.js";
-import { prepareProviderRuntimeSession } from "../provider-runtime-session.js";
 import {
   readThothRuntimeToolsConfig,
   withThothRuntimeTools,
@@ -104,11 +103,15 @@ import {
 import { createRuntimeAuthorityDecision } from "../runtime-tool-decisions.js";
 import {
   assertForegroundAuthorityTurn,
+  assertForegroundContextTurn,
   getActiveForegroundAuthorityTurnId,
   parkForegroundTurnFence,
 } from "./foreground-turn-fence.js";
-import { getForegroundAuthorityStore } from "../foreground-authority-runtime.js";
-import type { ForegroundAuthorityStore } from "../foreground-authority-store.js";
+import {
+  WorkspaceForegroundAuthority,
+  type TaskToolGateway,
+  type WorkspaceAuthorityManager,
+} from "../../workspace-authority/index.js";
 import {
   archiveAgentCommand,
   cancelAgentRunCommand,
@@ -133,11 +136,11 @@ import type {
   ThothToolExecutionContext,
   ThothToolResult,
   ThothToolRuntimeCallerConfig,
-} from "./types.js";
+} from "@thoth/drivers/agent-runtime";
 
 export interface ThothToolHostDependencies {
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   terminalManager?: TerminalManager | null;
   getDaemonTcpPort?: () => number | null;
   scheduleService?: ScheduleService | null;
@@ -177,7 +180,8 @@ export interface ThothToolHostDependencies {
   enableVoiceTools?: boolean;
   voiceOnly?: boolean;
   logger: Logger;
-  loopTaskService?: ThothLoopTaskService | null;
+  workspaceAuthorityManager?: WorkspaceAuthorityManager;
+  taskToolGateway?: TaskToolGateway;
 }
 
 function parseTimestamp(value: string | null | undefined): number {
@@ -393,7 +397,7 @@ export function runtimeToolResultText(input: {
 }
 
 function clarifyDecisionRecordsForAgent(
-  store: ForegroundAuthorityStore | null,
+  store: WorkspaceForegroundAuthority | null,
   agentId: string | null,
 ) {
   if (!store || !agentId) {
@@ -403,7 +407,7 @@ function clarifyDecisionRecordsForAgent(
 }
 
 function countAnsweredClarifyCardsForAgent(
-  store: ForegroundAuthorityStore | null,
+  store: WorkspaceForegroundAuthority | null,
   agentId: string | null,
 ): number {
   return clarifyDecisionRecordsForAgent(store, agentId).filter(
@@ -412,7 +416,7 @@ function countAnsweredClarifyCardsForAgent(
 }
 
 function latestClarifyLedgerForAgent(
-  store: ForegroundAuthorityStore | null,
+  store: WorkspaceForegroundAuthority | null,
   agentId: string | null,
 ): ClarifyFrontierLedger | null {
   return (
@@ -507,7 +511,6 @@ interface ScheduleUpdateToolInput {
   provider?: string;
   model?: string | null;
   mode?: string | null;
-  cwd?: string;
   expiresIn?: string;
   clearExpires?: boolean;
 }
@@ -577,7 +580,6 @@ function buildScheduleUpdateInput(input: ScheduleUpdateToolInput): UpdateSchedul
     ...(providerModelPatch.provider !== undefined ? { provider: providerModelPatch.provider } : {}),
     ...(providerModelPatch.model !== undefined ? { model: providerModelPatch.model } : {}),
     ...(input.mode !== undefined ? { modeId: input.mode } : {}),
-    ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
   };
 
   return {
@@ -669,8 +671,8 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     logger,
   } = options;
   const childLogger = logger.child({ module: "agent", component: "thoth-tool-catalog" });
-  const foregroundAuthorityStore = options.thothHome
-    ? getForegroundAuthorityStore({ thothHome: options.thothHome, logger })
+  const foregroundAuthorityStore = options.workspaceAuthorityManager
+    ? new WorkspaceForegroundAuthority(options.workspaceAuthorityManager)
     : null;
   const waitTracker = new WaitForAgentTracker(logger);
   const callerContext = callerAgentId ? (resolveCallerContext?.(callerAgentId) ?? null) : null;
@@ -680,12 +682,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
   // independent audit capability.
   const initialToolCallerAgent = callerAgentId ? agentManager.getAgent(callerAgentId) : null;
   const toolCallerConfig = initialToolCallerAgent?.config ?? options.callerAgentConfig;
-  const runtimeTools = toolCallerConfig
-    ? readThothRuntimeToolsConfig(toolCallerConfig, {
-        legacyLoopScope:
-          initialToolCallerAgent?.labels?.loopPhase === "review" ? "loop_review" : "loop_planexec",
-      })
-    : null;
+  const runtimeTools = toolCallerConfig ? readThothRuntimeToolsConfig(toolCallerConfig) : null;
   const enableClarifyRuntimeTools = runtimeTools?.scope === "clarify";
   const enableClarifyAuditTools = runtimeTools?.scope === "clarify_audit";
   const enableContractAuditTools = runtimeTools?.scope === "contract_audit";
@@ -742,7 +739,11 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         throw new Error(`Thoth tool not found: ${name}`);
       }
       if (runtimeTools?.scope === "clarify" && callerAgentId) {
-        assertForegroundAuthorityTurn({ agentId: callerAgentId, context });
+        if (name === "thoth_get_bound_task_progress") {
+          assertForegroundContextTurn({ agentId: callerAgentId, context });
+        } else {
+          assertForegroundAuthorityTurn({ agentId: callerAgentId, context });
+        }
       }
       return tool.handler(await parseToolInput(tool, input), context);
     },
@@ -757,20 +758,12 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     const toolCallerAgent = callerAgentId ? agentManager.getAgent(callerAgentId) : null;
     if (
       !toolCallerAgent ||
-      agentManager.getProviderCapabilities(toolCallerAgent.provider)?.supportsNativeThothTools !==
-        true
+      readThothRuntimeToolsConfig(toolCallerAgent.config)?.scope !== "clarify"
     ) {
       throw new Error(
         "Clarify convergence audit requires an active provider runtime-tools session.",
       );
     }
-    const auditRuntimeSession = options.thothHome
-      ? prepareProviderRuntimeSession({
-          provider: toolCallerAgent.provider,
-          thothHome: options.thothHome,
-          sessionId: `clarify-audit-${toolCallerAgent.id}-${randomUUID()}`,
-        })
-      : null;
     const auditAgent = await agentManager.createAgent(
       withThothRuntimeTools(
         {
@@ -788,7 +781,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         {
           enabled: true,
           scope: "clarify_audit",
-          ...(auditRuntimeSession?.home ? { sessionHome: auditRuntimeSession.home } : {}),
         },
       ),
       undefined,
@@ -797,6 +789,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         persistSession: true,
         persistInternal: true,
         initialTitle: "Clarify convergence audit",
+        ...(toolCallerAgent.workspaceId ? { workspaceId: toolCallerAgent.workspaceId } : {}),
       },
     );
     const wait = waitForClarifyConvergenceAudit(auditAgent.id);
@@ -977,7 +970,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
 
   const buildCallerAgentScheduleConfig = (
     callerAgent: NonNullable<ReturnType<typeof resolveCallerAgent>>,
-    params?: { provider?: string; cwd?: string },
+    params?: { provider?: string },
   ) => {
     const hasProviderOverride = params?.provider !== undefined;
     const resolvedProviderModel = hasProviderOverride
@@ -995,7 +988,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     }
     return {
       provider: resolvedProvider,
-      cwd: params?.cwd?.trim() ? expandUserPath(params.cwd) : callerAgent.cwd,
       ...(callerAgent.currentModeId && callerAgent.provider === resolvedProvider
         ? {
             modeId: callerAgent.currentModeId,
@@ -1006,31 +998,27 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     };
   };
 
-  const resolveNewAgentScheduleTarget = (params?: { provider?: string; cwd?: string }) => {
+  const resolveNewAgentScheduleTarget = (params?: { provider?: string }) => {
     if (!params?.provider?.trim()) {
       throw new Error("provider is required when target is new-agent");
     }
 
     const callerAgent = resolveCallerAgent();
-    if (callerAgent) {
-      return {
-        type: "new-agent" as const,
-        config: buildCallerAgentScheduleConfig(callerAgent, params),
-      };
+    if (!callerAgent?.workspaceId) {
+      throw new Error("Schedule tools require an Agent owned by a Workspace");
     }
-
-    const resolvedProviderModel = resolveScheduleProviderAndModel({
-      provider: params?.provider,
-      defaultProvider: params.provider,
-    });
     return {
       type: "new-agent" as const,
-      config: {
-        provider: resolvedProviderModel.provider,
-        cwd: params?.cwd?.trim() ? expandUserPath(params.cwd) : process.cwd(),
-        ...(resolvedProviderModel.model ? { model: resolvedProviderModel.model } : {}),
-      },
+      config: buildCallerAgentScheduleConfig(callerAgent, params),
     };
+  };
+
+  const resolveScheduleWorkspaceId = (): string => {
+    const callerAgent = resolveCallerAgent();
+    if (!callerAgent?.workspaceId) {
+      throw new Error("Schedule tools require an Agent owned by a Workspace");
+    }
+    return callerAgent.workspaceId;
   };
 
   const appendRuntimeAuthorityToolCall = async (input: {
@@ -1206,6 +1194,51 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
   };
 
   if (enableClarifyRuntimeTools) {
+    registerTool(
+      "thoth_get_bound_task_progress",
+      {
+        title: "Get bound Task progress",
+        description:
+          "Read the latest semantic progress for Tasks that the user explicitly attached to this foreground turn. This tool is read-only and cannot discover unbound Tasks.",
+        inputSchema: ThothGetBoundTaskProgressInputSchema,
+        outputSchema: z
+          .object({
+            tasks: z.array(z.unknown()),
+          })
+          .strict(),
+      },
+      async (_input, context) => {
+        if (!callerAgentId || !options.workspaceAuthorityManager) {
+          throw new Error("Bound Task progress requires foreground Workspace authority");
+        }
+        const turnId = assertForegroundContextTurn({ agentId: callerAgentId, context });
+        const store = options.workspaceAuthorityManager.forTurn(turnId);
+        if (!store) {
+          throw new Error(`Foreground turn ${turnId} has no Workspace authority`);
+        }
+        const tasks = store.listLatestTurnTaskContexts(turnId);
+        if (tasks.length === 0) {
+          throw new Error("This foreground turn has no user-selected Task context");
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                tasks.map((entry) => ({
+                  task: entry.task,
+                  humanDecisions: entry.decisions,
+                  blackboard: entry.blackboard,
+                  generatedAt: entry.generatedAt,
+                })),
+              ),
+            },
+          ],
+          structuredContent: { tasks },
+        };
+      },
+    );
+
     registerTool(
       "thoth_submit_clarify_card",
       {
@@ -1499,7 +1532,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         }
         const runtimeToolContext = resolveRuntimeToolCallContext(context);
         if (
-          !options.loopTaskService?.resolvePlanExecResult(
+          !options.taskToolGateway?.submitPlanExec(
             callerAgentId,
             input,
             runtimeToolContext.turnId,
@@ -1543,7 +1576,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
             "thoth_loop_submit_review_independent_assessment requires an agent-scoped caller",
           );
         }
-        const planExecBrief = options.loopTaskService?.resolveReviewIndependentAssessment(
+        const planExecBrief = options.taskToolGateway?.submitReviewAssessment(
           callerAgentId,
           input,
           resolveRuntimeToolCallContext(context).turnId,
@@ -1572,7 +1605,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         }
         const runtimeToolContext = resolveRuntimeToolCallContext(context);
         if (
-          !options.loopTaskService?.resolveReviewVerdict(
+          !options.taskToolGateway?.submitReviewVerdict(
             callerAgentId,
             input,
             runtimeToolContext.turnId,
@@ -1609,7 +1642,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           throw new Error("thoth_loop_report_blocked requires an agent-scoped caller");
         }
         if (
-          !options.loopTaskService?.resolveBlocked(
+          !options.taskToolGateway?.reportBlocked(
             callerAgentId,
             input,
             resolveRuntimeToolCallContext(context).turnId,
@@ -2587,7 +2620,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       description: "List recent agents as compact metadata.",
       inputSchema: {
         includeArchived: z.boolean().optional().default(false),
-        cwd: z.string().optional(),
         sinceHours: z
           .number()
           .int()
@@ -2982,19 +3014,19 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       },
       outputSchema: ScheduleSummarySchema.shape,
     },
-    async ({ prompt, cron, timezone, name, provider, cwd, maxRuns, expiresIn }) => {
+    async ({ prompt, cron, timezone, name, provider, maxRuns, expiresIn }) => {
       if (!scheduleService) {
         throw new Error("Schedule service is not configured");
       }
 
       const expiresAt = buildScheduleExpiry(expiresIn);
-      const schedule = await scheduleService.create({
+      const schedule = await scheduleService.create(resolveScheduleWorkspaceId(), {
         prompt: prompt.trim(),
         cadence: buildCronScheduleCadence({
           cron,
           ...(timezone !== undefined ? { timezone } : {}),
         }),
-        target: resolveNewAgentScheduleTarget({ provider, cwd }),
+        target: resolveNewAgentScheduleTarget({ provider }),
         ...(name?.trim() ? { name: name.trim() } : {}),
         ...(maxRuns === undefined ? {} : { maxRuns }),
         ...(expiresAt === undefined ? {} : { expiresAt }),
@@ -3037,7 +3069,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       resolveCallerAgent();
 
       const expiresAt = buildScheduleExpiry(expiresIn);
-      const schedule = await scheduleService.create({
+      const schedule = await scheduleService.create(resolveScheduleWorkspaceId(), {
         prompt: prompt.trim(),
         cadence: buildCronScheduleCadence({
           cron,
@@ -3060,7 +3092,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     "list_schedules",
     {
       title: "List schedules",
-      description: "List all schedules managed by the daemon.",
+      description: "List schedules owned by the current Workspace.",
       inputSchema: {},
       outputSchema: {
         schedules: z.array(ScheduleSummarySchema),
@@ -3071,7 +3103,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         throw new Error("Schedule service is not configured");
       }
 
-      const schedules = (await scheduleService.list()).map((schedule) =>
+      const schedules = (await scheduleService.list(resolveScheduleWorkspaceId())).map((schedule) =>
         toScheduleSummary(schedule),
       );
       return {
@@ -3096,7 +3128,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         throw new Error("Schedule service is not configured");
       }
 
-      const schedule = await scheduleService.inspect(id);
+      const schedule = await scheduleService.inspect(resolveScheduleWorkspaceId(), id);
       return {
         content: [],
         structuredContent: ensureValidJson(schedule),
@@ -3121,7 +3153,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         throw new Error("Schedule service is not configured");
       }
 
-      await scheduleService.pause(id);
+      await scheduleService.pause(resolveScheduleWorkspaceId(), id);
       return {
         content: [],
         structuredContent: ensureValidJson({ success: true }),
@@ -3146,7 +3178,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         throw new Error("Schedule service is not configured");
       }
 
-      await scheduleService.resume(id);
+      await scheduleService.resume(resolveScheduleWorkspaceId(), id);
       return {
         content: [],
         structuredContent: ensureValidJson({ success: true }),
@@ -3171,7 +3203,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         throw new Error("Schedule service is not configured");
       }
 
-      await scheduleService.delete(id);
+      await scheduleService.delete(resolveScheduleWorkspaceId(), id);
       return {
         content: [],
         structuredContent: ensureValidJson({ success: true }),
@@ -3226,7 +3258,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           .nullable()
           .optional()
           .describe("New mode for new-agent target (null to clear)."),
-        cwd: z.string().trim().min(1).optional().describe("New cwd for new-agent target."),
         expiresIn: z
           .string()
           .optional()
@@ -3240,7 +3271,10 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         throw new Error("Schedule service is not configured");
       }
 
-      const schedule = await scheduleService.update(buildScheduleUpdateInput(input));
+      const schedule = await scheduleService.update(
+        resolveScheduleWorkspaceId(),
+        buildScheduleUpdateInput(input),
+      );
 
       return {
         content: [],
@@ -3266,7 +3300,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         throw new Error("Schedule service is not configured");
       }
 
-      const runs = await scheduleService.logs(id);
+      const runs = await scheduleService.logs(resolveScheduleWorkspaceId(), id);
       return {
         content: [],
         structuredContent: ensureValidJson({ runs }),
@@ -3679,7 +3713,7 @@ type McpCreateWorktreeTarget =
 
 interface ArchiveWorktreeCommandContext {
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   terminalManager: TerminalManager | null;
   logger: Logger;
 }

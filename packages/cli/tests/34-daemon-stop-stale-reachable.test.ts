@@ -1,8 +1,8 @@
 #!/usr/bin/env npx tsx
 
 /**
- * Regression: `thoth daemon stop` must stop a reachable daemon even when the
- * local pid file points at a dead supervisor owner.
+ * Regression: `thoth daemon stop` must use the lifecycle RPC for a reachable
+ * supervised daemon even when its local PID lock has become stale.
  */
 
 import assert from "node:assert";
@@ -98,7 +98,7 @@ function findUnusedPid(): number {
   throw new Error("Unable to find unused pid for stale pid fixture");
 }
 
-console.log("=== Daemon Stop (stale pid, reachable worker regression) ===\n");
+console.log("=== Daemon Stop (stale pid, reachable supervisor regression) ===\n");
 
 const port = await getAvailablePort();
 const thothHome = await mkdtemp(join(tmpdir(), "thoth-stop-stale-reachable-"));
@@ -107,29 +107,14 @@ const host = `127.0.0.1:${port}`;
 const pidPath = join(thothHome, "thoth.pid");
 const stalePid = findUnusedPid();
 
-let workerProcess: ChildProcess | null = null;
+let supervisorProcess: ChildProcess | null = null;
 
 try {
-  console.log("Test 1: start daemon worker with stale supervisor pid file");
+  console.log("Test 1: start supervised daemon, then replace its PID lock with a stale owner");
 
-  await writeFile(
-    pidPath,
-    `${JSON.stringify(
-      {
-        pid: stalePid,
-        startedAt: new Date().toISOString(),
-        hostname: "stale-supervisor-fixture.local",
-        uid: typeof process.getuid === "function" ? process.getuid() : undefined,
-        listen: host,
-      },
-      null,
-      2,
-    )}\n`,
-  );
-
-  workerProcess = spawn(
+  supervisorProcess = spawn(
     process.execPath,
-    ["--import", "tsx", "../daemon/src/server/daemon-worker.ts"],
+    ["--import", "tsx", "../daemon/scripts/supervisor-entrypoint.ts", "--dev"],
     {
       cwd: cliRoot,
       env: {
@@ -147,20 +132,49 @@ try {
   await waitFor(
     async () => {
       const status = await readDaemonStatus(thothHome);
-      return status.localDaemon === "stale_pid" && status.connectedDaemon === "reachable";
+      return (
+        status.localDaemon === "running" &&
+        status.connectedDaemon === "reachable" &&
+        status.pid === supervisorProcess?.pid
+      );
     },
     120000,
+    "supervised daemon did not become reachable in time",
+  );
+
+  await writeFile(
+    pidPath,
+    `${JSON.stringify(
+      {
+        pid: stalePid,
+        startedAt: new Date().toISOString(),
+        hostname: "stale-supervisor-fixture.local",
+        uid: typeof process.getuid === "function" ? process.getuid() : undefined,
+        listen: host,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  await waitFor(
+    async () => {
+      const status = await readDaemonStatus(thothHome);
+      return status.localDaemon === "stale_pid" && status.connectedDaemon === "reachable";
+    },
+    15000,
     "daemon did not enter stale_pid + reachable state in time",
   );
 
   const statusBeforeStop = await readDaemonStatus(thothHome);
   assert.strictEqual(statusBeforeStop.pid, stalePid, "status should report the stale owner pid");
-  assert(workerProcess.pid && isProcessRunning(workerProcess.pid), "worker should be running");
-  console.log(`✓ fixture has stale pid ${stalePid} and live worker ${workerProcess.pid}\n`);
-
-  console.log(
-    "Test 2: `thoth daemon stop` should stop reachable worker instead of saying not_running",
+  assert(
+    supervisorProcess.pid && isProcessRunning(supervisorProcess.pid),
+    "supervisor should be running",
   );
+  console.log(`✓ fixture has stale pid ${stalePid} and live supervisor ${supervisorProcess.pid}\n`);
+
+  console.log("Test 2: `thoth daemon stop` should use lifecycle shutdown despite the stale lock");
   const stopResult =
     await $`THOTH_HOME=${thothHome} THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD=${testEnv.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD} THOTH_DICTATION_ENABLED=${testEnv.THOTH_DICTATION_ENABLED} THOTH_VOICE_MODE_ENABLED=${testEnv.THOTH_VOICE_MODE_ENABLED} npx thoth daemon stop --home ${thothHome} --json`.nothrow();
   assert.strictEqual(stopResult.exitCode, 0, `stop should succeed: ${stopResult.stderr}`);
@@ -182,21 +196,21 @@ try {
   );
 
   await waitFor(
-    () => !isProcessRunning(workerProcess?.pid ?? -1),
+    () => !isProcessRunning(supervisorProcess?.pid ?? -1),
     15000,
-    "worker remained running after stop",
+    "supervisor remained running after lifecycle stop",
   );
   assert.strictEqual(existsSync(pidPath), false, "stale pid file should be removed after stop");
   console.log("✓ stop recovered stale supervisor pid state\n");
 } finally {
-  if (workerProcess?.pid && isProcessRunning(workerProcess.pid)) {
-    workerProcess.kill("SIGTERM");
+  if (supervisorProcess?.pid && isProcessRunning(supervisorProcess.pid)) {
+    supervisorProcess.kill("SIGTERM");
     await waitFor(
-      () => !isProcessRunning(workerProcess!.pid ?? -1),
+      () => !isProcessRunning(supervisorProcess!.pid ?? -1),
       5000,
-      "worker cleanup timed out",
+      "supervisor cleanup timed out",
     ).catch(() => {
-      workerProcess?.kill("SIGKILL");
+      supervisorProcess?.kill("SIGKILL");
     });
   }
 

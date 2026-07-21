@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAgentBranchNameSeed, renderPromptAttachmentAsText } from "./prompt-attachments.js";
+import {
+  buildAgentBranchNameSeed,
+  renderPromptAttachmentAsText,
+} from "@thoth/drivers/internal/server/agent/prompt-attachments";
 
 describe("prompt attachments", () => {
   it("renders github_pr attachments as readable text", () => {

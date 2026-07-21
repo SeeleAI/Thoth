@@ -5,9 +5,9 @@ import path from "node:path";
 
 import { expect, test } from "vitest";
 
-import type { AgentStreamEvent } from "../agent-sdk-types.js";
-import { OpenCodeAgentClient } from "./opencode-agent.js";
-import { OpenCodeServerManager } from "./opencode/server-manager.js";
+import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
+import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
+import { OpenCodeServerManager } from "@thoth/drivers/internal/server/agent/providers/opencode/server-manager";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 
 function listen(server: http.Server): Promise<number> {

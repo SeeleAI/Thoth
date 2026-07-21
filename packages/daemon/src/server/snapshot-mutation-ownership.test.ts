@@ -6,8 +6,12 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { Session } from "./session.js";
 import type { SessionOptions } from "./session.js";
 import { createTestThothDaemon } from "./test-utils/thoth-daemon.js";
+import { DaemonClient } from "./test-utils/index.js";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
-import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
+import {
+  createProviderSnapshotManagerStub,
+  createSessionWithAuthority,
+} from "./test-utils/session-stubs.js";
 
 interface SessionInternals {
   archiveAgentForClose(agentId: string): Promise<{ archivedAt: string }>;
@@ -27,12 +31,25 @@ describe("snapshot mutation ownership boundary", () => {
   test("daemon live mutations write one durable snapshot through the manager-owned path", async () => {
     const daemonHandle = await createTestThothDaemon();
     const cwd = mkdtempSync(path.join(os.tmpdir(), "snapshot-owner-live-"));
+    const client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemonHandle.port}/ws`,
+      appVersion: "0.0.0-mvp-beta",
+    });
 
     try {
-      const snapshot = await daemonHandle.daemon.agentManager.createAgent({
+      await client.connect();
+      const workspace = await client.createWorkspace({
+        source: { kind: "directory", path: cwd },
+      });
+      if (!workspace.workspace) {
+        throw new Error(workspace.error ?? "Failed to create test Workspace");
+      }
+      const snapshot = await client.createAgent({
         provider: "codex",
         cwd,
+        workspaceId: workspace.workspace.id,
         model: "gpt-5.2-codex",
+        title: "Snapshot authority test",
       });
       await daemonHandle.daemon.agentManager.flush();
 
@@ -46,6 +63,7 @@ describe("snapshot mutation ownership boundary", () => {
       const persisted = await daemonHandle.daemon.agentStorage.get(snapshot.id);
       expect(persisted?.config?.model).toBe("gpt-5.4");
     } finally {
+      await client.close();
       rmSync(cwd, { recursive: true, force: true });
       await daemonHandle.close();
     }
@@ -93,7 +111,7 @@ describe("snapshot mutation ownership boundary", () => {
     };
 
     const session = asInternals<SessionInternals>(
-      new Session({
+      createSessionWithAuthority({
         clientId: "test-client",
         onMessage,
         logger: createStub<SessionOptions["logger"]>(logger),

@@ -1,12 +1,12 @@
 import { beforeAll, beforeEach, describe, expect, test } from "vitest";
 import pino from "pino";
 
-import type { AgentStreamEvent } from "../agent-sdk-types.js";
+import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 import {
   canRunRealProvider,
   createRealProviderClient,
 } from "../../daemon-e2e/real-provider-test-config.js";
-import { streamSession } from "./test-utils/session-stream-adapter.js";
+import { streamSession } from "@thoth/drivers/internal/server/agent/providers/test-utils/session-stream-adapter";
 
 function isTerminalEvent(event: AgentStreamEvent): boolean {
   return (

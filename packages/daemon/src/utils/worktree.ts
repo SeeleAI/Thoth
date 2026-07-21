@@ -26,12 +26,12 @@ import {
   writeThothWorktreeRuntimeMetadata,
 } from "./worktree-metadata.js";
 import { runGitCommand } from "./run-git-command.js";
-import { spawnProcess } from "./spawn.js";
+import { spawnProcess } from "@thoth/drivers/internal/utils/spawn";
 import { resolveThothHome } from "../server/thoth-home.js";
-import { createExternalProcessEnv } from "../server/thoth-env.js";
+import { createExternalProcessEnv } from "@thoth/drivers/internal/server/thoth-env";
 import { parseGitRevParsePath, resolveGitRevParsePath } from "./git-rev-parse-path.js";
 import { validateBranchSlug } from "@thoth/protocol/branch-slug";
-import { expandTilde } from "./path.js";
+import { expandTilde } from "@thoth/drivers/internal/utils/path";
 
 export { slugify, validateBranchSlug } from "@thoth/protocol/branch-slug";
 

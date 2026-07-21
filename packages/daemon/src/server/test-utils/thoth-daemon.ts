@@ -9,7 +9,7 @@ import {
   type ThothOpenAIConfig,
   type ThothSpeechConfig,
 } from "../bootstrap.js";
-import type { AgentClient, AgentProvider } from "../agent/agent-sdk-types.js";
+import type { AgentClient, AgentProvider } from "@thoth/drivers/agent-runtime";
 import { createTestAgentClients } from "./fake-agent-client.js";
 import type { PushNotificationSender } from "../push/notifications.js";
 

@@ -4,13 +4,13 @@ import path from "node:path";
 
 import type { Logger } from "pino";
 
-import type { AgentClient, AgentProvider, AgentSessionConfig } from "../agent/agent-sdk-types.js";
-import type { ProviderRuntimeSettings } from "../agent/provider-launch-config.js";
-import { ClaudeAgentClient } from "../agent/providers/claude/agent.js";
-import { CodexAppServerAgentClient } from "../agent/providers/codex-app-server-agent.js";
-import { OpenCodeAgentClient } from "../agent/providers/opencode-agent.js";
-import { PiRpcAgentClient } from "../agent/providers/pi/agent.js";
-import { isCommandAvailable } from "../../executable-resolution/executable-resolution.js";
+import type { AgentClient, AgentProvider, AgentSessionConfig } from "@thoth/drivers/agent-runtime";
+import type { ProviderRuntimeSettings } from "@thoth/drivers/internal/server/agent/provider-launch-config";
+import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import { CodexAppServerAgentClient } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
+import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
+import { PiRpcAgentClient } from "@thoth/drivers/internal/server/agent/providers/pi/agent";
+import { isCommandAvailable } from "@thoth/drivers/internal/executable-resolution/executable-resolution";
 
 export const realProviders = ["claude", "codex", "opencode", "pi"] as const;
 export type RealProvider = (typeof realProviders)[number];

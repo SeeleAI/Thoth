@@ -13,9 +13,9 @@ export async function runLsCommand(
   options: ScheduleCommandOptions,
   _command: Command,
 ): Promise<ListResult<ScheduleRow>> {
-  const { client } = await connectScheduleClient(options.host);
+  const { client, workspaceId } = await connectScheduleClient(options.host, options.workspace);
   try {
-    const payload = await client.scheduleList();
+    const payload = await client.scheduleList({ workspaceId });
     if (payload.error) {
       throw new Error(payload.error);
     }

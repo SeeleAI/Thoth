@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 
 import type { ManagedAgent } from "./agent-manager.js";
 import type { StoredAgentRecord } from "./agent-storage.js";
-import type { AgentProviderNotice } from "./agent-sdk-types.js";
+import type { AgentProviderNotice } from "@thoth/drivers/agent-runtime";
 
 export type LifecycleAgentSnapshot = Pick<ManagedAgent, "id" | "cwd" | "lifecycle">;
 

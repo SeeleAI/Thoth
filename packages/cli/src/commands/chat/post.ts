@@ -19,9 +19,10 @@ export async function runPostCommand(
   options: ChatPostOptions,
   _command: Command,
 ): Promise<SingleResult<ChatMessageRow>> {
-  const { client } = await connectChatClient(options.host);
+  const { client, workspaceId } = await connectChatClient(options.host, options.workspace);
   try {
     const payload = await client.postChatMessage({
+      workspaceId,
       room,
       body,
       authorAgentId: resolveChatAuthorAgentId(),

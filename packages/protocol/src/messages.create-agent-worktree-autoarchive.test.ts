@@ -33,6 +33,7 @@ describe("create_agent_request worktree and autoArchive fields", () => {
       },
       autoArchive: true,
       labels: {},
+      contextRefs: [],
     });
   });
 
@@ -54,6 +55,7 @@ describe("create_agent_request worktree and autoArchive fields", () => {
         cwd: "/repo/app",
       },
       labels: {},
+      contextRefs: [],
     });
   });
 });

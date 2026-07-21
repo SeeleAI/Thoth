@@ -6,7 +6,7 @@ import {
   type CheckoutExistingBranchResult,
   type GitMutationRefreshReason,
 } from "../../../utils/checkout-git.js";
-import { execCommand } from "../../../utils/spawn.js";
+import { execCommand } from "@thoth/drivers/internal/utils/spawn";
 import type { WorkspaceGitService } from "../../workspace-git-service.js";
 import { assertSafeGitRef as assertWorktreeSafeGitRef } from "../../worktree-session.js";
 

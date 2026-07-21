@@ -2499,3 +2499,51 @@ Evidence recorded on `2026-07-20`:
 6. Both Runtime Skills extracted from the public Windows x64 `app.asar` have real CRLF line endings. The parser
    extracted from that same package parsed `thoth.clarify` and `thoth.loop` successfully, with non-empty bodies
    of `13876` and `6977` characters respectively.
+
+### `NTH-EV-043` Workspace / Task Authority And Universal HarnessAdapter
+
+Status: `local_verified_release_pending`. The final product architecture and local packaged journeys are
+verified. Native GitHub Actions and verification of the replacement public Release are not yet claimed.
+
+Evidence recorded on `2026-07-21`:
+
+1. `.thoth` now uses one global catalog, one normalized SQLite authority shard per Workspace, content-addressed
+   RuntimeBundles and provider-owned thread handles. The repository guard rejects `.thoth/provider-sessions`,
+   copied provider homes, old foreground/Loop execution RPCs, full-projection event duplication and provider-name
+   business routing.
+2. The common HarnessAdapter and ToolGateway path passed all provider transport fixtures: drivers completed `46`
+   files / `583` tests with `3` files / `21` tests explicitly skipped, and daemon lifecycle conformance completed
+   `5/5` for Codex, Claude Code, OpenCode, Pi and ACP. Codex additionally completed a real-provider AppImage run.
+3. Workspace authority acceptance completed `30/30`; App Task surface acceptance completed `19/19`. These cover
+   one-shot storage migration, command idempotency/CAS, Human Decision persistence, Task context, Card suspension,
+   Quick/Loop unification, failed-Review retry and immediate Stop projection without a running spinner.
+4. The real Codex AppImage journey kept one visible provider thread through `10` raw/Thoth hot-switch turns,
+   consumed exactly one failed Review, attached `thoth.loop` to all `6` background phase attempts and used
+   `9,412,373` bytes of durable Thoth state. No provider-session directory or hidden foreground Secretary Agent
+   was created.
+5. A newly rebuilt final AppImage then passed the deterministic public journey with `13` hot-switch turns, one
+   failed Review, three PlanExec calls, three Review calls, six Loop attachment receipts, one-shot legacy layout
+   migration, structured Task context and a stopped Task with no active execution. Durable state was `6,428,194`
+   bytes and exactly two RuntimeBundle digests existed.
+6. The final server CLI tgz was installed as a non-root user in `node:24-bookworm-slim`, which has no `ps`. Over
+   hosted Relay v3 + E2EE it completed Clarify, Quick, Loop, Card submission across daemon restart, client
+   reconnect, one failed-Review retry, Pause/Resume, Stop, five PlanExec calls, five Review calls and six Loop
+   receipts. Pairing credentials were absent from URLs, logs and the report.
+7. Recovery defects found during the journey were fixed at their owning boundaries: visible Agents are restored
+   before Card/continuation timeline writes; resumed provider threads reattach the exact RuntimeBundle tool
+   catalog; Pause is consumed at the PlanExec transaction boundary; Stop owns `stopping -> stopped`; canceled
+   provider terminals cannot rewrite it as interrupted.
+8. CLI stop no longer depends on `tree-kill` or `ps`. The PID lock identifies the supervisor owner, POSIX provider
+   processes use native process-group signals, stale-lock reachable shutdown uses lifecycle RPC and forced stop
+   does not scan unrelated descendants. The full CLI suite passed `40/40`, including supervisor restart,
+   ownership, stale lock and worker-disconnect regressions.
+9. Final local gates passed: full App `327` files / `2688` tests, drivers `46` files / `583` tests, desktop `26`
+   files / `171` tests, foundation `552` tests, AppImage and hosted Relay journeys, daemon/client/protocol builds
+   and typechecks, release/brand contracts, secret and removed-path scans, formatting and diff hygiene. Clarify
+   golden, Clarify user simulation and Loop golden independent Codex judges all passed.
+
+Boundary:
+
+The fixed public `v0.0.0-mvp-beta` Release still contains the prior commit. `NTH-EV-043` becomes fully verified
+only after both target branches are pushed, every native workflow job succeeds, the sole MVP Release is replaced
+and the public AppImage/APK/CLI plus source/update/checksum receipts are downloaded and revalidated.

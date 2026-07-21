@@ -1,8 +1,8 @@
 import type { Logger } from "pino";
 
-import type { AgentProvider } from "./agent-sdk-types.js";
+import type { AgentProvider } from "@thoth/drivers/agent-runtime";
 import type { AgentManager, ManagedAgent } from "./agent-manager.js";
-import type { AgentStorage } from "./agent-storage.js";
+import type { AgentRegistry } from "./agent-storage.js";
 import {
   buildConfigOverrides,
   buildSessionConfig,
@@ -15,7 +15,7 @@ const pendingAgentInitializations = new Map<string, Promise<ManagedAgent>>();
 
 export interface EnsureAgentLoadedDeps {
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   validProviders?: Iterable<AgentProvider>;
   logger: Logger;
 }

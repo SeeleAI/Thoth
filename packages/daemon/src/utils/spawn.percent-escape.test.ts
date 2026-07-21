@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { execCommand } from "./spawn.js";
+import { execCommand } from "@thoth/drivers/internal/utils/spawn";
 
 const tempDirs: string[] = [];
 

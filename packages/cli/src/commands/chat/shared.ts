@@ -5,13 +5,21 @@ import type { ChatMessageRow } from "./schema.js";
 
 export interface ChatCommandOptions extends CommandOptions {
   host?: string;
+  workspace?: string;
 }
 
-export async function connectChatClient(host?: string) {
+export async function connectChatClient(host?: string, workspace?: string) {
+  const workspaceId = workspace?.trim() || process.env.THOTH_WORKSPACE_ID?.trim();
+  if (!workspaceId) {
+    throw {
+      code: "WORKSPACE_REQUIRED",
+      message: "Chat commands require --workspace <workspace-id>",
+    } satisfies CommandError;
+  }
   const daemonHost = getDaemonHost({ host });
   try {
     const client = await connectToDaemon({ host });
-    return { client, daemonHost };
+    return { client, daemonHost, workspaceId };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const error: CommandError = {

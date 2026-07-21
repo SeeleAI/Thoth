@@ -35,9 +35,9 @@ export {
 export {
   type ProviderOverride,
   type ProviderProfileModel,
-} from "./agent/provider-launch-config.js";
-export { findExecutable } from "../executable-resolution/executable-resolution.js";
-export { execCommand, spawnProcess } from "../utils/spawn.js";
+} from "@thoth/drivers/internal/server/agent/provider-launch-config";
+export { findExecutable } from "@thoth/drivers/internal/executable-resolution/executable-resolution";
+export { execCommand, spawnProcess } from "@thoth/drivers/internal/utils/spawn";
 
 // Provider manifest (source of truth for provider definitions)
 export {
@@ -54,10 +54,10 @@ export type {
   AgentPermissionRequest,
   AgentTimelineItem,
   ProviderSnapshotEntry,
-} from "./agent/agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 
 // Agent activity curator for CLI logs
-export { curateAgentActivity } from "./agent/activity-curator.js";
+export { curateAgentActivity } from "@thoth/drivers/internal/server/agent/activity-curator";
 export {
   getStructuredAgentResponse,
   StructuredAgentResponseError,

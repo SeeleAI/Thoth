@@ -118,12 +118,16 @@ export class ThothApiJourney {
 
   async waitForLoopDone(workspaceId) {
     const task = await this.waitFor(async () => {
-      const result = await this.client.listBackgroundTasks({ workspaceId });
-      return result.tasks.find((candidate) => candidate.status === "done") ?? null;
+      const result = await this.client.listTasks(workspaceId);
+      if (result.error) throw new Error(result.error);
+      return result.tasks.find((candidate) => candidate.status === "completed") ?? null;
     }, "background Loop to become done");
-    const detail = await this.client.inspectBackgroundTask({ taskId: task.id, workspaceId });
-    invariant(detail.error === null, `Background task inspect failed: ${detail.error}`);
-    invariant(detail.task?.status === "done", `Background task ended as ${detail.task?.status}`);
+    const detail = await this.client.getTask({ taskId: task.id, workspaceId });
+    invariant(detail.error === null, `Task inspect failed: ${detail.error}`);
+    invariant(
+      detail.task?.status === "completed",
+      `Background task ended as ${detail.task?.status}`,
+    );
     return detail.task;
   }
 
@@ -178,6 +182,28 @@ export class ThothApiJourney {
     invariant(
       task.budget.usedFailedReviews === 1,
       `Expected one failed Review, received ${task.budget.usedFailedReviews}`,
+    );
+    await this.client.sendAgentMessage(
+      agent.id,
+      "Read the attached Task context and report its current status.",
+      {
+        thoth: { enabled: false },
+        contextRefs: [
+          {
+            kind: "task",
+            workspaceId,
+            taskId: task.id,
+            revision: task.revision,
+          },
+        ],
+      },
+    );
+    await this.waitForLifecycle(agent.id, "done");
+    await this.waitForAgentIdle(agent.id);
+    const contextSessionId = await this.sessionId(agent.id);
+    invariant(
+      contextSessionId === sessionId,
+      `@Task context replaced the visible provider session: ${sessionId} -> ${contextSessionId}`,
     );
     return { agent, sessionId, task };
   }

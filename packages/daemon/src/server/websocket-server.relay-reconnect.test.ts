@@ -5,8 +5,7 @@ import type { AgentManager } from "./agent/agent-manager.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { DaemonConfigStore } from "./daemon-config-store.js";
-import type { FileBackedChatService } from "./chat/chat-service.js";
-import type { LoopService } from "./loop-service.js";
+import type { WorkspaceChatService } from "./chat/chat-service.js";
 import type { ScheduleService } from "./schedule/service.js";
 import type { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
@@ -268,9 +267,7 @@ function createServer(options?: {
     undefined,
     undefined,
     undefined,
-    createStub<FileBackedChatService>({}),
-    createStub<LoopService>({}),
-    undefined,
+    createStub<WorkspaceChatService>({}),
     createStub<ScheduleService>({}),
     createStub<CheckoutDiffManager>({
       subscribe: vi.fn(),

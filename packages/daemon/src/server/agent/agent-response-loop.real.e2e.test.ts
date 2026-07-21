@@ -12,7 +12,7 @@ import { generateStructuredAgentResponse } from "./agent-response-loop.js";
 import { AgentManager } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
 import { createAgentMcpServer } from "./mcp-server.js";
-import { shutdownProviders } from "./provider-registry.js";
+import { shutdownProviders } from "@thoth/drivers/internal/server/agent/provider-registry";
 import {
   canRunRealProvider,
   createRealProviderClients,

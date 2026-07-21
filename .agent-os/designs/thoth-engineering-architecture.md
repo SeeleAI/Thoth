@@ -49,6 +49,21 @@ The system has six primary layers:
 5. Harness driver layer.
 6. UI shells and relay sync.
 
+### 1.1 Architecture-First Delivery Rule
+
+`Simply Is First` governs how this architecture is implemented. Simplicity means one final architecture with explicit ownership, not a reduced implementation that is expected to be replaced later.
+
+For every nontrivial implementation slice:
+
+1. Name the final architecture module being implemented, its production interface, its state owner and its independent acceptance boundary before writing code.
+2. Use a rapid experiment only to retire a real risk inside that final boundary. The experiment must call the same public API and traverse the same state machine and lifecycle as production.
+3. Implement the final module A and verify it before advancing to module B. Do not create a compressed `A' + B' + C'` path to simulate an end-to-end milestone.
+4. Keep exactly one production authority path. Provider adapters may differ behind capability contracts, but product lifecycle semantics may not fork by provider name.
+5. Treat an unmet metric as evidence, not permission to downgrade. Preserve the failing result, diagnose it and change the final implementation; do not lower acceptance or add a fallback.
+6. If evidence invalidates the locked architecture, stop implementation and amend canonical architecture authority before coding the replacement. Do not let an expedient code path silently become architecture.
+
+This rule permits incomplete milestone sequencing: A may be production-correct while B does not yet exist. It forbids disposable product architecture: a temporary implementation may not impersonate A, B and C merely to make the whole journey appear complete.
+
 ## 2. Monorepo Packages
 
 The repository should use a `packages/` workspace layout.
@@ -1590,3 +1605,72 @@ Documentation acceptance:
 2. User journey contains no code paths or schema terms.
 3. Engineering architecture contains Multica and Paseo file-level reference maps.
 4. Original source archive remains unchanged.
+
+## 26. Workspace / Task Authority And HarnessAdapter Reset
+
+`NTH-CD-060` supersedes every implementation detail in this document that treats a provider session,
+hidden Agent, Codex home, topic snapshot, global Loop database or copied Skill directory as durable
+task authority.
+
+### 26.1 Durable units
+
+1. `Workspace` is the physical authority shard, path/capability boundary, mutation lease domain and
+   unit of crash recovery. A worktree is a separate Workspace.
+2. `Task` is the user-visible schedulable unit for both Quick and Loop work. It owns contracts,
+   goals, semantic memory, decisions, lifecycle and evidence.
+3. `PhaseRun` expresses PlanExec, Review or audit intent. `ExecutionAttempt` expresses exactly one
+   provider run. `ProviderThread` stores only an opaque native handle and resume/retention metadata.
+4. ProviderThread loss may require a replacement ExecutionAttempt, but it cannot invalidate Task
+   Truth, a pending Card, a human decision or completed Review direction.
+
+### 26.2 Storage topology
+
+```text
+~/.thoth/
+  catalog.sqlite
+  runtime-bundles/sha256/<digest>/bundle.json
+  workspaces/<workspaceId>/authority.sqlite
+  workspaces/<workspaceId>/blobs/sha256/<prefix>/<digest>
+  workspaces/<workspaceId>/artifacts/<taskId>/<phaseRunId>/
+  runtime/
+  logs/
+  secrets/
+```
+
+`catalog.sqlite` owns only global settings, provider profiles, Workspace Registry and a rebuildable
+Task locator. A Workspace authority shard owns normalized Agent, thread, turn, Card, human decision,
+Task, Goal, PhaseRun, ExecutionAttempt, attachment, Task Blackboard, context binding, timeline,
+evidence, command, lease and incremental event tables. Current rows and append-only deltas are
+written in one transaction; events never repeat the complete projection. Immutable large payloads
+are addressed by SHA-256 and referenced from SQL. Provider authentication, configuration, native
+transcript, KV cache and tool cache stay in provider-owned storage.
+
+### 26.3 RuntimeBundle and HarnessAdapter
+
+`packages/drivers` owns one `HarnessAdapter` contract for Codex, Claude Code, OpenCode, Pi, ACP and
+future providers. It exposes structured capabilities and thread, attachment, execution, event,
+interrupt, persistence, archive and legacy-adoption operations. Provider-specific tool and
+instruction transport belongs only inside an adapter. Daemon Task/Clarify/Loop code consumes
+capabilities and receipts and may not inspect a provider id.
+
+`thoth.clarify` and `thoth.loop` are immutable RuntimeBundles containing semantic instructions,
+tool schemas and phase scope. The daemon stores each digest once and records an attachment receipt
+before an eligible execution starts. Native dynamic tools, MCP and ACP are transport mappings of
+the same semantic catalog, not alternate product paths.
+
+### 26.4 Task Truth and runtime truth
+
+Task Blackboard entries contain only user intent, approved contracts, human decisions, workspace
+facts, PlanExec reports, Review Direction Memos, evidence meaning and blockers. Attempt ids,
+generations, leases, budgets, cursors, receipts and hashes remain daemon-only Runtime Truth. A
+foreground `@Task` context reference resolves through `TaskContextBroker` to same-Workspace semantic
+Blackboard content; it never concatenates or merges provider transcripts.
+
+### 26.5 Cancellation and suspension
+
+A Card is a durable Task/Turn suspension, not an open provider call stack. Committing a Card ends and
+fences the current ExecutionAttempt; answering it appends an exact Human Decision and starts a new
+continuation on the same ProviderThread or an explicit replacement lineage. Stop first commits
+`stopping` and `cancel_requested`, fences all callbacks and returns the new projection, then asks the
+adapter to interrupt. Unconfirmed cancellation becomes an orphaned execution under Workspace
+quarantine; UI phase activity comes from ExecutionProjection, never a hidden Agent snapshot.

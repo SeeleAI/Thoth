@@ -16,9 +16,9 @@ export async function runInspectCommand(
   options: ScheduleCommandOptions,
   _command: Command,
 ): Promise<ListResult<ScheduleInspectRow>> {
-  const { client } = await connectScheduleClient(options.host);
+  const { client, workspaceId } = await connectScheduleClient(options.host, options.workspace);
   try {
-    const payload = await client.scheduleInspect({ id });
+    const payload = await client.scheduleInspect({ workspaceId, id });
     if (payload.error || !payload.schedule) {
       throw new Error(payload.error ?? `Schedule not found: ${id}`);
     }

@@ -126,6 +126,7 @@ async function submitDraftCreateRequest(input: {
   text: string;
   images?: UserMessageImageAttachment[];
   attachments?: unknown;
+  contextRefs?: DraftCreateAttempt["contextRefs"];
   cwd: string;
   client: DaemonClient | null;
   workspaceDirectory: string | null;
@@ -148,6 +149,7 @@ async function submitDraftCreateRequest(input: {
     text,
     images,
     attachments,
+    contextRefs,
     cwd,
     client,
     workspaceDirectory,
@@ -191,6 +193,7 @@ async function submitDraftCreateRequest(input: {
     clientMessageId: attempt.clientMessageId,
     ...(imagesData && imagesData.length > 0 ? { images: imagesData } : {}),
     ...(attachmentsArray && attachmentsArray.length > 0 ? { attachments: attachmentsArray } : {}),
+    ...(contextRefs && contextRefs.length > 0 ? { contextRefs } : {}),
     thoth: input.thoth,
   });
 
@@ -405,6 +408,9 @@ export function WorkspaceDraftAgentTab({
       ...(pendingCreateAttempt.attachments && pendingCreateAttempt.attachments.length > 0
         ? { attachments: pendingCreateAttempt.attachments }
         : {}),
+      ...(pendingCreateAttempt.contextRefs && pendingCreateAttempt.contextRefs.length > 0
+        ? { contextRefs: pendingCreateAttempt.contextRefs }
+        : {}),
     };
   }, [pendingAutoSubmit, pendingCreateAttempt]);
   const allowsEmptyAutoSubmit = pendingAutoSubmit?.allowEmptyText === true;
@@ -493,12 +499,13 @@ export function WorkspaceDraftAgentTab({
         composerState,
         selectModelMessage: t("workspaceSetup.errors.selectModel"),
       }),
-    createRequest: async ({ attempt, text, images, attachments, cwd }) =>
+    createRequest: async ({ attempt, text, images, attachments, contextRefs, cwd }) =>
       submitDraftCreateRequest({
         attempt,
         text,
         images,
         attachments,
+        contextRefs,
         cwd,
         client,
         workspaceDirectory: draftWorkingDirectory,
@@ -703,6 +710,7 @@ export function WorkspaceDraftAgentTab({
         <Composer
           agentId={tabId}
           serverId={serverId}
+          workspaceId={workspaceId}
           externalKeyboardShift
           isPaneFocused={isPaneFocused}
           onSubmitMessage={handleCreateFromInput}

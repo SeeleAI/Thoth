@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ClarifyProviderRuntimeInputPacketSchema,
@@ -27,12 +27,6 @@ export const CLARIFY_SKILL_FOLDER = "thoth-clarify" as const;
 export const LOOP_SKILL_ID = "thoth.loop" as const;
 export const LOOP_SKILL_FOLDER = "thoth-loop" as const;
 
-const GLOBAL_PROVIDER_SKILL_DIR_SUFFIXES = [
-  ".codex/skills",
-  ".claude/skills",
-  ".agents/skills",
-] as const;
-
 export interface RuntimeSkillFrontmatter {
   name: string;
   description: string;
@@ -51,13 +45,6 @@ export interface RuntimeSkillArtifact {
   body: string;
   frontmatter: RuntimeSkillFrontmatter;
   digest: `sha256:${string}`;
-}
-
-export interface RuntimeSkillMount {
-  skillRef: ThothRuntimeSkillRef;
-  sourcePath: string;
-  mountedPath: string;
-  sessionSkillHome: string;
 }
 
 export interface BuildClarifyProviderInputOptions {
@@ -299,64 +286,6 @@ export function validateClarifyRuntimeSkillArtifact(
     }
   }
   return failures;
-}
-
-export function getGlobalProviderSkillDirs(home: string = process.env.HOME ?? ""): string[] {
-  if (!home) {
-    return [];
-  }
-  return GLOBAL_PROVIDER_SKILL_DIR_SUFFIXES.map((suffix) => resolve(home, suffix));
-}
-
-export function isInsideGlobalProviderSkillDir(
-  targetPath: string,
-  home: string = process.env.HOME ?? "",
-): boolean {
-  const resolvedTarget = resolve(targetPath);
-  return getGlobalProviderSkillDirs(home).some((globalDir) => {
-    const resolvedGlobal = resolve(globalDir);
-    const relativeTarget = relative(resolvedGlobal, resolvedTarget);
-    return (
-      relativeTarget === "" ||
-      (relativeTarget !== ".." &&
-        !relativeTarget.startsWith(`..${sep}`) &&
-        !isAbsolute(relativeTarget))
-    );
-  });
-}
-
-export function mountRuntimeSkillForSession(options: {
-  artifact?: RuntimeSkillArtifact;
-  thothSessionHome: string;
-  sessionId: string;
-  home?: string;
-}): RuntimeSkillMount {
-  const artifact = options.artifact ?? loadRuntimeSkillArtifact(CLARIFY_SKILL_ID);
-  const sessionSkillHome = resolve(
-    options.thothSessionHome,
-    "provider-sessions",
-    options.sessionId,
-    "skills",
-  );
-  if (isInsideGlobalProviderSkillDir(sessionSkillHome, options.home)) {
-    throw new Error("Refusing to mount a Thoth runtime skill inside a global provider skill dir");
-  }
-
-  const mountedDir = join(sessionSkillHome, artifact.folderName);
-  const mountedPath = join(mountedDir, "SKILL.md");
-  rmSync(mountedDir, { recursive: true, force: true });
-  mkdirSync(mountedDir, { recursive: true });
-  writeFileSync(mountedPath, artifact.source);
-
-  return {
-    skillRef: {
-      id: artifact.id,
-      digest: artifact.digest,
-    },
-    sourcePath: artifact.path,
-    mountedPath,
-    sessionSkillHome,
-  };
 }
 
 export function buildClarifyTurnInputPacket(

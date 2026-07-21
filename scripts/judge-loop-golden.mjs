@@ -1,7 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -35,15 +34,11 @@ const { LOOP_GOLDEN_SCENARIOS } = await import(
 const clarify = await import(
   pathToFileURL(resolve(repoRoot, "packages/drivers/dist/clarify/index.js")).href
 );
-
-const tempRoot = mkdtempSync(join(tmpdir(), "thoth-loop-golden-judge-"));
+const harness = await import(
+  pathToFileURL(resolve(repoRoot, "packages/drivers/dist/harness/index.js")).href
+);
 const artifact = clarify.loadRuntimeSkillArtifact("thoth.loop");
-const mount = clarify.mountRuntimeSkillForSession({
-  artifact,
-  thothSessionHome: join(tempRoot, "thoth-runtime-home"),
-  sessionId: "loop_golden_judge",
-  home: join(tempRoot, "bare-provider-home"),
-});
+const bundle = harness.loadRuntimeBundle("thoth.loop", harness.THOTH_RUNTIME_BUNDLE_CATALOG);
 
 const prompt = [
   "You are an independent judge for Thoth Loop background PlanExec/Review quality.",
@@ -81,8 +76,8 @@ const prompt = [
     2,
   ),
   "",
-  "## Session-Scoped Mount Evidence",
-  JSON.stringify(mount, null, 2),
+  "## RuntimeBundle Evidence",
+  JSON.stringify(bundle, null, 2),
   "",
   "## Loop Golden Scenarios",
   JSON.stringify(LOOP_GOLDEN_SCENARIOS, null, 2),
@@ -113,13 +108,11 @@ const judge = spawnSync(
 
 if (judge.error) {
   console.error(`Failed to run codex exec judge: ${judge.error.message}`);
-  rmSync(tempRoot, { recursive: true, force: true });
   process.exit(1);
 }
 if (judge.status !== 0) {
   console.error(judge.stdout);
   console.error(judge.stderr);
-  rmSync(tempRoot, { recursive: true, force: true });
   console.error(`codex exec judge failed with status ${judge.status}`);
   process.exit(judge.status ?? 1);
 }
@@ -128,11 +121,9 @@ const judgeText = readFileSync(judgePath, "utf8");
 if (!judgeText.includes("JUDGE_RESULT: PASS")) {
   console.log(judge.stdout);
   console.error(`Loop codex judge did not pass. Evidence: ${judgePath}`);
-  rmSync(tempRoot, { recursive: true, force: true });
   process.exit(1);
 }
 
-rmSync(tempRoot, { recursive: true, force: true });
 console.log("Loop codex judge: PASS");
 console.log(`Deterministic eval evidence: ${evalPath}`);
 console.log(`Codex judge evidence: ${judgePath}`);

@@ -1,6 +1,5 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   ClarifyAnswerPacketSchema,
   ClarifyOutputMetaSchema,
@@ -13,11 +12,11 @@ import {
   buildClarifyProviderInputEnvelope,
   buildClarifyRepairInputPacket,
   buildClarifyTransitionInputPacket,
-  isInsideGlobalProviderSkillDir,
   loadRuntimeSkillArtifact,
-  mountRuntimeSkillForSession,
   validateClarifyRuntimeSkillArtifact,
 } from "./contract.js";
+import { loadRuntimeBundle } from "../harness/runtime-bundle.js";
+import { THOTH_RUNTIME_BUNDLE_CATALOG } from "../harness/thoth-runtime-bundle-catalog.js";
 import { type ClarifyGoldenScenario, CLARIFY_GOLDEN_SCENARIOS } from "./golden.js";
 import {
   buildClarifyUserSimulationReport,
@@ -172,52 +171,36 @@ function evaluateSkillArtifactChecks(): ClarifyEvalScenarioResult[] {
   return [result("packaged-runtime-skill-authority", failures)];
 }
 
-function evaluateMountChecks(): ClarifyEvalScenarioResult[] {
-  const tempRoot = mkdtempSync(join(tmpdir(), "thoth-clarify-eval-"));
-  try {
-    const fakeHome = join(tempRoot, "fake-home");
-    const mount = mountRuntimeSkillForSession({
-      thothSessionHome: join(tempRoot, "thoth-runtime-home"),
-      sessionId: "sec_eval",
-      home: fakeHome,
-    });
-
-    const globalInstallFailures: string[] = [];
-    for (const globalPath of [
-      join(fakeHome, ".codex/skills/thoth-clarify/SKILL.md"),
-      join(fakeHome, ".claude/skills/thoth-clarify/SKILL.md"),
-      join(fakeHome, ".agents/skills/thoth-clarify/SKILL.md"),
-    ]) {
-      if (globalPath === mount.mountedPath) {
-        globalInstallFailures.push(`mounted into global skill path: ${globalPath}`);
-      }
-    }
-
-    const visibleFailures: string[] = [];
-    if (
-      !mount.mountedPath.endsWith(
-        join("provider-sessions", "sec_eval", "skills", "thoth-clarify", "SKILL.md"),
-      )
-    ) {
-      visibleFailures.push(`unexpected session mount path: ${mount.mountedPath}`);
-    }
-    if (mount.skillRef.id !== "thoth.clarify") {
-      visibleFailures.push("mounted skill ref id mismatch");
-    }
-
-    const bareFailures: string[] = [];
-    if (isInsideGlobalProviderSkillDir(mount.mountedPath, fakeHome)) {
-      bareFailures.push("bare provider skill home can see mounted thoth.clarify");
-    }
-
-    return [
-      result("skill-not-global-installed", globalInstallFailures),
-      result("session-scoped-skill-visible", visibleFailures),
-      result("bare-provider-skill-invisible", bareFailures),
-    ];
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
+function evaluateRuntimeBundleChecks(): ClarifyEvalScenarioResult[] {
+  const artifact = loadRuntimeSkillArtifact("thoth.clarify");
+  const bundle = loadRuntimeBundle("thoth.clarify", THOTH_RUNTIME_BUNDLE_CATALOG);
+  const digestFailures: string[] = [];
+  if (!/^sha256:[a-f0-9]{64}$/u.test(bundle.digest)) {
+    digestFailures.push("RuntimeBundle digest must be content-addressed");
   }
+  if (bundle.instructions !== artifact.body) {
+    digestFailures.push("RuntimeBundle instructions differ from the canonical skill body");
+  }
+  const catalogFailures: string[] = [];
+  for (const toolName of [
+    "thoth_submit_clarify_card",
+    "thoth_submit_task_card",
+    "thoth_submit_goals_card",
+  ]) {
+    if (!bundle.tools.some((tool) => tool.name === toolName)) {
+      catalogFailures.push(`RuntimeBundle is missing ${toolName}`);
+    }
+  }
+  const isolationFailures: string[] = [];
+  const serialized = JSON.stringify(bundle);
+  if (serialized.includes("provider-sessions") || serialized.includes(".codex/skills")) {
+    isolationFailures.push("RuntimeBundle contains a provider-home or session-home path");
+  }
+  return [
+    result("runtime-bundle-content-addressed", digestFailures),
+    result("runtime-bundle-tool-catalog", catalogFailures),
+    result("runtime-bundle-provider-home-independent", isolationFailures),
+  ];
 }
 
 function evaluateRuntimeInputPacketChecks(): ClarifyEvalScenarioResult[] {
@@ -572,7 +555,7 @@ export function evaluateClarifyGoldenDataset(
   const results = [
     ...scenarios.map((scenario) => evaluateClarifyGoldenScenario(scenario)),
     ...evaluateSkillArtifactChecks(),
-    ...evaluateMountChecks(),
+    ...evaluateRuntimeBundleChecks(),
     ...evaluateRuntimeInputPacketChecks(),
     evaluateSkillRulesLiveInSkillMd(),
     evaluateClarifyStrengthBehaviorChecks(scenarios),

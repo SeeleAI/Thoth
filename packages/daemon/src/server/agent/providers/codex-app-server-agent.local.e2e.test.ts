@@ -6,9 +6,9 @@ import { createServer } from "node:http";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { once } from "node:events";
 
-import { CodexAppServerAgentClient } from "./codex-app-server-agent.js";
+import { CodexAppServerAgentClient } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
-import type { AgentStreamEvent } from "../agent-sdk-types.js";
+import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 
 function isCodexInstalled(): boolean {
   try {

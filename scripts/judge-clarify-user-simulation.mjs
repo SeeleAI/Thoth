@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -19,8 +18,9 @@ const judgeResponsePath = resolve(
 const clarify = await import(
   pathToFileURL(resolve(repoRoot, "packages/drivers/dist/clarify/index.js")).href
 );
-
-const tempRoot = mkdtempSync(join(tmpdir(), "thoth-clarify-user-sim-"));
+const harness = await import(
+  pathToFileURL(resolve(repoRoot, "packages/drivers/dist/harness/index.js")).href
+);
 
 function writeEvidenceAndExit(status, evidence, judgeText = "") {
   const result = status === 0 ? "PASS" : "FAIL";
@@ -46,45 +46,13 @@ function writeEvidenceAndExit(status, evidence, judgeText = "") {
   process.exit(status);
 }
 
-try {
-  const fakeHome = join(tempRoot, "bare-provider-home");
-  const fakeGlobalSkillDirs = [
-    join(fakeHome, ".codex/skills"),
-    join(fakeHome, ".claude/skills"),
-    join(fakeHome, ".agents/skills"),
-  ];
-  for (const dir of fakeGlobalSkillDirs) {
-    mkdirSync(dir, { recursive: true });
-  }
-
+{
   const artifact = clarify.loadRuntimeSkillArtifact("thoth.clarify");
   const artifactFailures = clarify.validateClarifyRuntimeSkillArtifact(artifact);
-  const mount = clarify.mountRuntimeSkillForSession({
-    artifact,
-    thothSessionHome: join(tempRoot, "thoth-runtime-home"),
-    sessionId: "sec_user_sim_pathtracing",
-    home: fakeHome,
-  });
-  const mountedSource = readFileSync(mount.mountedPath, "utf8");
-  const simulationReport = clarify.buildClarifyUserSimulationReport(mount.skillRef);
+  const bundle = harness.loadRuntimeBundle("thoth.clarify", harness.THOTH_RUNTIME_BUNDLE_CATALOG);
+  const skillRef = { id: bundle.id, digest: bundle.digest };
+  const simulationReport = clarify.buildClarifyUserSimulationReport(skillRef);
   const simulationValidation = clarify.validateClarifyUserSimulationReport(simulationReport);
-
-  const noGlobalPollution = fakeGlobalSkillDirs.map((dir) => {
-    const thothClarifyPath = join(dir, "thoth-clarify/SKILL.md");
-    return {
-      dir,
-      thothClarifyPath,
-      exists: existsSync(thothClarifyPath),
-    };
-  });
-
-  const actualHomeGlobalMountCheck = clarify
-    .getGlobalProviderSkillDirs(process.env.HOME ?? "")
-    .map((dir) => ({
-      dir,
-      mountedInsideActualGlobalDir:
-        mount.mountedPath === dir || mount.mountedPath.startsWith(`${dir}/`),
-    }));
 
   const evidence = {
     timestamp,
@@ -96,38 +64,28 @@ try {
       source: artifact.source,
       validationFailures: artifactFailures,
     },
-    sessionScopedMount: {
-      sourcePath: mount.sourcePath,
-      mountedPath: mount.mountedPath,
-      sessionSkillHome: mount.sessionSkillHome,
-      skillRef: mount.skillRef,
-      mountedSourceMatchesCanonical: mountedSource === artifact.source,
-      visibleToSession: existsSync(mount.mountedPath),
-    },
-    bareProviderIsolation: {
-      fakeHome,
-      noGlobalPollution,
-      actualHomeGlobalMountCheck,
+    runtimeBundle: {
+      ...bundle,
+      skillRef,
+      instructionsMatchCanonicalBody: bundle.instructions === artifact.body,
+      providerHomeIndependent:
+        !JSON.stringify(bundle).includes("provider-sessions") &&
+        !JSON.stringify(bundle).includes(".codex/skills") &&
+        !JSON.stringify(bundle).includes(".claude/skills"),
     },
     simulationValidation,
     simulationReport,
   };
 
-  const deterministicFailures = [
-    ...artifactFailures,
-    ...simulationValidation.failures,
-    ...noGlobalPollution
-      .filter((entry) => entry.exists)
-      .map((entry) => `global skill pollution detected: ${entry.thothClarifyPath}`),
-    ...actualHomeGlobalMountCheck
-      .filter((entry) => entry.mountedInsideActualGlobalDir)
-      .map((entry) => `mounted inside actual global provider skill dir: ${entry.dir}`),
-  ];
-  if (mountedSource !== artifact.source) {
-    deterministicFailures.push("mounted session SKILL.md does not match canonical SKILL.md");
+  const deterministicFailures = [...artifactFailures, ...simulationValidation.failures];
+  if (bundle.instructions !== artifact.body) {
+    deterministicFailures.push("RuntimeBundle instructions do not match canonical SKILL body");
   }
-  if (!existsSync(mount.mountedPath)) {
-    deterministicFailures.push("session-scoped mounted SKILL.md is not visible");
+  if (!/^sha256:[a-f0-9]{64}$/u.test(bundle.digest)) {
+    deterministicFailures.push("RuntimeBundle digest is not content-addressed");
+  }
+  if (!evidence.runtimeBundle.providerHomeIndependent) {
+    deterministicFailures.push("RuntimeBundle contains a provider-home or session-home path");
   }
 
   if (deterministicFailures.length > 0) {
@@ -140,12 +98,12 @@ try {
   const prompt = [
     "You are an independent `codex exec` judge for Thoth `thoth.clarify` user simulation.",
     "",
-    "You must judge the installed Thoth runtime artifact and session-scoped invocation evidence below. Do not rely on any main development session conclusion and do not change files.",
+    "You must judge the installed Thoth runtime artifact and immutable RuntimeBundle evidence below. Do not rely on any main development session conclusion and do not change files.",
     "",
     "Pass only if all of these are true:",
     "- `SKILL.md` is a standard cross-provider Skill artifact with YAML frontmatter and Markdown body, not a Codex-only hook/metadata format.",
-    "- The canonical `SKILL.md` is mounted into a Thoth-owned provider-session skill home.",
-    "- The mount does not write to `.codex/skills`, `.claude/skills`, or `.agents/skills` under the clean bare provider home, and the mounted path is not under the actual global provider skill dirs.",
+    "- The canonical Skill body and semantic tool schemas form one content-addressed RuntimeBundle.",
+    "- RuntimeBundle attachment is provider-neutral and contains no provider-home or per-session copied path.",
     "- Normal same-state packets do not repeat Skill rules and do not include `skill_ref`.",
     "- Runtime input packets carry controls with clarify strength and effective clarify strength, plus compact refs when available.",
     "- Session start and transition packets carry `skill_ref`/digest markers without copying the rules.",
@@ -208,6 +166,4 @@ try {
   }
 
   writeEvidenceAndExit(0, evidence, judgeText);
-} finally {
-  rmSync(tempRoot, { recursive: true, force: true });
 }

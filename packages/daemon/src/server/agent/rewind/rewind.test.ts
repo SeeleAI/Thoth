@@ -2,12 +2,14 @@ import { describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { AgentManager } from "../agent-manager.js";
-import type { AgentClient, AgentSession, AgentSessionConfig } from "../agent-sdk-types.js";
+import type { AgentClient, AgentSession, AgentSessionConfig } from "@thoth/drivers/agent-runtime";
+import { NO_HARNESS_CAPABILITIES } from "@thoth/drivers/harness";
 import { FakeRewindSession, REWIND_TEST_CAPABILITIES } from "./test-rewind-session.js";
 
 class FakeRewindClient implements AgentClient {
   readonly provider = "claude";
   readonly capabilities = REWIND_TEST_CAPABILITIES;
+  readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
 
   constructor(readonly session: FakeRewindSession) {}
 

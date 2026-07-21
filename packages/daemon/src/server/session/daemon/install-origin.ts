@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { isRealpathInsideRoot } from "../../../utils/path.js";
+import { isRealpathInsideRoot } from "@thoth/drivers/internal/utils/path";
 import { THOTH_CLI_PACKAGE, type NpmGlobalThothInstall } from "./npm-global-cli.js";
 
 const PackageJsonSchema = z.object({ name: z.string().optional() }).passthrough();

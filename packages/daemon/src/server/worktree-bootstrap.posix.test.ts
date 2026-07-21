@@ -13,7 +13,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import type { AgentTimelineItem } from "./agent/agent-sdk-types.js";
+import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import { runAsyncWorktreeBootstrap, spawnWorkspaceScript } from "./worktree-bootstrap.js";
 import { ScriptRouteStore } from "./script-proxy.js";
 import { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";

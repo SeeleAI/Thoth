@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { parseScheduleCreateInput, parseScheduleUpdateInput } from "./shared.js";
 
@@ -14,56 +14,25 @@ const baseCron = {
   provider: "claude",
 };
 
-describe("parseScheduleCreateInput cwd/host validation", () => {
-  beforeEach(() => {
-    vi.spyOn(process, "cwd").mockReturnValue("/local/project");
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  test("no host, no cwd → defaults to process.cwd()", () => {
+describe("parseScheduleCreateInput new-agent target", () => {
+  test("stores provider configuration without client filesystem authority", () => {
     const input = parseScheduleCreateInput(baseOptions);
     expect(input.target).toEqual({
       type: "new-agent",
-      config: { provider: "claude", cwd: "/local/project" },
+      config: { provider: "claude" },
     });
   });
 
-  test("no host, with cwd → uses provided cwd", () => {
-    const input = parseScheduleCreateInput({ ...baseOptions, cwd: "/some/other/path" });
-    expect(input.target).toEqual({
-      type: "new-agent",
-      config: { provider: "claude", cwd: "/some/other/path" },
-    });
-  });
-
-  test("host with cwd → uses provided cwd", () => {
+  test("stores provider, model, and mode for daemon-side workspace execution", () => {
     const input = parseScheduleCreateInput({
       ...baseOptions,
-      host: "dev:6767",
-      cwd: "/remote/project",
+      provider: "codex/gpt-5",
+      mode: "full-access",
     });
     expect(input.target).toEqual({
       type: "new-agent",
-      config: { provider: "claude", cwd: "/remote/project" },
+      config: { provider: "codex", model: "gpt-5", modeId: "full-access" },
     });
-  });
-
-  test("host without cwd → throws MISSING_CWD", () => {
-    expect(() => parseScheduleCreateInput({ ...baseOptions, host: "dev:6767" })).toThrow(
-      expect.objectContaining({
-        code: "MISSING_CWD",
-        message: expect.stringContaining("--cwd is required when --host is specified"),
-      }),
-    );
-  });
-
-  test("host with whitespace-only cwd → throws MISSING_CWD", () => {
-    expect(() =>
-      parseScheduleCreateInput({ ...baseOptions, host: "dev:6767", cwd: "   " }),
-    ).toThrow(expect.objectContaining({ code: "MISSING_CWD" }));
   });
 });
 
@@ -204,7 +173,6 @@ describe("parseScheduleUpdateInput", () => {
         id: "abc",
         provider: "codex/gpt-5",
         mode: "full-access",
-        cwd: "/tmp/proj",
       }),
     ).toEqual({
       id: "abc",
@@ -212,7 +180,6 @@ describe("parseScheduleUpdateInput", () => {
         provider: "codex",
         model: "gpt-5",
         modeId: "full-access",
-        cwd: "/tmp/proj",
       },
     });
   });
@@ -222,12 +189,6 @@ describe("parseScheduleUpdateInput", () => {
       id: "abc",
       newAgentConfig: { modeId: null },
     });
-  });
-
-  test("rejects empty --cwd", () => {
-    expect(() => parseScheduleUpdateInput({ id: "abc", cwd: "   " })).toThrow(
-      expect.objectContaining({ code: "INVALID_CWD" }),
-    );
   });
 
   test("--max-runs sets a positive integer; --no-max-runs clears", () => {

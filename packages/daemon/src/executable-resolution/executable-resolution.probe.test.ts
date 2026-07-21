@@ -13,7 +13,7 @@ import { performance } from "node:perf_hooks";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { isPlatform } from "../test-utils/platform.js";
-import { probeExecutable } from "./executable-resolution.js";
+import { probeExecutable } from "@thoth/drivers/internal/executable-resolution/executable-resolution";
 
 const timeoutMs = 1000;
 const timeoutSlackMs = 500;

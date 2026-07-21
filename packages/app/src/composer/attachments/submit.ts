@@ -5,14 +5,17 @@ import {
   workspaceAttachmentToSubmitAttachment,
 } from "@/attachments/workspace-attachment-utils";
 import type { AgentAttachment } from "@thoth/protocol/messages";
+import type { TaskContextReference } from "@thoth/protocol/task-authority";
 import { buildGitHubAttachmentFromSearchItem } from "@/utils/review-attachments";
 
 export function splitComposerAttachmentsForSubmit(attachments: ComposerAttachment[]): {
   images: ImageAttachment[];
   attachments: AgentAttachment[];
+  contextRefs: TaskContextReference[];
 } {
   const images: ImageAttachment[] = [];
   const agentAttachments: AgentAttachment[] = [];
+  const contextRefs: TaskContextReference[] = [];
 
   for (const attachment of attachments) {
     if (attachment.kind === "image") {
@@ -22,6 +25,11 @@ export function splitComposerAttachmentsForSubmit(attachments: ComposerAttachmen
 
     if (attachment.kind === "file") {
       agentAttachments.push(attachment.attachment);
+      continue;
+    }
+
+    if (attachment.kind === "task_context") {
+      contextRefs.push(attachment.reference);
       continue;
     }
 
@@ -42,5 +50,6 @@ export function splitComposerAttachmentsForSubmit(attachments: ComposerAttachmen
   return {
     images,
     attachments: agentAttachments,
+    contextRefs,
   };
 }

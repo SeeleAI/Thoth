@@ -8,7 +8,7 @@ import type {
   AgentProvider,
   AgentSessionConfig,
   AgentStreamEvent,
-} from "../agent/agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon, type TestThothDaemon } from "../test-utils/thoth-daemon.js";
 import {

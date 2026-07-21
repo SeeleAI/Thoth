@@ -6,7 +6,7 @@
 2. 性质：Thoth APP 信息架构、runtime skill、runtime tool bridge、AgentTimeline 与 authority card 合同
 3. 适用范围：`packages/app`、`packages/desktop`、`packages/daemon`、`packages/drivers`、`packages/protocol`、`packages/client`
 4. 代码合同：`packages/protocol/src/thoth-runtime-contract.ts`、`packages/protocol/src/agent-types.ts`、`packages/protocol/src/messages.ts`
-5. 状态：canonical design authority；`NTH-CD-041` 锁定 restored Paseo production app surface，`NTH-CD-042` 锁定 Quick / Clarify / Loop phase split，`NTH-CD-043` 锁定 Loop-2 主链路为 Codex app-server `dynamicTools` semantic runtime tool bridge + AgentTimeline，`NTH-CD-045` 锁定 Loop background 主路径为 Goals Card -> durable Loop task -> PlanExec / Review phases，`NTH-CD-053` 锁定 Workspace Secretary 一个 topic 只有一条连续 foreground provider session，`NTH-CD-054` 锁定每次发送冻结该轮控制快照、已有 Card 不跟随 composer 热切换。
+5. 状态：canonical design authority；`NTH-CD-041` 锁定 restored Paseo production app surface，`NTH-CD-042` 锁定 Quick / Clarify / Loop phase split，`NTH-CD-045` 锁定 Loop background 主路径为 Goals Card -> durable Task -> PlanExec / Review phases，`NTH-CD-053` 锁定一个可见 Agent 只有一条连续 foreground provider thread，`NTH-CD-054` 锁定每次发送冻结该轮控制快照、已有 Card 不跟随 composer 热切换，`NTH-CD-060` 将 Runtime Tool Bridge 升级为所有 provider/ACP 共用的 HarnessAdapter + RuntimeBundle + ToolGateway，并把 Workspace / Task / Execution 设为唯一 authority。
 6. 取代范围：本文件覆盖此前三视图 toy shell、assistant JSON/outputSchema packet、`submit_clarify_packet` 主路、Workspace Secretary `liveEvents` 摘要流、fake background running/review 口径，以及旧 Pyramid Plan / `registered_pending` 作为 Loop 主路径的口径。旧 packet / state-code / golden 资料只能作为 legacy/internal evidence 或 Loop-1 历史，不驱动当前 Loop acceptance。
 
 ## 0. 当前最高口径
@@ -40,7 +40,7 @@
 
 `NTH-CD-043` 覆盖 `NTH-CD-042` 中 `submit_clarify_packet` 作为主路的旧描述：
 
-1. Loop-2 structured Workspace Secretary 主路使用 Codex app-server `dynamicTools` / `item/tool/call`。
+1. Structured Workspace Secretary 主路使用 provider-neutral HarnessAdapter；Codex `dynamicTools`、Claude/OpenCode/Pi MCP 与 ACP tool surface 只是同一 semantic tool catalog 的 driver 映射。
 2. 模型在 structured phases 中调用 Thoth semantic runtime tools，而不是输出 assistant JSON、markdown packet、native `outputSchema` packet 或 `submit_clarify_packet`。
 3. 当前 Codex 主路工具名：
    - `thoth_submit_clarify_card`
@@ -48,9 +48,9 @@
    - `thoth_submit_pyramid_plan`
    - `thoth_report_blocked`
 4. Daemon 接收 tool call input 后做 schema、phase、authority、provenance、permission 和 pending-decision 校验，再构造内部 authority event / card model。
-5. 用户回答 card 后，daemon 解析为 authority answer，resolve persisted pending decision，并向 Codex 返回 `DynamicToolCallResponse`，让同一 session 继续。
+5. 用户回答 Card 后，daemon 先追加 Human Decision，再在同一 ProviderThread 启动新的 continuation ExecutionAttempt；不得恢复旧 tool-call Promise 或依赖旧 call stack 存活。
 6. `submit_clarify_packet` / `submit_runtime_packet` 只能作为 legacy/internal/test-isolated 兼容词，不得作为 Loop-2 acceptance 主路径，不得出现在用户可见 UI。
-7. 如果 provider 没有可验证的 blocking/resumable runtime tool bridge，Clarify authority 必须 honest unsupported / blocked；不能退回 MCP/outputSchema/assistant markdown JSON 冒充通过。
+7. 当前 Codex、Claude Code、OpenCode、Pi 和 ACP adapter 必须实现并通过完整 bridge conformance；未来 provider 若缺少声明所需能力，必须 honest unsupported，不能退回 outputSchema/assistant markdown JSON 冒充通过。
 
 ## 1. 核心判断
 
@@ -60,7 +60,7 @@ Thoth 在 restored Paseo surface 上提供任务控制平面：
 
 1. 用户进入 workspace。
 2. 用户在当前 Workspace Secretary topic 中发送一句 prompt。
-3. `Provider` 选择真实 provider session，本轮 verified provider 只锁 Codex。
+3. `Provider` 选择真实 HarnessAdapter/ProviderThread；Codex做真实认证验收，Claude Code、OpenCode、Pi和ACP做各自transport-level端到端conformance。
 4. `Clarify` 选择 `none` / `light` / `balanced` / `dive` 等强度。
 5. `Mode` 选择 `Quick` 或 `Loop`。
 6. `Quick + none` 走裸 provider stream。

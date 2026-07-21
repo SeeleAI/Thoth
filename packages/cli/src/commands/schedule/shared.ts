@@ -15,17 +15,26 @@ import { resolveProviderAndModel } from "../../utils/provider-model.js";
 
 export interface ScheduleCommandOptions extends CommandOptions {
   host?: string;
+  workspace?: string;
 }
 
 export async function connectScheduleClient(
   host: string | undefined,
-): Promise<{ client: ScheduleDaemonClient; host: string }> {
+  workspace?: string,
+): Promise<{ client: ScheduleDaemonClient; host: string; workspaceId: string }> {
+  const workspaceId = workspace?.trim() || process.env.THOTH_WORKSPACE_ID?.trim();
+  if (!workspaceId) {
+    throw {
+      code: "WORKSPACE_REQUIRED",
+      message: "Schedule commands require --workspace <workspace-id>",
+    } satisfies CommandError;
+  }
   const resolvedHost = getDaemonHost({ host });
   try {
     const client = (await connectToDaemon({
       host,
     })) as unknown as ScheduleDaemonClient;
-    return { client, host: resolvedHost };
+    return { client, host: resolvedHost, workspaceId };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw {
@@ -135,8 +144,6 @@ export function parseScheduleCreateInput(options: {
   target?: string;
   provider?: string;
   mode?: string;
-  cwd?: string;
-  host?: string;
   maxRuns?: string;
   expiresIn?: string;
   runNow?: boolean;
@@ -157,15 +164,6 @@ export function parseScheduleCreateInput(options: {
     } satisfies CommandError;
   }
 
-  const cwdInput = options.cwd?.trim();
-  if (options.host !== undefined && !cwdInput) {
-    throw {
-      code: "MISSING_CWD",
-      message:
-        "--cwd is required when --host is specified (the local working directory will not exist on the remote daemon)",
-    } satisfies CommandError;
-  }
-
   const runOnCreate = resolveRunOnCreate(options.runNow, cadence.type);
 
   const targetValue = options.target?.trim();
@@ -179,7 +177,6 @@ export function parseScheduleCreateInput(options: {
       type: "new-agent",
       config: {
         provider: resolvedProviderModel.provider,
-        cwd: cwdInput ?? process.cwd(),
         ...(resolvedProviderModel.model ? { model: resolvedProviderModel.model } : {}),
         ...(modeId ? { modeId } : {}),
       },
@@ -240,7 +237,6 @@ export interface ScheduleUpdateOptionsInput {
   provider?: string;
   model?: string;
   mode?: string;
-  cwd?: string;
   maxRuns?: string;
   expiresIn?: string;
   clearMaxRuns?: boolean;
@@ -404,16 +400,6 @@ function buildNewAgentConfigPatch(
   if (options.mode !== undefined) {
     const trimmed = options.mode.trim();
     patch.modeId = trimmed.length > 0 ? trimmed : null;
-  }
-  if (options.cwd !== undefined) {
-    const trimmed = options.cwd.trim();
-    if (!trimmed) {
-      throw {
-        code: "INVALID_CWD",
-        message: "--cwd cannot be empty",
-      } satisfies CommandError;
-    }
-    patch.cwd = trimmed;
   }
   return Object.keys(patch).length > 0 ? patch : undefined;
 }

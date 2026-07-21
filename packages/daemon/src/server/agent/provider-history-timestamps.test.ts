@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { normalizeProviderReplayTimestamp } from "./provider-history-timestamps.js";
+import { normalizeProviderReplayTimestamp } from "@thoth/drivers/internal/server/agent/provider-history-timestamps";
 
 describe("normalizeProviderReplayTimestamp", () => {
   test("preserves valid string timestamps after trimming", () => {

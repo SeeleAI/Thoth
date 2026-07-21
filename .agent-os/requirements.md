@@ -24,6 +24,8 @@
 16. `NTH-REQ-016`: Maintain first-day development infrastructure before feature work: stable npm install, root-script validation gates, foundation build/typecheck/test coverage, local Android Debug APK packaging, Linux-safe iOS script behavior, package-level agent contracts and executable development/testing/packaging/release docs.
 17. `NTH-REQ-017`: Provide a stable human dogfood entry for Thoth I whose UI and experience match the current releasable full UI. Development mode may change runtime wiring, logs, local daemon targets or provider configuration, but it must not change the user-facing flow, layout, copy, states or task experience into a separate debug product.
 18. `NTH-REQ-018`: Keep Thoth runtime independent from the local Paseo daemon. Thoth direct daemon defaults to `127.0.0.1:6688`; local Paseo/legacy `127.0.0.1:6767` must remain untouched; web review uses the real app on `8082 -> 8148`; relay test traffic uses `relay.test.thoth.seeles.ai` through v3 tokenized pairing; desktop and Android artifacts must carry Thoth identity and avoid legacy/Paseo runtime state.
+19. `NTH-REQ-019`: Make `Simply Is First` the highest code-development priority. Development must implement the locked final architecture as independently verifiable production modules, one real module at a time. Rapid experiments must exercise the final module boundary and product path; they may reveal failing metrics, but may not introduce simplified substitutes, parallel implementations, fallback behavior, semantic downgrades or unapproved architecture changes.
+20. `NTH-REQ-020`: Persist and orchestrate Thoth through provider-neutral Workspace and Task authority. One Workspace owns one authority shard and one mutation lease domain; every approved Quick or Loop execution is a Task; every provider run is a fenced ExecutionAttempt; every human authority decision is append-only and exact. RuntimeBundles are deduplicated by digest and attached through the same HarnessAdapter contract for Codex, Claude Code, OpenCode, Pi and ACP. Provider homes, authentication, native transcripts and caches remain provider-owned and must never be copied into `.thoth`.
 
 ## Acceptance Criteria
 
@@ -40,6 +42,8 @@
 11. `NTH-AC-011`: Once the Thoth I dev entry exists, human review enters the same UI component tree, routes, composer controls, task cards, stream states and report surfaces that a releasable build uses; debug overlays or logs may exist only as non-primary developer aids.
 12. `NTH-AC-012`: Runtime isolation smoke proves Paseo/legacy remains on `127.0.0.1:6767`, Thoth runs on `127.0.0.1:6688`, the real web UI responds on `8082 -> 8148`, the test relay health endpoint responds, Linux AppImage packaged smoke passes with an isolated managed daemon, Android Debug APK has package id `sh.thoth.debug` without `RECORD_AUDIO`, and Codex provider smoke passes through Thoth paths.
 13. `NTH-AC-013`: The authorized `v0.0.0-mvp-beta` GitHub Actions flow leaves `main` unchanged, publishes exactly one current MVP prerelease with native macOS/Windows/Linux, signed Android and server CLI assets, preserves the historical archive release, does not publish npm packages and passes independent downloaded-asset verification.
+14. `NTH-AC-014`: Every nontrivial implementation slice identifies its canonical final module, production interface, state owner and real-path acceptance before coding; its landed code remains part of the final architecture, introduces no unapproved parallel or fallback path, and reports unmet acceptance values as failures rather than lowering the target.
+15. `NTH-AC-015`: A fresh packaged AppImage proves raw/Thoth hot switching on one visible provider thread, durable Card continuation after a five-hour wait, Quick and Loop Tasks, `thoth.loop` attachment receipts for every background phase, failed-Review retry, same-Workspace structured `@Task` context, Stop without a stale phase spinner, daemon restart recovery and a provider-session-free `.thoth` layout. Six scripted sessions add at most 25MB of durable Thoth state and store each RuntimeBundle digest only once. The same public adapter conformance journey passes for Codex, Claude Code, OpenCode, Pi and ACP; Codex additionally passes a real-provider run.
 
 ## Hard Constraints
 
@@ -67,6 +71,15 @@
 22. Do not auto-probe, reuse, stop or restart `localhost:6767` / `127.0.0.1:6767` from Thoth runtime. That port is reserved for the user's local Paseo/legacy daemon.
 23. Do not place relay pairing tokens in URL query strings, logs, screenshots, docs examples or final reports.
 24. Do not stage or commit `packages/desktop/release/`.
+25. Do not begin production implementation while the target module boundary, authority owner or canonical interface is unresolved.
+26. Do not replace a final module with a compressed substitute that combines or bypasses responsibilities belonging to later modules.
+27. Do not add fallback, compatibility, degraded, provider-specific or test-only production paths unless a tracked user decision explicitly requires that path.
+28. Do not let fixtures or mocks bypass the same public API, state machine and lifecycle used by the real product.
+29. Do not lower acceptance thresholds, alter success semantics or hide failing measurements to make a real implementation appear complete.
+30. Do not change locked architecture implicitly through code; record and approve the architectural change first, then implement it as the new single path.
+31. Do not create `.thoth/provider-sessions`, set a provider home per Agent/Task/phase, copy provider credentials/config/transcripts/cache, or inspect provider-native persistence from core/daemon business logic.
+32. Do not represent a Task phase by a hidden foreground Agent status. Task, PhaseRun, ExecutionAttempt and ProviderThread must retain separate identities and lifecycles.
+33. Do not place Runtime Truth fields such as attempt ids, generations, budgets, leases, receipts, hashes or cursors into Agent Harness cognitive context. They may exist only in daemon authority, adapter calls, audit evidence and UI projections.
 
 ## Non-Goals
 

@@ -10,7 +10,7 @@ import { z } from "zod";
 import { AGENT_WAIT_TIMEOUT_MS } from "./mcp-shared.js";
 import { createTestThothDaemon, type TestThothDaemon } from "../test-utils/thoth-daemon.js";
 import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
-import type { AgentClient, AgentProvider, AgentSessionConfig } from "./agent-sdk-types.js";
+import type { AgentClient, AgentProvider, AgentSessionConfig } from "@thoth/drivers/agent-runtime";
 import { PARENT_AGENT_ID_LABEL } from "@thoth/protocol/agent-labels";
 
 interface StructuredContent {

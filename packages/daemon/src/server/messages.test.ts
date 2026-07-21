@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type { AgentStreamEvent } from "./agent/agent-sdk-types.js";
+import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 import { SessionInboundMessageSchema, serializeAgentStreamEvent } from "./messages.js";
 
 describe("serializeAgentStreamEvent", () => {

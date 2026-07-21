@@ -8,9 +8,9 @@ export async function runDeleteCommand(
   options: ChatCommandOptions,
   _command: Command,
 ): Promise<SingleResult<ChatRoomRow>> {
-  const { client } = await connectChatClient(options.host);
+  const { client, workspaceId } = await connectChatClient(options.host, options.workspace);
   try {
-    const payload = await client.deleteChatRoom({ room });
+    const payload = await client.deleteChatRoom({ workspaceId, room });
     return {
       type: "single",
       data: toChatRoomRow(payload.room!),

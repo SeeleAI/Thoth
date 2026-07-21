@@ -22,22 +22,25 @@ import type {
   AgentSession,
   AgentSessionConfig,
   AgentStreamEvent,
-} from "../agent/agent-sdk-types.js";
-import type { ThothToolCatalog } from "../agent/tools/types.js";
+} from "@thoth/drivers/agent-runtime";
+import type { ThothToolCatalog } from "@thoth/drivers/agent-runtime";
 import type {
   ThothCardAnswerPayload,
   ThothClarifyCardModel,
   ThothGoalsCardModel,
   ThothTaskCardModel,
 } from "@thoth/protocol/thoth/rpc-schemas";
-import { resetForegroundAuthorityStoresForTest } from "../agent/foreground-authority-runtime.js";
+import { defineHarnessCapabilities } from "@thoth/drivers/harness";
+import { experimental_createMCPClient } from "ai";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { readThothRuntimeToolsConfig } from "../agent/thoth-runtime-tools-config.js";
+import type { HarnessToolAttachment } from "@thoth/drivers/harness";
 
 const capabilities: AgentCapabilityFlags = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
   supportsDynamicModes: true,
   supportsMcpServers: false,
-  supportsNativeThothTools: true,
   supportsReasoningStream: true,
   supportsToolInvocations: true,
   supportsRewindConversation: false,
@@ -45,8 +48,28 @@ const capabilities: AgentCapabilityFlags = {
   supportsRewindBoth: false,
 };
 
+interface ScriptedMcpClient {
+  callTool(input: { name: string; args: Record<string, unknown> }): Promise<unknown>;
+  close(): Promise<void>;
+}
+
+async function createScriptedMcpClient(config: AgentSessionConfig): Promise<ScriptedMcpClient> {
+  const server = config.mcpServers?.thoth;
+  if (!server || (server.type !== "http" && server.type !== "sse")) {
+    throw new Error("scripted Harness provider did not receive the Thoth MCP binding");
+  }
+  const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+    requestInit: server.headers ? { headers: server.headers } : undefined,
+  });
+  const client = await experimental_createMCPClient({ transport });
+  return {
+    callTool: Reflect.get(client, "callTool").bind(client) as ScriptedMcpClient["callTool"],
+    close: () => client.close(),
+  };
+}
+
 class ScriptedThothSession implements AgentSession {
-  readonly provider = "codex" as const;
+  readonly provider: string;
   readonly capabilities = capabilities;
   readonly id: string;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
@@ -54,13 +77,18 @@ class ScriptedThothSession implements AgentSession {
   private turnOrdinal = 0;
   private toolOrdinal = 0;
   private closed = false;
+  private mcpClient: Promise<ScriptedMcpClient> | null = null;
 
   constructor(
     id: string,
+    provider: string,
+    private readonly transport: HarnessToolAttachment,
+    private readonly config: AgentSessionConfig,
     private readonly tools: ThothToolCatalog | undefined,
     private readonly actor: ScriptedThothClient,
   ) {
     this.id = id;
+    this.provider = provider;
   }
 
   get dynamicToolCount(): number {
@@ -96,7 +124,7 @@ class ScriptedThothSession implements AgentSession {
   async *streamHistory(): AsyncGenerator<AgentStreamEvent> {}
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
-    return { provider: "codex", sessionId: this.id, model: "scripted-codex" };
+    return { provider: this.provider, sessionId: this.id, model: `scripted-${this.provider}` };
   }
 
   async getAvailableModes(): Promise<AgentMode[]> {
@@ -114,7 +142,7 @@ class ScriptedThothSession implements AgentSession {
   async respondToPermission(): Promise<void> {}
 
   describePersistence(): AgentPersistenceHandle {
-    return { provider: "codex", sessionId: this.id, metadata: { conversationId: this.id } };
+    return { provider: this.provider, sessionId: this.id, metadata: { threadId: this.id } };
   }
 
   async interrupt(): Promise<void> {
@@ -122,14 +150,14 @@ class ScriptedThothSession implements AgentSession {
     if (!turnId) return;
     this.emit({
       type: "timeline",
-      provider: "codex",
+      provider: this.provider,
       turnId,
       providerTurnId: turnId,
       item: { type: "reasoning", text: `LATE_REASONING_AFTER_AUTHORITY_CARD:${turnId}` },
     });
     this.emit({
       type: "timeline",
-      provider: "codex",
+      provider: this.provider,
       turnId,
       providerTurnId: turnId,
       item: { type: "assistant_message", text: `LATE_TEXT_AFTER_AUTHORITY_CARD:${turnId}` },
@@ -137,7 +165,7 @@ class ScriptedThothSession implements AgentSession {
     this.activeTurnId = null;
     this.emit({
       type: "turn_canceled",
-      provider: "codex",
+      provider: this.provider,
       reason: "scripted interrupt",
       turnId,
       providerTurnId: turnId,
@@ -147,6 +175,7 @@ class ScriptedThothSession implements AgentSession {
   async close(): Promise<void> {
     this.closed = true;
     await this.interrupt();
+    await (await this.mcpClient)?.close().catch(() => undefined);
     this.subscribers.clear();
   }
 
@@ -155,12 +184,32 @@ class ScriptedThothSession implements AgentSession {
   }
 
   private async callTool(name: string, input: unknown, turnId: string): Promise<void> {
-    if (!this.tools?.getTool(name)) {
-      throw new Error(`scripted session is missing ${name}`);
+    this.actor.recordToolTransport(this.transport);
+    this.actor.recordToolReceipt(`${turnId}:${name}:start`);
+    if (this.transport !== "native") {
+      this.mcpClient ??= createScriptedMcpClient(this.config);
+      const result = await (
+        await this.mcpClient
+      ).callTool({
+        name,
+        args: input as Record<string, unknown>,
+      });
+      if (
+        result &&
+        typeof result === "object" &&
+        "isError" in result &&
+        (result as { isError?: unknown }).isError === true
+      ) {
+        this.actor.recordToolReceipt(`${turnId}:${name}:error:${JSON.stringify(result)}`);
+        throw new Error(`MCP tool ${name} failed: ${JSON.stringify(result)}`);
+      }
+      this.actor.recordToolReceipt(`${turnId}:${name}:ok`);
+      return;
     }
+    if (!this.tools?.getTool(name)) throw new Error(`scripted session is missing ${name}`);
     await this.tools.executeTool(name, input, {
       providerToolCall: {
-        provider: "codex",
+        provider: this.provider,
         threadId: this.id,
         turnId,
         callId: `${turnId}-${++this.toolOrdinal}-${name}`,
@@ -168,19 +217,20 @@ class ScriptedThothSession implements AgentSession {
         isActiveProviderTurn: this.activeTurnId === turnId,
       },
     });
+    this.actor.recordToolReceipt(`${turnId}:${name}:ok`);
   }
 
   private async runActor(prompt: AgentPromptInput, turnId: string): Promise<void> {
-    this.emit({ type: "thread_started", provider: "codex", sessionId: this.id });
+    this.emit({ type: "thread_started", provider: this.provider, sessionId: this.id });
     this.emit({
       type: "turn_started",
-      provider: "codex",
+      provider: this.provider,
       turnId,
       providerTurnId: turnId,
     });
     try {
-      const names = new Set(this.tools ? [...this.tools.tools.keys()] : []);
-      if (names.has("thoth_submit_clarify_convergence_audit")) {
+      const scope = readThothRuntimeToolsConfig(this.config)?.scope ?? null;
+      if (scope === "clarify_audit") {
         await this.callTool(
           "thoth_submit_clarify_convergence_audit",
           {
@@ -192,11 +242,11 @@ class ScriptedThothSession implements AgentSession {
           },
           turnId,
         );
-      } else if (names.has("thoth_loop_submit_planexec_result")) {
+      } else if (scope === "loop_planexec") {
         const input = this.actor.script.planExec[this.actor.takePlanExecIndex()];
         if (!input) throw new Error("unexpected PlanExec attempt");
         await this.callTool("thoth_loop_submit_planexec_result", input, turnId);
-      } else if (names.has("thoth_loop_submit_review_verdict")) {
+      } else if (scope === "loop_review") {
         const index = this.actor.takeReviewIndex();
         const independent = this.actor.script.reviewIndependent[index];
         const verdict = this.actor.script.review[index];
@@ -204,29 +254,29 @@ class ScriptedThothSession implements AgentSession {
         await this.callTool("thoth_loop_submit_review_independent_assessment", independent, turnId);
         await this.callTool("thoth_loop_submit_review_verdict", verdict, turnId);
       } else if (
-        names.has("thoth_submit_clarify_card") &&
+        scope === "clarify" &&
         JSON.stringify(prompt).includes("Follow the installed thoth.clarify skill")
       ) {
         for (;;) {
           const clarify = this.actor.takeClarifyInput();
           if (!clarify) break;
           await this.callTool("thoth_submit_clarify_card", clarify, turnId);
-          if (this.activeTurnId !== turnId) return;
+          return;
         }
         const task = this.actor.takeTaskInput();
         if (task) {
           await this.callTool("thoth_submit_task_card", task, turnId);
-          if (this.activeTurnId !== turnId) return;
+          return;
         }
         const goals = this.actor.takeGoalsInput();
         if (goals) {
           await this.callTool("thoth_submit_goals_card", goals, turnId);
-          if (this.activeTurnId !== turnId) return;
+          return;
         }
       } else {
         this.emit({
           type: "timeline",
-          provider: "codex",
+          provider: this.provider,
           turnId,
           item: { type: "assistant_message", text: this.actor.script.finalMarker },
         });
@@ -235,7 +285,7 @@ class ScriptedThothSession implements AgentSession {
       this.activeTurnId = null;
       this.emit({
         type: "turn_completed",
-        provider: "codex",
+        provider: this.provider,
         turnId,
         providerTurnId: turnId,
         usage: { inputTokens: 1, outputTokens: 1 },
@@ -245,7 +295,7 @@ class ScriptedThothSession implements AgentSession {
       this.activeTurnId = null;
       this.emit({
         type: "turn_failed",
-        provider: "codex",
+        provider: this.provider,
         turnId,
         providerTurnId: turnId,
         error: error instanceof Error ? error.message : String(error),
@@ -255,8 +305,9 @@ class ScriptedThothSession implements AgentSession {
 }
 
 class ScriptedThothClient implements AgentClient {
-  readonly provider = "codex" as const;
-  readonly capabilities = capabilities;
+  readonly provider: string;
+  readonly capabilities: AgentCapabilityFlags;
+  readonly harnessCapabilities;
   readonly sessions: ScriptedThothSession[] = [];
   private nextSession = 0;
   private clarifyIndex = 0;
@@ -264,8 +315,25 @@ class ScriptedThothClient implements AgentClient {
   private reviewIndex = 0;
   private taskTaken = false;
   private goalsTaken = false;
+  private readonly toolCallsByTransport = new Map<HarnessToolAttachment, number>();
+  readonly toolReceipts: string[] = [];
 
-  constructor(readonly script: ThothRealProviderFlowScript) {}
+  constructor(
+    readonly script: ThothRealProviderFlowScript,
+    options: { provider?: string; transport?: HarnessToolAttachment } = {},
+  ) {
+    this.provider = options.provider ?? "codex";
+    this.transport = options.transport ?? "native";
+    this.capabilities = {
+      ...capabilities,
+      supportsMcpServers: this.transport !== "native",
+    };
+    this.harnessCapabilities = defineHarnessCapabilities({
+      toolAttachment: [this.transport],
+    });
+  }
+
+  private readonly transport: HarnessToolAttachment;
 
   takeClarifyInput(): ThothRealProviderFlowScript["clarify"][number] | null {
     const input = this.script.clarify[this.clarifyIndex];
@@ -294,6 +362,18 @@ class ScriptedThothClient implements AgentClient {
     return this.reviewIndex++;
   }
 
+  recordToolTransport(transport: HarnessToolAttachment): void {
+    this.toolCallsByTransport.set(transport, (this.toolCallsByTransport.get(transport) ?? 0) + 1);
+  }
+
+  recordToolReceipt(receipt: string): void {
+    this.toolReceipts.push(receipt);
+  }
+
+  toolCallsFor(transport: HarnessToolAttachment): number {
+    return this.toolCallsByTransport.get(transport) ?? 0;
+  }
+
   get planExecCalls(): number {
     return this.planExecIndex;
   }
@@ -303,11 +383,14 @@ class ScriptedThothClient implements AgentClient {
   }
 
   async createSession(
-    _config: AgentSessionConfig,
+    config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
     const session = new ScriptedThothSession(
-      `scripted-session-${++this.nextSession}`,
+      `scripted-${this.provider}-session-${++this.nextSession}`,
+      this.provider,
+      this.transport,
+      config,
       launchContext?.thothTools,
       this,
     );
@@ -321,7 +404,7 @@ class ScriptedThothClient implements AgentClient {
     launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
     return await this.createSession(
-      { provider: "codex", cwd: config?.cwd ?? process.cwd(), ...config },
+      { provider: this.provider, cwd: config?.cwd ?? process.cwd(), ...config },
       launchContext,
     );
   }
@@ -329,7 +412,12 @@ class ScriptedThothClient implements AgentClient {
   async fetchCatalog(): Promise<{ models: AgentModelDefinition[]; modes: AgentMode[] }> {
     return {
       models: [
-        { provider: "codex", id: "scripted-codex", label: "Scripted Codex", isDefault: true },
+        {
+          provider: this.provider,
+          id: `scripted-${this.provider}`,
+          label: `Scripted ${this.provider}`,
+          isDefault: true,
+        },
       ],
       modes: [{ id: "auto", label: "Auto" }],
     };
@@ -357,14 +445,22 @@ async function waitForPendingCard(
   agentId: string,
   kind: "clarify_card" | "task_card" | "goal_card",
 ): Promise<ThothClarifyCardModel | ThothTaskCardModel | ThothGoalsCardModel> {
-  return await waitFor(async () => {
+  const deadline = Date.now() + 15_000;
+  let last: unknown = null;
+  while (Date.now() < deadline) {
     const payload = await client.getAgentThothState(agentId);
     if (payload.error) {
       throw new Error(payload.error);
     }
+    last = payload.state;
     const pending = payload.state.pendingCard;
-    return pending?.kind === kind && pending.card.submitted === false ? pending.card : null;
-  });
+    if (pending?.kind === kind && pending.card.submitted === false) return pending.card;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  const agent = await client.fetchAgent({ agentId });
+  throw new Error(
+    `Timed out waiting for ${kind}: state=${JSON.stringify(last)} agent=${JSON.stringify(agent)}`,
+  );
 }
 
 async function answerPendingCard(input: {
@@ -503,6 +599,23 @@ async function timelineContains(
   );
 }
 
+async function waitForCompletedTask(client: DaemonClient, workspaceId: string, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastDetail: unknown = null;
+  while (Date.now() < deadline) {
+    const payload = await client.listTasks(workspaceId);
+    const task = payload.tasks[0];
+    if (task?.status === "completed") return task;
+    if (task) {
+      lastDetail = await client.getTask({ taskId: task.id, workspaceId });
+    } else {
+      lastDetail = payload;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for completed Task: ${JSON.stringify(lastDetail)}`);
+}
+
 describe("public foreground Thoth router", () => {
   let daemon: TestThothDaemon | null = null;
   let client: DaemonClient | null = null;
@@ -546,8 +659,10 @@ describe("public foreground Thoth router", () => {
     expect(provider.sessions).toHaveLength(1);
     expect(provider.sessions[0]?.dynamicToolCount).toBeGreaterThan(0);
     expect(await timelineContains(client, agent.id, script.finalMarker)).toBe(true);
-    const background = await client.listBackgroundTasks({ workspacePath: cwd });
-    expect(background.tasks.every((task) => task.status === "empty")).toBe(true);
+    expect(agent.workspaceId).toBeTruthy();
+    const tasks = await client.listTasks(agent.workspaceId!);
+    expect(tasks.error).toBeNull();
+    expect(tasks.tasks).toEqual([]);
   }, 30_000);
 
   it("UT-02 hot-switches raw -> Quick Clarify -> raw on one visible provider session", async () => {
@@ -637,8 +752,6 @@ describe("public foreground Thoth router", () => {
     client = null;
     daemon = null;
     rmSync(firstStaticDir, { recursive: true, force: true });
-    resetForegroundAuthorityStoresForTest();
-
     daemon = await createTestThothDaemon({
       agentClients: { codex: provider },
       thothHomeRoot,
@@ -666,6 +779,70 @@ describe("public foreground Thoth router", () => {
         clarifyStrength: "light",
       },
     });
+    await answerClarifyWithFirstChoices(client, agent.id);
+    await approveTaskAndGoals({ client, agentId: agent.id, mode: "quick" });
+    await waitForThothLifecycle(client, agent.id, "done");
+    await waitForAgentIdle(client, agent.id);
+    expect(await timelineContains(client, agent.id, script.finalMarker)).toBe(true);
+    expect(provider.sessions.length).toBeGreaterThan(1);
+  }, 60_000);
+
+  it("UT-03b answers an open Card after daemon restart and continues on the same Agent", async () => {
+    const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyRecovery;
+    const provider = new ScriptedThothClient(script);
+    daemon = await createTestThothDaemon({
+      agentClients: { codex: provider },
+      cleanup: false,
+    });
+    const thothHomeRoot = dirname(daemon.thothHome);
+    const firstStaticDir = daemon.staticDir;
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const cwd = mkdtempSync(join(tmpdir(), "thoth-public-answer-recovery-"));
+    workspaces.push(cwd);
+    const agent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd,
+      initialPrompt: "Run the deterministic recovery flow.",
+      thoth: {
+        enabled: true,
+        executionMode: "quick",
+        clarifyStrength: "light",
+      },
+    });
+    const firstCard = (await waitForPendingCard(
+      client,
+      agent.id,
+      "clarify_card",
+    )) as ThothClarifyCardModel;
+    await client.close();
+    await daemon.close();
+    client = null;
+    daemon = null;
+    rmSync(firstStaticDir, { recursive: true, force: true });
+    daemon = await createTestThothDaemon({
+      agentClients: { codex: provider },
+      thothHomeRoot,
+    });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const restored = (await waitForPendingCard(
+      client,
+      agent.id,
+      "clarify_card",
+    )) as ThothClarifyCardModel;
+    expect(restored.id).toBe(firstCard.id);
+    await answerClarifyWithFirstChoices(client, agent.id);
     await answerClarifyWithFirstChoices(client, agent.id);
     await approveTaskAndGoals({ client, agentId: agent.id, mode: "quick" });
     await waitForThothLifecycle(client, agent.id, "done");
@@ -704,14 +881,11 @@ describe("public foreground Thoth router", () => {
     const handoff = await waitForThothLifecycle(client, agent.id, "background_handoff");
     expect(handoff.backgroundTaskId).toBeTruthy();
 
-    const taskResult = await waitFor(async () => {
-      const payload = await client!.listBackgroundTasks({ workspacePath: cwd });
-      const background = payload.tasks[0];
-      return background?.status === "done" ? background : null;
-    }, 30_000);
-    const detail = await client.inspectBackgroundTask({
+    expect(agent.workspaceId).toBeTruthy();
+    const taskResult = await waitForCompletedTask(client, agent.workspaceId!);
+    const detail = await client.getTask({
       taskId: taskResult.id,
-      workspacePath: cwd,
+      workspaceId: agent.workspaceId!,
     });
     expect(detail.error).toBeNull();
     expect(detail.task?.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
@@ -751,22 +925,86 @@ describe("public foreground Thoth router", () => {
     await approveTaskAndGoals({ client, agentId: agent.id, mode: "loop" });
     await waitForThothLifecycle(client, agent.id, "background_handoff");
 
-    const taskResult = await waitFor(async () => {
-      const payload = await client!.listBackgroundTasks({ workspacePath: cwd });
-      const background = payload.tasks[0];
-      return background?.status === "done" ? background : null;
-    }, 30_000);
-    const detail = await client.inspectBackgroundTask({
+    expect(agent.workspaceId).toBeTruthy();
+    const taskResult = await waitForCompletedTask(client, agent.workspaceId!);
+    const detail = await client.getTask({
       taskId: taskResult.id,
-      workspacePath: cwd,
+      workspaceId: agent.workspaceId!,
     });
     expect(detail.error).toBeNull();
     expect(detail.task?.budget).toMatchObject({ maxFailedReviews: 5, usedFailedReviews: 1 });
-    expect(detail.task?.goals[0]?.round).toBe(2);
+    const firstGoalId = detail.task?.goals[0]?.id;
+    expect(
+      detail.executions.filter(
+        (execution) => execution.goalId === firstGoalId && execution.phase === "planexec",
+      ),
+    ).toHaveLength(2);
     expect(detail.task?.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
     expect(provider.planExecCalls).toBe(3);
     expect(provider.reviewCalls).toBe(3);
     const finalAgent = await client.fetchAgent({ agentId: agent.id });
     expect(finalAgent?.agent.status).toBe("idle");
   }, 45_000);
+
+  it.each([
+    { providerId: "codex", transport: "native" as const },
+    { providerId: "claude", transport: "mcp" as const },
+    { providerId: "opencode", transport: "mcp" as const },
+    { providerId: "pi", transport: "mcp" as const },
+    { providerId: "acp-fixture", transport: "mcp" as const },
+  ])(
+    "Harness lifecycle conformance: $providerId over $transport",
+    async ({ providerId, transport }) => {
+      const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopRetryAndBudget;
+      const provider = new ScriptedThothClient(script, { provider: providerId, transport });
+      daemon = await createTestThothDaemon({ agentClients: { [providerId]: provider } });
+      client = new DaemonClient({
+        url: `ws://127.0.0.1:${daemon.port}/ws`,
+        reconnect: { enabled: false },
+      });
+      await client.connect();
+
+      const cwd = mkdtempSync(join(tmpdir(), `thoth-adapter-${providerId}-`));
+      workspaces.push(cwd);
+      const agent = await client.createAgent({
+        provider: providerId,
+        model: `scripted-${providerId}`,
+        modeId: "auto",
+        cwd,
+        initialPrompt: "Run the shared HarnessAdapter conformance flow.",
+        thoth: {
+          enabled: true,
+          executionMode: "loop",
+          clarifyStrength: "light",
+          loopStrength: "light",
+        },
+      });
+      try {
+        await answerClarifyWithFirstChoices(client, agent.id);
+      } catch (error) {
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)} receipts=${JSON.stringify(provider.toolReceipts)}`,
+        );
+      }
+      await approveTaskAndGoals({ client, agentId: agent.id, mode: "loop" });
+      await waitForThothLifecycle(client, agent.id, "background_handoff");
+
+      const task = await waitForCompletedTask(client, agent.workspaceId!, 45_000);
+      const detail = await client.getTask({
+        taskId: task.id,
+        workspaceId: agent.workspaceId!,
+      });
+      expect(detail.error).toBeNull();
+      expect(detail.task?.budget).toMatchObject({ usedFailedReviews: 1, maxFailedReviews: 5 });
+      expect(detail.task?.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
+      expect(detail.executions).toHaveLength(6);
+      expect(
+        detail.executions.every((execution) => execution.attachment?.status === "attached"),
+      ).toBe(true);
+      expect(provider.planExecCalls).toBe(3);
+      expect(provider.reviewCalls).toBe(3);
+      expect(provider.toolCallsFor(transport)).toBeGreaterThan(0);
+    },
+    60_000,
+  );
 });

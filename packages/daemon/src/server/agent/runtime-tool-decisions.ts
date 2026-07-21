@@ -10,8 +10,8 @@ import type {
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type {
   ForegroundAuthorityCard,
-  ForegroundAuthorityStore,
-} from "./foreground-authority-store.js";
+  WorkspaceForegroundAuthority,
+} from "../workspace-authority/foreground-authority.js";
 
 export type RuntimeAuthorityCardKind = "clarify_card" | "task_card" | "goals_card" | "blocked_card";
 
@@ -57,7 +57,7 @@ function toStoreCard(card: RuntimeAuthorityCard): ForegroundAuthorityCard {
 }
 
 function fromStoreRecord(
-  store: ForegroundAuthorityStore,
+  store: WorkspaceForegroundAuthority,
   cardId: string,
 ): RuntimeAuthorityDecisionRecord | null {
   const card = store.getCard(cardId);
@@ -99,7 +99,7 @@ function fromStoreRecord(
 }
 
 export function createRuntimeAuthorityDecision(input: {
-  store: ForegroundAuthorityStore;
+  store: WorkspaceForegroundAuthority;
   provider: string;
   agentId: string;
   threadId: string;
@@ -150,7 +150,7 @@ export function createRuntimeAuthorityDecision(input: {
 }
 
 export function listRuntimeAuthorityDecisionRecords(
-  store: ForegroundAuthorityStore,
+  store: WorkspaceForegroundAuthority,
 ): RuntimeAuthorityDecisionRecord[] {
   return store
     .listAllCards()
@@ -158,7 +158,7 @@ export function listRuntimeAuthorityDecisionRecords(
 }
 
 export function listRuntimeAuthorityDecisionRecordsForAgent(
-  store: ForegroundAuthorityStore,
+  store: WorkspaceForegroundAuthority,
   agentId: string,
 ): RuntimeAuthorityDecisionRecord[] {
   return store
@@ -167,7 +167,7 @@ export function listRuntimeAuthorityDecisionRecordsForAgent(
 }
 
 export function getLatestRuntimeTaskCardForAgent(
-  store: ForegroundAuthorityStore,
+  store: WorkspaceForegroundAuthority,
   agentId: string,
 ): ThothTaskCardModel | null {
   return (

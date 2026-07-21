@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import pino from "pino";
 
-import type { AgentPersistenceHandle, AgentTimelineItem } from "../agent/agent-sdk-types.js";
+import type { AgentPersistenceHandle, AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon } from "../test-utils/thoth-daemon.js";
 import {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type {
@@ -8,7 +9,8 @@ import type {
 import { z } from "zod";
 
 import { createThothToolCatalog, type ThothToolHostDependencies } from "./tools/thoth-tools.js";
-import type { ThothToolResult } from "./tools/types.js";
+import type { ThothToolExecutionContext, ThothToolResult } from "@thoth/drivers/agent-runtime";
+import { getBoundForegroundProviderTurnId } from "./tools/foreground-turn-fence.js";
 
 export type AgentMcpServerOptions = ThothToolHostDependencies;
 
@@ -121,8 +123,31 @@ export async function createAgentMcpServer(options: AgentMcpServerOptions): Prom
         inputSchema: tool.inputSchema,
         outputSchema: tool.outputSchema,
       }),
-      async (args: unknown, context?: McpToolContext) =>
-        toMcpToolResult(await catalog.executeTool(tool.name, args, { signal: context?.signal })),
+      async (args: unknown, context?: McpToolContext) => {
+        const toolContext: ThothToolExecutionContext = { signal: context?.signal };
+        if (options.callerAgentId) {
+          const agent = options.agentManager.getAgent(options.callerAgentId);
+          const turnId =
+            getBoundForegroundProviderTurnId(options.callerAgentId) ??
+            agent?.activeForegroundTurnId ??
+            null;
+          if (agent && turnId) {
+            toolContext.providerToolCall = {
+              provider: agent.provider,
+              threadId:
+                agent.persistence?.nativeHandle?.toString() ??
+                agent.persistence?.sessionId ??
+                agent.id,
+              turnId,
+              callId: `mcp-runtime-${randomUUID()}`,
+              toolName: tool.name,
+              namespace: "thoth",
+              isActiveProviderTurn: agent.activeForegroundTurnId !== null,
+            };
+          }
+        }
+        return toMcpToolResult(await catalog.executeTool(tool.name, args, toolContext));
+      },
     );
   }
 

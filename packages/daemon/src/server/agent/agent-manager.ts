@@ -13,6 +13,7 @@ import {
 import type { Logger } from "pino";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
+import type { HarnessCapabilities } from "@thoth/drivers/harness";
 
 import {
   getAgentStreamEventTurnId,
@@ -42,9 +43,9 @@ import {
   type ImportedTimelineEntry,
   type ImportableProviderSession,
   type ListImportableSessionsOptions,
-} from "./agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
-import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
+import type { StoredAgentRecord, AgentRegistry } from "./agent-storage.js";
 import {
   InMemoryAgentTimelineStore,
   type SeedAgentTimelineOptions,
@@ -54,7 +55,7 @@ import type {
   AgentTimelineFetchResult,
   AgentTimelineRow,
   AgentTimelineStore,
-} from "./agent-timeline-store-types.js";
+} from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
 import {
   AGENT_STREAM_COALESCE_DEFAULT_WINDOW_MS,
   AgentStreamCoalescer,
@@ -63,15 +64,10 @@ import { ForegroundRunState, type ForegroundTurnWaiter } from "./foreground-run-
 import { getAgentProviderDefinition } from "@thoth/protocol/provider-manifest";
 import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
 import { isSystemInjectedEnvelope } from "./agent-prompt.js";
-import {
-  disposeProviderRuntimeSession,
-  prepareProviderRuntimeSession,
-  providerRuntimeSessionEnvironment,
-} from "./provider-runtime-session.js";
 import { stripInternalThothMcpServer, withRuntimeThothMcpServer } from "./runtime-mcp-config.js";
 import { resolveCreateAgentTitles } from "./create-agent-title.js";
 import { readThothRuntimeToolsConfig } from "./thoth-runtime-tools-config.js";
-import type { ThothToolCatalogFactory } from "./tools/types.js";
+import type { ThothToolCatalogFactory } from "@thoth/drivers/agent-runtime";
 import type { ForegroundThothSessionProvisioner } from "./foreground-thoth-session-provisioner.js";
 import {
   isParkedForegroundProviderTurn,
@@ -145,7 +141,7 @@ export type {
   AgentTimelineFetchResult,
   AgentTimelineRow,
   AgentTimelineWindow,
-} from "./agent-timeline-store-types.js";
+} from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
 
 export type AgentManagerEvent =
   | { type: "agent_state"; agent: ManagedAgent }
@@ -212,7 +208,7 @@ export interface AgentManagerOptions {
   clients?: ProviderClientMap;
   providerDefinitions?: ProviderEnabledMap;
   idFactory?: () => string;
-  registry?: AgentStorage;
+  registry?: AgentRegistry;
   onAgentAttention?: AgentAttentionCallback;
   onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
   durableTimelineStore?: AgentTimelineStore;
@@ -553,9 +549,8 @@ export class AgentManager {
   private readonly foregroundRuns = new ForegroundRunState();
   private readonly subscribers = new Set<SubscriptionRecord>();
   private readonly idFactory: () => string;
-  private readonly registry?: AgentStorage;
+  private readonly registry?: AgentRegistry;
   private readonly durableTimelineStore?: AgentTimelineStore;
-  private readonly thothHome: string | null;
   private readonly previousStatuses = new Map<string, AgentLifecycleStatus>();
   private readonly backgroundTasks = new Set<Promise<void>>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
@@ -575,7 +570,6 @@ export class AgentManager {
     this.idFactory = options?.idFactory ?? (() => randomUUID());
     this.registry = options?.registry;
     this.durableTimelineStore = options?.durableTimelineStore;
-    this.thothHome = options.thothHome?.trim() || null;
     this.onAgentAttention = options?.onAgentAttention;
     this.onWorkspaceStateMayHaveChanged = options?.onWorkspaceStateMayHaveChanged;
     this.mcpBaseUrl = options?.mcpBaseUrl ?? null;
@@ -874,8 +868,8 @@ export class AgentManager {
     return this.clients.get(provider)?.capabilities ?? null;
   }
 
-  getProviderRuntimeSessionProvider(provider: AgentProvider): AgentProvider {
-    return this.clients.get(provider)?.runtimeSessionProvider ?? provider;
+  getProviderHarnessCapabilities(provider: AgentProvider): HarnessCapabilities | null {
+    return this.clients.get(provider)?.harnessCapabilities ?? null;
   }
 
   async getProviderAvailability(provider: AgentProvider): Promise<ProviderAvailability> {
@@ -2693,6 +2687,10 @@ export class AgentManager {
       options?.initialTitle ?? null,
     );
 
+    if (options?.workspaceId) {
+      this.durableTimelineStore?.bindAgentWorkspace(resolvedAgentId, options.workspaceId);
+    }
+
     const now = new Date();
     const { durableTimelineHasRows } = await this.initializeAgentTimelineForRegister({
       agentId: resolvedAgentId,
@@ -3003,7 +3001,7 @@ export class AgentManager {
     await this.registry.applySnapshot(agent, options);
   }
 
-  private requireRegistry(): AgentStorage {
+  private requireRegistry(): AgentRegistry {
     if (!this.registry) {
       throw new Error("Agent storage unavailable");
     }
@@ -4027,17 +4025,13 @@ export class AgentManager {
     const context: AgentLaunchContext = {
       agentId,
       env: {
-        ...providerRuntimeSessionEnvironment(
-          client.runtimeSessionProvider ?? launchConfig.provider,
-          readThothRuntimeToolsConfig(launchConfig)?.sessionHome,
-        ),
         ...env,
         THOTH_AGENT_ID: agentId,
       },
     };
     if (
       this.thothToolsEnabled &&
-      client.capabilities.supportsNativeThothTools &&
+      client.harnessCapabilities.toolAttachment.includes("native") &&
       this.shouldUseNativeThothTools(launchConfig) &&
       this.thothToolCatalogFactory
     ) {
@@ -4143,38 +4137,17 @@ export class AgentManager {
   }
 
   private async withProviderControlLaunchContext<T>(
-    provider: AgentProvider,
+    _provider: AgentProvider,
     run: (launchContext: AgentLaunchContext) => Promise<T>,
   ): Promise<T> {
-    if (!this.thothHome) {
-      return await run({ env: {} });
-    }
-    const runtimeSessionProvider = this.getProviderRuntimeSessionProvider(provider);
-    const runtimeSession = prepareProviderRuntimeSession({
-      provider: runtimeSessionProvider,
-      thothHome: this.thothHome,
-      sessionId: `control-${randomUUID()}`,
-    });
-    try {
-      return await run({ env: runtimeSession.env });
-    } finally {
-      disposeProviderRuntimeSession(runtimeSessionProvider, runtimeSession);
-    }
+    return await run({ env: {} });
   }
 
   private buildPersistenceControlLaunchContext(
-    provider: AgentProvider,
-    persistence: AgentPersistenceHandle,
+    _provider: AgentProvider,
+    _persistence: AgentPersistenceHandle,
   ): AgentLaunchContext {
-    const sessionHome = readThothRuntimeToolsConfig({
-      extra: persistence.metadata?.extra,
-    })?.sessionHome;
-    return {
-      env: providerRuntimeSessionEnvironment(
-        this.getProviderRuntimeSessionProvider(provider),
-        sessionHome,
-      ),
-    };
+    return { env: {} };
   }
 
   private requireAgent(id: string): LiveManagedAgent {

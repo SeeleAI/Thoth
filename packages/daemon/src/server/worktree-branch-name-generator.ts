@@ -10,7 +10,7 @@ import {
   resolveStructuredGenerationProviders,
   type StructuredGenerationDaemonConfig,
 } from "./agent/structured-generation-providers.js";
-import { buildAgentBranchNameSeed } from "./agent/prompt-attachments.js";
+import { buildAgentBranchNameSeed } from "@thoth/drivers/internal/server/agent/prompt-attachments";
 import { buildMetadataPrompt } from "../utils/build-metadata-prompt.js";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import type { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";

@@ -21,13 +21,14 @@ export async function runWaitCommand(
   _command: Command,
 ): Promise<ListResult<ChatMessageRow>> {
   const timeoutMs = parseTimeoutMs(options.timeout);
-  const { client } = await connectChatClient(options.host);
+  const { client, workspaceId } = await connectChatClient(options.host, options.workspace);
   const deadline = typeof timeoutMs === "number" ? Date.now() + timeoutMs : null;
   const hasExplicitTimeout = deadline !== null;
   const remainingTimeoutMs = () =>
     deadline === null ? undefined : Math.max(1, deadline - Date.now());
   try {
     const latest = await client.readChatMessages({
+      workspaceId,
       room,
       limit: 1,
       ...(hasExplicitTimeout
@@ -38,6 +39,7 @@ export async function runWaitCommand(
     });
     const afterMessageId = latest.messages[0]?.id;
     const payload = await client.waitForChatMessages({
+      workspaceId,
       room,
       afterMessageId,
       timeoutMs: remainingTimeoutMs() ?? timeoutMs,

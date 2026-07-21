@@ -3,11 +3,11 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-021`
+2. Top next action: `NTH-TD-023`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: None for the current top next action. `NTH-EV-031` records the native-Codex five-journey transport run, and `NTH-EV-036` now verifies viewed internal Loop phase permission/stream recovery in a real Chromium/Codex Review. Remaining promotion is real browser/device evidence for budget/control actions and daemon restart/reconnect restoration.
-5. Current branch: `release/mvp-actions`
-6. Current implementation state: promoted TypeScript product substrate with provider-backed Codex dynamicTools as the verified execution path. `NTH-CD-047` adds daemon-owned SQLite append-only Loop authority, Task Memory, sealed evidence, budget envelopes, durable leases and independent audit sessions on top of the Task/Goals/PlanExec/Review chain. `NTH-CD-050` / `NTH-CD-051` keep live Agent Harness tools and prompts semantic: daemon binds attempt identity and resource control, while Review first assesses independently and then gives a Direction Memo plus semantic outcome. The native-Codex fixture suite passes all five scripted user journeys, including Loop+Single all-goals completion and Loop+Light failed-Review retry, without asking the provider to invent behavior. A viewed internal Loop phase now receives a session-scoped live stream without entering the foreground agent directory; `NTH-EV-036` verifies Review Apply request/resolution/tool continuation in a real browser. `NTH-EV-037` verifies the original public `v0.0.0-mvp-beta` prerelease, and `NTH-EV-038` verifies its `NTH-CD-057` replacement at commit `3ff79cad`: per-send visible-session Thoth binding, remote workspace authority, transparent branding and fixed-tag commit-based native updates are packaged across the same release matrix. Browser/device control actions and restart restoration remain open evidence under `NTH-TD-021`; an installed real-provider Relay Clarify/Loop run from the replacement build remains open under `NTH-TD-016`.
+4. Active blockers: None. `NTH-EV-043` records the locally verified `NTH-CD-060` implementation, fresh AppImage journey, real Codex journey and packaged CLI Relay journey. The remaining step is the authorized branch push, native GitHub Actions matrix and public-asset revalidation.
+5. Current branch: `agent/dev/mvp`
+6. Current implementation state: `NTH-CD-060` is the only local product path. One Workspace authority shard owns visible Agents, Cards, immutable Human Decisions, unified Quick/Loop Tasks, Goals, PhaseRuns, ExecutionAttempts, RuntimeBundle receipts, Task Blackboard and structured same-Workspace `@Task` context. Provider code lives behind the common HarnessAdapter/ToolGateway contract; `.thoth/provider-sessions`, copied provider homes, legacy Loop RPCs and internal-Agent phase authority are removed. Fresh packaged AppImage, real Codex and packaged CLI through hosted Relay all pass locally. The fixed MVP Release still points at the previous build until the current native Actions run succeeds.
 
 ## Objective Summary
 
@@ -24,7 +24,7 @@
 
 ## Top Next Action
 
-`NTH-TD-021` `[doing]`: Close the remaining real browser/device evidence for Loop `budget_wait`, pause/resume/stop and daemon restart/reconnect restoration, including Background Task detail and phase AgentTimeline recovery.
+`NTH-TD-023` `[doing]`: Commit and fast-forward the locally verified `NTH-CD-060` implementation to `agent/dev/mvp` and `release/mvp-actions`, wait for the complete native workflow, then re-download and verify the sole fixed MVP beta Release before closing the task.
 
 ## Active Blockers
 
@@ -95,6 +95,9 @@ None.
 61. `NTH-EV-037`: GitHub Actions run `29551530114` passed preflight, native desktop, signed Android, server CLI, three-OS CLI install and live Relay jobs before publishing the public prerelease. Re-downloaded AppImage, APK and CLI assets passed checksums and independent runtime/package verification.
 62. `NTH-CD-057`: Ordinary Agent sends now freeze Thoth on/off and Quick/Loop controls while preserving the visible provider session; Relay execution resolves cwd from daemon-owned workspace identity; platform branding is transparent Thoth artwork; native beta updates compare fixed-tag build commits and verify assets before installation.
 63. `NTH-EV-038`: GitHub Actions run `29571377829` rebuilt every native target and replaced the sole MVP prerelease at commit `3ff79cad`; public manifest/build-source/checksum receipts and re-downloaded AppImage/APK/CLI assets match that commit.
+64. `NTH-CD-059`: `Simply Is First` is now the highest engineering priority: code must land as final architecture modules through real production boundaries, with no simplified substitute, parallel implementation, fallback, semantic downgrade or hidden acceptance rewrite; failing metrics remain evidence to solve on the final path.
+65. `NTH-CD-060`: Workspace and Task are now the durable orchestration units. Provider threads and attempts are runtime evidence only; RuntimeBundles and HarnessAdapters replace copied provider session homes; human decisions are append-only; same-Workspace `@Task` supplies semantic Task context without provider-session merging.
+66. `NTH-EV-043`: The Workspace/Task authority and universal HarnessAdapter implementation is locally verified through adapter conformance, real Codex, a fresh AppImage, migration, hosted Relay, restart, Pause/Resume/Stop, failed-Review retry, storage limits and full local gates. Native Actions and public-download verification remain pending.
 
 ## Read Next
 

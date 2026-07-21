@@ -28,7 +28,7 @@ import {
 } from "../utils/worktree-metadata.js";
 import type { WorktreeCreationIntent } from "./resolve-worktree-creation-intent.js";
 import { resolveFirstAgentPromptTitle } from "./agent/create-agent-title.js";
-import { buildAgentBranchNameSeed } from "./agent/prompt-attachments.js";
+import { buildAgentBranchNameSeed } from "@thoth/drivers/internal/server/agent/prompt-attachments";
 import type { FirstAgentContext } from "@thoth/protocol/messages";
 
 export interface CreateThothWorktreeInput extends CreateWorktreeCoreInput {

@@ -1,7 +1,7 @@
 import type pino from "pino";
 import type { SubscribeCheckoutDiffRequest, SessionOutboundMessage } from "./messages.js";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
-import { expandTilde } from "../utils/path.js";
+import { expandTilde } from "@thoth/drivers/internal/utils/path";
 import { toCheckoutError } from "./checkout-git-utils.js";
 
 const CHECKOUT_DIFF_WATCH_DEBOUNCE_MS = 150;

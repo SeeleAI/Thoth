@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../../messages.js";
-import type { AgentSessionConfig } from "../../agent/agent-sdk-types.js";
+import type { AgentSessionConfig } from "@thoth/drivers/agent-runtime";
 import type { SpeechToTextProvider, TextToSpeechProvider } from "../../speech/speech-provider.js";
 import type { Resolvable } from "../../speech/provider-resolver.js";
 import type { SpeechReadinessSnapshot } from "../../speech/speech-runtime.js";

@@ -5,11 +5,11 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { AgentManager } from "../agent-manager.js";
-import type { AgentStreamEvent, AgentTimelineItem } from "../agent-sdk-types.js";
+import type { AgentStreamEvent, AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import {
   MOCK_LOAD_TEST_DEFAULT_MODEL_ID,
   MockLoadTestAgentClient,
-} from "./mock-load-test-agent.js";
+} from "@thoth/drivers/internal/server/agent/providers/mock-load-test-agent";
 
 type PermissionRequestedEvent = Extract<AgentStreamEvent, { type: "permission_requested" }>;
 

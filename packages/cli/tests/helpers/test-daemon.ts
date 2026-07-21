@@ -18,6 +18,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { ChildProcess, spawn } from "child_process";
 import { getAvailablePort } from "./network.ts";
+import { connectToDaemon } from "../../src/utils/client.ts";
 
 export interface TestDaemonContext {
   /** Available local port for test daemon (never 6767) */
@@ -412,6 +413,7 @@ export async function createE2ETestContext(options?: {
       stdout: string;
       stderr: string;
     }>;
+    createWorkspace: () => Promise<string>;
   }
 > {
   const ctx = await startTestDaemon({ timeout: options?.timeout, env: options?.env });
@@ -421,8 +423,30 @@ export async function createE2ETestContext(options?: {
     opts?: { timeout?: number; cwd?: string; env?: NodeJS.ProcessEnv },
   ) => runThothCli(ctx, args, opts);
 
+  const createWorkspace = async (): Promise<string> => {
+    const previousHome = process.env.THOTH_HOME;
+    process.env.THOTH_HOME = ctx.thothHome;
+    let client: Awaited<ReturnType<typeof connectToDaemon>> | undefined;
+    try {
+      client = await connectToDaemon({ host: `${TEST_DAEMON_HOST}:${ctx.port}` });
+      const result = await client.createWorkspace({
+        source: { kind: "directory", path: ctx.workDir },
+        title: "CLI Test Workspace",
+      });
+      if (!result.workspace || result.error) {
+        throw new Error(result.error ?? "Workspace creation returned no workspace");
+      }
+      return result.workspace.id;
+    } finally {
+      await client?.close();
+      if (previousHome === undefined) delete process.env.THOTH_HOME;
+      else process.env.THOTH_HOME = previousHome;
+    }
+  };
+
   return {
     ...ctx,
     thoth,
+    createWorkspace,
   };
 }

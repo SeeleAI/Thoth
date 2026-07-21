@@ -5,8 +5,8 @@ import path from "node:path";
 import pino from "pino";
 import { beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import type { AgentClient, ImportableProviderSession } from "../agent/agent-sdk-types.js";
-import { OpenCodeServerManager } from "../agent/providers/opencode/server-manager.js";
+import type { AgentClient, ImportableProviderSession } from "@thoth/drivers/agent-runtime";
+import { OpenCodeServerManager } from "@thoth/drivers/internal/server/agent/providers/opencode/server-manager";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon } from "../test-utils/thoth-daemon.js";
 import { canRunRealProvider, createRealProviderClient } from "./real-provider-test-config.js";

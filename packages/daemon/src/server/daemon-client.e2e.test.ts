@@ -22,7 +22,7 @@ import type {
   AgentSession,
   AgentSessionConfig,
   AgentStreamEvent,
-} from "./agent/agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 
 const openaiApiKey = process.env.OPENAI_API_KEY ?? null;
 

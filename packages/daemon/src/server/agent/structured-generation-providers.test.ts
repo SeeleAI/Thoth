@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { resolveStructuredGenerationProviders } from "./structured-generation-providers.js";
-import type { ProviderSnapshotEntry } from "./agent-sdk-types.js";
+import type { ProviderSnapshotEntry } from "@thoth/drivers/agent-runtime";
 
 const READY = "ready" as const;
 const ERROR = "error" as const;

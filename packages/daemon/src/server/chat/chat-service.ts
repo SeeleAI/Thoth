@@ -1,36 +1,12 @@
-import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import type pino from "pino";
-import { z } from "zod";
-import { writeJsonFileAtomic } from "../atomic-file.js";
+import type { ChatMessage, ChatRoomDetail } from "@thoth/protocol/chat/types";
+import type { WorkspaceAuthorityManager } from "../workspace-authority/workspace-authority-manager.js";
 import {
-  ChatMessageSchema,
-  ChatRoomDetailSchema,
-  ChatRoomSchema,
-  type ChatMessage,
-  type ChatRoom,
-  type ChatRoomDetail,
-} from "@thoth/protocol/chat/types";
+  ChatStorePayloadSchema,
+  WorkspaceCoordinationError,
+  type WorkspaceCoordinationRepository,
+} from "../workspace-authority/coordination-repository.js";
 
-const ChatStorePayloadSchema = z.object({
-  rooms: z.array(ChatRoomSchema),
-  messages: z.array(ChatMessageSchema),
-});
-
-type ChatStorePayload = z.infer<typeof ChatStorePayloadSchema>;
-
-function normalizeRoomName(name: string): string {
-  return name.trim().toLocaleLowerCase();
-}
-
-function trimToNull(value: string | null | undefined): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
+export { ChatStorePayloadSchema, WorkspaceCoordinationError as ChatServiceError };
 
 const CHAT_MENTION_PATTERN = /(?:^|[\s(])@([A-Za-z0-9][A-Za-z0-9._-]*)/g;
 
@@ -38,24 +14,19 @@ export function parseMentionAgentIds(body: string): string[] {
   const mentionAgentIds = new Set<string>();
   for (const match of body.matchAll(CHAT_MENTION_PATTERN)) {
     const agentId = match[1]?.trim();
-    if (agentId) {
-      mentionAgentIds.add(agentId);
-    }
+    if (agentId) mentionAgentIds.add(agentId);
   }
   return Array.from(mentionAgentIds).sort();
 }
 
-export class ChatServiceError extends Error {
-  readonly code: string;
-
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = "ChatServiceError";
-    this.code = code;
-  }
+function trimToNull(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 interface Waiter {
+  workspaceId: string;
   roomId: string;
   afterMessageId: string | null;
   resolve: (messages: ChatMessage[]) => void;
@@ -63,403 +34,181 @@ interface Waiter {
   timeout: ReturnType<typeof setTimeout> | null;
 }
 
-export interface CreateChatRoomInput {
+interface WorkspaceChatInput {
+  workspaceId: string;
+}
+
+export interface CreateChatRoomInput extends WorkspaceChatInput {
   name: string;
   purpose?: string | null;
 }
 
-export interface InspectChatRoomInput {
+export interface InspectChatRoomInput extends WorkspaceChatInput {
   room: string;
 }
 
-export interface DeleteChatRoomInput {
+export interface DeleteChatRoomInput extends WorkspaceChatInput {
   room: string;
 }
 
-export interface PostChatMessageInput {
+export interface PostChatMessageInput extends WorkspaceChatInput {
   room: string;
   authorAgentId: string;
   body: string;
   replyToMessageId?: string | null;
 }
 
-export interface ReadChatMessagesInput {
+export interface ReadChatMessagesInput extends WorkspaceChatInput {
   room: string;
   limit?: number;
   since?: string;
   authorAgentId?: string;
 }
 
-export interface ListChatRoomPosterAgentIdsInput {
+export interface ListChatRoomPosterAgentIdsInput extends WorkspaceChatInput {
   room: string;
 }
 
-export interface WaitForChatMessagesInput {
+export interface WaitForChatMessagesInput extends WorkspaceChatInput {
   room: string;
   afterMessageId?: string | null;
   timeoutMs?: number;
 }
 
-export interface DeleteChatRoomResult {
-  room: ChatRoomDetail;
-}
+/** Process-local wait coordination over durable, Workspace-owned chat rows. */
+export class WorkspaceChatService {
+  private readonly waiters = new Map<string, Set<Waiter>>();
 
-export interface InspectChatRoomResult {
-  room: ChatRoomDetail;
-}
+  constructor(private readonly authority: WorkspaceAuthorityManager) {}
 
-export class FileBackedChatService {
-  private readonly filePath: string;
-  private readonly logger: pino.Logger;
-  private loaded = false;
-  private readonly rooms = new Map<string, ChatRoom>();
-  private readonly messagesByRoomId = new Map<string, ChatMessage[]>();
-  private persistQueue: Promise<void> = Promise.resolve();
-  private readonly waitersByRoomId = new Map<string, Set<Waiter>>();
+  async initialize(): Promise<void> {}
 
-  constructor(options: { thothHome: string; logger: pino.Logger }) {
-    this.filePath = path.join(options.thothHome, "chat", "rooms.json");
-    this.logger = options.logger.child({ component: "chat-service" });
-  }
-
-  async initialize(): Promise<void> {
-    await this.load();
+  close(): void {
+    for (const waiters of this.waiters.values()) {
+      for (const waiter of waiters) waiter.reject(new Error("Chat service closed"));
+    }
+    this.waiters.clear();
   }
 
   async createRoom(input: CreateChatRoomInput): Promise<ChatRoomDetail> {
-    await this.load();
-    const name = input.name.trim();
-    if (name.length === 0) {
-      throw new ChatServiceError("invalid_chat_room_name", "Chat room name is required");
-    }
-    if (this.findRoomByName(name)) {
-      throw new ChatServiceError(
-        "chat_room_name_taken",
-        `Chat room already exists with name: ${name}`,
-      );
-    }
-
-    const now = new Date().toISOString();
-    const room = ChatRoomSchema.parse({
-      id: randomUUID(),
-      name,
-      purpose: trimToNull(input.purpose),
-      createdAt: now,
-      updatedAt: now,
-    });
-    this.rooms.set(room.id, room);
-    await this.enqueuePersist();
-    return this.toRoomDetail(room);
+    return this.repository(input.workspaceId).createChatRoom(input);
   }
 
-  async listRooms(): Promise<ChatRoomDetail[]> {
-    await this.load();
-    return Array.from(this.rooms.values())
-      .map((room) => this.toRoomDetail(room))
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  async listRooms(workspaceId: string): Promise<ChatRoomDetail[]> {
+    return this.repository(workspaceId).listChatRooms();
   }
 
-  async inspectRoom(input: InspectChatRoomInput): Promise<InspectChatRoomResult> {
-    await this.load();
-    const room = this.resolveRoom(input.room);
-    return {
-      room: this.toRoomDetail(room),
-    };
+  async inspectRoom(input: InspectChatRoomInput): Promise<{ room: ChatRoomDetail }> {
+    return { room: this.repository(input.workspaceId).inspectChatRoom(input.room) };
   }
 
-  async deleteRoom(input: DeleteChatRoomInput): Promise<DeleteChatRoomResult> {
-    await this.load();
-    const room = this.resolveRoom(input.room);
-    const detail = this.toRoomDetail(room);
-    this.rooms.delete(room.id);
-    this.messagesByRoomId.delete(room.id);
-    await this.enqueuePersist();
+  async deleteRoom(input: DeleteChatRoomInput): Promise<{ room: ChatRoomDetail }> {
+    const repository = this.repository(input.workspaceId);
+    const room = repository.deleteChatRoom(input.room);
     this.rejectWaiters(
+      input.workspaceId,
       room.id,
-      new ChatServiceError("chat_room_deleted", `Chat room deleted: ${room.name}`),
+      new WorkspaceCoordinationError("chat_room_deleted", `Chat room deleted: ${room.name}`),
     );
-    return { room: detail };
+    return { room };
   }
 
   async dispatchMessage(input: PostChatMessageInput): Promise<ChatMessage> {
-    await this.load();
-    const room = this.resolveRoom(input.room);
-    const body = input.body.trim();
-    if (body.length === 0) {
-      throw new ChatServiceError("invalid_chat_message", "Chat message body is required");
-    }
-    const authorAgentId = input.authorAgentId.trim();
-    if (authorAgentId.length === 0) {
-      throw new ChatServiceError("invalid_chat_author", "Chat message author is required");
-    }
-
-    const messages = this.getRoomMessages(room.id);
-    const replyToMessageId = trimToNull(input.replyToMessageId);
-    if (replyToMessageId) {
-      const replyTarget = messages.find((message) => message.id === replyToMessageId);
-      if (!replyTarget) {
-        throw new ChatServiceError(
-          "chat_message_not_found",
-          `Reply target not found: ${replyToMessageId}`,
-        );
-      }
-    }
-
-    const createdAt = new Date().toISOString();
-    const message = ChatMessageSchema.parse({
-      id: randomUUID(),
-      roomId: room.id,
-      authorAgentId,
-      body,
-      replyToMessageId,
-      mentionAgentIds: parseMentionAgentIds(body),
-      createdAt,
+    const repository = this.repository(input.workspaceId);
+    const message = repository.postChatMessage({
+      ...input,
+      mentionAgentIds: parseMentionAgentIds(input.body),
     });
-
-    messages.push(message);
-    this.messagesByRoomId.set(room.id, messages);
-    this.rooms.set(
-      room.id,
-      ChatRoomSchema.parse({
-        ...room,
-        updatedAt: createdAt,
-      }),
-    );
-    await this.enqueuePersist();
-    this.notifyWaiters(room.id);
+    this.notifyWaiters(input.workspaceId, message.roomId);
     return message;
   }
 
   async readMessages(input: ReadChatMessagesInput): Promise<ChatMessage[]> {
-    await this.load();
-    const room = this.resolveRoom(input.room);
-    const messages = [...this.getRoomMessages(room.id)];
-    const since = trimToNull(input.since);
-    const authorAgentId = trimToNull(input.authorAgentId);
-    const limit = this.normalizeLimit(input.limit);
-
-    const filtered = messages.filter((message) => {
-      if (since && message.createdAt < since) {
-        return false;
-      }
-      if (authorAgentId && message.authorAgentId !== authorAgentId) {
-        return false;
-      }
-      return true;
-    });
-
-    if (limit === 0 || filtered.length <= limit) {
-      return filtered;
-    }
-    return filtered.slice(filtered.length - limit);
+    return this.repository(input.workspaceId).readChatMessages(input);
   }
 
   async listRoomPosterAgentIds(input: ListChatRoomPosterAgentIdsInput): Promise<string[]> {
-    await this.load();
-    const room = this.resolveRoom(input.room);
-    const posters = new Set<string>();
-    for (const message of this.getRoomMessages(room.id)) {
-      posters.add(message.authorAgentId);
-    }
-    return Array.from(posters);
+    return this.repository(input.workspaceId).listChatRoomPosterAgentIds(input.room);
   }
 
   async waitForMessages(input: WaitForChatMessagesInput): Promise<ChatMessage[]> {
-    await this.load();
-    const room = this.resolveRoom(input.room);
+    const repository = this.repository(input.workspaceId);
+    const roomId = repository.resolveChatRoomId(input.room);
     const timeoutMs = Math.max(0, Math.floor(input.timeoutMs ?? 0));
     const afterMessageId = trimToNull(input.afterMessageId);
-
     if (afterMessageId) {
-      const existing = this.selectMessagesAfter(room.id, afterMessageId);
-      if (existing.length > 0) {
-        return existing;
-      }
-      const knownMessage = this.getRoomMessages(room.id).some(
-        (message) => message.id === afterMessageId,
-      );
-      if (!knownMessage) {
-        throw new ChatServiceError(
+      const existing = repository.selectChatMessagesAfter(roomId, afterMessageId);
+      if (existing.length > 0) return existing;
+      if (!repository.getChatMessage(afterMessageId)) {
+        throw new WorkspaceCoordinationError(
           "chat_message_not_found",
           `Wait cursor not found: ${afterMessageId}`,
         );
       }
     }
-
     return new Promise<ChatMessage[]>((resolve, reject) => {
       const waiter: Waiter = {
-        roomId: room.id,
+        workspaceId: input.workspaceId,
+        roomId,
         afterMessageId,
         resolve: (messages) => {
-          if (waiter.timeout) {
-            clearTimeout(waiter.timeout);
-            waiter.timeout = null;
-          }
+          if (waiter.timeout) clearTimeout(waiter.timeout);
+          waiter.timeout = null;
           this.removeWaiter(waiter);
           resolve(messages);
         },
         reject: (error) => {
-          if (waiter.timeout) {
-            clearTimeout(waiter.timeout);
-            waiter.timeout = null;
-          }
+          if (waiter.timeout) clearTimeout(waiter.timeout);
+          waiter.timeout = null;
           this.removeWaiter(waiter);
           reject(error);
         },
         timeout: null,
       };
-
-      if (timeoutMs > 0) {
-        waiter.timeout = setTimeout(() => {
-          waiter.resolve([]);
-        }, timeoutMs);
-      }
-
-      const roomWaiters = this.waitersByRoomId.get(room.id) ?? new Set<Waiter>();
-      roomWaiters.add(waiter);
-      this.waitersByRoomId.set(room.id, roomWaiters);
+      if (timeoutMs > 0) waiter.timeout = setTimeout(() => waiter.resolve([]), timeoutMs);
+      const key = this.waiterKey(input.workspaceId, roomId);
+      const waiters = this.waiters.get(key) ?? new Set<Waiter>();
+      waiters.add(waiter);
+      this.waiters.set(key, waiters);
     });
   }
 
-  private async load(): Promise<void> {
-    if (this.loaded) {
-      return;
-    }
-
-    this.rooms.clear();
-    this.messagesByRoomId.clear();
-
-    try {
-      const raw = await fs.readFile(this.filePath, "utf8");
-      const parsed = ChatStorePayloadSchema.parse(JSON.parse(raw));
-      for (const room of parsed.rooms) {
-        this.rooms.set(room.id, room);
-      }
-      for (const message of parsed.messages) {
-        const messages = this.messagesByRoomId.get(message.roomId) ?? [];
-        messages.push(message);
-        this.messagesByRoomId.set(message.roomId, messages);
-      }
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") {
-        this.logger.error({ err: error, filePath: this.filePath }, "Failed to load chat store");
-      }
-    }
-
-    this.loaded = true;
+  importSnapshot(workspaceId: string, value: unknown): { rooms: number; messages: number } {
+    return this.repository(workspaceId).importChatSnapshot(ChatStorePayloadSchema.parse(value));
   }
 
-  private async enqueuePersist(): Promise<void> {
-    const nextPersist = this.persistQueue.then(() => this.persist());
-    this.persistQueue = nextPersist.catch(() => {});
-    await nextPersist;
+  private repository(workspaceId: string): WorkspaceCoordinationRepository {
+    return this.authority.forWorkspace(workspaceId).coordination;
   }
 
-  private async persist(): Promise<void> {
-    const payload: ChatStorePayload = {
-      rooms: Array.from(this.rooms.values()).sort((left, right) =>
-        left.createdAt.localeCompare(right.createdAt),
-      ),
-      messages: Array.from(this.messagesByRoomId.values())
-        .flat()
-        .sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
-    };
-    await writeJsonFileAtomic(this.filePath, payload);
-  }
-
-  private findRoomByName(name: string): ChatRoom | null {
-    const normalizedName = normalizeRoomName(name);
-    for (const room of this.rooms.values()) {
-      if (normalizeRoomName(room.name) === normalizedName) {
-        return room;
-      }
-    }
-    return null;
-  }
-
-  private resolveRoom(roomSelector: string): ChatRoom {
-    const selector = roomSelector.trim();
-    if (selector.length === 0) {
-      throw new ChatServiceError("invalid_chat_room", "Chat room name or ID is required");
-    }
-    const byId = this.rooms.get(selector);
-    if (byId) {
-      return byId;
-    }
-    const byName = this.findRoomByName(selector);
-    if (byName) {
-      return byName;
-    }
-    throw new ChatServiceError("chat_room_not_found", `Chat room not found: ${selector}`);
-  }
-
-  private getRoomMessages(roomId: string): ChatMessage[] {
-    return this.messagesByRoomId.get(roomId) ?? [];
-  }
-
-  private toRoomDetail(room: ChatRoom): ChatRoomDetail {
-    const messages = this.getRoomMessages(room.id);
-    return ChatRoomDetailSchema.parse({
-      ...room,
-      messageCount: messages.length,
-      lastMessageAt: messages[messages.length - 1]?.createdAt ?? null,
-    });
-  }
-
-  private normalizeLimit(limit: number | undefined): number {
-    if (limit === undefined) {
-      return 20;
-    }
-    const normalized = Math.max(0, Math.floor(limit));
-    return normalized;
-  }
-
-  private selectMessagesAfter(roomId: string, afterMessageId: string): ChatMessage[] {
-    const messages = this.getRoomMessages(roomId);
-    const index = messages.findIndex((message) => message.id === afterMessageId);
-    if (index === -1) {
-      return [];
-    }
-    return messages.slice(index + 1);
-  }
-
-  private notifyWaiters(roomId: string): void {
-    const waiters = this.waitersByRoomId.get(roomId);
-    if (!waiters || waiters.size === 0) {
-      return;
-    }
-
+  private notifyWaiters(workspaceId: string, roomId: string): void {
+    const key = this.waiterKey(workspaceId, roomId);
+    const waiters = this.waiters.get(key);
+    if (!waiters) return;
+    const repository = this.repository(workspaceId);
     for (const waiter of Array.from(waiters)) {
-      const messages =
-        waiter.afterMessageId === null
-          ? this.getRoomMessages(roomId).slice(-1)
-          : this.selectMessagesAfter(roomId, waiter.afterMessageId);
-      if (messages.length === 0) {
-        continue;
-      }
-      waiter.resolve(messages);
+      const messages = waiter.afterMessageId
+        ? repository.selectChatMessagesAfter(roomId, waiter.afterMessageId)
+        : repository.latestChatRoomMessage(roomId);
+      if (messages.length > 0) waiter.resolve(messages);
     }
   }
 
   private removeWaiter(waiter: Waiter): void {
-    const waiters = this.waitersByRoomId.get(waiter.roomId);
-    if (!waiters) {
-      return;
-    }
+    const key = this.waiterKey(waiter.workspaceId, waiter.roomId);
+    const waiters = this.waiters.get(key);
+    if (!waiters) return;
     waiters.delete(waiter);
-    if (waiters.size === 0) {
-      this.waitersByRoomId.delete(waiter.roomId);
-    }
+    if (waiters.size === 0) this.waiters.delete(key);
   }
 
-  private rejectWaiters(roomId: string, error: Error): void {
-    const waiters = this.waitersByRoomId.get(roomId);
-    if (!waiters) {
-      return;
-    }
-    for (const waiter of Array.from(waiters)) {
-      waiter.reject(error);
-    }
+  private rejectWaiters(workspaceId: string, roomId: string, error: Error): void {
+    const waiters = this.waiters.get(this.waiterKey(workspaceId, roomId));
+    if (!waiters) return;
+    for (const waiter of Array.from(waiters)) waiter.reject(error);
+  }
+
+  private waiterKey(workspaceId: string, roomId: string): string {
+    return `${workspaceId}:${roomId}`;
   }
 }

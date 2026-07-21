@@ -239,6 +239,46 @@ function checkRemovedForegroundExecutionPath() {
   ok("removed foreground execution path is absent from product source");
 }
 
+function checkRemovedProviderSessionAndLoopPaths() {
+  const tracked = git(["ls-files", "packages", "scripts"])
+    .split("\n")
+    .filter(Boolean)
+    .filter((path) => !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path));
+  const auditOnlyFiles = new Set([
+    "packages/daemon/src/server/storage-layout-migration.ts",
+    "packages/drivers/src/clarify/eval.ts",
+    "packages/drivers/src/loop/eval.ts",
+    "scripts/judge-clarify-user-simulation.mjs",
+    "scripts/smoke-packaged-appimage-thoth-flow.mjs",
+    "scripts/validate-repo.mjs",
+  ]);
+  const forbidden = [
+    /["']provider-sessions(?:["'/])/,
+    /supportsNativeThothTools/,
+    /ProviderRuntimeSession/,
+    /runtimeSessionProvider/,
+    /opencode-home/,
+    /background_task\./,
+    /codex[-_ ]phase[-_ ]recovery/i,
+    /phase-recovery-adapters/,
+    /runtime-session-adapters/,
+    /RegisteredTaskModel/,
+    /LoopTaskModel/,
+  ];
+  for (const path of tracked) {
+    if (auditOnlyFiles.has(path)) continue;
+    const absolutePath = join(root, path);
+    if (!fileExists(absolutePath) || statSync(absolutePath).size > 1024 * 1024) continue;
+    const content = readFileSync(absolutePath, "utf8");
+    for (const pattern of forbidden) {
+      if (pattern.test(content)) {
+        fail(`removed provider-session or Loop path found in ${path}: ${pattern.source}`);
+      }
+    }
+  }
+  ok("removed provider-session and legacy Loop paths are absent from product source");
+}
+
 checkPackageBoundary();
 checkPackageMetadata();
 checkAgentDocs();
@@ -248,6 +288,7 @@ checkTrackedPaths();
 checkPackageConfigVoiceResidue();
 checkSecrets();
 checkRemovedForegroundExecutionPath();
+checkRemovedProviderSessionAndLoopPaths();
 
 if (process.exitCode) {
   process.exit(process.exitCode);

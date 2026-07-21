@@ -42,8 +42,8 @@ import {
   pullCurrentBranch,
   pushCurrentBranch,
 } from "../../../utils/checkout-git.js";
-import { execCommand } from "../../../utils/spawn.js";
-import { expandTilde } from "../../../utils/path.js";
+import { execCommand } from "@thoth/drivers/internal/utils/spawn";
+import { expandTilde } from "@thoth/drivers/internal/utils/path";
 import type { GitMetadataGenerator } from "./git-metadata-generator.js";
 
 /**

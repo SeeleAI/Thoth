@@ -26,7 +26,6 @@ export const ScheduleTargetSchema = z.discriminatedUnion("type", [
     type: z.literal("new-agent"),
     config: z.object({
       provider: AgentProviderSchema,
-      cwd: z.string().trim().min(1),
       modeId: z.string().trim().min(1).optional(),
       model: z.string().trim().min(1).optional(),
       thinkingOptionId: z.string().trim().min(1).optional(),
@@ -99,7 +98,6 @@ export interface UpdateScheduleNewAgentConfig {
   provider?: string;
   model?: string | null;
   modeId?: string | null;
-  cwd?: string;
 }
 
 export interface UpdateScheduleInput {

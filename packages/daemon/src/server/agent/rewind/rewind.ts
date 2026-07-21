@@ -1,4 +1,4 @@
-import type { AgentSession } from "../agent-sdk-types.js";
+import type { AgentSession } from "@thoth/drivers/agent-runtime";
 
 export type RewindMode = "conversation" | "files" | "both";
 

@@ -25,9 +25,9 @@ export async function runDeleteCommand(
   options: ScheduleCommandOptions,
   _command: Command,
 ): Promise<SingleResult<ScheduleDeleteRow>> {
-  const { client } = await connectScheduleClient(options.host);
+  const { client, workspaceId } = await connectScheduleClient(options.host, options.workspace);
   try {
-    const payload = await client.scheduleDelete({ id });
+    const payload = await client.scheduleDelete({ workspaceId, id });
     if (payload.error) {
       throw new Error(payload.error);
     }

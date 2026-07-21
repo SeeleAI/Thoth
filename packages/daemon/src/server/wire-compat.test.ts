@@ -11,7 +11,10 @@ import {
   type SessionOutboundMessage,
 } from "@thoth/protocol/messages";
 import { Session, type SessionOptions } from "./session.js";
-import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
+import {
+  createProviderSnapshotManagerStub,
+  createSessionWithAuthority,
+} from "./test-utils/session-stubs.js";
 import type { AgentTimelineRow } from "./agent/agent-manager.js";
 import { handleCreateThothWorktreeRequest } from "./worktree-session.js";
 
@@ -234,7 +237,7 @@ function createSessionForWireCompatTest(options?: {
     },
   ];
 
-  const session = new Session({
+  const session = createSessionWithAuthority({
     clientId: "wire-compat-client",
     clientCapabilities: options?.clientCapabilities ?? null,
     onMessage: (message) => messages.push(message),

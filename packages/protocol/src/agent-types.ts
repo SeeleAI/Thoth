@@ -1,6 +1,6 @@
 import type { AgentAttachment } from "./messages.js";
+import type { TaskProjection } from "./task-authority.js";
 import type {
-  RegisteredTaskModel,
   ThothApprovalGoalCardModel,
   ThothClarifyCardModel,
   ThothTaskCardModel,
@@ -348,7 +348,7 @@ export type AgentTimelineItem =
   | { type: "clarify_card"; card: ThothClarifyCardModel }
   | { type: "task_card"; card: ThothTaskCardModel }
   | { type: "goal_card"; card: ThothApprovalGoalCardModel }
-  | { type: "registered_task"; task: RegisteredTaskModel }
+  | { type: "registered_task"; task: TaskProjection }
   | ToolCallTimelineItem
   | { type: "todo"; items: { text: string; completed: boolean }[] }
   | { type: "error"; message: string }

@@ -8,7 +8,7 @@ import { experimental_createMCPClient } from "ai";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import pino from "pino";
 
-import { withTimeout } from "../../utils/promise-timeout.js";
+import { withTimeout } from "@thoth/drivers/internal/utils/promise-timeout";
 import { hashDaemonPassword } from "../auth.js";
 import { createThothDaemon, type ThothDaemonConfig } from "../bootstrap.js";
 import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
@@ -19,7 +19,7 @@ import type {
   AgentSession,
   AgentSessionConfig,
   AgentStreamEvent,
-} from "./agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 
 interface StructuredContent {
   [key: string]: unknown;
@@ -96,16 +96,17 @@ interface LaunchRecorder {
 class RecordingAgentClient implements AgentClient {
   readonly provider: AgentClient["provider"];
   readonly capabilities: AgentClient["capabilities"];
+  readonly harnessCapabilities: AgentClient["harnessCapabilities"];
 
   constructor(
     private readonly inner: AgentClient,
     private readonly recorder: LaunchRecorder,
   ) {
     this.provider = inner.provider;
+    this.harnessCapabilities = inner.harnessCapabilities;
     this.capabilities = {
       ...inner.capabilities,
       supportsMcpServers: true,
-      supportsNativeThothTools: false,
     };
   }
 

@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
 import type { AgentManager } from "../agent/agent-manager.js";
-import type { AgentStorage } from "../agent/agent-storage.js";
+import type { AgentRegistry } from "../agent/agent-storage.js";
 import type { DaemonConfigStore } from "../daemon-config-store.js";
 import {
   archiveByScope,
@@ -24,7 +24,7 @@ export interface AutoArchiveArchiveOptions {
   workspaceGitService: WorkspaceGitServiceImpl;
   github: GitHubService;
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   terminalManager: TerminalManager;
   findWorkspaceIdForCwd: (cwd: string) => Promise<string | null>;
   listActiveWorkspaces: () => Promise<ActiveWorkspaceRef[]>;

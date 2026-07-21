@@ -20,6 +20,8 @@ let buffer = "";
 let turnOrdinal = 0;
 let nextServerRequestId = 1_000_000 + process.pid * 100;
 const pendingServerRequests = new Map();
+const activeTurns = new Set();
+let foregroundFlow = "core";
 
 const clarifyCard = {
   title: "Packaged flow authority",
@@ -123,6 +125,35 @@ const goalsCard = {
   },
 };
 
+const stopTaskCard = {
+  ...taskCard,
+  task_card: {
+    ...taskCard.task_card,
+    title: "Packaged Stop lifecycle flow",
+    goal: "Verify that Stop fences and settles an active packaged Loop execution.",
+  },
+};
+
+const stopGoalsCard = {
+  ...goalsCard,
+  goals_card: {
+    title: "Packaged Stop goal",
+    summary: "One held checkpoint verifies cancellation authority.",
+    goals_count_rationale: "A single active phase is sufficient for Stop verification.",
+    goals: [
+      {
+        id: "packaged-stop-goal-1",
+        order: 1,
+        title: "Hold and stop",
+        goal: "Remain active until the user issues Stop.",
+        constraints: ["Do not modify workspace files."],
+        acceptance: ["The execution becomes canceled or explicitly orphaned without a spinner."],
+        provenance: "Fixed packaged Stop contract.",
+      },
+    ],
+  },
+};
+
 const planExecInputs = ["G1_R1", "G1_R2", "G2_R1"].map((marker) => ({
   plan_summary: `Prescribed packaged plan ${marker}.`,
   execution_summary: `Prescribed packaged execution ${marker}.`,
@@ -217,6 +248,16 @@ function resultFor(method, params) {
       record({ kind: "thread_start", threadId, dynamicToolNames, cwd: params?.cwd ?? null });
       return { thread: { id: threadId } };
     case "thread/resume":
+      dynamicToolNames = Array.isArray(params?.dynamicTools)
+        ? params.dynamicTools.map((tool) => tool.name).filter(Boolean)
+        : [];
+      record({
+        kind: "thread_resume",
+        threadId: params?.threadId ?? threadId,
+        dynamicToolNames,
+      });
+      return { thread: { id: params?.threadId ?? threadId } };
+    case "thread/resume":
       return { thread: { id: params?.threadId ?? threadId, turns: [] } };
     case "thread/read":
       return { thread: { id: params?.threadId ?? threadId, turns: [] } };
@@ -224,6 +265,7 @@ function resultFor(method, params) {
       return { data: [] };
     case "turn/start": {
       const turnId = `scripted-turn-${process.pid}-${++turnOrdinal}`;
+      activeTurns.add(turnId);
       record({
         kind: "turn_start",
         threadId: params?.threadId ?? threadId,
@@ -233,6 +275,22 @@ function resultFor(method, params) {
       });
       setImmediate(() => void runTurn(params, turnId));
       return { turn: { id: turnId } };
+    }
+    case "turn/interrupt": {
+      const turnId = params?.turnId;
+      record({ kind: "turn_interrupt", threadId: params?.threadId ?? threadId, turnId });
+      if (typeof turnId === "string" && activeTurns.delete(turnId)) {
+        setImmediate(() => {
+          writeMessage({
+            method: "turn/completed",
+            params: {
+              threadId: params?.threadId ?? threadId,
+              turn: { id: turnId, status: "interrupted", error: null },
+            },
+          });
+        });
+      }
+      return {};
     }
     default:
       record({ kind: "unhandled_request", method });
@@ -270,10 +328,18 @@ async function requireTool(tool, argumentsValue, turnId) {
   return response;
 }
 
+async function waitForPlanExecRelease(turnId) {
+  while (readSharedState().holdPlanExec === true && activeTurns.has(turnId)) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return activeTurns.has(turnId);
+}
+
 async function runTurn(params, turnId) {
   writeMessage({ method: "turn/started", params: { threadId, turn: { id: turnId } } });
   try {
     const inputText = JSON.stringify(params?.input ?? null);
+    if (inputText.includes("PACKAGED_LOOP_STOP")) foregroundFlow = "stop";
     if (dynamicToolNames.includes("thoth_submit_clarify_convergence_audit")) {
       await requireTool(
         "thoth_submit_clarify_convergence_audit",
@@ -287,6 +353,11 @@ async function runTurn(params, turnId) {
         turnId,
       );
     } else if (dynamicToolNames.includes("thoth_loop_submit_planexec_result")) {
+      if (readSharedState().holdPlanExec === true) {
+        record({ kind: "planexec_hold", threadId, turnId });
+        const released = await waitForPlanExecRelease(turnId);
+        if (!released) return;
+      }
       const index = takeSharedIndex("planExec");
       await requireTool(
         "thoth_loop_submit_planexec_result",
@@ -310,19 +381,31 @@ async function runTurn(params, turnId) {
       inputText.includes("Follow the installed thoth.clarify skill")
     ) {
       if (inputText.includes("Approved Task Card:")) {
-        await requireTool("thoth_submit_goals_card", goalsCard, turnId);
+        await requireTool(
+          "thoth_submit_goals_card",
+          foregroundFlow === "stop" ? stopGoalsCard : goalsCard,
+          turnId,
+        );
       } else if (inputText.includes("Clarification:")) {
-        await requireTool("thoth_submit_task_card", taskCard, turnId);
+        await requireTool(
+          "thoth_submit_task_card",
+          foregroundFlow === "stop" ? stopTaskCard : taskCard,
+          turnId,
+        );
       } else {
         await requireTool("thoth_submit_clarify_card", clarifyCard, turnId);
       }
     }
+    if (!activeTurns.has(turnId)) return;
     record({ kind: "turn_complete", threadId, turnId });
+    activeTurns.delete(turnId);
     writeMessage({
       method: "turn/completed",
       params: { threadId, turn: { id: turnId, status: "completed", error: null } },
     });
   } catch (error) {
+    if (!activeTurns.has(turnId)) return;
+    activeTurns.delete(turnId);
     record({
       kind: "turn_error",
       threadId,

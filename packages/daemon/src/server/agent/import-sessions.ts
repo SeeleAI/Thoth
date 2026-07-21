@@ -6,8 +6,8 @@ import type {
   ManagedAgent,
   ManagedImportableProviderSession,
 } from "./agent-manager.js";
-import type { AgentStorage, StoredAgentRecord } from "./agent-storage.js";
-import type { AgentPersistenceHandle, AgentProvider } from "./agent-sdk-types.js";
+import type { AgentRegistry, StoredAgentRecord } from "./agent-storage.js";
+import type { AgentPersistenceHandle, AgentProvider } from "@thoth/drivers/agent-runtime";
 import { unarchiveAgentState } from "./agent-prompt.js";
 import { toRecentProviderSessionDescriptorPayload } from "./agent-projections.js";
 import type {
@@ -15,7 +15,7 @@ import type {
   ImportAgentRequestMessageSchema,
   RecentProviderSessionDescriptorPayload,
 } from "@thoth/protocol/messages";
-import { createRealpathAwarePathMatcher } from "../../utils/path.js";
+import { createRealpathAwarePathMatcher } from "@thoth/drivers/internal/utils/path";
 
 type ImportAgentRequestMessage = z.infer<typeof ImportAgentRequestMessageSchema>;
 
@@ -43,7 +43,7 @@ export class ImportSessionsRequestError extends Error {
 export interface ListImportableProviderSessionsInput {
   request: FetchRecentProviderSessionsRequestMessage;
   agentManager: Pick<AgentManager, "listAgents" | "listImportableSessions">;
-  agentStorage: Pick<AgentStorage, "list">;
+  agentStorage: Pick<AgentRegistry, "list">;
   providerSnapshotManager: Pick<ProviderSnapshotManager, "getProviderLabel">;
 }
 
@@ -56,7 +56,7 @@ export interface ImportProviderSessionInput {
   request: NormalizedImportAgentRequest;
   workspaceId: string;
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   logger: Logger;
 }
 
@@ -161,7 +161,7 @@ export async function importProviderSession(
 }
 
 async function unarchiveAgentByHandle(
-  agentStorage: AgentStorage,
+  agentStorage: AgentRegistry,
   agentManager: AgentManager,
   handle: AgentPersistenceHandle,
 ): Promise<void> {
@@ -207,7 +207,7 @@ function buildImportPersistenceHandle(input: {
 
 async function collectImportedProviderSessionHandles(
   agentManager: Pick<AgentManager, "listAgents">,
-  agentStorage: Pick<AgentStorage, "list">,
+  agentStorage: Pick<AgentRegistry, "list">,
 ): Promise<Set<string>> {
   const handles = new Set<string>();
 

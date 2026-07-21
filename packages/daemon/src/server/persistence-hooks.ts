@@ -4,8 +4,8 @@ import type {
   AgentPersistenceHandle,
   AgentProvider,
   AgentSessionConfig,
-} from "./agent/agent-sdk-types.js";
-import type { AgentStorage, StoredAgentRecord } from "./agent/agent-storage.js";
+} from "@thoth/drivers/agent-runtime";
+import type { AgentRegistry, StoredAgentRecord } from "./agent/agent-storage.js";
 
 interface LoggerLike {
   child(bindings: Record<string, unknown>): LoggerLike;
@@ -17,7 +17,7 @@ function getLogger(logger: LoggerLike): LoggerLike {
   return logger.child({ module: "persistence" });
 }
 
-type AgentStoragePersistence = Pick<AgentStorage, "applySnapshot" | "list">;
+type AgentStoragePersistence = Pick<AgentRegistry, "applySnapshot" | "list">;
 type AgentManagerStateSource = Pick<AgentManager, "subscribe">;
 
 interface BuildSessionConfigOptions {

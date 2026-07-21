@@ -6,13 +6,13 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest
 
 import type {
   AgentThothLifecycle,
-  LoopTaskModel,
   ThothCardAnswerPayload,
   ThothClarifyCardModel,
   ThothGoalsCardModel,
   ThothTaskCardModel,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type { ThothTurnSnapshot } from "@thoth/protocol/messages";
+import type { ExecutionProjection, TaskProjection } from "@thoth/protocol/task-authority";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon, type TestThothDaemon } from "../test-utils/thoth-daemon.js";
 import {
@@ -330,51 +330,54 @@ function assertNoFixtureWorkProducts(runtime: FlowRuntime): void {
 
 async function waitForLoopTask(
   runtime: FlowRuntime,
-  predicate: (task: LoopTaskModel) => boolean,
+  predicate: (task: TaskProjection) => boolean,
   label: string,
-): Promise<LoopTaskModel> {
+): Promise<{ task: TaskProjection; executions: ExecutionProjection[] }> {
   const deadline = Date.now() + LOOP_TIMEOUT_MS;
-  let last: LoopTaskModel | null = null;
+  let last: TaskProjection | null = null;
   while (Date.now() < deadline) {
-    const listed = await runtime.client.listBackgroundTasks({
-      workspaceId: runtime.workspaceId,
-      workspacePath: runtime.cwd,
-    });
+    const listed = await runtime.client.listTasks(runtime.workspaceId);
     if (listed.error) throw new Error(listed.error);
-    const summary = listed.tasks.find((task) => task.id !== "empty");
+    const summary = listed.tasks[0];
     if (summary) {
-      const inspected = await runtime.client.inspectBackgroundTask({
+      const inspected = await runtime.client.getTask({
         taskId: summary.id,
         workspaceId: runtime.workspaceId,
-        workspacePath: runtime.cwd,
       });
       if (inspected.error) throw new Error(inspected.error);
       last = inspected.task;
-      if (last && predicate(last)) return last;
+      if (last && predicate(last)) return { task: last, executions: inspected.executions };
     }
     await sleep(750);
   }
   throw new Error(`Timed out waiting for ${label}. Last task=${JSON.stringify(last)}`);
 }
 
-function phaseAgentIds(task: LoopTaskModel, phase: "planexec" | "review"): string[] {
-  return task.goals.flatMap((goal) =>
-    goal.phases
-      .filter((entry) => entry.phase === phase && entry.agentId)
-      .map((entry) => entry.agentId!),
-  );
-}
-
-async function assertLoopPhaseTransport(runtime: FlowRuntime, task: LoopTaskModel): Promise<void> {
-  const phaseAgents = [
-    ...new Set([...phaseAgentIds(task, "planexec"), ...phaseAgentIds(task, "review")]),
-  ];
-  expect(phaseAgentIds(task, "planexec").length).toBeGreaterThan(0);
-  expect(phaseAgentIds(task, "review").length).toBeGreaterThan(0);
+async function assertLoopPhaseTransport(
+  runtime: FlowRuntime,
+  task: TaskProjection,
+  executions: ExecutionProjection[],
+): Promise<void> {
+  const planExec = executions.filter((execution) => execution.phase === "planexec");
+  const review = executions.filter((execution) => execution.phase === "review");
+  expect(planExec.length).toBeGreaterThan(0);
+  expect(review.length).toBeGreaterThan(0);
+  expect(
+    [...planExec, ...review].every((execution) => execution.attachment?.bundleId === "thoth.loop"),
+  ).toBe(true);
   const phaseTimelines = await Promise.all(
-    phaseAgents.map(async (agentId) => await timelineEntries(runtime, agentId)),
+    executions.map(async (execution) =>
+      runtime.client.getExecutionTimeline({
+        workspaceId: runtime.workspaceId,
+        taskId: task.id,
+        executionId: execution.id,
+        limit: 500,
+      }),
+    ),
   );
-  expect(phaseTimelines.every((entries) => entries.length > 0)).toBe(true);
+  expect(phaseTimelines.every((payload) => !payload.error && payload.entries.length > 0)).toBe(
+    true,
+  );
 }
 
 describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () => {
@@ -458,8 +461,8 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
       expect(await visibleToolNames(runtime, agent.id)).toEqual(
         expect.arrayContaining(["clarify", "task_approval", "goals_approval"]),
       );
-      const tasks = await runtime.client.listBackgroundTasks({ workspaceId: runtime.workspaceId });
-      expect(tasks.tasks.filter((task) => task.id !== "empty")).toEqual([]);
+      const tasks = await runtime.client.listTasks(runtime.workspaceId);
+      expect(tasks.tasks).toEqual([]);
       assertNoFixtureWorkProducts(runtime);
     },
     420_000,
@@ -544,14 +547,18 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
       );
       const completed = await waitForLoopTask(
         runtime,
-        (task) => task.status === "done",
+        (task) => task.status === "completed",
         "two linear goals",
       );
-      expect(completed.budget).toMatchObject({ maxFailedReviews: 1, usedFailedReviews: 0 });
-      expect(completed.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
-      expect(completed.goals[0]?.latestPlanExecResult?.executionSummary).toContain("UT04_G1_R1");
-      expect(completed.goals[1]?.latestReview?.summary).toContain("UT04_G2_R1");
-      await assertLoopPhaseTransport(runtime, completed);
+      expect(completed.task.budget).toMatchObject({ maxFailedReviews: 1, usedFailedReviews: 0 });
+      expect(completed.task.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
+      const context = await runtime.client.getTaskContext({
+        workspaceId: runtime.workspaceId,
+        taskId: completed.task.id,
+      });
+      expect(JSON.stringify(context.context?.blackboard)).toContain("UT04_G1_R1");
+      expect(JSON.stringify(context.context?.blackboard)).toContain("UT04_G2_R1");
+      await assertLoopPhaseTransport(runtime, completed.task, completed.executions);
       assertNoFixtureWorkProducts(runtime);
     },
     600_000,
@@ -583,15 +590,24 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
       });
       const completed = await waitForLoopTask(
         runtime,
-        (task) => task.status === "done",
+        (task) => task.status === "completed",
         "failed Review retry completion",
       );
-      expect(completed.budget).toMatchObject({ maxFailedReviews: 5, usedFailedReviews: 1 });
-      expect(completed.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
-      expect(completed.goals[0]?.round).toBe(2);
-      expect(completed.goals[0]?.latestPlanExecResult?.executionSummary).toContain("UT05_G1_R2");
-      expect(completed.goals[1]?.latestReview?.summary).toContain("UT05_G2_R1");
-      await assertLoopPhaseTransport(runtime, completed);
+      expect(completed.task.budget).toMatchObject({ maxFailedReviews: 5, usedFailedReviews: 1 });
+      expect(completed.task.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
+      expect(
+        completed.executions.filter(
+          (execution) =>
+            execution.goalId === completed.task.goals[0]?.id && execution.phase === "planexec",
+        ),
+      ).toHaveLength(2);
+      const context = await runtime.client.getTaskContext({
+        workspaceId: runtime.workspaceId,
+        taskId: completed.task.id,
+      });
+      expect(JSON.stringify(context.context?.blackboard)).toContain("UT05_G1_R2");
+      expect(JSON.stringify(context.context?.blackboard)).toContain("UT05_G2_R1");
+      await assertLoopPhaseTransport(runtime, completed.task, completed.executions);
       assertNoFixtureWorkProducts(runtime);
     },
     600_000,

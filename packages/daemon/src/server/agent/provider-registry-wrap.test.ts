@@ -6,8 +6,8 @@ import type {
   AgentSession,
   AgentStreamEvent,
   AgentRuntimeInfo,
-} from "./agent-sdk-types.js";
-import { wrapSessionProvider } from "./provider-registry.js";
+} from "@thoth/drivers/agent-runtime";
+import { wrapSessionProvider } from "@thoth/drivers/internal/server/agent/provider-registry";
 
 type OptionalAgentSessionMethodName = {
   [K in keyof AgentSession]-?: undefined extends AgentSession[K]

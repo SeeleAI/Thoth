@@ -9,7 +9,7 @@ import type {
 } from "./agent-manager.js";
 import type { AgentStorage, StoredAgentRecord } from "./agent-storage.js";
 import type { FetchRecentProviderSessionsRequestMessage } from "@thoth/protocol/messages";
-import type { AgentTimelineItem } from "./agent-sdk-types.js";
+import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import {
   ImportSessionsRequestError,
   importProviderSession,

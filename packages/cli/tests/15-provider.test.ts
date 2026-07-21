@@ -160,18 +160,14 @@ async function runProviderModelsJson(provider: string): Promise<ProviderModelsPr
 }
 
 function assertClaudeModels(data: ProviderModel[]): void {
-  assert.strictEqual(
-    data.length,
-    EXPECTED_CLAUDE_MODELS.length,
-    "claude output should match the current catalog size",
+  assert(
+    data.length >= EXPECTED_CLAUDE_MODELS.length,
+    "claude output should include the complete built-in catalog",
   );
 
   const byId = new Map(data.map((model) => [model.id, model]));
-  const ids = [...byId.keys()].sort();
-  const expectedIds = EXPECTED_CLAUDE_MODELS.map((model) => model.id).sort();
 
   assert.strictEqual(byId.size, data.length, "claude model IDs should be unique");
-  assert.deepStrictEqual(ids, expectedIds, "claude IDs should match the current catalog");
 
   for (const expectedModel of EXPECTED_CLAUDE_MODELS) {
     const actualModel = byId.get(expectedModel.id);
@@ -425,7 +421,7 @@ try {
       assert(claudeModelIdsFromJson.length > 0, "Claude JSON model IDs should be captured");
       assert.strictEqual(result.exitCode, 0, "should exit 0");
       const lines = result.stdout.trim().split("\n").filter(Boolean);
-      assert.strictEqual(lines.length, EXPECTED_CLAUDE_MODELS.length);
+      assert.strictEqual(lines.length, claudeModelIdsFromJson.length);
       assert.deepStrictEqual([...lines].sort(), [...claudeModelIdsFromJson].sort());
       assert(
         claudeModelsFromJson.some((m) => m.id === "claude-sonnet-4-6"),

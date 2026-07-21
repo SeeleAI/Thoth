@@ -7,7 +7,10 @@ import type {
   ThothClarifyCardModel,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import { createTestLogger } from "../../test-utils/test-logger.js";
-import { ForegroundAuthorityStore } from "./foreground-authority-store.js";
+import {
+  WorkspaceAuthorityManager,
+  WorkspaceForegroundAuthority,
+} from "../workspace-authority/index.js";
 import {
   createRuntimeAuthorityDecision,
   listRuntimeAuthorityDecisionRecords,
@@ -66,32 +69,42 @@ function clarifyCard(): ThothClarifyCardModel {
   };
 }
 
-function createStore(home?: string): { home: string; store: ForegroundAuthorityStore } {
+function createStore(home?: string): {
+  home: string;
+  store: WorkspaceForegroundAuthority;
+  manager: WorkspaceAuthorityManager;
+} {
   const resolvedHome = home ?? mkdtempSync(join(tmpdir(), "thoth-runtime-decisions-"));
   if (!home) {
     temporaryHomes.push(resolvedHome);
   }
-  return {
-    home: resolvedHome,
-    store: new ForegroundAuthorityStore({
-      thothHome: resolvedHome,
-      logger: createTestLogger(),
-    }),
-  };
+  const manager = new WorkspaceAuthorityManager(resolvedHome);
+  manager.catalog.upsertWorkspace({
+    id: "workspace-test",
+    canonicalPath: "/workspace/thoth",
+    displayName: "Test Workspace",
+    kind: "workspace",
+    parentWorkspaceId: null,
+    archivedAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  return { home: resolvedHome, store: new WorkspaceForegroundAuthority(manager), manager };
 }
 
-function startThothTurn(store: ForegroundAuthorityStore): void {
+function startThothTurn(store: WorkspaceForegroundAuthority): void {
   store.startTurn({
     agentId: "agent-1",
     kind: "thoth",
     controls: { mode: "quick", clarifyStrength: "dive", loop: null },
     sourceMessageId: "message-1",
+    workspaceId: "workspace-test",
     workspacePath: "/workspace/thoth",
     userText: "实现一个高性能工具",
   });
 }
 
-function createDecision(store: ForegroundAuthorityStore) {
+function createDecision(store: WorkspaceForegroundAuthority) {
   return createRuntimeAuthorityDecision({
     store,
     provider: "codex",
@@ -114,12 +127,13 @@ afterEach(() => {
 
 describe("runtime authority decision persistence", () => {
   it("keeps an open Card actionable after process memory is lost", () => {
-    const { home, store } = createStore();
+    const { home, store, manager } = createStore();
     startThothTurn(store);
     const { record } = createDecision(store);
-    store.close();
+    manager.close();
 
-    const recovered = createStore(home).store;
+    const recoveredRuntime = createStore(home);
+    const recovered = recoveredRuntime.store;
     try {
       expect(listRuntimeAuthorityDecisionRecords(recovered)).toContainEqual(
         expect.objectContaining({
@@ -150,15 +164,17 @@ describe("runtime authority decision persistence", () => {
         expectedRevision: state.revision,
         commandId: "answer-after-restart",
         nextLifecycle: "running",
+        actorId: "user:test",
+        clientId: "test-client",
       });
       expect(result.accepted).toBe(true);
     } finally {
-      recovered.close();
+      recoveredRuntime.manager.close();
     }
   });
 
   it("does not expire an unanswered authority Card over elapsed time", async () => {
-    const { store } = createStore();
+    const { store, manager } = createStore();
     try {
       startThothTurn(store);
       const { record } = createDecision(store);
@@ -168,7 +184,7 @@ describe("runtime authority decision persistence", () => {
       expect(store.getCard(record.cardId)).toMatchObject({ status: "pending" });
       expect(store.getState("agent-1")).toMatchObject({ lifecycle: "awaiting_card" });
     } finally {
-      store.close();
+      manager.close();
     }
   });
 });

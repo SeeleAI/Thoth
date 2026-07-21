@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
-import type { AgentStreamEvent } from "../../agent-sdk-types.js";
+import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 import type { AgentTimelineRow } from "../../agent-manager.js";
-import { projectTimelineRows } from "../../timeline-projection.js";
-import { ClaudeAgentClient } from "./agent.js";
-import { streamSession } from "../test-utils/session-stream-adapter.js";
+import { projectTimelineRows } from "@thoth/drivers/internal/server/agent/timeline-projection";
+import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import { streamSession } from "@thoth/drivers/internal/server/agent/providers/test-utils/session-stream-adapter";
 
 const queryFactory = vi.fn();
 

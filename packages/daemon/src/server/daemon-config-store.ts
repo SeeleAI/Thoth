@@ -3,7 +3,7 @@ import {
   savePersistedConfig,
   type PersistedConfig,
 } from "./persisted-config.js";
-import { ProviderOverrideSchema } from "./agent/provider-launch-config.js";
+import { ProviderOverrideSchema } from "@thoth/drivers/internal/server/agent/provider-launch-config";
 import {
   MutableDaemonConfigSchema,
   MutableDaemonConfigPatchSchema,
@@ -13,7 +13,8 @@ export type { MutableDaemonConfig, MutableDaemonConfigPatch } from "@thoth/proto
 
 type MutableDaemonConfig = import("@thoth/protocol/messages").MutableDaemonConfig;
 type MutableDaemonConfigPatch = import("@thoth/protocol/messages").MutableDaemonConfigPatch;
-type ProviderOverride = import("./agent/provider-launch-config.js").ProviderOverride;
+type ProviderOverride =
+  import("@thoth/drivers/internal/server/agent/provider-launch-config").ProviderOverride;
 
 interface LoggerLike {
   child(bindings: Record<string, unknown>): LoggerLike;

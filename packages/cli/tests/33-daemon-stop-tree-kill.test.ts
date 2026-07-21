@@ -1,9 +1,8 @@
 #!/usr/bin/env npx tsx
 
 /**
- * Regression: forced daemon stop must kill descendants even when they started
- * their own process group. The pid lock still points at the daemon owner; the
- * child stays linked by PPID but would survive a process-group-only kill.
+ * Regression: daemon stop is ownership-driven. The PID lock identifies the
+ * supervisor owner; CLI stop must never scan and kill unrelated descendants.
  */
 
 import assert from "node:assert";
@@ -72,7 +71,7 @@ function killIfRunning(pid: number | null): void {
   }
 }
 
-console.log("=== Daemon Stop Tree Kill Regression ===\n");
+console.log("=== Daemon Stop Owner Signal Regression ===\n");
 
 if (process.platform === "win32") {
   console.log("Skipping separate process-group regression on Windows");
@@ -137,7 +136,7 @@ try {
   );
   console.log(`✓ owner ${ownerProcess.pid} started descendant ${descendantPid}\n`);
 
-  console.log("Test 2: forced daemon stop kills owner and separate-PGID descendant");
+  console.log("Test 2: forced daemon stop kills only the recorded owner");
   const stopResult =
     await $`THOTH_HOME=${thothHome} THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD=${testEnv.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD} THOTH_DICTATION_ENABLED=${testEnv.THOTH_DICTATION_ENABLED} THOTH_VOICE_MODE_ENABLED=${testEnv.THOTH_VOICE_MODE_ENABLED} npx thoth daemon stop --home ${thothHome} --json --timeout 1 --force --kill-timeout 2`.nothrow();
   assert.strictEqual(stopResult.exitCode, 0, `stop should succeed: ${stopResult.stderr}`);
@@ -163,20 +162,24 @@ try {
       reason: "owner_pid_sigkill",
       message: "Daemon owner process was force-stopped",
     },
-    `stop should report forced tree cleanup: ${stopResult.stdout}`,
+    `stop should report forced owner cleanup: ${stopResult.stdout}`,
   );
 
   const ownerPid = ownerProcess.pid;
   await waitFor(
-    () => !isProcessRunning(ownerPid ?? -1) && !isProcessRunning(descendantPid ?? -1),
+    () => !isProcessRunning(ownerPid ?? -1),
     5000,
-    `owner (${ownerPid}) or descendant (${descendantPid}) survived forced stop`,
+    `owner (${ownerPid}) survived forced stop`,
   );
-  console.log("✓ forced stop killed the full process tree\n");
+  assert(
+    isProcessRunning(descendantPid ?? -1),
+    "CLI stop must not discover and kill a process outside supervisor ownership",
+  );
+  console.log("✓ forced stop killed the owner without scanning descendants\n");
 } finally {
   killIfRunning(ownerProcess?.pid ?? null);
   killIfRunning(descendantPid);
   await rm(thothHome, { recursive: true, force: true });
 }
 
-console.log("=== Daemon stop tree kill regression test passed ===");
+console.log("=== Daemon stop owner signal regression test passed ===");

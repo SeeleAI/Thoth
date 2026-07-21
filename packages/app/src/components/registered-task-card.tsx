@@ -1,15 +1,16 @@
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import type { RegisteredTaskModel } from "@thoth/protocol/thoth/rpc-schemas";
+import type { TaskProjection } from "@thoth/protocol/task-authority";
 
-export function RegisteredTaskCard({ task }: { task: RegisteredTaskModel }) {
+export function RegisteredTaskCard({ task }: { task: TaskProjection }) {
+  const currentGoal = task.goals.find((goal) => goal.id === task.currentGoalId);
   return (
     <View style={styles.card} testID="registered-task-card">
       <Text style={styles.kicker}>后台任务已注册</Text>
       <Text style={styles.title}>{task.title}</Text>
       <Text style={styles.summary}>{task.summary}</Text>
-      <Text style={styles.meta}>{task.workspaceName}</Text>
-      <Text style={styles.meta}>{task.currentGoalTitle ?? "等待执行"}</Text>
+      <Text style={styles.meta}>Task {task.id}</Text>
+      <Text style={styles.meta}>{currentGoal?.title ?? "等待执行"}</Text>
     </View>
   );
 }

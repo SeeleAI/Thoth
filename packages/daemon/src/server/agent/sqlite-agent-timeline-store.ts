@@ -9,8 +9,8 @@ import type {
   AgentTimelineFetchResult,
   AgentTimelineRow,
   AgentTimelineStore,
-} from "./agent-timeline-store-types.js";
-import type { AgentTimelineItem } from "./agent-sdk-types.js";
+} from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
+import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 
 interface TimelineMetaRow {
   epoch: string;
@@ -63,6 +63,8 @@ export class SqliteAgentTimelineStore implements AgentTimelineStore {
         ON agent_timeline_rows(agent_id, seq);
     `);
   }
+
+  bindAgentWorkspace(_agentId: string, _workspaceId: string): void {}
 
   async appendCommitted(
     agentId: string,

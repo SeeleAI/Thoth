@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { AgentTimelineItem } from "../../agent/agent-sdk-types.js";
+import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import type { DaemonClient } from "../../test-utils/daemon-client.js";
 
 export interface RewindSessionBase {

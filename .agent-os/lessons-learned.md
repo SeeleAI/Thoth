@@ -814,3 +814,52 @@ Packaged ASAR verification should also prefer targeted reads. Full extraction fo
 and can fail when platform packaging deliberately prunes optional native files. Reading the exact parser and
 Runtime Skill entries directly proves the intended contract without treating absent unrelated native binaries
 as archive corruption.
+
+## `NTH-EXP-030` Resuming A Provider Thread Must Re-Provision Runtime Capability
+
+Observed on `2026-07-21`:
+
+1. A Card could survive daemon restart in Workspace authority, but answering it first failed with `Unknown
+agent` because continuation code assumed the visible Agent was still resident in process memory.
+2. After restoring the Agent and native thread, Codex resumed the conversation but did not receive dynamic tools;
+   the initial thread start had attached the RuntimeBundle catalog, while `thread/resume` had been treated as a
+   handle-only operation.
+3. The Human Decision was durable in both failures. The missing piece was runtime capability reprovisioning, not
+   Task Truth recovery.
+
+Conclusion:
+
+ProviderThread identity and RuntimeBundle attachment are separate receipts. Every create, resume, adopt and
+replacement operation must restore the visible Agent lineage, attach the requested immutable bundle through the
+adapter, verify the returned receipt and only then launch continuation. A native provider handle alone never
+proves Thoth capability.
+
+Retry condition:
+
+Every adapter conformance journey must park a Card, restart the daemon, resume the same native thread and verify
+that the next semantic tool call is accepted under the new execution generation. A restored transcript or a
+successful plain-text continuation is insufficient.
+
+## `NTH-EXP-031` Process Control Must Follow Ownership, Not Process Discovery
+
+Observed on `2026-07-21`:
+
+1. The packaged CLI failed in a minimal Linux image because daemon Stop depended on `tree-kill`, which shells out
+   to `ps`. The image intentionally had no `ps`.
+2. PID 1 in the same container did not reap zombies promptly, so `kill(pid, 0)` could continue reporting a killed
+   supervisor as present even after its listening socket and owned PID lock were gone.
+3. An old regression test required CLI to scan and kill a detached descendant outside the supervisor process
+   group. That assertion contradicted the final owner model and could authorize unrelated-process termination.
+
+Conclusion:
+
+The PID lock identifies one supervisor owner. CLI signals that owner only; the supervisor forwards lifecycle
+signals to its worker; each provider adapter terminates only its owned process or POSIX process group. Stop
+completion is proven by owner-lock release or process disappearance, with daemon unreachability as bounded force
+recovery. External process listing is neither a dependency nor authority.
+
+Retry condition:
+
+Run daemon start/restart/stop from the final CLI tgz in a non-root minimal image without `ps`, plus stale-lock,
+decoy-process, supervisor-disconnect and detached-descendant tests. Acceptance requires no unrelated kill, no
+daemon reachability and no retained owner lock; zombie visibility alone must not keep the command spinning.

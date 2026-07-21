@@ -812,20 +812,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             );
           case "registered_task":
             return <RegisteredTaskCard task={item.task} />;
-          case "loop_decision":
-            return (
-              <View style={stylesheet.loopDecisionCard} testID={`loop-decision-${item.taskId}`}>
-                <Text style={stylesheet.loopDecisionTitle}>{item.decision.title}</Text>
-                <Text style={stylesheet.loopDecisionQuestion}>{item.decision.question}</Text>
-                <Text style={stylesheet.loopDecisionStatus}>
-                  {item.decision.status === "pending"
-                    ? "Continue this decision in Background Tasks."
-                    : item.decision.status === "submitted"
-                      ? "Decision submitted to the background task."
-                      : "Decision canceled with the background task."}
-                </Text>
-              </View>
-            );
 
           case "activity_log":
             return (
@@ -1508,27 +1494,6 @@ const stylesheet = StyleSheet.create((theme) => ({
   syncingIndicatorText: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
-  },
-  loopDecisionCard: {
-    borderRadius: theme.borderRadius.md,
-    borderWidth: theme.borderWidth[1],
-    borderColor: theme.colors.borderAccent,
-    backgroundColor: theme.colors.surface1,
-    padding: theme.spacing[3],
-    gap: theme.spacing[2],
-  },
-  loopDecisionTitle: {
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.base,
-    fontWeight: theme.fontWeight.semibold,
-  },
-  loopDecisionQuestion: {
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
-  },
-  loopDecisionStatus: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
   },
   invertedWrapper: {
     transform: [{ scaleY: -1 }],

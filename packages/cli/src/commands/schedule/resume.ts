@@ -14,9 +14,9 @@ export async function runResumeCommand(
   options: ScheduleCommandOptions,
   _command: Command,
 ): Promise<SingleResult<ScheduleRow>> {
-  const { client } = await connectScheduleClient(options.host);
+  const { client, workspaceId } = await connectScheduleClient(options.host, options.workspace);
   try {
-    const payload = await client.scheduleResume({ id });
+    const payload = await client.scheduleResume({ workspaceId, id });
     if (payload.error || !payload.schedule) {
       throw new Error(payload.error ?? `Failed to resume schedule: ${id}`);
     }

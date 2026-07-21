@@ -1,7 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -35,16 +34,12 @@ const { CLARIFY_GOLDEN_SCENARIOS } = await import(
 const clarify = await import(
   pathToFileURL(resolve(repoRoot, "packages/drivers/dist/clarify/index.js")).href
 );
-
-const tempRoot = mkdtempSync(join(tmpdir(), "thoth-clarify-golden-judge-"));
-const fakeHome = join(tempRoot, "bare-provider-home");
+const harness = await import(
+  pathToFileURL(resolve(repoRoot, "packages/drivers/dist/harness/index.js")).href
+);
 const artifact = clarify.loadRuntimeSkillArtifact("thoth.clarify");
-const mount = clarify.mountRuntimeSkillForSession({
-  artifact,
-  thothSessionHome: join(tempRoot, "thoth-runtime-home"),
-  sessionId: "sec_golden_judge",
-  home: fakeHome,
-});
+const bundle = harness.loadRuntimeBundle("thoth.clarify", harness.THOTH_RUNTIME_BUNDLE_CATALOG);
+const skillRef = { id: bundle.id, digest: bundle.digest };
 const normalTurnEnvelope = clarify.buildClarifyProviderInputEnvelope({
   sessionId: "sec_golden_judge",
   taskId: null,
@@ -72,7 +67,7 @@ const transitionPacket = clarify.buildClarifyTransitionInputPacket({
     clarify_strength_to: "dive",
     reason: "judge fixture verifies strength-change marker",
   },
-  skillRef: mount.skillRef,
+  skillRef,
 });
 const repairPacket = clarify.buildClarifyRepairInputPacket({
   sessionId: "sec_golden_judge",
@@ -80,7 +75,7 @@ const repairPacket = clarify.buildClarifyRepairInputPacket({
   intendedOutputState: "C_ASK",
   badOutput: '{"type":"clarify","code":"C_ASK"}',
   schemaErrors: ["C_ASK packets must include content.question_card"],
-  skillRef: mount.skillRef,
+  skillRef,
 });
 
 const prompt = [
@@ -89,7 +84,7 @@ const prompt = [
   "Review the following installed `thoth.clarify` Skill artifact, invocation packets, repair packet, and golden evidence. Do not change files.",
   "Judge whether the golden transcripts and packets satisfy:",
   "- standard cross-provider SKILL.md artifact, not Codex-only metadata",
-  "- session-scoped runtime skill mount, not user global provider skill installation",
+  "- immutable content-addressed RuntimeBundle attachment, independent of provider home",
   "- normal same-state input packets do not repeat full Skill rules",
   "- transition packets carry skill_ref/digest and according_to_loaded_skill without copying rules",
   "- repair packets repair shape/state/provenance only without semantic reinterpretation",
@@ -126,8 +121,8 @@ const prompt = [
     2,
   ),
   "",
-  "## Session-Scoped Mount Evidence",
-  JSON.stringify(mount, null, 2),
+  "## RuntimeBundle Evidence",
+  JSON.stringify(bundle, null, 2),
   "",
   "## Normal Turn Envelope",
   JSON.stringify(normalTurnEnvelope, null, 2),
@@ -180,11 +175,9 @@ const judgeText = readFileSync(judgePath, "utf8");
 if (!judgeText.includes("JUDGE_RESULT: PASS")) {
   console.log(judge.stdout);
   console.error(`Clarify codex judge did not pass. Evidence: ${judgePath}`);
-  rmSync(tempRoot, { recursive: true, force: true });
   process.exit(1);
 }
 
-rmSync(tempRoot, { recursive: true, force: true });
 console.log("Clarify codex judge: PASS");
 console.log(`Deterministic eval evidence: ${evalPath}`);
 console.log(`Codex judge evidence: ${judgePath}`);

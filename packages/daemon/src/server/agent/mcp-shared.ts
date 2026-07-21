@@ -1,14 +1,14 @@
 import { z } from "zod";
 import type { Logger } from "pino";
 
-import type { AgentPermissionRequest } from "./agent-sdk-types.js";
+import type { AgentPermissionRequest } from "@thoth/drivers/agent-runtime";
 import type { AgentManager, ManagedAgent, WaitForAgentResult } from "./agent-manager.js";
-import { curateAgentActivity } from "./activity-curator.js";
-import { selectItemsByProjectedLimit } from "./timeline-projection.js";
-import type { AgentStorage } from "./agent-storage.js";
+import { curateAgentActivity } from "@thoth/drivers/internal/server/agent/activity-curator";
+import { selectItemsByProjectedLimit } from "@thoth/drivers/internal/server/agent/timeline-projection";
+import type { AgentRegistry } from "./agent-storage.js";
 import { serializeAgentSnapshot } from "../messages.js";
 import { StoredScheduleSchema } from "@thoth/protocol/schedule/types";
-import type { AgentProvider } from "./agent-sdk-types.js";
+import type { AgentProvider } from "@thoth/drivers/agent-runtime";
 
 export const AgentProviderEnum = z.string();
 
@@ -197,7 +197,7 @@ export function sanitizePermissionRequest(
 }
 
 export async function resolveAgentTitle(
-  agentStorage: AgentStorage,
+  agentStorage: AgentRegistry,
   agentId: string,
   logger: Logger,
 ): Promise<string | null> {
@@ -211,7 +211,7 @@ export async function resolveAgentTitle(
 }
 
 export async function serializeSnapshotWithMetadata(
-  agentStorage: AgentStorage,
+  agentStorage: AgentRegistry,
   snapshot: ManagedAgent,
   logger: Logger,
 ) {

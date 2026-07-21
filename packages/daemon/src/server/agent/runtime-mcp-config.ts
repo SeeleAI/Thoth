@@ -1,4 +1,4 @@
-import type { AgentSessionConfig, McpServerConfig } from "./agent-sdk-types.js";
+import type { AgentSessionConfig, McpServerConfig } from "@thoth/drivers/agent-runtime";
 
 const THOTH_MCP_SERVER_NAME = "thoth";
 const THOTH_MCP_PATHNAME = "/mcp/agents";

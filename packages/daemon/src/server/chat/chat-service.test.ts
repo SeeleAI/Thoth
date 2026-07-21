@@ -1,59 +1,86 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import pino from "pino";
 import {
   type ChatServiceError,
-  FileBackedChatService,
+  WorkspaceChatService,
   parseMentionAgentIds,
   type PostChatMessageInput,
 } from "./chat-service.js";
+import { WorkspaceAuthorityManager } from "../workspace-authority/workspace-authority-manager.js";
 
-describe("FileBackedChatService", () => {
+const WORKSPACE_ID = "workspace-chat-a";
+const OTHER_WORKSPACE_ID = "workspace-chat-b";
+
+describe("WorkspaceChatService", () => {
   let thothHome: string;
-  let service: FileBackedChatService;
+  let authority: WorkspaceAuthorityManager;
+  let service: WorkspaceChatService;
 
-  async function sendChatMessage(input: PostChatMessageInput) {
-    return await service.dispatchMessage(input);
+  async function sendChatMessage(input: Omit<PostChatMessageInput, "workspaceId">) {
+    return await service.dispatchMessage({ ...input, workspaceId: WORKSPACE_ID });
+  }
+
+  function registerWorkspaces(): void {
+    for (const id of [WORKSPACE_ID, OTHER_WORKSPACE_ID]) {
+      authority.catalog.upsertWorkspace({
+        id,
+        canonicalPath: path.join(thothHome, id),
+        displayName: id,
+        kind: "workspace",
+        parentWorkspaceId: null,
+        archivedAt: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+    }
   }
 
   beforeEach(async () => {
     thothHome = await mkdtemp(path.join(tmpdir(), "thoth-chat-service-"));
-    service = new FileBackedChatService({
-      thothHome,
-      logger: pino({ level: "silent" }),
-    });
+    authority = new WorkspaceAuthorityManager(thothHome);
+    registerWorkspaces();
+    service = new WorkspaceChatService(authority);
     await service.initialize();
   });
 
   afterEach(async () => {
+    service.close();
+    authority.close();
     await rm(thothHome, { recursive: true, force: true });
   });
 
   test("creates rooms, enforces unique names, and persists to disk", async () => {
     const created = await service.createRoom({
+      workspaceId: WORKSPACE_ID,
       name: "cli-features-epic",
       purpose: "Coordination room",
     });
 
     await expect(
       service.createRoom({
+        workspaceId: WORKSPACE_ID,
         name: "CLI-FEATURES-EPIC",
       }),
     ).rejects.toMatchObject<Partial<ChatServiceError>>({
       code: "chat_room_name_taken",
     });
 
-    const raw = await readFile(path.join(thothHome, "chat", "rooms.json"), "utf8");
-    expect(raw).toContain("cli-features-epic");
+    const reloaded = new WorkspaceChatService(authority);
+    await expect(
+      reloaded.inspectRoom({ workspaceId: WORKSPACE_ID, room: created.id }),
+    ).resolves.toMatchObject({
+      room: { name: "cli-features-epic" },
+    });
+    reloaded.close();
     expect(created.name).toBe("cli-features-epic");
     expect(created.purpose).toBe("Coordination room");
     expect(created.messageCount).toBe(0);
   });
 
   test("resolves rooms by name or ID, validates replies, and reads filtered messages", async () => {
-    const room = await service.createRoom({ name: "auth-refactor" });
+    const room = await service.createRoom({ workspaceId: WORKSPACE_ID, name: "auth-refactor" });
     const first = await sendChatMessage({
       room: room.name,
       authorAgentId: "agent-a",
@@ -77,11 +104,16 @@ describe("FileBackedChatService", () => {
       code: "chat_message_not_found",
     });
 
-    const all = await service.readMessages({ room: room.name, limit: 10 });
+    const all = await service.readMessages({
+      workspaceId: WORKSPACE_ID,
+      room: room.name,
+      limit: 10,
+    });
     expect(all).toHaveLength(2);
     expect(all[0]?.mentionAgentIds).toEqual(["agent-b", "agent-c"]);
 
     const byAuthor = await service.readMessages({
+      workspaceId: WORKSPACE_ID,
       room: room.id,
       authorAgentId: "agent-b",
       limit: 10,
@@ -89,14 +121,14 @@ describe("FileBackedChatService", () => {
     expect(byAuthor).toHaveLength(1);
     expect(byAuthor[0]?.body).toBe("reply");
 
-    const detail = await service.inspectRoom({ room: room.name });
+    const detail = await service.inspectRoom({ workspaceId: WORKSPACE_ID, room: room.name });
     expect(detail.room.messageCount).toBe(2);
     expect(detail.room.lastMessageAt).toBeTruthy();
   });
 
   test("lists unique agents who have posted to a room", async () => {
-    const room = await service.createRoom({ name: "incident-room" });
-    const otherRoom = await service.createRoom({ name: "other-room" });
+    const room = await service.createRoom({ workspaceId: WORKSPACE_ID, name: "incident-room" });
+    const otherRoom = await service.createRoom({ workspaceId: WORKSPACE_ID, name: "other-room" });
     await sendChatMessage({
       room: room.name,
       authorAgentId: "agent-a",
@@ -118,14 +150,13 @@ describe("FileBackedChatService", () => {
       body: "different room",
     });
 
-    await expect(service.listRoomPosterAgentIds({ room: room.name })).resolves.toEqual([
-      "agent-a",
-      "agent-b",
-    ]);
+    await expect(
+      service.listRoomPosterAgentIds({ workspaceId: WORKSPACE_ID, room: room.name }),
+    ).resolves.toEqual(["agent-a", "agent-b"]);
   });
 
   test("waits for new messages after a cursor and times out with an empty result", async () => {
-    const room = await service.createRoom({ name: "loop-status" });
+    const room = await service.createRoom({ workspaceId: WORKSPACE_ID, name: "loop-status" });
     const first = await sendChatMessage({
       room: room.name,
       authorAgentId: "agent-a",
@@ -133,6 +164,7 @@ describe("FileBackedChatService", () => {
     });
 
     const waitPromise = service.waitForMessages({
+      workspaceId: WORKSPACE_ID,
       room: room.name,
       afterMessageId: first.id,
       timeoutMs: 1000,
@@ -148,6 +180,7 @@ describe("FileBackedChatService", () => {
     expect(waited[0]?.body).toBe("new work");
 
     const timedOut = await service.waitForMessages({
+      workspaceId: WORKSPACE_ID,
       room: room.name,
       afterMessageId: waited[0]?.id,
       timeoutMs: 10,
@@ -156,7 +189,7 @@ describe("FileBackedChatService", () => {
   });
 
   test("deletes rooms, removes messages, and rejects pending waiters", async () => {
-    const room = await service.createRoom({ name: "schedule-jobs" });
+    const room = await service.createRoom({ workspaceId: WORKSPACE_ID, name: "schedule-jobs" });
     await sendChatMessage({
       room: room.name,
       authorAgentId: "agent-a",
@@ -164,18 +197,19 @@ describe("FileBackedChatService", () => {
     });
 
     const waitPromise = service.waitForMessages({
+      workspaceId: WORKSPACE_ID,
       room: room.name,
       timeoutMs: 1000,
     });
-    const deleted = await service.deleteRoom({ room: room.id });
+    const deleted = await service.deleteRoom({ workspaceId: WORKSPACE_ID, room: room.id });
     expect(deleted.room.messageCount).toBe(1);
 
     await expect(waitPromise).rejects.toMatchObject<Partial<ChatServiceError>>({
       code: "chat_room_deleted",
     });
-    await expect(service.inspectRoom({ room: room.name })).rejects.toMatchObject<
-      Partial<ChatServiceError>
-    >({
+    await expect(
+      service.inspectRoom({ workspaceId: WORKSPACE_ID, room: room.name }),
+    ).rejects.toMatchObject<Partial<ChatServiceError>>({
       code: "chat_room_not_found",
     });
   });

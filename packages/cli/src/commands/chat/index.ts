@@ -9,10 +9,20 @@ import { runPostCommand } from "./post.js";
 import { runReadCommand } from "./read.js";
 import { runWaitCommand } from "./wait.js";
 
+function addChatCommandOptions(command: Command): Command {
+  return addJsonAndDaemonHostOptions(
+    command.option(
+      "--workspace <workspace-id>",
+      "Workspace authority scope",
+      process.env.THOTH_WORKSPACE_ID,
+    ),
+  );
+}
+
 export function createChatCommand(): Command {
   const chat = new Command("chat").description("Manage chat rooms for agent coordination");
 
-  addJsonAndDaemonHostOptions(
+  addChatCommandOptions(
     chat
       .command("create")
       .description("Create a chat room")
@@ -20,25 +30,25 @@ export function createChatCommand(): Command {
       .option("--purpose <text>", "Room purpose/description"),
   ).action(withOutput(runCreateCommand));
 
-  addJsonAndDaemonHostOptions(chat.command("ls").description("List chat rooms")).action(
+  addChatCommandOptions(chat.command("ls").description("List chat rooms")).action(
     withOutput(runLsCommand),
   );
 
-  addJsonAndDaemonHostOptions(
+  addChatCommandOptions(
     chat
       .command("inspect")
       .description("Inspect a chat room")
       .argument("<name-or-id>", "Room name or ID"),
   ).action(withOutput(runInspectCommand));
 
-  addJsonAndDaemonHostOptions(
+  addChatCommandOptions(
     chat
       .command("delete")
       .description("Delete a chat room")
       .argument("<name-or-id>", "Room name or ID"),
   ).action(withOutput(runDeleteCommand));
 
-  addJsonAndDaemonHostOptions(
+  addChatCommandOptions(
     chat
       .command("post")
       .description("Post a chat message")
@@ -47,7 +57,7 @@ export function createChatCommand(): Command {
       .option("--reply-to <msg-id>", "Reply to a specific message ID"),
   ).action(withOutput(runPostCommand));
 
-  addJsonAndDaemonHostOptions(
+  addChatCommandOptions(
     chat
       .command("read")
       .description("Read chat messages")
@@ -57,7 +67,7 @@ export function createChatCommand(): Command {
       .option("--agent <agent-id>", "Filter by author agent ID"),
   ).action(withOutput(runReadCommand));
 
-  addJsonAndDaemonHostOptions(
+  addChatCommandOptions(
     chat
       .command("wait")
       .description("Wait for new chat messages")

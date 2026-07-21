@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentManager, ManagedAgent } from "../agent-manager.js";
-import type { AgentStreamEvent, AgentTimelineItem } from "../agent-sdk-types.js";
+import type { AgentStreamEvent, AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import type { AgentStorage } from "../agent-storage.js";
 import type { ProviderSnapshotManager } from "../provider-snapshot-manager.js";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
@@ -11,7 +11,6 @@ import {
   rejectClarifyConvergenceAudit,
   resolveClarifyConvergenceAudit,
 } from "../clarify-audit-broker.js";
-import type { ThothLoopTaskService } from "../../thoth-loop/task-service.js";
 import {
   beginForegroundTurnFence,
   bindForegroundProviderTurn,
@@ -19,14 +18,15 @@ import {
 } from "./foreground-turn-fence.js";
 import { createThothToolCatalog } from "./thoth-tools.js";
 import {
-  getForegroundAuthorityStore,
-  resetForegroundAuthorityStoresForTest,
-} from "../foreground-authority-runtime.js";
-import type { ForegroundAuthorityStore } from "../foreground-authority-store.js";
+  WorkspaceAuthorityManager,
+  WorkspaceForegroundAuthority,
+  type TaskToolGateway,
+} from "../../workspace-authority/index.js";
 import type { ThothCardAnswerPayload } from "@thoth/protocol/thoth/rpc-schemas";
 
 const temporaryHomes: string[] = [];
-let currentAuthorityStore: ForegroundAuthorityStore | null = null;
+let currentAuthorityStore: WorkspaceForegroundAuthority | null = null;
+const authorityManagers: WorkspaceAuthorityManager[] = [];
 let commandSequence = 0;
 
 async function flushToolStart(): Promise<void> {
@@ -40,7 +40,7 @@ function createCatalog(
     auditFailure?: string;
     enableLoopRuntimeTools?: boolean;
     loopPhase?: "planexec" | "review";
-    loopTaskService?: ThothLoopTaskService;
+    taskToolGateway?: TaskToolGateway;
     callerAvailableAfterCatalogCreation?: boolean;
     foregroundTurnKind?: "raw_provider" | "thoth_clarify";
   } = {},
@@ -77,7 +77,6 @@ function createCatalog(
     getAgent: (agentId: string) =>
       agentId === "agent-1" && callerRegistered ? primaryAgent : null,
     getTimeline: (agentId: string) => (agentId === "agent-1" ? [...timeline] : []),
-    getProviderCapabilities: () => ({ supportsNativeThothTools: true }),
     cancelAgentRun: vi.fn(async () => true),
     createAgent: vi.fn(async (config: Parameters<AgentManager["createAgent"]>[0]) => {
       const auditAgent = {
@@ -115,7 +114,19 @@ function createCatalog(
   const logger = createTestLogger();
   const thothHome = mkdtempSync(join(tmpdir(), "thoth-tools-authority-"));
   temporaryHomes.push(thothHome);
-  const authorityStore = getForegroundAuthorityStore({ thothHome, logger });
+  const authorityManager = new WorkspaceAuthorityManager(thothHome);
+  authorityManagers.push(authorityManager);
+  authorityManager.catalog.upsertWorkspace({
+    id: "workspace-test",
+    canonicalPath: primaryAgent.cwd,
+    displayName: "Test Workspace",
+    kind: "workspace",
+    parentWorkspaceId: null,
+    archivedAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  const authorityStore = new WorkspaceForegroundAuthority(authorityManager);
   currentAuthorityStore = authorityStore;
   const turnKind = input.foregroundTurnKind ?? "thoth_clarify";
   const foreground = authorityStore.startTurn({
@@ -125,6 +136,7 @@ function createCatalog(
       ? { controls: { mode: "quick" as const, clarifyStrength: "light" as const, loop: null } }
       : {}),
     sourceMessageId: `message-${temporaryHomes.length}`,
+    workspaceId: "workspace-test",
     workspacePath: primaryAgent.cwd,
     userText: "Test foreground turn",
   });
@@ -134,10 +146,10 @@ function createCatalog(
     terminalManager: null,
     providerSnapshotManager: {} as ProviderSnapshotManager,
     logger,
-    thothHome,
+    workspaceAuthorityManager: authorityManager,
     callerAgentId: "agent-1",
     callerAgentConfig: primaryAgent.config,
-    ...(input.loopTaskService ? { loopTaskService: input.loopTaskService } : {}),
+    ...(input.taskToolGateway ? { taskToolGateway: input.taskToolGateway } : {}),
   });
   callerRegistered = true;
   beginForegroundTurnFence({
@@ -177,6 +189,8 @@ function answerPendingRuntimeDecision(input: {
     expectedRevision: state.revision,
     commandId: `test-answer-${++commandSequence}`,
     nextLifecycle: "running",
+    actorId: "user:test",
+    clientId: "test-client",
   });
   expect(result.accepted).toBe(true);
 }
@@ -350,8 +364,10 @@ async function submitAnsweredClarifyCard(
 
 afterEach(() => {
   resetForegroundTurnFencesForTest();
-  resetForegroundAuthorityStoresForTest();
   currentAuthorityStore = null;
+  for (const manager of authorityManagers.splice(0)) {
+    manager.close();
+  }
   for (const home of temporaryHomes.splice(0)) {
     rmSync(home, { recursive: true, force: true });
   }
@@ -877,18 +893,18 @@ describe("Thoth runtime authority tools", () => {
     const { catalog: planExecCatalog } = createCatalog({
       enableLoopRuntimeTools: true,
       loopPhase: "planexec",
-      loopTaskService: {
-        resolvePlanExecResult,
-        resolveReviewVerdict,
-      } as unknown as ThothLoopTaskService,
+      taskToolGateway: {
+        submitPlanExec: resolvePlanExecResult,
+        submitReviewVerdict: resolveReviewVerdict,
+      } as unknown as TaskToolGateway,
     });
     const { catalog: reviewCatalog } = createCatalog({
       enableLoopRuntimeTools: true,
       loopPhase: "review",
-      loopTaskService: {
-        resolvePlanExecResult,
-        resolveReviewVerdict,
-      } as unknown as ThothLoopTaskService,
+      taskToolGateway: {
+        submitPlanExec: resolvePlanExecResult,
+        submitReviewVerdict: resolveReviewVerdict,
+      } as unknown as TaskToolGateway,
     });
     const context = {
       providerToolCall: {

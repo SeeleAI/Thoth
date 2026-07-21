@@ -16,7 +16,7 @@ import type {
   AgentRuntimeInfo,
   AgentUsage,
   ImportableProviderSession,
-} from "./agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import type { ManagedAgent } from "./agent-manager.js";
 import type { JsonValue } from "../json-utils.js";
 import { isStoredAgentProviderAvailable, toAgentPersistenceHandle } from "../persistence-hooks.js";

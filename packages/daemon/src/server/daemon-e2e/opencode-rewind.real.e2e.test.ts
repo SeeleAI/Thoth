@@ -4,7 +4,7 @@ import path from "node:path";
 import pino from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import type { AgentTimelineItem } from "../agent/agent-sdk-types.js";
+import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import type { AgentLifecycleStatus } from "@thoth/protocol/agent-lifecycle";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon, type TestThothDaemon } from "../test-utils/thoth-daemon.js";

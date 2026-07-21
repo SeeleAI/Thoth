@@ -1,7 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { LoopPhaseKind } from "@thoth/protocol/thoth/rpc-schemas";
 
 export interface BackgroundTasksSurfaceState {
   open: boolean;
@@ -10,7 +9,7 @@ export interface BackgroundTasksSurfaceState {
   taskListWidth?: number;
   selectedTaskId: string | null;
   selectedGoalId: string | null;
-  selectedPhaseId: LoopPhaseKind | null;
+  selectedExecutionId: string | null;
 }
 
 interface BackgroundTasksSurfaceStore {
@@ -28,7 +27,7 @@ const DEFAULT_STATE: BackgroundTasksSurfaceState = {
   sidebarWidth: undefined,
   selectedTaskId: null,
   selectedGoalId: null,
-  selectedPhaseId: null,
+  selectedExecutionId: null,
 };
 
 export const BACKGROUND_TASKS_LIST_DEFAULT_WIDTH = 300;
@@ -158,7 +157,7 @@ export const useBackgroundTasksSurfaceStore = create<BackgroundTasksSurfaceStore
         }),
     }),
     {
-      name: "thoth.background-tasks-surface.v1",
+      name: "thoth.background-tasks-surface.v2",
       storage: createJSONStorage(() => AsyncStorage),
     },
   ),

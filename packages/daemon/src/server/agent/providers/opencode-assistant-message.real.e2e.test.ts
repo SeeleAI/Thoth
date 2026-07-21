@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import pino from "pino";
 
-import { OpenCodeServerManager } from "./opencode/server-manager.js";
-import type { AgentStreamEvent } from "../agent-sdk-types.js";
+import { OpenCodeServerManager } from "@thoth/drivers/internal/server/agent/providers/opencode/server-manager";
+import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 import {
   canRunRealProvider,
   createRealProviderClient,

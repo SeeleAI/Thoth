@@ -18,7 +18,7 @@ import {
 } from "../utils/worktree.js";
 import { findFreePort, type ServiceProxySubsystem } from "./service-proxy.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
-import type { AgentTimelineItem, ToolCallDetail } from "./agent/agent-sdk-types.js";
+import type { AgentTimelineItem, ToolCallDetail } from "@thoth/drivers/agent-runtime";
 import {
   assertNoServiceEnvNameCollisions,
   buildWorkspaceServiceEnv,

@@ -1,4 +1,8 @@
-import type { AgentProvider, AgentStreamEvent, AgentTimelineItem } from "./agent-sdk-types.js";
+import type {
+  AgentProvider,
+  AgentStreamEvent,
+  AgentTimelineItem,
+} from "@thoth/drivers/agent-runtime";
 
 export const AGENT_STREAM_COALESCE_DEFAULT_WINDOW_MS = 60;
 

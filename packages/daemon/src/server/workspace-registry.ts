@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { writeJsonFileAtomic } from "./atomic-file.js";
 import type { PersistedProjectKind, PersistedWorkspaceKind } from "./workspace-registry-model.js";
+import type { WorkspaceCatalogStore } from "./workspace-authority/catalog-store.js";
 
 const PersistedProjectRecordSchema = z.object({
   projectId: z.string(),
@@ -221,6 +222,54 @@ export class FileBackedWorkspaceRegistry
       getId: (record) => record.workspaceId,
       component: "workspaces",
     });
+  }
+}
+
+export class CatalogProjectRegistry implements ProjectRegistry {
+  constructor(private readonly catalog: WorkspaceCatalogStore) {}
+
+  async initialize(): Promise<void> {}
+  async existsOnDisk(): Promise<boolean> {
+    return this.catalog.hasRegistryProjects();
+  }
+  async list(): Promise<PersistedProjectRecord[]> {
+    return this.catalog.listProjectRecords();
+  }
+  async get(projectId: string): Promise<PersistedProjectRecord | null> {
+    return this.catalog.getProjectRecord(projectId);
+  }
+  async upsert(record: PersistedProjectRecord): Promise<void> {
+    this.catalog.upsertProjectRecord(PersistedProjectRecordSchema.parse(record));
+  }
+  async archive(projectId: string, archivedAt: string): Promise<void> {
+    this.catalog.archiveProjectRecord(projectId, archivedAt);
+  }
+  async remove(projectId: string): Promise<void> {
+    this.catalog.removeProjectRecord(projectId);
+  }
+}
+
+export class CatalogWorkspaceRegistry implements WorkspaceRegistry {
+  constructor(private readonly catalog: WorkspaceCatalogStore) {}
+
+  async initialize(): Promise<void> {}
+  async existsOnDisk(): Promise<boolean> {
+    return this.catalog.hasRegistryWorkspaces();
+  }
+  async list(): Promise<PersistedWorkspaceRecord[]> {
+    return this.catalog.listWorkspaceRecords();
+  }
+  async get(workspaceId: string): Promise<PersistedWorkspaceRecord | null> {
+    return this.catalog.getWorkspaceRecord(workspaceId);
+  }
+  async upsert(record: PersistedWorkspaceRecord): Promise<void> {
+    this.catalog.upsertWorkspaceRecord(PersistedWorkspaceRecordSchema.parse(record));
+  }
+  async archive(workspaceId: string, archivedAt: string): Promise<void> {
+    this.catalog.archiveWorkspaceRecord(workspaceId, archivedAt);
+  }
+  async remove(workspaceId: string): Promise<void> {
+    this.catalog.removeWorkspaceRecord(workspaceId);
   }
 }
 

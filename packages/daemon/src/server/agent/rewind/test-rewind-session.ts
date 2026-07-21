@@ -8,7 +8,7 @@ import type {
   AgentSession,
   AgentStreamEvent,
   AgentTimelineItem,
-} from "../agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 
 export const REWIND_TEST_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,

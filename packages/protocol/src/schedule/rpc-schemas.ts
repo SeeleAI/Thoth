@@ -25,6 +25,7 @@ const ScheduleCreateTargetSchema = z.discriminatedUnion("type", [
 export const ScheduleCreateRequestSchema = z.object({
   type: z.literal("schedule/create"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   prompt: z.string().min(1),
   name: z.string().optional(),
   cadence: ScheduleCadenceSchema,
@@ -37,41 +38,48 @@ export const ScheduleCreateRequestSchema = z.object({
 export const ScheduleListRequestSchema = z.object({
   type: z.literal("schedule/list"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
 });
 
 export const ScheduleInspectRequestSchema = z.object({
   type: z.literal("schedule/inspect"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   scheduleId: z.string(),
 });
 
 export const ScheduleLogsRequestSchema = z.object({
   type: z.literal("schedule/logs"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   scheduleId: z.string(),
 });
 
 export const SchedulePauseRequestSchema = z.object({
   type: z.literal("schedule/pause"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   scheduleId: z.string(),
 });
 
 export const ScheduleResumeRequestSchema = z.object({
   type: z.literal("schedule/resume"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   scheduleId: z.string(),
 });
 
 export const ScheduleDeleteRequestSchema = z.object({
   type: z.literal("schedule/delete"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   scheduleId: z.string(),
 });
 
 export const ScheduleRunOnceRequestSchema = z.object({
   type: z.literal("schedule/run-once"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   scheduleId: z.string(),
 });
 
@@ -79,12 +87,12 @@ const ScheduleUpdateNewAgentConfigSchema = z.object({
   provider: z.string().trim().min(1).optional(),
   model: z.string().trim().min(1).nullable().optional(),
   modeId: z.string().trim().min(1).nullable().optional(),
-  cwd: z.string().trim().min(1).optional(),
 });
 
 export const ScheduleUpdateRequestSchema = z.object({
   type: z.literal("schedule/update"),
   requestId: z.string(),
+  workspaceId: z.string().min(1),
   scheduleId: z.string(),
   name: z.string().nullable().optional(),
   prompt: z.string().min(1).optional(),

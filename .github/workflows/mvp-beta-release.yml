@@ -38,6 +38,7 @@ jobs:
       - run: npm --workspace=@thoth/app run test -- --project unit
       - run: npm --workspace=@thoth/daemon run test:unit
       - run: npm run test:thoth-foreground
+      - run: npm run test:thoth:adapters
       - run: npm --workspace=@thoth/desktop run test
       - run: npm --workspace=@thoth/cli run test
       - run: npm run build:web
@@ -291,7 +292,7 @@ jobs:
           retention-days: 7
 
   relay-smoke:
-    needs: preflight
+    needs: [preflight, server-cli]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -301,6 +302,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build:cli
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-cli
+          path: server-cli
       - name: Verify the real Seele Relay v3 service
         shell: bash
         run: |
@@ -308,6 +313,8 @@ jobs:
           response="$(curl --fail --silent --show-error --max-time 15 https://relay.test.thoth.seeles.ai/health)"
           test "$response" = '{"status":"ok","protocol":"3","service":"thoth-relay"}'
           THOTH_RELAY_LIVE_E2E=1 npm --workspace=@thoth/relay run test:live
+      - name: Run packaged daemon Clarify and Loop through hosted Relay
+        run: npm run smoke:packaged:server-cli-relay -- --tgz server-cli/thoth-server-cli-0.0.0-mvp-beta.tgz
 
   publish:
     needs:

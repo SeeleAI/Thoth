@@ -7,7 +7,7 @@ import { writeJsonFileAtomic } from "../atomic-file.js";
 import { AgentFeatureSchema, AgentStatusSchema } from "../messages.js";
 import { toStoredAgentRecord } from "./agent-projections.js";
 import type { ManagedAgent } from "./agent-manager.js";
-import type { AgentSessionConfig } from "./agent-sdk-types.js";
+import type { AgentSessionConfig } from "@thoth/drivers/agent-runtime";
 
 const SERIALIZABLE_CONFIG_SCHEMA = z
   .object({
@@ -82,7 +82,23 @@ export function parseStoredAgentRecord(value: unknown): StoredAgentRecord {
   return STORED_AGENT_SCHEMA.parse(value);
 }
 
-export class AgentStorage {
+export interface AgentRegistry {
+  initialize(): Promise<void>;
+  list(): Promise<StoredAgentRecord[]>;
+  get(agentId: string): Promise<StoredAgentRecord | null>;
+  upsert(record: StoredAgentRecord): Promise<void>;
+  beginDelete(agentId: string): void;
+  remove(agentId: string): Promise<void>;
+  applySnapshot(
+    agent: ManagedAgent,
+    options?: { title?: string | null; internal?: boolean },
+  ): Promise<void>;
+  setTitle(agentId: string, title: string): Promise<void>;
+  flush(): Promise<void>;
+}
+
+/** Legacy JSON reader retained only for one-time migration and isolated storage tests. */
+export class AgentStorage implements AgentRegistry {
   private cache: Map<string, StoredAgentRecord> = new Map();
   private pathById: Map<string, string> = new Map();
   private pathsById: Map<string, Set<string>> = new Map();

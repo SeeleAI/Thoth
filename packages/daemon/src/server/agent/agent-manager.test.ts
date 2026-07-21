@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -34,9 +34,10 @@ import type {
   AgentStreamEvent,
   AgentTimelineItem,
   ImportProviderSessionInput,
-} from "./agent-sdk-types.js";
-import type { ThothToolCatalog, ThothToolRuntimeContext } from "./tools/types.js";
-import type { ProviderDefinition } from "./provider-registry.js";
+} from "@thoth/drivers/agent-runtime";
+import type { ThothToolCatalog, ThothToolRuntimeContext } from "@thoth/drivers/agent-runtime";
+import type { ProviderDefinition } from "@thoth/drivers/internal/server/agent/provider-registry";
+import { NO_HARNESS_CAPABILITIES, defineHarnessCapabilities } from "@thoth/drivers/harness";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -90,6 +91,7 @@ function expectArchivedAgentRecord(
 class TestAgentClient implements AgentClient {
   readonly provider = "codex" as const;
   readonly capabilities = TEST_CAPABILITIES;
+  readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
   readonly createdConfigs: AgentSessionConfig[] = [];
   readonly resumeOverrides: Array<Partial<AgentSessionConfig> | undefined> = [];
 
@@ -382,6 +384,7 @@ class StreamingAssistantSession implements AgentSession {
 }
 
 class StreamingAssistantClient implements AgentClient {
+  readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
   readonly provider = "codex" as const;
   readonly capabilities = TEST_CAPABILITIES;
 
@@ -436,6 +439,7 @@ function fakeCodexEmitting(args: FakeCodexEmitterArgs): AgentClient {
   return {
     provider: "codex",
     capabilities: TEST_CAPABILITIES,
+    harnessCapabilities: NO_HARNESS_CAPABILITIES,
     async isAvailable() {
       return true;
     },
@@ -627,9 +631,7 @@ test("listDraftCommands uses explicit model config without default model fetchin
   expect(commands).toEqual([draftCommand]);
   expect(client.fetchCatalogCalls).toBe(0);
   expect(client.createSessionCalls).toBe(1);
-  const commandProbeHome = client.launchContexts[0]?.env?.CODEX_HOME;
-  expect(commandProbeHome).toContain("provider-sessions/control-");
-  expect(commandProbeHome ? existsSync(commandProbeHome) : true).toBe(false);
+  expect(client.launchContexts[0]?.env?.CODEX_HOME).toBeUndefined();
   expect(client.createOptions).toEqual([{ persistSession: false }]);
   expect(client.commandConfigs).toEqual([
     {
@@ -738,9 +740,7 @@ test("listDraftFeatures uses explicit model config without default model fetchin
   expect(features).toEqual([draftFeature]);
   expect(client.fetchCatalogCalls).toBe(0);
   expect(client.createSessionCalls).toBe(0);
-  const featureProbeHome = client.launchContexts[0]?.env?.CODEX_HOME;
-  expect(featureProbeHome).toContain("provider-sessions/control-");
-  expect(featureProbeHome ? existsSync(featureProbeHome) : true).toBe(false);
+  expect(client.launchContexts[0]?.env?.CODEX_HOME).toBeUndefined();
   expect(client.featureConfigs).toEqual([
     {
       provider: "codex",
@@ -872,6 +872,7 @@ test("setAgentMode persists the selected mode across session reload", async () =
   }
 
   class ModeAwareClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -1067,6 +1068,7 @@ test("listProviderAvailability uses registered client keys, including custom pro
   const customClient: AgentClient = {
     provider: "zai",
     capabilities: TEST_CAPABILITIES,
+    harnessCapabilities: NO_HARNESS_CAPABILITIES,
     async isAvailable() {
       return true;
     },
@@ -1296,8 +1298,10 @@ test("createAgent passes native Thoth tools through launch context without inter
     override readonly capabilities = {
       ...TEST_CAPABILITIES,
       supportsMcpServers: true,
-      supportsNativeThothTools: true,
     };
+    override readonly harnessCapabilities = defineHarnessCapabilities({
+      toolAttachment: ["native"],
+    });
     lastConfig: AgentSessionConfig | null = null;
     lastLaunchContext: AgentLaunchContext | undefined;
 
@@ -1384,10 +1388,9 @@ test("createAgent provisions foreground Thoth tools before provider session crea
   };
 
   class NativeToolsClient extends TestAgentClient {
-    override readonly capabilities = {
-      ...TEST_CAPABILITIES,
-      supportsNativeThothTools: true,
-    };
+    override readonly harnessCapabilities = defineHarnessCapabilities({
+      toolAttachment: ["native"],
+    });
     lastLaunchContext: AgentLaunchContext | undefined;
 
     override async createSession(
@@ -1814,6 +1817,7 @@ test("resumeAgentFromPersistence keeps metadata config, applies overrides, and p
   const storage = new AgentStorage(storagePath, logger);
 
   class ResumeCaptureClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
     lastResumeOverrides: Partial<AgentSessionConfig> | undefined;
@@ -1898,7 +1902,6 @@ test("resumeAgentFromPersistence keeps metadata config, applies overrides, and p
         thothRuntimeTools: {
           enabled: true,
           scope: "loop_planexec",
-          sessionHome: "/tmp/thoth-loop-session-home",
         },
       },
       mcpServers: {
@@ -1936,7 +1939,6 @@ test("resumeAgentFromPersistence keeps metadata config, applies overrides, and p
   expect(client.lastResumeLaunchContext).toEqual({
     agentId: resumed.id,
     env: {
-      CODEX_HOME: "/tmp/thoth-loop-session-home",
       THOTH_AGENT_ID: resumed.id,
     },
   });
@@ -2027,6 +2029,7 @@ test("reloadAgentSession passes daemon launch env through the provider launch co
   const storage = new AgentStorage(storagePath, logger);
 
   class ReloadCaptureClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
     lastCreateLaunchContext: AgentLaunchContext | undefined;
@@ -2121,6 +2124,7 @@ test("reloadAgentSession preserves timeline and does not force history replay", 
   }
 
   class HistoryProbeClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -2741,6 +2745,7 @@ test("reloadAgentSession cancels active run and resumes existing session once th
   }
 
   class DelayedPersistenceClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
     createSessionCalls = 0;
@@ -3212,6 +3217,7 @@ test("hydrateTimeline preserves assistant chunk, reasoning, and tool timeline hi
   }
 
   class ChunkedAssistantHistoryClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -3291,6 +3297,7 @@ test("hydrateTimeline preserves reasoning between assistant chunks", async () =>
   }
 
   class ReasoningInterleavedHistoryClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -4431,6 +4438,7 @@ test("runAgent assembles finalText from trailing assistant chunks", async () => 
   }
 
   class ChunkedAssistantClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -4753,6 +4761,7 @@ test("clearAgentAttention on errored agent stays cleared until a new error trans
   }
 
   class FailingClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -4855,6 +4864,7 @@ test("streamAgent clears pending run when startTurn fails before a turn id exist
   }
 
   class FailsOnceClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
     readonly session = new FailsOnceBeforeTurnSession({
@@ -5400,6 +5410,7 @@ test("turn_failed emits a system error assistant timeline message and keeps erro
   }
 
   class TurnFailedClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -5474,6 +5485,7 @@ test("turn_failed surfaces provider code and diagnostic in system error message"
   }
 
   class DetailedFailureClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -5561,6 +5573,7 @@ test("permission request notifies once without forcing unread attention state", 
   }
 
   class PermissionClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -5694,6 +5707,7 @@ test("respondToPermission updates currentModeId after plan approval", async () =
   }
 
   class PlanModeTestClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -6071,6 +6085,7 @@ test("close during in-flight stream does not clear persistence sessionId", async
   }
 
   class CloseRaceClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -6187,6 +6202,7 @@ test("hydrateTimeline keeps provider user_message items when no canonical user h
   }
 
   class HistoryUserMessageClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -6252,6 +6268,7 @@ test("visible Agents keep daemon user anchors across provider history replay", a
   }
 
   class ProviderHistoryClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "opencode" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -6322,6 +6339,7 @@ test("hydrateTimeline preserves provider replay timestamps and marks missing one
   }
 
   class TimestampedHistoryClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
 
@@ -6394,6 +6412,7 @@ test("provider user_message is recorded from the live stream", async () => {
   }
 
   class UnexpectedUserMsgClient implements AgentClient {
+    readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
     async isAvailable(): Promise<boolean> {
@@ -6570,6 +6589,7 @@ test("replaceAgentRun succeeds when foreground turn terminal event is never deli
 }, 10_000);
 
 class RecordingPersistedAgentsClient implements AgentClient {
+  readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
   readonly capabilities = TEST_CAPABILITIES;
   calls = 0;
 

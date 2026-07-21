@@ -13,7 +13,7 @@ import type {
   AgentProvider,
   AgentSession,
   AgentSessionConfig,
-} from "./agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 
 type ManagedAgentOverrides = Omit<
   Partial<ManagedAgent>,

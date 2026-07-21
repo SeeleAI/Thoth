@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { terminateWithTreeKill } from "./tree-kill.js";
+import { terminateWithTreeKill } from "@thoth/drivers/internal/utils/tree-kill";
 
 const pollIntervalMs = 50;
 

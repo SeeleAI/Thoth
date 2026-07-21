@@ -8,7 +8,7 @@ import { createTestThothDaemon } from "../test-utils/thoth-daemon.js";
 import { DaemonClient, type WaitForFinishResult } from "../test-utils/daemon-client.js";
 import { createMessageCollector } from "../test-utils/message-collector.js";
 import { canRunRealProvider, createRealProviderClients } from "./real-provider-test-config.js";
-import type { AgentPermissionRequest } from "../agent/agent-sdk-types.js";
+import type { AgentPermissionRequest } from "@thoth/drivers/agent-runtime";
 import type { SessionOutboundMessage } from "../messages.js";
 
 const SYSTEM_ERROR_SNIPPET = "A foreground turn is already active";

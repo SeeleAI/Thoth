@@ -100,8 +100,8 @@ import {
   selectProjectedTimelinePage,
   type TimelineProjectionEntry,
   type TimelineProjectionMode,
-} from "./agent/timeline-projection.js";
-import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
+} from "@thoth/drivers/internal/server/agent/timeline-projection";
+import { buildAgentForkContextAttachment } from "@thoth/drivers/internal/server/agent/activity-curator";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
   getAgentStreamEventTurnId,
@@ -111,9 +111,9 @@ import {
   type AgentPromptInput,
   type AgentRunOptions,
   type AgentSessionConfig,
-} from "./agent/agent-sdk-types.js";
+} from "@thoth/drivers/agent-runtime";
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
-import type { AgentStorage } from "./agent/agent-storage.js";
+import type { AgentRegistry } from "./agent/agent-storage.js";
 import {
   ImportSessionsRequestError,
   importProviderSession,
@@ -146,14 +146,13 @@ import {
   createAgentStructuredTextGeneration,
   createGitMetadataGenerator,
 } from "./session/checkout/git-metadata-generator.js";
-import { ChatScheduleLoopSession } from "./session/chat/chat-schedule-loop-session.js";
+import { ChatScheduleSession } from "./session/chat/chat-schedule-session.js";
 import { ProviderCatalogSession } from "./session/provider/provider-catalog-session.js";
 import { WorkspaceFilesSession } from "./session/files/workspace-files-session.js";
 import { AgentConfigSession } from "./session/agent-config/agent-config-session.js";
 import { ProjectConfigSession } from "./session/project-config/project-config-session.js";
 import { DaemonSession, type DaemonRuntimeConfig } from "./session/daemon/daemon-session.js";
 import { ForegroundTurnCoordinator } from "./agent/foreground-turn-coordinator.js";
-import { getForegroundAuthorityStore } from "./agent/foreground-authority-runtime.js";
 import type { DaemonWebSocketRuntimeDiagnosticSnapshot } from "./session/daemon/diagnostics.js";
 import { DownloadTokenStore } from "./file-download/token-store.js";
 import { PushTokenStore } from "./push/token-store.js";
@@ -177,15 +176,19 @@ import {
   matchesAgentUpdatesFilter,
   type AgentUpdatesService,
 } from "./session/agent-updates/agent-updates-service.js";
-import { expandTilde } from "../utils/path.js";
+import { expandTilde } from "@thoth/drivers/internal/utils/path";
 import { searchHomeDirectories, searchWorkspaceEntries } from "../utils/directory-suggestions.js";
 import type { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import type { Resolvable } from "./speech/provider-resolver.js";
 import type { SpeechReadinessSnapshot } from "./speech/speech-runtime.js";
 import type pino from "pino";
-import { FileBackedChatService } from "./chat/chat-service.js";
-import { LoopService } from "./loop-service.js";
-import type { ThothLoopTaskService } from "./thoth-loop/task-service.js";
+import { WorkspaceChatService } from "./chat/chat-service.js";
+import type {
+  WorkspaceAuthorityManager,
+  WorkspaceTaskCoordinator,
+} from "./workspace-authority/index.js";
+import { TaskContextBroker } from "./workspace-authority/task-context-broker.js";
+import { WorkspaceForegroundAuthority } from "./workspace-authority/foreground-authority.js";
 import { ScheduleService } from "./schedule/service.js";
 import { createGitHubService, type GitHubService } from "../services/github-service.js";
 import type { ProviderUsageService } from "../services/quota-fetcher/service.js";
@@ -311,11 +314,11 @@ function clientSupportsAllProviders(appVersion: string | null): boolean {
   return isAppVersionAtLeast(appVersion, MIN_VERSION_ALL_PROVIDERS);
 }
 
-type DeleteFencedAgentStorage = AgentStorage & {
+type DeleteFencedAgentStorage = AgentRegistry & {
   beginDelete(agentId: string): void;
 };
 
-function beginAgentDeleteIfSupported(agentStorage: AgentStorage, agentId: string): void {
+function beginAgentDeleteIfSupported(agentStorage: AgentRegistry, agentId: string): void {
   if ("beginDelete" in agentStorage && typeof agentStorage.beginDelete === "function") {
     (agentStorage as DeleteFencedAgentStorage).beginDelete(agentId);
   }
@@ -419,14 +422,14 @@ export interface SessionOptions {
   thothHome: string;
   worktreesRoot?: string;
   agentManager: AgentManager;
-  agentStorage: AgentStorage;
+  agentStorage: AgentRegistry;
   projectRegistry: ProjectRegistry;
   workspaceRegistry: WorkspaceRegistry;
   filesystem?: SessionFileSystem;
-  chatService: FileBackedChatService;
+  chatService: WorkspaceChatService;
   scheduleService: ScheduleService;
-  loopService: LoopService;
-  loopTaskService?: ThothLoopTaskService | null;
+  workspaceAuthorityManager: WorkspaceAuthorityManager;
+  workspaceTaskCoordinator: WorkspaceTaskCoordinator;
   checkoutDiffManager: CheckoutDiffManager;
   github?: GitHubService;
   createAgentMcpTransport?: AgentMcpTransportFactory;
@@ -551,7 +554,7 @@ export class Session {
   private readonly worktreesRoot: string | undefined;
 
   private agentManager: AgentManager;
-  private readonly agentStorage: AgentStorage;
+  private readonly agentStorage: AgentRegistry;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly filesystem: SessionFileSystem;
@@ -565,8 +568,7 @@ export class Session {
   private readonly pushTokenStore: PushTokenStore;
   private unsubscribeAgentEvents: (() => void) | null = null;
   private unsubscribeForegroundAuthority: (() => void) | null = null;
-  private observedLoopPhaseAgentId: string | null = null;
-  private unsubscribeObservedLoopPhaseAgentEvents: (() => void) | null = null;
+  private unsubscribeWorkspaceAuthority: (() => void) | null = null;
   private unsubscribeTerminalWorkspaceContributionEvents: (() => void) | null = null;
   private readonly agentUpdates: AgentUpdatesService;
   private workspaceUpdatesSubscription: WorkspaceUpdatesSubscriptionState | null = null;
@@ -594,14 +596,15 @@ export class Session {
   private readonly workspaceDirectory: WorkspaceDirectory;
   private readonly voiceSession: VoiceSession;
   private readonly checkoutSession: CheckoutSession;
-  private readonly chatScheduleLoopSession: ChatScheduleLoopSession;
+  private readonly chatScheduleSession: ChatScheduleSession;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly agentConfigSession: AgentConfigSession;
   private readonly projectConfigSession: ProjectConfigSession;
   private readonly daemonSession: DaemonSession;
   private readonly foregroundTurnCoordinator: ForegroundTurnCoordinator;
-  private readonly loopTaskService: ThothLoopTaskService | null;
+  private readonly workspaceAuthorityManager: WorkspaceAuthorityManager;
+  private readonly workspaceTaskCoordinator: WorkspaceTaskCoordinator;
   private readonly workspaceScripts: WorkspaceScriptsService;
   private readonly createAgentLifecycleDispatch: CreateAgentLifecycleDispatch;
 
@@ -626,8 +629,8 @@ export class Session {
       filesystem,
       chatService,
       scheduleService,
-      loopService,
-      loopTaskService,
+      workspaceAuthorityManager,
+      workspaceTaskCoordinator,
       checkoutDiffManager,
       github,
       renameCurrentBranch,
@@ -737,12 +740,21 @@ export class Session {
       onBranchChanged,
       logger: this.sessionLogger,
     });
-    this.chatScheduleLoopSession = new ChatScheduleLoopSession({
+    this.chatScheduleSession = new ChatScheduleSession({
       host: {
         emit: (msg) => this.emit(msg),
-        listStoredAgents: () => this.agentStorage.list(),
-        listLiveAgents: () => this.agentManager.listAgents(),
-        resolveAgentIdentifier: (identifier) => this.resolveAgentIdentifier(identifier),
+        listStoredAgents: async (workspaceId) =>
+          (await this.agentStorage.list()).filter((agent) => agent.workspaceId === workspaceId),
+        listLiveAgents: (workspaceId) =>
+          this.agentManager.listAgents().filter((agent) => agent.workspaceId === workspaceId),
+        resolveAgentIdentifier: async (workspaceId, identifier) => {
+          const resolved = await this.resolveAgentIdentifier(identifier);
+          if (!resolved.ok) return resolved;
+          const record = await this.agentStorage.get(resolved.agentId);
+          return record?.workspaceId === workspaceId
+            ? resolved
+            : { ok: false, error: `Agent ${identifier} is outside Workspace ${workspaceId}` };
+        },
         sendAgentMessage: async (agentId, text) => {
           await sendPromptToAgent({
             agentManager: this.agentManager,
@@ -756,7 +768,6 @@ export class Session {
       },
       chatService,
       scheduleService,
-      loopService,
       clientId: this.clientId,
       logger: this.sessionLogger,
     });
@@ -813,15 +824,14 @@ export class Session {
       listWorkspaces: () => this.workspaceRegistry.list(),
       logger: this.sessionLogger,
     });
-    const foregroundAuthorityStore = getForegroundAuthorityStore({
-      thothHome: this.thothHome,
-      logger: this.sessionLogger,
-    });
+    const foregroundAuthorityStore = new WorkspaceForegroundAuthority(workspaceAuthorityManager);
+    const taskContextBroker = new TaskContextBroker(workspaceAuthorityManager);
     this.foregroundTurnCoordinator = new ForegroundTurnCoordinator({
       authorityStore: foregroundAuthorityStore,
       agentManager: this.agentManager,
       agentStorage: this.agentStorage,
-      loopTaskService: loopTaskService ?? null,
+      taskCoordinator: workspaceTaskCoordinator,
+      taskContextBroker,
       logger: this.sessionLogger.child({ component: "foreground-turn-coordinator" }),
     });
     this.unsubscribeForegroundAuthority = foregroundAuthorityStore.subscribe((state, reason) => {
@@ -830,7 +840,14 @@ export class Session {
         payload: { state, reason },
       });
     });
-    this.loopTaskService = loopTaskService ?? null;
+    this.workspaceAuthorityManager = workspaceAuthorityManager;
+    this.workspaceTaskCoordinator = workspaceTaskCoordinator;
+    this.unsubscribeWorkspaceAuthority = this.workspaceAuthorityManager.subscribe((update) => {
+      this.emit({
+        type: "workspace.authority.update",
+        payload: update,
+      });
+    });
     this.daemonConfigStore = daemonConfigStore;
     this.terminalManager = terminalManager;
     this.terminalController = new TerminalSessionController({
@@ -1186,24 +1203,6 @@ export class Session {
     );
   }
 
-  private observeLoopPhaseAgentEvents(agentId: string): void {
-    if (this.observedLoopPhaseAgentId === agentId) {
-      return;
-    }
-
-    this.unsubscribeObservedLoopPhaseAgentEvents?.();
-    this.observedLoopPhaseAgentId = agentId;
-    this.unsubscribeObservedLoopPhaseAgentEvents = this.agentManager.subscribe(
-      (event) => {
-        if (this.observedLoopPhaseAgentId !== agentId || event.type === "agent_state") {
-          return;
-        }
-        this.forwardAgentManagerEvent(event, { allowInternalStream: true });
-      },
-      { agentId, replayState: false },
-    );
-  }
-
   private forwardAgentManagerEvent(
     event: AgentManagerEvent,
     options: { allowInternalStream: boolean },
@@ -1436,11 +1435,12 @@ export class Session {
       this.dispatchAgentTimelineMessage(msg) ??
       this.dispatchAgentLifecycleMessage(msg) ??
       this.dispatchAgentConfigMessage(msg) ??
+      this.dispatchTaskAuthorityMessage(msg) ??
       this.dispatchCheckoutMessage(msg) ??
       this.dispatchWorkspaceAndProjectMessage(msg) ??
       this.dispatchProviderMessage(msg) ??
       this.dispatchTerminalMessage(msg) ??
-      this.dispatchChatScheduleLoopMessage(msg) ??
+      this.dispatchChatScheduleMessage(msg) ??
       this.dispatchMiscMessage(msg);
     if (promise) await promise;
   }
@@ -1615,6 +1615,185 @@ export class Session {
     }
   }
 
+  private dispatchTaskAuthorityMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "task.list.request":
+        return this.handleTaskListRequest(msg);
+      case "task.get.request":
+        return this.handleTaskGetRequest(msg);
+      case "task.command.request":
+        return this.handleTaskCommandRequest(msg);
+      case "task.context.search.request":
+        return this.handleTaskContextSearchRequest(msg);
+      case "task.context.get.request":
+        return this.handleTaskContextGetRequest(msg);
+      case "task.decision.answer.request":
+        return this.handleTaskDecisionAnswerRequest(msg);
+      case "execution.timeline.request":
+        return this.handleExecutionTimelineRequest(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  private async registerAuthorityWorkspace(workspaceId: string): Promise<boolean> {
+    const workspace = await this.workspaceRegistry.get(workspaceId);
+    if (!workspace) {
+      return false;
+    }
+    this.workspaceAuthorityManager.registerWorkspace(workspace);
+    return true;
+  }
+
+  private async handleTaskListRequest(
+    msg: Extract<SessionInboundMessage, { type: "task.list.request" }>,
+  ): Promise<void> {
+    const registered = await this.registerAuthorityWorkspace(msg.workspaceId);
+    this.emit({
+      type: "task.list.response",
+      payload: {
+        requestId: msg.requestId,
+        tasks: registered ? this.workspaceTaskCoordinator.list(msg.workspaceId) : [],
+        error: registered ? null : `Workspace ${msg.workspaceId} was not found`,
+      },
+    });
+  }
+
+  private async handleTaskGetRequest(
+    msg: Extract<SessionInboundMessage, { type: "task.get.request" }>,
+  ): Promise<void> {
+    const registered = await this.registerAuthorityWorkspace(msg.workspaceId);
+    const result = registered
+      ? this.workspaceTaskCoordinator.get(msg.workspaceId, msg.taskId)
+      : { task: null, executions: [], decisions: [] };
+    this.emit({
+      type: "task.get.response",
+      payload: {
+        requestId: msg.requestId,
+        ...result,
+        error: registered
+          ? result.task
+            ? null
+            : `Task ${msg.taskId} was not found in Workspace ${msg.workspaceId}`
+          : `Workspace ${msg.workspaceId} was not found`,
+      },
+    });
+  }
+
+  private async handleTaskCommandRequest(
+    msg: Extract<SessionInboundMessage, { type: "task.command.request" }>,
+  ): Promise<void> {
+    const registered = await this.registerAuthorityWorkspace(msg.workspaceId);
+    const result = registered
+      ? this.workspaceTaskCoordinator.command({
+          workspaceId: msg.workspaceId,
+          taskId: msg.taskId,
+          command: msg.command,
+          expectedRevision: msg.expectedRevision,
+          commandId: msg.commandId,
+          actorId: `user:${this.clientId}`,
+          clientId: this.clientId,
+        })
+      : {
+          task: null,
+          execution: null,
+          conflict: false,
+          duplicate: false,
+          error: `Workspace ${msg.workspaceId} was not found`,
+        };
+    this.emit({
+      type: "task.command.response",
+      payload: { requestId: msg.requestId, ...result },
+    });
+  }
+
+  private async handleTaskContextSearchRequest(
+    msg: Extract<SessionInboundMessage, { type: "task.context.search.request" }>,
+  ): Promise<void> {
+    const registered = await this.registerAuthorityWorkspace(msg.workspaceId);
+    this.emit({
+      type: "task.context.search.response",
+      payload: {
+        requestId: msg.requestId,
+        tasks: registered
+          ? this.workspaceTaskCoordinator.search(msg.workspaceId, msg.query, msg.limit)
+          : [],
+        error: registered ? null : `Workspace ${msg.workspaceId} was not found`,
+      },
+    });
+  }
+
+  private async handleTaskContextGetRequest(
+    msg: Extract<SessionInboundMessage, { type: "task.context.get.request" }>,
+  ): Promise<void> {
+    const registered = await this.registerAuthorityWorkspace(msg.workspaceId);
+    const context = registered
+      ? this.workspaceTaskCoordinator.context(msg.workspaceId, msg.taskId, msg.revision)
+      : null;
+    this.emit({
+      type: "task.context.get.response",
+      payload: {
+        requestId: msg.requestId,
+        context,
+        error: registered
+          ? context
+            ? null
+            : `Task ${msg.taskId} was not found at the requested revision`
+          : `Workspace ${msg.workspaceId} was not found`,
+      },
+    });
+  }
+
+  private async handleTaskDecisionAnswerRequest(
+    msg: Extract<SessionInboundMessage, { type: "task.decision.answer.request" }>,
+  ): Promise<void> {
+    const registered = await this.registerAuthorityWorkspace(msg.workspaceId);
+    const result = registered
+      ? this.workspaceTaskCoordinator.answerDecision({
+          workspaceId: msg.workspaceId,
+          taskId: msg.taskId,
+          decisionId: msg.decisionId,
+          optionId: msg.optionId,
+          ...(msg.note === undefined ? {} : { note: msg.note }),
+          expectedRevision: msg.expectedRevision,
+          commandId: msg.commandId,
+          actorId: `user:${this.clientId}`,
+          clientId: this.clientId,
+        })
+      : {
+          task: null,
+          decision: null,
+          conflict: false,
+          duplicate: false,
+          error: `Workspace ${msg.workspaceId} was not found`,
+        };
+    this.emit({
+      type: "task.decision.answer.response",
+      payload: { requestId: msg.requestId, ...result },
+    });
+  }
+
+  private async handleExecutionTimelineRequest(
+    msg: Extract<SessionInboundMessage, { type: "execution.timeline.request" }>,
+  ): Promise<void> {
+    const registered = await this.registerAuthorityWorkspace(msg.workspaceId);
+    const result = registered
+      ? this.workspaceTaskCoordinator.timeline(msg)
+      : { execution: null, entries: [], nextBeforeSeq: null };
+    this.emit({
+      type: "execution.timeline.response",
+      payload: {
+        requestId: msg.requestId,
+        ...result,
+        error: registered
+          ? result.execution
+            ? null
+            : `Execution ${msg.executionId} was not found for Task ${msg.taskId}`
+          : `Workspace ${msg.workspaceId} was not found`,
+      },
+    });
+  }
+
   // eslint-disable-next-line complexity
   private dispatchCheckoutMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
@@ -1705,14 +1884,6 @@ export class Session {
         return this.handleWorkspaceClearAttentionRequest(msg);
       case "workspace.title.set.request":
         return this.handleWorkspaceTitleSetRequest(msg.workspaceId, msg.title, msg.requestId);
-      case "background_task.list.request":
-        return this.handleBackgroundTaskListRequest(msg);
-      case "background_task.inspect.request":
-        return this.handleBackgroundTaskInspectRequest(msg);
-      case "background_task.action.request":
-        return this.handleBackgroundTaskActionRequest(msg);
-      case "background_task.decision.request":
-        return this.handleBackgroundTaskDecisionRequest(msg);
       case "file_explorer_request":
         return this.workspaceFilesSession.handleFileExplorerRequest(msg);
       case "project_icon_request":
@@ -1725,190 +1896,6 @@ export class Session {
       default:
         return undefined;
     }
-  }
-
-  private async resolveBackgroundTaskWorkspacePath(input: {
-    workspaceId?: string;
-    workspacePath?: string;
-  }): Promise<string | null> {
-    if (input.workspacePath?.trim()) {
-      return input.workspacePath.trim();
-    }
-    if (!input.workspaceId?.trim()) {
-      return null;
-    }
-    const workspace = await this.workspaceRegistry.get(input.workspaceId.trim());
-    return workspace?.cwd ?? null;
-  }
-
-  private async handleBackgroundTaskListRequest(
-    msg: Extract<SessionInboundMessage, { type: "background_task.list.request" }>,
-  ): Promise<void> {
-    if (!this.loopTaskService) {
-      this.emit({
-        type: "background_task.list.response",
-        payload: {
-          requestId: msg.requestId,
-          tasks: [],
-          error: "Thoth Loop background task service is unavailable.",
-        },
-      });
-      return;
-    }
-    const workspacePath = await this.resolveBackgroundTaskWorkspacePath(msg);
-    if (!workspacePath) {
-      this.emit({
-        type: "background_task.list.response",
-        payload: {
-          requestId: msg.requestId,
-          tasks: [],
-          error: "A workspace scope is required to list background tasks.",
-        },
-      });
-      return;
-    }
-    const tasks = this.loopTaskService.list({ workspacePath });
-    this.emit({
-      type: "background_task.list.response",
-      payload: {
-        requestId: msg.requestId,
-        tasks,
-        error: null,
-      },
-    });
-  }
-
-  private async handleBackgroundTaskInspectRequest(
-    msg: Extract<SessionInboundMessage, { type: "background_task.inspect.request" }>,
-  ): Promise<void> {
-    const workspacePath = await this.resolveBackgroundTaskWorkspacePath(msg);
-    const candidate = this.loopTaskService?.inspect(msg.taskId) ?? null;
-    const task =
-      candidate && workspacePath && resolve(candidate.workspacePath) === resolve(workspacePath)
-        ? candidate
-        : null;
-    this.emit({
-      type: "background_task.inspect.response",
-      payload: {
-        requestId: msg.requestId,
-        task,
-        error: !this.loopTaskService
-          ? "Thoth Loop background task service is unavailable."
-          : candidate && !task
-            ? "Background task does not belong to this workspace."
-            : null,
-      },
-    });
-  }
-
-  private async handleBackgroundTaskActionRequest(
-    msg: Extract<SessionInboundMessage, { type: "background_task.action.request" }>,
-  ): Promise<void> {
-    if (!this.loopTaskService) {
-      this.emit({
-        type: "background_task.action.response",
-        payload: {
-          requestId: msg.requestId,
-          task: null,
-          error: "Thoth Loop background task service is unavailable.",
-        },
-      });
-      return;
-    }
-    const workspacePath = await this.resolveBackgroundTaskWorkspacePath(msg);
-    const candidate = this.loopTaskService.inspect(msg.taskId);
-    if (
-      !candidate ||
-      !workspacePath ||
-      resolve(candidate.workspacePath) !== resolve(workspacePath)
-    ) {
-      this.emit({
-        type: "background_task.action.response",
-        payload: {
-          requestId: msg.requestId,
-          task: null,
-          error: candidate
-            ? "Background task does not belong to this workspace."
-            : "Background task not found.",
-        },
-      });
-      return;
-    }
-    let task = null;
-    let actionError: string | null = null;
-    try {
-      task = await this.loopTaskService.action(msg.taskId, msg.action, {
-        expectedAuthorityRevision: msg.expectedAuthorityRevision,
-        commandId: msg.commandId,
-      });
-    } catch (error) {
-      actionError = error instanceof Error ? error.message : String(error);
-    }
-    this.emit({
-      type: "background_task.action.response",
-      payload: {
-        requestId: msg.requestId,
-        task,
-        error: actionError ?? (task ? null : "Background task not found."),
-      },
-    });
-  }
-
-  private async handleBackgroundTaskDecisionRequest(
-    msg: Extract<SessionInboundMessage, { type: "background_task.decision.request" }>,
-  ): Promise<void> {
-    if (!this.loopTaskService) {
-      this.emit({
-        type: "background_task.decision.response",
-        payload: {
-          requestId: msg.requestId,
-          task: null,
-          error: "Thoth Loop background task service is unavailable.",
-        },
-      });
-      return;
-    }
-    const workspacePath = await this.resolveBackgroundTaskWorkspacePath(msg);
-    const candidate = this.loopTaskService.inspect(msg.taskId);
-    if (
-      !candidate ||
-      !workspacePath ||
-      resolve(candidate.workspacePath) !== resolve(workspacePath)
-    ) {
-      this.emit({
-        type: "background_task.decision.response",
-        payload: {
-          requestId: msg.requestId,
-          task: null,
-          error: candidate
-            ? "Background task does not belong to this workspace."
-            : "Background task not found.",
-        },
-      });
-      return;
-    }
-    let task = null;
-    let decisionError: string | null = null;
-    try {
-      task = await this.loopTaskService.answerUserDecision({
-        taskId: msg.taskId,
-        decisionId: msg.decisionId,
-        choiceId: msg.choiceId,
-        ...(msg.note ? { note: msg.note } : {}),
-        expectedAuthorityRevision: msg.expectedAuthorityRevision,
-        commandId: msg.commandId,
-      });
-    } catch (error) {
-      decisionError = error instanceof Error ? error.message : String(error);
-    }
-    this.emit({
-      type: "background_task.decision.response",
-      payload: {
-        requestId: msg.requestId,
-        task,
-        error: decisionError ?? (task ? null : "Background task not found."),
-      },
-    });
   }
 
   private dispatchProviderMessage(msg: SessionInboundMessage): Promise<void> | undefined {
@@ -1942,50 +1929,40 @@ export class Session {
   }
 
   // eslint-disable-next-line complexity
-  private dispatchChatScheduleLoopMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+  private dispatchChatScheduleMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
       case "chat/create":
-        return this.chatScheduleLoopSession.handleChatCreateRequest(msg);
+        return this.chatScheduleSession.handleChatCreateRequest(msg);
       case "chat/list":
-        return this.chatScheduleLoopSession.handleChatListRequest(msg);
+        return this.chatScheduleSession.handleChatListRequest(msg);
       case "chat/inspect":
-        return this.chatScheduleLoopSession.handleChatInspectRequest(msg);
+        return this.chatScheduleSession.handleChatInspectRequest(msg);
       case "chat/delete":
-        return this.chatScheduleLoopSession.handleChatDeleteRequest(msg);
+        return this.chatScheduleSession.handleChatDeleteRequest(msg);
       case "chat/post":
-        return this.chatScheduleLoopSession.handleChatPostRequest(msg);
+        return this.chatScheduleSession.handleChatPostRequest(msg);
       case "chat/read":
-        return this.chatScheduleLoopSession.handleChatReadRequest(msg);
+        return this.chatScheduleSession.handleChatReadRequest(msg);
       case "chat/wait":
-        return this.chatScheduleLoopSession.handleChatWaitRequest(msg);
-      case "loop/run":
-        return this.chatScheduleLoopSession.handleLoopRunRequest(msg);
-      case "loop/list":
-        return this.chatScheduleLoopSession.handleLoopListRequest(msg);
-      case "loop/inspect":
-        return this.chatScheduleLoopSession.handleLoopInspectRequest(msg);
-      case "loop/logs":
-        return this.chatScheduleLoopSession.handleLoopLogsRequest(msg);
-      case "loop/stop":
-        return this.chatScheduleLoopSession.handleLoopStopRequest(msg);
+        return this.chatScheduleSession.handleChatWaitRequest(msg);
       case "schedule/create":
-        return this.chatScheduleLoopSession.handleScheduleCreateRequest(msg);
+        return this.chatScheduleSession.handleScheduleCreateRequest(msg);
       case "schedule/list":
-        return this.chatScheduleLoopSession.handleScheduleListRequest(msg);
+        return this.chatScheduleSession.handleScheduleListRequest(msg);
       case "schedule/inspect":
-        return this.chatScheduleLoopSession.handleScheduleInspectRequest(msg);
+        return this.chatScheduleSession.handleScheduleInspectRequest(msg);
       case "schedule/logs":
-        return this.chatScheduleLoopSession.handleScheduleLogsRequest(msg);
+        return this.chatScheduleSession.handleScheduleLogsRequest(msg);
       case "schedule/pause":
-        return this.chatScheduleLoopSession.handleSchedulePauseRequest(msg);
+        return this.chatScheduleSession.handleSchedulePauseRequest(msg);
       case "schedule/resume":
-        return this.chatScheduleLoopSession.handleScheduleResumeRequest(msg);
+        return this.chatScheduleSession.handleScheduleResumeRequest(msg);
       case "schedule/delete":
-        return this.chatScheduleLoopSession.handleScheduleDeleteRequest(msg);
+        return this.chatScheduleSession.handleScheduleDeleteRequest(msg);
       case "schedule/run-once":
-        return this.chatScheduleLoopSession.handleScheduleRunOnceRequest(msg);
+        return this.chatScheduleSession.handleScheduleRunOnceRequest(msg);
       case "schedule/update":
-        return this.chatScheduleLoopSession.handleScheduleUpdateRequest(msg);
+        return this.chatScheduleSession.handleScheduleUpdateRequest(msg);
       default:
         return undefined;
     }
@@ -2654,6 +2631,7 @@ export class Session {
       labels,
       env,
       thoth,
+      contextRefs,
     } = msg;
     let createdWorktreeForCleanup: CreateThothWorktreeWorkflowResult | null = null;
     let createdAgentId: string | null = null;
@@ -2704,6 +2682,9 @@ export class Session {
           initialTitle: workspacePromptTitle,
         },
       );
+      if (!(await this.registerAuthorityWorkspace(workspaceId))) {
+        throw new Error(`Workspace ${workspaceId} was not durably registered`);
+      }
       const createdDirectoryWorkspaceForAgent = !createdWorktree && !msg.workspaceId;
 
       const { snapshot } = await createAgentCommand(
@@ -2753,6 +2734,7 @@ export class Session {
           ...(images ? { images } : {}),
           ...(attachments ? { attachments } : {}),
           ...(thoth ? { thoth } : {}),
+          contextRefs,
           rawPrompt: initialPromptPayload,
           ...(outputSchema ? { rawRunOptions: { outputSchema } } : {}),
         });
@@ -3108,7 +3090,10 @@ export class Session {
     msg: Extract<SessionInboundMessage, { type: "agent.thoth.card.answer.request" }>,
   ): Promise<void> {
     try {
-      const payload = await this.foregroundTurnCoordinator.answerCard(msg);
+      const payload = await this.foregroundTurnCoordinator.answerCard(msg, {
+        actorId: `user:${this.clientId}`,
+        clientId: this.clientId,
+      });
       this.emit({ type: "agent.thoth.card.answer.response", payload });
     } catch (error) {
       this.emit({
@@ -3512,6 +3497,27 @@ export class Session {
     response: AgentPermissionResponse,
   ): Promise<void> {
     try {
+      const agent = this.agentManager.getAgent(agentId);
+      if (!agent?.workspaceId) {
+        throw new Error(`Agent ${agentId} has no Workspace authority for a permission decision`);
+      }
+      const displayed = agent.pendingPermissions.get(requestId);
+      if (!displayed) {
+        throw new Error(
+          `Permission request ${requestId} is no longer pending for Agent ${agentId}`,
+        );
+      }
+      this.workspaceTaskCoordinator.recordProviderPermission({
+        workspaceId: agent.workspaceId,
+        agentId,
+        providerThreadId: agent.labels.providerThreadId ?? null,
+        requestId,
+        displayed,
+        rawAnswer: response,
+        actorId: `user:${this.clientId}`,
+        clientId: this.clientId,
+        deviceId: null,
+      });
       await respondToAgentPermission({
         agentManager: this.agentManager,
         agentId,
@@ -5661,15 +5667,13 @@ export class Session {
       : undefined;
 
     try {
-      const isLoopPhaseAgent =
-        (await this.loopTaskService?.recoverPhaseAgent(msg.agentId)) ?? false;
       const snapshot = await ensureAgentLoaded(msg.agentId, {
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
-      if (isLoopPhaseAgent && snapshot.internal) {
-        this.observeLoopPhaseAgentEvents(msg.agentId);
+      if (snapshot.internal) {
+        throw new Error(`Agent not found: ${msg.agentId}`);
       }
       const agentPayload = await this.buildAgentPayload(snapshot);
 
@@ -5832,6 +5836,9 @@ export class Session {
           agentStorage: this.agentStorage,
           logger: this.sessionLogger,
         }));
+      if (!agent.workspaceId) {
+        throw new Error(`Agent ${agentId} is not bound to a daemon Workspace`);
+      }
       const prompt = this.buildAgentPrompt(msg.text, msg.images, msg.attachments);
       this.sessionLogger.trace(
         {
@@ -5844,13 +5851,14 @@ export class Session {
       try {
         const turnAck = await this.foregroundTurnCoordinator.startTurn({
           agentId,
-          ...(agent.workspaceId ? { workspaceId: agent.workspaceId } : {}),
+          workspaceId: agent.workspaceId,
           workspacePath: agent.cwd,
           text: msg.text,
           ...(msg.messageId ? { messageId: msg.messageId } : {}),
           ...(msg.images ? { images: msg.images } : {}),
           ...(msg.attachments ? { attachments: msg.attachments } : {}),
           ...(msg.thoth ? { thoth: msg.thoth } : {}),
+          contextRefs: msg.contextRefs,
           rawPrompt: prompt,
         });
         this.emit({
@@ -6056,10 +6064,9 @@ export class Session {
       this.unsubscribeForegroundAuthority();
       this.unsubscribeForegroundAuthority = null;
     }
-    if (this.unsubscribeObservedLoopPhaseAgentEvents) {
-      this.unsubscribeObservedLoopPhaseAgentEvents();
-      this.unsubscribeObservedLoopPhaseAgentEvents = null;
-      this.observedLoopPhaseAgentId = null;
+    if (this.unsubscribeWorkspaceAuthority) {
+      this.unsubscribeWorkspaceAuthority();
+      this.unsubscribeWorkspaceAuthority = null;
     }
     this.agentUpdates.dispose();
     if (this.unsubscribeTerminalWorkspaceContributionEvents) {

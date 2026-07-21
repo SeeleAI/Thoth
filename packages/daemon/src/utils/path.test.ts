@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { areEquivalentPaths, createPathEquivalenceMatcher, isPathInsideRoot } from "./path.js";
+import {
+  areEquivalentPaths,
+  createPathEquivalenceMatcher,
+  isPathInsideRoot,
+} from "@thoth/drivers/internal/utils/path";
 
 describe("path equivalence", () => {
   test.each([

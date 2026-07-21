@@ -12,7 +12,7 @@ import { createAgentMcpServer } from "./mcp-server.js";
 import { AgentManager, type ManagedAgent } from "./agent-manager.js";
 import { AgentStorage, type StoredAgentRecord } from "./agent-storage.js";
 import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
-import type { AgentMode, AgentProvider, ProviderSnapshotEntry } from "./agent-sdk-types.js";
+import type { AgentMode, AgentProvider, ProviderSnapshotEntry } from "@thoth/drivers/agent-runtime";
 import { createProviderSnapshotManagerStub } from "../test-utils/session-stubs.js";
 import {
   AgentListItemPayloadSchema,
@@ -39,6 +39,70 @@ import { PARENT_AGENT_ID_LABEL } from "@thoth/protocol/agent-labels";
 
 const REPO_CWD = resolvePath("/tmp/repo");
 const TARGET_CWD = resolvePath("/tmp/target");
+const SCHEDULE_WORKSPACE_ID = "workspace-schedule";
+const SCHEDULE_CALLER_AGENT_ID = "schedule-caller";
+const createUnscopedAgentMcpServer = createAgentMcpServer;
+
+async function createWorkspaceScopedAgentMcpServer(
+  options: Parameters<typeof createAgentMcpServer>[0],
+): ReturnType<typeof createAgentMcpServer> {
+  const callerAgentId = options.callerAgentId ?? SCHEDULE_CALLER_AGENT_ID;
+  const getAgent = vi.mocked(options.agentManager.getAgent);
+  const previousImplementation = getAgent.getMockImplementation();
+  getAgent.mockImplementation((agentId: string) => {
+    const existing = previousImplementation?.(agentId);
+    if (existing) {
+      return existing.workspaceId ? existing : { ...existing, workspaceId: SCHEDULE_WORKSPACE_ID };
+    }
+    if (agentId !== callerAgentId) {
+      return null;
+    }
+    return {
+      id: callerAgentId,
+      provider: "codex",
+      cwd: REPO_CWD,
+      workspaceId: SCHEDULE_WORKSPACE_ID,
+      lifecycle: "idle",
+      currentModeId: "full-access",
+      availableModes: [],
+      config: { title: "Schedule caller" },
+    } as ManagedAgent;
+  });
+  return createUnscopedAgentMcpServer({ ...options, callerAgentId });
+}
+
+function workspaceScheduleService(input: {
+  create?: (schedule: CreateScheduleInput) => Promise<StoredSchedule>;
+  update?: (schedule: UpdateScheduleInput) => Promise<StoredSchedule>;
+  logs?: (scheduleId: string) => Promise<unknown>;
+}): ScheduleService {
+  return {
+    ...(input.create
+      ? {
+          create: async (workspaceId: string, schedule: CreateScheduleInput) => {
+            expect(workspaceId).toBe(SCHEDULE_WORKSPACE_ID);
+            return input.create?.(schedule) as Promise<StoredSchedule>;
+          },
+        }
+      : {}),
+    ...(input.update
+      ? {
+          update: async (workspaceId: string, schedule: UpdateScheduleInput) => {
+            expect(workspaceId).toBe(SCHEDULE_WORKSPACE_ID);
+            return input.update?.(schedule) as Promise<StoredSchedule>;
+          },
+        }
+      : {}),
+    ...(input.logs
+      ? {
+          logs: async (workspaceId: string, scheduleId: string) => {
+            expect(workspaceId).toBe(SCHEDULE_WORKSPACE_ID);
+            return input.logs?.(scheduleId);
+          },
+        }
+      : {}),
+  } as ScheduleService;
+}
 
 interface LooseSafeParseResult {
   success: boolean;
@@ -2715,6 +2779,7 @@ describe("update_agent MCP tool", () => {
 
 describe("create_schedule MCP tool", () => {
   const logger = createTestLogger();
+  const createAgentMcpServer = createWorkspaceScopedAgentMcpServer;
 
   it("requires provider for schedules", async () => {
     const { agentManager, agentStorage } = createTestDeps();
@@ -2723,7 +2788,7 @@ describe("create_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { create } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ create }),
       logger,
     });
     const tool = registeredTool(server, "create_schedule");
@@ -2745,7 +2810,7 @@ describe("create_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { create } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ create }),
       logger,
     });
     const tool = registeredTool(server, "create_schedule");
@@ -2766,10 +2831,9 @@ describe("create_schedule MCP tool", () => {
       expect.objectContaining({
         target: {
           type: "new-agent",
-          config: {
+          config: expect.objectContaining({
             provider: "codex",
-            cwd: process.cwd(),
-          },
+          }),
         },
       }),
     );
@@ -2778,11 +2842,10 @@ describe("create_schedule MCP tool", () => {
       expect.objectContaining({
         target: {
           type: "new-agent",
-          config: {
+          config: expect.objectContaining({
             provider: "codex",
-            cwd: process.cwd(),
             model: "gpt-5.4",
-          },
+          }),
         },
       }),
     );
@@ -2808,7 +2871,7 @@ describe("create_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { create } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ create }),
       callerAgentId: "parent-agent",
       logger,
     });
@@ -2836,7 +2899,7 @@ describe("create_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { create } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ create }),
       logger,
     });
     const tool = registeredTool(server, "create_schedule");
@@ -2866,7 +2929,7 @@ describe("create_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { create } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ create }),
       logger,
     });
     const tool = registeredTool(server, "create_schedule");
@@ -2888,7 +2951,7 @@ describe("create_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { create } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ create }),
       logger,
     });
     const tool = registeredTool(server, "create_schedule");
@@ -2910,7 +2973,7 @@ describe("create_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { create } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ create }),
       logger,
     });
     const tool = registeredTool(server, "create_schedule");
@@ -2930,6 +2993,7 @@ describe("create_schedule MCP tool", () => {
 
 describe("create_heartbeat MCP tool", () => {
   const logger = createTestLogger();
+  const createAgentMcpServer = createWorkspaceScopedAgentMcpServer;
 
   it("creates a self-targeted cron heartbeat", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
@@ -2947,7 +3011,7 @@ describe("create_heartbeat MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { create } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ create }),
       callerAgentId: "parent-agent",
       logger,
     });
@@ -2977,11 +3041,11 @@ describe("create_heartbeat MCP tool", () => {
   it("requires an agent-scoped session", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const create = vi.fn();
-    const server = await createAgentMcpServer({
+    const server = await createUnscopedAgentMcpServer({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { create } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ create }),
       logger,
     });
     const tool = registeredTool(server, "create_heartbeat");
@@ -2999,6 +3063,7 @@ describe("create_heartbeat MCP tool", () => {
 
 describe("update_schedule MCP tool", () => {
   const logger = createTestLogger();
+  const createAgentMcpServer = createWorkspaceScopedAgentMcpServer;
 
   function makeStoredSchedule(): StoredSchedule {
     return {
@@ -3006,7 +3071,7 @@ describe("update_schedule MCP tool", () => {
       name: "test schedule",
       prompt: "say hello",
       cadence: { type: "every", everyMs: 300000 },
-      target: { type: "new-agent", config: { provider: "claude", cwd: "/tmp" } },
+      target: { type: "new-agent", config: { provider: "claude" } },
       status: "active",
       createdAt: "2026-04-11T00:00:00.000Z",
       updatedAt: "2026-04-11T00:00:00.000Z",
@@ -3032,7 +3097,7 @@ describe("update_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ update }),
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -3058,7 +3123,7 @@ describe("update_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ update }),
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -3082,7 +3147,7 @@ describe("update_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ update }),
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -3111,7 +3176,7 @@ describe("update_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ update }),
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -3152,7 +3217,7 @@ describe("update_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ update }),
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -3172,7 +3237,7 @@ describe("update_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ update }),
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -3194,7 +3259,7 @@ describe("update_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ update }),
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -3217,7 +3282,7 @@ describe("update_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ update }),
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -3233,7 +3298,7 @@ describe("update_schedule MCP tool", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("passes new-agent config and expiry updates", async () => {
+  it("passes new-agent provider config and expiry updates", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
@@ -3241,7 +3306,7 @@ describe("update_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ update }),
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -3250,7 +3315,6 @@ describe("update_schedule MCP tool", () => {
       id: "schedule-1",
       provider: "codex/gpt-5.4",
       mode: "full-access",
-      cwd: "/home/user/project",
       expiresIn: "1h",
     });
 
@@ -3261,7 +3325,6 @@ describe("update_schedule MCP tool", () => {
         provider: "codex",
         model: "gpt-5.4",
         modeId: "full-access",
-        cwd: "/home/user/project",
       },
     });
     expect(updateInput?.expiresAt).toEqual(expect.any(String));
@@ -3275,7 +3338,7 @@ describe("update_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ update }),
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -3306,7 +3369,7 @@ describe("update_schedule MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { update } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ update }),
       logger,
     });
     const tool = registeredTool(server, "update_schedule");
@@ -3331,6 +3394,7 @@ describe("update_schedule MCP tool", () => {
 
 describe("schedule_logs MCP tool", () => {
   const logger = createTestLogger();
+  const createAgentMcpServer = createWorkspaceScopedAgentMcpServer;
 
   function makeRun(overrides: Partial<{ id: string; status: string }> = {}) {
     return {
@@ -3353,7 +3417,7 @@ describe("schedule_logs MCP tool", () => {
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      scheduleService: { logs } as unknown as ScheduleService,
+      scheduleService: workspaceScheduleService({ logs }),
       logger,
     });
     const tool = registeredTool(server, "schedule_logs");

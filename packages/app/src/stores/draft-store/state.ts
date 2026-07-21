@@ -1,5 +1,6 @@
 import type { AttachmentMetadata, UserComposerAttachment } from "@/attachments/types";
 import { GitHubSearchItemSchema } from "@thoth/protocol/messages";
+import { TaskContextReferenceSchema } from "@thoth/protocol/task-authority";
 
 export const DRAFT_STORE_VERSION = 4;
 export const FINALIZED_DRAFT_TTL_MS = 5 * 60 * 1000;
@@ -78,6 +79,13 @@ export function isUserComposerAttachment(value: unknown): value is UserComposerA
   if (record.kind === "image") {
     const metadata = record.metadata;
     return isAttachmentMetadata(metadata);
+  }
+  if (record.kind === "task_context") {
+    return (
+      TaskContextReferenceSchema.safeParse(record.reference).success &&
+      typeof record.title === "string" &&
+      typeof record.status === "string"
+    );
   }
   if (record.kind !== "github_issue" && record.kind !== "github_pr") {
     return false;

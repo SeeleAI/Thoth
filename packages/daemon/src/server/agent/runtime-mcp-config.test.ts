@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type { AgentSessionConfig } from "./agent-sdk-types.js";
+import type { AgentSessionConfig } from "@thoth/drivers/agent-runtime";
 import { withRuntimeThothMcpServer } from "./runtime-mcp-config.js";
 
 const BASE_CONFIG: AgentSessionConfig = {

@@ -4,7 +4,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync, mkdirSync } from "fs"
 import { join } from "path";
 import { tmpdir } from "os";
 
-import type { AgentTimelineItem } from "./agent/agent-sdk-types.js";
+import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import { runAsyncWorktreeBootstrap, spawnWorkspaceScript } from "./worktree-bootstrap.js";
 import { ensureWorkspaceServicePortPlan } from "./workspace-service-port-registry.js";
 import { ScriptRouteStore } from "./script-proxy.js";

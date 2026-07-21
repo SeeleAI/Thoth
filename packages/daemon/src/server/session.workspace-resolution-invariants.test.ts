@@ -12,7 +12,10 @@ import { Session, type SessionOptions } from "./session.js";
 import type { SessionOutboundMessage } from "@thoth/protocol/messages";
 import { createNoopWorkspaceGitService } from "./test-utils/workspace-git-service-stub.js";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
-import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
+import {
+  createProviderSnapshotManagerStub,
+  createSessionWithAuthority,
+} from "./test-utils/session-stubs.js";
 import {
   createPersistedProjectRecord,
   createPersistedWorkspaceRecord,
@@ -86,7 +89,7 @@ function createHarness(input: {
     error: vi.fn(),
   };
 
-  const session = new Session({
+  const session = createSessionWithAuthority({
     clientId: "test",
     appVersion: null,
     onMessage: (m) => emitted.push(m),

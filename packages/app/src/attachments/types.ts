@@ -3,6 +3,7 @@ import type {
   GitHubSearchItem,
   UploadedFileAttachment,
 } from "@thoth/protocol/messages";
+import type { TaskContextReference } from "@thoth/protocol/task-authority";
 
 export type AttachmentStorageType = "web-indexeddb" | "desktop-file" | "native-file";
 
@@ -79,7 +80,13 @@ export type UserComposerAttachment =
   | { kind: "image"; metadata: AttachmentMetadata }
   | { kind: "file"; attachment: UploadedFileAttachment }
   | { kind: "github_issue"; item: GitHubSearchItem }
-  | { kind: "github_pr"; item: GitHubSearchItem };
+  | { kind: "github_pr"; item: GitHubSearchItem }
+  | {
+      kind: "task_context";
+      reference: TaskContextReference;
+      title: string;
+      status: string;
+    };
 
 export type WorkspaceComposerAttachment =
   | {

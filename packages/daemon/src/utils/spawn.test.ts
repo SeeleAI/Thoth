@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { buildSelfNodeCommand } from "../server/thoth-env.js";
-import { execCommand, spawnProcess } from "./spawn.js";
+import { buildSelfNodeCommand } from "@thoth/drivers/internal/server/thoth-env";
+import { execCommand, spawnProcess } from "@thoth/drivers/internal/utils/spawn";
 
 const printEnvScript = `
 const keys = [

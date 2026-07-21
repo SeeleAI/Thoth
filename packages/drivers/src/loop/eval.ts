@@ -2,11 +2,10 @@ import {
   ThothLoopPlanExecResultInputSchema,
   ThothLoopReviewVerdictInputSchema,
 } from "@thoth/protocol/thoth-runtime-contract";
-import { loadRuntimeSkillArtifact, mountRuntimeSkillForSession } from "../clarify/contract.js";
+import { loadRuntimeSkillArtifact } from "../clarify/contract.js";
+import { loadRuntimeBundle } from "../harness/runtime-bundle.js";
+import { THOTH_RUNTIME_BUNDLE_CATALOG } from "../harness/thoth-runtime-bundle-catalog.js";
 import { LOOP_GOLDEN_SCENARIOS, type LoopGoldenScenario } from "./golden.js";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 export interface LoopEvalScenarioResult {
   id: string;
@@ -157,31 +156,23 @@ function evaluateSkillArtifact(): LoopEvalScenarioResult {
   return result("skill-artifact", failures);
 }
 
-function evaluateSessionMount(): LoopEvalScenarioResult {
-  const tempRoot = mkdtempSync(join(tmpdir(), "thoth-loop-eval-"));
-  try {
-    const artifact = loadRuntimeSkillArtifact("thoth.loop");
-    const mount = mountRuntimeSkillForSession({
-      artifact,
-      thothSessionHome: join(tempRoot, "runtime-home"),
-      sessionId: "loop_eval",
-      home: join(tempRoot, "bare-provider-home"),
-    });
-    const failures: string[] = [];
-    if (
-      !mount.mountedPath.endsWith(
-        join("provider-sessions", "loop_eval", "skills", "thoth-loop", "SKILL.md"),
-      )
-    ) {
-      failures.push(`unexpected mounted path: ${mount.mountedPath}`);
-    }
-    if (mount.skillRef.id !== "thoth.loop") {
-      failures.push("mounted skill ref id mismatch");
-    }
-    return result("session-scoped-loop-skill", failures);
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
+function evaluateRuntimeBundle(): LoopEvalScenarioResult {
+  const artifact = loadRuntimeSkillArtifact("thoth.loop");
+  const bundle = loadRuntimeBundle("thoth.loop", THOTH_RUNTIME_BUNDLE_CATALOG);
+  const failures: string[] = [];
+  if (bundle.instructions !== artifact.body) {
+    failures.push("RuntimeBundle instructions differ from the canonical thoth.loop body");
   }
+  if (!/^sha256:[a-f0-9]{64}$/u.test(bundle.digest)) {
+    failures.push("RuntimeBundle digest must be content-addressed");
+  }
+  if (!bundle.tools.some((tool) => tool.name === "thoth_loop_submit_review_verdict")) {
+    failures.push("RuntimeBundle is missing the Review verdict tool");
+  }
+  if (JSON.stringify(bundle).includes("provider-sessions")) {
+    failures.push("RuntimeBundle contains a session-home path");
+  }
+  return result("runtime-bundle-loop", failures);
 }
 
 function evaluateScenario(scenario: LoopGoldenScenario): LoopEvalScenarioResult {
@@ -350,7 +341,7 @@ function evaluateScenario(scenario: LoopGoldenScenario): LoopEvalScenarioResult 
 export function buildLoopGoldenEvalReport(): LoopEvalReport {
   const results = [
     evaluateSkillArtifact(),
-    evaluateSessionMount(),
+    evaluateRuntimeBundle(),
     ...LOOP_GOLDEN_SCENARIOS.map(evaluateScenario),
   ];
   return {
