@@ -224,7 +224,12 @@ function resultFor(method, params) {
     case "initialize":
       return {};
     case "collaborationMode/list":
-      return { data: [{ id: "auto", label: "Auto" }] };
+      return {
+        data: [
+          { name: "Code", mode: "code" },
+          { name: "Plan", mode: "plan" },
+        ],
+      };
     case "config/read":
     case "getUserSavedConfig":
       return { config: {} };

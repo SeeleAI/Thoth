@@ -3587,3 +3587,7 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - Actions run `29919804667` passed the corrected adapter gate, then exposed four supervisor fixtures that still
   spread a deleted Voice-only `testEnv`. The residual spreads were removed rather than restoring retired media
   configuration; the failed run again left the public Release unchanged.
+- Actions run `29920715971` passed preflight and all three native CLI install smokes. Its live Relay E2EE test
+  passed, but the packaged journey rejected an empty native mode receipt because the scripted Codex transport
+  still emitted an obsolete `{id,label}` collaboration-mode shape. The fixture now emits real Code/Plan modes,
+  and the adapter discards malformed entries without a non-empty native name.

@@ -3085,19 +3085,23 @@ export class CodexAppServerAgentSession implements AgentSession {
     try {
       const response = toObjectRecord(await this.client.request("collaborationMode/list", {}));
       const data = Array.isArray(response?.data) ? response.data : [];
-      this.collaborationModes = data.map((entry) => {
+      this.collaborationModes = data.flatMap((entry) => {
         const record = toObjectRecord(entry);
-        return {
-          name: typeof record?.name === "string" ? record.name : "",
-          mode: typeof record?.mode === "string" ? record.mode : null,
-          model: typeof record?.model === "string" ? record.model : null,
-          reasoning_effort:
-            typeof record?.reasoning_effort === "string" ? record.reasoning_effort : null,
-          developer_instructions:
-            typeof record?.developer_instructions === "string"
-              ? record.developer_instructions
-              : null,
-        };
+        const name = typeof record?.name === "string" ? record.name.trim() : "";
+        if (!name) return [];
+        return [
+          {
+            name,
+            mode: typeof record?.mode === "string" ? record.mode : null,
+            model: typeof record?.model === "string" ? record.model : null,
+            reasoning_effort:
+              typeof record?.reasoning_effort === "string" ? record.reasoning_effort : null,
+            developer_instructions:
+              typeof record?.developer_instructions === "string"
+                ? record.developer_instructions
+                : null,
+          },
+        ];
       });
     } catch (error) {
       this.logger.trace(
