@@ -358,17 +358,35 @@ async function runTurn(params, turnId) {
         turnId,
       );
     } else if (dynamicToolNames.includes("thoth_loop_submit_planexec_result")) {
-      if (readSharedState().holdPlanExec === true) {
-        record({ kind: "planexec_hold", threadId, turnId });
-        const released = await waitForPlanExecRelease(turnId);
-        if (!released) return;
+      if (params?.collaborationMode?.mode === "plan") {
+        const index = readSharedState().planExec ?? 0;
+        const plan = planExecInputs[index] ?? planExecInputs.at(-1);
+        record({ kind: "plan_ready", threadId, turnId, plan: plan.plan_summary });
+        writeMessage({
+          method: "item/completed",
+          params: {
+            threadId,
+            turnId,
+            item: {
+              id: `scripted-plan-${process.pid}-${turnId}`,
+              type: "plan",
+              text: plan.plan_summary,
+            },
+          },
+        });
+      } else {
+        if (readSharedState().holdPlanExec === true) {
+          record({ kind: "planexec_hold", threadId, turnId });
+          const released = await waitForPlanExecRelease(turnId);
+          if (!released) return;
+        }
+        const index = takeSharedIndex("planExec");
+        await requireTool(
+          "thoth_loop_submit_planexec_result",
+          planExecInputs[index] ?? planExecInputs.at(-1),
+          turnId,
+        );
       }
-      const index = takeSharedIndex("planExec");
-      await requireTool(
-        "thoth_loop_submit_planexec_result",
-        planExecInputs[index] ?? planExecInputs.at(-1),
-        turnId,
-      );
     } else if (dynamicToolNames.includes("thoth_loop_submit_review_verdict")) {
       const index = takeSharedIndex("review");
       await requireTool(

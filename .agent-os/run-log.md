@@ -3591,3 +3591,7 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   passed, but the packaged journey rejected an empty native mode receipt because the scripted Codex transport
   still emitted an obsolete `{id,label}` collaboration-mode shape. The fixture now emits real Code/Plan modes,
   and the adapter discards malformed entries without a non-empty native name.
+- Actions run `29922567878` passed preflight, live Relay E2EE and three native CLI smokes, then showed that the
+  scripted provider still submitted PlanExec during the native Plan turn. The daemon correctly fenced that
+  out-of-phase semantic call. The fixture now emits a native plan item, waits for daemon-owned Implement approval
+  and submits PlanExec only from the same-thread implementation turn.
