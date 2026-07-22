@@ -33,24 +33,29 @@ export function useRewindAgentMutation(input: UseRewindAgentMutationInput): {
       if (!input.client || !input.agentId || !input.messageId) {
         throw new Error(t("common.errors.daemonClientUnavailable"));
       }
-      await input.client.rewindAgent(input.agentId, input.messageId, mode);
+      const rewind = await input.client.rewindAgent(input.agentId, input.messageId, mode);
       if (mode !== "files") {
         if (input.serverId) {
           const session = useSessionStore.getState().sessions[input.serverId];
           useSessionStore.getState().setAgentStreamState(input.serverId, input.agentId, {
-            tail: clearOptimisticUserMessages(session?.agentStreamTail.get(input.agentId) ?? []),
-            head: clearOptimisticUserMessages(session?.agentStreamHead.get(input.agentId) ?? []),
+            tail: rewind.reset
+              ? []
+              : clearOptimisticUserMessages(session?.agentStreamTail.get(input.agentId) ?? []),
+            head: rewind.reset
+              ? []
+              : clearOptimisticUserMessages(session?.agentStreamHead.get(input.agentId) ?? []),
           });
+          if (rewind.reset) {
+            useSessionStore.getState().setAgentTimelineCursor(input.serverId, (previous) => {
+              const next = new Map(previous);
+              next.delete(input.agentId!);
+              return next;
+            });
+          }
         }
-        const cursor = input.serverId
-          ? useSessionStore
-              .getState()
-              .sessions[input.serverId]?.agentTimelineCursor.get(input.agentId)
-          : undefined;
         await input.client.fetchAgentTimeline(input.agentId, {
           direction: "tail",
           projection: "projected",
-          ...(cursor ? { cursor: { epoch: cursor.epoch, seq: cursor.endSeq } } : {}),
         });
       }
     },

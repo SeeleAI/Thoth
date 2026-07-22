@@ -48,19 +48,13 @@ import { focusWithRetries } from "@/utils/web-focus";
 import {
   cancelComposerAgent,
   dispatchComposerAgentMessage,
-  editQueuedComposerMessage,
   findGithubItemByOption,
   isAttachmentSelectedForGithubItem,
   openComposerAttachment,
   pickAndPersistImages,
-  queueComposerMessage,
   removeComposerAttachmentAtIndex,
-  sendQueuedComposerMessageNow,
   toggleGithubAttachmentFromPicker,
   uploadFileAttachments,
-  type AgentStreamWriter,
-  type QueueWriter,
-  type QueuedComposerMessage,
 } from "@/composer/actions";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import { buildThothTurnSnapshot } from "@/composer/agent-controls/thoth-mode";
@@ -106,9 +100,14 @@ import { useCheckoutStatusQuery } from "@/git/use-status-query";
 import { useComposerGithubAutoAttach } from "./github/auto-attach";
 import { resolveClientSlashCommand, type ClientSlashCommand } from "@/client-slash-commands";
 import { resolveForegroundAgentStatus } from "@/agent-thoth/foreground-state";
+import type { AgentMessageDeliveryMode } from "@thoth/protocol/agent-turn-queue";
 import { appendTaskContextAttachment, listSelectedTaskContextIds } from "@/composer/task-context";
 
-type QueuedMessage = QueuedComposerMessage;
+interface QueuedMessage {
+  id: string;
+  text: string;
+  attachments: ComposerAttachment[];
+}
 
 type AttachmentListUpdater =
   | UserComposerAttachment[]
@@ -743,7 +742,6 @@ interface ComposerProps {
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
-const EMPTY_ARRAY: readonly QueuedMessage[] = [];
 const StableMessageInput = memo(MessageInput);
 
 function resolveContextWindowValues(
@@ -878,15 +876,15 @@ export function Composer({
   const providerRunMode = daemonConfig?.providerControl.runMode ?? "default";
 
   const agentState = useSessionStore(useShallow(buildAgentStateSelector(serverId, agentId)));
-  const queuedMessagesRaw = useSessionStore((state) =>
-    state.sessions[serverId]?.queuedMessages?.get(agentId),
+  const queuedMessages = useMemo(
+    () =>
+      (agentState.thothState?.queuedTurns ?? []).map((item) => ({
+        id: item.id,
+        text: item.text,
+        attachments: [] as ComposerAttachment[],
+      })),
+    [agentState.thothState?.queuedTurns],
   );
-  const queuedMessages = queuedMessagesRaw ?? EMPTY_ARRAY;
-
-  const setQueuedMessages = useSessionStore((state) => state.setQueuedMessages);
-  const setAgentStreamTail = useSessionStore((state) => state.setAgentStreamTail);
-  const setAgentStreamHead = useSessionStore((state) => state.setAgentStreamHead);
-
   const isCompactFormFactor = useIsCompactFormFactor();
   const isCompactLayout = resolveCompactLayout(isCompactLayoutOverride, isCompactFormFactor);
   const isDesktopWebBreakpoint = resolveIsDesktopWebBreakpoint(isCompactFormFactor);
@@ -929,6 +927,7 @@ export function Composer({
   const [isGithubPickerOpen, setIsGithubPickerOpen] = useState(false);
   const [githubSearchQuery, setGithubSearchQuery] = useState("");
   const [lightboxMetadata, setLightboxMetadata] = useState<AttachmentMetadata | null>(null);
+  const [editingQueuedTurnId, setEditingQueuedTurnId] = useState<string | null>(null);
   const selectedTaskIds = useMemo(
     () => listSelectedTaskContextIds(selectedAttachments),
     [selectedAttachments],
@@ -1015,7 +1014,13 @@ export function Composer({
   const { pickFiles } = useFilePicker();
   const agentIdRef = useRef(agentId);
   const sendAgentMessageRef = useRef<
-    ((agentId: string, text: string, attachments: ComposerAttachment[]) => Promise<void>) | null
+    | ((
+        agentId: string,
+        text: string,
+        attachments: ComposerAttachment[],
+        deliveryMode: AgentMessageDeliveryMode,
+      ) => Promise<void>)
+    | null
   >(null);
   const onSubmitMessageRef = useRef(onSubmitMessage);
 
@@ -1052,7 +1057,11 @@ export function Composer({
   }, [focusInput, onFocusInput]);
 
   const submitMessage = useCallback(
-    async (text: string, submitAttachments: ComposerAttachment[]) => {
+    async (
+      text: string,
+      submitAttachments: ComposerAttachment[],
+      deliveryMode: AgentMessageDeliveryMode = appSettings.sendBehavior,
+    ) => {
       onMessageSent?.();
       if (onSubmitMessageRef.current) {
         await onSubmitMessageRef.current({ text, attachments: submitAttachments, cwd });
@@ -1061,9 +1070,9 @@ export function Composer({
       if (!sendAgentMessageRef.current) {
         throw new Error(t("workspace.terminal.hostDisconnected"));
       }
-      await sendAgentMessageRef.current(agentIdRef.current, text, submitAttachments);
+      await sendAgentMessageRef.current(agentIdRef.current, text, submitAttachments, deliveryMode);
     },
-    [cwd, onMessageSent, t],
+    [appSettings.sendBehavior, cwd, onMessageSent, t],
   );
 
   useEffect(() => {
@@ -1075,40 +1084,24 @@ export function Composer({
       targetAgentId: string,
       text: string,
       sendAttachments: ComposerAttachment[],
+      deliveryMode: AgentMessageDeliveryMode,
     ) => {
       if (!client) {
         throw new Error(t("workspace.terminal.hostDisconnected"));
       }
-      const stream: AgentStreamWriter = {
-        getTail: (id) => useSessionStore.getState().sessions[serverId]?.agentStreamTail?.get(id),
-        getHead: (id) => useSessionStore.getState().sessions[serverId]?.agentStreamHead?.get(id),
-        setHead: (updater) => setAgentStreamHead(serverId, updater),
-        setTail: (updater) => setAgentStreamTail(serverId, updater),
-      };
       await dispatchComposerAgentMessage({
         client,
         agentId: targetAgentId,
         text,
         attachments: sendAttachments,
         encodeImages,
-        stream,
         thoth: thothTurnSnapshot,
         providerRunMode,
+        deliveryMode,
       });
       onAttentionPromptSend?.();
     };
-  }, [
-    client,
-    cwd,
-    onAttentionPromptSend,
-    serverId,
-    setAgentStreamTail,
-    setAgentStreamHead,
-    t,
-    thothTurnSnapshot,
-    providerRunMode,
-    workspaceId,
-  ]);
+  }, [client, cwd, onAttentionPromptSend, t, thothTurnSnapshot, providerRunMode, workspaceId]);
 
   useEffect(() => {
     onSubmitMessageRef.current = onSubmitMessage;
@@ -1119,44 +1112,12 @@ export function Composer({
   const isAgentRunning = effectiveAgentStatus === "running";
   const hasAgent = effectiveAgentStatus !== null;
 
-  const queueWriter = useMemo<QueueWriter>(
-    () => ({
-      read: (id) => useSessionStore.getState().sessions[serverId]?.queuedMessages?.get(id) ?? [],
-      write: (updater) => setQueuedMessages(serverId, updater),
-    }),
-    [serverId, setQueuedMessages],
-  );
-
-  const queueMessage = useCallback(
-    (queuedMessage: string, queuedAttachments: ComposerAttachment[]) => {
-      const result = queueComposerMessage({
-        agentId,
-        text: queuedMessage,
-        attachments: queuedAttachments,
-        queue: queueWriter,
-      });
-      if (!result.queued) return;
-
-      setUserInput("");
-      setSelectedAttachments([]);
-      resetSuppression();
-      clearSentAttachments(queuedAttachments);
-    },
-    [
-      agentId,
-      clearSentAttachments,
-      queueWriter,
-      resetSuppression,
-      setSelectedAttachments,
-      setUserInput,
-    ],
-  );
-
   const sendMessageWithContent = useCallback(
     async (
       outgoingMessage: string,
       outgoingAttachments: ComposerAttachment[],
       forceSend?: boolean,
+      deliveryModeOverride?: AgentMessageDeliveryMode,
     ) => {
       const result = await submitAgentInput({
         message: outgoingMessage,
@@ -1165,15 +1126,17 @@ export function Composer({
         allowEmptySubmit,
         forceSend,
         submitBehavior,
-        isAgentRunning,
+        isAgentRunning: false,
         // Parent-managed submits are still valid submit paths even when the
         // transport is disconnected, because the parent decides the failure mode.
         canSubmit: Boolean(sendAgentMessageRef.current || onSubmitMessageRef.current),
-        queueMessage: ({ message: queuedText, attachments: queuedAttachments }) => {
-          queueMessage(queuedText, queuedAttachments);
-        },
+        queueMessage: () => undefined,
         submitMessage: async ({ message: submitText, attachments: submitAttachments }) => {
-          await submitMessage(submitText, submitAttachments);
+          await submitMessage(
+            submitText,
+            submitAttachments,
+            deliveryModeOverride ?? (forceSend ? "interrupt" : appSettings.sendBehavior),
+          );
         },
         clearDraft,
         setUserInput,
@@ -1197,8 +1160,7 @@ export function Composer({
       clearDraft,
       completeSubmit,
       hasExternalContent,
-      isAgentRunning,
-      queueMessage,
+      appSettings.sendBehavior,
       setSelectedAttachments,
       setUserInput,
       submitBehavior,
@@ -1209,6 +1171,31 @@ export function Composer({
 
   const handleSubmit = useCallback(
     (payload: MessagePayload) => {
+      if (editingQueuedTurnId) {
+        if (!client || !agentState.thothState) return;
+        setIsProcessing(true);
+        setSendError(null);
+        void client
+          .commandAgentTurnQueue({
+            agentId,
+            queuedTurnId: editingQueuedTurnId,
+            command: "edit",
+            text: payload.text.trim(),
+            expectedRevision: agentState.thothState.revision,
+            commandId: crypto.randomUUID(),
+          })
+          .then((result) => {
+            if (!result.accepted) {
+              setSendError(result.error ?? t("composer.errors.failedToSend"));
+              return;
+            }
+            setEditingQueuedTurnId(null);
+            setUserInput("");
+          })
+          .catch((error) => setSendError(error instanceof Error ? error.message : String(error)))
+          .finally(() => setIsProcessing(false));
+        return;
+      }
       const outgoingAttachments = buildOutgoingAttachments(attachments);
       const clientSlashCommand = resolveClientSlashCommand({
         text: payload.text,
@@ -1225,10 +1212,16 @@ export function Composer({
     },
     [
       attachments,
+      agentId,
+      agentState.thothState,
       blurOnSubmit,
       buildOutgoingAttachments,
+      client,
+      editingQueuedTurnId,
       runClientSlashCommand,
       sendMessageWithContent,
+      setUserInput,
+      t,
     ],
   );
 
@@ -1422,39 +1415,36 @@ export function Composer({
 
   const handleEditQueuedMessage = useCallback(
     (id: string) => {
-      const result = editQueuedComposerMessage({
-        agentId,
-        messageId: id,
-        queue: queueWriter,
-      });
-      if (!result) return;
-      setUserInput(result.text);
-      setSelectedAttachments(result.attachments);
+      const queued = queuedMessages.find((item) => item.id === id);
+      if (!queued) return;
+      setEditingQueuedTurnId(id);
+      setUserInput(queued.text);
+      messageInputRef.current?.focus();
     },
-    [agentId, queueWriter, setSelectedAttachments, setUserInput],
+    [queuedMessages, setUserInput],
   );
 
   const handleSendQueuedNow = useCallback(
     async (id: string) => {
-      if (!sendAgentMessageRef.current && !onSubmitMessageRef.current) return;
-      // Reuse the regular send path; server-side send atomically interrupts any active run.
-      const result = await sendQueuedComposerMessageNow({
+      if (!client || !agentState.thothState) return;
+      const result = await client.commandAgentTurnQueue({
         agentId,
-        messageId: id,
-        queue: queueWriter,
-        submitMessage: ({ text, attachments: queuedAttachments }) =>
-          submitMessage(text, queuedAttachments),
-        failedToSendMessage: t("composer.errors.failedToSend"),
+        queuedTurnId: id,
+        command: "interrupt",
+        expectedRevision: agentState.thothState.revision,
+        commandId: crypto.randomUUID(),
       });
-      if (result.status === "failed") {
-        setSendError(result.errorMessage);
-      }
+      if (!result.accepted && result.error) setSendError(result.error);
     },
-    [agentId, queueWriter, submitMessage, t],
+    [agentId, agentState.thothState, client],
   );
 
   const handleQueue = useCallback(
     (payload: MessagePayload) => {
+      if (editingQueuedTurnId) {
+        handleSubmit(payload);
+        return;
+      }
       const outgoingAttachments = buildOutgoingAttachments(attachments);
       const clientSlashCommand = resolveClientSlashCommand({
         text: payload.text,
@@ -1463,9 +1453,16 @@ export function Composer({
       if (clientSlashCommand && runClientSlashCommand(clientSlashCommand)) {
         return;
       }
-      queueMessage(payload.text, outgoingAttachments);
+      void sendMessageWithContent(payload.text, outgoingAttachments, false, "queue");
     },
-    [attachments, buildOutgoingAttachments, queueMessage, runClientSlashCommand],
+    [
+      attachments,
+      buildOutgoingAttachments,
+      editingQueuedTurnId,
+      handleSubmit,
+      runClientSlashCommand,
+      sendMessageWithContent,
+    ],
   );
 
   const hasSendableContent = userInput.trim().length > 0 || selectedAttachments.length > 0;

@@ -33,6 +33,8 @@ import {
   type AgentProviderNotice,
   type AgentPromptInput,
   type AgentProvider,
+  type ProviderMessageAnchorReceipt,
+  type ProviderRewindScope,
   type AgentRunOptions,
   type AgentRunResult,
   type AgentSession,
@@ -548,6 +550,10 @@ export class AgentManager {
   private readonly timelineStore = new InMemoryAgentTimelineStore();
   private readonly agentsAwaitingInitialSnapshotPersist = new Set<string>();
   private readonly sessionEventTails = new Map<string, Promise<void>>();
+  private readonly canonicalMessageByProviderTurn = new Map<
+    string,
+    { agentId: string; canonicalMessageId: string }
+  >();
   private readonly foregroundRuns = new ForegroundRunState();
   private readonly subscribers = new Set<SubscriptionRecord>();
   private readonly idFactory: () => string;
@@ -2001,6 +2007,12 @@ export class AgentManager {
       try {
         const result = await agent.session.startTurn(prompt, options);
         turnId = result.turnId;
+        if (options?.messageId) {
+          this.canonicalMessageByProviderTurn.set(turnId, {
+            agentId,
+            canonicalMessageId: options.messageId,
+          });
+        }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : "Failed to start turn";
         await this.handleStreamEvent(agent, {
@@ -2434,12 +2446,14 @@ export class AgentManager {
 
     const lock = this.foregroundRuns.createPendingRun(agentId);
     try {
+      const nativeAnchor = await this.resolveProviderRewindAnchor(agent, messageId, mode);
       this.logger.info(
         { agentId, provider: agent.provider, messageId, mode },
         "agent.rewind.start",
       );
-      await invokeRewindCapability(agent.session, { messageId, mode });
+      await invokeRewindCapability(agent.session, { anchor: nativeAnchor, mode });
       if (mode !== "files") {
+        await this.truncateCanonicalTimelineForRewind(agentId, messageId);
         await this.hydrateTimelineFromProvider(agentId, { force: true, broadcast: true });
       }
       await this.refreshRuntimeInfo(agent);
@@ -2456,6 +2470,94 @@ export class AgentManager {
       throw error;
     } finally {
       this.foregroundRuns.settlePendingRun(agentId, lock.token);
+    }
+  }
+
+  private async resolveProviderRewindAnchor(
+    agent: ActiveManagedAgent,
+    canonicalMessageId: string,
+    scope: RewindMode,
+  ): Promise<ProviderMessageAnchorReceipt> {
+    const persisted = await this.durableTimelineStore?.getProviderMessageAnchor?.(
+      agent.id,
+      canonicalMessageId,
+      scope,
+    );
+    if (persisted) return persisted;
+    if (!agent.session.listRewindAnchors) {
+      throw new Error("The provider session cannot enumerate native rewind anchors.");
+    }
+    const canonicalRows = this.timelineStore
+      .getRows(agent.id)
+      .filter(
+        (row) =>
+          row.item.type === "user_message" &&
+          typeof row.item.messageId === "string" &&
+          row.item.messageId.length > 0,
+      );
+    const nativeAnchors = await agent.session.listRewindAnchors();
+    const scopes = this.getProviderRewindScopes(agent);
+    if (canonicalRows.length > 0 && canonicalRows.length !== nativeAnchors.length) {
+      throw new Error(
+        `The provider-native rewind anchors cannot be deterministically matched to ${canonicalRows.length} canonical user turns.`,
+      );
+    }
+    for (let index = 0; index < canonicalRows.length; index += 1) {
+      const item = canonicalRows[index]!.item;
+      const receipt = nativeAnchors[index]!;
+      if (item.type !== "user_message" || !item.messageId) continue;
+      await this.durableTimelineStore?.bindProviderMessageAnchor?.(
+        agent.id,
+        item.messageId,
+        receipt,
+        scopes,
+      );
+    }
+    const targetIndex = canonicalRows.findIndex(
+      (row) => row.item.type === "user_message" && row.item.messageId === canonicalMessageId,
+    );
+    const resolved = targetIndex >= 0 ? nativeAnchors[targetIndex] : null;
+    if (!resolved) {
+      throw new Error(
+        `The provider-native rewind anchor for message ${canonicalMessageId} is unavailable.`,
+      );
+    }
+    return resolved;
+  }
+
+  private getProviderRewindScopes(agent: ActiveManagedAgent): ProviderRewindScope[] {
+    const scopes: ProviderRewindScope[] = [];
+    if (agent.capabilities.supportsRewindConversation && agent.session.revertConversation) {
+      scopes.push("conversation");
+    }
+    if (agent.capabilities.supportsRewindFiles && agent.session.revertFiles) {
+      scopes.push("files");
+    }
+    if (agent.capabilities.supportsRewindBoth && agent.session.revertBoth) {
+      scopes.push("both");
+    }
+    return scopes;
+  }
+
+  private async truncateCanonicalTimelineForRewind(
+    agentId: string,
+    canonicalMessageId: string,
+  ): Promise<void> {
+    const rows = this.timelineStore.getRows(agentId);
+    const targetIndex = rows.findIndex(
+      (row) => row.item.type === "user_message" && row.item.messageId === canonicalMessageId,
+    );
+    if (targetIndex < 0) {
+      if (rows.length === 0) return;
+      throw new Error(`Canonical rewind message ${canonicalMessageId} was not found.`);
+    }
+    const retained = rows.slice(0, targetIndex);
+    this.timelineStore.initialize(agentId, {
+      rows: retained,
+      nextSeq: retained.at(-1)?.seq !== undefined ? retained.at(-1)!.seq + 1 : 1,
+    });
+    if (this.durableTimelineStore?.truncateFromMessage) {
+      await this.durableTimelineStore.truncateFromMessage(agentId, canonicalMessageId);
     }
   }
 
@@ -3235,9 +3337,10 @@ export class AgentManager {
 
   private async handleStreamEvent(
     agent: ActiveManagedAgent,
-    event: AgentStreamEvent,
+    incomingEvent: AgentStreamEvent,
     options?: HandleStreamEventOptions,
   ): Promise<boolean> {
+    let event = incomingEvent;
     const eventTurnId = getAgentStreamEventTurnId(event);
     if (
       event.type === "timeline" &&
@@ -3254,6 +3357,12 @@ export class AgentManager {
         "Suppressing timeline emitted after a foreground authority card parked the provider turn",
       );
       return false;
+    }
+    if (!options?.fromHistory && event.type === "timeline" && event.item.type === "user_message") {
+      event = {
+        ...event,
+        item: await this.canonicalizeProviderUserMessage(agent, event, event.item),
+      };
     }
     const isForegroundEvent = Boolean(eventTurnId && agent.activeForegroundTurnId === eventTurnId);
     this.traceHandleStreamEventStart(agent, event, eventTurnId, isForegroundEvent);
@@ -3298,6 +3407,10 @@ export class AgentManager {
     }
 
     if (!options?.fromHistory && isTurnTerminalEvent(event)) {
+      if (eventTurnId) {
+        await this.captureOrderedProviderAnchor(agent, eventTurnId);
+        this.canonicalMessageByProviderTurn.delete(eventTurnId);
+      }
       releaseParkedForegroundProviderTurn({
         agentId: agent.id,
         providerTurnId: getAgentStreamEventProviderTurnId(event) ?? eventTurnId,
@@ -3307,6 +3420,76 @@ export class AgentManager {
     this.traceHandleStreamEventEnd(agent, event, eventTurnId, flags);
 
     return flags.shouldNotifyWaiters;
+  }
+
+  private async canonicalizeProviderUserMessage(
+    agent: ActiveManagedAgent,
+    event: Extract<AgentStreamEvent, { type: "timeline" }>,
+    item: Extract<AgentTimelineItem, { type: "user_message" }>,
+  ): Promise<Extract<AgentTimelineItem, { type: "user_message" }>> {
+    const turnId = getAgentStreamEventTurnId(event);
+    const binding = turnId ? this.canonicalMessageByProviderTurn.get(turnId) : null;
+    if (!binding || binding.agentId !== agent.id) return item;
+    const nativeAnchor = item.messageId;
+    if (nativeAnchor) {
+      await this.persistProviderMessageAnchor(agent, binding.canonicalMessageId, {
+        version: 1,
+        opaqueAnchor: nativeAnchor,
+      });
+    }
+    return { ...item, messageId: binding.canonicalMessageId };
+  }
+
+  private async captureOrderedProviderAnchor(
+    agent: ActiveManagedAgent,
+    providerTurnId: string,
+  ): Promise<void> {
+    const binding = this.canonicalMessageByProviderTurn.get(providerTurnId);
+    if (!binding || binding.agentId !== agent.id || !agent.session.listRewindAnchors) return;
+    const scopes = this.getProviderRewindScopes(agent);
+    if (scopes.length === 0) return;
+    const existing = await this.durableTimelineStore?.getProviderMessageAnchor?.(
+      agent.id,
+      binding.canonicalMessageId,
+      scopes[0]!,
+    );
+    if (existing) return;
+    const canonicalRows = this.timelineStore
+      .getRows(agent.id)
+      .filter(
+        (row) =>
+          row.item.type === "user_message" &&
+          typeof row.item.messageId === "string" &&
+          row.item.messageId.length > 0,
+      );
+    const anchors = await agent.session.listRewindAnchors();
+    if (canonicalRows.length !== anchors.length) return;
+    const index = canonicalRows.findIndex(
+      (row) =>
+        row.item.type === "user_message" && row.item.messageId === binding.canonicalMessageId,
+    );
+    if (index < 0 || !anchors[index]) return;
+    await this.persistProviderMessageAnchor(agent, binding.canonicalMessageId, anchors[index]);
+  }
+
+  private async persistProviderMessageAnchor(
+    agent: ActiveManagedAgent,
+    canonicalMessageId: string,
+    receipt: ProviderMessageAnchorReceipt,
+  ): Promise<void> {
+    try {
+      await this.durableTimelineStore?.bindProviderMessageAnchor?.(
+        agent.id,
+        canonicalMessageId,
+        receipt,
+        this.getProviderRewindScopes(agent),
+      );
+    } catch (error) {
+      this.logger.warn(
+        { err: error, agentId: agent.id, canonicalMessageId },
+        "Failed to persist provider rewind anchor receipt",
+      );
+    }
   }
 
   private traceHandleStreamEventStart(

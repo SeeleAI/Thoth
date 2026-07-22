@@ -12,6 +12,8 @@ import {
 import { isElectronRuntime } from "@/desktop/host";
 import {
   APP_SETTINGS_KEY,
+  APP_SETTINGS_SCHEMA_KEY,
+  APP_SETTINGS_SCHEMA_VERSION,
   APP_SETTINGS_QUERY_KEY,
   DEFAULT_APP_SETTINGS,
   DEFAULT_CLIENT_SETTINGS,
@@ -122,6 +124,7 @@ export function useAppSettings(): UseAppSettingsReturn {
       const next = { ...DEFAULT_CLIENT_SETTINGS };
       queryClient.setQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY, next);
       await AsyncStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(next));
+      await AsyncStorage.setItem(APP_SETTINGS_SCHEMA_KEY, String(APP_SETTINGS_SCHEMA_VERSION));
     } catch (err) {
       console.error("[AppSettings] Failed to reset settings:", err);
       throw err;

@@ -194,6 +194,14 @@ export interface AgentPersistenceHandle {
   metadata?: AgentMetadata;
 }
 
+export type ProviderRewindScope = "conversation" | "files" | "both";
+
+/** Adapter-owned, versioned receipt. The opaque anchor is never interpreted outside the adapter. */
+export interface ProviderMessageAnchorReceipt {
+  version: 1;
+  opaqueAnchor: string;
+}
+
 export type AgentPromptContentBlock =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string }
@@ -658,9 +666,11 @@ export interface AgentSession {
   setModel?(modelId: string | null): Promise<void>;
   setThinkingOption?(thinkingOptionId: string | null): Promise<void | AgentProviderNotice>;
   setFeature?(featureId: string, value: unknown): Promise<void>;
-  revertConversation?(input: { messageId: string }): Promise<void>;
-  revertFiles?(input: { messageId: string }): Promise<void>;
-  revertBoth?(input: { messageId: string }): Promise<void>;
+  revertConversation?(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void>;
+  revertFiles?(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void>;
+  revertBoth?(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void>;
+  /** Ordered provider-native user anchors for canonical rewind binding. */
+  listRewindAnchors?(): Promise<ProviderMessageAnchorReceipt[]>;
   /**
    * Out-of-band prompt handler. When non-null, the manager runs the returned
    * handler instead of allocating a turn. The handler emits stream events

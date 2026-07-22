@@ -3564,3 +3564,19 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   Unistyles/WebView typing and unrelated historical fixtures; affected App behavior passed `107/107`. No AppImage,
   Android, Relay, real provider, commit, push, tag, npm publication or Release mutation occurred. Top next action
   remains `NTH-TD-021`.
+
+## 2026-07-22 [Foreground Queue, provider-neutral rewind and image preview recovery]
+
+- Worked on `NTH-TD-028` / `NTH-AC-018`. Replaced App-local Queue and optimistic Timeline writes with a durable
+  Workspace Queue, Queue-default migration, serialized Queue/Interrupt dispatch and CAS edit/delete/interrupt.
+- Added canonical-message to opaque provider-anchor bindings across adapter contracts. Conversation/both rewind
+  resets the Timeline epoch; deterministic legacy migration refuses ambiguous native histories.
+- Replaced FilePane and assistant-image durable attachment copies with transient Blob/data URI sources, explicit
+  URL release and immediate visibility resampling.
+- Queue editing is now an in-place daemon command: text/raw prompt changes while attachments, Thoth/Plan and
+  `@Task` snapshots remain frozen.
+- `accept:interaction-regressions:fast` passed in `29.693s`; `accept:thoth:fast` passed in `81.357s` with all
+  `12/12` public foreground journeys. Foundation passed `555` tests; daemon typecheck, Client build, Web export,
+  formatting, secret/path validation and diff hygiene passed.
+- Native Actions and public Release verification remain pending. No local AppImage, real-provider, Relay or long
+  browser smoke ran, matching the approved bounded acceptance.

@@ -12,6 +12,12 @@ import {
   ProviderRunModeSchema,
 } from "./provider-control.js";
 import {
+  AgentMessageDeliveryModeSchema,
+  AgentTurnDispositionSchema,
+  AgentTurnQueueCommandRequestSchema,
+  AgentTurnQueueCommandResponseSchema,
+} from "./agent-turn-queue.js";
+import {
   ExecutionApprovalResolveRequestSchema,
   ExecutionApprovalResolveResponseSchema,
   ExecutionTimelineRequestSchema,
@@ -140,6 +146,8 @@ export const ThothTurnAckSchema = z
     authorityRevision: z.number().int().nonnegative(),
     providerRunMode: ProviderRunModeSchema.optional(),
     providerRunModeReceipt: ProviderRunModeReceiptSchema.optional(),
+    disposition: AgentTurnDispositionSchema.optional(),
+    queuePosition: z.number().int().positive().nullable().optional(),
   })
   .strict();
 // ---------------------------------------------------------------------------
@@ -1125,6 +1133,7 @@ export const SendAgentMessageRequestSchema = z.object({
   thoth: ThothTurnSnapshotSchema.optional(),
   providerRunMode: ProviderRunModeSchema.optional(),
   contextRefs: z.array(TaskContextReferenceSchema).default([]),
+  deliveryMode: AgentMessageDeliveryModeSchema.default("queue"),
 });
 
 export const WaitForFinishRequestSchema = z.object({
@@ -1440,6 +1449,9 @@ export const AgentRewindResponseMessageSchema = z.object({
     agentId: z.string(),
     ok: z.boolean(),
     error: z.string().nullable(),
+    timelineEpoch: z.string().nullable().optional(),
+    authorityRevision: z.number().int().nonnegative().optional(),
+    reset: z.boolean().optional(),
   }),
 });
 
@@ -2209,6 +2221,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   TaskDecisionAnswerRequestSchema,
   ExecutionTimelineRequestSchema,
   ExecutionApprovalResolveRequestSchema,
+  AgentTurnQueueCommandRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -4273,6 +4286,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   TaskDecisionAnswerResponseSchema,
   ExecutionTimelineResponseSchema,
   ExecutionApprovalResolveResponseSchema,
+  AgentTurnQueueCommandResponseSchema,
   WorkspaceAuthorityUpdateSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,

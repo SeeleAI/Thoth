@@ -1093,7 +1093,9 @@ describe("Codex app-server provider", () => {
     emitCodexUserMessage(appServer, { id: "codex-second", text: "remember second" });
     appServer.completeTurn();
 
-    await session.revertConversation({ messageId: "codex-first" });
+    await session.revertConversation({
+      anchor: { version: 1, opaqueAnchor: "codex-first" },
+    });
 
     expect(appServer.recordedRollbacks).toEqual([{ threadId: "forked-thread", numTurns: 2 }]);
     await expect(session.getRuntimeInfo()).resolves.toMatchObject({

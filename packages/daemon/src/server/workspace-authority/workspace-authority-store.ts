@@ -30,7 +30,11 @@ import {
   type ProviderRunModeReceipt,
 } from "@thoth/protocol/provider-control";
 import { parseStoredAgentRecord, type StoredAgentRecord } from "../agent/agent-storage.js";
-import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
+import type {
+  AgentTimelineItem,
+  ProviderMessageAnchorReceipt,
+  ProviderRewindScope,
+} from "@thoth/drivers/agent-runtime";
 import type { AgentTimelineRow } from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
 import {
   AgentThothLifecycleSchema,
@@ -49,6 +53,11 @@ import type {
   ThothLoopReviewIndependentAssessmentInput,
   ThothLoopReviewVerdictInput,
 } from "@thoth/protocol/thoth-runtime-contract";
+import {
+  AgentMessageDeliveryModeSchema,
+  AgentQueuedTurnSchema,
+  type AgentQueuedTurn,
+} from "@thoth/protocol/agent-turn-queue";
 import { ContentAddressedBlobStore } from "./blob-store.js";
 import type { WorkspaceCatalogStore } from "./catalog-store.js";
 import {
@@ -64,6 +73,9 @@ import type {
   ForegroundAuthorityRuntimeBinding,
   ForegroundAuthorityUpdateReason,
   ForegroundCardAuthorityRecord,
+  ForegroundQueuedSubmission,
+  ForegroundQueueCommandInput,
+  ForegroundQueueCommandResult,
   ForegroundTurnAuthorityRecord,
   StartForegroundTurnInput,
   StartForegroundTurnResult,
@@ -119,6 +131,37 @@ interface ExecutionRow extends Record<string, unknown> {
   completed_at: string | null;
   summary: string | null;
   revision: number;
+}
+
+function updateQueuedSubmissionText(payload: unknown, text: string): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("Queued turn payload is invalid.");
+  }
+  const submission = payload as Record<string, unknown>;
+  const normalizedText = text.trim();
+  const rawPrompt = submission.rawPrompt;
+  let updatedPrompt: unknown;
+  if (typeof rawPrompt === "string") {
+    updatedPrompt = normalizedText;
+  } else if (Array.isArray(rawPrompt)) {
+    const nonTextBlocks = rawPrompt.filter(
+      (block) =>
+        !block ||
+        typeof block !== "object" ||
+        Array.isArray(block) ||
+        (block as Record<string, unknown>).type !== "text",
+    );
+    updatedPrompt = normalizedText
+      ? [{ type: "text", text: normalizedText }, ...nonTextBlocks]
+      : nonTextBlocks;
+  } else {
+    throw new Error("Queued turn prompt is invalid.");
+  }
+  return {
+    ...submission,
+    text,
+    rawPrompt: updatedPrompt,
+  };
 }
 
 interface ExecutionApprovalRow extends Record<string, unknown> {
@@ -335,6 +378,31 @@ export class WorkspaceAuthorityStore {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY(agent_id) REFERENCES agents(agent_id),
+        FOREIGN KEY(provider_thread_id) REFERENCES provider_threads(thread_id)
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS foreground_turn_queue (
+        queued_turn_id TEXT PRIMARY KEY NOT NULL,
+        agent_id TEXT NOT NULL,
+        source_message_id TEXT NOT NULL,
+        delivery_mode TEXT NOT NULL CHECK(delivery_mode IN ('queue', 'interrupt')),
+        text_digest TEXT NOT NULL,
+        payload_digest TEXT NOT NULL,
+        attachment_count INTEGER NOT NULL DEFAULT 0,
+        queue_order INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(agent_id, source_message_id),
+        FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS provider_message_anchors (
+        agent_id TEXT NOT NULL,
+        canonical_message_id TEXT NOT NULL,
+        provider_thread_id TEXT,
+        native_anchor_receipt_json TEXT NOT NULL,
+        scopes_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(agent_id, canonical_message_id),
+        FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE,
         FOREIGN KEY(provider_thread_id) REFERENCES provider_threads(thread_id)
       ) STRICT;
       CREATE TABLE IF NOT EXISTS cards (
@@ -595,6 +663,8 @@ export class WorkspaceAuthorityStore {
       CREATE INDEX IF NOT EXISTS authority_events_aggregate_revision
         ON authority_events(aggregate_type, aggregate_id, revision);
       CREATE INDEX IF NOT EXISTS turns_agent_created ON turns(agent_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS foreground_turn_queue_agent_order
+        ON foreground_turn_queue(agent_id, queue_order ASC, created_at ASC);
       CREATE INDEX IF NOT EXISTS cards_turn_created ON cards(turn_id, created_at ASC);
     `);
     this.ensureColumn("agents", "authority_revision", "INTEGER NOT NULL DEFAULT 0");
@@ -627,6 +697,9 @@ export class WorkspaceAuthorityStore {
     this.ensureColumn("turns", "provider_turn_id", "TEXT");
     this.ensureColumn("turns", "background_task_id", "TEXT");
     this.ensureColumn("turns", "error", "TEXT");
+    this.ensureColumn("provider_message_anchors", "provider_thread_id", "TEXT");
+    this.ensureColumn("provider_message_anchors", "native_anchor_receipt_json", "TEXT");
+    this.ensureColumn("provider_message_anchors", "scopes_json", "TEXT");
     this.ensureColumn("cards", "answer_digest", "TEXT");
     this.ensureColumn("cards", "submitted_summary", "TEXT");
     this.ensureColumn("cards", "runtime_digest", "TEXT");
@@ -654,6 +727,12 @@ export class WorkspaceAuthorityStore {
       .prepare(
         `INSERT OR IGNORE INTO authority_schema_migrations(version, checksum, applied_at)
          VALUES (1, 'workspace-task-authority-v1', ?)`,
+      )
+      .run(nowIso());
+    this.database
+      .prepare(
+        `INSERT OR IGNORE INTO authority_schema_migrations(version, checksum, applied_at)
+         VALUES (4, 'foreground-queue-rewind-anchors-v4', ?)`,
       )
       .run(nowIso());
     this.database
@@ -807,6 +886,353 @@ export class WorkspaceAuthorityStore {
     return this.getForegroundStateInTransaction(agentId);
   }
 
+  enqueueForegroundTurn(input: ForegroundQueuedSubmission): {
+    queuedTurn: AgentQueuedTurn;
+    revision: number;
+    created: boolean;
+  } {
+    let output!: { queuedTurn: AgentQueuedTurn; revision: number; created: boolean };
+    this.transaction(() => {
+      const existing = this.database
+        .prepare("SELECT * FROM foreground_turn_queue WHERE agent_id = ? AND source_message_id = ?")
+        .get(input.agentId, input.messageId) as Record<string, unknown> | undefined;
+      if (existing) {
+        const authority = this.getForegroundAgentRow(input.agentId);
+        output = {
+          queuedTurn: this.toQueuedTurn(existing),
+          revision: authority?.authority_revision ?? 0,
+          created: false,
+        };
+        return;
+      }
+
+      const now = nowIso();
+      this.database
+        .prepare(
+          `INSERT INTO agents(
+             agent_id, provider_thread_id, title, visible, authority_revision,
+             active_turn_id, thoth_lifecycle, background_task_id, error, created_at, updated_at
+           ) VALUES (?, NULL, NULL, 1, 0, NULL, 'idle', NULL, NULL, ?, ?)
+           ON CONFLICT(agent_id) DO UPDATE SET visible = 1, updated_at = excluded.updated_at`,
+        )
+        .run(input.agentId, now, now);
+      const boundary = this.database
+        .prepare(
+          input.deliveryMode === "interrupt"
+            ? "SELECT MIN(queue_order) AS value FROM foreground_turn_queue WHERE agent_id = ?"
+            : "SELECT MAX(queue_order) AS value FROM foreground_turn_queue WHERE agent_id = ?",
+        )
+        .get(input.agentId) as { value: number | null };
+      const queueOrder =
+        input.deliveryMode === "interrupt" ? (boundary.value ?? 1) - 1 : (boundary.value ?? 0) + 1;
+      const text = this.blobs.putJson(input.text);
+      const payload = this.blobs.putJson(input.payload);
+      const queuedTurnId = `queued-turn-${randomUUID()}`;
+      this.database
+        .prepare(
+          `INSERT INTO foreground_turn_queue(
+             queued_turn_id, agent_id, source_message_id, delivery_mode, text_digest,
+             payload_digest, attachment_count, queue_order, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          queuedTurnId,
+          input.agentId,
+          input.messageId,
+          input.deliveryMode,
+          text.digest,
+          payload.digest,
+          input.attachmentCount,
+          queueOrder,
+          now,
+          now,
+        );
+      const authority = this.getForegroundAgentRow(input.agentId)!;
+      const revision = authority.authority_revision + 1;
+      this.database
+        .prepare("UPDATE agents SET authority_revision = ?, updated_at = ? WHERE agent_id = ?")
+        .run(revision, now, input.agentId);
+      this.appendEventInTransaction({
+        aggregateType: "agent",
+        aggregateId: input.agentId,
+        revision,
+        kind: "foreground_turn_queued",
+        payload: { queuedTurnId, deliveryMode: input.deliveryMode },
+      });
+      output = {
+        queuedTurn: this.toQueuedTurn(
+          this.database
+            .prepare("SELECT * FROM foreground_turn_queue WHERE queued_turn_id = ?")
+            .get(queuedTurnId) as Record<string, unknown>,
+        ),
+        revision,
+        created: true,
+      };
+    });
+    if (output.created) {
+      const state = this.getForegroundState(input.agentId);
+      this.emit([], []);
+      this.emitForeground(state, "queue_changed");
+    }
+    return output;
+  }
+
+  peekForegroundQueue(agentId: string): { queuedTurn: AgentQueuedTurn; payload: unknown } | null {
+    const row = this.database
+      .prepare(
+        `SELECT * FROM foreground_turn_queue
+         WHERE agent_id = ? ORDER BY queue_order ASC, created_at ASC LIMIT 1`,
+      )
+      .get(agentId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      queuedTurn: this.toQueuedTurn(row),
+      payload: this.blobs.readJson(String(row.payload_digest)),
+    };
+  }
+
+  removeForegroundQueuedTurn(agentId: string, queuedTurnId: string): boolean {
+    const result = this.database
+      .prepare("DELETE FROM foreground_turn_queue WHERE agent_id = ? AND queued_turn_id = ?")
+      .run(agentId, queuedTurnId);
+    if (result.changes === 0) return false;
+    const authority = this.getForegroundAgentRow(agentId);
+    if (authority) {
+      this.database
+        .prepare("UPDATE agents SET authority_revision = ?, updated_at = ? WHERE agent_id = ?")
+        .run(authority.authority_revision + 1, nowIso(), agentId);
+    }
+    this.emit([], []);
+    this.emitForeground(this.getForegroundState(agentId), "queue_changed");
+    return true;
+  }
+
+  clearForegroundQueue(agentId: string): number {
+    const result = this.database
+      .prepare("DELETE FROM foreground_turn_queue WHERE agent_id = ?")
+      .run(agentId);
+    if (result.changes > 0) {
+      const authority = this.getForegroundAgentRow(agentId);
+      if (authority) {
+        this.database
+          .prepare("UPDATE agents SET authority_revision = ?, updated_at = ? WHERE agent_id = ?")
+          .run(authority.authority_revision + 1, nowIso(), agentId);
+      }
+      this.emit([], []);
+      this.emitForeground(this.getForegroundState(agentId), "queue_changed");
+    }
+    return Number(result.changes);
+  }
+
+  commandForegroundQueue(input: ForegroundQueueCommandInput): ForegroundQueueCommandResult {
+    let output!: ForegroundQueueCommandResult;
+    this.transaction(() => {
+      const persistResult = (result: ForegroundQueueCommandResult): void => {
+        this.database
+          .prepare(
+            `INSERT INTO authority_commands(
+               command_id, aggregate_type, aggregate_id, command_kind,
+               result_revision, result_json, created_at
+             ) VALUES (?, 'agent_queue', ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            input.commandId,
+            input.agentId,
+            input.command,
+            result.revision,
+            JSON.stringify(result),
+            nowIso(),
+          );
+      };
+      const duplicate = this.database
+        .prepare("SELECT result_json FROM authority_commands WHERE command_id = ?")
+        .get(input.commandId) as { result_json: string } | undefined;
+      if (duplicate) {
+        output = {
+          ...(JSON.parse(duplicate.result_json) as ForegroundQueueCommandResult),
+          duplicate: true,
+        };
+        return;
+      }
+      const authority = this.getForegroundAgentRow(input.agentId);
+      const revision = authority?.authority_revision ?? 0;
+      if (revision !== input.expectedRevision) {
+        output = {
+          accepted: false,
+          conflict: true,
+          duplicate: false,
+          revision,
+          queuedTurns: this.listForegroundQueue(input.agentId),
+          restoredText: null,
+          error: "Agent queue authority revision changed.",
+        };
+        persistResult(output);
+        return;
+      }
+      const row = this.database
+        .prepare("SELECT * FROM foreground_turn_queue WHERE agent_id = ? AND queued_turn_id = ?")
+        .get(input.agentId, input.queuedTurnId) as Record<string, unknown> | undefined;
+      if (!row) {
+        output = {
+          accepted: false,
+          conflict: false,
+          duplicate: false,
+          revision,
+          queuedTurns: this.listForegroundQueue(input.agentId),
+          restoredText: null,
+          error: "Queued turn was not found.",
+        };
+        persistResult(output);
+        return;
+      }
+      if (input.command === "interrupt") {
+        const minimum = this.database
+          .prepare("SELECT MIN(queue_order) AS value FROM foreground_turn_queue WHERE agent_id = ?")
+          .get(input.agentId) as { value: number | null };
+        this.database
+          .prepare(
+            `UPDATE foreground_turn_queue
+             SET delivery_mode = 'interrupt', queue_order = ?, updated_at = ?
+             WHERE queued_turn_id = ?`,
+          )
+          .run((minimum.value ?? 1) - 1, nowIso(), input.queuedTurnId);
+      } else if (input.command === "edit") {
+        const updatedText = this.blobs.putJson(input.text);
+        const updatedPayload = this.blobs.putJson(
+          updateQueuedSubmissionText(this.blobs.readJson(String(row.payload_digest)), input.text),
+        );
+        this.database
+          .prepare(
+            `UPDATE foreground_turn_queue
+             SET text_digest = ?, payload_digest = ?, updated_at = ?
+             WHERE queued_turn_id = ?`,
+          )
+          .run(updatedText.digest, updatedPayload.digest, nowIso(), input.queuedTurnId);
+      } else {
+        this.database
+          .prepare("DELETE FROM foreground_turn_queue WHERE queued_turn_id = ?")
+          .run(input.queuedTurnId);
+      }
+      const nextRevision = revision + 1;
+      this.database
+        .prepare("UPDATE agents SET authority_revision = ?, updated_at = ? WHERE agent_id = ?")
+        .run(nextRevision, nowIso(), input.agentId);
+      output = {
+        accepted: true,
+        conflict: false,
+        duplicate: false,
+        revision: nextRevision,
+        queuedTurns: this.listForegroundQueue(input.agentId),
+        restoredText: input.command === "edit" ? input.text : null,
+        error: null,
+      };
+      persistResult(output);
+    });
+    if (output.accepted && !output.duplicate) {
+      this.emit([], []);
+      this.emitForeground(this.getForegroundState(input.agentId), "queue_changed");
+    }
+    return output;
+  }
+
+  listForegroundQueue(agentId: string): AgentQueuedTurn[] {
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM foreground_turn_queue
+         WHERE agent_id = ? ORDER BY queue_order ASC, created_at ASC`,
+      )
+      .all(agentId) as Array<Record<string, unknown>>;
+    return rows.map((row, index) => this.toQueuedTurn(row, index + 1));
+  }
+
+  getProviderMessageAnchor(
+    agentId: string,
+    canonicalMessageId: string,
+    scope: ProviderRewindScope,
+  ): ProviderMessageAnchorReceipt | null {
+    const row = this.database
+      .prepare(
+        `SELECT native_anchor_receipt_json, scopes_json FROM provider_message_anchors
+         WHERE agent_id = ? AND canonical_message_id = ?`,
+      )
+      .get(agentId, canonicalMessageId) as
+      | { native_anchor_receipt_json: string | null; scopes_json: string | null }
+      | undefined;
+    if (!row || !row.native_anchor_receipt_json || !row.scopes_json) return null;
+    const scopes = JSON.parse(row.scopes_json) as unknown;
+    if (!Array.isArray(scopes) || !scopes.includes(scope)) return null;
+    const receipt = JSON.parse(
+      row.native_anchor_receipt_json,
+    ) as Partial<ProviderMessageAnchorReceipt>;
+    if (receipt.version !== 1 || typeof receipt.opaqueAnchor !== "string") return null;
+    return { version: 1, opaqueAnchor: receipt.opaqueAnchor };
+  }
+
+  bindProviderMessageAnchor(
+    agentId: string,
+    canonicalMessageId: string,
+    receipt: ProviderMessageAnchorReceipt,
+    scopes: readonly ProviderRewindScope[],
+  ): void {
+    const agent = this.database
+      .prepare("SELECT provider_thread_id FROM agents WHERE agent_id = ?")
+      .get(agentId) as { provider_thread_id: string | null } | undefined;
+    if (!agent) throw new Error(`Agent ${agentId} is not registered in Workspace authority`);
+    this.database
+      .prepare(
+        `INSERT INTO provider_message_anchors(
+           agent_id, canonical_message_id, provider_thread_id,
+           native_anchor_receipt_json, scopes_json, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(agent_id, canonical_message_id)
+         DO UPDATE SET
+           provider_thread_id = excluded.provider_thread_id,
+           native_anchor_receipt_json = excluded.native_anchor_receipt_json,
+           scopes_json = excluded.scopes_json`,
+      )
+      .run(
+        agentId,
+        canonicalMessageId,
+        agent.provider_thread_id,
+        JSON.stringify(receipt),
+        JSON.stringify([...new Set(scopes)]),
+        nowIso(),
+      );
+  }
+
+  truncateAgentTimelineFromMessage(agentId: string, canonicalMessageId: string): void {
+    const rows = this.listAgentTimelineRows(agentId);
+    const target = rows.find(
+      (row) => row.item.type === "user_message" && row.item.messageId === canonicalMessageId,
+    );
+    if (!target) {
+      throw new Error(`Canonical rewind message ${canonicalMessageId} was not found`);
+    }
+    const removedMessageIds = rows.flatMap((row) =>
+      row.seq >= target.seq && row.item.type === "user_message" && row.item.messageId
+        ? [row.item.messageId]
+        : [],
+    );
+    this.transaction(() => {
+      this.database
+        .prepare("DELETE FROM agent_timeline_rows WHERE agent_id = ? AND seq >= ?")
+        .run(agentId, target.seq);
+      this.database
+        .prepare(
+          `UPDATE agent_timeline_meta SET epoch = ?, next_seq = ?, updated_at = ?
+           WHERE agent_id = ?`,
+        )
+        .run(randomUUID(), target.seq, nowIso(), agentId);
+      const deleteAnchor = this.database.prepare(
+        `DELETE FROM provider_message_anchors
+         WHERE agent_id = ? AND canonical_message_id = ?`,
+      );
+      for (const messageId of removedMessageIds) {
+        deleteAnchor.run(agentId, messageId);
+      }
+    });
+  }
+
   getActiveForegroundTurn(agentId: string): ForegroundTurnAuthorityRecord | null {
     const authority = this.getForegroundAgentRow(agentId);
     return authority?.active_turn_id
@@ -816,6 +1242,16 @@ export class WorkspaceAuthorityStore {
 
   getForegroundTurn(turnId: string): ForegroundTurnAuthorityRecord | null {
     return this.getForegroundTurnInTransaction(turnId);
+  }
+
+  getForegroundTurnBySourceMessage(
+    agentId: string,
+    sourceMessageId: string,
+  ): ForegroundTurnAuthorityRecord | null {
+    const row = this.database
+      .prepare("SELECT * FROM turns WHERE agent_id = ? AND source_message_id = ?")
+      .get(agentId, sourceMessageId) as Record<string, unknown> | undefined;
+    return row ? this.toForegroundTurn(row) : null;
   }
 
   bindForegroundProviderTurn(input: {
@@ -4216,13 +4652,16 @@ export class WorkspaceAuthorityStore {
           )
           .get(authority.active_turn_id) as ForegroundCardRow | undefined)
       : undefined;
-    return WorkspaceForegroundProjection.build({
-      authority,
-      turn: turn ?? null,
-      pendingCard: pendingCard ?? null,
-      agentId,
-      readBlob: (digest) => this.blobs.readJson(digest),
-    });
+    return {
+      ...WorkspaceForegroundProjection.build({
+        authority,
+        turn: turn ?? null,
+        pendingCard: pendingCard ?? null,
+        agentId,
+        readBlob: (digest) => this.blobs.readJson(digest),
+      }),
+      queuedTurns: this.listForegroundQueue(agentId),
+    };
   }
 
   private getForegroundAgentRow(agentId: string): ForegroundAgentAuthorityRow | null {
@@ -4303,6 +4742,37 @@ export class WorkspaceAuthorityStore {
       startedAt: String(row.created_at),
       updatedAt: String(row.updated_at),
     };
+  }
+
+  private toQueuedTurn(row: Record<string, unknown>, position?: number): AgentQueuedTurn {
+    const resolvedPosition =
+      position ??
+      Number(
+        (
+          this.database
+            .prepare(
+              `SELECT COUNT(*) + 1 AS position FROM foreground_turn_queue
+               WHERE agent_id = ? AND (
+                 queue_order < ? OR (queue_order = ? AND created_at < ?)
+               )`,
+            )
+            .get(
+              String(row.agent_id),
+              Number(row.queue_order),
+              Number(row.queue_order),
+              String(row.created_at),
+            ) as { position: number }
+        ).position,
+      );
+    return AgentQueuedTurnSchema.parse({
+      id: String(row.queued_turn_id),
+      messageId: String(row.source_message_id),
+      text: String(this.blobs.readJson(String(row.text_digest))),
+      deliveryMode: AgentMessageDeliveryModeSchema.parse(row.delivery_mode),
+      attachmentCount: Number(row.attachment_count ?? 0),
+      position: resolvedPosition,
+      createdAt: String(row.created_at),
+    });
   }
 
   private toForegroundCard(row: Record<string, unknown>): ForegroundCardAuthorityRecord {

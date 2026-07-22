@@ -6445,7 +6445,7 @@ test("provider user_message is recorded from the live stream", async () => {
   expect(userMessages[0].text).toBe("continuation prompt");
 });
 
-test("authoritative timeline includes provider-emitted submitted user prompt", async () => {
+test("authoritative timeline maps a provider-native user anchor to the canonical message id", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-submitted-prompt-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
@@ -6453,7 +6453,7 @@ test("authoritative timeline includes provider-emitted submitted user prompt", a
   class SubmittedUserMessageSession extends TestAgentSession {
     override async startTurn(
       prompt: AgentPromptInput,
-      options?: AgentRunOptions,
+      _options?: AgentRunOptions,
     ): Promise<{ turnId: string }> {
       const turnId = "turn-submitted-user-message";
       const text = typeof prompt === "string" ? prompt : "";
@@ -6463,7 +6463,7 @@ test("authoritative timeline includes provider-emitted submitted user prompt", a
           type: "timeline",
           provider: this.provider,
           turnId,
-          item: { type: "user_message", text, messageId: options?.messageId },
+          item: { type: "user_message", text, messageId: "native-user-anchor-1" },
         });
         this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
       }, 0);

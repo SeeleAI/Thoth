@@ -477,7 +477,9 @@ function createAgentHandleFactory(daemonClient: DaemonClient): AgentHandleFactor
         latest = result?.agent ?? null;
         return result;
       },
-      send: (text, options) => daemonClient.sendAgentMessage(id, text, options),
+      send: async (text, options) => {
+        await daemonClient.sendAgentMessage(id, text, options);
+      },
       archive: async () => {
         const result = await daemonClient.archiveAgent(id);
         if (latest) {

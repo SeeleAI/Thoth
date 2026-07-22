@@ -105,6 +105,11 @@ const phases = [
   ...(fullThoth
     ? [
         {
+          name: "interaction regressions",
+          command: process.execPath,
+          args: ["scripts/accept-interaction-regressions-fast.mjs"],
+        },
+        {
           name: "extended Task authority",
           command: npm,
           args: [

@@ -105,16 +105,34 @@ export class FakeRewindSession implements AgentSession {
 
   async close(): Promise<void> {}
 
-  async revertConversation(input: { messageId: string }): Promise<void> {
-    this.recordedRewinds.push({ mode: "conversation", messageId: input.messageId });
+  async revertConversation(input: { anchor: { version: 1; opaqueAnchor: string } }): Promise<void> {
+    const messageId = input.anchor.opaqueAnchor;
+    this.recordedRewinds.push({ mode: "conversation", messageId });
+    const index = this.history.findIndex(
+      (item) => item.type === "user_message" && item.messageId === messageId,
+    );
+    if (index >= 0) this.history = this.history.slice(0, index);
   }
 
-  async revertFiles(input: { messageId: string }): Promise<void> {
-    this.recordedRewinds.push({ mode: "files", messageId: input.messageId });
+  async revertFiles(input: { anchor: { version: 1; opaqueAnchor: string } }): Promise<void> {
+    this.recordedRewinds.push({ mode: "files", messageId: input.anchor.opaqueAnchor });
   }
 
-  async revertBoth(input: { messageId: string }): Promise<void> {
-    this.recordedRewinds.push({ mode: "both", messageId: input.messageId });
+  async revertBoth(input: { anchor: { version: 1; opaqueAnchor: string } }): Promise<void> {
+    const messageId = input.anchor.opaqueAnchor;
+    this.recordedRewinds.push({ mode: "both", messageId });
+    const index = this.history.findIndex(
+      (item) => item.type === "user_message" && item.messageId === messageId,
+    );
+    if (index >= 0) this.history = this.history.slice(0, index);
+  }
+
+  async listRewindAnchors(): Promise<Array<{ version: 1; opaqueAnchor: string }>> {
+    return this.history.flatMap((item) =>
+      item.type === "user_message" && item.messageId
+        ? [{ version: 1 as const, opaqueAnchor: item.messageId }]
+        : [],
+    );
   }
 
   private emit(event: AgentStreamEvent): void {

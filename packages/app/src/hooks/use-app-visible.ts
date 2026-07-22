@@ -36,6 +36,9 @@ export function useAppVisible(): boolean {
       window.addEventListener("blur", notify);
     }
 
+    // The pane can mount after the focus event that made it visible.
+    notify();
+
     return () => {
       appStateSubscription.remove();
       if (isWeb && typeof document !== "undefined") {

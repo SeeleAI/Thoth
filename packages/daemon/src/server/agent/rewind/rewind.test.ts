@@ -62,6 +62,11 @@ async function createRewindHarness(options: { historyGate?: RewindHistoryGate } 
     provider: "claude",
     cwd: process.cwd(),
   });
+  await manager.appendTimelineItem(agent.id, {
+    type: "user_message",
+    text: "before",
+    messageId: "message-1",
+  });
   return { manager, session, agentId: agent.id };
 }
 
@@ -73,9 +78,7 @@ describe("AgentManager rewind", () => {
 
     expect(session.recordedRewinds).toEqual([{ mode: "conversation", messageId: "message-1" }]);
     expect(session.historyReadCount).toBe(1);
-    expect(manager.fetchTimeline(agentId, { limit: 0 }).rows.map((row) => row.item)).toEqual([
-      { type: "user_message", text: "before", messageId: "message-1" },
-    ]);
+    expect(manager.fetchTimeline(agentId, { limit: 0 }).rows).toEqual([]);
   });
 
   test("rewinds files without rehydrating the conversation timeline", async () => {
@@ -111,5 +114,15 @@ describe("AgentManager rewind", () => {
 
     historyGate.release();
     await rewind;
+  });
+
+  test("rejects ambiguous legacy anchor migration instead of matching by text or index", async () => {
+    const { manager, session, agentId } = await createRewindHarness();
+    session.history.push({ type: "user_message", text: "extra", messageId: "native-extra" });
+
+    await expect(manager.rewind(agentId, "message-1", "conversation")).rejects.toThrow(
+      "cannot be deterministically matched",
+    );
+    expect(session.recordedRewinds).toEqual([]);
   });
 });

@@ -80,11 +80,7 @@ import {
 } from "@/utils/assistant-image-metadata";
 import { setAssistantMarkdownBlockHeight } from "@/utils/assistant-message-height-estimate";
 import { resolveAssistantImageSource } from "@/utils/assistant-image-source";
-import {
-  createPreviewAttachmentId,
-  getFileNameFromPath,
-  parseImageDataUrl,
-} from "@/attachments/utils";
+import { parseImageDataUrl } from "@/attachments/utils";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
 import { PlanCard } from "./plan-card";
 import { useToolCallSheet } from "./tool-call-sheet";
@@ -99,8 +95,7 @@ import {
   useAssistantLinkPress,
 } from "@/assistant-file-links";
 import { getCompactionMarkerLabel } from "./message-compaction-label";
-import { useAttachmentPreviewUrl } from "@/attachments/use-attachment-preview-url";
-import { persistAttachmentFromBytes, persistAttachmentFromDataUrl } from "@/attachments/service";
+import { useFilePreviewSource } from "@/file-explorer/use-file-preview-source";
 import {
   AttachmentFrame,
   AttachmentLabel,
@@ -933,44 +928,13 @@ function AssistantMarkdownImage({
         throw new Error(t("message.attachments.imagePreviewUnavailable"));
       }
 
-      return await persistAttachmentFromBytes({
-        id: createPreviewAttachmentId({
-          mimeType: file.mime,
-          path: file.path || resolution.path,
-          size: file.size,
-          modifiedAt: file.modifiedAt,
-          contentLength: file.bytes.byteLength,
-        }),
-        bytes: file.bytes,
-        mimeType: file.mime,
-        fileName: getFileNameFromPath(file.path || resolution.path),
-      });
-    },
-  });
-  const dataImageQuery = useQuery({
-    queryKey: ["assistantMarkdownDataImage", dataImage?.cacheKey ?? null],
-    enabled: dataImage !== null,
-    staleTime: 30_000,
-    queryFn: async () => {
-      if (!dataImage) {
-        return null;
-      }
-
-      return await persistAttachmentFromDataUrl({
-        id: createPreviewAttachmentId({
-          mimeType: dataImage.mimeType,
-          contentLength: dataImage.base64.length,
-        }),
-        dataUrl: source,
-        mimeType: dataImage.mimeType,
-      });
+      return file;
     },
   });
 
-  const fileAssetUri = useAttachmentPreviewUrl(query.data);
-  const dataImageAssetUri = useAttachmentPreviewUrl(dataImageQuery.data);
-  const directUri = resolution?.kind === "direct" && !dataImage ? resolution.uri : null;
-  const resolvedUri = directUri ?? dataImageAssetUri ?? fileAssetUri ?? null;
+  const filePreview = useFilePreviewSource(query.data);
+  const directUri = dataImage ? source : resolution?.kind === "direct" ? resolution.uri : null;
+  const resolvedUri = directUri ?? filePreview.uri;
 
   const stateFrameStyle = useMemo<StyleProp<ViewStyle>>(
     () => [
@@ -995,7 +959,7 @@ function AssistantMarkdownImage({
     );
   }
 
-  if (query.isLoading || dataImageQuery.isLoading) {
+  if (query.isLoading) {
     return (
       <View style={stateFrameStyle}>
         <ActivityIndicator size="small" />
@@ -1004,8 +968,8 @@ function AssistantMarkdownImage({
   }
 
   const errorText = resolveAssistantImageErrorText(
-    query.error,
-    dataImageQuery.error,
+    query.error ?? filePreview.error,
+    null,
     t("message.attachments.imagePreviewLoadFailed"),
   );
 

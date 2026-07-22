@@ -1512,6 +1512,8 @@ export class Session {
         return this.handleExecutionTimelineRequest(msg);
       case "execution.approval.resolve.request":
         return this.handleExecutionApprovalResolveRequest(msg);
+      case "agent.turn_queue.command.request":
+        return this.handleAgentTurnQueueCommand(msg);
       default:
         return undefined;
     }
@@ -1703,6 +1705,46 @@ export class Session {
     this.emit({
       type: "execution.approval.resolve.response",
       payload: { requestId: msg.requestId, ...result },
+    });
+  }
+
+  private async handleAgentTurnQueueCommand(
+    msg: Extract<SessionInboundMessage, { type: "agent.turn_queue.command.request" }>,
+  ): Promise<void> {
+    if (msg.command === "edit" && msg.text === undefined) {
+      throw new Error("Queue edit commands require replacement text.");
+    }
+    const result = await this.foregroundTurnCoordinator.commandQueue(
+      msg.command === "edit"
+        ? {
+            agentId: msg.agentId,
+            queuedTurnId: msg.queuedTurnId,
+            command: "edit",
+            text: msg.text!,
+            expectedRevision: msg.expectedRevision,
+            commandId: msg.commandId,
+          }
+        : {
+            agentId: msg.agentId,
+            queuedTurnId: msg.queuedTurnId,
+            command: msg.command,
+            expectedRevision: msg.expectedRevision,
+            commandId: msg.commandId,
+          },
+    );
+    this.emit({
+      type: "agent.turn_queue.command.response",
+      payload: {
+        requestId: msg.requestId,
+        agentId: msg.agentId,
+        accepted: result.accepted,
+        conflict: result.conflict,
+        duplicate: result.duplicate,
+        revision: result.revision,
+        queuedTurns: result.queuedTurns,
+        restoredText: result.restoredText,
+        error: result.error,
+      },
     });
   }
 
@@ -2597,6 +2639,7 @@ export class Session {
           ...(attachments ? { attachments } : {}),
           ...(thoth ? { thoth } : {}),
           providerRunMode: providerRunMode ?? "default",
+          deliveryMode: "queue",
           contextRefs,
           rawPrompt: initialPromptPayload,
           ...(outputSchema ? { rawRunOptions: { outputSchema } } : {}),
@@ -2976,7 +3019,18 @@ export class Session {
     msg: Extract<SessionInboundMessage, { type: "agent.rewind.request" }>,
   ): Promise<void> {
     try {
+      await this.foregroundTurnCoordinator.prepareRewind(msg.agentId);
       await this.agentManager.rewind(msg.agentId, msg.messageId, msg.mode);
+      if (msg.mode !== "files") {
+        this.foregroundTurnCoordinator.clearQueue(msg.agentId);
+      } else {
+        await this.foregroundTurnCoordinator.resumeQueue(msg.agentId);
+      }
+      const timeline = this.agentManager.fetchTimeline(msg.agentId, {
+        direction: "tail",
+        limit: 0,
+      });
+      const authority = await this.foregroundTurnCoordinator.getState(msg.agentId);
       this.emit({
         type: "agent.rewind.response",
         payload: {
@@ -2984,9 +3038,13 @@ export class Session {
           agentId: msg.agentId,
           ok: true,
           error: null,
+          timelineEpoch: timeline.epoch,
+          authorityRevision: authority.revision,
+          reset: msg.mode !== "files",
         },
       });
     } catch (error) {
+      await this.foregroundTurnCoordinator.resumeQueue(msg.agentId).catch(() => undefined);
       this.emit({
         type: "agent.rewind.response",
         payload: {
@@ -2994,6 +3052,9 @@ export class Session {
           agentId: msg.agentId,
           ok: false,
           error: error instanceof Error ? error.message : "Failed to rewind agent",
+          timelineEpoch: null,
+          authorityRevision: 0,
+          reset: false,
         },
       });
     }
@@ -5740,6 +5801,7 @@ export class Session {
           ...(msg.attachments ? { attachments: msg.attachments } : {}),
           ...(msg.thoth ? { thoth: msg.thoth } : {}),
           providerRunMode: msg.providerRunMode ?? "default",
+          deliveryMode: msg.deliveryMode,
           contextRefs: msg.contextRefs,
           rawPrompt: prompt,
         });

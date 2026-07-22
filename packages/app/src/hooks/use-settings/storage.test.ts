@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
   APP_SETTINGS_KEY,
+  APP_SETTINGS_SCHEMA_KEY,
+  APP_SETTINGS_SCHEMA_VERSION,
   DEFAULT_APP_SETTINGS,
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_CODE_FONT_SIZE,
@@ -51,6 +53,30 @@ describe("loadAppSettingsFromStorage", () => {
     expect(deps.storage.entries.get(APP_SETTINGS_KEY)).toBe(
       JSON.stringify(DEFAULT_CLIENT_SETTINGS),
     );
+    expect(deps.storage.entries.get(APP_SETTINGS_SCHEMA_KEY)).toBe(
+      String(APP_SETTINGS_SCHEMA_VERSION),
+    );
+  });
+
+  it("migrates an unversioned interrupt default to Queue exactly once", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ sendBehavior: "interrupt" }),
+      }),
+    });
+
+    const migrated = await loadAppSettingsFromStorage(deps);
+    expect(migrated.sendBehavior).toBe("queue");
+    expect(deps.storage.entries.get(APP_SETTINGS_SCHEMA_KEY)).toBe(
+      String(APP_SETTINGS_SCHEMA_VERSION),
+    );
+
+    deps.storage.entries.set(
+      APP_SETTINGS_KEY,
+      JSON.stringify({ ...migrated, sendBehavior: "interrupt" }),
+    );
+    const explicit = await loadAppSettingsFromStorage(deps);
+    expect(explicit.sendBehavior).toBe("interrupt");
   });
 
   it("defaults language to system when storage is empty", async () => {

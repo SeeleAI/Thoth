@@ -83,6 +83,7 @@ class ScriptedThothSession implements AgentSession {
   private mcpClient: Promise<ScriptedMcpClient> | null = null;
   private providerRunMode: "default" | "plan" = "default";
   private readonly pendingPermissions = new Map<string, AgentPermissionRequest>();
+  readonly receivedPrompts: string[] = [];
 
   constructor(
     id: string,
@@ -110,14 +111,15 @@ class ScriptedThothSession implements AgentSession {
 
   async startTurn(
     prompt: AgentPromptInput,
-    _options?: AgentRunOptions,
+    options?: AgentRunOptions,
   ): Promise<{ turnId: string }> {
     if (this.activeTurnId) {
       throw new Error("scripted session already has an active turn");
     }
     const turnId = `${this.id}-turn-${++this.turnOrdinal}`;
     this.activeTurnId = turnId;
-    queueMicrotask(() => void this.runActor(prompt, turnId));
+    this.receivedPrompts.push(typeof prompt === "string" ? prompt : JSON.stringify(prompt));
+    queueMicrotask(() => void this.runActor(prompt, turnId, options?.messageId));
     return { turnId };
   }
 
@@ -267,7 +269,11 @@ class ScriptedThothSession implements AgentSession {
     this.actor.recordToolReceipt(`${turnId}:${name}:ok`);
   }
 
-  private async runActor(prompt: AgentPromptInput, turnId: string): Promise<void> {
+  private async runActor(
+    prompt: AgentPromptInput,
+    turnId: string,
+    canonicalMessageId?: string,
+  ): Promise<void> {
     this.emit({ type: "thread_started", provider: this.provider, sessionId: this.id });
     this.emit({
       type: "turn_started",
@@ -275,6 +281,19 @@ class ScriptedThothSession implements AgentSession {
       turnId,
       providerTurnId: turnId,
     });
+    if (canonicalMessageId) {
+      this.emit({
+        type: "timeline",
+        provider: this.provider,
+        turnId,
+        providerTurnId: turnId,
+        item: {
+          type: "user_message",
+          text: typeof prompt === "string" ? prompt : JSON.stringify(prompt),
+          messageId: canonicalMessageId,
+        },
+      });
+    }
     try {
       const scope = readThothRuntimeToolsConfig(this.config)?.scope ?? null;
       if (this.providerRunMode === "plan") {
@@ -844,6 +863,101 @@ describe("public foreground Thoth router", () => {
     expect(provider.sessions[0]).toBe(visibleSession);
   }, 45_000);
 
+  it("UT-02c durably queues suspended-card input and serializes Interrupt before later turns", async () => {
+    const provider = new ScriptedThothClient(THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyRecovery);
+    daemon = await createTestThothDaemon({ agentClients: { codex: provider } });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const cwd = mkdtempSync(join(tmpdir(), "thoth-public-turn-queue-"));
+    workspaces.push(cwd);
+    const agent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd,
+      initialPrompt: "OPEN_CARD",
+      thoth: {
+        enabled: true,
+        executionMode: "quick",
+        clarifyStrength: "light",
+      },
+    });
+    await waitForPendingCard(client, agent.id, "clarify_card");
+    const session = provider.sessions[0]!;
+
+    const first = await client.sendAgentMessage(agent.id, "QUEUE_FIRST", {
+      messageId: "canonical-queue-first",
+      thoth: { enabled: false },
+      deliveryMode: "queue",
+    });
+    const second = await client.sendAgentMessage(agent.id, "INTERRUPT_SECOND", {
+      messageId: "canonical-interrupt-second",
+      thoth: { enabled: false },
+      deliveryMode: "queue",
+    });
+    expect(first.turnAck).toMatchObject({ disposition: "queued", queuePosition: 1 });
+    expect(second.turnAck).toMatchObject({ disposition: "queued", queuePosition: 2 });
+    expect(session.turnCount).toBe(1);
+
+    const queued = await client.getAgentThothState(agent.id);
+    expect(queued.state.queuedTurns?.map((turn) => turn.messageId)).toEqual([
+      "canonical-queue-first",
+      "canonical-interrupt-second",
+    ]);
+    const interrupt = await client.commandAgentTurnQueue({
+      agentId: agent.id,
+      queuedTurnId: queued.state.queuedTurns![1]!.id,
+      command: "interrupt",
+      expectedRevision: queued.state.revision,
+      commandId: "queue-command-interrupt-second",
+    });
+    expect(interrupt).toMatchObject({ accepted: true, conflict: false });
+    expect(interrupt.queuedTurns.map((turn) => turn.messageId)).toEqual([
+      "canonical-interrupt-second",
+      "canonical-queue-first",
+    ]);
+
+    try {
+      await waitFor(async () => {
+        const state = await client!.getAgentThothState(agent.id);
+        return session.turnCount === 3 && state.state.queuedTurns?.length === 0 ? true : null;
+      });
+    } catch (error) {
+      const state = await client.getAgentThothState(agent.id);
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}: ${JSON.stringify({
+          turnCount: session.turnCount,
+          receivedPrompts: session.receivedPrompts,
+          state: state.state,
+        })}`,
+      );
+    }
+    await waitForAgentIdle(client, agent.id);
+    expect(session.receivedPrompts.slice(-2)).toEqual(["INTERRUPT_SECOND", "QUEUE_FIRST"]);
+
+    const timeline = await client.fetchAgentTimeline(agent.id, { limit: 0 });
+    const queuedMessageIds = timeline.entries.flatMap((entry) =>
+      entry.item.type === "user_message" &&
+      (entry.item.messageId === "canonical-queue-first" ||
+        entry.item.messageId === "canonical-interrupt-second")
+        ? [entry.item.messageId]
+        : [],
+    );
+    expect(queuedMessageIds).toEqual(["canonical-interrupt-second", "canonical-queue-first"]);
+    const replay = await client.sendAgentMessage(agent.id, "QUEUE_FIRST", {
+      messageId: "canonical-queue-first",
+      thoth: { enabled: false },
+      deliveryMode: "interrupt",
+    });
+    expect(replay.turnAck).toMatchObject({ disposition: "started" });
+    expect(session.turnCount).toBe(3);
+    expect((await client.getAgentThothState(agent.id)).state.queuedTurns).toEqual([]);
+  }, 30_000);
+
   it("UT-02b hot-switches default -> native Plan -> default on one provider thread", async () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickDirect;
     const provider = new ScriptedThothClient(script);
@@ -946,6 +1060,12 @@ describe("public foreground Thoth router", () => {
       agent.id,
       "clarify_card",
     )) as ThothClarifyCardModel;
+    const queuedBeforeRestart = await client.sendAgentMessage(agent.id, "PERSISTED_QUEUE", {
+      messageId: "canonical-persisted-queue",
+      thoth: { enabled: false },
+      deliveryMode: "queue",
+    });
+    expect(queuedBeforeRestart.turnAck?.disposition).toBe("queued");
     await client.close();
     await daemon.close();
     client = null;
@@ -967,6 +1087,18 @@ describe("public foreground Thoth router", () => {
       "clarify_card",
     )) as ThothClarifyCardModel;
     expect(restored.id).toBe(firstCard.id);
+    const restoredState = await client.getAgentThothState(agent.id);
+    expect(restoredState.state.queuedTurns?.map((turn) => turn.messageId)).toEqual([
+      "canonical-persisted-queue",
+    ]);
+    const deleted = await client.commandAgentTurnQueue({
+      agentId: agent.id,
+      queuedTurnId: restoredState.state.queuedTurns![0]!.id,
+      command: "delete",
+      expectedRevision: restoredState.state.revision,
+      commandId: "queue-command-delete-after-restart",
+    });
+    expect(deleted).toMatchObject({ accepted: true, queuedTurns: [] });
     await client.cancelAgent(agent.id);
     const canceled = await waitForThothLifecycle(client, agent.id, "canceled");
     expect(canceled.pendingCard).toBeNull();

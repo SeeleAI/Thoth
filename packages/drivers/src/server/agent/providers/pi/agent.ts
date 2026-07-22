@@ -28,6 +28,7 @@ import {
   type AgentSlashCommandKind,
   type AgentStreamEvent,
   type AgentUsage,
+  type ProviderMessageAnchorReceipt,
   type FetchCatalogOptions,
   type ImportableProviderSession,
   type ImportProviderSessionContext,
@@ -1179,18 +1180,19 @@ export class PiRpcAgentSession implements AgentSession {
     await this.runtimeSession.abort();
   }
 
-  async revertConversation(input: { messageId: string }): Promise<void> {
+  async revertConversation(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void> {
     if (this.activeTurnId) {
       throw new Error("Cannot rewind the Pi conversation while a Pi turn is active");
     }
     await this.refreshState().catch(() => undefined);
     await this.requestEntryCapture("rewind");
-    const targetEntry = this.capturedUserEntriesById.get(input.messageId);
+    const messageId = input.anchor.opaqueAnchor;
+    const targetEntry = this.capturedUserEntriesById.get(messageId);
     if (!targetEntry) {
-      throw new Error(`Pi rewind target ${input.messageId} was not found in captured tree entries`);
+      throw new Error(`Pi rewind target ${messageId} was not found in captured tree entries`);
     }
     await revertPiConversation({
-      messageId: input.messageId,
+      messageId,
       navigator: {
         navigateTree: (treeEntryId) => this.runPiTreeExtensionCommand(treeEntryId),
       },
@@ -1198,6 +1200,13 @@ export class PiRpcAgentSession implements AgentSession {
     // Pi keeps all tree nodes, so selecting the previous leaf later reverses this rewind.
     this.currentLeafOverrideId = targetEntry.parentId;
     this.activeToolCalls.clear();
+  }
+
+  async listRewindAnchors(): Promise<ProviderMessageAnchorReceipt[]> {
+    return [...this.capturedUserEntriesById.keys()].map((opaqueAnchor) => ({
+      version: 1,
+      opaqueAnchor,
+    }));
   }
 
   private async runPiTreeExtensionCommand(targetId: string): Promise<unknown> {

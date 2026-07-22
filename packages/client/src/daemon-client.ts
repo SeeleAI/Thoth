@@ -273,6 +273,7 @@ export interface SendMessageOptions {
   thoth?: SendAgentMessageRequest["thoth"];
   providerRunMode?: SendAgentMessageRequest["providerRunMode"];
   contextRefs?: SendAgentMessageRequest["contextRefs"];
+  deliveryMode?: SendAgentMessageRequest["deliveryMode"];
 }
 
 type AgentConfigOverrides = Partial<Omit<AgentSessionConfig, "provider" | "cwd">>;
@@ -2666,7 +2667,7 @@ export class DaemonClient {
     agentId: string,
     text: string,
     options?: SendMessageOptions,
-  ): Promise<void> {
+  ): Promise<Extract<SessionOutboundMessage, { type: "send_agent_message_response" }>["payload"]> {
     const requestId = this.createRequestId();
     const messageId = options?.messageId ?? crypto.randomUUID();
     const message = SessionInboundMessageSchema.parse({
@@ -2680,6 +2681,7 @@ export class DaemonClient {
       ...(options?.thoth ? { thoth: options.thoth } : {}),
       ...(options?.providerRunMode ? { providerRunMode: options.providerRunMode } : {}),
       ...(options?.contextRefs ? { contextRefs: options.contextRefs } : {}),
+      deliveryMode: options?.deliveryMode ?? "queue",
     });
     const payload = await this.sendRequest({
       requestId,
@@ -2698,10 +2700,35 @@ export class DaemonClient {
     if (!payload.accepted) {
       throw new Error(payload.error ?? "sendAgentMessage rejected");
     }
+    return payload;
   }
 
   async sendMessage(agentId: string, text: string, options?: SendMessageOptions): Promise<void> {
     await this.sendAgentMessage(agentId, text, options);
+  }
+
+  async commandAgentTurnQueue(
+    input: {
+      agentId: string;
+      queuedTurnId: string;
+      expectedRevision: number;
+      commandId: string;
+      requestId?: string;
+    } & ({ command: "edit"; text: string } | { command: "delete" | "interrupt" }),
+  ) {
+    return this.sendCorrelatedSessionRequest({
+      requestId: input.requestId,
+      message: {
+        type: "agent.turn_queue.command.request",
+        agentId: input.agentId,
+        queuedTurnId: input.queuedTurnId,
+        command: input.command,
+        ...("text" in input ? { text: input.text } : {}),
+        expectedRevision: input.expectedRevision,
+        commandId: input.commandId,
+      },
+      responseType: "agent.turn_queue.command.response",
+    });
   }
 
   async rewindAgent(

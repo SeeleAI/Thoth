@@ -943,3 +943,24 @@ Retry condition:
 When a stopped Task leaves a Workspace idle-but-blocked or a late provider segment appears, inspect both the durable
 ExecutionProjection and the Orchestrator ActivePhase. Do not infer cleanup from a provider terminal; verify the
 explicit Stop-settled callback and the post-await authority check.
+
+## `NTH-EXP-035` Interaction State Must Have One Durable Authority
+
+Observed on `2026-07-22`:
+
+1. App-local queued messages duplicated daemon/provider lifecycle state, allowing duplicate input and two
+   unsynchronized Timeline regions.
+2. Rewind passed UI message ids into provider-native APIs even though the ids belonged to different domains.
+3. File preview reused attachment persistence, copying read-only Workspace images into durable attachment storage.
+
+Conclusion:
+
+Queue ordering and canonical Timeline identity belong to Workspace authority; native rewind identity belongs to
+the adapter behind an opaque receipt; preview sources are transient UI resources. Crossing those ownership lines
+creates duplicated truth, storage growth and recovery bugs.
+
+Retry condition:
+
+Future interaction features must prove one durable owner, explicit identity translation and resource lifetime.
+UI may project authority but may not persist a second queue, invent provider anchors or turn previews into durable
+attachments.

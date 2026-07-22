@@ -1147,7 +1147,9 @@ describe("PiRpcAgentClient", () => {
     pi.latestSession().finishTurn({ role: "assistant", content: [] });
     await events.nextTurnCompletion();
 
-    await session.revertConversation?.({ messageId: "entry-1" });
+    await session.revertConversation?.({
+      anchor: { version: 1, opaqueAnchor: "entry-1" },
+    });
 
     expect(rewindCapabilities(session.capabilities)).toEqual({
       supportsRewindConversation: true,

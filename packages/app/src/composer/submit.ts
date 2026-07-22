@@ -51,7 +51,7 @@ export async function submitAgentInput<TAttachment>(
     return "queued";
   }
 
-  // Clear immediately so optimistic stream updates and composer state stay in sync.
+  // Keep the submitted snapshot locally until the daemon durably accepts it.
   if (shouldClearOnSubmit) {
     input.setUserInput("");
     input.setAttachments([]);

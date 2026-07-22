@@ -5,6 +5,8 @@ import { parseAppLanguage, type AppLanguage } from "@/i18n/locales";
 import { THEME_TO_UNISTYLES, type ThemeName } from "@/styles/theme";
 
 export const APP_SETTINGS_KEY = "@thoth:app-settings";
+export const APP_SETTINGS_SCHEMA_KEY = "@thoth:app-settings-schema";
+export const APP_SETTINGS_SCHEMA_VERSION = 2;
 export const APP_SETTINGS_QUERY_KEY = ["app-settings"];
 const LEGACY_SETTINGS_KEY = "@thoth:settings";
 
@@ -49,7 +51,7 @@ export interface Settings extends AppSettings {
 export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   theme: "auto",
   language: "system",
-  sendBehavior: "interrupt",
+  sendBehavior: "queue",
   serviceUrlBehavior: "ask",
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
   uiFontFamily: "",
@@ -96,6 +98,7 @@ export async function saveAppSettings(input: {
   const next = { ...current, ...input.updates };
   input.queryClient.setQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY, next);
   await input.deps.storage.setItem(APP_SETTINGS_KEY, JSON.stringify(next));
+  await input.deps.storage.setItem(APP_SETTINGS_SCHEMA_KEY, String(APP_SETTINGS_SCHEMA_VERSION));
 }
 
 export async function loadAppSettingsFromStorage(deps: SettingsDeps): Promise<AppSettings> {
@@ -103,7 +106,17 @@ export async function loadAppSettingsFromStorage(deps: SettingsDeps): Promise<Ap
     const stored = await deps.storage.getItem(APP_SETTINGS_KEY);
     if (stored) {
       const parsed = JSON.parse(stored) as Partial<AppSettings>;
-      return { ...DEFAULT_CLIENT_SETTINGS, ...pickAppSettings(parsed) };
+      const schemaVersion = Number(await deps.storage.getItem(APP_SETTINGS_SCHEMA_KEY));
+      const next = {
+        ...DEFAULT_CLIENT_SETTINGS,
+        ...pickAppSettings(parsed),
+        ...(schemaVersion >= APP_SETTINGS_SCHEMA_VERSION ? {} : { sendBehavior: "queue" as const }),
+      };
+      if (schemaVersion < APP_SETTINGS_SCHEMA_VERSION) {
+        await deps.storage.setItem(APP_SETTINGS_KEY, JSON.stringify(next));
+        await deps.storage.setItem(APP_SETTINGS_SCHEMA_KEY, String(APP_SETTINGS_SCHEMA_VERSION));
+      }
+      return next;
     }
 
     const legacyStored = await deps.storage.getItem(LEGACY_SETTINGS_KEY);
@@ -114,10 +127,12 @@ export async function loadAppSettingsFromStorage(deps: SettingsDeps): Promise<Ap
         ...pickAppSettingsFromLegacy(legacyParsed),
       } satisfies AppSettings;
       await deps.storage.setItem(APP_SETTINGS_KEY, JSON.stringify(next));
+      await deps.storage.setItem(APP_SETTINGS_SCHEMA_KEY, String(APP_SETTINGS_SCHEMA_VERSION));
       return next;
     }
 
     await deps.storage.setItem(APP_SETTINGS_KEY, JSON.stringify(DEFAULT_CLIENT_SETTINGS));
+    await deps.storage.setItem(APP_SETTINGS_SCHEMA_KEY, String(APP_SETTINGS_SCHEMA_VERSION));
     return DEFAULT_CLIENT_SETTINGS;
   } catch (error) {
     console.error("[AppSettings] Failed to load settings:", error);

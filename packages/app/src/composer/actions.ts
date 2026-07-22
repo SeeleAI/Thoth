@@ -1,5 +1,6 @@
 import type { GitHubSearchItem, ThothTurnSnapshot } from "@thoth/protocol/messages";
 import type { ProviderRunMode } from "@thoth/protocol/provider-control";
+import type { AgentMessageDeliveryMode } from "@thoth/protocol/agent-turn-queue";
 import type {
   AttachmentMetadata,
   ComposerAttachment,
@@ -10,21 +11,8 @@ import {
   userAttachmentsOnly,
 } from "@/attachments/workspace-attachment-utils";
 import { splitComposerAttachmentsForSubmit } from "@/composer/attachments/submit";
-import {
-  appendOptimisticUserMessageToStream,
-  buildOptimisticUserMessage,
-  generateMessageId,
-  type StreamItem,
-  type UserMessageItem,
-} from "@/types/stream";
+import { generateMessageId } from "@/types/stream";
 import type { PickedImageAttachmentInput } from "@/hooks/image-attachment-picker";
-import { i18n } from "@/i18n/i18next";
-
-export interface QueuedComposerMessage {
-  id: string;
-  text: string;
-  attachments: ComposerAttachment[];
-}
 
 export interface AttachmentPersister {
   persistFromBlob: (input: {
@@ -51,8 +39,9 @@ export interface ComposerSendClient {
       contextRefs: ReturnType<typeof splitComposerAttachmentsForSubmit>["contextRefs"];
       thoth?: ThothTurnSnapshot;
       providerRunMode?: ProviderRunMode;
+      deliveryMode?: AgentMessageDeliveryMode;
     },
-  ) => Promise<void>;
+  ) => Promise<unknown>;
   uploadFile: (input: { fileName: string; mimeType: string; bytes: Uint8Array }) => Promise<{
     requestId: string;
     file: {
@@ -69,20 +58,6 @@ export interface ComposerSendClient {
 
 export interface ComposerCancelClient {
   cancelAgent: (agentId: string) => Promise<void> | void;
-}
-
-export interface AgentStreamWriter {
-  getTail: (agentId: string) => StreamItem[] | undefined;
-  getHead: (agentId: string) => StreamItem[] | undefined;
-  setHead: (updater: (prev: Map<string, StreamItem[]>) => Map<string, StreamItem[]>) => void;
-  setTail: (updater: (prev: Map<string, StreamItem[]>) => Map<string, StreamItem[]>) => void;
-}
-
-export interface QueueWriter {
-  read: (agentId: string) => QueuedComposerMessage[];
-  write: (
-    updater: (prev: Map<string, QueuedComposerMessage[]>) => Map<string, QueuedComposerMessage[]>,
-  ) => void;
 }
 
 export async function pickAndPersistImages(input: {
@@ -163,9 +138,9 @@ export interface DispatchComposerAgentMessageInput {
   encodeImages: (
     images: AttachmentMetadata[],
   ) => Promise<Array<{ data: string; mimeType: string }> | undefined>;
-  stream: AgentStreamWriter;
   thoth?: ThothTurnSnapshot;
   providerRunMode?: ProviderRunMode;
+  deliveryMode?: AgentMessageDeliveryMode;
 }
 
 export async function dispatchComposerAgentMessage(
@@ -173,14 +148,6 @@ export async function dispatchComposerAgentMessage(
 ): Promise<void> {
   const wirePayload = splitComposerAttachmentsForSubmit(input.attachments);
   const messageId = generateMessageId();
-  const userMessage = buildOptimisticUserMessage({
-    id: messageId,
-    text: input.text,
-    timestamp: new Date(),
-    images: wirePayload.images,
-    attachments: wirePayload.attachments,
-  });
-  appendUserMessageToStream(input.agentId, userMessage, input.stream);
   const imagesData = await input.encodeImages(wirePayload.images);
   await input.client.sendAgentMessage(input.agentId, input.text, {
     messageId,
@@ -189,138 +156,8 @@ export async function dispatchComposerAgentMessage(
     contextRefs: wirePayload.contextRefs,
     ...(input.thoth ? { thoth: input.thoth } : {}),
     ...(input.providerRunMode ? { providerRunMode: input.providerRunMode } : {}),
+    deliveryMode: input.deliveryMode ?? "queue",
   });
-}
-
-function appendUserMessageToStream(
-  agentId: string,
-  userMessage: UserMessageItem,
-  stream: AgentStreamWriter,
-): void {
-  const result = appendOptimisticUserMessageToStream({
-    tail: stream.getTail(agentId) ?? [],
-    head: stream.getHead(agentId) ?? [],
-    message: userMessage,
-    placement: "active-head",
-  });
-  if (result.changedHead) {
-    stream.setHead((prev) => {
-      const next = new Map(prev);
-      next.set(agentId, result.head);
-      return next;
-    });
-  }
-  if (result.changedTail) {
-    stream.setTail((prev) => {
-      const next = new Map(prev);
-      next.set(agentId, result.tail);
-      return next;
-    });
-  }
-}
-
-export interface QueueComposerMessageInput {
-  agentId: string;
-  text: string;
-  attachments: ComposerAttachment[];
-  queue: QueueWriter;
-}
-
-export interface QueueComposerMessageResult {
-  queued: QueuedComposerMessage | null;
-}
-
-export function queueComposerMessage(input: QueueComposerMessageInput): QueueComposerMessageResult {
-  const trimmed = input.text.trim();
-  if (!trimmed && input.attachments.length === 0) {
-    return { queued: null };
-  }
-  const item: QueuedComposerMessage = {
-    id: generateMessageId(),
-    text: trimmed,
-    attachments: input.attachments,
-  };
-  input.queue.write((prev) => {
-    const next = new Map(prev);
-    next.set(input.agentId, [...(prev.get(input.agentId) ?? []), item]);
-    return next;
-  });
-  return { queued: item };
-}
-
-export interface EditQueuedComposerMessageInput {
-  agentId: string;
-  messageId: string;
-  queue: QueueWriter;
-}
-
-export interface EditQueuedComposerMessageResult {
-  text: string;
-  attachments: UserComposerAttachment[];
-}
-
-export function editQueuedComposerMessage(
-  input: EditQueuedComposerMessageInput,
-): EditQueuedComposerMessageResult | null {
-  const item = input.queue.read(input.agentId).find((q) => q.id === input.messageId);
-  if (!item) return null;
-  input.queue.write((prev) => {
-    const next = new Map(prev);
-    next.set(
-      input.agentId,
-      (prev.get(input.agentId) ?? []).filter((q) => q.id !== input.messageId),
-    );
-    return next;
-  });
-  return {
-    text: item.text,
-    attachments: userAttachmentsOnly(item.attachments),
-  };
-}
-
-export interface SendQueuedComposerMessageNowInput {
-  agentId: string;
-  messageId: string;
-  queue: QueueWriter;
-  submitMessage: (input: { text: string; attachments: ComposerAttachment[] }) => Promise<void>;
-  failedToSendMessage?: string;
-}
-
-export type SendQueuedComposerMessageNowResult =
-  | { status: "missing" }
-  | { status: "submitted" }
-  | { status: "failed"; errorMessage: string };
-
-export async function sendQueuedComposerMessageNow(
-  input: SendQueuedComposerMessageNowInput,
-): Promise<SendQueuedComposerMessageNowResult> {
-  const item = input.queue.read(input.agentId).find((q) => q.id === input.messageId);
-  if (!item) return { status: "missing" };
-  input.queue.write((prev) => {
-    const next = new Map(prev);
-    next.set(
-      input.agentId,
-      (prev.get(input.agentId) ?? []).filter((q) => q.id !== input.messageId),
-    );
-    return next;
-  });
-  try {
-    await input.submitMessage({ text: item.text, attachments: item.attachments });
-    return { status: "submitted" };
-  } catch (error) {
-    input.queue.write((prev) => {
-      const next = new Map(prev);
-      next.set(input.agentId, [item, ...(prev.get(input.agentId) ?? [])]);
-      return next;
-    });
-    return {
-      status: "failed",
-      errorMessage:
-        error instanceof Error
-          ? error.message
-          : (input.failedToSendMessage ?? i18n.t("composer.errors.failedToSend")),
-    };
-  }
 }
 
 export interface OpenComposerAttachmentInput {

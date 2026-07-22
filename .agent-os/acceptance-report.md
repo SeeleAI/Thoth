@@ -2721,3 +2721,27 @@ Boundary:
 This evidence proves deletion of a disconnected source-and-self-test island. It does not claim a product
 performance delta because the directory was outside the runtime import graph; its benefit is removal of a
 second Task model and its maintenance/test surface without changing valid behavior.
+
+### `NTH-EV-049` Foreground Queue, Rewind Identity And Transient Image Preview
+
+Status: `passed locally; native Release verification pending` for `NTH-TD-028` / `NTH-AC-018`.
+
+Evidence recorded on `2026-07-22`:
+
+1. Send freezes `queue | interrupt` in a Workspace-sharded durable Queue. One Agent has at most one active
+   foreground execution; Interrupt persists first, fences the old execution and only then drains the new turn.
+   App-local Queue state and optimistic user Timeline writes were removed.
+2. Queue edit is a CAS/idempotent in-place authority command. It rewrites only text and raw prompt digests while
+   retaining frozen image/file attachments, Thoth/Plan controls and structured `@Task` context references.
+3. Rewind resolves canonical Timeline ids through versioned adapter-owned opaque native receipts.
+   Conversation/both rewind creates a new Timeline epoch; ambiguous legacy histories remain unavailable.
+4. Workspace and assistant image preview use daemon/Relay bytes plus transient Blob/data URIs, release object URLs
+   and no longer copy preview bytes into durable attachment storage.
+5. `accept:interaction-regressions:fast` passed in `29.693s`; `accept:thoth:fast` passed in `81.357s`, including
+   all `12/12` public foreground journeys. Foundation passed `555` tests. Daemon typecheck, Client build, Web
+   export and `git diff --check` also passed.
+
+Boundary:
+
+This is local source/API acceptance. Native Actions and replacement public assets remain to be verified before
+this evidence becomes `verified`.

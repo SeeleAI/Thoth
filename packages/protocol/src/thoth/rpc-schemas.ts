@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ProviderRunModeReceiptSchema, ProviderRunModeSchema } from "../provider-control.js";
+import { AgentQueuedTurnSchema } from "../agent-turn-queue.js";
 import {
   ClarifyFrontierLedgerSchema,
   ClarifyDecisionDeltaSchema,
@@ -237,6 +238,7 @@ export const AgentThothStateSchema = z
     pendingCard: AgentThothPendingCardSchema.nullable(),
     backgroundTaskId: NonEmptyStringSchema.nullable(),
     error: z.string().nullable(),
+    queuedTurns: z.array(AgentQueuedTurnSchema).optional(),
   })
   .strict();
 
@@ -303,6 +305,7 @@ export const AgentThothStateUpdateSchema = z
             "background_handoff",
             "turn_completed",
             "turn_interrupted",
+            "queue_changed",
             "turn_canceled",
           ])
           .optional(),

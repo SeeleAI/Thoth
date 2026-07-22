@@ -8,6 +8,11 @@ import type {
   ThothTurnControlSnapshot,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type { ProviderRunMode, ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
+import type {
+  AgentMessageDeliveryMode,
+  AgentQueuedTurn,
+  AgentTurnQueueCommand,
+} from "@thoth/protocol/agent-turn-queue";
 
 export type ForegroundAuthorityUpdateReason =
   | "turn_started"
@@ -17,7 +22,8 @@ export type ForegroundAuthorityUpdateReason =
   | "background_handoff"
   | "turn_completed"
   | "turn_interrupted"
-  | "turn_canceled";
+  | "turn_canceled"
+  | "queue_changed";
 
 export type ForegroundAuthorityCardKind = "clarify_card" | "task_card" | "goal_card";
 
@@ -95,3 +101,35 @@ export interface AnswerForegroundCardResult {
   card: ForegroundCardAuthorityRecord | null;
   turn: ForegroundTurnAuthorityRecord | null;
 }
+
+export interface ForegroundQueuedSubmission {
+  agentId: string;
+  messageId: string;
+  text: string;
+  deliveryMode: AgentMessageDeliveryMode;
+  attachmentCount: number;
+  payload: unknown;
+}
+
+export interface ForegroundQueueCommandResult {
+  accepted: boolean;
+  conflict: boolean;
+  duplicate: boolean;
+  revision: number;
+  queuedTurns: AgentQueuedTurn[];
+  restoredText: string | null;
+  error: string | null;
+}
+
+interface ForegroundQueueCommandBaseInput {
+  agentId: string;
+  queuedTurnId: string;
+  expectedRevision: number;
+  commandId: string;
+}
+
+export type ForegroundQueueCommandInput = ForegroundQueueCommandBaseInput &
+  (
+    | { command: Extract<AgentTurnQueueCommand, "edit">; text: string }
+    | { command: Exclude<AgentTurnQueueCommand, "edit"> }
+  );

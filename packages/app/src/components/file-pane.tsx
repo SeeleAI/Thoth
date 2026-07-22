@@ -22,16 +22,13 @@ import { lineNumberGutterWidth } from "@/components/code-insets";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { isRenderedMarkdownFile } from "@/components/file-pane-render-mode";
 import { isWeb } from "@/constants/platform";
-import type { AttachmentMetadata } from "@/attachments/types";
-import { useAttachmentPreviewUrl } from "@/attachments/use-attachment-preview-url";
-import { persistAttachmentFromBytes } from "@/attachments/service";
-import { createPreviewAttachmentId, getFileNameFromPath } from "@/attachments/utils";
 import { explorerFileFromReadResult } from "@/file-explorer/read-result";
 import { resolveFilePreviewReadTarget } from "@/file-explorer/preview-target";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import { MountedTabActiveContext } from "@/components/split-container";
 import { useAppVisible } from "@/hooks/use-app-visible";
 import { isFileQueryEnabled } from "@/components/file-pane-enabled";
+import { useFilePreviewSource } from "@/file-explorer/use-file-preview-source";
 
 interface CodeLineProps {
   tokens: HighlightToken[];
@@ -72,36 +69,19 @@ function formatFileSize({ size }: { size: number }): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function createFilePanePreview(file: FileReadResult | null): Promise<{
+function createFilePanePreview(file: FileReadResult | null): {
   file: ExplorerFile | null;
-  imageAttachment: AttachmentMetadata | null;
-}> {
+  imageFile: FileReadResult | null;
+} {
   if (!file) {
-    return { file: null, imageAttachment: null };
+    return { file: null, imageFile: null };
   }
 
   const explorerFile = explorerFileFromReadResult(file);
   if (file.kind !== "image") {
-    return { file: explorerFile, imageAttachment: null };
+    return { file: explorerFile, imageFile: null };
   }
-
-  const imageAttachment = await persistAttachmentFromBytes({
-    id: createPreviewAttachmentId({
-      mimeType: file.mime,
-      path: file.path,
-      size: file.size,
-      modifiedAt: file.modifiedAt,
-      contentLength: file.bytes.byteLength,
-    }),
-    bytes: file.bytes,
-    mimeType: file.mime,
-    fileName: getFileNameFromPath(file.path),
-  });
-
-  return {
-    file: explorerFile,
-    imageAttachment,
-  };
+  return { file: explorerFile, imageFile: file };
 }
 
 function clampLineSelection(input: {
@@ -433,16 +413,16 @@ export function FilePane({
       }
       try {
         const file = await client.readFile(readTarget.cwd, readTarget.path);
-        const preview = await createFilePanePreview(file);
+        const preview = createFilePanePreview(file);
         return {
           file: preview.file,
-          imageAttachment: preview.imageAttachment,
+          imageFile: preview.imageFile,
           error: null,
         };
       } catch (error) {
         return {
           file: null,
-          imageAttachment: null,
+          imageFile: null,
           error: error instanceof Error ? error.message : t("panels.file.failedToLoad"),
         };
       }
@@ -450,24 +430,25 @@ export function FilePane({
     staleTime: 5_000,
     refetchOnMount: true,
   });
-  const imagePreviewUri = useAttachmentPreviewUrl(query.data?.imageAttachment ?? null);
+  const imagePreview = useFilePreviewSource(query.data?.imageFile ?? null);
+  const visibleError = query.data?.error ?? imagePreview.error;
 
   return (
     <View style={styles.container} testID="workspace-file-pane">
-      {query.data?.error ? (
+      {visibleError ? (
         <View style={styles.centerState}>
-          <Text style={styles.errorText}>{query.data.error}</Text>
+          <Text style={styles.errorText}>{visibleError}</Text>
         </View>
-      ) : null}
-
-      <FilePreviewBody
-        preview={query.data?.file ?? null}
-        isLoading={query.isFetching}
-        showDesktopWebScrollbar={showDesktopWebScrollbar}
-        isMobile={isMobile}
-        location={location}
-        imagePreviewUri={imagePreviewUri}
-      />
+      ) : (
+        <FilePreviewBody
+          preview={query.data?.file ?? null}
+          isLoading={query.isFetching}
+          showDesktopWebScrollbar={showDesktopWebScrollbar}
+          isMobile={isMobile}
+          location={location}
+          imagePreviewUri={imagePreview.uri}
+        />
+      )}
     </View>
   );
 }

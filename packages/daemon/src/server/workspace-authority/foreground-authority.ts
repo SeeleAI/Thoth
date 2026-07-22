@@ -14,7 +14,11 @@ import type {
   ForegroundTurnAuthorityRecord,
   StartForegroundTurnInput,
   StartForegroundTurnResult,
+  ForegroundQueuedSubmission,
+  ForegroundQueueCommandInput,
+  ForegroundQueueCommandResult,
 } from "./foreground-authority-types.js";
+import type { AgentQueuedTurn } from "@thoth/protocol/agent-turn-queue";
 
 /** Agent-scoped facade over Workspace-sharded authority stores. */
 export class WorkspaceForegroundAuthority {
@@ -48,8 +52,60 @@ export class WorkspaceForegroundAuthority {
     return this.manager.forAgent(agentId)?.getActiveForegroundTurn(agentId) ?? null;
   }
 
+  enqueueTurn(input: ForegroundQueuedSubmission): {
+    queuedTurn: AgentQueuedTurn;
+    revision: number;
+    created: boolean;
+  } {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) {
+      throw new Error(`Agent ${input.agentId} is not bound to a Workspace authority`);
+    }
+    return store.enqueueForegroundTurn(input);
+  }
+
+  peekQueue(agentId: string): { queuedTurn: AgentQueuedTurn; payload: unknown } | null {
+    return this.manager.forAgent(agentId)?.peekForegroundQueue(agentId) ?? null;
+  }
+
+  removeQueuedTurn(agentId: string, queuedTurnId: string): boolean {
+    return (
+      this.manager.forAgent(agentId)?.removeForegroundQueuedTurn(agentId, queuedTurnId) ?? false
+    );
+  }
+
+  clearQueue(agentId: string): number {
+    return this.manager.forAgent(agentId)?.clearForegroundQueue(agentId) ?? 0;
+  }
+
+  commandQueue(input: ForegroundQueueCommandInput): ForegroundQueueCommandResult {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) {
+      return {
+        accepted: false,
+        conflict: false,
+        duplicate: false,
+        revision: 0,
+        queuedTurns: [],
+        restoredText: null,
+        error: `Agent ${input.agentId} is not bound to a Workspace authority`,
+      };
+    }
+    return store.commandForegroundQueue(input);
+  }
+
   getTurn(turnId: string): ForegroundTurnAuthorityRecord | null {
     return this.manager.forTurn(turnId)?.getForegroundTurn(turnId) ?? null;
+  }
+
+  getTurnBySourceMessage(
+    agentId: string,
+    sourceMessageId: string,
+  ): ForegroundTurnAuthorityRecord | null {
+    return (
+      this.manager.forAgent(agentId)?.getForegroundTurnBySourceMessage(agentId, sourceMessageId) ??
+      null
+    );
   }
 
   bindProviderTurn(input: {

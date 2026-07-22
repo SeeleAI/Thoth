@@ -112,6 +112,20 @@ npm run accept:thoth:fast
 This reuses the same runner, executes the complete foreground authority journey and adds storage migration, Task
 coordination, Task context and the wider App Task surface under the same hard deadline.
 
+## Fast Interaction Regression Acceptance
+
+Use the dedicated interaction gate while changing foreground delivery, rewind identity or file preview:
+
+```bash
+npm run accept:interaction-regressions:fast
+```
+
+The runner shares one 300-second deadline. It exercises the public Queue/Interrupt lifecycle through a suspended
+Card and daemon restart, Workspace queue/CAS persistence, canonical-to-provider rewind receipts, Timeline epoch
+reset, daemon/client binary file reads, Queue-default settings migration and transient PNG/JPEG/GIF/WebP preview
+URL cleanup. Its static contract rejects a second App-local Queue, optimistic user Timeline writes and preview
+copies in durable attachment storage. `accept:thoth:fast` includes this gate.
+
 ## Acceptance Layers
 
 Use the cheapest layer that can disprove the current change, then promote the same Journey:

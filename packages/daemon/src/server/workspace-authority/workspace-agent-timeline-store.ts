@@ -6,7 +6,11 @@ import type {
   AgentTimelineRow,
   AgentTimelineStore,
 } from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
-import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
+import type {
+  AgentTimelineItem,
+  ProviderMessageAnchorReceipt,
+  ProviderRewindScope,
+} from "@thoth/drivers/agent-runtime";
 import type { WorkspaceAuthorityManager } from "./workspace-authority-manager.js";
 import type { WorkspaceAuthorityStore } from "./workspace-authority-store.js";
 
@@ -84,6 +88,27 @@ export class WorkspaceAgentTimelineStore implements AgentTimelineStore {
 
   async bulkInsert(agentId: string, rows: readonly AgentTimelineRow[]): Promise<void> {
     this.store(agentId).appendAgentTimelineRows(agentId, rows);
+  }
+
+  async getProviderMessageAnchor(
+    agentId: string,
+    canonicalMessageId: string,
+    scope: ProviderRewindScope,
+  ): Promise<ProviderMessageAnchorReceipt | null> {
+    return this.store(agentId).getProviderMessageAnchor(agentId, canonicalMessageId, scope);
+  }
+
+  async bindProviderMessageAnchor(
+    agentId: string,
+    canonicalMessageId: string,
+    receipt: ProviderMessageAnchorReceipt,
+    scopes: readonly ProviderRewindScope[],
+  ): Promise<void> {
+    this.store(agentId).bindProviderMessageAnchor(agentId, canonicalMessageId, receipt, scopes);
+  }
+
+  async truncateFromMessage(agentId: string, canonicalMessageId: string): Promise<void> {
+    this.store(agentId).truncateAgentTimelineFromMessage(agentId, canonicalMessageId);
   }
 
   close(): void {}

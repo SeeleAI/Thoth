@@ -10,26 +10,19 @@ import type {
   UserComposerAttachment,
   WorkspaceComposerAttachment,
 } from "@/attachments/types";
-import type { StreamItem } from "@/types/stream";
 import {
   cancelComposerAgent,
   dispatchComposerAgentMessage,
-  editQueuedComposerMessage,
   findGithubItemByOption,
   isAttachmentSelectedForGithubItem,
   openComposerAttachment,
   pickAndPersistImages,
-  queueComposerMessage,
   removeComposerAttachmentAtIndex,
-  sendQueuedComposerMessageNow,
   toggleGithubAttachment,
   toggleGithubAttachmentFromPicker,
-  type AgentStreamWriter,
   type AttachmentPersister,
   type ComposerCancelClient,
   type ComposerSendClient,
-  type QueueWriter,
-  type QueuedComposerMessage,
 } from "./actions";
 const imageMetadata: AttachmentMetadata = {
   id: "img-1",
@@ -168,6 +161,7 @@ interface FakeSendCall {
     images: Array<{ data: string; mimeType: string }>;
     attachments: AgentAttachment[];
     thoth?: ThothTurnSnapshot;
+    deliveryMode?: "queue" | "interrupt";
   };
 }
 
@@ -185,40 +179,6 @@ function createFakeSendClient(
     },
     uploadFile: async () => ({ requestId: "test", file: null, error: null }),
   };
-}
-
-interface FakeStream extends AgentStreamWriter {
-  head: Map<string, StreamItem[]>;
-  tail: Map<string, StreamItem[]>;
-}
-
-function createFakeStream(initialHead: Map<string, StreamItem[]> = new Map()): FakeStream {
-  const fake: FakeStream = {
-    head: new Map(initialHead),
-    tail: new Map(),
-    getTail: (agentId) => fake.tail.get(agentId),
-    getHead: (agentId) => fake.head.get(agentId),
-    setHead: (updater) => {
-      fake.head = updater(fake.head);
-    },
-    setTail: (updater) => {
-      fake.tail = updater(fake.tail);
-    },
-  };
-  return fake;
-}
-
-function createFakeQueue(
-  initial: Map<string, QueuedComposerMessage[]> = new Map(),
-): QueueWriter & { state: Map<string, QueuedComposerMessage[]> } {
-  const fake: QueueWriter & { state: Map<string, QueuedComposerMessage[]> } = {
-    state: new Map(initial),
-    read: (agentId) => fake.state.get(agentId) ?? [],
-    write: (updater) => {
-      fake.state = updater(fake.state);
-    },
-  };
-  return fake;
 }
 
 const passthroughEncodeImages = async (images: AttachmentMetadata[]) =>
@@ -317,9 +277,8 @@ describe("pickAndPersistImages", () => {
 });
 
 describe("dispatchComposerAgentMessage", () => {
-  it("sends text + image data + structured attachments and appends user_message to the tail when head is empty", async () => {
+  it("sends text and attachments only through the daemon client", async () => {
     const client = createFakeSendClient();
-    const stream = createFakeStream();
     const image = imageWithId("img-2");
 
     await dispatchComposerAgentMessage({
@@ -331,7 +290,6 @@ describe("dispatchComposerAgentMessage", () => {
         { kind: "github_pr", item: prItem },
       ],
       encodeImages: passthroughEncodeImages,
-      stream,
     });
 
     expect(client.calls).toHaveLength(1);
@@ -352,44 +310,11 @@ describe("dispatchComposerAgentMessage", () => {
       },
     ]);
 
-    expect(stream.head.get("agent")).toBeUndefined();
-    const tail = stream.tail.get("agent");
-    expect(tail).toHaveLength(1);
-    const userMessage = tail?.[0] as Extract<StreamItem, { kind: "user_message" }>;
-    expect(userMessage.kind).toBe("user_message");
-    expect(userMessage.text).toBe("send attachments");
-    expect(userMessage.images).toEqual([image]);
-    expect(userMessage.attachments).toEqual(call.options.attachments);
-    expect(userMessage.id).toBe(call.options.messageId);
-    expect(userMessage.optimistic).toBe(true);
-  });
-
-  it("appends to the existing head when one is present", async () => {
-    const existingItem: StreamItem = {
-      kind: "user_message",
-      id: "prior",
-      text: "prior",
-      timestamp: new Date(0),
-    };
-    const stream = createFakeStream(new Map([["agent", [existingItem]]]));
-    const client = createFakeSendClient();
-
-    await dispatchComposerAgentMessage({
-      client,
-      agentId: "agent",
-      text: "next message",
-      attachments: [],
-      encodeImages: passthroughEncodeImages,
-      stream,
-    });
-
-    expect(stream.head.get("agent")).toHaveLength(2);
-    expect(stream.tail.get("agent")).toBeUndefined();
+    expect(call.options.deliveryMode).toBe("queue");
   });
 
   it("submits empty wire arrays when no attachments are provided", async () => {
     const client = createFakeSendClient();
-    const stream = createFakeStream();
 
     await dispatchComposerAgentMessage({
       client,
@@ -397,7 +322,6 @@ describe("dispatchComposerAgentMessage", () => {
       text: "plain message",
       attachments: [],
       encodeImages: passthroughEncodeImages,
-      stream,
     });
 
     expect(client.calls[0]?.options).toMatchObject({
@@ -408,7 +332,6 @@ describe("dispatchComposerAgentMessage", () => {
 
   it("forwards the send-time Thoth snapshot through the ordinary agent API", async () => {
     const client = createFakeSendClient();
-    const stream = createFakeStream();
     const thoth: ThothTurnSnapshot = {
       enabled: true,
       executionMode: "loop",
@@ -422,7 +345,6 @@ describe("dispatchComposerAgentMessage", () => {
       text: "run this in the background",
       attachments: [],
       encodeImages: passthroughEncodeImages,
-      stream,
       thoth,
     });
 
@@ -431,7 +353,6 @@ describe("dispatchComposerAgentMessage", () => {
 
   it("serializes workspace review attachments through the structured attachment path", async () => {
     const client = createFakeSendClient();
-    const stream = createFakeStream();
     const review = reviewWorkspaceAttachment("Please simplify this.");
 
     await dispatchComposerAgentMessage({
@@ -440,7 +361,6 @@ describe("dispatchComposerAgentMessage", () => {
       text: "review this",
       attachments: [review],
       encodeImages: passthroughEncodeImages,
-      stream,
     });
 
     expect(client.calls[0]?.options.attachments).toEqual([review.attachment]);
@@ -449,7 +369,6 @@ describe("dispatchComposerAgentMessage", () => {
 
   it("serializes browser_element workspace attachments as text attachments at the wire boundary", async () => {
     const client = createFakeSendClient();
-    const stream = createFakeStream();
     const browserElement = browserElementWorkspaceAttachment();
 
     await dispatchComposerAgentMessage({
@@ -458,7 +377,6 @@ describe("dispatchComposerAgentMessage", () => {
       text: "inspect element",
       attachments: [browserElement],
       encodeImages: passthroughEncodeImages,
-      stream,
     });
 
     expect(client.calls[0]?.options.attachments).toEqual([
@@ -469,150 +387,6 @@ describe("dispatchComposerAgentMessage", () => {
         text: browserElement.attachment.formatted,
       },
     ]);
-  });
-});
-
-describe("queueComposerMessage", () => {
-  it("queues a trimmed message under the agent id and returns the new entry", () => {
-    const queue = createFakeQueue();
-    const result = queueComposerMessage({
-      agentId: "agent",
-      text: "  draft  ",
-      attachments: [],
-      queue,
-    });
-
-    expect(result.queued?.text).toBe("draft");
-    expect(queue.state.get("agent")).toEqual([
-      { id: result.queued?.id, text: "draft", attachments: [] },
-    ]);
-  });
-
-  it("does not queue an empty message with no attachments", () => {
-    const queue = createFakeQueue();
-    const result = queueComposerMessage({
-      agentId: "agent",
-      text: "   ",
-      attachments: [],
-      queue,
-    });
-    expect(result.queued).toBeNull();
-    expect(queue.state.get("agent")).toBeUndefined();
-  });
-
-  it("captures workspace review attachments at queue time alongside user attachments", () => {
-    const queue = createFakeQueue();
-    const review = reviewWorkspaceAttachment("Initial queued review.");
-    const image = imageWithId("img-queue");
-    queueComposerMessage({
-      agentId: "agent",
-      text: "queue this",
-      attachments: [{ kind: "image", metadata: image }, review],
-      queue,
-    });
-
-    expect(queue.state.get("agent")?.[0]?.attachments).toEqual([
-      { kind: "image", metadata: image },
-      review,
-    ]);
-  });
-});
-
-describe("editQueuedComposerMessage", () => {
-  it("returns null and leaves the queue untouched when the message id is missing", () => {
-    const queue = createFakeQueue(
-      new Map([["agent", [{ id: "other", text: "other", attachments: [] }]]]),
-    );
-    const result = editQueuedComposerMessage({ agentId: "agent", messageId: "missing", queue });
-    expect(result).toBeNull();
-    expect(queue.state.get("agent")).toHaveLength(1);
-  });
-
-  it("returns the text and only user attachments, removing the queued entry", () => {
-    const review = reviewWorkspaceAttachment("Queued snapshot.");
-    const image = imageWithId("img-queued-edit");
-    const queue = createFakeQueue(
-      new Map([
-        [
-          "agent",
-          [
-            {
-              id: "msg-1",
-              text: "queued draft",
-              attachments: [{ kind: "image", metadata: image }, review],
-            },
-          ],
-        ],
-      ]),
-    );
-
-    const result = editQueuedComposerMessage({ agentId: "agent", messageId: "msg-1", queue });
-    expect(result).toEqual({
-      text: "queued draft",
-      attachments: [{ kind: "image", metadata: image }],
-    });
-    expect(queue.state.get("agent")).toEqual([]);
-  });
-});
-
-describe("sendQueuedComposerMessageNow", () => {
-  it("returns missing without submitting when the message id is gone", async () => {
-    const queue = createFakeQueue();
-    const submitted: Array<{ text: string; attachments: ComposerAttachment[] }> = [];
-    const result = await sendQueuedComposerMessageNow({
-      agentId: "agent",
-      messageId: "msg-1",
-      queue,
-      submitMessage: async (input) => {
-        submitted.push(input);
-      },
-    });
-    expect(result).toEqual({ status: "missing" });
-    expect(submitted).toEqual([]);
-  });
-
-  it("removes the queued entry and submits its text + attachments", async () => {
-    const review = reviewWorkspaceAttachment("Queued for send.");
-    const queue = createFakeQueue(
-      new Map([["agent", [{ id: "msg-1", text: "send me", attachments: [review] }]]]),
-    );
-    const submitted: Array<{ text: string; attachments: ComposerAttachment[] }> = [];
-    const result = await sendQueuedComposerMessageNow({
-      agentId: "agent",
-      messageId: "msg-1",
-      queue,
-      submitMessage: async (input) => {
-        submitted.push(input);
-      },
-    });
-    expect(result).toEqual({ status: "submitted" });
-    expect(queue.state.get("agent")).toEqual([]);
-    expect(submitted).toEqual([{ text: "send me", attachments: [review] }]);
-  });
-
-  it("restores the queued entry to the front and surfaces the error message on failure", async () => {
-    const queue = createFakeQueue(
-      new Map([
-        [
-          "agent",
-          [
-            { id: "msg-1", text: "first", attachments: [] },
-            { id: "msg-2", text: "second", attachments: [] },
-          ],
-        ],
-      ]),
-    );
-    const result = await sendQueuedComposerMessageNow({
-      agentId: "agent",
-      messageId: "msg-1",
-      queue,
-      submitMessage: async () => {
-        throw new Error("network down");
-      },
-    });
-    expect(result).toEqual({ status: "failed", errorMessage: "network down" });
-    const state = queue.state.get("agent");
-    expect(state?.map((m) => m.id)).toEqual(["msg-1", "msg-2"]);
   });
 });
 

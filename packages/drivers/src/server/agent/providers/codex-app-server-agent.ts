@@ -34,6 +34,7 @@ import {
   type ListImportableSessionsOptions,
   type ProviderCatalog,
   type ProviderControlLaunchContext,
+  type ProviderMessageAnchorReceipt,
 } from "../agent-sdk-types.js";
 import { THOTH_RUNTIME_TOOL_NAMES } from "@thoth/protocol/thoth-runtime-contract";
 import type { ThothToolCatalog, ThothToolDefinition, ThothToolResult } from "../tools/types.js";
@@ -3958,7 +3959,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     };
   }
 
-  async revertConversation(input: { messageId: string }): Promise<void> {
+  async revertConversation(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void> {
     await this.connect();
     if (!this.client) {
       throw new Error("Codex client is not initialized");
@@ -3972,7 +3973,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     await revertCodexConversation({
       client: this.client,
       threadId: this.currentThreadId,
-      messageId: input.messageId,
+      messageId: input.anchor.opaqueAnchor,
       cwd: this.config.cwd ?? null,
       model: this.config.model ?? null,
       serviceTier: this.serviceTier,
@@ -3985,6 +3986,13 @@ export class CodexAppServerAgentSession implements AgentSession {
         await this.loadPersistedHistory();
       },
     });
+  }
+
+  async listRewindAnchors(): Promise<ProviderMessageAnchorReceipt[]> {
+    if (this.userMessageTurnIds.length === 0 && this.currentThreadId) {
+      await this.loadPersistedHistory();
+    }
+    return this.userMessageTurnIds.map((opaqueAnchor) => ({ version: 1, opaqueAnchor }));
   }
 
   async interrupt(): Promise<void> {

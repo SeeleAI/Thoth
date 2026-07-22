@@ -58,7 +58,6 @@ import { derivePendingPermissionKey, normalizeAgentSnapshot } from "@/utils/agen
 import { resolveProjectPlacement } from "@/utils/project-placement";
 import { buildDraftStoreKey } from "@/stores/draft-keys";
 import type { AttachmentMetadata } from "@/attachments/types";
-import { splitComposerAttachmentsForSubmit } from "@/composer/attachments/submit";
 import { reconcilePreviousAgentStatuses } from "@/contexts/session-status-tracking";
 import { patchWorkspaceScripts } from "@/contexts/session-workspace-scripts";
 import {
@@ -494,7 +493,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const flushAgentLastActivity = useSessionStore((state) => state.flushAgentLastActivity);
   const setPendingPermissions = useSessionStore((state) => state.setPendingPermissions);
   const clearDraftInput = useDraftStore((state) => state.clearDraftInput);
-  const setQueuedMessages = useSessionStore((state) => state.setQueuedMessages);
   const updateSessionClient = useSessionStore((state) => state.updateSessionClient);
   const updateSessionServerInfo = useSessionStore((state) => state.updateSessionServerInfo);
   const upsertWorkspaceSetupProgress = useWorkspaceSetupStore((state) => state.upsertProgress);
@@ -511,15 +509,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const sessionAgents = useSessionStore((state) => state.sessions[serverId]?.agents);
 
   const previousAgentStatusRef = useRef<Map<string, AgentLifecycleStatus>>(new Map());
-  const sendAgentMessageRef = useRef<
-    | ((
-        agentId: string,
-        message: string,
-        images?: AttachmentMetadata[],
-        attachments?: AgentAttachment[],
-      ) => Promise<void>)
-    | null
-  >(null);
   const _sessionStateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attentionNotifiedRef = useRef<Map<string, number>>(new Map());
   const appStateRef = useRef(AppState.currentState);
@@ -663,39 +652,9 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         return next;
       });
 
-      const prevStatus = previousAgentStatusRef.current.get(agent.id);
-      if (prevStatus === "running" && agent.status !== "running") {
-        const session = useSessionStore.getState().sessions[serverId];
-        const queue = session?.queuedMessages.get(agent.id);
-        if (queue && queue.length > 0) {
-          const [next, ...rest] = queue;
-          if (sendAgentMessageRef.current) {
-            const wirePayload = splitComposerAttachmentsForSubmit(next.attachments);
-            void sendAgentMessageRef.current(
-              agent.id,
-              next.text,
-              wirePayload.images,
-              wirePayload.attachments,
-            );
-          }
-          setQueuedMessages(serverId, (prev) => {
-            const updated = new Map(prev);
-            updated.set(agent.id, rest);
-            return updated;
-          });
-        }
-      }
-
       previousAgentStatusRef.current.set(agent.id, agent.status);
     },
-    [
-      queryClient,
-      serverId,
-      setAgentLastActivity,
-      setAgents,
-      setPendingPermissions,
-      setQueuedMessages,
-    ],
+    [queryClient, serverId, setAgentLastActivity, setAgents, setPendingPermissions],
   );
 
   const runAuthoritativeRevalidation = useCallback(async () => {
@@ -977,15 +936,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           return changed ? next : prev;
         });
 
-        setQueuedMessages(serverId, (prev) => {
-          if (!prev.has(agentId)) {
-            return prev;
-          }
-          const next = new Map(prev);
-          next.delete(agentId);
-          return next;
-        });
-
         setAgentTimelineCursor(serverId, (prev) => {
           if (!prev.has(agentId)) {
             return prev;
@@ -1020,7 +970,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       setAgents,
       setAgentTimelineCursor,
       setPendingPermissions,
-      setQueuedMessages,
     ],
   );
 
@@ -1715,9 +1664,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     },
     [serverId, client, setAgentStreamTail, setAgentStreamHead],
   );
-
-  // Keep the ref updated so the agent_update handler can call it
-  sendAgentMessageRef.current = sendAgentMessage;
 
   const _cancelAgentRun = useCallback(
     (agentId: string) => {

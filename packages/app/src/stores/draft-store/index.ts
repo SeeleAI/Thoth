@@ -136,7 +136,6 @@ async function runAttachmentGc(): Promise<void> {
 
   const sessions = useSessionStore.getState().sessions;
   for (const session of Object.values(sessions)) {
-    collectQueuedMessageAttachmentIds(session, referencedIds);
     collectStreamUserImageIds(session.agentStreamTail, referencedIds);
     collectStreamUserImageIds(session.agentStreamHead, referencedIds);
   }
@@ -145,21 +144,6 @@ async function runAttachmentGc(): Promise<void> {
     await garbageCollectAttachments({ referencedIds });
   } catch (error) {
     console.warn("[DraftStore] Attachment garbage collection failed", error);
-  }
-}
-
-function collectQueuedMessageAttachmentIds(
-  session: SessionState,
-  referencedIds: Set<string>,
-): void {
-  for (const queue of session.queuedMessages.values()) {
-    for (const queuedMessage of queue) {
-      for (const attachment of queuedMessage.attachments) {
-        if (attachment.kind === "image") {
-          referencedIds.add(attachment.metadata.id);
-        }
-      }
-    }
   }
 }
 

@@ -1535,6 +1535,9 @@ Daemon tests:
 17. Stop task preserves state.
 18. Timeline cursor catch-up.
 19. Provider stream events are appended before broadcast.
+20. Foreground Queue/Interrupt is stored in the owning Workspace shard; App shells render its projection and never schedule from local status transitions.
+21. Canonical user-message ids bind to adapter-owned, versioned opaque rewind receipts with provider-thread lineage and supported scopes.
+22. Conversation rewind replaces the Timeline epoch; image preview bytes remain daemon-owned and use only transient client URLs.
 
 Driver tests:
 

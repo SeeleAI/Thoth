@@ -86,6 +86,7 @@ import {
   type ListImportableSessionsOptions,
   type McpServerConfig,
   type ProviderCatalog,
+  type ProviderMessageAnchorReceipt,
 } from "../../agent-sdk-types.js";
 import { importSessionFromPersistence } from "../../provider-session-import.js";
 import {
@@ -2449,8 +2450,8 @@ class ClaudeAgentSession implements AgentSession {
     return Array.from(commandMap.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async revertConversation(input: { messageId: string }): Promise<void> {
-    const target = this.resolveConversationRewindTarget(input.messageId);
+  async revertConversation(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void> {
+    const target = this.resolveConversationRewindTarget(input.anchor.opaqueAnchor);
     if (target.kind === "fresh-session") {
       this.startFreshConversationSession();
       return;
@@ -2466,15 +2467,19 @@ class ClaudeAgentSession implements AgentSession {
     });
   }
 
-  async revertFiles(input: { messageId: string }): Promise<void> {
-    const messageId = await this.resolveClaudeMessageId(input.messageId);
+  async listRewindAnchors(): Promise<ProviderMessageAnchorReceipt[]> {
+    return this.userMessageIds.map((opaqueAnchor) => ({ version: 1, opaqueAnchor }));
+  }
+
+  async revertFiles(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void> {
+    const messageId = await this.resolveClaudeMessageId(input.anchor.opaqueAnchor);
     await revertClaudeFiles({
       query: await this.ensureQuery(),
       messageId,
     });
   }
 
-  async revertBoth(input: { messageId: string }): Promise<void> {
+  async revertBoth(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void> {
     await this.revertFiles(input);
     await this.revertConversation(input);
   }

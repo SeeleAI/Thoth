@@ -1,4 +1,8 @@
-import type { AgentTimelineItem } from "./agent-sdk-types.js";
+import type {
+  AgentTimelineItem,
+  ProviderMessageAnchorReceipt,
+  ProviderRewindScope,
+} from "./agent-sdk-types.js";
 
 export interface AgentTimelineRow {
   seq: number;
@@ -59,4 +63,16 @@ export interface AgentTimelineStore {
   getLastAssistantMessage(agentId: string): Promise<string | null>;
   deleteAgent(agentId: string): Promise<void>;
   bulkInsert(agentId: string, rows: readonly AgentTimelineRow[]): Promise<void>;
+  getProviderMessageAnchor?(
+    agentId: string,
+    canonicalMessageId: string,
+    scope: ProviderRewindScope,
+  ): Promise<ProviderMessageAnchorReceipt | null>;
+  bindProviderMessageAnchor?(
+    agentId: string,
+    canonicalMessageId: string,
+    receipt: ProviderMessageAnchorReceipt,
+    scopes: readonly ProviderRewindScope[],
+  ): Promise<void>;
+  truncateFromMessage?(agentId: string, canonicalMessageId: string): Promise<void>;
 }

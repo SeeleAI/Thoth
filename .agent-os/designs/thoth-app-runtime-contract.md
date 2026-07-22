@@ -172,6 +172,14 @@ Thoth authority cards 也是 timeline items：
 
 Workspace Secretary 可以保留 snapshot/model 字段做恢复和兼容，但用户主链路不得依赖 `liveEvents` 这种降级摘要流来替代 provider timeline。
 
+### 4.1 Foreground Delivery And Rewind Identity
+
+1. 每次 Send 先由 daemon Workspace authority 接受完整冻结快照；App 不写 optimistic `user_message`，也不保存第二份 Queue。
+2. 每个 Agent 最多一个 active foreground execution。`queue` 等待 terminal/fence；`interrupt` 先持久化，再停止旧 turn，禁止上下两条 provider stream 并行。
+3. canonical `messageId` 属于 Thoth Timeline。HarnessAdapter 把它绑定到版本化 opaque provider anchor receipt；daemon 和 App 不解释 provider 原生 id。
+4. conversation/both rewind 从目标 canonical user row 开始截断并生成新 Timeline epoch；App 清空旧 cursor/head/tail 后完整读取新 epoch。无法确定的旧 anchor 明确不可回退。
+5. Workspace 图片始终由当前 daemon/Relay 二进制读取。预览只使用临时 Blob/data URI，并在切换、关闭或卸载时释放；不得复制进附件持久化目录。
+
 ## 5. Cards And Contracts
 
 ### 5.1 Clarify Card

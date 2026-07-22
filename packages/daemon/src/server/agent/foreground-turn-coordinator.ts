@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type { AgentAttachment, ThothTurnAck, ThothTurnSnapshot } from "@thoth/protocol/messages";
 import type { ProviderRunMode, ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
+import type { AgentMessageDeliveryMode } from "@thoth/protocol/agent-turn-queue";
 import type { TaskContextReference } from "@thoth/protocol/task-authority";
 import type {
   AgentThothCardAnswerRequest,
@@ -54,6 +55,7 @@ interface StartForegroundTurnInput {
   rawPrompt: AgentPromptInput;
   rawRunOptions?: AgentRunOptions;
   contextRefs?: TaskContextReference[];
+  deliveryMode: AgentMessageDeliveryMode;
 }
 
 interface ForegroundTurnCoordinatorOptions {
@@ -360,9 +362,14 @@ function continuationKey(cards: ForegroundCardAuthorityRecord[]): string | null 
   return "first-authority-card";
 }
 
+function occupiesForegroundExecutionSlot(lifecycle: AgentThothState["lifecycle"]): boolean {
+  return ["running", "awaiting_card", "awaiting_implementation", "quick_exec"].includes(lifecycle);
+}
+
 export class ForegroundTurnCoordinator {
   private readonly activeRunTokens = new Map<string, string>();
   private readonly deferredRunTokens = new Map<string, string>();
+  private readonly queueDrains = new Set<string>();
 
   constructor(private readonly options: ForegroundTurnCoordinatorOptions) {}
 
@@ -375,8 +382,48 @@ export class ForegroundTurnCoordinator {
     if (agent.internal === true) {
       throw new Error("Internal agents cannot own foreground Thoth turns.");
     }
-    if (this.options.agentManager.hasInFlightRun(agent.id)) {
-      throw new Error(`Agent ${agent.id} already has an active run`);
+    const existingTurn = input.messageId
+      ? this.options.authorityStore.getTurnBySourceMessage(agent.id, input.messageId)
+      : null;
+    if (existingTurn) {
+      const state = this.options.authorityStore.getState(agent.id);
+      return {
+        turnKind: existingTurn.kind,
+        turnId: existingTurn.id,
+        authorityRevision: state.revision,
+        providerRunMode: existingTurn.providerRunMode,
+        ...(existingTurn.providerRunModeReceipt
+          ? { providerRunModeReceipt: existingTurn.providerRunModeReceipt }
+          : {}),
+        disposition: "started",
+        queuePosition: null,
+      };
+    }
+    const foregroundState = this.options.authorityStore.getState(agent.id);
+    if (
+      this.options.agentManager.hasInFlightRun(agent.id) ||
+      occupiesForegroundExecutionSlot(foregroundState.lifecycle)
+    ) {
+      const queued = this.options.authorityStore.enqueueTurn({
+        agentId: agent.id,
+        messageId: input.messageId ?? randomUUID(),
+        text: input.text,
+        deliveryMode: input.deliveryMode,
+        attachmentCount: (input.images?.length ?? 0) + (input.attachments?.length ?? 0),
+        payload: input,
+      });
+      const deliveryMode = queued.queuedTurn.deliveryMode;
+      if (deliveryMode === "interrupt") {
+        void this.interruptAndDrain(agent.id);
+      }
+      return {
+        turnKind: input.thoth?.enabled === true ? "thoth" : "raw",
+        turnId: queued.queuedTurn.id,
+        authorityRevision: queued.revision,
+        providerRunMode: input.providerRunMode,
+        disposition: deliveryMode === "interrupt" ? "interrupting" : "queued",
+        queuePosition: queued.queuedTurn.position,
+      };
     }
     const kind = input.thoth?.enabled === true ? "thoth" : "raw";
     const started = this.options.authorityStore.startTurn({
@@ -398,6 +445,8 @@ export class ForegroundTurnCoordinator {
         ...(started.turn.providerRunModeReceipt
           ? { providerRunModeReceipt: started.turn.providerRunModeReceipt }
           : {}),
+        disposition: "started",
+        queuePosition: null,
       };
     }
 
@@ -465,7 +514,10 @@ export class ForegroundTurnCoordinator {
       this.startProviderRun(preparedTurn, appendPromptContext(input.rawPrompt, taskContextPrompt), {
         replace: false,
         structured: false,
-        runOptions: input.rawRunOptions,
+        runOptions: {
+          ...input.rawRunOptions,
+          ...(input.messageId ? { messageId: input.messageId } : {}),
+        },
       });
     }
 
@@ -480,7 +532,70 @@ export class ForegroundTurnCoordinator {
               .providerRunModeReceipt!,
           }
         : {}),
+      disposition: "started",
+      queuePosition: null,
     };
+  }
+
+  async commandQueue(
+    input: import("../workspace-authority/foreground-authority-types.js").ForegroundQueueCommandInput,
+  ) {
+    const result = this.options.authorityStore.commandQueue(input);
+    if (result.accepted && input.command === "interrupt") {
+      void this.interruptAndDrain(input.agentId);
+    }
+    return result;
+  }
+
+  clearQueue(agentId: string): number {
+    return this.options.authorityStore.clearQueue(agentId);
+  }
+
+  async resumeQueue(agentId: string): Promise<void> {
+    await this.drainQueue(agentId);
+  }
+
+  async prepareRewind(agentId: string): Promise<void> {
+    if (occupiesForegroundExecutionSlot(this.options.authorityStore.getState(agentId).lifecycle)) {
+      await this.cancel(agentId, { drainQueue: false });
+    }
+  }
+
+  private async interruptAndDrain(agentId: string): Promise<void> {
+    if (occupiesForegroundExecutionSlot(this.options.authorityStore.getState(agentId).lifecycle)) {
+      await this.cancel(agentId);
+    }
+    await this.drainQueue(agentId);
+  }
+
+  private async drainQueue(agentId: string): Promise<void> {
+    if (this.queueDrains.has(agentId)) return;
+    this.queueDrains.add(agentId);
+    try {
+      if (
+        this.options.agentManager.hasInFlightRun(agentId) ||
+        occupiesForegroundExecutionSlot(this.options.authorityStore.getState(agentId).lifecycle)
+      ) {
+        return;
+      }
+      const next = this.options.authorityStore.peekQueue(agentId);
+      if (!next) return;
+      const ack = await this.startTurn(next.payload as StartForegroundTurnInput);
+      if (ack.disposition === "started") {
+        this.options.authorityStore.removeQueuedTurn(agentId, next.queuedTurn.id);
+      }
+    } catch (error) {
+      this.options.logger.error({ err: error, agentId }, "Failed to start queued foreground turn");
+    } finally {
+      this.queueDrains.delete(agentId);
+      if (
+        !this.options.agentManager.hasInFlightRun(agentId) &&
+        !occupiesForegroundExecutionSlot(this.options.authorityStore.getState(agentId).lifecycle) &&
+        this.options.authorityStore.peekQueue(agentId)
+      ) {
+        queueMicrotask(() => void this.drainQueue(agentId));
+      }
+    }
   }
 
   async resolveProviderApproval(
@@ -650,7 +765,7 @@ export class ForegroundTurnCoordinator {
     };
   }
 
-  async cancel(agentId: string): Promise<AgentThothState> {
+  async cancel(agentId: string, options: { drainQueue?: boolean } = {}): Promise<AgentThothState> {
     await ensureAgentLoaded(agentId, {
       agentManager: this.options.agentManager,
       agentStorage: this.options.agentStorage,
@@ -673,6 +788,9 @@ export class ForegroundTurnCoordinator {
     this.activeRunTokens.delete(agentId);
     this.deferredRunTokens.delete(agentId);
     await this.options.agentManager.cancelAgentRun(agentId).catch(() => false);
+    if (options.drainQueue !== false) {
+      void this.drainQueue(agentId);
+    }
     return this.options.authorityStore.getState(agentId);
   }
 
@@ -753,6 +871,9 @@ export class ForegroundTurnCoordinator {
           state.lifecycle === "background_handoff" ||
           state.lifecycle === "canceled"
         ) {
+          if (state.lifecycle === "background_handoff" || state.lifecycle === "canceled") {
+            void this.drainQueue(input.turn.agentId);
+          }
           return;
         }
         if (event.type === "turn_failed" || event.type === "turn_canceled") {
@@ -765,6 +886,7 @@ export class ForegroundTurnCoordinator {
             error:
               event.type === "turn_failed" ? event.error : event.reason || "Provider turn canceled",
           });
+          void this.drainQueue(input.turn.agentId);
           return;
         }
         if (!input.structured || state.lifecycle === "quick_exec") {
@@ -776,6 +898,7 @@ export class ForegroundTurnCoordinator {
             reason: "turn_completed",
             error: null,
           });
+          void this.drainQueue(input.turn.agentId);
           return;
         }
         await new Promise<void>((resolve) => setImmediate(resolve));
@@ -799,6 +922,7 @@ export class ForegroundTurnCoordinator {
         reason: "turn_interrupted",
         error: error instanceof Error ? error.message : String(error),
       });
+      void this.drainQueue(input.turn.agentId);
     }
   }
 
@@ -942,6 +1066,7 @@ export class ForegroundTurnCoordinator {
       this.deferredRunTokens.delete(turn.agentId);
       endForegroundTurnFence({ agentId: turn.agentId, generation: turn.generation });
       await this.options.agentManager.cancelAgentRun(turn.agentId).catch(() => false);
+      void this.drainQueue(turn.agentId);
     } catch (error) {
       this.options.authorityStore.markLifecycle({
         agentId: turn.agentId,
@@ -952,6 +1077,7 @@ export class ForegroundTurnCoordinator {
         error: error instanceof Error ? error.message : String(error),
       });
       await this.options.agentManager.cancelAgentRun(turn.agentId).catch(() => false);
+      void this.drainQueue(turn.agentId);
     }
   }
 
@@ -1005,7 +1131,11 @@ export class ForegroundTurnCoordinator {
   private async recover(agentId: string): Promise<void> {
     const state = this.options.authorityStore.getState(agentId);
     const turn = this.options.authorityStore.getActiveTurn(agentId);
-    if (!turn || state.lifecycle === "awaiting_card" || state.lifecycle === "background_handoff") {
+    if (!turn || !occupiesForegroundExecutionSlot(state.lifecycle)) {
+      await this.drainQueue(agentId);
+      return;
+    }
+    if (state.lifecycle === "awaiting_card" || state.lifecycle === "background_handoff") {
       return;
     }
     if (this.options.agentManager.hasInFlightRun(agentId)) {

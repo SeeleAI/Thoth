@@ -42,6 +42,7 @@ import {
   type AgentStreamEvent,
   type AgentTimelineItem,
   type AgentUsage,
+  type ProviderMessageAnchorReceipt,
   type FetchCatalogOptions,
   type ImportableProviderSession,
   type ImportProviderSessionContext,
@@ -2903,13 +2904,19 @@ class OpenCodeAgentSession implements AgentSession {
     }
   }
 
-  async revertBoth(input: { messageId: string }): Promise<void> {
+  async revertBoth(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void> {
     await revertOpenCodeConversationAndFiles({
       client: this.client,
       sessionId: this.sessionId,
       cwd: this.config.cwd,
-      messageId: input.messageId,
+      messageId: input.anchor.opaqueAnchor,
     });
+  }
+
+  async listRewindAnchors(): Promise<ProviderMessageAnchorReceipt[]> {
+    return [...this.messageRoles.entries()]
+      .filter(([, role]) => role === "user")
+      .map(([opaqueAnchor]) => ({ version: 1 as const, opaqueAnchor }));
   }
 
   private beginSessionAbort(turnId: string | null, reason: string): Promise<void> {

@@ -785,4 +785,182 @@ describe("WorkspaceAuthorityStore", () => {
     store.close();
     catalog.close();
   });
+
+  it("persists foreground queue order and fences queue commands with authority revision", () => {
+    const created = createStore();
+    const { catalog } = created;
+    let { store } = created;
+    const first = store.enqueueForegroundTurn({
+      agentId: "agent_visible",
+      messageId: "message-queue-1",
+      text: "wait for the current turn",
+      deliveryMode: "queue",
+      attachmentCount: 0,
+      payload: { marker: "first" },
+    });
+    const replayedFirst = store.enqueueForegroundTurn({
+      agentId: "agent_visible",
+      messageId: "message-queue-1",
+      text: "must not replace the frozen payload",
+      deliveryMode: "interrupt",
+      attachmentCount: 1,
+      payload: { marker: "replacement" },
+    });
+    expect(replayedFirst).toMatchObject({ created: false });
+    expect(replayedFirst.queuedTurn).toMatchObject({
+      text: "wait for the current turn",
+      deliveryMode: "queue",
+      attachmentCount: 0,
+    });
+    const interrupt = store.enqueueForegroundTurn({
+      agentId: "agent_visible",
+      messageId: "message-interrupt-1",
+      text: "stop then run this",
+      deliveryMode: "interrupt",
+      attachmentCount: 1,
+      payload: {
+        marker: "interrupt",
+        text: "stop then run this",
+        rawPrompt: [
+          { type: "text", text: "stop then run this" },
+          { type: "image", data: "frozen-image", mimeType: "image/png" },
+        ],
+        images: [{ data: "frozen-image", mimeType: "image/png" }],
+        contextRefs: [{ type: "task", taskId: "task-1", revision: 3 }],
+        thoth: { enabled: true, executionMode: "loop" },
+        providerRunMode: "plan",
+      },
+    });
+    store.close();
+    store = new WorkspaceAuthorityStore({
+      thothHome: created.root,
+      workspaceId: created.workspaceId,
+      catalog,
+    });
+
+    expect(store.listForegroundQueue("agent_visible").map((item) => item.messageId)).toEqual([
+      "message-interrupt-1",
+      "message-queue-1",
+    ]);
+    expect(store.peekForegroundQueue("agent_visible")?.payload).toMatchObject({
+      marker: "interrupt",
+      text: "stop then run this",
+    });
+    expect(store.getForegroundState("agent_visible").queuedTurns).toHaveLength(2);
+
+    const stale = store.commandForegroundQueue({
+      agentId: "agent_visible",
+      queuedTurnId: first.queuedTurn.id,
+      command: "delete",
+      expectedRevision: first.revision,
+      commandId: "queue-command-stale",
+    });
+    expect(stale).toMatchObject({ accepted: false, conflict: true });
+
+    const edited = store.commandForegroundQueue({
+      agentId: "agent_visible",
+      queuedTurnId: interrupt.queuedTurn.id,
+      command: "edit",
+      text: "edited without replacing frozen context",
+      expectedRevision: interrupt.revision,
+      commandId: "queue-command-edit",
+    });
+    expect(edited).toMatchObject({
+      accepted: true,
+      restoredText: "edited without replacing frozen context",
+    });
+    expect(store.listForegroundQueue("agent_visible")).toHaveLength(2);
+    expect(store.peekForegroundQueue("agent_visible")?.payload).toMatchObject({
+      marker: "interrupt",
+      text: "edited without replacing frozen context",
+      rawPrompt: [
+        { type: "text", text: "edited without replacing frozen context" },
+        { type: "image", data: "frozen-image", mimeType: "image/png" },
+      ],
+      images: [{ data: "frozen-image", mimeType: "image/png" }],
+      contextRefs: [{ type: "task", taskId: "task-1", revision: 3 }],
+      thoth: { enabled: true, executionMode: "loop" },
+      providerRunMode: "plan",
+    });
+    expect(
+      store.commandForegroundQueue({
+        agentId: "agent_visible",
+        queuedTurnId: first.queuedTurn.id,
+        command: "delete",
+        expectedRevision: first.revision,
+        commandId: "queue-command-stale",
+      }),
+    ).toMatchObject({ accepted: false, conflict: true, duplicate: true });
+    store.close();
+    catalog.close();
+  });
+
+  it("persists provider-native rewind anchors and resets the canonical timeline epoch", () => {
+    const { root, catalog, store } = createStore();
+    store.upsertAgentRecord({
+      id: "agent_visible",
+      provider: "codex",
+      title: "Visible",
+      cwd: "/tmp/workspace",
+      workspaceId: "wks_test",
+      config: { provider: "codex", cwd: "/tmp/workspace" },
+      labels: {},
+      lastStatus: "closed",
+      persistence: {
+        provider: "codex",
+        sessionId: "native-thread-1",
+        nativeHandle: "native-thread-1",
+      },
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T00:00:00.000Z",
+      archivedAt: null,
+    });
+    store.appendAgentTimelineRows("agent_visible", [
+      {
+        seq: 1,
+        timestamp: "2026-07-20T00:00:00.000Z",
+        item: { type: "user_message", text: "first", messageId: "canonical-1" },
+      },
+      {
+        seq: 2,
+        timestamp: "2026-07-20T00:00:01.000Z",
+        item: { type: "assistant_message", text: "answer" },
+      },
+    ]);
+    const before = store.getAgentTimelineMeta("agent_visible")?.epoch;
+    store.bindProviderMessageAnchor(
+      "agent_visible",
+      "canonical-1",
+      { version: 1, opaqueAnchor: "native-1" },
+      ["conversation"],
+    );
+    expect(store.getProviderMessageAnchor("agent_visible", "canonical-1", "conversation")).toEqual({
+      version: 1,
+      opaqueAnchor: "native-1",
+    });
+    expect(store.getProviderMessageAnchor("agent_visible", "canonical-1", "files")).toBeNull();
+    const database = new DatabaseSync(
+      path.join(root, "workspaces", "wks_test", "authority.sqlite"),
+      { readOnly: true },
+    );
+    expect(
+      database
+        .prepare(
+          `SELECT provider_thread_id, native_anchor_receipt_json, scopes_json
+           FROM provider_message_anchors WHERE canonical_message_id = ?`,
+        )
+        .get("canonical-1"),
+    ).toMatchObject({
+      provider_thread_id: "provider-thread-visible-agent_visible",
+      native_anchor_receipt_json: JSON.stringify({ version: 1, opaqueAnchor: "native-1" }),
+      scopes_json: JSON.stringify(["conversation"]),
+    });
+    database.close();
+
+    store.truncateAgentTimelineFromMessage("agent_visible", "canonical-1");
+    expect(store.listAgentTimelineRows("agent_visible")).toEqual([]);
+    expect(store.getAgentTimelineMeta("agent_visible")?.epoch).not.toBe(before);
+    store.close();
+    catalog.close();
+  });
 });

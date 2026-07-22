@@ -776,17 +776,19 @@ export class MockLoadTestAgentSession implements AgentSession {
     this.listeners.clear();
   }
 
-  async revertConversation(_input: { messageId: string }): Promise<void> {
+  async revertConversation(_input: {
+    anchor: { version: 1; opaqueAnchor: string };
+  }): Promise<void> {
     this.failConfiguredRewind();
     this.keepFirstUserMessageHistory();
   }
 
-  async revertFiles(_input: { messageId: string }): Promise<void> {
+  async revertFiles(_input: { anchor: { version: 1; opaqueAnchor: string } }): Promise<void> {
     this.failConfiguredRewind();
     this.keepFirstUserMessageHistory();
   }
 
-  async revertBoth(_input: { messageId: string }): Promise<void> {
+  async revertBoth(_input: { anchor: { version: 1; opaqueAnchor: string } }): Promise<void> {
     this.failConfiguredRewind();
     this.keepFirstUserMessageHistory();
   }
