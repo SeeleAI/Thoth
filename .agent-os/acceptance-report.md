@@ -2724,7 +2724,7 @@ second Task model and its maintenance/test surface without changing valid behavi
 
 ### `NTH-EV-049` Foreground Queue, Rewind Identity And Transient Image Preview
 
-Status: `passed locally; native Release verification pending` for `NTH-TD-028` / `NTH-AC-018`.
+Status: `verified` for `NTH-TD-028` / `NTH-AC-018`.
 
 Evidence recorded on `2026-07-22`:
 
@@ -2740,8 +2740,18 @@ Evidence recorded on `2026-07-22`:
 5. `accept:interaction-regressions:fast` passed in `29.693s`; `accept:thoth:fast` passed in `81.357s`, including
    all `12/12` public foreground journeys. Foundation passed `555` tests. Daemon typecheck, Client build, Web
    export and `git diff --check` also passed.
+6. GitHub Actions run `29926576540` completed successfully at commit
+   `0eff56c084f2a0980b754a2c47f9a1af0cc6e4a1`. Preflight, Linux packaged Clarify/Loop, Windows, macOS x64/arm64,
+   signed Android, live Relay, server CLI and all three native CLI install smokes passed before publish.
+7. The replace-in-place `v0.0.0-mvp-beta` prerelease and tag both target `0eff56c0`; it remains the only MVP beta
+   Release, while `thoth-plugin-final-archive` remains present and remote `main` remains
+   `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+8. Re-downloaded `BUILD-SOURCE.txt` and `MVP-UPDATE.json` identify commit `0eff56c0` and workflow
+   `29926576540`. The public AppImage, Android APK and server CLI tgz all passed the released `SHA256SUMS`.
+9. Static extraction of the public AppImage verified bundled build identity `0eff56c0`, durable Queue protocol and
+   authority, provider message anchors, Timeline epoch reset and transient image object-URL create/release code.
 
 Boundary:
 
-This is local source/API acceptance. Native Actions and replacement public assets remain to be verified before
-this evidence becomes `verified`.
+This evidence verifies the bounded source/API behavior and the published native asset set. It intentionally does
+not add a second long AppImage/browser/real-provider smoke after the workflow's packaged Clarify/Loop journey.

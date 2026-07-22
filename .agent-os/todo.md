@@ -122,11 +122,11 @@ None.
 - Related: `NTH-CD-018`, `NTH-CD-059`, `NTH-CD-060`, `NTH-CD-062`, `NTH-REQ-022`, `NTH-AC-017`
 - Verification: See `NTH-EV-048`. Seven files and `2,244` lines were deleted with zero additions; structural guards, repository/Release contracts, foundation and Daemon type boundaries, 16 current Task-authority tests, targeted formatting and diff hygiene passed in a bounded source gate.
 
-12. `NTH-TD-028` `[doing]`: Repair rewind identity, foreground delivery serialization and Workspace image preview regressions, then replace the fixed MVP Release.
+12. `NTH-TD-028` `[verified]`: Repair rewind identity, foreground delivery serialization and Workspace image preview regressions, then replace the fixed MVP Release.
 
 - Scope: Provider-neutral canonical/native rewind receipts and Timeline epoch reset; Workspace-sharded durable Queue/Interrupt with one active foreground turn; removal of App-local Queue and optimistic Timeline authority; transient daemon/Relay image preview; Queue-default settings migration.
 - Related: `NTH-CD-060`, `NTH-CD-063`, `NTH-REQ-023`, `NTH-AC-018`
-- Verification: Local `accept:interaction-regressions:fast` currently passes; final status requires the complete fast/foundation gates, branch synchronization, all native Actions jobs and public Release metadata/assets.
+- Verification: See `NTH-EV-049`. Local interaction and full Thoth fast gates passed; GitHub Actions run `29926576540` completed every native, Relay and CLI job, replaced the fixed prerelease at `0eff56c0`, and the re-downloaded AppImage, APK and server CLI passed SHA-256 plus AppImage static content verification.
 
 ## Abandoned
 

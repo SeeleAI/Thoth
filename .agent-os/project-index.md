@@ -3,11 +3,11 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-028`
+2. Top next action: `NTH-TD-021`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: None. `NTH-TD-028` is in local verification before the authorized fixed MVP Release replacement.
+4. Active blockers: None.
 5. Current branch: `agent/dev/mvp`
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-028` moves foreground delivery into the Workspace authority Queue, maps canonical Timeline ids to versioned provider-owned rewind receipts, removes App-local Queue/optimistic Timeline authority and renders Workspace image bytes through transient preview URLs. The fixed MVP Release still points at verified commit `a705bbe8` until the current fast/foundation gates and native Actions finish.
+6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-028` is verified and released at `0eff56c0`: foreground delivery uses the Workspace authority Queue, canonical Timeline ids map to versioned provider-owned rewind receipts, App-local Queue/optimistic Timeline authority is removed, and Workspace image bytes render through transient preview URLs.
 
 ## Objective Summary
 
@@ -24,7 +24,7 @@
 
 ## Top Next Action
 
-`NTH-TD-028` `[doing]`: Finish the bounded interaction-regression gates, synchronize `agent/dev/mvp` and `release/mvp-actions`, then verify the replace-in-place `v0.0.0-mvp-beta` native Actions run and public assets. After release evidence lands, restore `NTH-TD-021` as the sole top next action.
+`NTH-TD-021` `[doing]`: Close the remaining real browser/device evidence for Loop `budget_wait`, pause/resume/stop and daemon restart/reconnect, including Background Task detail and phase AgentTimeline restoration.
 
 ## Active Blockers
 
@@ -103,7 +103,8 @@ None.
 69. `NTH-EV-046`: The second deletion slice removed the unused 65-file Core shadow implementation, nine false test placeholders, the destructive Expo starter reset and the abandoned Code4Agent Relay mirror. Its independent diff is `20,153` deletions with zero additions, and the 447-test affected gate passed in `36s`.
 70. `NTH-EV-047`: Provider-neutral native Plan, same-thread Implement, Loop approval automation and typed update recovery passed the bounded source gate. Final `accept:provider-control:fast` passed in `42.143s`, expanded `accept:thoth:fast` passed in `50.968s`, foundation passed `552` tests, and Protocol/Client/Drivers/Daemon type boundaries passed. Stop settlement also releases its in-memory ActivePhase and rechecks authority after asynchronous approval resolution. No AppImage, Relay, real provider, push or Release operation ran.
 71. `NTH-EV-048`: The third deletion slice removed the seven-file, 2,244-line Paseo file-backed TaskStore/TaskGraph subsystem and its self-contained tests. It had zero consumers outside its own directory; current Workspace-sharded SQLite Task authority remained unchanged and passed 16 focused tests in a complete 30-second gate.
-72. `NTH-CD-063`: Send delivery, canonical Timeline identity, provider-native rewind receipts and image preview lifetime now have one daemon/adapter/App ownership model. Local release evidence is pending under `NTH-TD-028`.
+72. `NTH-CD-063`: Send delivery, canonical Timeline identity, provider-native rewind receipts and image preview lifetime now have one daemon/adapter/App ownership model.
+73. `NTH-EV-049`: The interaction-regression implementation passed the bounded local gates and GitHub Actions run `29926576540`. The fixed MVP prerelease now targets `0eff56c0`; re-downloaded AppImage, APK and server CLI assets match `SHA256SUMS`, and the AppImage contains the expected Queue, rewind, Timeline epoch, transient preview and build-identity code.
 
 ## Read Next
 

@@ -3599,3 +3599,18 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   retained a pre-Plan 60-second Loop wait budget. Three required 20-second human approval windows consume that
   entire budget before normal phase work. The packaged AppImage wait is now 120 seconds; the product's approval
   deadline remains exactly 20 seconds and is not bypassed or shortened.
+
+## 2026-07-22 [Interaction regressions native release verification]
+
+- GitHub Actions run `29926576540` completed successfully at release commit
+  `0eff56c084f2a0980b754a2c47f9a1af0cc6e4a1`. Preflight, Linux packaged Clarify/Loop, Windows, macOS x64/arm64,
+  signed Android, live Relay, server CLI and the Linux/macOS/Windows CLI install smokes all passed; publish then
+  replaced the sole `v0.0.0-mvp-beta` prerelease.
+- The public tag and Release both target `0eff56c0`. `BUILD-SOURCE.txt` and `MVP-UPDATE.json` identify the same
+  commit and workflow `29926576540`; `SHA256SUMS` contains 27 assets. Re-downloaded AppImage, APK and server CLI
+  tgz passed their released SHA-256 values.
+- Static extraction of the downloaded AppImage verified bundled build identity `0eff56c0` and the shipped Queue,
+  provider-neutral rewind anchor, Timeline epoch reset and transient image object-URL code. No second long smoke
+  was run; the workflow's packaged Clarify/Loop product journey is the native runtime evidence.
+- The archive Release remains present, remote `main` remains `e74c6e0d`, and no npm publication or Relay deploy
+  occurred. `NTH-EV-049` and `NTH-TD-028` are verified; `NTH-TD-021` is restored as the sole top next action.
