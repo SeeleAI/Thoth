@@ -16,7 +16,6 @@ const definitions = [
   [/^Thoth-Setup-0\.0\.0-mvp-beta-x64\.exe$/u, "win32", "x64", "nsis"],
   [/^Thoth-x86_64\.AppImage$/u, "linux", "x64", "appimage_replace"],
   [/^Thoth-0\.0\.0-mvp-beta-amd64\.deb$/u, "linux", "x64", "system_package"],
-  [/^Thoth-0\.0\.0-mvp-beta-android\.apk$/u, "android", "universal", "apk"],
 ];
 const assets = [];
 for (const [pattern, platform, arch, installStrategy] of definitions) {

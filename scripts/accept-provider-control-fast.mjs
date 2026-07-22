@@ -105,6 +105,11 @@ const phases = [
   ...(fullThoth
     ? [
         {
+          name: "Provider Plan and tab archive",
+          command: process.execPath,
+          args: ["scripts/accept-provider-plan-tabs-fast.mjs"],
+        },
+        {
           name: "interaction regressions",
           command: process.execPath,
           args: ["scripts/accept-interaction-regressions-fast.mjs"],

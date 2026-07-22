@@ -20,7 +20,10 @@ import type {
   AgentUsage,
   AgentPersistenceHandle,
 } from "@thoth/protocol/agent-types";
-import type { ProviderPlanCapability } from "@thoth/protocol/provider-control";
+import type {
+  AgentProviderControl,
+  ProviderPlanCapability,
+} from "@thoth/protocol/provider-control";
 import type {
   ServerInfoStatusPayload,
   ProjectPlacementPayload,
@@ -100,6 +103,7 @@ export interface Agent {
   lastActivityAt: Date;
   capabilities: AgentCapabilityFlags;
   planCapability?: ProviderPlanCapability;
+  providerControl?: AgentProviderControl;
   currentModeId: string | null;
   availableModes: AgentMode[];
   pendingPermissions: AgentPermissionRequest[];

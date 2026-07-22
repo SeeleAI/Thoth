@@ -3614,3 +3614,24 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   was run; the workflow's packaged Clarify/Loop product journey is the native runtime evidence.
 - The archive Release remains present, remote `main` remains `e74c6e0d`, and no npm publication or Relay deploy
   occurred. `NTH-EV-049` and `NTH-TD-028` are verified; `NTH-TD-021` is restored as the sole top next action.
+
+## 2026-07-22 [Agent-scoped native Plan, reliable archive and desktop-only Release]
+
+- Implemented `NTH-CD-064` / `NTH-TD-029`: Provider Plan preference and capability now belong to each visible
+  Agent. Workspace authority persists `default | plan` with CAS/idempotent commands; live Harness sessions publish
+  native, unsupported or retryable unavailable capability. Composer sends freeze the Agent projection, and New
+  Agent drafts start independently at Default.
+- Moved Plan into the Provider settings sheet and removed the standalone Composer Plan switch. Codex native Plan
+  assistant output is promoted to one durable canonical Plan item; the Implement permission references only a
+  stable `planId`, and same-thread continuation preserves the Plan after approval or refresh.
+- Reversed top-level and bulk tab close ordering. Agent layout is removed only after daemon archive succeeds;
+  failed/partial closes retain their tabs. Archive mutation no longer hides the Agent optimistically while the RPC
+  is pending.
+- Removed Android self-update code and package-install permission. The MVP workflow no longer builds/publishes an
+  APK and no longer copies server CLI into the public payload; server CLI install and Relay smokes remain internal.
+  `MVP-UPDATE.json` now has exactly six preferred desktop assets.
+- Final `accept:provider-plan-tabs:fast` passed in `24.971s`; full `accept:thoth:fast` passed in `101.927s`; foundation,
+  daemon/web builds, Release/brand contracts and diff hygiene passed. Authenticated Codex `0.144.1` passed the real
+  public Create/Get/Update/Send Plan-to-Implement journey in `18.17s` on one provider thread.
+- Push, desktop native Actions and public Release replacement remain pending. No Android/AppImage local build, npm
+  publication, Relay deployment or `main` mutation occurred.

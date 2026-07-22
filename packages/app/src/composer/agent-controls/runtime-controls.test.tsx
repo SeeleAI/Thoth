@@ -307,25 +307,9 @@ describe("RuntimeControls", () => {
     expect(patchConfigMock).not.toHaveBeenCalled();
   });
 
-  it("always allows an enabled Plan mode to be switched off", async () => {
-    configState.current.providerControl = { runMode: "plan" };
+  it("does not render provider Plan as a standalone runtime control", () => {
+    render(<RuntimeControls serverId="server-1" />);
 
-    render(
-      <RuntimeControls
-        serverId="server-1"
-        planCapability={{ kind: "unsupported", reason: "Native Plan is unavailable." }}
-      />,
-    );
-
-    const planSwitch = screen.getByTestId("provider-plan-switch");
-    expect(planSwitch.getAttribute("aria-checked")).toBe("true");
-    expect((planSwitch as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(planSwitch);
-
-    await waitFor(() =>
-      expect(patchConfigMock).toHaveBeenCalledWith({
-        providerControl: { runMode: "default" },
-      }),
-    );
+    expect(screen.queryByTestId("provider-plan-switch")).toBeNull();
   });
 });

@@ -16,13 +16,27 @@ export const ProviderPlanCapabilitySchema = z.discriminatedUnion("kind", [
       reason: NonEmptyStringSchema,
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal("unavailable"),
+      reason: NonEmptyStringSchema,
+    })
+    .strict(),
 ]);
+
+export const AgentProviderControlSchema = z
+  .object({
+    runMode: ProviderRunModeSchema,
+    planCapability: ProviderPlanCapabilitySchema,
+    revision: z.number().int().nonnegative(),
+  })
+  .strict();
 
 export const ProviderRunModeReceiptSchema = z
   .object({
     id: NonEmptyStringSchema,
     requestedMode: ProviderRunModeSchema,
-    status: z.enum(["applied", "unsupported"]),
+    status: z.enum(["applied", "unsupported", "unavailable"]),
     nativeModeId: NonEmptyStringSchema.nullable(),
     reason: z.string().nullable(),
     appliedAt: NonEmptyStringSchema,
@@ -32,3 +46,4 @@ export const ProviderRunModeReceiptSchema = z
 export type ProviderRunMode = z.infer<typeof ProviderRunModeSchema>;
 export type ProviderPlanCapability = z.infer<typeof ProviderPlanCapabilitySchema>;
 export type ProviderRunModeReceipt = z.infer<typeof ProviderRunModeReceiptSchema>;
+export type AgentProviderControl = z.infer<typeof AgentProviderControlSchema>;

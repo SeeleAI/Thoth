@@ -39,6 +39,14 @@ export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayload, serverId:
     lastActivityAt: updatedAt,
     capabilities: snapshot.capabilities,
     planCapability: snapshot.planCapability,
+    providerControl: snapshot.providerControl ?? {
+      runMode: "default",
+      planCapability: snapshot.planCapability ?? {
+        kind: "unavailable",
+        reason: "Provider session capability is not loaded.",
+      },
+      revision: 0,
+    },
     currentModeId: snapshot.currentModeId,
     availableModes: snapshot.availableModes ?? [],
     pendingPermissions: snapshot.pendingPermissions ?? [],

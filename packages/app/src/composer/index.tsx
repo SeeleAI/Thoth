@@ -177,6 +177,7 @@ function buildAgentStateSelector(serverId: string, agentId: string) {
       totalCostUsd: agent?.lastUsage?.totalCostUsd ?? null,
       model: agent?.model ?? null,
       provider: agent?.provider ?? null,
+      providerRunMode: agent?.providerControl?.runMode ?? "default",
     };
   };
 }
@@ -873,9 +874,8 @@ export function Composer({
     () => buildThothTurnSnapshot(daemonConfig?.thoth),
     [daemonConfig?.thoth],
   );
-  const providerRunMode = daemonConfig?.providerControl.runMode ?? "default";
-
   const agentState = useSessionStore(useShallow(buildAgentStateSelector(serverId, agentId)));
+  const providerRunMode = agentState.providerRunMode;
   const queuedMessages = useMemo(
     () =>
       (agentState.thothState?.queuedTurns ?? []).map((item) => ({

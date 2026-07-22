@@ -654,6 +654,8 @@ async function importLoopTasks(input: {
             updatedAt: String(legacy.updatedAt ?? new Date(0).toISOString()),
             labels: {},
             lastStatus: "closed",
+            providerRunMode: "default",
+            providerControlRevision: 0,
           },
           projects: input.projects,
           workspaces: input.workspaces,

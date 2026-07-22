@@ -3,11 +3,11 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-021`
+2. Top next action: `NTH-TD-029`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
 4. Active blockers: None.
 5. Current branch: `agent/dev/mvp`
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-028` is verified and released at `0eff56c0`: foreground delivery uses the Workspace authority Queue, canonical Timeline ids map to versioned provider-owned rewind receipts, App-local Queue/optimistic Timeline authority is removed, and Workspace image bytes render through transient preview URLs.
+6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-029` is locally verified: Agent-scoped native Plan, durable Plan results, archive-before-layout tab close and desktop-only Release contracts pass; branch promotion, native Actions and public asset verification remain.
 
 ## Objective Summary
 
@@ -24,7 +24,7 @@
 
 ## Top Next Action
 
-`NTH-TD-021` `[doing]`: Close the remaining real browser/device evidence for Loop `budget_wait`, pause/resume/stop and daemon restart/reconnect, including Background Task detail and phase AgentTimeline restoration.
+`NTH-TD-029` `[doing]`: Restore live-session native Plan, move Plan into Agent-scoped Provider settings, make Agent tab close durably archive before layout removal, and replace the fixed MVP Release with desktop-only public assets. After release evidence lands, restore `NTH-TD-021`.
 
 ## Active Blockers
 
@@ -105,6 +105,7 @@ None.
 71. `NTH-EV-048`: The third deletion slice removed the seven-file, 2,244-line Paseo file-backed TaskStore/TaskGraph subsystem and its self-contained tests. It had zero consumers outside its own directory; current Workspace-sharded SQLite Task authority remained unchanged and passed 16 focused tests in a complete 30-second gate.
 72. `NTH-CD-063`: Send delivery, canonical Timeline identity, provider-native rewind receipts and image preview lifetime now have one daemon/adapter/App ownership model.
 73. `NTH-EV-049`: The interaction-regression implementation passed the bounded local gates and GitHub Actions run `29926576540`. The fixed MVP prerelease now targets `0eff56c0`; re-downloaded AppImage, APK and server CLI assets match `SHA256SUMS`, and the AppImage contains the expected Queue, rewind, Timeline epoch, transient preview and build-identity code.
+74. `NTH-CD-064`: Native Plan is Agent-scoped and live-session-owned; Plan output is durable; tab close is archive-first; the public fixed MVP Release is desktop-only.
 
 ## Read Next
 

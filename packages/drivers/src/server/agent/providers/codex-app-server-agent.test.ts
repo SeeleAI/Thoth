@@ -2631,13 +2631,13 @@ describe("Codex app-server provider", () => {
     });
 
     expect(
-      events.some(
+      events.filter(
         (event) =>
           event.type === "timeline" &&
           event.item.type === "tool_call" &&
           event.item.detail.type === "plan",
       ),
-    ).toBe(false);
+    ).toHaveLength(1);
     expect(events.at(-2)).toEqual({
       type: "permission_requested",
       provider: "codex",
@@ -2648,7 +2648,7 @@ describe("Codex app-server provider", () => {
         kind: "plan",
         title: "Plan",
         input: {
-          plan: "- Inspect the existing auth flow\n- Implement the button behavior",
+          planId: expect.stringMatching(/^plan:/u),
         },
         actions: [
           expect.objectContaining({
@@ -2691,7 +2691,7 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
-  test("does not emit Codex plan thread items as timeline cards while plan approval is pending", async () => {
+  test("persists the final Codex plan thread item before plan approval", async () => {
     const session = createSession({
       featureValues: { fast_mode: true },
     });
@@ -2713,15 +2713,14 @@ describe("Codex app-server provider", () => {
       turn: { status: "completed", error: null },
     });
 
-    expect(events).not.toContainEqual(
-      expect.objectContaining({
-        type: "timeline",
-        item: expect.objectContaining({
-          type: "tool_call",
-          detail: expect.objectContaining({ type: "plan" }),
-        }),
-      }),
-    );
+    expect(
+      events.filter(
+        (event) =>
+          event.type === "timeline" &&
+          event.item.type === "tool_call" &&
+          event.item.detail.type === "plan",
+      ),
+    ).toHaveLength(1);
     expect(events.at(-2)).toEqual({
       type: "permission_requested",
       provider: "codex",
@@ -2731,10 +2730,58 @@ describe("Codex app-server provider", () => {
         name: "CodexPlanApproval",
         kind: "plan",
         input: {
-          plan: "- Inspect README\n- Add a short note",
+          planId: "plan-item-1",
         },
       }),
     });
+  });
+
+  test("promotes native Plan assistant output to one durable Plan result", async () => {
+    const session = createSession({ featureValues: { fast_mode: true } });
+    await enableNativePlanMode(session);
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals(session).handleNotification("turn/started", {
+      turn: { id: "turn-plan-assistant" },
+    });
+    asInternals(session).handleNotification("item/agentMessage/delta", {
+      itemId: "assistant-plan-1",
+      delta: "Plan:\n- Inspect\n- Implement",
+    });
+    asInternals(session).handleNotification("item/completed", {
+      item: {
+        id: "assistant-plan-1",
+        type: "agentMessage",
+        text: "Plan:\n- Inspect\n- Implement",
+      },
+    });
+    asInternals(session).handleNotification("turn/completed", {
+      turn: { status: "completed", error: null },
+    });
+
+    expect(
+      events.filter(
+        (event) => event.type === "timeline" && event.item.type === "assistant_message",
+      ),
+    ).toHaveLength(0);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === "timeline" &&
+          event.item.type === "tool_call" &&
+          event.item.detail.type === "plan",
+      ),
+    ).toHaveLength(1);
+    expect(events.at(-2)).toEqual(
+      expect.objectContaining({
+        type: "permission_requested",
+        request: expect.objectContaining({
+          kind: "plan",
+          input: { planId: "plan:turn-plan-assistant" },
+        }),
+      }),
+    );
   });
 
   test("emits imageView thread items as assistant markdown images using the path", () => {

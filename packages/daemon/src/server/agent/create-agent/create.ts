@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import { PARENT_AGENT_ID_LABEL } from "@thoth/protocol/agent-labels";
+import type { ProviderRunMode } from "@thoth/protocol/provider-control";
 import type { TerminalManager } from "../../../terminal/terminal-manager.js";
 import type { CreateThothWorktreeInput } from "../../thoth-worktree-service.js";
 import { expandUserPath, resolvePathFromBase } from "../../path-utils.js";
@@ -54,6 +55,7 @@ export interface CreateAgentFromSessionInput {
   kind: "session";
   config: AgentSessionConfig;
   workspaceId?: string;
+  providerRunMode?: ProviderRunMode;
   worktreeName?: string;
   initialPrompt?: string;
   clientMessageId?: string;
@@ -124,6 +126,8 @@ interface AgentCreateOptions {
   env?: Record<string, string>;
   initialTitle?: string | null;
   workspaceId?: string;
+  providerRunMode?: ProviderRunMode;
+  providerControlRevision?: number;
 }
 
 export async function createAgentCommand(
@@ -204,6 +208,7 @@ async function resolveSessionCreateAgent(
       // agent belongs to that workspace, not the source one (mirrors the MCP
       // path). createdWorkspaceId is the freshly created worktree's workspace.
       workspaceId: setupContinuation ? createdWorkspaceId : input.workspaceId,
+      providerRunMode: input.providerRunMode ?? "default",
     },
     prompt: hasPromptContent ? prompt : undefined,
     runOptions,

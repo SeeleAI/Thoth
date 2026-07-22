@@ -7,6 +7,7 @@ import { AgentProviderSchema } from "@thoth/protocol/provider-manifest";
 import { normalizeAgentModelDefinition, TOOL_CALL_ICON_NAMES } from "./agent-types.js";
 import { TaskContextReferenceSchema, TaskProjectionSchema } from "./task-authority.js";
 import {
+  AgentProviderControlSchema,
   ProviderPlanCapabilitySchema,
   ProviderRunModeReceiptSchema,
   ProviderRunModeSchema,
@@ -785,6 +786,7 @@ export const AgentSnapshotPayloadSchema = z.object({
   status: AgentStatusSchema,
   capabilities: AgentCapabilityFlagsSchema,
   planCapability: ProviderPlanCapabilitySchema.optional(),
+  providerControl: AgentProviderControlSchema.optional(),
   currentModeId: z.string().nullable(),
   availableModes: z.array(AgentModeSchema),
   pendingPermissions: z.array(AgentPermissionRequestPayloadSchema),
@@ -1369,6 +1371,40 @@ export const SetAgentModeRequestMessageSchema = z.object({
   agentId: z.string(),
   modeId: z.string(),
   requestId: z.string(),
+});
+
+export const AgentProviderControlGetRequestMessageSchema = z.object({
+  type: z.literal("agent.provider_control.get.request"),
+  agentId: z.string().min(1),
+  refresh: z.boolean().optional(),
+  requestId: z.string().min(1),
+});
+
+export const AgentProviderControlUpdateRequestMessageSchema = z.object({
+  type: z.literal("agent.provider_control.update.request"),
+  agentId: z.string().min(1),
+  runMode: ProviderRunModeSchema,
+  expectedRevision: z.number().int().nonnegative(),
+  commandId: z.string().min(1),
+  requestId: z.string().min(1),
+});
+
+const AgentProviderControlResponsePayloadSchema = z.object({
+  requestId: z.string(),
+  agentId: z.string(),
+  accepted: z.boolean(),
+  error: z.string().nullable(),
+  providerControl: AgentProviderControlSchema.nullable(),
+});
+
+export const AgentProviderControlGetResponseMessageSchema = z.object({
+  type: z.literal("agent.provider_control.get.response"),
+  payload: AgentProviderControlResponsePayloadSchema,
+});
+
+export const AgentProviderControlUpdateResponseMessageSchema = z.object({
+  type: z.literal("agent.provider_control.update.response"),
+  payload: AgentProviderControlResponsePayloadSchema,
 });
 
 const AgentActionResponsePayloadSchema = z.object({
@@ -2134,6 +2170,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   FetchAgentTimelineRequestMessageSchema,
   AgentForkContextRequestMessageSchema,
   SetAgentModeRequestMessageSchema,
+  AgentProviderControlGetRequestMessageSchema,
+  AgentProviderControlUpdateRequestMessageSchema,
   SetAgentModelRequestMessageSchema,
   SetAgentThinkingRequestMessageSchema,
   SetAgentFeatureRequestMessageSchema,
@@ -4193,6 +4231,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ReadProjectConfigResponseMessageSchema,
   WriteProjectConfigResponseMessageSchema,
   SetAgentModeResponseMessageSchema,
+  AgentProviderControlGetResponseMessageSchema,
+  AgentProviderControlUpdateResponseMessageSchema,
   SetAgentModelResponseMessageSchema,
   SetAgentThinkingResponseMessageSchema,
   SetAgentFeatureResponseMessageSchema,

@@ -78,7 +78,7 @@ describe("workspace bulk close helpers", () => {
     );
   });
 
-  it("closes all tabs immediately and fires one mixed closeItems RPC in the background", async () => {
+  it("closes only daemon-confirmed destructive tabs after closeItems returns", async () => {
     const groups = classifyBulkClosableTabs([
       makeAgentTab("a1"),
       makeTerminalTab("t1"),
@@ -114,21 +114,15 @@ describe("workspace bulk close helpers", () => {
       agentIds: ["a1"],
       terminalIds: ["t1", "t2"],
     });
-    expect(closedTabIds).toEqual([
-      "agent_a1",
-      "terminal_t1",
-      "terminal_t2",
-      "file_/repo/README.md",
-    ]);
+    expect(closedTabIds).toEqual(["agent_a1", "terminal_t1", "file_/repo/README.md"]);
     expect(cleanupCalls).toEqual([
       { tabId: "agent_a1", target: { kind: "agent", agentId: "a1" } },
       { tabId: "terminal_t1", target: { kind: "terminal", terminalId: "t1" } },
-      { tabId: "terminal_t2", target: { kind: "terminal", terminalId: "t2" } },
       { tabId: "file_/repo/README.md", target: { kind: "file", path: "/repo/README.md" } },
     ]);
   });
 
-  it("still closes all tabs when the mixed closeItems RPC fails", async () => {
+  it("retains destructive tabs when closeItems fails and still closes passive tabs", async () => {
     const groups = classifyBulkClosableTabs([
       makeAgentTab("a1"),
       makeTerminalTab("t1"),
@@ -159,10 +153,8 @@ describe("workspace bulk close helpers", () => {
     await Promise.resolve();
 
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(closedTabIds).toEqual(["agent_a1", "terminal_t1", "file_/repo/README.md"]);
+    expect(closedTabIds).toEqual(["file_/repo/README.md"]);
     expect(cleanupCalls).toEqual([
-      { tabId: "agent_a1", target: { kind: "agent", agentId: "a1" } },
-      { tabId: "terminal_t1", target: { kind: "terminal", terminalId: "t1" } },
       { tabId: "file_/repo/README.md", target: { kind: "file", path: "/repo/README.md" } },
     ]);
   });

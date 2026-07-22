@@ -625,6 +625,79 @@ test("requests Agent-scoped Thoth authority state", async () => {
   });
 });
 
+test("gets and updates Agent-scoped provider control", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const getPromise = client.getAgentProviderControl("agent-1", { refresh: true });
+  const getRequest = parseSentFrame(mock.sent[0]);
+  expect(getRequest).toMatchObject({
+    type: "agent.provider_control.get.request",
+    agentId: "agent-1",
+    refresh: true,
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.provider_control.get.response",
+      payload: {
+        requestId: getRequest.requestId,
+        agentId: "agent-1",
+        accepted: true,
+        error: null,
+        providerControl: {
+          runMode: "default",
+          planCapability: { kind: "native" },
+          revision: 2,
+        },
+      },
+    }),
+  );
+  await expect(getPromise).resolves.toMatchObject({ runMode: "default", revision: 2 });
+
+  const updatePromise = client.updateAgentProviderControl({
+    agentId: "agent-1",
+    runMode: "plan",
+    expectedRevision: 2,
+    commandId: "command-provider-plan",
+  });
+  const updateRequest = parseSentFrame(mock.sent[1]);
+  expect(updateRequest).toMatchObject({
+    type: "agent.provider_control.update.request",
+    agentId: "agent-1",
+    runMode: "plan",
+    expectedRevision: 2,
+    commandId: "command-provider-plan",
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.provider_control.update.response",
+      payload: {
+        requestId: updateRequest.requestId,
+        agentId: "agent-1",
+        accepted: true,
+        error: null,
+        providerControl: {
+          runMode: "plan",
+          planCapability: { kind: "native" },
+          revision: 3,
+        },
+      },
+    }),
+  );
+  await expect(updatePromise).resolves.toMatchObject({ runMode: "plan", revision: 3 });
+});
+
 test("answers an Agent-scoped Thoth card with CAS and command idempotency", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();

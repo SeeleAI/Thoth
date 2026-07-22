@@ -2153,7 +2153,7 @@ export function NewWorkspaceScreen({
           draftKey,
           draftId,
           thoth: buildThothTurnSnapshot(daemonConfig?.thoth),
-          providerRunMode: daemonConfig?.providerControl.runMode ?? "default",
+          providerRunMode: composerState?.providerRunMode ?? "default",
           labels: {
             composerStateRequired: t("newWorkspace.errors.composerStateRequired"),
             selectModel: t("newWorkspace.errors.selectModel"),
@@ -2169,7 +2169,6 @@ export function NewWorkspaceScreen({
     [
       composerState,
       daemonConfig?.thoth,
-      daemonConfig?.providerControl.runMode,
       draftId,
       draftKey,
       ensureWorkspace,

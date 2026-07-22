@@ -52,6 +52,8 @@ export function buildDraftAgentControls(input: {
     planCapability:
       formState.allProviderEntries?.find((entry) => entry.provider === formState.selectedProvider)
         ?.planCapability ?? null,
+    providerRunMode: formState.providerRunMode,
+    onSelectProviderRunMode: formState.setProviderRunMode,
   };
 }
 

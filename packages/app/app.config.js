@@ -82,11 +82,7 @@ export default {
       softwareKeyboardLayoutMode: "resize",
       // Allow HTTP connections for local network hosts (required for release builds)
       usesCleartextTraffic: true,
-      permissions: [
-        "CAMERA",
-        "android.permission.CAMERA",
-        "android.permission.REQUEST_INSTALL_PACKAGES",
-      ],
+      permissions: ["CAMERA", "android.permission.CAMERA"],
       blockedPermissions: [
         "android.permission.RECORD_AUDIO",
         "android.permission.SYSTEM_ALERT_WINDOW",

@@ -21,7 +21,7 @@ import {
 } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useShallow } from "zustand/shallow";
-import { Brain, ListTodo, Settings2, ShieldCheck, Zap } from "lucide-react-native";
+import { Brain, ListTodo, RefreshCw, Settings2, ShieldCheck, Zap } from "lucide-react-native";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
 import { getProviderIcon } from "@/components/provider-icons";
@@ -47,6 +47,7 @@ import { selectProviderModel } from "@/composer/agent-controls/provider-session-
 import { AgentModeControlView } from "@/composer/agent-controls/mode-control";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import type {
   AgentFeature,
   AgentMode,
@@ -54,7 +55,11 @@ import type {
   AgentProvider,
 } from "@thoth/protocol/agent-types";
 import type { AgentProviderDefinition } from "@thoth/protocol/provider-manifest";
-import type { ProviderPlanCapability } from "@thoth/protocol/provider-control";
+import type {
+  AgentProviderControl,
+  ProviderPlanCapability,
+  ProviderRunMode,
+} from "@thoth/protocol/provider-control";
 import {
   getFeatureHighlightColor,
   getFeatureTooltip,
@@ -108,6 +113,11 @@ interface ControlledAgentControlsProps {
   onSelectMode?: (modeId: string) => void;
   modelSelectorServerId?: string | null;
   isCompactLayout?: boolean;
+  providerRunMode?: ProviderRunMode;
+  planCapability?: ProviderPlanCapability | null;
+  providerControlBusy?: boolean;
+  onSelectProviderRunMode?: (runMode: ProviderRunMode) => void;
+  onRetryProviderPlanCapability?: () => void;
 }
 
 export interface DraftAgentControlsProps {
@@ -138,6 +148,8 @@ export interface DraftAgentControlsProps {
   isCompactLayout?: boolean;
   controlExtras?: ReactNode;
   planCapability?: ProviderPlanCapability | null;
+  providerRunMode?: ProviderRunMode;
+  onSelectProviderRunMode?: (runMode: ProviderRunMode) => void;
 }
 
 interface AgentControlsProps {
@@ -301,7 +313,7 @@ type AgentControlsSlice = {
   features: AgentFeature[] | undefined;
   thinkingOptionId: string | null | undefined;
   lastUsage: unknown;
-  planCapability: ProviderPlanCapability | null;
+  providerControl: AgentProviderControl;
 } | null;
 
 function selectAgentControlsSlice(
@@ -323,7 +335,14 @@ function selectAgentControlsSlice(
     features: currentAgent.features,
     thinkingOptionId: currentAgent.thinkingOptionId ?? currentAgent.runtimeInfo?.thinkingOptionId,
     lastUsage: currentAgent.lastUsage,
-    planCapability: currentAgent.planCapability ?? null,
+    providerControl: currentAgent.providerControl ?? {
+      runMode: "default",
+      planCapability: currentAgent.planCapability ?? {
+        kind: "unavailable",
+        reason: "Provider session capability is not loaded.",
+      },
+      revision: 0,
+    },
   };
 }
 
@@ -401,6 +420,11 @@ function ControlledAgentControls({
   modeOptions = [],
   selectedModeId,
   onSelectMode,
+  providerRunMode = "default",
+  planCapability = null,
+  providerControlBusy = false,
+  onSelectProviderRunMode,
+  onRetryProviderPlanCapability,
   modelSelectorServerId = null,
   isCompactLayout,
 }: ControlledAgentControlsProps) {
@@ -619,6 +643,11 @@ function ControlledAgentControls({
           modeOptions={modeOptions}
           selectedModeId={selectedModeId}
           onSelectMode={onSelectMode}
+          providerRunMode={providerRunMode}
+          planCapability={planCapability}
+          providerControlBusy={providerControlBusy}
+          onSelectProviderRunMode={onSelectProviderRunMode}
+          onRetryProviderPlanCapability={onRetryProviderPlanCapability}
           activeSheet={activeSheet}
           handleProviderPress={handleProviderPress}
           handleCloseSheet={handleCloseSheet}
@@ -654,6 +683,11 @@ function ControlledAgentControls({
           modeOptions={modeOptions}
           selectedModeId={selectedModeId}
           onSelectMode={onSelectMode}
+          providerRunMode={providerRunMode}
+          planCapability={planCapability}
+          providerControlBusy={providerControlBusy}
+          onSelectProviderRunMode={onSelectProviderRunMode}
+          onRetryProviderPlanCapability={onRetryProviderPlanCapability}
           handleProviderPress={handleProviderPress}
           handleOpenSheet={handleOpenSheet}
           handleCloseSheet={handleCloseSheet}
@@ -720,6 +754,11 @@ interface DesktopAgentControlsContentProps {
   modeOptions: AgentMode[];
   selectedModeId?: string | null;
   onSelectMode?: (modeId: string) => void;
+  providerRunMode: ProviderRunMode;
+  planCapability: ProviderPlanCapability | null;
+  providerControlBusy: boolean;
+  onSelectProviderRunMode?: (runMode: ProviderRunMode) => void;
+  onRetryProviderPlanCapability?: () => void;
   activeSheet: ActiveSheet;
   handleProviderPress: () => void;
   handleCloseSheet: () => void;
@@ -777,6 +816,11 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     modeOptions,
     selectedModeId,
     onSelectMode,
+    providerRunMode,
+    planCapability,
+    providerControlBusy,
+    onSelectProviderRunMode,
+    onRetryProviderPlanCapability,
     activeSheet,
     handleProviderPress,
     handleCloseSheet,
@@ -787,7 +831,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     <>
       <ProviderConfigTrigger
         ref={providerAnchorRef}
-        disabled={disabled || (!canSelectModel && !canSelectProvider)}
+        disabled={disabled || (!canSelectModel && !canSelectProvider && !onSelectProviderRunMode)}
         onPress={handleProviderPress}
         open={activeSheet === "provider"}
         icon={resolveProviderIcon(provider)}
@@ -820,6 +864,11 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
         modeOptions={modeOptions}
         selectedModeId={selectedModeId}
         onSelectMode={onSelectMode}
+        providerRunMode={providerRunMode}
+        planCapability={planCapability}
+        providerControlBusy={providerControlBusy}
+        onSelectProviderRunMode={onSelectProviderRunMode}
+        onRetryProviderPlanCapability={onRetryProviderPlanCapability}
         thinkingOptions={thinkingOptions}
         selectedThinkingOptionId={selectedThinkingOptionId}
         canSelectThinking={canSelectThinking}
@@ -869,6 +918,11 @@ interface SheetAgentControlsContentProps {
   modeOptions: AgentMode[];
   selectedModeId?: string | null;
   onSelectMode?: (modeId: string) => void;
+  providerRunMode: ProviderRunMode;
+  planCapability: ProviderPlanCapability | null;
+  providerControlBusy: boolean;
+  onSelectProviderRunMode?: (runMode: ProviderRunMode) => void;
+  onRetryProviderPlanCapability?: () => void;
   handleProviderPress: () => void;
   handleOpenSheet: (sheet: Exclude<ActiveSheet, null>) => void;
   handleCloseSheet: () => void;
@@ -916,6 +970,11 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
     modeOptions,
     selectedModeId,
     onSelectMode,
+    providerRunMode,
+    planCapability,
+    providerControlBusy,
+    onSelectProviderRunMode,
+    onRetryProviderPlanCapability,
     handleProviderPress,
     handleOpenSheet,
     handleCloseSheet,
@@ -978,10 +1037,10 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
 
   return (
     <>
-      {canSelectModel ? (
+      {canSelectModel || onSelectProviderRunMode ? (
         <Pressable
           onPress={handleProviderPress}
-          disabled={disabled || !canSelectModel}
+          disabled={disabled}
           style={styles.providerConfigPressable}
           accessibilityRole="button"
           accessibilityLabel={t("agentControls.provider.select")}
@@ -990,7 +1049,7 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
           {renderModelTrigger({
             selectedModelLabel: displayModel,
             onPress: handleProviderPress,
-            disabled: disabled || !canSelectModel,
+            disabled,
             isOpen: activeSheet === "provider",
           })}
         </Pressable>
@@ -1019,6 +1078,11 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
         modeOptions={modeOptions}
         selectedModeId={selectedModeId}
         onSelectMode={onSelectMode}
+        providerRunMode={providerRunMode}
+        planCapability={planCapability}
+        providerControlBusy={providerControlBusy}
+        onSelectProviderRunMode={onSelectProviderRunMode}
+        onRetryProviderPlanCapability={onRetryProviderPlanCapability}
         thinkingOptions={hasThinking ? comboboxThinkingOptions : []}
         selectedThinkingOptionId={selectedThinkingOptionId}
         canSelectThinking={canSelectThinking}
@@ -1109,6 +1173,11 @@ function ProviderConfigSheet({
   modeOptions,
   selectedModeId,
   onSelectMode,
+  providerRunMode = "default",
+  planCapability,
+  providerControlBusy,
+  onSelectProviderRunMode,
+  onRetryProviderPlanCapability,
   thinkingOptions,
   selectedThinkingOptionId,
   canSelectThinking,
@@ -1143,6 +1212,11 @@ function ProviderConfigSheet({
   modeOptions: AgentMode[];
   selectedModeId?: string | null;
   onSelectMode?: (modeId: string) => void;
+  providerRunMode: ProviderRunMode;
+  planCapability: ProviderPlanCapability | null;
+  providerControlBusy: boolean;
+  onSelectProviderRunMode?: (runMode: ProviderRunMode) => void;
+  onRetryProviderPlanCapability?: () => void;
   thinkingOptions?: AgentControlOption[];
   selectedThinkingOptionId?: string;
   canSelectThinking: boolean;
@@ -1212,6 +1286,57 @@ function ProviderConfigSheet({
             serverId={modelSelectorServerId}
           />
         </View>
+
+        {onSelectProviderRunMode ? (
+          <View style={styles.providerConfigSection}>
+            <View style={styles.providerControlHeader}>
+              <Text style={styles.sheetSectionLabel}>Run Mode</Text>
+              {planCapability?.kind === "unavailable" && onRetryProviderPlanCapability ? (
+                <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+                  <TooltipTrigger asChild>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Retry Plan capability"
+                      disabled={providerControlBusy}
+                      onPress={onRetryProviderPlanCapability}
+                      style={styles.providerControlRetry}
+                      testID="provider-plan-retry"
+                    >
+                      <RefreshCw size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
+                    </Pressable>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="center" offset={8}>
+                    <Text style={styles.tooltipText}>Retry Plan capability</Text>
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
+            </View>
+            <SegmentedControl<ProviderRunMode>
+              value={providerRunMode}
+              onValueChange={onSelectProviderRunMode}
+              options={[
+                {
+                  value: "default",
+                  label: "Default",
+                  disabled: providerControlBusy,
+                  testID: "provider-run-mode-default",
+                },
+                {
+                  value: "plan",
+                  label: "Plan",
+                  disabled: providerControlBusy || planCapability?.kind !== "native",
+                  testID: "provider-run-mode-plan",
+                },
+              ]}
+              testID="provider-run-mode-control"
+            />
+            {providerControlBusy ? (
+              <Text style={styles.providerControlStatus}>Checking...</Text>
+            ) : planCapability?.kind === "unsupported" || planCapability?.kind === "unavailable" ? (
+              <Text style={styles.providerControlStatus}>{planCapability.reason}</Text>
+            ) : null}
+          </View>
+        ) : null}
 
         {hasProviderMode ? (
           <View style={styles.providerConfigSection}>
@@ -1573,6 +1698,7 @@ export const AgentControls = memo(function AgentControls({
   );
   const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   const toast = useToast();
+  const [providerControlBusy, setProviderControlBusy] = useState(false);
 
   const {
     entries: snapshotEntries,
@@ -1769,15 +1895,38 @@ export const AgentControls = memo(function AgentControls({
     [refreshSnapshot],
   );
 
+  const handleSelectProviderRunMode = useCallback(
+    (runMode: ProviderRunMode) => {
+      if (!client || !agent || providerControlBusy || runMode === agent.providerControl.runMode) {
+        return;
+      }
+      setProviderControlBusy(true);
+      void client
+        .updateAgentProviderControl({
+          agentId,
+          runMode,
+          expectedRevision: agent.providerControl.revision,
+        })
+        .catch((error) => toast.error(toErrorMessage(error)))
+        .finally(() => setProviderControlBusy(false));
+    },
+    [agent, agentId, client, providerControlBusy, toast],
+  );
+
+  const handleRetryProviderPlanCapability = useCallback(() => {
+    if (!client || providerControlBusy) {
+      return;
+    }
+    setProviderControlBusy(true);
+    void client
+      .getAgentProviderControl(agentId, { refresh: true })
+      .catch((error) => toast.error(toErrorMessage(error)))
+      .finally(() => setProviderControlBusy(false));
+  }, [agentId, client, providerControlBusy, toast]);
+
   const runtimeControls = useMemo(
-    () => (
-      <RuntimeControls
-        serverId={serverId}
-        disabled={!client}
-        planCapability={agent?.planCapability ?? snapshotSelectedEntry?.planCapability ?? null}
-      />
-    ),
-    [agent?.planCapability, client, snapshotSelectedEntry?.planCapability, serverId],
+    () => <RuntimeControls serverId={serverId} disabled={!client} />,
+    [client, serverId],
   );
 
   if (!agent) {
@@ -1810,6 +1959,11 @@ export const AgentControls = memo(function AgentControls({
       modeOptions={agent.availableModes}
       selectedModeId={agentModeId}
       onSelectMode={handleSelectProviderMode}
+      providerRunMode={agent.providerControl.runMode}
+      planCapability={agent.providerControl.planCapability}
+      providerControlBusy={providerControlBusy}
+      onSelectProviderRunMode={handleSelectProviderRunMode}
+      onRetryProviderPlanCapability={handleRetryProviderPlanCapability}
       modelSelectorServerId={serverId}
       isCompactLayout={isCompactLayout}
     />
@@ -1844,6 +1998,8 @@ export function DraftAgentControls({
   isCompactLayout,
   controlExtras,
   planCapability = null,
+  providerRunMode = "default",
+  onSelectProviderRunMode,
 }: DraftAgentControlsProps) {
   const { preferences, updatePreferences } = useFormPreferences();
   const isCompactFormFactor = useIsCompactFormFactor();
@@ -1919,14 +2075,8 @@ export function DraftAgentControls({
   );
 
   const runtimeControls = useMemo(
-    () => (
-      <RuntimeControls
-        serverId={modelSelectorServerId}
-        disabled={disabled}
-        planCapability={planCapability}
-      />
-    ),
-    [disabled, modelSelectorServerId, planCapability],
+    () => <RuntimeControls serverId={modelSelectorServerId} disabled={disabled} />,
+    [disabled, modelSelectorServerId],
   );
 
   if (!isCompact) {
@@ -1957,6 +2107,9 @@ export function DraftAgentControls({
         modeOptions={_modeOptions}
         selectedModeId={selectedMode}
         onSelectMode={handleDraftModeSelect}
+        providerRunMode={providerRunMode}
+        planCapability={planCapability}
+        onSelectProviderRunMode={onSelectProviderRunMode}
         modelSelectorServerId={modelSelectorServerId}
         isCompactLayout={isCompactLayout}
       />
@@ -1989,6 +2142,9 @@ export function DraftAgentControls({
       modeOptions={_modeOptions}
       selectedModeId={selectedMode}
       onSelectMode={handleDraftModeSelect}
+      providerRunMode={providerRunMode}
+      planCapability={planCapability}
+      onSelectProviderRunMode={onSelectProviderRunMode}
       modelSelectorServerId={modelSelectorServerId}
       isCompactLayout={isCompactLayout}
     />
@@ -2080,6 +2236,22 @@ const styles = StyleSheet.create((theme) => ({
   },
   providerConfigSection: {
     gap: theme.spacing[2],
+  },
+  providerControlHeader: {
+    minHeight: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  providerControlRetry: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  providerControlStatus: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
   },
   providerFeatureList: {
     gap: theme.spacing[2],

@@ -627,10 +627,7 @@ export class ForegroundTurnCoordinator {
         });
         return true;
       }
-      const transition = await this.options.agentManager.prepareAgentRunMode(agentId, "default");
-      if (transition.capability.kind === "unsupported") {
-        throw new Error(transition.capability.reason);
-      }
+      await this.options.agentManager.prepareAgentRunMode(agentId, "default");
       this.options.authorityStore.markLifecycle({
         agentId,
         turnId: turn.id,
@@ -694,7 +691,7 @@ export class ForegroundTurnCoordinator {
     }
     if (record.kind === "goal_card" && request.answer.intent === "accept_loop") {
       const capability = await this.options.agentManager.getAgentPlanCapability(request.agentId);
-      if (capability.kind === "unsupported") {
+      if (capability.kind !== "native") {
         return {
           requestId: request.requestId,
           accepted: false,
@@ -1250,16 +1247,16 @@ export class ForegroundTurnCoordinator {
       turn.agentId,
       turn.providerRunMode,
     );
-    const unsupportedReason =
-      turn.providerRunMode === "plan" && result.capability.kind === "unsupported"
-        ? result.capability.reason
+    const failure =
+      turn.providerRunMode === "plan" && result.capability.kind !== "native"
+        ? result.capability
         : null;
     const receipt: ProviderRunModeReceipt = {
       id: `foreground-mode-${randomUUID()}`,
       requestedMode: turn.providerRunMode,
-      status: unsupportedReason ? "unsupported" : "applied",
+      status: failure ? failure.kind : "applied",
       nativeModeId: result.nativeModeId,
-      reason: unsupportedReason,
+      reason: failure?.reason ?? null,
       appliedAt: new Date().toISOString(),
     };
     const updated = this.options.authorityStore.recordRunModeReceipt({
@@ -1268,16 +1265,16 @@ export class ForegroundTurnCoordinator {
       generation: turn.generation,
       receipt,
     });
-    if (unsupportedReason) {
+    if (failure) {
       this.options.authorityStore.markLifecycle({
         agentId: turn.agentId,
         turnId: turn.id,
         generation: turn.generation,
         lifecycle: "unsupported",
         reason: "turn_interrupted",
-        error: unsupportedReason,
+        error: failure.reason,
       });
-      throw new Error(unsupportedReason);
+      throw new Error(failure.reason);
     }
     return updated;
   }

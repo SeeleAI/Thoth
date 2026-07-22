@@ -1521,7 +1521,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     const capability = await this.getProviderRunModeCapability();
     const planMode = findACPPlanMode(this.availableModes);
     if (mode === "plan") {
-      if (!planMode || capability.kind === "unsupported") {
+      if (!planMode || capability.kind !== "native") {
         return { capability, nativeModeId: null };
       }
       if (this.currentMode !== planMode.id) {

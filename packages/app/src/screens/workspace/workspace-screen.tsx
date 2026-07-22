@@ -68,6 +68,7 @@ import { WorkspaceOpenInEditorButton } from "@/screens/workspace/workspace-open-
 import { WorkspaceScriptsButton } from "@/screens/workspace/workspace-scripts-button";
 import { ImportSessionSheet } from "@/components/import-session-sheet";
 import { useToast } from "@/contexts/toast-context";
+import { toErrorMessage } from "@/utils/error-messages";
 import { selectIsFileExplorerOpen, usePanelStore } from "@/stores/panel-store";
 import { type ExplorerCheckoutContext } from "@/stores/explorer-checkout-context";
 import {
@@ -2722,6 +2723,24 @@ function WorkspaceScreenContent({
           }
         }
 
+        if (closePolicy.kind === "layout-only") {
+          setHoveredCloseTabKey((current) => (current === tabId ? null : current));
+          if (persistenceKey) {
+            closeWorkspaceTabWithCleanup({
+              tabId,
+              target: { kind: "agent", agentId },
+            });
+          }
+          return;
+        }
+
+        try {
+          await archiveAgent({ serverId: normalizedServerId, agentId });
+        } catch (error) {
+          toast.error(toErrorMessage(error));
+          return;
+        }
+
         setHoveredCloseTabKey((current) => (current === tabId ? null : current));
         if (persistenceKey) {
           closeWorkspaceTabWithCleanup({
@@ -2729,16 +2748,17 @@ function WorkspaceScreenContent({
             target: { kind: "agent", agentId },
           });
         }
-
-        if (closePolicy.kind === "layout-only") {
-          return;
-        }
-
-        // Errors (e.g. timeout) are handled by the mutation's onSettled callback
-        void archiveAgent({ serverId: normalizedServerId, agentId }).catch(() => {});
       });
     },
-    [archiveAgent, closeTab, closeWorkspaceTabWithCleanup, normalizedServerId, persistenceKey, t],
+    [
+      archiveAgent,
+      closeTab,
+      closeWorkspaceTabWithCleanup,
+      normalizedServerId,
+      persistenceKey,
+      t,
+      toast,
+    ],
   );
 
   const handleCloseDraftOrFileTab = useCallback(

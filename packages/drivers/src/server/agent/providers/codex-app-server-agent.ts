@@ -2997,6 +2997,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     reasoning_effort?: string | null;
     developer_instructions?: string | null;
   }> = [];
+  private collaborationModesError: string | null = null;
   private resolvedCollaborationMode: {
     mode: string;
     settings: Record<string, unknown>;
@@ -3103,6 +3104,7 @@ export class CodexAppServerAgentSession implements AgentSession {
           },
         ];
       });
+      this.collaborationModesError = null;
     } catch (error) {
       this.logger.trace(
         {
@@ -3115,6 +3117,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         "provider.codex.metadata.collaboration_modes_failed",
       );
       this.collaborationModes = [];
+      this.collaborationModesError = error instanceof Error ? error.message : String(error);
     }
     this.refreshResolvedCollaborationMode();
   }
@@ -3247,7 +3250,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     };
   }
 
-  private emitSyntheticPlanApprovalRequest(planText: string): void {
+  private emitSyntheticPlanApprovalRequest(planText: string, planId: string): void {
     const requestId = `permission-${randomUUID()}`;
     const request: AgentPermissionRequest = {
       id: requestId,
@@ -3256,10 +3259,10 @@ export class CodexAppServerAgentSession implements AgentSession {
       kind: "plan",
       title: "Plan",
       description: "Review the proposed plan before implementation starts.",
-      input: { plan: planText },
+      input: { planId },
       actions: buildPlanPermissionActions(),
       metadata: {
-        planText,
+        planId,
         source: "codex_plan_approval",
       },
     };
@@ -3711,6 +3714,15 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   async getProviderRunModeCapability() {
     await this.connect();
+    if (this.collaborationModesError) {
+      await this.loadCollaborationModes();
+    }
+    if (this.collaborationModesError) {
+      return {
+        kind: "unavailable",
+        reason: this.collaborationModesError,
+      } as const;
+    }
     return this.hasPlanCollaborationMode()
       ? ({ kind: "native" } as const)
       : ({
@@ -3721,7 +3733,7 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   async applyProviderRunMode(mode: "default" | "plan") {
     const capability = await this.getProviderRunModeCapability();
-    if (mode === "plan" && capability.kind === "unsupported") {
+    if (mode === "plan" && capability.kind !== "native") {
       return { capability, nativeModeId: null };
     }
     this.applyFeatureValue("plan_mode", mode === "plan");
@@ -4595,6 +4607,9 @@ export class CodexAppServerAgentSession implements AgentSession {
         this.emitSubAgentActivityUpdate(subAgentCallId, "running");
         return;
       }
+      if (this.planModeEnabled) {
+        return;
+      }
       const isFirstDeltaForItem = prev.length === 0;
       this.emitEvent({
         type: "timeline",
@@ -4694,7 +4709,21 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.emitEvent({ type: "turn_canceled", provider: CODEX_PROVIDER, reason: "interrupted" });
     } else {
       if (this.planModeEnabled && this.latestPlanResult?.text) {
-        this.emitSyntheticPlanApprovalRequest(this.latestPlanResult.text);
+        const finalPlanItem = mapCodexPlanToToolCall({
+          callId: this.latestPlanResult.callId,
+          text: this.latestPlanResult.text,
+        });
+        if (finalPlanItem) {
+          this.emitEvent({
+            type: "timeline",
+            provider: CODEX_PROVIDER,
+            item: finalPlanItem,
+          });
+        }
+        this.emitSyntheticPlanApprovalRequest(
+          this.latestPlanResult.text,
+          this.latestPlanResult.callId,
+        );
       }
       this.emitEvent({
         type: "turn_completed",
@@ -4736,9 +4765,8 @@ export class CodexAppServerAgentSession implements AgentSession {
     });
     if (timelineItem) {
       this.rememberPlanResult(timelineItem);
-      // In plan mode, the same plan is rendered through the synthetic approval
-      // permission. Keep the remembered text for that card, but do not also
-      // emit a static timeline plan panel.
+      // Plan mode persists the final remembered plan exactly once when the
+      // provider turn completes, immediately before the Implement permission.
       if (this.planModeEnabled) {
         return;
       }
@@ -4984,6 +5012,21 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (this.shouldSkipCompletedThreadItem(timelineItem, normalizedItemType, itemId)) {
       return;
     }
+    if (this.planModeEnabled && timelineItem.type === "assistant_message") {
+      const planItem = mapCodexPlanToToolCall({
+        callId: `plan:${this.currentTurnId ?? this.currentThreadId ?? "current"}`,
+        text: timelineItem.text,
+      });
+      if (planItem) {
+        this.rememberPlanResult(planItem);
+      }
+      if (itemId) {
+        this.pendingAgentMessages.delete(itemId);
+        this.emittedItemCompletedIds.add(itemId);
+        this.emittedItemStartedIds.delete(itemId);
+      }
+      return;
+    }
     if (this.consumeStreamedTextCompletion(timelineItem, itemId)) {
       if (timelineItem.type === "assistant_message") {
         this.pendingAssistantMessageBoundary = true;
@@ -5000,7 +5043,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       if (timelineItem.detail.type === "plan") {
         this.rememberPlanResult(timelineItem);
         // Codex can surface plans both as turn/plan updates and as completed
-        // thread items. In plan mode, approval owns the visible plan card.
+        // thread items. Plan mode persists only the final remembered version.
         if (this.planModeEnabled) {
           return;
         }

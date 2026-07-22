@@ -183,16 +183,14 @@ export class AgentManagerHarnessHost implements HarnessAdapterHost {
     const thread = this.requireThread(adapterId, input.thread.id);
     await this.ensureAgent(thread);
     const result = await this.agentManager.prepareAgentRunMode(thread.agentId, input.mode);
-    const unsupportedReason =
-      input.mode === "plan" && result.capability.kind === "unsupported"
-        ? result.capability.reason
-        : null;
+    const failure =
+      input.mode === "plan" && result.capability.kind !== "native" ? result.capability : null;
     return {
       id: `provider-mode-${randomUUID()}`,
       requestedMode: input.mode,
-      status: unsupportedReason ? "unsupported" : "applied",
+      status: failure ? failure.kind : "applied",
       nativeModeId: result.nativeModeId,
-      reason: unsupportedReason,
+      reason: failure?.reason ?? null,
       appliedAt: new Date().toISOString(),
     };
   }

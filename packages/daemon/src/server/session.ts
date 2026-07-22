@@ -1454,6 +1454,10 @@ export class Session {
     switch (msg.type) {
       case "set_agent_mode_request":
         return this.agentConfigSession.handleSetAgentModeRequest(msg);
+      case "agent.provider_control.get.request":
+        return this.handleAgentProviderControlGetRequest(msg);
+      case "agent.provider_control.update.request":
+        return this.handleAgentProviderControlUpdateRequest(msg);
       case "set_agent_model_request":
         return this.agentConfigSession.handleSetAgentModelRequest(msg);
       case "set_agent_feature_request":
@@ -1491,6 +1495,102 @@ export class Session {
         return this.projectConfigSession.handleWriteProjectConfigRequest(msg);
       default:
         return undefined;
+    }
+  }
+
+  private async handleAgentProviderControlGetRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.provider_control.get.request" }>,
+  ): Promise<void> {
+    try {
+      const agent = await ensureAgentLoaded(msg.agentId, {
+        agentManager: this.agentManager,
+        agentStorage: this.agentStorage,
+        logger: this.sessionLogger,
+      });
+      if (agent.internal) {
+        throw new Error(`Agent not found: ${msg.agentId}`);
+      }
+      if (msg.refresh) {
+        await this.agentManager.refreshAgentPlanCapability(msg.agentId);
+      }
+      this.emit({
+        type: "agent.provider_control.get.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          accepted: true,
+          error: null,
+          providerControl: this.agentManager.getAgentProviderControl(msg.agentId),
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "agent.provider_control.get.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          accepted: false,
+          error: getErrorMessageOr(error, "Failed to load Agent provider control"),
+          providerControl: null,
+        },
+      });
+    }
+  }
+
+  private async handleAgentProviderControlUpdateRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.provider_control.update.request" }>,
+  ): Promise<void> {
+    try {
+      const agent = await ensureAgentLoaded(msg.agentId, {
+        agentManager: this.agentManager,
+        agentStorage: this.agentStorage,
+        logger: this.sessionLogger,
+      });
+      if (agent.internal) {
+        throw new Error(`Agent not found: ${msg.agentId}`);
+      }
+      if (msg.runMode === "plan") {
+        const capability = await this.agentManager.getAgentPlanCapability(msg.agentId);
+        if (capability.kind !== "native") {
+          throw new Error(capability.reason);
+        }
+      }
+      const store = this.workspaceAuthorityManager.forAgent(msg.agentId);
+      if (!store) {
+        throw new Error(`Workspace authority not found for Agent ${msg.agentId}`);
+      }
+      const updated = store.updateAgentProviderControl({
+        agentId: msg.agentId,
+        runMode: msg.runMode,
+        expectedRevision: msg.expectedRevision,
+        commandId: msg.commandId,
+      });
+      const providerControl = await this.agentManager.applyAgentProviderControl({
+        agentId: msg.agentId,
+        runMode: updated.runMode,
+        revision: updated.revision,
+      });
+      this.emit({
+        type: "agent.provider_control.update.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          accepted: true,
+          error: null,
+          providerControl,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "agent.provider_control.update.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          accepted: false,
+          error: getErrorMessageOr(error, "Failed to update Agent provider control"),
+          providerControl: null,
+        },
+      });
     }
   }
 
@@ -2604,6 +2704,7 @@ export class Session {
           kind: "session",
           config: createAgentConfig,
           workspaceId,
+          providerRunMode: providerRunMode ?? "default",
           worktreeName,
           // The public foreground router owns the first turn. Creating the
           // provider session first guarantees its Thoth tool catalog exists

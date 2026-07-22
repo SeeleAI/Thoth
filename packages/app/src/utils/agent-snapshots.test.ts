@@ -30,11 +30,37 @@ function createSnapshot(
     pendingPermissions: input.pendingPermissions ?? [],
     persistence: input.persistence ?? null,
     title: input.title ?? null,
+    ...(input.providerControl ? { providerControl: input.providerControl } : {}),
     labels: (input.labels ?? {}) as AgentSnapshotPayload["labels"],
   };
 }
 
 describe("normalizeAgentSnapshot", () => {
+  it("preserves Agent-scoped provider control and defaults legacy snapshots", () => {
+    const current = normalizeAgentSnapshot(
+      createSnapshot({
+        providerControl: {
+          runMode: "plan",
+          planCapability: { kind: "native" },
+          revision: 2,
+        },
+      }),
+      "server-1",
+    );
+    const legacy = normalizeAgentSnapshot(createSnapshot(), "server-1");
+
+    expect(current.providerControl).toEqual({
+      runMode: "plan",
+      planCapability: { kind: "native" },
+      revision: 2,
+    });
+    expect(legacy.providerControl).toMatchObject({
+      runMode: "default",
+      planCapability: { kind: "unavailable" },
+      revision: 0,
+    });
+  });
+
   it("derives parentAgentId from the parent label while preserving labels", () => {
     const labels = {
       [PARENT_AGENT_ID_LABEL]: "parent-1",

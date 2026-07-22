@@ -14,7 +14,11 @@ import type { Logger } from "pino";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
 import type { HarnessCapabilities } from "@thoth/drivers/harness";
-import type { ProviderPlanCapability, ProviderRunMode } from "@thoth/protocol/provider-control";
+import type {
+  AgentProviderControl,
+  ProviderPlanCapability,
+  ProviderRunMode,
+} from "@thoth/protocol/provider-control";
 
 import {
   getAgentStreamEventTurnId,
@@ -283,6 +287,8 @@ interface ManagedAgentBase {
   workspaceId?: string;
   capabilities: AgentCapabilityFlags;
   planCapability?: ProviderPlanCapability;
+  providerRunMode: ProviderRunMode;
+  providerControlRevision: number;
   config: AgentSessionConfig;
   runtimeInfo?: AgentRuntimeInfo;
   createdAt: Date;
@@ -1053,6 +1059,8 @@ export class AgentManager {
       workspaceId: record.workspaceId,
       session: null,
       capabilities: STORED_AGENT_CAPABILITIES,
+      providerRunMode: record.providerRunMode,
+      providerControlRevision: record.providerControlRevision,
       config: buildStoredAgentConfig(record),
       runtimeInfo: record.runtimeInfo
         ? {
@@ -1106,6 +1114,8 @@ export class AgentManager {
       persistInternal?: boolean;
       initialTitle?: string | null;
       workspaceId?: string;
+      providerRunMode?: ProviderRunMode;
+      providerControlRevision?: number;
     },
   ): Promise<ManagedAgent> {
     const resolvedAgentId = validateAgentId(agentId ?? this.idFactory(), "createAgent");
@@ -1127,6 +1137,8 @@ export class AgentManager {
       labels: options?.labels,
       initialTitle: options?.initialTitle,
       workspaceId: options?.workspaceId,
+      providerRunMode: options?.providerRunMode,
+      providerControlRevision: options?.providerControlRevision,
     });
     if (options?.persistInternal && managed.internal && this.registry) {
       await this.registry.applySnapshot(managed, {
@@ -1158,6 +1170,8 @@ export class AgentManager {
       labels?: Record<string, string>;
       workspaceId?: string;
       historyOnly?: boolean;
+      providerRunMode?: ProviderRunMode;
+      providerControlRevision?: number;
     },
   ): Promise<ManagedAgent> {
     const resolvedAgentId = validateAgentId(
@@ -1318,6 +1332,8 @@ export class AgentManager {
       lastUsage: preservedLastUsage,
       lastError: preservedLastError,
       attention: preservedAttention,
+      providerRunMode: existing.providerRunMode,
+      providerControlRevision: existing.providerControlRevision,
     });
   }
 
@@ -1496,6 +1512,8 @@ export class AgentManager {
         workspaceId: record.workspaceId,
         session: null,
         capabilities: STORED_AGENT_CAPABILITIES,
+        providerRunMode: record.providerRunMode,
+        providerControlRevision: record.providerControlRevision,
         config: buildStoredAgentConfig(record),
         runtimeInfo: undefined,
         lifecycle: "closed",
@@ -1541,17 +1559,72 @@ export class AgentManager {
 
   async getAgentPlanCapability(agentId: string): Promise<ProviderPlanCapability> {
     const agent = this.requireSessionAgent(agentId);
-    if (agent.planCapability) {
+    if (agent.planCapability && agent.planCapability.kind !== "unavailable") {
       return agent.planCapability;
     }
-    const capability = agent.session.getProviderRunModeCapability
-      ? await agent.session.getProviderRunModeCapability()
-      : (this.clients.get(agent.provider)?.harnessCapabilities.plan ?? {
-          kind: "unsupported" as const,
-          reason: "Provider session does not expose native Plan.",
-        });
+    return await this.refreshAgentPlanCapability(agentId);
+  }
+
+  async refreshAgentPlanCapability(
+    agentId: string,
+    options?: { emit?: boolean; persist?: boolean },
+  ): Promise<ProviderPlanCapability> {
+    const agent = this.requireSessionAgent(agentId);
+    let capability: ProviderPlanCapability;
+    try {
+      capability = agent.session.getProviderRunModeCapability
+        ? await agent.session.getProviderRunModeCapability()
+        : (this.clients.get(agent.provider)?.harnessCapabilities.plan ?? {
+            kind: "unsupported" as const,
+            reason: "Provider session does not expose native Plan.",
+          });
+    } catch (error) {
+      capability = {
+        kind: "unavailable",
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
     agent.planCapability = capability;
+    this.touchUpdatedAt(agent);
+    if (options?.persist !== false) {
+      await this.persistSnapshot(agent);
+    }
+    if (options?.emit !== false) {
+      this.emitState(agent, { persist: false });
+    }
     return capability;
+  }
+
+  getAgentProviderControl(agentId: string): AgentProviderControl {
+    const agent = this.requireAgent(agentId);
+    return {
+      runMode: agent.providerRunMode,
+      planCapability:
+        agent.planCapability ??
+        ({ kind: "unavailable", reason: "Provider session capability is not loaded." } as const),
+      revision: agent.providerControlRevision,
+    };
+  }
+
+  async applyAgentProviderControl(input: {
+    agentId: string;
+    runMode: ProviderRunMode;
+    revision: number;
+  }): Promise<AgentProviderControl> {
+    const agent = this.requireSessionAgent(input.agentId);
+    const capability =
+      input.runMode === "plan"
+        ? await this.getAgentPlanCapability(input.agentId)
+        : (agent.planCapability ?? (await this.refreshAgentPlanCapability(input.agentId)));
+    if (input.runMode === "plan" && capability.kind !== "native") {
+      throw new Error(capability.reason);
+    }
+    agent.providerRunMode = input.runMode;
+    agent.providerControlRevision = input.revision;
+    this.touchUpdatedAt(agent);
+    await this.persistSnapshot(agent);
+    this.emitState(agent, { persist: false });
+    return this.getAgentProviderControl(input.agentId);
   }
 
   async prepareAgentRunMode(
@@ -1560,7 +1633,7 @@ export class AgentManager {
   ): Promise<{ capability: ProviderPlanCapability; nativeModeId: string | null }> {
     const agent = this.requireSessionAgent(agentId);
     const capability = await this.getAgentPlanCapability(agentId);
-    if (mode === "plan" && capability.kind === "unsupported") {
+    if (mode === "plan" && capability.kind !== "native") {
       return { capability, nativeModeId: null };
     }
     if (!agent.session.applyProviderRunMode) {
@@ -2827,6 +2900,8 @@ export class AgentManager {
       initialTitle?: string | null;
       publishWhenReady?: boolean;
       workspaceId?: string;
+      providerRunMode?: ProviderRunMode;
+      providerControlRevision?: number;
     },
   ): Promise<ManagedAgent> {
     const resolvedAgentId = validateAgentId(agentId, "registerSession");
@@ -2932,6 +3007,8 @@ export class AgentManager {
           attention?: AttentionState;
           persistence?: AgentPersistenceHandle;
           workspaceId?: string;
+          providerRunMode?: ProviderRunMode;
+          providerControlRevision?: number;
         }
       | undefined;
   }): ActiveManagedAgent {
@@ -2943,6 +3020,8 @@ export class AgentManager {
       workspaceId: options?.workspaceId,
       session,
       capabilities: session.capabilities,
+      providerRunMode: options?.providerRunMode ?? "default",
+      providerControlRevision: options?.providerControlRevision ?? 0,
       config,
       runtimeInfo: undefined,
       lifecycle: "initializing",
@@ -3186,6 +3265,10 @@ export class AgentManager {
     }
 
     this.syncFeaturesFromSession(agent);
+    await this.refreshAgentPlanCapability(agent.id, {
+      emit: options?.emit,
+      persist: false,
+    });
     await this.refreshRuntimeInfo(agent, options);
   }
 

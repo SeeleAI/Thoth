@@ -112,6 +112,8 @@ export function extractTimestamps(record: StoredAgentRecord): {
   lastUserMessageAt: Date | null;
   labels?: Record<string, string>;
   workspaceId?: string;
+  providerRunMode: StoredAgentRecord["providerRunMode"];
+  providerControlRevision: number;
 } {
   return {
     createdAt: new Date(record.createdAt),
@@ -119,6 +121,8 @@ export function extractTimestamps(record: StoredAgentRecord): {
     lastUserMessageAt: record.lastUserMessageAt ? new Date(record.lastUserMessageAt) : null,
     labels: record.labels,
     workspaceId: record.workspaceId,
+    providerRunMode: record.providerRunMode,
+    providerControlRevision: record.providerControlRevision,
   };
 }
 

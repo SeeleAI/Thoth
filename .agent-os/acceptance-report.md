@@ -2755,3 +2755,23 @@ Boundary:
 
 This evidence verifies the bounded source/API behavior and the published native asset set. It intentionally does
 not add a second long AppImage/browser/real-provider smoke after the workflow's packaged Clarify/Loop journey.
+
+### `NTH-EV-050` Agent-Scoped Native Plan, Reliable Archive And Desktop-Only Release
+
+Status: local implementation and acceptance verified; desktop Actions and public Release replacement pending.
+
+Required evidence:
+
+1. Live Agent capability comes from its real Harness session and distinguishes native, unsupported and unavailable.
+2. Provider Run Mode is persisted independently per Agent and Plan output remains canonical after its decision.
+3. Single and bulk tab close remove layout only after daemon archive success and remain closed after restart.
+4. The public fixed MVP Release contains only macOS, Windows, Linux and metadata assets.
+5. A bounded source gate plus one real Codex public Plan journey passes without an Android build.
+
+Local evidence on `2026-07-22`:
+
+1. Final `npm run accept:provider-plan-tabs:fast` passed in `24.971s`: Protocol `3/3`, Codex adapter `95/95`, Agent authority `136/136`, App controls/archive `18/18`, plus the static product/Release contract.
+2. `npm run accept:thoth:fast` passed in `101.927s`, including all `12/12` public foreground Plan/Loop journeys and the interaction-regression gate.
+3. `npm run test:e2e:real:plan --workspace=@thoth/daemon` passed against authenticated Codex `0.144.1` in `18.17s`. The public Create/Get/Update/Send flow reported native Plan, persisted one Plan result, exposed a stable `planId`, accepted Implement and continued on the same provider thread.
+4. `npm run check:foundation`, `npm run build:daemon`, `npm run build:web`, `npm run check:mvp-release-contract`, `npm run check:brand-assets` and `git diff --check` passed.
+5. No local Android or AppImage build ran. Public asset verification remains pending the desktop-native workflow.

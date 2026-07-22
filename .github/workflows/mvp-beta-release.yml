@@ -235,62 +235,6 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  android-apk:
-    needs: preflight
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24.14.0
-          cache: npm
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: android-actions/setup-android@v3
-      - run: npm ci
-      - name: Restore Android MVP signing key
-        shell: bash
-        env:
-          KEYSTORE_BASE64: ${{ secrets.THOTH_ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          set -euo pipefail
-          test -n "$KEYSTORE_BASE64"
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/thoth-mvp-beta.jks"
-          chmod 600 "$RUNNER_TEMP/thoth-mvp-beta.jks"
-      - name: Build signed Android Release APK
-        env:
-          THOTH_RELEASE_OUTPUT_DIR: release-output
-          THOTH_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/thoth-mvp-beta.jks
-          THOTH_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.THOTH_ANDROID_KEYSTORE_PASSWORD }}
-          THOTH_ANDROID_KEY_ALIAS: ${{ secrets.THOTH_ANDROID_KEY_ALIAS }}
-          THOTH_ANDROID_KEY_PASSWORD: ${{ secrets.THOTH_ANDROID_KEY_PASSWORD }}
-        run: npm run package:android:release-apk
-      - name: Verify Android package, signature, and permissions
-        shell: bash
-        run: |
-          set -euo pipefail
-          apk="release-output/Thoth-$THOTH_MVP_VERSION-android.apk"
-          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          aapt="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
-          "$apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/apk-signature.txt"
-          "$aapt" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
-          "$aapt" dump permissions "$apk" > "$RUNNER_TEMP/apk-permissions.txt"
-          grep -F "package: name='sh.thoth'" "$RUNNER_TEMP/apk-badging.txt"
-          grep -F "versionName='$THOTH_MVP_VERSION'" "$RUNNER_TEMP/apk-badging.txt"
-          for forbidden_permission in android.permission.RECORD_AUDIO android.permission.SYSTEM_ALERT_WINDOW; do
-            if grep -Fq "$forbidden_permission" "$RUNNER_TEMP/apk-permissions.txt"; then
-              echo "::error::Release APK requests forbidden permission $forbidden_permission."
-              exit 1
-            fi
-          done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: android-apk
-          path: release-output/Thoth-0.0.0-mvp-beta-android.apk
-          retention-days: 7
-
   relay-smoke:
     needs: [preflight, server-cli]
     runs-on: ubuntu-22.04
@@ -323,7 +267,6 @@ jobs:
       - desktop-macos
       - desktop-linux
       - desktop-windows
-      - android-apk
       - relay-smoke
     runs-on: ubuntu-22.04
     permissions:
@@ -341,14 +284,6 @@ jobs:
         with:
           pattern: desktop-*
           path: downloaded/desktop
-      - uses: actions/download-artifact@v4
-        with:
-          name: android-apk
-          path: downloaded/android
-      - uses: actions/download-artifact@v4
-        with:
-          name: server-cli
-          path: downloaded/server
       - name: Assemble release payload
         shell: bash
         run: |
@@ -362,9 +297,6 @@ jobs:
             esac
             cp "$file" "release-files/$name"
           done < <(find downloaded/desktop -type f -print0)
-
-          cp downloaded/android/Thoth-$THOTH_MVP_VERSION-android.apk release-files/
-          cp downloaded/server/thoth-server-cli-$THOTH_MVP_VERSION.tgz release-files/
 
           mapfile -t mac_manifests < <(find downloaded/desktop -type f -name beta-mac.yml | sort)
           test "${#mac_manifests[@]}" -eq 2
@@ -406,22 +338,13 @@ jobs:
           test -f "release-files/beta-linux.yml"
           test -f "release-files/beta.yml"
           test -f "release-files/MVP-UPDATE.json"
-          node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync("release-files/MVP-UPDATE.json","utf8")); if(value.commit!==process.env.GITHUB_SHA||value.tag!==process.env.THOTH_MVP_TAG||value.assets.length<7) process.exit(1)'
-          test -f "release-files/Thoth-$THOTH_MVP_VERSION-android.apk"
-          test -f "release-files/thoth-server-cli-$THOTH_MVP_VERSION.tgz"
+          node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync("release-files/MVP-UPDATE.json","utf8")); if(value.commit!==process.env.GITHUB_SHA||value.tag!==process.env.THOTH_MVP_TAG||value.assets.length!==6) process.exit(1)'
+          test -z "$(find release-files -maxdepth 1 -type f \( -name '*.apk' -o -name 'thoth-server-cli-*.tgz' \) -print -quit)"
 
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
           Thoth MVP beta automated cross-platform build.
 
           Desktop packages are unsigned in this MVP release. macOS may show Gatekeeper warnings and Windows may show SmartScreen warnings.
-
-          Android is signed with the dedicated Thoth MVP beta signing key.
-
-          Server CLI installation requires Node.js 24.14 or newer:
-
-          ~~~bash
-          npm install -g https://github.com/SeeleAI/Thoth/releases/download/v0.0.0-mvp-beta/thoth-server-cli-0.0.0-mvp-beta.tgz
-          ~~~
 
           This build uses the Seele Relay v3 test service at relay.test.thoth.seeles.ai.
           NOTES

@@ -3533,7 +3533,7 @@ class OpenCodeAgentSession implements AgentSession {
 
   async applyProviderRunMode(mode: "default" | "plan") {
     const capability = await this.getProviderRunModeCapability();
-    if (mode === "plan" && capability.kind === "unsupported") {
+    if (mode === "plan" && capability.kind !== "native") {
       return { capability, nativeModeId: null };
     }
     const nativeModeId = mode === "plan" ? "plan" : OPENCODE_BUILD_MODE_ID;

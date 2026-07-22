@@ -139,6 +139,27 @@ export function runMvpReleaseContract({ writeMode = false } = {}) {
   if (!workflowText.includes('test -f "release-files/MVP-UPDATE.json"')) {
     failures.push("MVP workflow must verify MVP-UPDATE.json before publishing");
   }
+  if (/^  android-apk:/mu.test(workflowText)) {
+    failures.push("MVP workflow must not build or publish Android artifacts");
+  }
+  if (
+    workflowText.includes("downloaded/android") ||
+    workflowText.includes("release-files/Thoth-$THOTH_MVP_VERSION-android.apk") ||
+    workflowText.includes("release-files/thoth-server-cli-$THOTH_MVP_VERSION.tgz")
+  ) {
+    failures.push("Public MVP payload must contain desktop artifacts only");
+  }
+  const updateManifestBuilder = readFileSync(
+    join(repoRoot, "scripts/build-mvp-update-manifest.mjs"),
+    "utf8",
+  );
+  if (updateManifestBuilder.includes('"android"') || updateManifestBuilder.includes('"apk"')) {
+    failures.push("MVP update manifest must not advertise Android assets");
+  }
+  const appConfig = readFileSync(join(repoRoot, "packages/app/app.config.js"), "utf8");
+  if (appConfig.includes("android.permission.REQUEST_INSTALL_PACKAGES")) {
+    failures.push("Android source must not request package installation permission");
+  }
   const desktopManifest = readJson("packages/desktop/package.json");
   if (desktopManifest.dependencies?.["electron-updater"]) {
     failures.push("Desktop MVP must not depend on the legacy electron-updater path");

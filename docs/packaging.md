@@ -11,10 +11,12 @@ The fixed MVP version is `0.0.0-mvp-beta`. The `release/mvp-actions` workflow bu
 - macOS arm64/x64 DMG and ZIP packages
 - Windows arm64/x64 NSIS and ZIP packages
 - Linux x64 AppImage, DEB, RPM and tar.gz packages
-- one universal signed Android Release APK
-- `thoth-server-cli-0.0.0-mvp-beta.tgz`
 - legacy Electron updater manifests for already-published clients, build-source metadata,
   `MVP-UPDATE.json` and `SHA256SUMS`
+
+The server CLI bundle is built and installed only inside Actions for daemon and Relay acceptance.
+It is not uploaded to the public Release. Android remains a local source/build target and is not
+part of the MVP beta Release.
 
 Run the local release-contract check before packaging:
 
@@ -25,7 +27,7 @@ npm run check:mvp-release-contract
 It verifies every workspace version, exact internal semver dependency, private-package policy,
 lockfile consistency and the absence of internal `file:` dependencies.
 
-## Server CLI Bundle
+## Internal Server CLI Bundle
 
 Build the server CLI GitHub Release bundle:
 
@@ -38,11 +40,7 @@ The default output is ignored under `.dev/release-artifacts/`. The archive embed
 platform-appropriate third-party dependencies through npm. It requires Node.js `>=24.14.0` and is
 not published to the npm registry.
 
-Release installation command:
-
-```bash
-npm install -g https://github.com/SeeleAI/Thoth/releases/download/v0.0.0-mvp-beta/thoth-server-cli-0.0.0-mvp-beta.tgz
-```
+The bundle is an Actions artifact only and has no public Release installation URL.
 
 ## Android Debug APK
 
@@ -83,7 +81,7 @@ Current verified debug artifact from the runtime isolation run:
 - Package: `sh.thoth.debug`
 - Permission check: does not request `android.permission.RECORD_AUDIO`
 
-## Android MVP Release APK
+## Android Local Release APK
 
 Build the production-identity universal APK with:
 
@@ -107,10 +105,8 @@ The Release APK contract is:
 - no `android.permission.SYSTEM_ALERT_WINDOW`
 - no Expo development launcher or EAS OTA project binding
 
-The APK embeds the build commit and consumes the fixed-tag `MVP-UPDATE.json`. Its update action
-downloads the universal APK, reports byte progress, verifies the declared size and SHA-256, then
-opens the Android package installer through a content URI. `REQUEST_INSTALL_PACKAGES` is required
-for this flow; Android's per-source permission and final install confirmation remain system-owned.
+This local artifact is not uploaded to the MVP beta Release. The app does not expose Android
+self-update or request `REQUEST_INSTALL_PACKAGES` while mobile publication is paused.
 
 ## iOS
 

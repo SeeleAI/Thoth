@@ -82,6 +82,8 @@ export function toStoredAgentRecord(
     labels: agent.labels,
     lastStatus: agent.lifecycle,
     lastModeId: agent.currentModeId ?? config?.modeId ?? null,
+    providerRunMode: agent.providerRunMode,
+    providerControlRevision: agent.providerControlRevision,
     config: config ?? null,
     runtimeInfo,
     features: normalizeFeatures(agent.features),
@@ -122,6 +124,14 @@ export function toAgentPayload(
     status: agent.lifecycle,
     capabilities: cloneCapabilities(agent.capabilities),
     ...(agent.planCapability ? { planCapability: agent.planCapability } : {}),
+    providerControl: {
+      runMode: agent.providerRunMode,
+      planCapability: agent.planCapability ?? {
+        kind: "unavailable",
+        reason: "Provider session capability is not loaded.",
+      },
+      revision: agent.providerControlRevision,
+    },
     currentModeId: agent.currentModeId,
     availableModes: cloneAvailableModes(agent.availableModes),
     features: normalizeFeatures(agent.features),
@@ -227,6 +237,14 @@ export function buildStoredAgentPayload(
     lastUserMessageAt: lastUserMessageAt ? lastUserMessageAt.toISOString() : null,
     status: record.lastStatus,
     capabilities: defaultCapabilities,
+    providerControl: {
+      runMode: record.providerRunMode,
+      planCapability: {
+        kind: "unavailable",
+        reason: "Provider session is not loaded.",
+      },
+      revision: record.providerControlRevision,
+    },
     currentModeId: record.lastModeId ?? null,
     availableModes: [],
     pendingPermissions: [],

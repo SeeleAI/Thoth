@@ -27,6 +27,7 @@ import type { HarnessApprovalRequest, RuntimeAttachmentReceipt } from "@thoth/dr
 import {
   ProviderRunModeReceiptSchema,
   ProviderRunModeSchema,
+  type ProviderRunMode,
   type ProviderRunModeReceipt,
 } from "@thoth/protocol/provider-control";
 import { parseStoredAgentRecord, type StoredAgentRecord } from "../agent/agent-storage.js";
@@ -341,6 +342,8 @@ export class WorkspaceAuthorityStore {
         title TEXT,
         visible INTEGER NOT NULL CHECK(visible IN (0, 1)),
         authority_revision INTEGER NOT NULL DEFAULT 0,
+        provider_run_mode TEXT NOT NULL DEFAULT 'default',
+        provider_control_revision INTEGER NOT NULL DEFAULT 0,
         active_turn_id TEXT,
         thoth_lifecycle TEXT NOT NULL DEFAULT 'idle',
         background_task_id TEXT,
@@ -668,6 +671,8 @@ export class WorkspaceAuthorityStore {
       CREATE INDEX IF NOT EXISTS cards_turn_created ON cards(turn_id, created_at ASC);
     `);
     this.ensureColumn("agents", "authority_revision", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("agents", "provider_run_mode", "TEXT NOT NULL DEFAULT 'default'");
+    this.ensureColumn("agents", "provider_control_revision", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("agents", "active_turn_id", "TEXT");
     this.ensureColumn("agents", "thoth_lifecycle", "TEXT NOT NULL DEFAULT 'idle'");
     this.ensureColumn("agents", "background_task_id", "TEXT");
@@ -4196,7 +4201,8 @@ export class WorkspaceAuthorityStore {
              labels_json = ?, last_status = ?, last_mode_id = ?, config_json = ?,
              runtime_info_json = ?, features_json = ?, persistence_json = ?,
              last_error = ?, requires_attention = ?, attention_reason = ?,
-             attention_timestamp = ?, internal = ?, archived_at = ?
+             attention_timestamp = ?, internal = ?, archived_at = ?,
+             provider_run_mode = ?, provider_control_revision = ?
            WHERE agent_id = ?`,
         )
         .run(
@@ -4217,6 +4223,8 @@ export class WorkspaceAuthorityStore {
           record.attentionTimestamp ?? null,
           record.internal === true ? 1 : 0,
           record.archivedAt ?? null,
+          record.providerRunMode ?? "default",
+          record.providerControlRevision ?? 0,
           record.id,
         );
     });
@@ -4239,6 +4247,97 @@ export class WorkspaceAuthorityStore {
       .prepare("SELECT * FROM agents WHERE provider IS NOT NULL ORDER BY updated_at DESC")
       .all() as Array<Record<string, unknown>>;
     return rows.map((row) => this.toAgentRecord(row));
+  }
+
+  getAgentProviderControlRecord(agentId: string): {
+    runMode: ProviderRunMode;
+    revision: number;
+  } | null {
+    const row = this.database
+      .prepare(
+        "SELECT provider_run_mode, provider_control_revision FROM agents WHERE agent_id = ? AND provider IS NOT NULL",
+      )
+      .get(agentId) as { provider_run_mode: string; provider_control_revision: number } | undefined;
+    return row
+      ? {
+          runMode: ProviderRunModeSchema.parse(row.provider_run_mode),
+          revision: row.provider_control_revision,
+        }
+      : null;
+  }
+
+  updateAgentProviderControl(input: {
+    agentId: string;
+    runMode: ProviderRunMode;
+    expectedRevision: number;
+    commandId: string;
+  }): { runMode: ProviderRunMode; revision: number } {
+    return this.transaction(() => {
+      const previous = this.database
+        .prepare(
+          "SELECT aggregate_id, command_kind, result_json FROM authority_commands WHERE command_id = ?",
+        )
+        .get(input.commandId) as
+        | { aggregate_id: string; command_kind: string; result_json: string }
+        | undefined;
+      if (previous) {
+        if (
+          previous.aggregate_id !== input.agentId ||
+          previous.command_kind !== "provider_control.update"
+        ) {
+          throw new Error(`Command id ${input.commandId} is already bound to another command`);
+        }
+        const parsed = JSON.parse(previous.result_json) as {
+          runMode: ProviderRunMode;
+          revision: number;
+        };
+        return {
+          runMode: ProviderRunModeSchema.parse(parsed.runMode),
+          revision: parsed.revision,
+        };
+      }
+
+      const current = this.getAgentProviderControlRecord(input.agentId);
+      if (!current) {
+        throw new Error(`Agent not found: ${input.agentId}`);
+      }
+      if (current.revision !== input.expectedRevision) {
+        throw new Error(
+          `Provider control revision conflict: expected ${input.expectedRevision}, current ${current.revision}`,
+        );
+      }
+
+      const result = {
+        runMode: ProviderRunModeSchema.parse(input.runMode),
+        revision: current.revision + 1,
+      };
+      const now = new Date().toISOString();
+      this.database
+        .prepare(
+          `UPDATE agents
+           SET provider_run_mode = ?, provider_control_revision = ?, updated_at = ?
+           WHERE agent_id = ?`,
+        )
+        .run(result.runMode, result.revision, now, input.agentId);
+      this.database
+        .prepare(
+          `INSERT INTO authority_commands(
+             command_id, aggregate_type, aggregate_id, command_kind,
+             result_revision, result_json, created_at
+           ) VALUES (?, 'agent', ?, 'provider_control.update', ?, ?, ?)`,
+        )
+        .run(input.commandId, input.agentId, result.revision, JSON.stringify(result), now);
+      this.appendEventInTransaction({
+        aggregateType: "agent",
+        aggregateId: input.agentId,
+        revision: result.revision,
+        kind: "agent_provider_control_updated",
+        payload: { runMode: result.runMode },
+        causationId: input.commandId,
+        correlationId: input.commandId,
+      });
+      return result;
+    });
   }
 
   removeAgentRecord(agentId: string): void {
@@ -5204,6 +5303,8 @@ export class WorkspaceAuthorityStore {
       labels: parseOptionalJson(row.labels_json) ?? {},
       lastStatus: row.last_status,
       lastModeId: row.last_mode_id ?? null,
+      providerRunMode: row.provider_run_mode ?? "default",
+      providerControlRevision: row.provider_control_revision ?? 0,
       config: parseOptionalJson(row.config_json),
       runtimeInfo: parseOptionalJson(row.runtime_info_json),
       features: parseOptionalJson(row.features_json),

@@ -111,16 +111,26 @@ export function buildBulkCloseConfirmationMessage(
 export async function closeBulkWorkspaceTabs(input: CloseBulkWorkspaceTabsInput): Promise<void> {
   const { client, groups, closeTab, closeWorkspaceTabWithCleanup, logLabel, warn } = input;
   const hasDestructiveTabs = groups.agentTabs.length > 0 || groups.terminalTabs.length > 0;
+  const archivedAgentIds = new Set<string>();
+  const closedTerminalIds = new Set<string>();
 
   if (hasDestructiveTabs && client) {
-    void client
-      .closeItems({
+    try {
+      const result = await client.closeItems({
         agentIds: groups.agentTabs.map((tab) => tab.agentId),
         terminalIds: groups.terminalTabs.map((tab) => tab.terminalId),
-      })
-      .catch((error) => {
-        warn?.(`[WorkspaceScreen] Failed to bulk close tabs ${logLabel}`, { error });
       });
+      for (const item of result.agents) {
+        archivedAgentIds.add(item.agentId);
+      }
+      for (const item of result.terminals) {
+        if (item.success) {
+          closedTerminalIds.add(item.terminalId);
+        }
+      }
+    } catch (error) {
+      warn?.(`[WorkspaceScreen] Failed to bulk close tabs ${logLabel}`, { error });
+    }
   } else if (hasDestructiveTabs) {
     warn?.(`[WorkspaceScreen] Failed to bulk close tabs ${logLabel}`, {
       error: new Error(i18n.t("common.errors.daemonClientUnavailable")),
@@ -128,7 +138,10 @@ export async function closeBulkWorkspaceTabs(input: CloseBulkWorkspaceTabsInput)
   }
 
   for (const { tabId, agentId } of groups.agentTabs) {
-    void closeTab(tabId, async () => {
+    if (!archivedAgentIds.has(agentId)) {
+      continue;
+    }
+    await closeTab(tabId, async () => {
       closeWorkspaceTabWithCleanup({
         tabId,
         target: { kind: "agent", agentId },
@@ -137,7 +150,10 @@ export async function closeBulkWorkspaceTabs(input: CloseBulkWorkspaceTabsInput)
   }
 
   for (const { tabId, terminalId } of groups.terminalTabs) {
-    void closeTab(tabId, async () => {
+    if (!closedTerminalIds.has(terminalId)) {
+      continue;
+    }
+    await closeTab(tabId, async () => {
       closeWorkspaceTabWithCleanup({
         tabId,
         target: { kind: "terminal", terminalId },
@@ -146,7 +162,7 @@ export async function closeBulkWorkspaceTabs(input: CloseBulkWorkspaceTabsInput)
   }
 
   for (const { tabId, target } of groups.otherTabs) {
-    void closeTab(tabId, async () => {
+    await closeTab(tabId, async () => {
       closeWorkspaceTabWithCleanup({ tabId, target });
     });
   }

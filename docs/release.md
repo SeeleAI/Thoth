@@ -47,16 +47,15 @@ additional MVP beta releases.
 
 ## MVP Build-ID Updates
 
-`MVP-UPDATE.json` is the update authority for newly packaged desktop and Android clients. It records
+`MVP-UPDATE.json` is the update authority for newly packaged desktop clients. It records
 the fixed tag/version, source commit, workflow run, publication time and each preferred native
 installer's platform, architecture, strategy, byte size, SHA-256 and fixed Release URL. Clients use
 their bundled commit as identity; equal semver with a different commit is an update.
 
 One click on Check for updates authorizes check, download, verification and handoff to the platform
 installer. Windows runs the NSIS installer, macOS opens the unsigned beta DMG, AppImage performs an
-atomic replacement and restart, DEB/RPM opens the system installer, and Android opens the package
-installer after APK verification. Operating-system permission and install confirmations are not
-bypassed.
+atomic replacement and restart, and DEB/RPM opens the system installer. Operating-system permission
+and install confirmations are not bypassed.
 
 The previously published build contains the former `electron-updater` implementation. A remote
 manifest cannot replace code that is already installed, and the fixed semver prevents that legacy
@@ -65,15 +64,9 @@ this change. All subsequent fixed-tag beta replacements can then use the commit-
 
 ## Artifact Policy
 
-The release contains unsigned/ad-hoc macOS and Windows desktop packages, Linux desktop packages, a
-dedicated-key signed Android APK, updater manifests, source-commit metadata, checksums and the server
-CLI tgz. It does not contain an iOS package.
-
-The server CLI is installed directly from GitHub and is not uploaded to npm:
-
-```bash
-npm install -g https://github.com/SeeleAI/Thoth/releases/download/v0.0.0-mvp-beta/thoth-server-cli-0.0.0-mvp-beta.tgz
-```
+The release contains unsigned/ad-hoc macOS and Windows desktop packages, Linux desktop packages,
+updater manifests, source-commit metadata and checksums. It contains no Android APK, iOS package or
+server CLI tgz. Actions still build and install the server CLI internally for daemon and Relay gates.
 
 ## Credentials And GitHub Operations
 
@@ -85,9 +78,10 @@ THOTH_GH_CONFIG_DIR=.dev/gh-royalvice npm run gh -- api user
 ```
 
 Do not use global `~/.config/gh`, place credentials in command arguments, commit signing material or
-reuse a credential exposed in chat. Android keystore material stays in ignored
-`.dev/release-keys/` and repository Actions secrets. Workflow build jobs have `contents: read`; only
-the final publish job has `contents: write` through its automatic `GITHUB_TOKEN`.
+reuse a credential exposed in chat. Local Android keystore material stays in ignored
+`.dev/release-keys/` and is not consumed by the desktop-only workflow. Build jobs have
+`contents: read`; only the final publish job has `contents: write` through its automatic
+`GITHUB_TOKEN`.
 
 ## Branch Safety
 

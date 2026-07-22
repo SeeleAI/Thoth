@@ -8,6 +8,7 @@ import { AgentFeatureSchema, AgentStatusSchema } from "../messages.js";
 import { toStoredAgentRecord } from "./agent-projections.js";
 import type { ManagedAgent } from "./agent-manager.js";
 import type { AgentSessionConfig } from "@thoth/drivers/agent-runtime";
+import { ProviderRunModeSchema } from "@thoth/protocol/provider-control";
 
 const SERIALIZABLE_CONFIG_SCHEMA = z
   .object({
@@ -45,6 +46,8 @@ const STORED_AGENT_SCHEMA = z.object({
   labels: z.record(z.string(), z.string()).default({}),
   lastStatus: AgentStatusSchema.default("closed"),
   lastModeId: z.string().nullable().optional(),
+  providerRunMode: ProviderRunModeSchema.default("default"),
+  providerControlRevision: z.number().int().nonnegative().default(0),
   config: SERIALIZABLE_CONFIG_SCHEMA,
   runtimeInfo: z
     .object({

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import type { ProviderRunMode } from "@thoth/protocol/provider-control";
 import type { AgentProviderDefinition } from "@thoth/protocol/provider-manifest";
 import type {
   AgentMode,
@@ -78,6 +79,8 @@ export interface UseAgentFormStateResult {
   setProviderAndModelFromUser: (provider: AgentProvider, modelId: string) => void;
   workingDirIsEmpty: boolean;
   persistFormPreferences: () => Promise<void>;
+  providerRunMode: ProviderRunMode;
+  setProviderRunMode: (runMode: ProviderRunMode) => void;
 }
 
 function shouldAutoSelectServerId(input: {
@@ -169,6 +172,7 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
   } = options;
 
   const { preferences, isLoading: isPreferencesLoading, updatePreferences } = useFormPreferences();
+  const [providerRunMode, setProviderRunMode] = useState<ProviderRunMode>("default");
 
   const daemons = useHosts();
 
@@ -203,6 +207,7 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
       dispatch({ type: "RESET" });
       hasResolvedRef.current = false;
       hydrationPreferencesRef.current = null;
+      setProviderRunMode("default");
     }
   }, [isVisible]);
 
@@ -512,6 +517,15 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
   );
   const isModelLoading = snapshotIsLoading || selectedProviderIsLoading;
   const modelError = snapshotError;
+  const selectedPlanCapability = allProviderEntries?.find(
+    (entry) => entry.provider === formState.provider,
+  )?.planCapability;
+
+  useEffect(() => {
+    if (providerRunMode === "plan" && selectedPlanCapability?.kind !== "native") {
+      setProviderRunMode("default");
+    }
+  }, [providerRunMode, selectedPlanCapability]);
 
   const workingDirIsEmpty = !formState.workingDir.trim();
 
@@ -549,6 +563,8 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
       setProviderAndModelFromUser,
       workingDirIsEmpty,
       persistFormPreferences,
+      providerRunMode,
+      setProviderRunMode,
     }),
     [
       formState.serverId,
@@ -583,6 +599,8 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
       setProviderAndModelFromUser,
       workingDirIsEmpty,
       persistFormPreferences,
+      providerRunMode,
+      setProviderRunMode,
     ],
   );
 }

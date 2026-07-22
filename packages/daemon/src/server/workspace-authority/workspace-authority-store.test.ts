@@ -71,6 +71,50 @@ afterEach(() => {
 });
 
 describe("WorkspaceAuthorityStore", () => {
+  it("stores Agent provider control with CAS and command idempotency", () => {
+    const { store } = createStore();
+    store.upsertAgentRecord({
+      id: "agent_visible",
+      provider: "codex",
+      cwd: "/workspace",
+      workspaceId: "wks_test",
+      createdAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T00:00:00.000Z",
+      labels: {},
+      lastStatus: "idle",
+      providerRunMode: "default",
+      providerControlRevision: 0,
+    });
+
+    const first = store.updateAgentProviderControl({
+      agentId: "agent_visible",
+      runMode: "plan",
+      expectedRevision: 0,
+      commandId: "provider-control-1",
+    });
+    expect(first).toEqual({ runMode: "plan", revision: 1 });
+    expect(
+      store.updateAgentProviderControl({
+        agentId: "agent_visible",
+        runMode: "plan",
+        expectedRevision: 0,
+        commandId: "provider-control-1",
+      }),
+    ).toEqual(first);
+    expect(() =>
+      store.updateAgentProviderControl({
+        agentId: "agent_visible",
+        runMode: "default",
+        expectedRevision: 0,
+        commandId: "provider-control-2",
+      }),
+    ).toThrow("Provider control revision conflict");
+    expect(store.getAgentRecord("agent_visible")).toMatchObject({
+      providerRunMode: "plan",
+      providerControlRevision: 1,
+    });
+  });
+
   it("stores normalized Task and Execution projections without full projection events", () => {
     const { root, catalog, store } = createStore();
     createTask(store, catalog);

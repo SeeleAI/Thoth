@@ -103,6 +103,7 @@ import type {
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type { MutableDaemonConfig, MutableDaemonConfigPatch } from "@thoth/protocol/messages";
 import type { TaskCommand } from "@thoth/protocol/task-authority";
+import type { AgentProviderControl, ProviderRunMode } from "@thoth/protocol/provider-control";
 import { isRelayClientWebSocketUrl } from "@thoth/protocol/daemon-endpoints";
 import { terminalSubscriptionKey } from "@thoth/protocol/terminal-subscription-key";
 import {
@@ -2816,6 +2817,66 @@ export class DaemonClient {
       throw new Error(payload.error ?? "setAgentMode rejected");
     }
     return payload.notice ?? null;
+  }
+
+  async getAgentProviderControl(
+    agentId: string,
+    options?: { refresh?: boolean },
+  ): Promise<AgentProviderControl> {
+    const requestId = this.createRequestId();
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.provider_control.get.request",
+      agentId,
+      ...(options?.refresh ? { refresh: true } : {}),
+      requestId,
+    });
+    const payload = await this.sendRequest({
+      requestId,
+      message,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.provider_control.get.response") {
+          return null;
+        }
+        return msg.payload.requestId === requestId ? msg.payload : null;
+      },
+    });
+    if (!payload.accepted || !payload.providerControl) {
+      throw new Error(payload.error ?? "getAgentProviderControl rejected");
+    }
+    return payload.providerControl;
+  }
+
+  async updateAgentProviderControl(input: {
+    agentId: string;
+    runMode: ProviderRunMode;
+    expectedRevision: number;
+    commandId?: string;
+  }): Promise<AgentProviderControl> {
+    const requestId = this.createRequestId();
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.provider_control.update.request",
+      agentId: input.agentId,
+      runMode: input.runMode,
+      expectedRevision: input.expectedRevision,
+      commandId: input.commandId ?? this.createRequestId(),
+      requestId,
+    });
+    const payload = await this.sendRequest({
+      requestId,
+      message,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.provider_control.update.response") {
+          return null;
+        }
+        return msg.payload.requestId === requestId ? msg.payload : null;
+      },
+    });
+    if (!payload.accepted || !payload.providerControl) {
+      throw new Error(payload.error ?? "updateAgentProviderControl rejected");
+    }
+    return payload.providerControl;
   }
 
   async setAgentModel(agentId: string, modelId: string | null): Promise<void> {

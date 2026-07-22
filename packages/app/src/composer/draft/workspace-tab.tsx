@@ -382,7 +382,7 @@ export function WorkspaceDraftAgentTab({
     () => buildThothTurnSnapshot(daemonConfig?.thoth),
     [daemonConfig?.thoth],
   );
-  const providerRunMode = daemonConfig?.providerControl.runMode ?? "default";
+  const providerRunMode = composerState.providerRunMode;
   const clearDraftInput = draftInput.clear;
   const setDraftText = draftInput.setText;
   const setDraftAttachments = draftInput.setAttachments;
