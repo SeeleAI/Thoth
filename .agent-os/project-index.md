@@ -3,11 +3,11 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-029`
+2. Top next action: `NTH-TD-021`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
 4. Active blockers: None.
 5. Current branch: `agent/dev/mvp`
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-029` is locally verified: Agent-scoped native Plan, durable Plan results, archive-before-layout tab close and desktop-only Release contracts pass; branch promotion, native Actions and public asset verification remain.
+6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-029` is verified and published at `05775486`: Agent-scoped native Plan, durable Plan results, archive-before-layout tab close and the desktop-only fixed MVP Release passed local, real-provider, packaged Relay, native Actions and public-asset verification.
 
 ## Objective Summary
 
@@ -24,7 +24,7 @@
 
 ## Top Next Action
 
-`NTH-TD-029` `[doing]`: Restore live-session native Plan, move Plan into Agent-scoped Provider settings, make Agent tab close durably archive before layout removal, and replace the fixed MVP Release with desktop-only public assets. After release evidence lands, restore `NTH-TD-021`.
+`NTH-TD-021` `[doing]`: Harden Loop background into Loop Engineering authority. Complete the remaining real browser/device evidence for budget wait, Pause/Resume/Stop and daemon restart/reconnect, including Background Task detail and phase Timeline restoration.
 
 ## Active Blockers
 
@@ -106,6 +106,7 @@ None.
 72. `NTH-CD-063`: Send delivery, canonical Timeline identity, provider-native rewind receipts and image preview lifetime now have one daemon/adapter/App ownership model.
 73. `NTH-EV-049`: The interaction-regression implementation passed the bounded local gates and GitHub Actions run `29926576540`. The fixed MVP prerelease now targets `0eff56c0`; re-downloaded AppImage, APK and server CLI assets match `SHA256SUMS`, and the AppImage contains the expected Queue, rewind, Timeline epoch, transient preview and build-identity code.
 74. `NTH-CD-064`: Native Plan is Agent-scoped and live-session-owned; Plan output is durable; tab close is archive-first; the public fixed MVP Release is desktop-only.
+75. `NTH-EV-050`: Agent-scoped native Plan, id-only Implement continuation, reliable tab archive and the desktop-only fixed MVP Release are fully verified at `05775486` by local gates, authenticated Codex, packaged hosted Relay, native Actions run `29949640876` and re-downloaded public AppImage metadata/checksums.
 
 ## Read Next
 

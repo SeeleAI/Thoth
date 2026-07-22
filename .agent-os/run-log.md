@@ -3653,3 +3653,20 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   the hosted Relay journey with Review fail/retry/pass, restart, Pause/Resume, Stop, six `thoth.loop` receipts and
   five PlanExec/five Review calls. Final `accept:thoth:fast` passed in `92.591s` and foundation passed. A clean
   replacement Actions run and public asset verification remain pending.
+
+## 2026-07-22 [Desktop-only MVP Release final verification]
+
+- GitHub Actions run `29949640876` completed successfully at final release commit
+  `05775486ba72457f4c7f9506b217ca7c88ebd07a`. Preflight, Windows, Linux, macOS arm64/x64, Linux packaged
+  Clarify/Loop, hosted Relay packaged Plan/Loop and the three internal server CLI install smokes all passed before
+  publish; no Android job ran.
+- Publish replaced the sole `v0.0.0-mvp-beta` prerelease in place. The tag and Release both target `05775486`;
+  its `26` public assets are desktop packages or updater metadata only, with no APK, iOS package or server CLI tgz.
+  `MVP-UPDATE.json` contains exactly the six preferred macOS, Windows and Linux installers.
+- Re-downloaded metadata identifies workflow `29949640876` and commit `05775486`. The public
+  `Thoth-x86_64.AppImage` SHA-256 is
+  `32b7824a3457a5b8bf9c2d70b5f117cdb2c76fade026ae533f094e59ac8456c5`, matching both the manifest and
+  `SHA256SUMS`; extraction confirmed the bundled build identity and captured-Plan/id-only Implement fix.
+- `NTH-EV-050` and `NTH-TD-029` are verified. `thoth-plugin-final-archive` remains present, remote `main` remains
+  `e74c6e0d`, and no npm publication or Relay deployment occurred. The sole top next action returns to
+  `NTH-TD-021`; this documentation-only closeout does not push `release/mvp-actions` or trigger another publish.

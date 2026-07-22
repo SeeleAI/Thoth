@@ -2758,7 +2758,7 @@ not add a second long AppImage/browser/real-provider smoke after the workflow's 
 
 ### `NTH-EV-050` Agent-Scoped Native Plan, Reliable Archive And Desktop-Only Release
 
-Status: local implementation and acceptance verified; desktop Actions and public Release replacement pending.
+Status: verified and published.
 
 Required evidence:
 
@@ -2793,3 +2793,19 @@ Local evidence on `2026-07-22`:
    `6` durable `thoth.loop` attachments and `5` PlanExec / `5` Review calls under the original `90s` per-wait cap.
 10. Final `npm run accept:thoth:fast` passed in `92.591s`, and `npm run check:foundation`, Release runtime build,
     MVP Release contract, formatting and `git diff --check` passed after the adapter correction.
+11. GitHub Actions run `29949640876` completed successfully at commit
+    `05775486ba72457f4c7f9506b217ca7c88ebd07a`. Clean preflight, Windows, Linux, macOS arm64/x64, Linux
+    packaged Clarify/Loop, hosted Relay packaged Plan/Loop and all three internal server CLI install smokes passed
+    before publish. The workflow contains no Android job.
+12. The fixed `v0.0.0-mvp-beta` tag and prerelease now target `05775486`. The public Release contains `26`
+    macOS, Windows, Linux and updater-metadata assets and contains no APK, iOS package or server CLI tgz.
+    `MVP-UPDATE.json` contains exactly the six preferred desktop installers: two macOS DMGs, two Windows NSIS
+    installers, Linux AppImage and Linux DEB.
+13. Re-downloaded `BUILD-SOURCE.txt` identifies tag `v0.0.0-mvp-beta`, commit `05775486` and workflow
+    `29949640876`. The public `Thoth-x86_64.AppImage` SHA-256 is
+    `32b7824a3457a5b8bf9c2d70b5f117cdb2c76fade026ae533f094e59ac8456c5`, matching both
+    `MVP-UPDATE.json` and `SHA256SUMS`.
+14. Static extraction of that public AppImage verified bundled build identity `05775486` and the final
+    provider-neutral captured-Plan binding used by id-only Implement approvals. The archive Release remains
+    present, remote `main` remains `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`, and no npm publication or
+    Relay deployment occurred.

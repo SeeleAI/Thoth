@@ -34,11 +34,7 @@
 
 ## Doing
 
-1. `NTH-TD-029` `[doing]`: Restore Agent-scoped native Plan, durable Plan output, reliable tab archive and desktop-only Release publication.
-   - Scope: live-session capability projection; per-Agent `default | plan` CAS authority; Provider settings segmented control; canonical Plan Timeline persistence; archive-before-layout single/bulk close; no Android updater/install permission; no public APK or server CLI tgz.
-   - Related: `NTH-CD-060`, `NTH-CD-061`, `NTH-CD-064`, `NTH-REQ-024`, `NTH-AC-019`
-   - Verification: `NTH-EV-050` local gates and real Codex journey pass. Pending branch promotion, all desktop native Actions and public desktop-only Release asset verification.
-2. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
+1. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
    - Goal: Keep restored Paseo surface and Codex dynamicTools path, but make Clarify behave like a pending authority decision lifecycle with intelligent timeline badges and model-submitted frontier ledger.
    - Scope: `thoth_submit_clarify_card` carries `public_badge_summary` and `frontier_ledger`; `thoth_submit_task_card` carries convergence review; `balanced` has a 5-10 card soft range and `dive` has a 10-20 card soft range; cards must not show completed/idle footer before user submission; `decision_it_changes` is legacy optional input only. Under `NTH-CD-052`, raw Provider conversation is an explicit Thoth-off state rather than an ambiguous `Quick + Direct` sub-selection; only Thoth-on exposes structured Clarify and Loop controls. Under `NTH-CD-053`, that off/on choice is strictly per turn: one Workspace Secretary topic reuses one foreground provider session, and a daemon authority fence blocks remembered runtime tools during raw turns instead of using historical `bare` / `structured` sessions.
    - Verification: Reopened under `NTH-EV-029`; unit/build/foundation gates and most real Codex web paths now pass after the frontier-ledger repair, including local/public Balanced sort, local Dive sort, local Balanced PathTracing and local Loop `registered_pending`. Under `NTH-CD-057` / `NTH-EV-038`, ordinary Agent sends now reuse the visible provider session for Thoth Clarify/Quick, remote workspace identity overrides client cwd, and packaged Clarify/Loop skills were confirmed in the public Linux `app.asar`. Do not return this TODO to verified until installed/Relay real-provider behavior is exercised from the replacement build.
@@ -131,6 +127,12 @@ None.
 - Scope: Provider-neutral canonical/native rewind receipts and Timeline epoch reset; Workspace-sharded durable Queue/Interrupt with one active foreground turn; removal of App-local Queue and optimistic Timeline authority; transient daemon/Relay image preview; Queue-default settings migration.
 - Related: `NTH-CD-060`, `NTH-CD-063`, `NTH-REQ-023`, `NTH-AC-018`
 - Verification: See `NTH-EV-049`. Local interaction and full Thoth fast gates passed; GitHub Actions run `29926576540` completed every native, Relay and CLI job, replaced the fixed prerelease at `0eff56c0`, and the re-downloaded AppImage, APK and server CLI passed SHA-256 plus AppImage static content verification.
+
+13. `NTH-TD-029` `[verified]`: Restore Agent-scoped native Plan, durable Plan output, reliable tab archive and desktop-only Release publication.
+
+- Scope: live-session capability projection; per-Agent `default | plan` CAS authority; Provider settings segmented control; canonical Plan Timeline persistence; archive-before-layout single/bulk close; no Android updater/install permission; no public APK or server CLI tgz.
+- Related: `NTH-CD-060`, `NTH-CD-061`, `NTH-CD-064`, `NTH-REQ-024`, `NTH-AC-019`
+- Verification: See `NTH-EV-050`. Local and authenticated Codex gates passed; hosted Relay packaged Plan/Loop passed; GitHub Actions run `29949640876` completed every required desktop, Relay and internal CLI job; the fixed prerelease and downloaded AppImage metadata/checksum all resolve to `05775486`.
 
 ## Abandoned
 
