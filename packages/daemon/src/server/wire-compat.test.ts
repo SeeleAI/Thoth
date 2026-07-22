@@ -100,6 +100,8 @@ class InMemoryAgentManager {
       updatedAt: new Date("2026-05-02T00:00:00.000Z"),
       lastUserMessageAt: null,
       lifecycle: "idle",
+      providerRunMode: "default",
+      providerControlRevision: 0,
       capabilities: {
         supportsStreaming: true,
         supportsSessionPersistence: true,

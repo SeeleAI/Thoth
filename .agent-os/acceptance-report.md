@@ -2775,3 +2775,9 @@ Local evidence on `2026-07-22`:
 3. `npm run test:e2e:real:plan --workspace=@thoth/daemon` passed against authenticated Codex `0.144.1` in `18.17s`. The public Create/Get/Update/Send flow reported native Plan, persisted one Plan result, exposed a stable `planId`, accepted Implement and continued on the same provider thread.
 4. `npm run check:foundation`, `npm run build:daemon`, `npm run build:web`, `npm run check:mvp-release-contract`, `npm run check:brand-assets` and `git diff --check` passed.
 5. No local Android or AppImage build ran. Public asset verification remains pending the desktop-native workflow.
+6. GitHub Actions run `29943126952` stopped safely in preflight because two legacy daemon fixtures omitted the
+   required internal `providerRunMode` and `providerControlRevision` fields before projecting a new Agent snapshot.
+   Production schemas remained strict and the existing public Release was not modified.
+7. After correcting only those fixture constructors, the exact preflight daemon unit command passed `187/187`
+   files with `2405` tests passed and `26` skipped. The focused Plan/tab gate passed again in `19.162s`; the MVP
+   Release contract, repository formatting and diff hygiene also passed.

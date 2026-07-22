@@ -3635,3 +3635,10 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   public Create/Get/Update/Send Plan-to-Implement journey in `18.17s` on one provider thread.
 - Push, desktop native Actions and public Release replacement remain pending. No Android/AppImage local build, npm
   publication, Relay deployment or `main` mutation occurred.
+- Commit `0fd3be4e` was pushed to both target branches. GitHub Actions run `29943126952` stopped in preflight before
+  any native or publish job because two old test-only ManagedAgent constructors emitted an invalid new
+  `providerControl` projection. The prior public Release remained untouched.
+- Added the required `providerRunMode: default` and revision `0` to those fixtures without widening the wire schema.
+  The exact daemon preflight suite then passed `187/187` files and `2405` tests (`26` skipped); the focused
+  Plan/tab gate passed in `19.162s`, and Release-contract, formatting and diff checks passed. A replacement Actions
+  run and public desktop-only asset verification remain pending.

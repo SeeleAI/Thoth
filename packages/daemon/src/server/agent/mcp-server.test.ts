@@ -504,6 +504,8 @@ function createManagedAgent(overrides: Partial<ManagedAgent> = {}): ManagedAgent
     updatedAt: now,
     lastUserMessageAt: null,
     lifecycle: "idle",
+    providerRunMode: "default",
+    providerControlRevision: 0,
     capabilities: {
       supportsStreaming: false,
       supportsSessionPersistence: false,
