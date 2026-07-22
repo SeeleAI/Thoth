@@ -120,7 +120,6 @@ try {
       cwd: cliRoot,
       env: {
         ...process.env,
-        ...testEnv,
         THOTH_HOME: thothHome,
         THOTH_LISTEN: `127.0.0.1:${port}`,
         THOTH_RELAY_ENABLED: "false",

@@ -3584,3 +3584,6 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   provider-neutral `planCapability` receipt. Production returned the required honest unsupported result; the
   fixtures were updated to assert it before triggering a replacement run. The existing public Release was not
   modified by the failed run.
+- Actions run `29919804667` passed the corrected adapter gate, then exposed four supervisor fixtures that still
+  spread a deleted Voice-only `testEnv`. The residual spreads were removed rather than restoring retired media
+  configuration; the failed run again left the public Release unchanged.

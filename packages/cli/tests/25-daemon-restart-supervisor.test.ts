@@ -131,7 +131,6 @@ try {
       cwd: cliRoot,
       env: {
         ...process.env,
-        ...testEnv,
         THOTH_HOME: thothHome,
         THOTH_LISTEN: host,
         THOTH_RELAY_ENABLED: "false",
