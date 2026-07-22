@@ -161,6 +161,71 @@ describe("HostedHarnessAdapter provider control", () => {
     expect(resolution.followUpPrompt).toContain("Inspect reality");
   });
 
+  it("binds an id-only provider Implement approval to the captured Plan result", async () => {
+    const fixture = createHost();
+    const adapter = new HostedHarnessAdapter(
+      "fixture",
+      defineHarnessCapabilities({ toolAttachment: ["native"], plan: { kind: "native" } }),
+      fixture.host,
+    );
+    const descriptor = await adapter.startExecution({
+      thread: THREAD,
+      execution: executionInput("plan"),
+    });
+    const received: HarnessExecutionEvent[] = [];
+    adapter.subscribeEvents(descriptor, (next) => received.push(next));
+
+    fixture.emit(
+      descriptor.id,
+      event("plan", {
+        type: "timeline",
+        item: {
+          type: "tool_call",
+          detail: { type: "plan", text: "Inspect the authority, then implement and verify." },
+        },
+      }),
+    );
+    fixture.emit(
+      descriptor.id,
+      event("implement", {
+        type: "permission_requested",
+        request: {
+          id: "implement-plan-1",
+          kind: "plan",
+          title: "Plan",
+          input: { planId: "plan-1" },
+          metadata: { planId: "plan-1" },
+        },
+      }),
+    );
+
+    const planReady = received.find((candidate) => candidate.control?.type === "plan_ready");
+    expect(planReady?.control).toMatchObject({
+      type: "plan_ready",
+      plan: "Inspect the authority, then implement and verify.",
+      approval: { id: "implement-plan-1", kind: "implement" },
+    });
+    if (planReady?.control?.type !== "plan_ready") {
+      throw new Error("Expected the provider Implement approval to retain the captured Plan");
+    }
+
+    const resolution = await adapter.resolveApproval({
+      thread: THREAD,
+      execution: descriptor,
+      approvalId: planReady.control.approval.id,
+      decision: "implement",
+    });
+
+    expect(fixture.resolveApproval).toHaveBeenCalledWith(
+      "fixture",
+      expect.objectContaining({ approvalId: "implement-plan-1", decision: "implement" }),
+    );
+    expect(fixture.modeCalls).toEqual(["default"]);
+    expect(resolution.followUpPrompt).toContain(
+      "Inspect the authority, then implement and verify.",
+    );
+  });
+
   it("normalizes provider permissions but never makes provider questions auto-approvable", async () => {
     const fixture = createHost();
     fixture.resolveApproval.mockResolvedValueOnce({ followUpPrompt: "provider continuation" });

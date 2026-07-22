@@ -3642,8 +3642,14 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   The exact daemon preflight suite then passed `187/187` files and `2405` tests (`26` skipped); the focused
   Plan/tab gate passed in `19.162s`, and Release-contract, formatting and diff checks passed. A replacement Actions
   run and public desktop-only asset verification remain pending.
-- Replacement run `29944547453` passed the full clean preflight and crossed the repaired fixture boundary. Its
-  hosted Relay health/E2EE check passed, but the packaged Loop journey timed out at the obsolete `90s` cap. The
-  deterministic core requires three real 20-second daemon auto-Implement windows before Relay and phase overhead.
-  Aligned all Relay Journey instances with the already-correct AppImage budget of `120s`; no approval deadline,
-  state assertion or product behavior was shortened or bypassed. The failed run did not reach publish.
+- Replacement runs `29944547453` and `29946112486` passed full clean preflight but stopped in the hosted Relay
+  packaged journey. Preserved failure authority proved this was not a slow approval: the first native Plan was
+  durably present, while the Task was immediately interrupted as having no Plan. The provider's Implement request
+  intentionally carried only stable `planId`; the provider-neutral `HostedHarnessAdapter` discarded it because it
+  did not associate the preceding canonical Plan item with that approval.
+- Bound Implement approvals to the execution's captured Plan and added a transport-neutral fallback continuation
+  plus an id-only approval regression. Restored the Relay wait cap to `90s` and kept the new failure authority
+  capture. Drivers typecheck and `accept:provider-control:fast` passed; a freshly packaged server CLI then completed
+  the hosted Relay journey with Review fail/retry/pass, restart, Pause/Resume, Stop, six `thoth.loop` receipts and
+  five PlanExec/five Review calls. Final `accept:thoth:fast` passed in `92.591s` and foundation passed. A clean
+  replacement Actions run and public asset verification remain pending.

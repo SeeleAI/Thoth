@@ -10,7 +10,7 @@ import { ThothApiJourney } from "./acceptance/thoth-api-journey.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-const JOURNEY_TIMEOUT_MS = 120_000;
+const JOURNEY_TIMEOUT_MS = 90_000;
 
 function option(name, fallback) {
   const index = args.indexOf(name);
@@ -343,10 +343,15 @@ try {
   mkdirSync(outputDir, { recursive: true });
   for (const filePath of [
     harness.capturePath,
+    harness.statePath,
     path.join(harness.thothHome, "daemon.log"),
     path.join(harness.runRoot, "relay-background-task.json"),
   ]) {
     if (existsSync(filePath)) cpSync(filePath, path.join(outputDir, path.basename(filePath)));
+  }
+  const workspaceAuthorityPath = path.join(harness.thothHome, "workspaces");
+  if (failure && existsSync(workspaceAuthorityPath)) {
+    cpSync(workspaceAuthorityPath, path.join(outputDir, "workspaces"), { recursive: true });
   }
   if (latestStopDetail) {
     writeFileSync(

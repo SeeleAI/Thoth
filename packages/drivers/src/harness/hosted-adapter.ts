@@ -98,7 +98,13 @@ export class HostedHarnessAdapter implements HarnessAdapter {
   >();
   private readonly approvals = new Map<
     string,
-    { threadId: string; executionId: string; request: HarnessApprovalRequest; synthetic: boolean }
+    {
+      threadId: string;
+      executionId: string;
+      request: HarnessApprovalRequest;
+      synthetic: boolean;
+      plan: string | null;
+    }
   >();
 
   constructor(
@@ -172,8 +178,7 @@ export class HostedHarnessAdapter implements HarnessAdapter {
     let followUpPrompt: unknown | null = null;
     if (approval.synthetic) {
       if (input.decision !== "deny") {
-        const plan = readPlanText(approval.request.displayed);
-        followUpPrompt = buildPlanImplementationPrompt(plan);
+        followUpPrompt = buildPlanImplementationPrompt(approval.plan ?? "");
       }
     } else {
       const resolved = await this.host.resolveApproval(this.id, input);
@@ -183,8 +188,8 @@ export class HostedHarnessAdapter implements HarnessAdapter {
     let runModeReceipt: ProviderRunModeReceipt | null = null;
     if (approval.request.kind === "implement" && input.decision !== "deny") {
       runModeReceipt = await this.prepareRunMode({ thread: input.thread, mode: "default" });
-      if (followUpPrompt === null && approval.synthetic) {
-        followUpPrompt = buildPlanImplementationPrompt(readPlanText(approval.request.displayed));
+      if (followUpPrompt === null && approval.plan) {
+        followUpPrompt = buildPlanImplementationPrompt(approval.plan);
       }
     }
     this.approvals.delete(input.approvalId);
@@ -287,14 +292,18 @@ export class HostedHarnessAdapter implements HarnessAdapter {
         return;
       }
       const approval = toHarnessApproval(request);
+      const plan =
+        approval.kind === "implement"
+          ? readPlanText(approval.displayed) || readCollectedPlan(control)
+          : null;
       this.approvals.set(approval.id, {
         threadId: execution.threadId,
         executionId: execution.id,
         request: approval,
         synthetic: false,
+        plan,
       });
       if (approval.kind === "implement") {
-        const plan = readPlanText(approval.displayed);
         control.planReady = Boolean(plan);
         if (!plan) {
           this.approvals.delete(approval.id);
@@ -335,6 +344,7 @@ export class HostedHarnessAdapter implements HarnessAdapter {
         executionId: execution.id,
         request: approval,
         synthetic: true,
+        plan,
       });
       callback({
         id: `${event.id}:plan-ready`,
@@ -350,6 +360,13 @@ export class HostedHarnessAdapter implements HarnessAdapter {
       this.executionControls.delete(execution.id);
     }
   }
+}
+
+function readCollectedPlan(control: { planParts: string[] }): string {
+  return control.planParts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

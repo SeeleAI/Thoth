@@ -2781,8 +2781,15 @@ Local evidence on `2026-07-22`:
 7. After correcting only those fixture constructors, the exact preflight daemon unit command passed `187/187`
    files with `2405` tests passed and `26` skipped. The focused Plan/tab gate passed again in `19.162s`; the MVP
    Release contract, repository formatting and diff hygiene also passed.
-8. Replacement run `29944547453` passed the complete clean preflight, including the corrected daemon suite, but
-   the hosted Relay packaged journey retained a `90s` pre-native-Plan wait budget. Three required `20s` automatic
-   Implement windows plus Relay and phase work reached that cap. The journey budget is now aligned with the
-   existing AppImage gate at `120s`; product approval timing and assertions are unchanged. The failed run did not
-   publish or replace the existing Release.
+8. Replacement runs `29944547453` and `29946112486` passed the complete clean preflight, including the corrected
+   daemon suite, but the hosted Relay packaged journey exposed a real provider-neutral Plan binding defect. The
+   provider correctly emitted a canonical Plan result and then an Implement permission containing only its stable
+   `planId`; `HostedHarnessAdapter` ignored the already captured Plan text and falsely interrupted the Task as an
+   empty Plan. Neither failed run published or replaced the existing Release.
+9. `HostedHarnessAdapter` now binds an id-only Implement approval to the execution's captured native Plan and can
+   construct the provider-neutral continuation when the transport omits one. The focused adapter regression,
+   Drivers typecheck and `accept:provider-control:fast` (`39.678s`) passed. A freshly packaged server CLI then
+   passed the full hosted Relay v3 journey with one failed Review retry, daemon restart, Pause/Resume, Stop,
+   `6` durable `thoth.loop` attachments and `5` PlanExec / `5` Review calls under the original `90s` per-wait cap.
+10. Final `npm run accept:thoth:fast` passed in `92.591s`, and `npm run check:foundation`, Release runtime build,
+    MVP Release contract, formatting and `git diff --check` passed after the adapter correction.
