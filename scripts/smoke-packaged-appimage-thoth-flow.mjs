@@ -446,7 +446,7 @@ async function main() {
     await configureRealCodexFixture(client, `${quickPrompt}\n\n${loopPrompt}`);
     const journey = new ThothApiJourney({
       client,
-      timeoutMs: realCodex ? 600_000 : 60_000,
+      timeoutMs: realCodex ? 600_000 : 120_000,
       commandPrefix: "packaged-card",
     });
     const core = await journey.runCore({

@@ -3595,3 +3595,7 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   scripted provider still submitted PlanExec during the native Plan turn. The daemon correctly fenced that
   out-of-phase semantic call. The fixture now emits a native plan item, waits for daemon-owned Implement approval
   and submits PlanExec only from the same-thread implementation turn.
+- Actions run `29924569966` verified the corrected packaged Relay journey and Windows build, but Linux AppImage
+  retained a pre-Plan 60-second Loop wait budget. Three required 20-second human approval windows consume that
+  entire budget before normal phase work. The packaged AppImage wait is now 120 seconds; the product's approval
+  deadline remains exactly 20 seconds and is not bypassed or shortened.
