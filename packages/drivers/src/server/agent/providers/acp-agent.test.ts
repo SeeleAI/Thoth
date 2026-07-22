@@ -724,6 +724,54 @@ describe("ACP selection validity helpers", () => {
 });
 
 describe("ACPAgentSession Zed parity", () => {
+  test("provider run mode writes the advertised native ACP Plan mode and restores the prior mode", async () => {
+    const session = createSessionWithConfig();
+    const fixture = prepareConfiguredOverrideSession(session, {
+      currentMode: "default",
+      availableModes: [
+        { id: "default", label: "Agent" },
+        { id: "session/plan", label: "Plan" },
+      ],
+    });
+
+    await expect(session.applyProviderRunMode?.("plan")).resolves.toEqual({
+      capability: { kind: "native" },
+      nativeModeId: "session/plan",
+    });
+    expect(fixture.setSessionMode).toHaveBeenLastCalledWith({
+      sessionId: "session-1",
+      modeId: "session/plan",
+    });
+    expect(await session.getCurrentMode()).toBe("session/plan");
+
+    await expect(session.applyProviderRunMode?.("default")).resolves.toEqual({
+      capability: { kind: "native" },
+      nativeModeId: "default",
+    });
+    expect(fixture.setSessionMode).toHaveBeenLastCalledWith({
+      sessionId: "session-1",
+      modeId: "default",
+    });
+    expect(await session.getCurrentMode()).toBe("default");
+  });
+
+  test("provider run mode reports typed unsupported when ACP advertises no native Plan", async () => {
+    const session = createSessionWithConfig();
+    const fixture = prepareConfiguredOverrideSession(session, {
+      currentMode: "default",
+      availableModes: [{ id: "default", label: "Agent" }],
+    });
+
+    await expect(session.applyProviderRunMode?.("plan")).resolves.toEqual({
+      capability: {
+        kind: "unsupported",
+        reason: "claude-acp does not expose a native ACP Plan mode.",
+      },
+      nativeModeId: null,
+    });
+    expect(fixture.setSessionMode).not.toHaveBeenCalled();
+  });
+
   test("applies valid stored mode/model values, routes current_mode_update, and skips invalid Cursor-style stored values with warnings", async () => {
     const validSession = createSessionWithConfig({ modeId: "plan", model: "sonnet" });
     const valid = prepareConfiguredOverrideSession(validSession, {
@@ -1395,6 +1443,10 @@ describe("ACPAgentClient modelTransformer", () => {
         },
       ],
       modes: [],
+      planCapability: {
+        kind: "unsupported",
+        reason: "pi does not expose a native ACP Plan mode.",
+      },
     });
   });
 });
@@ -1495,6 +1547,10 @@ describe("ACPAgentClient sessionResponseTransformer", () => {
           description: "After transform",
         },
       ],
+      planCapability: {
+        kind: "unsupported",
+        reason: "claude-acp does not expose a native ACP Plan mode.",
+      },
     });
   });
 });
@@ -1573,6 +1629,10 @@ describe("ACPAgentClient fetchCatalog", () => {
     ).resolves.toEqual({
       models: [],
       modes: [],
+      planCapability: {
+        kind: "unsupported",
+        reason: "pi does not expose a native ACP Plan mode.",
+      },
     });
   });
 });

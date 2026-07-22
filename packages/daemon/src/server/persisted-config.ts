@@ -46,34 +46,6 @@ const LogConfigSchema = z
   })
   .strict();
 
-const OpenAiVoiceProviderSchema = z
-  .object({
-    apiKey: z.string().trim().min(1).optional(),
-    baseUrl: z.string().trim().min(1).optional(),
-  })
-  .strict();
-
-const OpenAiProviderSchema = z
-  .object({
-    apiKey: z.string().min(1).optional(),
-    voice: OpenAiVoiceProviderSchema.optional(),
-    baseUrl: z.string().trim().min(1).optional(),
-  })
-  .strict();
-
-const LocalSpeechProviderSchema = z
-  .object({
-    modelsDir: z.string().min(1).optional(),
-  })
-  .strict();
-
-const ProvidersSchema = z
-  .object({
-    openai: OpenAiProviderSchema.optional(),
-    local: LocalSpeechProviderSchema.optional(),
-  })
-  .strict();
-
 const WorktreesConfigSchema = z
   .object({
     root: z.string().min(1).optional(),
@@ -87,64 +59,6 @@ const BcryptHashSchema = z.string().regex(/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/
 const DaemonAuthSchema = z
   .object({
     password: BcryptHashSchema.optional(),
-  })
-  .strict();
-
-const SpeechProviderIdSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .pipe(z.enum(["openai", "local"]));
-
-const FeatureDictationSchema = z
-  .object({
-    enabled: z.boolean().optional(),
-    stt: z
-      .object({
-        provider: SpeechProviderIdSchema.optional(),
-        model: z.string().min(1).optional(),
-        language: z.string().trim().min(1).optional(),
-        confidenceThreshold: z.number().optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
-
-const FeatureVoiceModeSchema = z
-  .object({
-    enabled: z.boolean().optional(),
-    llm: z
-      .object({
-        provider: z.string().optional(),
-        model: z.string().min(1).optional(),
-      })
-      .strict()
-      .optional(),
-    stt: z
-      .object({
-        provider: SpeechProviderIdSchema.optional(),
-        model: z.string().min(1).optional(),
-        language: z.string().trim().min(1).optional(),
-      })
-      .strict()
-      .optional(),
-    turnDetection: z
-      .object({
-        provider: SpeechProviderIdSchema.optional(),
-      })
-      .strict()
-      .optional(),
-    tts: z
-      .object({
-        provider: SpeechProviderIdSchema.optional(),
-        model: z.string().min(1).optional(),
-        voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
-        speakerId: z.number().int().optional(),
-        speed: z.number().optional(),
-      })
-      .strict()
-      .optional(),
   })
   .strict();
 
@@ -172,6 +86,12 @@ const ThothConfigSchema = z
       .enum(["auto", "one_plan_one_do", "light", "balanced", "run_until_stopped"])
       .optional(),
     selectedBackgroundTaskId: z.string().min(1).nullable().optional(),
+  })
+  .strict();
+
+const ProviderControlConfigSchema = z
+  .object({
+    runMode: z.enum(["default", "plan"]).optional(),
   })
   .strict();
 
@@ -299,8 +219,8 @@ export const PersistedConfigSchema = z
       .strict()
       .optional(),
 
-    providers: ProvidersSchema.optional(),
     thoth: ThothConfigSchema.optional(),
+    providerControl: ProviderControlConfigSchema.optional(),
     worktrees: WorktreesConfigSchema.optional(),
     agents: z
       .object({
@@ -311,8 +231,6 @@ export const PersistedConfigSchema = z
       .optional(),
     features: z
       .object({
-        dictation: FeatureDictationSchema.optional(),
-        voiceMode: FeatureVoiceModeSchema.optional(),
         webUi: FeatureWebUiSchema.optional(),
       })
       .strict()
@@ -360,31 +278,20 @@ function getLogger(logger: LoggerLike | undefined): LoggerLike | undefined {
   return logger?.child({ module: "config" });
 }
 
-function stripDeprecatedLocalSpeechConfigFields(parsed: unknown): unknown {
+function stripRemovedVoiceConfig(parsed: unknown): unknown {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return parsed;
   }
 
   const root = { ...(parsed as Record<string, unknown>) };
-  const providers = root.providers;
-  if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
-    return root;
+  delete root.providers;
+  const features = root.features;
+  if (features && typeof features === "object" && !Array.isArray(features)) {
+    const nextFeatures = { ...(features as Record<string, unknown>) };
+    delete nextFeatures.dictation;
+    delete nextFeatures.voiceMode;
+    root.features = nextFeatures;
   }
-
-  const providersRecord = { ...(providers as Record<string, unknown>) };
-  const local = providersRecord.local;
-  if (!local || typeof local !== "object" || Array.isArray(local)) {
-    root.providers = providersRecord;
-    return root;
-  }
-
-  const localRecord = { ...(local as Record<string, unknown>) };
-  if ("autoDownload" in localRecord) {
-    delete localRecord.autoDownload;
-  }
-
-  providersRecord.local = localRecord;
-  root.providers = providersRecord;
   return root;
 }
 
@@ -435,9 +342,7 @@ export function loadPersistedConfig(thothHome: string, logger?: LoggerLike): Per
     });
   }
 
-  const migrated = stripDeprecatedLocalSpeechConfigFields(
-    stripRemovedWorkspaceSecretaryConfig(parsed),
-  );
+  const migrated = stripRemovedVoiceConfig(stripRemovedWorkspaceSecretaryConfig(parsed));
   const result = PersistedConfigSchema.safeParse(migrated);
   if (!result.success) {
     const issues = result.error.issues

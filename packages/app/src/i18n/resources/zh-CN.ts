@@ -37,7 +37,6 @@ export const zhCN: TranslationResources = {
       daemonClientUnavailable: "Daemon client 不可用",
       daemonClientDisconnected: "Daemon client 已断开连接",
       noFileFound: "未找到 {{token}} 对应的文件",
-      unexpectedDictationError: "处理听写时发生意外错误。",
     },
     connectionStatus: {
       online: "在线",
@@ -84,18 +83,6 @@ export const zhCN: TranslationResources = {
       cancelingAgent: "正在取消 Agent",
       stopAgent: "停止 Agent",
       interrupt: "中断",
-    },
-    voice: {
-      enableVoiceMode: "启用语音模式",
-      voiceMode: "语音模式",
-      unmuteVoiceMode: "取消静音语音模式",
-      muteVoiceMode: "静音语音模式",
-      stopDictation: "停止听写",
-      startDictation: "开始听写",
-      unmuteVoice: "取消静音",
-      muteVoice: "静音",
-      dictation: "听写",
-      interruptBeforeVoice: "启动语音模式前请先中断 Agent",
     },
     attachments: {
       addImage: "添加图片",
@@ -171,6 +158,11 @@ export const zhCN: TranslationResources = {
       thoth: {
         switch: "开启 Thoth 模式",
         tooltip: "开启后使用 Thoth Clarify 与 Loop；关闭后直接发送给 Provider。",
+      },
+      plan: {
+        switch: "开启原生 Plan 模式",
+        tooltip: "下一轮使用当前 Provider 的原生 Plan。",
+        unavailable: "当前 Provider 尚未提供原生 Plan 能力。",
       },
       clarify: {
         tooltip: "Clarify",
@@ -282,20 +274,8 @@ export const zhCN: TranslationResources = {
       text: "文本",
       file: "文件",
     },
-    speak: {
-      header: "已朗读",
-    },
     activity: {
       details: "详情",
-    },
-    dictation: {
-      start: "开始语音听写",
-      cancel: "取消听写",
-      retry: "重试听写",
-      insert: "插入转写",
-      insertAndSend: "插入转写并发送",
-      failed: "听写失败：{{error}}",
-      failedRetry: "听写失败。点按重试。",
     },
     question: {
       submit: "提交",
@@ -990,26 +970,8 @@ export const zhCN: TranslationResources = {
         requestFailed: "请求通知权限失败：{{message}}",
         unexpectedState: "意外的通知权限状态：{{state}}",
       },
-      microphone: {
-        webOnly: "桌面麦克风状态仅在 web runtime 中可用。",
-        navigatorUnavailable: "此环境中 Navigator 不可用。",
-        granted: "已授予麦克风访问权限。",
-        denied: "系统设置中已拒绝麦克风访问。",
-        notGranted: "麦克风权限尚未授予。",
-        unexpectedState: "意外的麦克风权限状态：{{state}}",
-        statusApiUnavailable: "此 runtime 中麦克风状态 API 不可用。请使用请求来检查访问权限。",
-        queryFailed: "查询麦克风状态失败：{{message}}",
-        captureUnavailable: "此环境中麦克风采集不可用。",
-        permissionApiUnavailable: "权限状态 API 不可用。请使用请求来检查访问权限。",
-        requestsWebOnly: "桌面麦克风请求仅在 web runtime 中可用。",
-        captureApiUnavailable: "此环境中麦克风采集 API 不可用。",
-        requestDenied: "用户或系统拒绝了麦克风权限。",
-        noDevice: "未找到麦克风设备。",
-        requestFailed: "请求麦克风权限失败：{{message}}",
-      },
       empty: {
         notifications: "尚未检查通知状态。",
-        microphone: "尚未检查麦克风状态。",
       },
       testNotification: {
         title: "Thoth 通知测试",
@@ -1278,13 +1240,6 @@ export const zhCN: TranslationResources = {
       copied: "已复制",
     },
   },
-  realtimeVoice: {
-    actions: {
-      mute: "静音 realtime voice",
-      unmute: "取消静音 realtime voice",
-      stop: "停止 realtime voice 并中断 turn",
-    },
-  },
   rewind: {
     tooltip: "回退到此消息",
     warning: "此操作无法撤销",
@@ -1455,10 +1410,6 @@ export const zhCN: TranslationResources = {
     },
     diagnostics: {
       title: "诊断",
-      testAudio: "测试音频",
-      playTest: "播放测试",
-      playing: "正在播放...",
-      playbackFailed: "播放失败：{{message}}",
       app: {
         title: "App diagnostic",
         rowTitle: "App diagnostic",
@@ -1593,12 +1544,9 @@ export const zhCN: TranslationResources = {
         cycleTheme: "循环切换主题",
         focusMessageInput: "聚焦消息输入框",
         cycleAgentMode: "循环切换代理模式",
-        toggleVoiceMode: "切换语音模式",
-        startStopDictation: "开始/停止听写",
         interruptAgent: "中断 Agent",
         sendMessage: "发送消息",
         queueMessage: "消息排队",
-        muteUnmuteVoiceMode: "静音/取消静音语音模式",
       },
       helpNotes: {
         showKeyboardShortcuts: "焦点不在文本输入框或终端内时可用。",
@@ -1642,7 +1590,6 @@ export const zhCN: TranslationResources = {
     permissions: {
       title: "权限",
       notifications: "通知",
-      microphone: "麦克风",
       refresh: "刷新",
       refreshing: "正在刷新...",
       refreshAccessibility: "刷新桌面端权限",

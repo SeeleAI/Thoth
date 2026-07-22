@@ -49,9 +49,6 @@ const thothHome = await mkdtemp(join(tmpdir(), "thoth-windows-status-home-"));
 const port = await getAvailablePort();
 const env = {
   THOTH_HOME: thothHome,
-  THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD: "0",
-  THOTH_DICTATION_ENABLED: "0",
-  THOTH_VOICE_MODE_ENABLED: "0",
 };
 
 try {

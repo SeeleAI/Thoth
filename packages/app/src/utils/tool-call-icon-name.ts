@@ -28,9 +28,6 @@ export function resolveToolCallIconName(toolName: string, detail?: ToolCallDetai
   if (lowerName === "thinking" && (!detail || detail.type === "unknown")) {
     return "brain";
   }
-  if (lowerName === "speak") {
-    return "mic_vocal";
-  }
   if (isThothToolName(lowerName)) {
     return "thoth";
   }

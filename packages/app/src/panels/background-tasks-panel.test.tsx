@@ -17,6 +17,7 @@ const { clientMock, authorityListeners, theme } = vi.hoisted(() => ({
     getTask: vi.fn(),
     commandTask: vi.fn(),
     answerTaskDecision: vi.fn(),
+    resolveExecutionApproval: vi.fn(),
     getExecutionTimeline: vi.fn(),
     subscribeWorkspaceAuthorityUpdates: vi.fn((listener: (payload: any) => void) => {
       authorityListeners.add(listener);
@@ -144,6 +145,8 @@ function execution(overrides: Partial<ExecutionProjection> = {}): ExecutionProje
     summary: null,
     revision: 2,
     ...overrides,
+    runModeReceipt: overrides.runModeReceipt ?? null,
+    pendingApproval: overrides.pendingApproval ?? null,
   };
 }
 
@@ -219,6 +222,88 @@ describe("BackgroundTasksSurface", () => {
 
     await waitFor(() => expect(clientMock.commandTask).toHaveBeenCalled());
     expect(screen.getAllByText("Canceling").length).toBeGreaterThan(0);
+  });
+
+  it("renders the approval deadline and resolves Implement through Task authority", async () => {
+    const pendingApproval = {
+      id: "approval-1",
+      taskId: "task-1",
+      executionId: "execution-1",
+      kind: "implement" as const,
+      title: "Implement native Plan",
+      description: "Review the provider-native Plan before implementation.",
+      displayed: { plan: "Inspect, implement, verify." },
+      deadlineAt: new Date(Date.now() + 20_000).toISOString(),
+      status: "pending" as const,
+      resolution: null,
+      revision: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const awaiting = execution({
+      status: "awaiting_implementation",
+      pendingApproval,
+      latestApproval: pendingApproval,
+    });
+    installResponses(task(), awaiting);
+    clientMock.resolveExecutionApproval.mockResolvedValue({
+      requestId: "approval-response-1",
+      task: task({ revision: 4 }),
+      execution: execution({ status: "implementing", revision: 3 }),
+      approval: { ...pendingApproval, status: "allowed", revision: 2 },
+      conflict: false,
+      duplicate: false,
+      error: null,
+    });
+
+    render(<BackgroundTasksSurface serverId="server-1" workspaceId="workspace-1" />);
+    expect(await screen.findByText("Implement native Plan")).toBeTruthy();
+    expect(screen.getByTestId("background-execution-approval-countdown").textContent).toMatch(
+      /Automatic approval in (19|20)s/,
+    );
+    fireEvent.click(screen.getByTestId("background-execution-approval-accept"));
+
+    await waitFor(() =>
+      expect(clientMock.resolveExecutionApproval).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: "workspace-1",
+          taskId: "task-1",
+          executionId: "execution-1",
+          approvalId: "approval-1",
+          decision: "implement",
+          expectedRevision: 1,
+        }),
+      ),
+    );
+  });
+
+  it("shows the daemon as the actor for a timeout approval", async () => {
+    const approved = {
+      id: "approval-auto",
+      taskId: "task-1",
+      executionId: "execution-1",
+      kind: "command" as const,
+      title: "Run validation",
+      description: null,
+      displayed: { command: "npm test" },
+      deadlineAt: "2026-07-22T00:00:20.000Z",
+      status: "allowed" as const,
+      resolution: {
+        decision: "allow" as const,
+        actorId: "daemon:auto-approval-timeout",
+        resolvedAt: "2026-07-22T00:00:20.000Z",
+      },
+      revision: 2,
+      createdAt: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:20.000Z",
+    };
+    installResponses(task(), execution({ latestApproval: approved }));
+
+    render(<BackgroundTasksSurface serverId="server-1" workspaceId="workspace-1" />);
+
+    expect((await screen.findByTestId("background-execution-approval-result")).textContent).toBe(
+      "Last approval: allow by daemon:auto-approval-timeout",
+    );
   });
 
   it("answers a pending Task decision through the authority API", async () => {

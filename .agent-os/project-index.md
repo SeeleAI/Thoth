@@ -5,9 +5,9 @@
 1. Objective: `NTH-OBJ-001`
 2. Top next action: `NTH-TD-021`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: None. `NTH-EV-043` verifies the complete `NTH-CD-060` implementation, native GitHub Actions matrix, replacement MVP Release and re-downloaded public AppImage/APK/CLI journeys.
+4. Active blockers: None. `NTH-TD-024` is verified by `NTH-EV-047`; `NTH-EV-043` remains the released baseline for `NTH-CD-060`.
 5. Current branch: `agent/dev/mvp`
-6. Current implementation state: `NTH-CD-060` is the only product path. One Workspace authority shard owns visible Agents, Cards, immutable Human Decisions, unified Quick/Loop Tasks, Goals, PhaseRuns, ExecutionAttempts, RuntimeBundle receipts, Task Blackboard and structured same-Workspace `@Task` context. Provider code lives behind the common HarnessAdapter/ToolGateway contract; `.thoth/provider-sessions`, copied provider homes, legacy Loop RPCs and internal-Agent phase authority are removed. The fixed MVP Release and both target branches point at verified commit `a705bbe8`; public AppImage, APK and CLI assets match its release receipts.
+6. Current implementation state: `NTH-CD-060` is the only product path. One Workspace authority shard owns visible Agents, Cards, immutable Human Decisions, unified Quick/Loop Tasks, Goals, PhaseRuns, ExecutionAttempts, RuntimeBundle receipts, Task Blackboard and structured same-Workspace `@Task` context. Provider code lives behind the common HarnessAdapter/ToolGateway contract; native Plan and Implement now use the same capability contract for foreground and Loop, while durable background approvals use a 20-second CAS-fenced human window. `.thoth/provider-sessions`, copied provider homes, legacy Loop RPCs, Codex-only product Plan and internal-Agent phase authority are removed. `NTH-EV-045` verifies deletion of the prohibited Voice / Speech / Dictation path, `NTH-EV-046` verifies deletion of the unreachable Core shadow, `NTH-EV-047` verifies the local Provider Control path, and `NTH-EV-048` verifies deletion of the disconnected Paseo file-backed Task subsystem. The fixed MVP Release still points at verified commit `a705bbe8`; this local round did not replace it.
 
 ## Objective Summary
 
@@ -24,7 +24,7 @@
 
 ## Top Next Action
 
-`NTH-TD-021` `[doing]`: Close the remaining real browser/device evidence for Loop `budget_wait`, control and daemon restart/reconnect projections without reintroducing internal-Agent authority or a parallel execution path.
+`NTH-TD-021` `[doing]`: Gather the remaining real browser/device evidence for `budget_wait`, Pause/Resume/Stop and daemon restart/reconnect, including Background Task detail and phase timeline restoration. `NTH-TD-024` is locally verified and no longer displaces this product evidence boundary.
 
 ## Active Blockers
 
@@ -98,6 +98,11 @@ None.
 64. `NTH-CD-059`: `Simply Is First` is now the highest engineering priority: code must land as final architecture modules through real production boundaries, with no simplified substitute, parallel implementation, fallback, semantic downgrade or hidden acceptance rewrite; failing metrics remain evidence to solve on the final path.
 65. `NTH-CD-060`: Workspace and Task are now the durable orchestration units. Provider threads and attempts are runtime evidence only; RuntimeBundles and HarnessAdapters replace copied provider session homes; human decisions are append-only; same-Workspace `@Task` supplies semantic Task context without provider-session merging.
 66. `NTH-EV-043`: The Workspace/Task authority and universal HarnessAdapter implementation is fully verified through adapter conformance, real Codex, migration, public AppImage and CLI Relay journeys, native Actions, signed APK checks, restart, Pause/Resume/Stop, failed-Review retry, storage limits and fixed Release replacement at `a705bbe8`.
+67. `NTH-CD-062`: This refactor line is deletion-only: no new product capability, active business-flow/algorithm change or valid UX change; every slice must remove code and complexity on the final ownership path and pass an affected source gate within five minutes.
+68. `NTH-EV-045`: The first deletion slice removed the prohibited Voice / Speech / Dictation path across Protocol, Client, Daemon, Drivers, App and CLI. A conservative non-overlapping diff is `4,899` deletions versus `172` additions, and the 805-test affected gate passed in `48.602s`.
+69. `NTH-EV-046`: The second deletion slice removed the unused 65-file Core shadow implementation, nine false test placeholders, the destructive Expo starter reset and the abandoned Code4Agent Relay mirror. Its independent diff is `20,153` deletions with zero additions, and the 447-test affected gate passed in `36s`.
+70. `NTH-EV-047`: Provider-neutral native Plan, same-thread Implement, Loop approval automation and typed update recovery passed the bounded source gate. Final `accept:provider-control:fast` passed in `42.143s`, expanded `accept:thoth:fast` passed in `50.968s`, foundation passed `552` tests, and Protocol/Client/Drivers/Daemon type boundaries passed. Stop settlement also releases its in-memory ActivePhase and rechecks authority after asynchronous approval resolution. No AppImage, Relay, real provider, push or Release operation ran.
+71. `NTH-EV-048`: The third deletion slice removed the seven-file, 2,244-line Paseo file-backed TaskStore/TaskGraph subsystem and its self-contained tests. It had zero consumers outside its own directory; current Workspace-sharded SQLite Task authority remained unchanged and passed 16 focused tests in a complete 30-second gate.
 
 ## Read Next
 

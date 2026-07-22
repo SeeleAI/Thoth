@@ -77,7 +77,7 @@ describe("mergeProviderPreferences", () => {
         provider: "codex",
         updates: {
           featureValues: {
-            plan_mode: true,
+            auto_accept: true,
           },
         },
       }),
@@ -88,7 +88,7 @@ describe("mergeProviderPreferences", () => {
           model: "gpt-5.4",
           featureValues: {
             fast_mode: true,
-            plan_mode: true,
+            auto_accept: true,
           },
         },
       },

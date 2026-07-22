@@ -96,7 +96,7 @@ describe("serializeAgentStreamEvent", () => {
       item: {
         type: "tool_call",
         callId: "call_unknown",
-        name: "thoth_voice.speak",
+        name: "custom_provider.render_report",
         status: "completed",
         detail: {
           type: "unknown",

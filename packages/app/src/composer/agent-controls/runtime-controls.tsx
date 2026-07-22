@@ -20,7 +20,14 @@ import {
   type ViewStyle,
 } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { ChevronLeft, ChevronRight, GitBranch, SearchCheck, Sparkles } from "lucide-react-native";
+import {
+  ChevronLeft,
+  ChevronRight,
+  GitBranch,
+  ListChecks,
+  SearchCheck,
+  Sparkles,
+} from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
 import {
@@ -45,6 +52,7 @@ import type {
   ThothRuntimeLoopStrength,
   ThothRuntimeMode,
 } from "@thoth/protocol/thoth-runtime-contract";
+import type { ProviderPlanCapability } from "@thoth/protocol/provider-control";
 
 type ClarifyStrength = ThothClarifyStrength;
 type LoopStrength = Exclude<ThothRuntimeLoopStrength, "auto">;
@@ -94,6 +102,7 @@ let webDiveTextKeyframesRegistered = false;
 interface RuntimeControlsProps {
   serverId: string | null;
   disabled?: boolean;
+  planCapability?: ProviderPlanCapability | null;
 }
 
 function getClarifyLabel(value: ClarifyStrength): string {
@@ -179,6 +188,7 @@ function makeChipStyle(
 export const RuntimeControls = memo(function RuntimeControls({
   serverId,
   disabled = false,
+  planCapability = null,
 }: RuntimeControlsProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
@@ -186,10 +196,29 @@ export const RuntimeControls = memo(function RuntimeControls({
   const { config, patchConfig } = useDaemonConfig(serverId);
 
   const thothEnabled = isThothModeEnabled(config?.thoth);
+  const planEnabled = config?.providerControl?.runMode === "plan";
   const clarify = resolveThothClarifyStrength(config?.thoth.clarifyStrength);
   const mode = (config?.thoth.mode ?? "quick") as ThothRuntimeMode;
   const loopStrength = normalizeLoopStrength(config?.thoth.loopStrength);
   const controlDisabled = disabled || !serverId;
+  const planDisabled = controlDisabled || (!planEnabled && planCapability?.kind !== "native");
+  const planTooltip =
+    planCapability?.kind === "unsupported"
+      ? planCapability.reason
+      : planCapability?.kind === "native"
+        ? t("agentControls.runtime.plan.tooltip")
+        : t("agentControls.runtime.plan.unavailable");
+
+  const persistPlanEnabled = useCallback(
+    async (enabled: boolean) => {
+      try {
+        await patchConfig({ providerControl: { runMode: enabled ? "plan" : "default" } });
+      } catch (error) {
+        toast.error(toErrorMessage(error));
+      }
+    },
+    [patchConfig, toast],
+  );
 
   const persistClarify = useCallback(
     async (clarifyStrength: ClarifyStrength) => {
@@ -281,6 +310,27 @@ export const RuntimeControls = memo(function RuntimeControls({
 
   return (
     <View style={styles.controls}>
+      <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+        <TooltipTrigger asChild>
+          <View style={[styles.thothSwitch, planDisabled && styles.chipDisabled]}>
+            <ListChecks
+              size={theme.iconSize.md}
+              color={planEnabled ? theme.colors.accent : theme.colors.foregroundMuted}
+            />
+            <Text style={[styles.thothLabel, planEnabled && styles.thothLabelEnabled]}>Plan</Text>
+            <Switch
+              value={planEnabled}
+              onValueChange={persistPlanEnabled}
+              disabled={planDisabled}
+              accessibilityLabel={t("agentControls.runtime.plan.switch")}
+              testID="provider-plan-switch"
+            />
+          </View>
+        </TooltipTrigger>
+        <TooltipContent side="top" align="center" offset={8}>
+          <Text style={styles.tooltipText}>{planTooltip}</Text>
+        </TooltipContent>
+      </Tooltip>
       <View style={[styles.thothSwitch, controlDisabled && styles.chipDisabled]}>
         <Sparkles
           size={theme.iconSize.md}

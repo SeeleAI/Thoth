@@ -37,8 +37,6 @@ export const fr: TranslationResources = {
       daemonClientUnavailable: "ClientDaemonindisponible",
       daemonClientDisconnected: "Le clientDaemonest déconnecté",
       noFileFound: "Aucun fichier trouvé pour{{token}}",
-      unexpectedDictationError:
-        "Une erreur inattendue s'est produite lors du traitement de la dictée.",
     },
     connectionStatus: {
       online: "En ligne",
@@ -85,18 +83,6 @@ export const fr: TranslationResources = {
       cancelingAgent: "Agent d'annulation",
       stopAgent: "Agent d'arrêt",
       interrupt: "Interrompre",
-    },
-    voice: {
-      enableVoiceMode: "Activer le mode vocal",
-      voiceMode: "Mode vocal",
-      unmuteVoiceMode: "Activer le mode vocal",
-      muteVoiceMode: "Mode voix muette",
-      stopDictation: "Arrêter la dictée",
-      startDictation: "Démarrer la dictée",
-      unmuteVoice: "Réactiver la voix",
-      muteVoice: "Voix muette",
-      dictation: "Dictée",
-      interruptBeforeVoice: "Interrompre l'agent avant de démarrer le mode vocal",
     },
     attachments: {
       addImage: "Ajouter une image",
@@ -169,6 +155,11 @@ export const fr: TranslationResources = {
       mode: "Changer de mode",
     },
     runtime: {
+      plan: {
+        switch: "Enable native Plan mode",
+        tooltip: "Use the selected provider's native Plan for the next turn.",
+        unavailable: "Native Plan capability is not available for this provider yet.",
+      },
       thoth: {
         switch: "Activer le mode Thoth",
         tooltip:
@@ -286,20 +277,8 @@ export const fr: TranslationResources = {
       text: "Texte",
       file: "Fichier",
     },
-    speak: {
-      header: "Rayon",
-    },
     activity: {
       details: "Détails",
-    },
-    dictation: {
-      start: "Démarrer la dictée vocale",
-      cancel: "Annuler la dictée",
-      retry: "Réessayer la dictée",
-      insert: "Insérer la transcription",
-      insertAndSend: "Insérer la transcription et envoyer",
-      failed: "Échec de la dictée:{{error}}",
-      failedRetry: "La dictée a échoué. Appuyez sur réessayer.",
     },
     question: {
       submit: "Soumettre",
@@ -1036,32 +1015,8 @@ export const fr: TranslationResources = {
         requestFailed: "Échec de la demande d'autorisation de notification:{{message}}",
         unexpectedState: "État d'autorisation de notification inattendu:{{state}}",
       },
-      microphone: {
-        webOnly:
-          "L’état du microphone de bureau est uniquement disponible dans l’environnement d’exécution Web.",
-        navigatorUnavailable: "Le navigateur n'est pas disponible dans cet environnement.",
-        granted: "L’accès au microphone est accordé.",
-        denied: "L'accès au microphone est refusé dans les paramètres système.",
-        notGranted: "L'autorisation du microphone n'a pas encore été accordée.",
-        unexpectedState: "État d'autorisation inattendu du microphone:{{state}}",
-        statusApiUnavailable:
-          "L’API d’état du microphone n’est pas disponible dans ce runtime. Utilisez Request pour vérifier l’accès.",
-        queryFailed: "Échec de l'interrogation de l'état du microphone:{{message}}",
-        captureUnavailable: "La capture du microphone n'est pas disponible dans cet environnement.",
-        permissionApiUnavailable:
-          "L'API d'état des autorisations n'est pas disponible. Utilisez Request pour vérifier l’accès.",
-        requestsWebOnly:
-          "Les demandes de microphone de bureau sont uniquement disponibles sur le runtime Web.",
-        captureApiUnavailable:
-          "L'API de capture de microphone n'est pas disponible dans cet environnement.",
-        requestDenied:
-          "L'autorisation du microphone a été refusée par l'utilisateur ou le système.",
-        noDevice: "Aucun microphone n'a été trouvé.",
-        requestFailed: "Échec de la demande d'autorisation du microphone:{{message}}",
-      },
       empty: {
         notifications: "L'état de la notification n'a pas encore été vérifié.",
-        microphone: "L'état du microphone n'a pas encore été vérifié.",
       },
       testNotification: {
         title: "Test de notificationThoth",
@@ -1338,13 +1293,6 @@ export const fr: TranslationResources = {
       copied: "Copié",
     },
   },
-  realtimeVoice: {
-    actions: {
-      mute: "Couper la voix en temps réel",
-      unmute: "Réactiver la voix en temps réel",
-      stop: "Arrêtez la voix en temps réel et interrompez le tour",
-    },
-  },
   rewind: {
     tooltip: "Revenez à ce message",
     warning: "Cette action ne peut pas être annulée",
@@ -1517,10 +1465,6 @@ export const fr: TranslationResources = {
     },
     diagnostics: {
       title: "Diagnostic",
-      testAudio: "Tester le son",
-      playTest: "Jouer à l'essai",
-      playing: "Jouant...",
-      playbackFailed: "Échec de la lecture:{{message}}",
       app: {
         title: "App diagnostic",
         rowTitle: "App diagnostic",
@@ -1658,12 +1602,9 @@ export const fr: TranslationResources = {
         cycleTheme: "Thème du cycle",
         focusMessageInput: "Saisie du message de focus",
         cycleAgentMode: "Parcourir les modes de l'agent",
-        toggleVoiceMode: "Changer le mode vocal",
-        startStopDictation: "Démarrer la dictée/stop",
         interruptAgent: "Agent d'interruption",
         sendMessage: "Envoyer un message",
         queueMessage: "Message de file d'attente",
-        muteUnmuteVoiceMode: "Mode vocal/unmutemuet",
       },
       helpNotes: {
         showKeyboardShortcuts:
@@ -1709,7 +1650,6 @@ export const fr: TranslationResources = {
     permissions: {
       title: "Autorisations",
       notifications: "Notifications",
-      microphone: "Microphone",
       refresh: "Rafraîchir",
       refreshing: "Rafraîchissant...",
       refreshAccessibility: "Actualiser les autorisations du bureau",

@@ -88,7 +88,7 @@ function formatListenTarget(listenTarget: ListenTarget | null): string | null {
   return listenTarget.path;
 }
 
-import { VoiceAssistantWebSocketServer } from "./websocket-server.js";
+import { DaemonWebSocketServer } from "./websocket-server.js";
 import { createGitHubService } from "../services/github-service.js";
 import {
   createThothWorktree as createRegisteredThothWorktree,
@@ -96,10 +96,6 @@ import {
 } from "./thoth-worktree-service.js";
 import { createThothWorktreeWorkflow } from "./worktree-session.js";
 import { DownloadTokenStore } from "./file-download/token-store.js";
-import type { OpenAiSpeechProviderConfig } from "./speech/providers/openai/config.js";
-import type { LocalSpeechProviderConfig } from "./speech/providers/local/config.js";
-import type { RequestedSpeechProviders } from "./speech/speech-types.js";
-import { createSpeechService } from "./speech/speech-runtime.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { provisionForegroundThothSession } from "./agent/foreground-thoth-session-provisioner.js";
 import type { AgentRegistry } from "./agent/agent-storage.js";
@@ -315,20 +311,6 @@ function summarizeAgentMcpDebugBody(body: unknown): Record<string, unknown> {
   };
 }
 
-export type ThothOpenAIConfig = OpenAiSpeechProviderConfig;
-export type ThothLocalSpeechConfig = LocalSpeechProviderConfig;
-
-export interface ThothSpeechSttLanguages {
-  dictation: string;
-  voice: string;
-}
-
-export interface ThothSpeechConfig {
-  providers: RequestedSpeechProviders;
-  sttLanguages?: ThothSpeechSttLanguages;
-  local?: ThothLocalSpeechConfig;
-}
-
 export type DaemonLifecycleIntent =
   | {
       type: "shutdown";
@@ -377,12 +359,6 @@ export interface ThothDaemonConfig {
   };
   appBaseUrl?: string;
   auth?: DaemonAuthConfig;
-  openai?: ThothOpenAIConfig;
-  speech?: ThothSpeechConfig;
-  voiceLlmProvider?: AgentProvider | null;
-  voiceLlmProviderExplicit?: boolean;
-  voiceLlmModel?: string | null;
-  dictationFinalTimeoutMs?: number;
   downloadTokenTtlMs?: number;
   agentProviderSettings?: AgentProviderRuntimeSettingsMap;
   metadataGeneration?: {
@@ -393,6 +369,7 @@ export interface ThothDaemonConfig {
     }>;
   };
   thoth?: PersistedConfig["thoth"];
+  providerControl?: PersistedConfig["providerControl"];
   providerOverrides?: Record<string, ProviderOverride>;
   log?: PersistedConfig["log"];
   onLifecycleIntent?: (intent: DaemonLifecycleIntent) => void;
@@ -479,6 +456,7 @@ export async function createThothDaemon(
         providers: config.metadataGeneration?.providers ?? [],
       },
       thoth: config.thoth ?? {},
+      providerControl: config.providerControl ?? {},
       autoArchiveAfterMerge: config.autoArchiveAfterMerge ?? false,
       enableTerminalAgentHooks: config.enableTerminalAgentHooks ?? false,
       appendSystemPrompt: config.appendSystemPrompt ?? "",
@@ -537,7 +515,7 @@ export async function createThothDaemon(
   });
   const scriptRuntimeStore = new WorkspaceScriptRuntimeStore();
   const configuredHostnames = config.hostnames ?? config.allowedHosts;
-  let wsServer: VoiceAssistantWebSocketServer | null = null;
+  let wsServer: DaemonWebSocketServer | null = null;
   let serviceProxyListenTarget: ListenTarget | null = null;
   const scriptHealthMonitor = new ScriptHealthMonitor({
     serviceProxy,
@@ -709,7 +687,7 @@ export async function createThothDaemon(
   const httpServer = createHTTPServer(app);
 
   // Script proxy WebSocket upgrade handler — must be registered before the
-  // VoiceAssistantWebSocketServer attaches its own "upgrade" listener so that
+  // DaemonWebSocketServer attaches its own "upgrade" listener so that
   // script-bound upgrades are forwarded first. The handler is a no-op for
   // requests that don't match a registered script route.
   httpServer.on("upgrade", serviceProxy.upgradeHandler({ passthroughUnknown: true }));
@@ -881,10 +859,7 @@ export async function createThothDaemon(
     { elapsed: elapsed() },
     `Agent registry loaded (${persistedRecords.length} record${persistedRecords.length === 1 ? "" : "s"}); agents will initialize on demand`,
   );
-  logger.info(
-    "Voice mode configured for agent-scoped resume flow (no dedicated voice assistant provider)",
-  );
-  logger.info({ elapsed: elapsed() }, "Preparing voice and MCP runtime");
+  logger.info({ elapsed: elapsed() }, "Preparing MCP runtime");
 
   const archiveWorkspaceRecordExternal = async (workspaceId: string) => {
     const sessions = wsServer?.listActiveSessions() ?? [];
@@ -1031,10 +1006,6 @@ export async function createThothDaemon(
     worktreesRoot: config.worktreesRoot,
     callerAgentId: runtime.callerAgentId,
     callerAgentConfig: runtime.callerAgentConfig,
-    enableVoiceTools: runtime.enableVoiceTools,
-    voiceOnly: runtime.voiceOnly,
-    resolveSpeakHandler: (agentId) => wsServer?.resolveVoiceSpeakHandler(agentId) ?? null,
-    resolveCallerContext: (agentId) => wsServer?.resolveVoiceCallerContext(agentId) ?? null,
     workspaceAuthorityManager,
     taskToolGateway: workspaceTaskOrchestrator.toolGateway,
     logger,
@@ -1175,13 +1146,6 @@ export async function createThothDaemon(
     logger.info("Agent MCP HTTP endpoint disabled");
   }
 
-  const speechService = createSpeechService({
-    logger,
-    openaiConfig: config.openai,
-    speechConfig: config.speech,
-  });
-  logger.info({ elapsed: elapsed() }, "Speech service created");
-
   logger.info({ elapsed: elapsed() }, "Bootstrap complete, ready to start listening");
 
   const start = async () => {
@@ -1253,7 +1217,7 @@ export async function createThothDaemon(
               logger.info("Daemon password authentication enabled");
             }
 
-            wsServer = new VoiceAssistantWebSocketServer(
+            wsServer = new DaemonWebSocketServer(
               httpServer,
               logger,
               serverId,
@@ -1265,11 +1229,7 @@ export async function createThothDaemon(
               mcpBaseUrl,
               { allowedOrigins, hostnames: configuredHostnames },
               config.auth,
-              speechService,
               terminalManager,
-              {
-                finalTimeoutMs: config.dictationFinalTimeoutMs,
-              },
               daemonVersion,
               (intent) => {
                 try {
@@ -1350,9 +1310,6 @@ export async function createThothDaemon(
         }
       });
 
-      // Start speech service after listening so synchronous Sherpa native
-      // model loading doesn't block the server from accepting connections.
-      speechService.start();
       scriptHealthMonitor.start();
     } catch (error) {
       await serviceProxy.stopStandalone().catch(() => undefined);
@@ -1373,7 +1330,6 @@ export async function createThothDaemon(
     durableTimelineStore.close();
     await providerSnapshotManager.shutdown();
     terminalManager.killAll();
-    speechService.stop();
     await scheduleService.stop().catch(() => undefined);
     await relayTransport?.stop().catch(() => undefined);
     if (wsServer) {

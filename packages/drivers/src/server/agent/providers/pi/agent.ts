@@ -1108,6 +1108,21 @@ export class PiRpcAgentSession implements AgentSession {
     return [];
   }
 
+  async getProviderRunModeCapability() {
+    return {
+      kind: "unsupported",
+      reason: "Pi does not expose a native Plan mode.",
+    } as const;
+  }
+
+  async applyProviderRunMode(mode: "default" | "plan") {
+    const capability = await this.getProviderRunModeCapability();
+    return {
+      capability,
+      nativeModeId: mode === "default" ? null : null,
+    };
+  }
+
   async getCurrentMode(): Promise<string | null> {
     return null;
   }
@@ -1868,7 +1883,10 @@ export class PiRpcAgentSession implements AgentSession {
 export class PiRpcAgentClient implements AgentClient {
   readonly provider = PI_PROVIDER;
   readonly capabilities = PI_CAPABILITIES;
-  readonly harnessCapabilities = defineHarnessCapabilities({ toolAttachment: ["mcp"] });
+  readonly harnessCapabilities = defineHarnessCapabilities({
+    toolAttachment: ["mcp"],
+    plan: { kind: "unsupported", reason: "Pi does not expose a native Plan mode." },
+  });
 
   private readonly logger: Logger;
   private readonly runtimeSettings?: ProviderRuntimeSettings;
@@ -1986,7 +2004,11 @@ export class PiRpcAgentClient implements AgentClient {
       const models = transformPiModels(
         (await runtimeSession.getAvailableModels(PI_CATALOG_REQUEST_TIMEOUT_MS)).map(mapPiModel),
       );
-      return { models, modes: [] };
+      return {
+        models,
+        modes: [],
+        planCapability: { kind: "unsupported", reason: "Pi does not expose a native Plan mode." },
+      };
     } finally {
       await runtimeSession.close();
     }

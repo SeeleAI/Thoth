@@ -1,7 +1,7 @@
 #!/usr/bin/env npx tsx
 
 import assert from "node:assert";
-import { readFile, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "zx";
@@ -51,32 +51,6 @@ try {
   assert.strictEqual(status.exitCode, 0, `daemon status should succeed: ${status.stderr}`);
   assert(status.stdout.includes("running"), "daemon should be running when onboarding exits");
   console.log("✓ onboarding prints pairing info and waits for daemon readiness\n");
-
-  console.log("Test 2: non-interactive onboarding persists voice disabled config");
-  const configRaw = await readFile(join(thothHome, "config.json"), "utf-8");
-  const config = JSON.parse(configRaw) as {
-    features?: {
-      dictation?: { enabled?: boolean };
-      voiceMode?: { enabled?: boolean };
-    };
-  };
-
-  assert.strictEqual(
-    config.features?.dictation?.enabled,
-    false,
-    "dictation.enabled should be false",
-  );
-  assert.strictEqual(
-    config.features?.voiceMode?.enabled,
-    false,
-    "voiceMode.enabled should be false",
-  );
-  const daemonLog = await readFile(join(thothHome, "daemon.log"), "utf-8");
-  assert(
-    !daemonLog.includes("Ensuring local speech models"),
-    "daemon should not attempt local speech model setup when voice is disabled",
-  );
-  console.log("✓ non-interactive run persisted voice disabled choices\n");
 } finally {
   await $`THOTH_HOME=${thothHome} npx thoth daemon stop --home ${thothHome} --force`.nothrow();
   await rm(thothHome, { recursive: true, force: true });

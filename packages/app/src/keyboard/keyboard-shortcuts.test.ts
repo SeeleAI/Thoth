@@ -293,25 +293,11 @@ describe("keyboard-shortcuts", () => {
       action: "sidebar.toggle.both",
     },
     {
-      name: "routes Mod+D to message-input action outside terminal",
-      event: { key: "d", code: "KeyD", metaKey: true },
-      context: { isMac: true, focusScope: "message-input" },
-      action: "message-input.action",
-      payload: { kind: "dictation-toggle" },
-    },
-    {
       name: "routes Shift+Tab to cycle agent mode from the message input",
       event: { key: "Tab", code: "Tab", shiftKey: true },
       context: { focusScope: "message-input" },
       action: "message-input.action",
       payload: { kind: "mode-cycle" },
-    },
-    {
-      name: "routes space to voice mute toggle outside editable scopes",
-      event: { key: " ", code: "Space" },
-      context: { focusScope: "other" },
-      action: "message-input.action",
-      payload: { kind: "voice-mute-toggle" },
     },
     {
       name: "routes Escape to agent interrupt outside terminal focus",

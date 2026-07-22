@@ -2575,3 +2575,149 @@ Boundary:
 `NTH-EV-043` verifies the released `NTH-CD-060` architecture and public MVP assets. It does not close the separate
 `NTH-TD-021` requirement for additional human-visible browser/device evidence of `budget_wait` and phase-detail
 recovery, and it does not claim real authenticated provider runs for providers other than Codex.
+
+### `NTH-EV-045` Deletion-Only Voice / Speech / Dictation Retirement
+
+Status: `verified` for the affected source boundaries of `NTH-TD-025`. This evidence does not claim a clean
+whole-worktree gate while the separate `NTH-TD-024` Provider Control implementation remains concurrently dirty.
+
+Evidence recorded on `2026-07-22`:
+
+1. Removed the disabled media product path from Protocol, Client, Daemon, Drivers, App and CLI. Daemon no longer
+   constructs, starts, injects or stops a SpeechService/VoiceSession; App no longer owns dictation buffers,
+   overlays, microphone controls, voice shortcuts or audio playback state; CLI no longer writes disabled media
+   config or tails daemon logs every 200ms looking for retired speech-model download progress.
+2. Deleted `23` files in the combined worktree. To avoid attributing concurrent Provider Control edits to this
+   slice, the conservative metric excludes every known mixed file and still covers `103` files with `4,899`
+   deleted lines, `172` added lines and a net reduction of `4,727` lines. Mixed files contain additional media
+   deletion but are deliberately not counted.
+3. The bounded acceptance ran in two executor-safe sequential segments of `28.697s` and `19.905s`, totaling
+   `48.602s` against the `300s` ceiling. Repository validation, Protocol/Client/Drivers/CLI type boundaries,
+   targeted formatting, retired-symbol scan and `git diff --check` passed.
+4. The same gate passed `805` affected tests: Protocol `341`, Client daemon transport `97`, Claude/Codex/OpenCode
+   tool mapping `62`, App composer/keyboard/desktop-permission/i18n/icon behavior `171`, daemon
+   message/config/persistence `62`, and daemon bootstrap/WebSocket/Relay-reconnect/terminal/notification `72`.
+5. Deliberately retained non-product compatibility and safety boundaries: Android explicitly blocks
+   `android.permission.RECORD_AUDIO`; old persisted media fields are stripped during load; ACP can render a
+   provider-owned generic audio content item as `[audio]`; browser selection mode still disables pointer events
+   on ordinary HTML media elements; provider-native slash-command text remains opaque passthrough.
+6. Wider checks exposed only concurrent or pre-existing failures and were not rewritten to obtain green:
+   Client full test has one stale `providerControl: {}` expectation; Drivers full test has 22 native-Plan
+   contract expectation failures; daemon typecheck has five `task-orchestrator` Provider Control errors and one
+   Session permission test binds an unfinished Provider Control value into SQLite; App typecheck retains React,
+   Unistyles and concurrent authority-shape errors; full format check points only at the remaining concurrent
+   Provider/Harness files. None is inside the retired-media acceptance set.
+
+Boundary:
+
+This evidence proves structural removal and surviving source behavior, not a numeric cold-start, RSS or CPU
+benchmark. No AppImage, Android/iOS package, Relay, browser, real-provider, GitHub Actions, release, push or tag
+operation was run.
+
+### `NTH-EV-046` Core Shadow And Migration Scaffold Retirement
+
+Status: `verified` for the affected source boundaries of `NTH-TD-026`. This evidence does not claim a clean
+whole-worktree gate while the separate `NTH-TD-024` Provider Control implementation remains concurrently dirty.
+
+Evidence recorded on `2026-07-22`:
+
+1. Deleted all `65` files and `19,704` current-worktree lines under `packages/core/src`. The package had no
+   entrypoint, exports, scripts, dependencies or production consumer; `49/65` files were byte-identical copies
+   of daemon/drivers files, while the remaining divergent files were equally unreachable.
+2. Retained `packages/core/package.json`, `AGENTS.md`, the `CLAUDE.md` symlink and the accurate reserved-domain
+   README. No empty index, stub, compatibility export, `.gitkeep` or alternate implementation was added, and no
+   active daemon/drivers source was changed by this slice.
+3. Removed nine false package-test placeholder READMEs while retaining the accurate TUI test guide. Removed the
+   stale Expo starter README plus its destructive 112-line `reset-project` script/command, and removed the
+   abandoned 230-line Code4Agent Relay mirror script/command after Relay authority had moved to
+   `SeeleAI/Thoth-Relay`. Valid package-boundary README content was retained while false skeleton status lines
+   were deleted.
+4. The final target-path diff against `HEAD` is `20,157` deletions with zero additions across `83` files. Four
+   App README lines were already deleted by `NTH-TD-025` before this slice, so the independent non-overlapping
+   `NTH-TD-026` result is `20,153` deletions, zero additions and net `-20,153`.
+5. The bounded source gate passed in `36s` against the `300s` ceiling: structural absence and zero-reference
+   guards, `npm run validate:repo`, `npm run check:mvp-release-contract`, four foundation type boundaries and
+   `447/447` tests passed. Tests comprise Highlight `66`, Protocol `341`, Relay `29` and unaffected Client
+   transport/router `11`.
+6. Targeted formatting and `git diff --check` passed after the evidence ledger update. The full Client export
+   test remains outside this slice because concurrent `NTH-TD-024` adds `providerControl: {}` while its
+   expectation is still stale; this deletion did not alter or conceal that failure.
+
+Boundary:
+
+This evidence proves removal of unreachable imports, copies, destructive starter tooling, abandoned deployment
+tooling and false placeholders without changing runtime behavior. No AppImage, Android/iOS, Electron, browser,
+Relay service, real-provider, GitHub Actions, release, push or tag operation was run.
+
+### `NTH-EV-047` Provider-Neutral Native Plan And Approval Authority
+
+Status: `verified` for the source-level boundary of `NTH-TD-024` / `NTH-AC-016`.
+
+Evidence recorded on `2026-07-22`:
+
+1. Create/Send now freeze `providerRunMode: default | plan` independently of the Thoth snapshot. A public daemon
+   journey passed `default -> native Plan -> human Implement -> default` on one visible ProviderThread with no
+   Thoth Card and no session replacement.
+2. Codex, Claude Code, OpenCode and capable ACP map the shared Harness contract to their native Plan/Implement
+   transport. Pi and ACP without native Plan return typed unsupported. App and Task orchestration contain no
+   provider-name Plan branch, prompt emulation or Codex `plan_mode` product feature.
+3. Every Loop PlanExec now proves a native Plan receipt, opens one durable Implement approval, switches to native
+   implementation on the same ProviderThread, accepts its semantic result and then schedules independent Review.
+   The all-pass and failed-Review retry public journeys passed, as did four provider/transport Harness lifecycle
+   conformance journeys.
+4. Background Implement, command, file, tool, mode and permission approvals share one task-scoped SQLite/CAS
+   authority. Fake-clock tests prove the full `19.999s` human window, exact `20.000s` timeout, durable-deadline
+   timer reconstruction, human/timeout CAS exclusivity and Stop timer cancellation. Provider questions and Thoth
+   authority Cards are rejected from auto-approval; timeout actor identity remains
+   `daemon:auto-approval-timeout`. Stop settlement now also releases the Orchestrator ActivePhase, drops pending
+   adapter approval bindings and schedules the next eligible Task in that Workspace. An approval callback must
+   re-read Task/Execution authority after its provider await before it can start a continuation, so a concurrent
+   Stop or already-accepted semantic result cannot restart implementation.
+5. Update recovery no longer notifies an archived Agent before it is registered live. Fetch Agent uses the typed
+   `agent_not_found` code only for genuine absence; Client returns `null` only for that code, and App atomically
+   removes the matching tab/pin/restore state under its exact `serverId + workspaceId` key without touching an
+   equal Agent id on another host or Workspace.
+6. Final `npm run accept:provider-control:fast` passed nine timed phases in `42.143s` under the shared `300s`
+   deadline: `478` assertions across protocol snapshots, six adapter files, approval/update authority, seven public API
+   journeys, Client and six App files, followed by the static architecture contract.
+7. Final `npm run accept:thoth:fast` passed ten timed phases in `50.968s`: `506` assertions, all `11` public foreground
+   journeys, storage migration, Task coordinator, Task context and eight App surface files under the same `300s`
+   deadline.
+8. `npm run check:foundation` passed repository/secret/removed-path validation, full formatting, foundation lint,
+   all foundation builds and typechecks, and `552` tests: Highlight `66`, Protocol `342`, Relay `29`, Client
+   `115`. Protocol, Client, Drivers and Daemon package typechecks also passed independently.
+
+Boundary:
+
+The full App typecheck was run diagnostically and still reports the known broad React DOM declaration,
+Unistyles, WebView and unrelated historical fixture debt; Provider Control fixture drift found by that run was
+fixed, and the affected App behavior passed `107` tests. This round intentionally did not build AppImage/Android,
+contact Relay or a real provider, push, tag, publish npm or replace the fixed MVP Release.
+
+### `NTH-EV-048` Disconnected Paseo File-Backed Task Subsystem Retirement
+
+Status: `verified` for the affected source boundary of `NTH-TD-027`.
+
+Evidence recorded on `2026-07-22`:
+
+1. Deleted all seven files and `2,244` lines under `packages/daemon/src/tasks`: `FileTaskStore`, Markdown task
+   serialization, Task types, dependency-graph readiness, execution ordering and the two self-contained test
+   suites. The slice added zero lines and left no empty directory, stub, export or compatibility path.
+2. A full repository scan before deletion found no import, runtime consumer, manifest command, package export,
+   wire/API surface or App entry outside that directory. Thoth history showed only the Paseo seed-promotion
+   commit; the latest upstream Paseo history confirmed its former 1,318-line Task CLI had already been deleted
+   as unused, leaving the lower-level files reachable only from their own tests.
+3. The current production authority remains the Workspace-sharded SQLite path under
+   `packages/daemon/src/server/workspace-authority`, including Task coordinator/orchestrator, Task Blackboard,
+   Human Decisions and execution attempts. No file in that authority path changed as part of this slice.
+4. The complete bounded gate passed in `30s` against the `300s` ceiling: structural and zero-reference guards,
+   `npm run validate:repo`, `npm run check:mvp-release-contract`, all four foundation type boundaries, Daemon
+   typecheck and three focused current Task-authority files passed. The focused suite passed `16/16` tests.
+5. Targeted formatting and `git diff --check` passed after the evidence update. No AppImage, Android/iOS,
+   Electron, browser, Relay service, real provider, GitHub Actions, release, push or tag operation ran.
+
+Boundary:
+
+This evidence proves deletion of a disconnected source-and-self-test island. It does not claim a product
+performance delta because the directory was outside the runtime import graph; its benefit is removal of a
+second Task model and its maintenance/test surface without changing valid behavior.

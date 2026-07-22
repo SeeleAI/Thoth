@@ -7,12 +7,14 @@ import { OpenCodeAgentClient } from "../server/agent/providers/opencode-agent.js
 import { PiRpcAgentClient } from "../server/agent/providers/pi/agent.js";
 import { GenericACPAgentClient } from "../server/agent/providers/generic-acp-agent.js";
 import type { HarnessToolAttachment } from "./types.js";
+import type { ProviderPlanCapability } from "@thoth/protocol/provider-control";
 
 interface ProviderTransportContractCase {
   id: string;
   client: AgentClient;
   toolAttachment: HarnessToolAttachment;
   eventReplay: "cursor" | "live_only";
+  plan: ProviderPlanCapability;
 }
 
 const logger = pino({ level: "silent" });
@@ -24,6 +26,7 @@ function createCases(): ProviderTransportContractCase[] {
       client: new CodexAppServerAgentClient(logger),
       toolAttachment: "native",
       eventReplay: "cursor",
+      plan: { kind: "native" },
     },
     {
       id: "claude-sdk",
@@ -33,18 +36,21 @@ function createCases(): ProviderTransportContractCase[] {
       }),
       toolAttachment: "mcp",
       eventReplay: "live_only",
+      plan: { kind: "native" },
     },
     {
       id: "opencode-server",
       client: new OpenCodeAgentClient(logger),
       toolAttachment: "mcp",
       eventReplay: "live_only",
+      plan: { kind: "native" },
     },
     {
       id: "pi-rpc",
       client: new PiRpcAgentClient({ logger }),
       toolAttachment: "mcp",
       eventReplay: "live_only",
+      plan: { kind: "unsupported", reason: "Pi does not expose a native Plan mode." },
     },
     {
       id: "generic-acp-process",
@@ -55,6 +61,7 @@ function createCases(): ProviderTransportContractCase[] {
       }),
       toolAttachment: "mcp",
       eventReplay: "live_only",
+      plan: { kind: "native" },
     },
   ];
 }
@@ -70,6 +77,7 @@ describe("provider native transport capability receipts", () => {
       permissions: "interactive",
       threadPersistence: "native",
       nativeRetention: "provider_owned",
+      plan: entry.plan,
     });
   });
 });

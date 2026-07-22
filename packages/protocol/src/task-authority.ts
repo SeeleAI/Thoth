@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ProviderRunModeReceiptSchema } from "./provider-control.js";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
 
@@ -30,6 +31,9 @@ export const TaskStrengthSchema = z.enum(["single", "light", "balanced", "infini
 export const ExecutionLifecycleSchema = z.enum([
   "created",
   "starting",
+  "planning",
+  "awaiting_implementation",
+  "implementing",
   "running",
   "awaiting_provider",
   "awaiting_user",
@@ -39,6 +43,42 @@ export const ExecutionLifecycleSchema = z.enum([
   "failed",
   "orphaned",
 ]);
+
+export const ExecutionApprovalKindSchema = z.enum([
+  "implement",
+  "command",
+  "file",
+  "tool",
+  "mode",
+  "permission",
+]);
+export const ExecutionApprovalDecisionSchema = z.enum(["allow", "deny", "implement"]);
+export const ExecutionApprovalStatusSchema = z.enum(["pending", "allowed", "denied", "canceled"]);
+
+export const ExecutionApprovalProjectionSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    taskId: NonEmptyStringSchema,
+    executionId: NonEmptyStringSchema,
+    kind: ExecutionApprovalKindSchema,
+    title: NonEmptyStringSchema,
+    description: z.string().nullable(),
+    displayed: z.unknown(),
+    deadlineAt: NonEmptyStringSchema.nullable(),
+    status: ExecutionApprovalStatusSchema,
+    resolution: z
+      .object({
+        decision: ExecutionApprovalDecisionSchema,
+        actorId: NonEmptyStringSchema,
+        resolvedAt: NonEmptyStringSchema,
+      })
+      .strict()
+      .nullable(),
+    revision: z.number().int().positive(),
+    createdAt: NonEmptyStringSchema,
+    updatedAt: NonEmptyStringSchema,
+  })
+  .strict();
 
 export const TaskContextReferenceSchema = z
   .object({
@@ -125,6 +165,9 @@ export const ExecutionProjectionSchema = z
     status: ExecutionLifecycleSchema,
     generation: NonEmptyStringSchema,
     attachment: RuntimeAttachmentProjectionSchema.nullable(),
+    runModeReceipt: ProviderRunModeReceiptSchema.nullable().default(null),
+    pendingApproval: ExecutionApprovalProjectionSchema.nullable().default(null),
+    latestApproval: ExecutionApprovalProjectionSchema.nullable().optional(),
     startedAt: NonEmptyStringSchema.nullable(),
     lastActivityAt: NonEmptyStringSchema.nullable(),
     completedAt: NonEmptyStringSchema.nullable(),
@@ -282,6 +325,19 @@ export const ExecutionTimelineRequestSchema = z
     limit: z.number().int().positive().max(500).default(100),
   })
   .strict();
+export const ExecutionApprovalResolveRequestSchema = z
+  .object({
+    type: z.literal("execution.approval.resolve.request"),
+    requestId: NonEmptyStringSchema,
+    workspaceId: NonEmptyStringSchema,
+    taskId: NonEmptyStringSchema,
+    executionId: NonEmptyStringSchema,
+    approvalId: NonEmptyStringSchema,
+    decision: ExecutionApprovalDecisionSchema,
+    expectedRevision: z.number().int().positive(),
+    commandId: NonEmptyStringSchema,
+  })
+  .strict();
 
 export const TaskListResponseSchema = z.object({
   type: z.literal("task.list.response"),
@@ -355,6 +411,18 @@ export const ExecutionTimelineResponseSchema = z.object({
     error: z.string().nullable(),
   }),
 });
+export const ExecutionApprovalResolveResponseSchema = z.object({
+  type: z.literal("execution.approval.resolve.response"),
+  payload: z.object({
+    requestId: NonEmptyStringSchema,
+    task: TaskProjectionSchema.nullable(),
+    execution: ExecutionProjectionSchema.nullable(),
+    approval: ExecutionApprovalProjectionSchema.nullable(),
+    conflict: z.boolean(),
+    duplicate: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
 
 export const WorkspaceAuthorityUpdateSchema = z.object({
   type: z.literal("workspace.authority.update"),
@@ -370,6 +438,10 @@ export type TaskExecutionMode = z.infer<typeof TaskExecutionModeSchema>;
 export type TaskStrength = z.infer<typeof TaskStrengthSchema>;
 export type TaskLifecycle = z.infer<typeof TaskLifecycleSchema>;
 export type ExecutionLifecycle = z.infer<typeof ExecutionLifecycleSchema>;
+export type ExecutionApprovalKind = z.infer<typeof ExecutionApprovalKindSchema>;
+export type ExecutionApprovalDecision = z.infer<typeof ExecutionApprovalDecisionSchema>;
+export type ExecutionApprovalStatus = z.infer<typeof ExecutionApprovalStatusSchema>;
+export type ExecutionApprovalProjection = z.infer<typeof ExecutionApprovalProjectionSchema>;
 export type TaskContextReference = z.infer<typeof TaskContextReferenceSchema>;
 export type RuntimeAttachmentProjection = z.infer<typeof RuntimeAttachmentProjectionSchema>;
 export type HumanDecisionRecord = z.infer<typeof HumanDecisionRecordSchema>;

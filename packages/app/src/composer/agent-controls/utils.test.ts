@@ -37,7 +37,7 @@ describe("feature metadata helpers", () => {
 
   it("maps feature highlight colors by feature id", () => {
     expect(getFeatureHighlightColor("fast_mode")).toBe("yellow");
-    expect(getFeatureHighlightColor("plan_mode")).toBe("blue");
+    expect(getFeatureHighlightColor("auto_accept")).toBe("green");
     expect(getFeatureHighlightColor("other")).toBe("default");
   });
 });

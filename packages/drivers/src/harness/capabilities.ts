@@ -1,4 +1,5 @@
 import type { HarnessCapabilities, HarnessToolAttachment } from "./types.js";
+import type { ProviderPlanCapability } from "@thoth/protocol/provider-control";
 
 export interface HarnessCapabilityInput {
   toolAttachment: readonly HarnessToolAttachment[];
@@ -9,6 +10,7 @@ export interface HarnessCapabilityInput {
   permissions?: HarnessCapabilities["permissions"];
   threadPersistence?: HarnessCapabilities["threadPersistence"];
   nativeRetention?: HarnessCapabilities["nativeRetention"];
+  plan?: ProviderPlanCapability;
 }
 
 /** Defines one immutable provider capability receipt without provider-name branching. */
@@ -22,6 +24,9 @@ export function defineHarnessCapabilities(input: HarnessCapabilityInput): Harnes
     permissions: input.permissions ?? "interactive",
     threadPersistence: input.threadPersistence ?? "native",
     nativeRetention: input.nativeRetention ?? "provider_owned",
+    plan:
+      input.plan ??
+      ({ kind: "unsupported", reason: "Provider adapter does not expose native Plan." } as const),
   });
 }
 
@@ -32,4 +37,5 @@ export const NO_HARNESS_CAPABILITIES = defineHarnessCapabilities({
   eventReplay: "live_only",
   threadPersistence: "none",
   nativeRetention: "adapter_owned",
+  plan: { kind: "unsupported", reason: "Provider adapter does not expose native Plan." },
 });

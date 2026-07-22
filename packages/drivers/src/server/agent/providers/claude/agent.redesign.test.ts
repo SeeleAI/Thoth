@@ -1084,6 +1084,29 @@ test("plan approval exposes a resume-bypass action and can return to bypassPermi
   }
 });
 
+test("provider run mode uses Claude native plan permission mode and restores implementation mode", async () => {
+  const queryMock = createBaseQueryMock(vi.fn(async () => ({ done: true, value: undefined })));
+  sdkQueryFactory.mockImplementation(() => queryMock);
+  const session = await createSession();
+
+  try {
+    await session.setMode("acceptEdits");
+    await expect(session.applyProviderRunMode?.("plan")).resolves.toEqual({
+      capability: { kind: "native" },
+      nativeModeId: "plan",
+    });
+    expect(queryMock.setPermissionMode).toHaveBeenLastCalledWith("plan");
+
+    await expect(session.applyProviderRunMode?.("default")).resolves.toEqual({
+      capability: { kind: "native" },
+      nativeModeId: "acceptEdits",
+    });
+    expect(queryMock.setPermissionMode).toHaveBeenLastCalledWith("acceptEdits");
+  } finally {
+    await session.close();
+  }
+});
+
 test("reuses one autonomous run for unbound stream_event bursts with no foreground run", async () => {
   const session = await createSession();
   const internal: {

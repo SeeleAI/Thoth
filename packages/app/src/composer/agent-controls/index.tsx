@@ -54,6 +54,7 @@ import type {
   AgentProvider,
 } from "@thoth/protocol/agent-types";
 import type { AgentProviderDefinition } from "@thoth/protocol/provider-manifest";
+import type { ProviderPlanCapability } from "@thoth/protocol/provider-control";
 import {
   getFeatureHighlightColor,
   getFeatureTooltip,
@@ -136,6 +137,7 @@ export interface DraftAgentControlsProps {
   modelSelectorServerId?: string | null;
   isCompactLayout?: boolean;
   controlExtras?: ReactNode;
+  planCapability?: ProviderPlanCapability | null;
 }
 
 interface AgentControlsProps {
@@ -299,6 +301,7 @@ type AgentControlsSlice = {
   features: AgentFeature[] | undefined;
   thinkingOptionId: string | null | undefined;
   lastUsage: unknown;
+  planCapability: ProviderPlanCapability | null;
 } | null;
 
 function selectAgentControlsSlice(
@@ -320,6 +323,7 @@ function selectAgentControlsSlice(
     features: currentAgent.features,
     thinkingOptionId: currentAgent.thinkingOptionId ?? currentAgent.runtimeInfo?.thinkingOptionId,
     lastUsage: currentAgent.lastUsage,
+    planCapability: currentAgent.planCapability ?? null,
   };
 }
 
@@ -1766,8 +1770,14 @@ export const AgentControls = memo(function AgentControls({
   );
 
   const runtimeControls = useMemo(
-    () => <RuntimeControls serverId={serverId} disabled={!client} />,
-    [client, serverId],
+    () => (
+      <RuntimeControls
+        serverId={serverId}
+        disabled={!client}
+        planCapability={agent?.planCapability ?? snapshotSelectedEntry?.planCapability ?? null}
+      />
+    ),
+    [agent?.planCapability, client, snapshotSelectedEntry?.planCapability, serverId],
   );
 
   if (!agent) {
@@ -1833,6 +1843,7 @@ export function DraftAgentControls({
   modelSelectorServerId = null,
   isCompactLayout,
   controlExtras,
+  planCapability = null,
 }: DraftAgentControlsProps) {
   const { preferences, updatePreferences } = useFormPreferences();
   const isCompactFormFactor = useIsCompactFormFactor();
@@ -1908,8 +1919,14 @@ export function DraftAgentControls({
   );
 
   const runtimeControls = useMemo(
-    () => <RuntimeControls serverId={modelSelectorServerId} disabled={disabled} />,
-    [disabled, modelSelectorServerId],
+    () => (
+      <RuntimeControls
+        serverId={modelSelectorServerId}
+        disabled={disabled}
+        planCapability={planCapability}
+      />
+    ),
+    [disabled, modelSelectorServerId, planCapability],
   );
 
   if (!isCompact) {

@@ -892,3 +892,54 @@ On hosted transport failure, inspect daemon socket errors, service health and di
 changing code. If only the verifier route is broken, use a documented environment-level tunnel and repeat the
 same public journey. Run certificate/checksum pipelines under `set -euo pipefail` and compare the final digest
 explicitly before recording evidence.
+
+## `NTH-EXP-033` Native Continuation Can Beat Lifecycle Projection
+
+Observed on `2026-07-22`:
+
+1. The first Loop PlanExec correctly entered native Plan, opened an Implement approval and continued on the same
+   ProviderThread, but its semantic result was rejected while the execution still projected `implementing`.
+2. The provider transport can resume and call a semantic tool immediately from the approval callback. The
+   separately queued `turn_started` event reaches the Workspace authority one microtask later, so requiring only
+   `awaiting_provider` created an event-order race despite a valid generation, attachment and ToolGateway binding.
+3. `implementing` is already the durable proof that the Implement CAS won for this PlanExec. It is therefore a
+   valid PlanExec semantic authority state; planning remains excluded. A later `turn_started` still normalizes
+   the projection to `awaiting_provider`, and provider-segment revision fencing prevents stale Plan events from
+   advancing implementation.
+
+Conclusion:
+
+Provider lifecycle events are evidence, not the sole authority for a transition already committed by CAS. A
+semantic gateway must authorize from the durable aggregate plus generation/phase binding and tolerate legal
+transport event reordering, while continuing to reject planning, old generations and stopped executions.
+
+Retry condition:
+
+When a same-thread provider continuation reports a missing semantic authority, inspect the execution lifecycle,
+segment revision and ToolGateway binding at the exact tool call. Do not add delays, provider-name branches or a
+fixture-only bypass; model the valid intermediate state in the authority contract.
+
+## `NTH-EXP-034` Durable Stop Must Retire Ephemeral Execution Ownership
+
+Observed on `2026-07-22`:
+
+1. Stop correctly committed `cancel_requested -> canceled/orphaned` in SQLite and removed the UI spinner, but the
+   Workspace Orchestrator could retain its ActivePhase if a provider confirmed interrupt without later yielding a
+   terminal event.
+2. That stale in-memory owner kept the Workspace occupied even though durable Task truth was already `stopped`, so
+   another queued Task might not start. Pending adapter approval bindings could also outlive the stopped execution.
+3. A provider approval callback can race with Stop while awaiting the provider transport. Checking generation only
+   before that await is insufficient; a returned follow-up could otherwise launch after Stop had already won.
+
+Conclusion:
+
+Durable lifecycle settlement and ephemeral process ownership require an explicit handoff. After Stop settles, the
+Task coordinator notifies the scheduler to release ActivePhase, ToolGateway, runtime registration, approval timers
+and lease heartbeat, then reconsider the Workspace queue. Every asynchronous approval continuation re-reads the
+current Task/Execution authority after the provider await before starting another segment.
+
+Retry condition:
+
+When a stopped Task leaves a Workspace idle-but-blocked or a late provider segment appears, inspect both the durable
+ExecutionProjection and the Orchestrator ActivePhase. Do not infer cleanup from a provider terminal; verify the
+explicit Stop-settled callback and the post-await authority check.

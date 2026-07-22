@@ -95,9 +95,7 @@ export async function unarchiveAgentState(
   agentId: string,
 ): Promise<boolean> {
   const unarchived = await agentManager.unarchiveSnapshot(agentId);
-  if (!unarchived) return false;
-  agentManager.notifyAgentState(agentId);
-  return true;
+  return unarchived;
 }
 
 /**

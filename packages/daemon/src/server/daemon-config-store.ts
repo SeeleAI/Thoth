@@ -208,6 +208,7 @@ function mergeMutableConfigIntoPersistedConfig(params: {
   return {
     ...persisted,
     thoth: mutable.thoth,
+    providerControl: mutable.providerControl,
     daemon: {
       ...persisted.daemon,
       mcp: {

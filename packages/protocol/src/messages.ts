@@ -7,6 +7,13 @@ import { AgentProviderSchema } from "@thoth/protocol/provider-manifest";
 import { normalizeAgentModelDefinition, TOOL_CALL_ICON_NAMES } from "./agent-types.js";
 import { TaskContextReferenceSchema, TaskProjectionSchema } from "./task-authority.js";
 import {
+  ProviderPlanCapabilitySchema,
+  ProviderRunModeReceiptSchema,
+  ProviderRunModeSchema,
+} from "./provider-control.js";
+import {
+  ExecutionApprovalResolveRequestSchema,
+  ExecutionApprovalResolveResponseSchema,
   ExecutionTimelineRequestSchema,
   ExecutionTimelineResponseSchema,
   TaskCommandRequestSchema,
@@ -131,6 +138,8 @@ export const ThothTurnAckSchema = z
     turnKind: z.enum(["raw", "thoth"]),
     turnId: z.string().min(1),
     authorityRevision: z.number().int().nonnegative(),
+    providerRunMode: ProviderRunModeSchema.optional(),
+    providerRunModeReceipt: ProviderRunModeReceiptSchema.optional(),
   })
   .strict();
 // ---------------------------------------------------------------------------
@@ -171,6 +180,12 @@ const MutableThothConfigSchema = z
   })
   .strict();
 
+const MutableProviderControlConfigSchema = z
+  .object({
+    runMode: ProviderRunModeSchema.optional(),
+  })
+  .strict();
+
 const MutableMetadataGenerationConfigSchema = z
   .object({
     providers: z.array(MutableStructuredGenerationProviderSchema).default([]),
@@ -199,6 +214,7 @@ export const MutableDaemonConfigSchema = z
     providers: z.record(z.string(), MutableDaemonProviderConfigSchema).default({}),
     metadataGeneration: MutableMetadataGenerationConfigSchema.default({ providers: [] }),
     thoth: MutableThothConfigSchema.default({}),
+    providerControl: MutableProviderControlConfigSchema.default({}),
     autoArchiveAfterMerge: z.boolean().default(false),
     enableTerminalAgentHooks: z.boolean().default(false),
     appendSystemPrompt: z.string().default(""),
@@ -214,6 +230,7 @@ export const MutableDaemonConfigPatchSchema = z
       .optional(),
     metadataGeneration: MutableMetadataGenerationConfigSchema.partial().optional(),
     thoth: MutableThothConfigSchema.partial().optional(),
+    providerControl: MutableProviderControlConfigSchema.partial().optional(),
     autoArchiveAfterMerge: z.boolean().optional(),
     enableTerminalAgentHooks: z.boolean().optional(),
     appendSystemPrompt: z.string().optional(),
@@ -321,6 +338,7 @@ export const ProviderSnapshotEntrySchema = z.object({
   label: z.string().optional(),
   description: z.string().optional(),
   defaultModeId: z.string().nullable().optional(),
+  planCapability: ProviderPlanCapabilitySchema.optional(),
 });
 
 const AgentCapabilityFlagsSchema: z.ZodType<AgentCapabilityFlags> = z
@@ -758,6 +776,7 @@ export const AgentSnapshotPayloadSchema = z.object({
   lastUserMessageAt: z.string().nullable(),
   status: AgentStatusSchema,
   capabilities: AgentCapabilityFlagsSchema,
+  planCapability: ProviderPlanCapabilitySchema.optional(),
   currentModeId: z.string().nullable(),
   availableModes: z.array(AgentModeSchema),
   pendingPermissions: z.array(AgentPermissionRequestPayloadSchema),
@@ -822,22 +841,6 @@ export type RecentProviderSessionDescriptorPayload = z.infer<
 // Session Inbound Messages (Session receives these)
 // ============================================================================
 
-export const VoiceAudioChunkMessageSchema = z.object({
-  type: z.literal("voice_audio_chunk"),
-  audio: z.string(), // base64 encoded
-  format: z.string(),
-  isLast: z.boolean(),
-});
-
-export const AbortRequestMessageSchema = z.object({
-  type: z.literal("abort_request"),
-});
-
-export const AudioPlayedMessageSchema = z.object({
-  type: z.literal("audio_played"),
-  id: z.string(),
-});
-
 const AgentDirectoryFilterSchema = z.object({
   labels: z.record(z.string(), z.string()).optional(),
   projectKeys: z.array(z.string()).optional(),
@@ -894,13 +897,6 @@ export const WorkspaceTitleSetRequestSchema = z.object({
   // Null or empty string clears the title and reverts to the derived name.
   title: z.string().nullable(),
   requestId: z.string(),
-});
-
-export const SetVoiceModeMessageSchema = z.object({
-  type: z.literal("set_voice_mode"),
-  enabled: z.boolean(),
-  agentId: z.string().optional(),
-  requestId: z.string().optional(),
 });
 
 export const GitHubPrAttachmentSchema = z.object({
@@ -1127,6 +1123,7 @@ export const SendAgentMessageRequestSchema = z.object({
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: AgentAttachmentsSchema,
   thoth: ThothTurnSnapshotSchema.optional(),
+  providerRunMode: ProviderRunModeSchema.optional(),
   contextRefs: z.array(TaskContextReferenceSchema).default([]),
 });
 
@@ -1183,35 +1180,6 @@ export const WriteProjectConfigRequestMessageSchema = z.object({
   expectedRevision: ThothConfigRevisionSchema.nullable(),
 });
 
-// ============================================================================
-// Dictation Streaming (lossless, resumable)
-// ============================================================================
-
-export const DictationStreamStartMessageSchema = z.object({
-  type: z.literal("dictation_stream_start"),
-  dictationId: z.string(),
-  format: z.string(), // e.g. "audio/pcm;rate=16000;bits=16"
-});
-
-export const DictationStreamChunkMessageSchema = z.object({
-  type: z.literal("dictation_stream_chunk"),
-  dictationId: z.string(),
-  seq: z.number().int().nonnegative(),
-  audio: z.string(), // base64 encoded chunk
-  format: z.string(), // e.g. "audio/pcm;rate=16000;bits=16"
-});
-
-export const DictationStreamFinishMessageSchema = z.object({
-  type: z.literal("dictation_stream_finish"),
-  dictationId: z.string(),
-  finalSeq: z.number().int().nonnegative(),
-});
-
-export const DictationStreamCancelMessageSchema = z.object({
-  type: z.literal("dictation_stream_cancel"),
-  dictationId: z.string(),
-});
-
 const GitSetupOptionsSchema = z.object({
   baseBranch: z.string().optional(),
   createNewBranch: z.boolean().optional(),
@@ -1252,6 +1220,7 @@ export const CreateAgentRequestMessageSchema = z
     worktreeName: z.string().optional(),
     initialPrompt: z.string().optional(),
     thoth: ThothTurnSnapshotSchema.optional(),
+    providerRunMode: ProviderRunModeSchema.optional(),
     contextRefs: z.array(TaskContextReferenceSchema).default([]),
     clientMessageId: z.string().optional(),
     outputSchema: z.record(z.string(), z.unknown()).optional(),
@@ -1516,20 +1485,6 @@ export const WorkspaceTitleSetResponsePayloadSchema = z.object({
 export const WorkspaceTitleSetResponseSchema = z.object({
   type: z.literal("workspace.title.set.response"),
   payload: WorkspaceTitleSetResponsePayloadSchema,
-});
-
-export const SetVoiceModeResponseMessageSchema = z.object({
-  type: z.literal("set_voice_mode_response"),
-  payload: z.object({
-    requestId: z.string(),
-    enabled: z.boolean(),
-    agentId: z.string().nullable(),
-    accepted: z.boolean(),
-    error: z.string().nullable(),
-    reasonCode: z.string().optional(),
-    retryable: z.boolean().optional(),
-    missingModelIds: z.array(z.string()).optional(),
-  }),
 });
 
 export const AgentPermissionResponseMessageSchema = z.object({
@@ -2126,9 +2081,6 @@ export const CaptureTerminalRequestSchema = z.object({
 });
 
 export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
-  VoiceAudioChunkMessageSchema,
-  AbortRequestMessageSchema,
-  AudioPlayedMessageSchema,
   FetchAgentsRequestMessageSchema,
   FetchAgentHistoryRequestMessageSchema,
   FetchRecentProviderSessionsRequestMessageSchema,
@@ -2141,7 +2093,6 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProjectRenameRequestSchema,
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
-  SetVoiceModeMessageSchema,
   SendAgentMessageRequestSchema,
   WaitForFinishRequestSchema,
   DaemonGetStatusRequestSchema,
@@ -2152,10 +2103,6 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SetDaemonConfigRequestMessageSchema,
   ReadProjectConfigRequestMessageSchema,
   WriteProjectConfigRequestMessageSchema,
-  DictationStreamStartMessageSchema,
-  DictationStreamChunkMessageSchema,
-  DictationStreamFinishMessageSchema,
-  DictationStreamCancelMessageSchema,
   CreateAgentRequestMessageSchema,
   ListProviderModelsRequestMessageSchema,
   ListProviderModesRequestMessageSchema,
@@ -2261,6 +2208,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   TaskContextGetRequestSchema,
   TaskDecisionAnswerRequestSchema,
   ExecutionTimelineRequestSchema,
+  ExecutionApprovalResolveRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -2289,101 +2237,7 @@ export const AssistantChunkMessageSchema = z.object({
   }),
 });
 
-export const AudioOutputMessageSchema = z.object({
-  type: z.literal("audio_output"),
-  payload: z.object({
-    audio: z.string(), // base64 encoded
-    format: z.string(),
-    id: z.string(),
-    isVoiceMode: z.boolean(), // Mode when audio was generated (for drift protection)
-    groupId: z.string().optional(), // Logical utterance id
-    chunkIndex: z.number().int().nonnegative().optional(),
-    isLastChunk: z.boolean().optional(),
-  }),
-});
-
-export const TranscriptionResultMessageSchema = z.object({
-  type: z.literal("transcription_result"),
-  payload: z.object({
-    text: z.string(),
-    language: z.string().optional(),
-    duration: z.number().optional(),
-    requestId: z.string(), // Echoed back from request for tracking
-    avgLogprob: z.number().optional(),
-    isLowConfidence: z.boolean().optional(),
-    byteLength: z.number().optional(),
-    format: z.string().optional(),
-    debugRecordingPath: z.string().optional(),
-  }),
-});
-
-export const VoiceInputStateMessageSchema = z.object({
-  type: z.literal("voice_input_state"),
-  payload: z.object({
-    isSpeaking: z.boolean(),
-  }),
-});
-
-export const DictationStreamAckMessageSchema = z.object({
-  type: z.literal("dictation_stream_ack"),
-  payload: z.object({
-    dictationId: z.string(),
-    ackSeq: z.number().int(),
-  }),
-});
-
-export const DictationStreamFinishAcceptedMessageSchema = z.object({
-  type: z.literal("dictation_stream_finish_accepted"),
-  payload: z.object({
-    dictationId: z.string(),
-    timeoutMs: z.number().int().positive(),
-  }),
-});
-
-export const DictationStreamPartialMessageSchema = z.object({
-  type: z.literal("dictation_stream_partial"),
-  payload: z.object({
-    dictationId: z.string(),
-    text: z.string(),
-  }),
-});
-
-export const DictationStreamFinalMessageSchema = z.object({
-  type: z.literal("dictation_stream_final"),
-  payload: z.object({
-    dictationId: z.string(),
-    text: z.string(),
-    debugRecordingPath: z.string().optional(),
-  }),
-});
-
-export const DictationStreamErrorMessageSchema = z.object({
-  type: z.literal("dictation_stream_error"),
-  payload: z.object({
-    dictationId: z.string(),
-    error: z.string(),
-    retryable: z.boolean(),
-    reasonCode: z.string().optional(),
-    missingModelIds: z.array(z.string()).optional(),
-    debugRecordingPath: z.string().optional(),
-  }),
-});
-
-export const ServerCapabilityStateSchema = z.object({
-  enabled: z.boolean(),
-  reason: z.string(),
-});
-
-export const ServerVoiceCapabilitiesSchema = z.object({
-  dictation: ServerCapabilityStateSchema,
-  voice: ServerCapabilityStateSchema,
-});
-
-export const ServerCapabilitiesSchema = z
-  .object({
-    voice: ServerVoiceCapabilitiesSchema.optional(),
-  })
-  .passthrough();
+export const ServerCapabilitiesSchema = z.object({}).passthrough();
 
 const ServerInfoHostnameSchema = z.unknown().transform((value): string | null => {
   if (typeof value !== "string") {
@@ -3019,6 +2873,7 @@ export const FetchAgentResponseMessageSchema = z.object({
     agent: AgentSnapshotPayloadSchema.nullable(),
     project: ProjectPlacementPayloadSchema.nullable().optional(),
     error: z.string().nullable(),
+    errorCode: z.literal("agent_not_found").nullable().optional(),
   }),
 });
 
@@ -4287,14 +4142,6 @@ export type DaemonUpdateProgressMessage = z.infer<typeof DaemonUpdateProgressMes
 export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ActivityLogMessageSchema,
   AssistantChunkMessageSchema,
-  AudioOutputMessageSchema,
-  TranscriptionResultMessageSchema,
-  VoiceInputStateMessageSchema,
-  DictationStreamAckMessageSchema,
-  DictationStreamFinishAcceptedMessageSchema,
-  DictationStreamPartialMessageSchema,
-  DictationStreamFinalMessageSchema,
-  DictationStreamErrorMessageSchema,
   StatusMessageSchema,
   PongMessageSchema,
   RpcErrorMessageSchema,
@@ -4324,7 +4171,6 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceCreateResponseSchema,
   WorkspaceClearAttentionResponseSchema,
   SendAgentMessageResponseMessageSchema,
-  SetVoiceModeResponseMessageSchema,
   DaemonGetStatusResponseSchema,
   DaemonGetPairingOfferResponseSchema,
   DaemonIssueRelayDeviceTokenResponseSchema,
@@ -4426,6 +4272,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   TaskContextGetResponseSchema,
   TaskDecisionAnswerResponseSchema,
   ExecutionTimelineResponseSchema,
+  ExecutionApprovalResolveResponseSchema,
   WorkspaceAuthorityUpdateSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
@@ -4438,11 +4285,7 @@ export type ThothTurnAck = z.infer<typeof ThothTurnAckSchema>;
 // Type exports for individual message types
 export type ActivityLogMessage = z.infer<typeof ActivityLogMessageSchema>;
 export type AssistantChunkMessage = z.infer<typeof AssistantChunkMessageSchema>;
-export type AudioOutputMessage = z.infer<typeof AudioOutputMessageSchema>;
-export type TranscriptionResultMessage = z.infer<typeof TranscriptionResultMessageSchema>;
 export type StatusMessage = z.infer<typeof StatusMessageSchema>;
-export type ServerCapabilityState = z.infer<typeof ServerCapabilityStateSchema>;
-export type ServerVoiceCapabilities = z.infer<typeof ServerVoiceCapabilitiesSchema>;
 export type ServerCapabilities = z.infer<typeof ServerCapabilitiesSchema>;
 export type ServerInfoStatusPayload = z.infer<typeof ServerInfoStatusPayloadSchema>;
 export type RpcErrorMessage = z.infer<typeof RpcErrorMessageSchema>;
@@ -4493,7 +4336,6 @@ export type FetchAgentTimelineResponseMessage = z.infer<
 export type AgentForkContextResponseMessage = z.infer<typeof AgentForkContextResponseMessageSchema>;
 export type CancelAgentResponseMessage = z.infer<typeof CancelAgentResponseMessageSchema>;
 export type SendAgentMessageResponseMessage = z.infer<typeof SendAgentMessageResponseMessageSchema>;
-export type SetVoiceModeResponseMessage = z.infer<typeof SetVoiceModeResponseMessageSchema>;
 export type SetAgentModeResponseMessage = z.infer<typeof SetAgentModeResponseMessageSchema>;
 export type SetAgentModelResponseMessage = z.infer<typeof SetAgentModelResponseMessageSchema>;
 export type SetAgentThinkingResponseMessage = z.infer<typeof SetAgentThinkingResponseMessageSchema>;
@@ -4570,7 +4412,6 @@ export type ScheduleUpdateResponse = z.infer<typeof ScheduleUpdateResponseSchema
 export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;
 
 // Type exports for inbound message types
-export type VoiceAudioChunkMessage = z.infer<typeof VoiceAudioChunkMessageSchema>;
 export type FetchAgentsRequestMessage = z.infer<typeof FetchAgentsRequestMessageSchema>;
 export type FetchAgentHistoryRequestMessage = z.infer<typeof FetchAgentHistoryRequestMessageSchema>;
 export type FetchRecentProviderSessionsRequestMessage = z.infer<
@@ -4581,10 +4422,6 @@ export type FetchAgentRequestMessage = z.infer<typeof FetchAgentRequestMessageSc
 export type AgentForkContextRequestMessage = z.infer<typeof AgentForkContextRequestMessageSchema>;
 export type SendAgentMessageRequest = z.infer<typeof SendAgentMessageRequestSchema>;
 export type WaitForFinishRequest = z.infer<typeof WaitForFinishRequestSchema>;
-export type DictationStreamStartMessage = z.infer<typeof DictationStreamStartMessageSchema>;
-export type DictationStreamChunkMessage = z.infer<typeof DictationStreamChunkMessageSchema>;
-export type DictationStreamFinishMessage = z.infer<typeof DictationStreamFinishMessageSchema>;
-export type DictationStreamCancelMessage = z.infer<typeof DictationStreamCancelMessageSchema>;
 export type CreateAgentRequestMessage = z.infer<typeof CreateAgentRequestMessageSchema>;
 export type AgentAttachment = z.infer<typeof AgentAttachmentSchema>;
 export type UploadedFileAttachment = z.infer<typeof UploadedFileAttachmentSchema>;
@@ -4786,7 +4623,6 @@ export const WSHelloMessageSchema = z.object({
   appVersion: z.string().optional(),
   capabilities: z
     .object({
-      voice: z.boolean().optional(),
       pushNotifications: z.boolean().optional(),
       [CLIENT_CAPS.reasoningMergeEnum]: z.boolean().optional(),
       [CLIENT_CAPS.customModeIcons]: z.boolean().optional(),
@@ -4794,11 +4630,6 @@ export const WSHelloMessageSchema = z.object({
     })
     .passthrough()
     .optional(),
-});
-
-export const WSRecordingStateMessageSchema = z.object({
-  type: z.literal("recording_state"),
-  isRecording: z.boolean(),
 });
 
 // Wrapped session message
@@ -4816,7 +4647,6 @@ export const WSSessionOutboundSchema = z.object({
 export const WSInboundMessageSchema = z.discriminatedUnion("type", [
   WSPingMessageSchema,
   WSHelloMessageSchema,
-  WSRecordingStateMessageSchema,
   WSSessionInboundSchema,
 ]);
 
@@ -4841,7 +4671,7 @@ export function extractSessionMessage(wsMsg: WSInboundMessage): SessionInboundMe
   if (wsMsg.type === "session") {
     return wsMsg.message;
   }
-  // Ping and recording_state are WS-level only
+  // Ping is WebSocket-level only.
   return null;
 }
 

@@ -39,8 +39,6 @@ export function getFeatureHighlightColor(featureId: string): FeatureHighlightCol
       return "yellow";
     case "auto_accept":
       return "green";
-    case "plan_mode":
-      return "blue";
     default:
       return "default";
   }

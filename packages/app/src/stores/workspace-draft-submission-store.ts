@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { ComposerAttachment } from "@/attachments/types";
 import type { AgentProvider } from "@thoth/protocol/agent-types";
 import type { ThothTurnSnapshot } from "@thoth/protocol/messages";
+import type { ProviderRunMode } from "@thoth/protocol/provider-control";
 import type { WorkspaceDraftTabSetup } from "@/stores/workspace-tabs-store";
 
 export interface PendingWorkspaceDraftSubmission {
@@ -13,6 +14,7 @@ export interface PendingWorkspaceDraftSubmission {
   cwd: string;
   provider: AgentProvider;
   thoth: ThothTurnSnapshot;
+  providerRunMode: ProviderRunMode;
   clientMessageId: string;
   timestamp: number;
   modeId?: string;

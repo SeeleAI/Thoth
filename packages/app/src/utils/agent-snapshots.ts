@@ -38,6 +38,7 @@ export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayload, serverId:
     lastUserMessageAt,
     lastActivityAt: updatedAt,
     capabilities: snapshot.capabilities,
+    planCapability: snapshot.planCapability,
     currentModeId: snapshot.currentModeId,
     availableModes: snapshot.availableModes ?? [],
     pendingPermissions: snapshot.pendingPermissions ?? [],

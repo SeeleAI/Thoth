@@ -153,10 +153,7 @@ const SHORTCUT_HELP_LABEL_KEYS: Record<string, string> = {
   "cycle-theme": "settings.shortcuts.help.cycleTheme",
   "focus-message-input": "settings.shortcuts.help.focusMessageInput",
   "cycle-agent-mode": "settings.shortcuts.help.cycleAgentMode",
-  "voice-toggle": "settings.shortcuts.help.toggleVoiceMode",
-  "dictation-toggle": "settings.shortcuts.help.startStopDictation",
   "agent-interrupt": "settings.shortcuts.help.interruptAgent",
-  "voice-mute-toggle": "settings.shortcuts.help.muteUnmuteVoiceMode",
 };
 
 const SHORTCUT_HELP_NOTE_KEYS: Record<string, string> = {
@@ -926,60 +923,6 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     },
   },
   {
-    id: "message-input-voice-toggle-cmd-shift-d-mac",
-    action: "message-input.action",
-    combo: "Cmd+Shift+D",
-    repeat: false,
-    when: { mac: true, commandCenter: false, terminal: false },
-    payload: { type: "message-input", kind: "voice-toggle" },
-    help: {
-      id: "voice-toggle",
-      section: "agent-input",
-      label: "Toggle voice mode",
-      keys: ["mod", "shift", "D"],
-    },
-  },
-  {
-    id: "message-input-voice-toggle-ctrl-shift-d-non-mac",
-    action: "message-input.action",
-    combo: "Ctrl+Shift+D",
-    repeat: false,
-    when: { mac: false, commandCenter: false, terminal: false },
-    payload: { type: "message-input", kind: "voice-toggle" },
-    help: {
-      id: "voice-toggle",
-      section: "agent-input",
-      label: "Toggle voice mode",
-      keys: ["mod", "shift", "D"],
-    },
-  },
-  {
-    id: "message-input-dictation-toggle-cmd-d-mac",
-    action: "message-input.action",
-    combo: "Cmd+D",
-    when: { mac: true, commandCenter: false, terminal: false },
-    payload: { type: "message-input", kind: "dictation-toggle" },
-    help: {
-      id: "dictation-toggle",
-      section: "agent-input",
-      label: "Start/stop dictation",
-      keys: ["mod", "D"],
-    },
-  },
-  {
-    id: "message-input-dictation-toggle-ctrl-d-non-mac",
-    action: "message-input.action",
-    combo: "Ctrl+D",
-    when: { mac: false, commandCenter: false, terminal: false },
-    payload: { type: "message-input", kind: "dictation-toggle" },
-    help: {
-      id: "dictation-toggle",
-      section: "agent-input",
-      label: "Start/stop dictation",
-      keys: ["mod", "D"],
-    },
-  },
-  {
     id: "agent-interrupt",
     action: "agent.interrupt",
     combo: "Escape",
@@ -991,28 +934,6 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
       section: "agent-input",
       label: "Interrupt agent",
       keys: ["Esc"],
-    },
-  },
-  {
-    id: "message-input-dictation-confirm-enter",
-    action: "message-input.action",
-    combo: "Enter",
-    when: { commandCenter: false, terminal: false },
-    payload: { type: "message-input", kind: "dictation-confirm" },
-  },
-
-  {
-    id: "message-input-voice-mute-toggle",
-    action: "message-input.action",
-    combo: "Space",
-    repeat: false,
-    when: { commandCenter: false, focusScope: "other" },
-    payload: { type: "message-input", kind: "voice-mute-toggle" },
-    help: {
-      id: "voice-mute-toggle",
-      section: "agent-input",
-      label: "Mute/unmute voice mode",
-      keys: ["Space"],
     },
   },
 ];

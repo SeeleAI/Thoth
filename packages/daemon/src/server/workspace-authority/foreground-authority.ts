@@ -3,6 +3,7 @@ import type {
   AgentThothState,
   ThothCardAnswerPayload,
 } from "@thoth/protocol/thoth/rpc-schemas";
+import type { ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
 import type { WorkspaceAuthorityManager } from "./workspace-authority-manager.js";
 import type {
   AnswerForegroundCardResult,
@@ -58,6 +59,19 @@ export class WorkspaceForegroundAuthority {
     providerTurnId: string;
   }): boolean {
     return this.manager.forAgent(input.agentId)?.bindForegroundProviderTurn(input) ?? false;
+  }
+
+  recordRunModeReceipt(input: {
+    agentId: string;
+    turnId: string;
+    generation: string;
+    receipt: ProviderRunModeReceipt;
+  }): ForegroundTurnAuthorityRecord {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) {
+      throw new Error(`Agent ${input.agentId} is not bound to a Workspace authority`);
+    }
+    return store.recordForegroundRunModeReceipt(input);
   }
 
   openCard(input: {

@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
+  ExecutionApprovalProjectionSchema,
   ExecutionProjectionSchema,
   HumanDecisionRecordSchema,
   TaskBlackboardEntrySchema,
@@ -10,6 +11,8 @@ import {
   TaskProjectionSchema,
   TaskUserDecisionProjectionSchema,
   type ExecutionLifecycle,
+  type ExecutionApprovalDecision,
+  type ExecutionApprovalProjection,
   type ExecutionProjection,
   type HumanDecisionRecord,
   type RuntimeAttachmentProjection,
@@ -20,7 +23,12 @@ import {
   type TaskProjection,
   type TaskUserDecisionProjection,
 } from "@thoth/protocol/task-authority";
-import type { RuntimeAttachmentReceipt } from "@thoth/drivers/harness";
+import type { HarnessApprovalRequest, RuntimeAttachmentReceipt } from "@thoth/drivers/harness";
+import {
+  ProviderRunModeReceiptSchema,
+  ProviderRunModeSchema,
+  type ProviderRunModeReceipt,
+} from "@thoth/protocol/provider-control";
 import { parseStoredAgentRecord, type StoredAgentRecord } from "../agent/agent-storage.js";
 import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import type { AgentTimelineRow } from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
@@ -105,11 +113,40 @@ interface ExecutionRow extends Record<string, unknown> {
   provider_thread_id: string | null;
   status: string;
   generation: string;
+  run_mode_receipt_json: string | null;
   started_at: string | null;
   last_activity_at: string | null;
   completed_at: string | null;
   summary: string | null;
   revision: number;
+}
+
+interface ExecutionApprovalRow extends Record<string, unknown> {
+  approval_id: string;
+  provider_request_id: string;
+  task_id: string;
+  execution_id: string;
+  generation: string;
+  kind: string;
+  title: string;
+  description: string | null;
+  displayed_digest: string;
+  auto_approve_eligible: number;
+  deadline_at: string | null;
+  status: string;
+  resolution_decision: string | null;
+  resolution_actor_id: string | null;
+  resolved_at: string | null;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExecutionApprovalAuthorityResult {
+  task: TaskProjection;
+  execution: ExecutionProjection;
+  approval: ExecutionApprovalProjection;
+  duplicate: boolean;
 }
 
 export interface TaskRuntimeMetadata {
@@ -287,6 +324,8 @@ export class WorkspaceAuthorityStore {
         status TEXT NOT NULL,
         turn_kind TEXT NOT NULL DEFAULT 'raw',
         controls_json TEXT,
+        provider_run_mode TEXT NOT NULL DEFAULT 'default',
+        provider_mode_receipt_json TEXT,
         source_message_id TEXT,
         workspace_path TEXT,
         user_text_digest TEXT,
@@ -395,6 +434,7 @@ export class WorkspaceAuthorityStore {
         provider_thread_id TEXT,
         status TEXT NOT NULL,
         generation TEXT NOT NULL,
+        run_mode_receipt_json TEXT,
         started_at TEXT,
         last_activity_at TEXT,
         completed_at TEXT,
@@ -406,6 +446,31 @@ export class WorkspaceAuthorityStore {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS execution_attempts_task_time
         ON execution_attempts(task_id, started_at DESC);
+      CREATE TABLE IF NOT EXISTS execution_approvals (
+        approval_id TEXT PRIMARY KEY NOT NULL,
+        provider_request_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        execution_id TEXT NOT NULL,
+        generation TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        displayed_digest TEXT NOT NULL,
+        auto_approve_eligible INTEGER NOT NULL CHECK(auto_approve_eligible IN (0, 1)),
+        deadline_at TEXT,
+        status TEXT NOT NULL CHECK(status IN ('pending', 'allowed', 'denied', 'canceled')),
+        resolution_decision TEXT,
+        resolution_actor_id TEXT,
+        resolved_at TEXT,
+        revision INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
+        FOREIGN KEY(execution_id) REFERENCES execution_attempts(execution_id) ON DELETE CASCADE,
+        UNIQUE(execution_id, provider_request_id)
+      ) STRICT;
+      CREATE UNIQUE INDEX IF NOT EXISTS execution_approvals_one_pending
+        ON execution_approvals(execution_id) WHERE status = 'pending';
       CREATE TABLE IF NOT EXISTS runtime_attachments (
         attachment_id TEXT PRIMARY KEY NOT NULL,
         execution_id TEXT NOT NULL UNIQUE,
@@ -555,6 +620,8 @@ export class WorkspaceAuthorityStore {
     this.ensureColumn("agents", "internal", "INTEGER");
     this.ensureColumn("agents", "archived_at", "TEXT");
     this.ensureColumn("turns", "turn_kind", "TEXT NOT NULL DEFAULT 'raw'");
+    this.ensureColumn("turns", "provider_run_mode", "TEXT NOT NULL DEFAULT 'default'");
+    this.ensureColumn("turns", "provider_mode_receipt_json", "TEXT");
     this.ensureColumn("turns", "source_message_id", "TEXT");
     this.ensureColumn("turns", "workspace_path", "TEXT");
     this.ensureColumn("turns", "provider_turn_id", "TEXT");
@@ -574,6 +641,7 @@ export class WorkspaceAuthorityStore {
     this.ensureColumn("tasks", "tool_call_count", "INTEGER NOT NULL DEFAULT 0");
     this.ensureColumn("tasks", "pending_control", "TEXT");
     this.ensureColumn("tasks", "goals_revision", "INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("execution_attempts", "run_mode_receipt_json", "TEXT");
     this.ensureColumn("context_bindings", "context_digest", "TEXT");
     this.database.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS turns_agent_source_message
@@ -586,6 +654,12 @@ export class WorkspaceAuthorityStore {
       .prepare(
         `INSERT OR IGNORE INTO authority_schema_migrations(version, checksum, applied_at)
          VALUES (1, 'workspace-task-authority-v1', ?)`,
+      )
+      .run(nowIso());
+    this.database
+      .prepare(
+        `INSERT OR IGNORE INTO authority_schema_migrations(version, checksum, applied_at)
+         VALUES (3, 'provider-control-approvals-v3', ?)`,
       )
       .run(nowIso());
     this.database
@@ -645,7 +719,9 @@ export class WorkspaceAuthorityStore {
       const authority = this.getForegroundAgentRow(input.agentId);
       if (
         authority &&
-        ["running", "awaiting_card", "quick_exec"].includes(authority.thoth_lifecycle)
+        ["running", "awaiting_card", "awaiting_implementation", "quick_exec"].includes(
+          authority.thoth_lifecycle,
+        )
       ) {
         throw new WorkspaceAuthorityConflictError(
           `Agent ${input.agentId} already has an active foreground turn.`,
@@ -669,9 +745,10 @@ export class WorkspaceAuthorityStore {
         .prepare(
           `INSERT INTO turns(
              turn_id, agent_id, task_id, provider_thread_id, generation, status, turn_kind,
-             controls_json, source_message_id, workspace_path, user_text_digest,
+             controls_json, provider_run_mode, provider_mode_receipt_json,
+             source_message_id, workspace_path, user_text_digest,
              provider_turn_id, background_task_id, error, created_at, updated_at
-           ) VALUES (?, ?, NULL, NULL, ?, 'running', ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
+           ) VALUES (?, ?, NULL, NULL, ?, 'running', ?, ?, ?, NULL, ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
         )
         .run(
           turnId,
@@ -679,6 +756,7 @@ export class WorkspaceAuthorityStore {
           generation,
           input.kind,
           controls ? JSON.stringify(controls) : null,
+          input.providerRunMode ?? "default",
           input.sourceMessageId ?? null,
           input.workspacePath,
           userText.digest,
@@ -753,6 +831,25 @@ export class WorkspaceAuthorityStore {
       )
       .run(input.providerTurnId, nowIso(), input.turnId, input.agentId, input.generation);
     return result.changes === 1;
+  }
+
+  recordForegroundRunModeReceipt(input: {
+    agentId: string;
+    turnId: string;
+    generation: string;
+    receipt: ProviderRunModeReceipt;
+  }): ForegroundTurnAuthorityRecord {
+    const receipt = ProviderRunModeReceiptSchema.parse(input.receipt);
+    const updated = this.database
+      .prepare(
+        `UPDATE turns SET provider_mode_receipt_json = ?, updated_at = ?
+         WHERE turn_id = ? AND agent_id = ? AND generation = ?`,
+      )
+      .run(JSON.stringify(receipt), nowIso(), input.turnId, input.agentId, input.generation);
+    if (updated.changes !== 1) {
+      throw new WorkspaceAuthorityConflictError("Foreground turn changed before mode receipt.");
+    }
+    return this.getForegroundTurnInTransaction(input.turnId)!;
   }
 
   openForegroundCard(input: {
@@ -1431,8 +1528,9 @@ export class WorkspaceAuthorityStore {
         .prepare(
           `INSERT INTO execution_attempts(
              execution_id, task_id, goal_id, phase_run_id, phase_kind, provider_thread_id,
-             status, generation, started_at, last_activity_at, completed_at, summary, revision
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             status, generation, run_mode_receipt_json,
+             started_at, last_activity_at, completed_at, summary, revision
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           execution.id,
@@ -1443,6 +1541,7 @@ export class WorkspaceAuthorityStore {
           execution.providerThreadId,
           execution.status,
           execution.generation,
+          execution.runModeReceipt ? JSON.stringify(execution.runModeReceipt) : null,
           execution.startedAt,
           execution.lastActivityAt,
           execution.completedAt,
@@ -1624,6 +1723,409 @@ export class WorkspaceAuthorityStore {
       this.emit([updated.taskId], [updated.id]);
     }
     return updated;
+  }
+
+  recordExecutionRunModeReceipt(input: {
+    executionId: string;
+    generation: string;
+    expectedRevision: number;
+    receipt: ProviderRunModeReceipt;
+    status: Extract<ExecutionLifecycle, "planning" | "running">;
+  }): ExecutionProjection | null {
+    const receipt = ProviderRunModeReceiptSchema.parse(input.receipt);
+    let changed = false;
+    this.transaction(() => {
+      const current = this.getExecution(input.executionId);
+      if (
+        !current ||
+        current.generation !== input.generation ||
+        current.revision !== input.expectedRevision ||
+        current.status !== "starting"
+      ) {
+        return;
+      }
+      const now = nowIso();
+      const result = this.database
+        .prepare(
+          `UPDATE execution_attempts SET run_mode_receipt_json = ?, status = ?,
+             last_activity_at = ?, revision = revision + 1
+           WHERE execution_id = ? AND generation = ? AND revision = ? AND status = 'starting'`,
+        )
+        .run(
+          JSON.stringify(receipt),
+          input.status,
+          now,
+          input.executionId,
+          input.generation,
+          input.expectedRevision,
+        );
+      if (result.changes !== 1) {
+        return;
+      }
+      changed = true;
+      this.appendEventInTransaction({
+        aggregateType: "execution",
+        aggregateId: input.executionId,
+        revision: input.expectedRevision + 1,
+        kind: "execution_provider_mode_applied",
+        payload: {
+          requestedMode: receipt.requestedMode,
+          status: receipt.status,
+          nativeModeId: receipt.nativeModeId,
+        },
+      });
+    });
+    const updated = changed ? this.getExecution(input.executionId) : null;
+    if (updated) {
+      this.emit([updated.taskId], [updated.id]);
+    }
+    return updated;
+  }
+
+  createExecutionApproval(input: {
+    executionId: string;
+    generation: string;
+    request: HarnessApprovalRequest;
+    deadlineAt: string | null;
+  }): ExecutionApprovalProjection {
+    if (input.request.kind === "question" || !input.request.autoApproveEligible) {
+      throw new Error("Provider questions cannot enter the execution approval authority.");
+    }
+    let approvalId: string | null = null;
+    let taskId: string | null = null;
+    this.transaction(() => {
+      const existing = this.database
+        .prepare(
+          `SELECT * FROM execution_approvals
+           WHERE execution_id = ? AND provider_request_id = ?`,
+        )
+        .get(input.executionId, input.request.id) as ExecutionApprovalRow | undefined;
+      if (existing) {
+        approvalId = existing.approval_id;
+        taskId = existing.task_id;
+        return;
+      }
+      const execution = this.getExecution(input.executionId);
+      const task = execution ? this.getTask(execution.taskId) : null;
+      if (
+        !execution ||
+        !task ||
+        execution.generation !== input.generation ||
+        task.currentExecutionId !== execution.id ||
+        task.status === "stopping" ||
+        ["canceled", "succeeded", "failed", "orphaned"].includes(execution.status)
+      ) {
+        throw new WorkspaceAuthorityConflictError(
+          "Execution changed before the provider approval could be recorded.",
+        );
+      }
+      const pending = this.database
+        .prepare(
+          "SELECT approval_id FROM execution_approvals WHERE execution_id = ? AND status = 'pending'",
+        )
+        .get(execution.id) as { approval_id: string } | undefined;
+      if (pending) {
+        throw new WorkspaceAuthorityConflictError(
+          `Execution ${execution.id} already has pending approval ${pending.approval_id}.`,
+        );
+      }
+      const now = nowIso();
+      approvalId = `execution-approval-${randomUUID()}`;
+      taskId = execution.taskId;
+      const displayed = this.blobs.putJson(input.request.displayed);
+      this.database
+        .prepare(
+          `INSERT INTO execution_approvals(
+             approval_id, provider_request_id, task_id, execution_id, generation,
+             kind, title, description, displayed_digest, auto_approve_eligible,
+             deadline_at, status, resolution_decision, resolution_actor_id,
+             resolved_at, revision, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'pending', NULL, NULL, NULL, 1, ?, ?)`,
+        )
+        .run(
+          approvalId,
+          input.request.id,
+          execution.taskId,
+          execution.id,
+          execution.generation,
+          input.request.kind,
+          input.request.title,
+          input.request.description,
+          displayed.digest,
+          input.deadlineAt,
+          now,
+          now,
+        );
+      const nextStatus: ExecutionLifecycle =
+        input.request.kind === "implement" ? "awaiting_implementation" : "awaiting_user";
+      this.database
+        .prepare(
+          `UPDATE execution_attempts SET status = ?, last_activity_at = ?, revision = revision + 1
+           WHERE execution_id = ? AND generation = ?`,
+        )
+        .run(nextStatus, now, execution.id, execution.generation);
+      this.database
+        .prepare(
+          `UPDATE tasks SET summary = ?, revision = revision + 1, updated_at = ?
+           WHERE task_id = ?`,
+        )
+        .run(
+          input.request.kind === "implement"
+            ? "Native Plan is ready for implementation approval."
+            : "Provider approval is waiting for a user decision.",
+          now,
+          execution.taskId,
+        );
+      this.appendEventInTransaction({
+        aggregateType: "execution_approval",
+        aggregateId: approvalId,
+        revision: 1,
+        kind: "execution_approval_requested",
+        payload: {
+          taskId: execution.taskId,
+          executionId: execution.id,
+          kind: input.request.kind,
+          deadlineAt: input.deadlineAt,
+        },
+      });
+    });
+    if (!approvalId || !taskId) {
+      throw new Error("Execution approval was not recorded.");
+    }
+    const approval = this.getExecutionApproval(approvalId);
+    if (!approval) {
+      throw new Error(`Execution approval ${approvalId} disappeared after commit.`);
+    }
+    this.emit([taskId], [input.executionId]);
+    this.syncTaskLocator(this.getTask(taskId)!);
+    return approval;
+  }
+
+  getExecutionApproval(approvalId: string): ExecutionApprovalProjection | null {
+    const row = this.database
+      .prepare("SELECT * FROM execution_approvals WHERE approval_id = ?")
+      .get(approvalId) as ExecutionApprovalRow | undefined;
+    return row ? this.toExecutionApprovalProjection(row) : null;
+  }
+
+  getPendingExecutionApproval(executionId: string): ExecutionApprovalProjection | null {
+    const row = this.database
+      .prepare(
+        `SELECT * FROM execution_approvals
+         WHERE execution_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 1`,
+      )
+      .get(executionId) as ExecutionApprovalRow | undefined;
+    return row ? this.toExecutionApprovalProjection(row) : null;
+  }
+
+  getLatestExecutionApproval(executionId: string): ExecutionApprovalProjection | null {
+    const row = this.database
+      .prepare(
+        `SELECT * FROM execution_approvals
+         WHERE execution_id = ? ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(executionId) as ExecutionApprovalRow | undefined;
+    return row ? this.toExecutionApprovalProjection(row) : null;
+  }
+
+  getProviderApprovalRequestId(approvalId: string): string | null {
+    const row = this.database
+      .prepare("SELECT provider_request_id FROM execution_approvals WHERE approval_id = ?")
+      .get(approvalId) as { provider_request_id: string } | undefined;
+    return row?.provider_request_id ?? null;
+  }
+
+  resolveExecutionApproval(input: {
+    taskId: string;
+    executionId: string;
+    approvalId: string;
+    decision: ExecutionApprovalDecision;
+    expectedRevision: number;
+    commandId: string;
+    actorId: string;
+    clientId: string;
+    deviceId?: string | null;
+    recordHumanDecision: boolean;
+  }): ExecutionApprovalAuthorityResult {
+    let result!: ExecutionApprovalAuthorityResult;
+    this.transaction(() => {
+      const duplicate = this.database
+        .prepare("SELECT result_json FROM authority_commands WHERE command_id = ?")
+        .get(input.commandId) as { result_json: string } | undefined;
+      if (duplicate) {
+        const stored = JSON.parse(duplicate.result_json) as {
+          taskId: string;
+          executionId: string;
+          approvalId: string;
+        };
+        const task = this.getTask(stored.taskId);
+        const execution = this.getExecution(stored.executionId);
+        const approval = this.getExecutionApproval(stored.approvalId);
+        if (!task || !execution || !approval) {
+          throw new Error("Recorded execution approval result is incomplete.");
+        }
+        result = { task, execution, approval, duplicate: true };
+        return;
+      }
+
+      const task = this.getTask(input.taskId);
+      const execution = this.getExecution(input.executionId);
+      const row = this.database
+        .prepare("SELECT * FROM execution_approvals WHERE approval_id = ?")
+        .get(input.approvalId) as ExecutionApprovalRow | undefined;
+      if (
+        !task ||
+        !execution ||
+        !row ||
+        execution.taskId !== task.id ||
+        row.task_id !== task.id ||
+        row.execution_id !== execution.id
+      ) {
+        throw new Error("Execution approval does not belong to the requested Task.");
+      }
+      if (
+        row.status !== "pending" ||
+        row.revision !== input.expectedRevision ||
+        row.generation !== execution.generation ||
+        task.currentExecutionId !== execution.id ||
+        task.status === "stopping"
+      ) {
+        throw new WorkspaceAuthorityConflictError(
+          "Execution approval changed before this decision was committed.",
+        );
+      }
+      if (row.kind === "implement" && !["implement", "deny"].includes(input.decision)) {
+        throw new Error("A native Plan approval requires Implement or Deny.");
+      }
+      if (row.kind !== "implement" && input.decision === "implement") {
+        throw new Error("Implement is only valid for a native Plan approval.");
+      }
+
+      const now = nowIso();
+      const approvalStatus = input.decision === "deny" ? "denied" : "allowed";
+      const approvalUpdate = this.database
+        .prepare(
+          `UPDATE execution_approvals SET status = ?, resolution_decision = ?,
+             resolution_actor_id = ?, resolved_at = ?, revision = revision + 1, updated_at = ?
+           WHERE approval_id = ? AND status = 'pending' AND revision = ?`,
+        )
+        .run(
+          approvalStatus,
+          input.decision,
+          input.actorId,
+          now,
+          now,
+          input.approvalId,
+          input.expectedRevision,
+        );
+      if (approvalUpdate.changes !== 1) {
+        throw new WorkspaceAuthorityConflictError("Another approval decision won the CAS race.");
+      }
+
+      const denied = input.decision === "deny";
+      const nextExecutionStatus: ExecutionLifecycle = denied
+        ? "failed"
+        : row.kind === "implement"
+          ? "implementing"
+          : "awaiting_provider";
+      this.database
+        .prepare(
+          `UPDATE execution_attempts SET status = ?, last_activity_at = ?,
+             completed_at = ?, summary = ?, revision = revision + 1
+           WHERE execution_id = ? AND generation = ?`,
+        )
+        .run(
+          nextExecutionStatus,
+          now,
+          denied ? now : null,
+          denied ? "Provider approval was denied." : execution.summary,
+          execution.id,
+          execution.generation,
+        );
+      const nextTaskRevision = task.revision + 1;
+      this.database
+        .prepare(
+          `UPDATE tasks SET status = ?, summary = ?, current_execution_id = ?,
+             revision = ?, updated_at = ? WHERE task_id = ? AND revision = ?`,
+        )
+        .run(
+          denied ? "interrupted" : "running",
+          denied
+            ? "Provider approval was denied; resume reruns this phase."
+            : row.kind === "implement"
+              ? "Native Plan approved; implementation is running."
+              : "Provider approval resolved; execution is continuing.",
+          denied ? null : execution.id,
+          nextTaskRevision,
+          now,
+          task.id,
+          task.revision,
+        );
+      if (input.recordHumanDecision) {
+        this.appendDecisionInTransaction({
+          taskId: task.id,
+          turnId: null,
+          cardId: null,
+          kind: "execution_approval",
+          displayed: this.blobs.readJson(row.displayed_digest),
+          rawAnswer: { decision: input.decision },
+          normalized: {
+            approvalId: input.approvalId,
+            executionId: execution.id,
+            kind: row.kind,
+            decision: input.decision,
+          },
+          actorId: input.actorId,
+          clientId: input.clientId,
+          deviceId: input.deviceId ?? null,
+          commandId: input.commandId,
+          expectedRevision: input.expectedRevision,
+          resultRevision: nextTaskRevision,
+          supersedesDecisionId: null,
+          fidelity: "exact",
+        });
+      }
+      this.appendEventInTransaction({
+        aggregateType: "execution_approval",
+        aggregateId: input.approvalId,
+        revision: input.expectedRevision + 1,
+        kind: `execution_approval_${approvalStatus}`,
+        payload: {
+          taskId: task.id,
+          executionId: execution.id,
+          decision: input.decision,
+          actorId: input.actorId,
+        },
+        causationId: input.commandId,
+      });
+      this.database
+        .prepare(
+          `INSERT INTO authority_commands(
+             command_id, aggregate_type, aggregate_id, command_kind,
+             result_revision, result_json, created_at
+           ) VALUES (?, 'execution_approval', ?, 'resolve', ?, ?, ?)`,
+        )
+        .run(
+          input.commandId,
+          input.approvalId,
+          input.expectedRevision + 1,
+          JSON.stringify({
+            taskId: task.id,
+            executionId: execution.id,
+            approvalId: input.approvalId,
+          }),
+          now,
+        );
+      result = {
+        task: this.getTask(task.id)!,
+        execution: this.getExecution(execution.id)!,
+        approval: this.getExecutionApproval(input.approvalId)!,
+        duplicate: false,
+      };
+    });
+    this.emit([input.taskId], [input.executionId]);
+    this.syncTaskLocator(result.task);
+    return result;
   }
 
   acceptPlanExecResult(input: {
@@ -1983,7 +2485,11 @@ export class WorkspaceAuthorityStore {
     if (execution.status === "awaiting_provider") {
       return execution;
     }
-    if (execution.status !== "starting" && execution.status !== "running") {
+    if (
+      execution.status !== "starting" &&
+      execution.status !== "running" &&
+      execution.status !== "implementing"
+    ) {
       return null;
     }
     return this.updateExecution({
@@ -2325,10 +2831,18 @@ export class WorkspaceAuthorityStore {
       let execution = task.currentExecutionId ? this.getExecution(task.currentExecutionId) : null;
       if (
         execution &&
-        ["created", "starting", "running", "awaiting_provider", "awaiting_user"].includes(
-          execution.status,
-        )
+        [
+          "created",
+          "starting",
+          "planning",
+          "awaiting_implementation",
+          "implementing",
+          "running",
+          "awaiting_provider",
+          "awaiting_user",
+        ].includes(execution.status)
       ) {
+        this.cancelPendingExecutionApprovalsInTransaction(execution.id, now);
         this.database
           .prepare(
             `UPDATE execution_attempts SET status = 'cancel_requested', revision = revision + 1,
@@ -2442,9 +2956,16 @@ export class WorkspaceAuthorityStore {
       const execution = task.currentExecutionId ? this.getExecution(task.currentExecutionId) : null;
       const hasActiveExecution =
         execution !== null &&
-        ["created", "starting", "running", "awaiting_provider", "awaiting_user"].includes(
-          execution.status,
-        );
+        [
+          "created",
+          "starting",
+          "planning",
+          "awaiting_implementation",
+          "implementing",
+          "running",
+          "awaiting_provider",
+          "awaiting_user",
+        ].includes(execution.status);
       let status = task.status;
       let summary = task.summary;
       let pendingControl: TaskCommand | null = null;
@@ -3096,7 +3617,10 @@ export class WorkspaceAuthorityStore {
       const rows = this.database
         .prepare(
           `SELECT * FROM execution_attempts
-           WHERE status IN ('created', 'starting', 'running', 'awaiting_provider', 'cancel_requested')`,
+           WHERE status IN (
+             'created', 'starting', 'planning', 'awaiting_implementation', 'implementing',
+             'running', 'awaiting_provider', 'awaiting_user', 'cancel_requested'
+           )`,
         )
         .all() as ExecutionRow[];
       const now = nowIso();
@@ -3110,7 +3634,10 @@ export class WorkspaceAuthorityStore {
         const taskStatus = stopping ? "stopped" : "interrupted";
         const summary = stopping
           ? "Daemon restarted before provider cancellation could be confirmed."
-          : "Daemon restarted while the provider execution was active.";
+          : row.status === "awaiting_implementation" || row.status === "awaiting_user"
+            ? "Daemon restarted while a provider approval callback was pending; this phase must be rerun."
+            : "Daemon restarted while the provider execution was active.";
+        this.cancelPendingExecutionApprovalsInTransaction(row.execution_id, now);
         this.database
           .prepare(
             `UPDATE execution_attempts SET status = ?, summary = ?, last_activity_at = ?,
@@ -3756,6 +4283,13 @@ export class WorkspaceAuthorityStore {
       controls: controlsJson
         ? ThothTurnControlSnapshotSchema.parse(JSON.parse(controlsJson) as unknown)
         : null,
+      providerRunMode: ProviderRunModeSchema.parse(row.provider_run_mode ?? "default"),
+      providerRunModeReceipt:
+        typeof row.provider_mode_receipt_json === "string"
+          ? ProviderRunModeReceiptSchema.parse(
+              JSON.parse(row.provider_mode_receipt_json) as unknown,
+            )
+          : null,
       sourceMessageId: typeof row.source_message_id === "string" ? row.source_message_id : null,
       workspaceId: this.workspaceId,
       workspacePath:
@@ -3893,11 +4427,14 @@ export class WorkspaceAuthorityStore {
     phase: "planexec" | "review" | undefined;
   }): ExecutionProjection {
     const execution = this.getExecution(input.executionId);
+    const implementationMaySubmit =
+      input.phase === "planexec" && execution?.status === "implementing";
     if (
       !execution ||
       execution.generation !== input.generation ||
       (input.phase && execution.phase !== input.phase) ||
-      !["starting", "running", "awaiting_provider"].includes(execution.status)
+      (!implementationMaySubmit &&
+        !["starting", "running", "awaiting_provider"].includes(execution.status))
     ) {
       throw new WorkspaceAuthorityConflictError(
         `Execution ${input.executionId} is not the active semantic tool authority`,
@@ -4098,6 +4635,8 @@ export class WorkspaceAuthorityStore {
     const attachment = this.database
       .prepare("SELECT * FROM runtime_attachments WHERE execution_id = ?")
       .get(row.execution_id) as Record<string, unknown> | undefined;
+    const latestApproval = this.getLatestExecutionApproval(row.execution_id);
+    const pendingApproval = latestApproval?.status === "pending" ? latestApproval : null;
     return ExecutionProjectionSchema.parse({
       id: row.execution_id,
       taskId: row.task_id,
@@ -4116,12 +4655,67 @@ export class WorkspaceAuthorityStore {
             attachedAt: attachment.attached_at,
           }
         : null,
+      runModeReceipt:
+        typeof row.run_mode_receipt_json === "string"
+          ? ProviderRunModeReceiptSchema.parse(JSON.parse(row.run_mode_receipt_json))
+          : null,
+      pendingApproval,
+      latestApproval,
       startedAt: row.started_at,
       lastActivityAt: row.last_activity_at,
       completedAt: row.completed_at,
       summary: row.summary,
       revision: row.revision,
     });
+  }
+
+  private toExecutionApprovalProjection(row: ExecutionApprovalRow): ExecutionApprovalProjection {
+    return ExecutionApprovalProjectionSchema.parse({
+      id: row.approval_id,
+      taskId: row.task_id,
+      executionId: row.execution_id,
+      kind: row.kind,
+      title: row.title,
+      description: row.description,
+      displayed: this.blobs.readJson(row.displayed_digest),
+      deadlineAt: row.deadline_at,
+      status: row.status,
+      resolution:
+        row.resolution_decision && row.resolution_actor_id && row.resolved_at
+          ? {
+              decision: row.resolution_decision,
+              actorId: row.resolution_actor_id,
+              resolvedAt: row.resolved_at,
+            }
+          : null,
+      revision: row.revision,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    });
+  }
+
+  private cancelPendingExecutionApprovalsInTransaction(executionId: string, now: string): void {
+    const rows = this.database
+      .prepare(
+        "SELECT approval_id, revision FROM execution_approvals WHERE execution_id = ? AND status = 'pending'",
+      )
+      .all(executionId) as Array<{ approval_id: string; revision: number }>;
+    for (const row of rows) {
+      this.database
+        .prepare(
+          `UPDATE execution_approvals SET status = 'canceled', deadline_at = NULL,
+             revision = revision + 1, updated_at = ?
+           WHERE approval_id = ? AND status = 'pending'`,
+        )
+        .run(now, row.approval_id);
+      this.appendEventInTransaction({
+        aggregateType: "execution_approval",
+        aggregateId: row.approval_id,
+        revision: row.revision + 1,
+        kind: "execution_approval_canceled",
+        payload: { executionId },
+      });
+    }
   }
 
   private toAgentRecord(row: Record<string, unknown>): StoredAgentRecord {

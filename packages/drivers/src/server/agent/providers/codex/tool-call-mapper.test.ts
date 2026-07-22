@@ -685,66 +685,6 @@ describe("codex tool-call mapper", () => {
     });
   });
 
-  it("normalizes codex thoth speak mcp calls and extracts spoken text", () => {
-    const item = expectMapped(
-      mapCodexToolCallFromThreadItem({
-        type: "mcpToolCall",
-        id: "codex-speak-thread-1",
-        status: "completed",
-        server: "thoth",
-        tool: "speak",
-        arguments: { text: "Voice response from Codex." },
-        result: { ok: true },
-      }),
-    );
-
-    expect(item.name).toBe("speak");
-    expect(item.detail).toEqual({
-      type: "unknown",
-      input: "Voice response from Codex.",
-      output: null,
-    });
-  });
-
-  it("normalizes codex thoth_voice.speak mcp calls and extracts spoken text", () => {
-    const item = expectMapped(
-      mapCodexToolCallFromThreadItem({
-        type: "mcpToolCall",
-        id: "codex-speak-thread-2",
-        status: "completed",
-        server: "thoth_voice",
-        tool: "speak",
-        arguments: { text: "Voice response from Codex via thoth_voice." },
-        result: { ok: true },
-      }),
-    );
-
-    expect(item.name).toBe("speak");
-    expect(item.detail).toEqual({
-      type: "unknown",
-      input: "Voice response from Codex via thoth_voice.",
-      output: null,
-    });
-  });
-
-  it("normalizes codex thoth speak tool-call names and extracts spoken text", () => {
-    const item = expectMapped(
-      mapCodexToolCallEnvelope({
-        callId: "codex-speak-tool-call-1",
-        name: "thoth.speak",
-        input: { text: "Tool call speech text." },
-        output: { ok: true },
-      }),
-    );
-
-    expect(item.name).toBe("speak");
-    expect(item.detail).toEqual({
-      type: "unknown",
-      input: "Tool call speech text.",
-      output: null,
-    });
-  });
-
   it("drops tool-call tool calls when callId is missing", () => {
     const item = mapCodexToolCallEnvelope({
       callId: null,

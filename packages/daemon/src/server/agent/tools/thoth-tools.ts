@@ -29,7 +29,6 @@ import {
 } from "../../workspace-archive-service.js";
 import { WaitForAgentTracker } from "../wait-for-agent-tracker.js";
 import { createAgentCommand, type CreateAgentFromMcpInput } from "../create-agent/create.js";
-import type { VoiceCallerContext, VoiceSpeakHandler } from "../../voice-types.js";
 import { expandUserPath, isSameOrDescendantPath, resolvePathFromBase } from "../../path-utils.js";
 import type { TerminalManager } from "../../../terminal/terminal-manager.js";
 import type { CreateThothWorktreeWorkflowFn } from "../../worktree-session.js";
@@ -171,14 +170,6 @@ export interface ThothToolHostDependencies {
    * is not registered yet when native provider tools are mounted.
    */
   callerAgentConfig?: ThothToolRuntimeCallerConfig;
-  /**
-   * Optional resolver for session-bound speak handlers.
-   * Used by hidden voice agents to narrate through daemon-managed TTS.
-   */
-  resolveSpeakHandler?: (callerAgentId: string) => VoiceSpeakHandler | null;
-  resolveCallerContext?: (callerAgentId: string) => VoiceCallerContext | null;
-  enableVoiceTools?: boolean;
-  voiceOnly?: boolean;
   logger: Logger;
   workspaceAuthorityManager?: WorkspaceAuthorityManager;
   taskToolGateway?: TaskToolGateway;
@@ -593,19 +584,9 @@ function buildScheduleUpdateInput(input: ScheduleUpdateToolInput): UpdateSchedul
   };
 }
 
-function resolveChildAgentCwd(params: {
-  parentCwd: string;
-  requestedCwd?: string;
-  lockedCwd?: string;
-  allowCustomCwd: boolean;
-}): string {
-  const lockedCwd = params.lockedCwd?.trim();
-  if (lockedCwd) {
-    return expandUserPath(lockedCwd);
-  }
-
+function resolveChildAgentCwd(params: { parentCwd: string; requestedCwd?: string }): string {
   const requestedCwd = params.requestedCwd?.trim();
-  if (!requestedCwd || !params.allowCustomCwd) {
+  if (!requestedCwd) {
     return params.parentCwd;
   }
 
@@ -666,8 +647,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     scheduleService,
     providerSnapshotManager,
     callerAgentId,
-    resolveSpeakHandler,
-    resolveCallerContext,
     logger,
   } = options;
   const childLogger = logger.child({ module: "agent", component: "thoth-tool-catalog" });
@@ -675,7 +654,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     ? new WorkspaceForegroundAuthority(options.workspaceAuthorityManager)
     : null;
   const waitTracker = new WaitForAgentTracker(logger);
-  const callerContext = callerAgentId ? (resolveCallerContext?.(callerAgentId) ?? null) : null;
   // AgentManager builds the native dynamic-tool catalog before it registers the
   // provider session. Read the caller lazily for handlers that need a live
   // session, otherwise a valid Clarify -> Task transition falsely loses its
@@ -906,8 +884,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       return resolveChildAgentCwd({
         parentCwd: callerAgent.cwd,
         requestedCwd,
-        lockedCwd: callerContext?.lockedCwd,
-        allowCustomCwd: callerContext?.allowCustomCwd ?? true,
       });
     }
 
@@ -1983,49 +1959,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
   type TopLevelCreateAgentArgs = z.infer<typeof canonicalTopLevelCreateAgentArgsSchema>;
   type TopLevelCreateAgentToolArgs = z.infer<typeof topLevelCreateAgentArgsSchema>;
 
-  if (options.voiceOnly || options.enableVoiceTools || callerContext?.enableVoiceTools) {
-    registerTool(
-      "speak",
-      {
-        title: "Speak",
-        description:
-          "Speak text to the user via daemon-managed voice output. Blocks until playback completes.",
-        inputSchema: {
-          text: z
-            .string()
-            .trim()
-            .min(1, "text is required")
-            .max(4000, "text must be 4000 characters or fewer"),
-        },
-        outputSchema: {
-          ok: z.boolean(),
-        },
-      },
-      async (args, context) => {
-        if (!callerAgentId) {
-          throw new Error("speak is only available to agent-scoped tool sessions");
-        }
-        const handler = resolveSpeakHandler?.(callerAgentId) ?? null;
-        if (!handler) {
-          throw new Error(`No speak handler registered for your session '${callerAgentId}'`);
-        }
-        await handler({
-          text: args.text,
-          callerAgentId,
-          signal: context?.signal,
-        });
-        return {
-          content: [],
-          structuredContent: ensureValidJson({ ok: true }),
-        };
-      },
-    );
-  }
-
-  if (options.voiceOnly) {
-    return toCatalog();
-  }
-
   registerTool(
     "create_agent",
     {
@@ -2094,7 +2027,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           notifyOnFinish,
           detached,
           callerAgentId,
-          callerContext,
           worktree,
         },
       );
@@ -2336,10 +2268,6 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       const cwd = workspace.cwd
         ? resolveScopedCwd(workspace.cwd, { required: true })
         : existingWorkspace.cwd;
-      const lockedCwd = callerContext?.lockedCwd?.trim();
-      if (lockedCwd && !isSameOrDescendantPath(expandUserPath(lockedCwd), cwd)) {
-        throw new Error(`Workspace ${workspace.workspaceId} is outside the allowed cwd`);
-      }
       return {
         cwd,
         workspaceId: workspace.workspaceId,

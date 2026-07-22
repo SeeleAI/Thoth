@@ -451,6 +451,53 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     rmSync(cwd, { recursive: true, force: true });
   }, 60_000);
 
+  test("provider run mode sends native plan then build on the same OpenCode session", async () => {
+    const cwd = tmpCwd();
+    const runtime = new TestOpenCodeHarness();
+    const openCodeClient = new TestOpenCodeClient();
+    openCodeClient.sessionPromptAsyncEvents = assistantTurnEvents({
+      text: "Inspect the implementation and verify it.",
+    });
+    runtime.enqueueClient(openCodeClient);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const session = await client.createSession(buildConfig(cwd));
+
+    try {
+      await expect(session.applyProviderRunMode?.("plan")).resolves.toMatchObject({
+        capability: { kind: "native" },
+        nativeModeId: "plan",
+      });
+      const planned = await collectTurnEvents(streamSession(session, "Plan this change."));
+      const planApproval = planned.events.find(
+        (event): event is Extract<AgentStreamEvent, { type: "permission_requested" }> =>
+          event.type === "permission_requested" && event.request.kind === "plan",
+      );
+      expect(planApproval?.request.input).toEqual({
+        plan: "Inspect the implementation and verify it.",
+      });
+      expect(openCodeClient.calls.sessionPromptAsync[0]).toMatchObject({ agent: "plan" });
+      if (!planApproval) throw new Error("Expected OpenCode Plan approval");
+
+      const transition = await session.respondToPermission(planApproval.request.id, {
+        behavior: "allow",
+        selectedActionId: "implement",
+      });
+      expect(transition?.followUpPrompt).toContain("Implement the approved native plan now");
+      expect(await session.getCurrentMode()).toBe("build");
+
+      await collectTurnEvents(
+        streamSession(session, transition?.followUpPrompt ?? "Implement the approved plan."),
+      );
+      expect(openCodeClient.calls.sessionPromptAsync[1]).toMatchObject({ agent: "build" });
+    } finally {
+      await session.close();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   test("custom agents defined in opencode.json appear in available modes", async () => {
     const cwd = tmpCwd();
     const runtime = new TestOpenCodeHarness();

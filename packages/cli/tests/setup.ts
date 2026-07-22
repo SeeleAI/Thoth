@@ -14,12 +14,6 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 
-const TEST_ENV_DEFAULTS = {
-  THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD: process.env.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD ?? "0",
-  THOTH_DICTATION_ENABLED: process.env.THOTH_DICTATION_ENABLED ?? "0",
-  THOTH_VOICE_MODE_ENABLED: process.env.THOTH_VOICE_MODE_ENABLED ?? "0",
-};
-
 function killPidTree(pid: number, signal: NodeJS.Signals): void {
   if (!Number.isInteger(pid) || pid <= 0) {
     return;
@@ -111,7 +105,7 @@ export async function waitForDaemon(port: number, timeout = 30000): Promise<void
 export async function startDaemon(port: number, thothHome: string): Promise<ProcessPromise> {
   $.verbose = false;
   const daemon =
-    $`THOTH_HOME=${thothHome} THOTH_LISTEN=127.0.0.1:${port} THOTH_RELAY_ENABLED=false THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD=${TEST_ENV_DEFAULTS.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD} THOTH_DICTATION_ENABLED=${TEST_ENV_DEFAULTS.THOTH_DICTATION_ENABLED} THOTH_VOICE_MODE_ENABLED=${TEST_ENV_DEFAULTS.THOTH_VOICE_MODE_ENABLED} CI=true thoth daemon start --foreground`.nothrow();
+    $`THOTH_HOME=${thothHome} THOTH_LISTEN=127.0.0.1:${port} THOTH_RELAY_ENABLED=false CI=true thoth daemon start --foreground`.nothrow();
   return daemon;
 }
 
@@ -125,7 +119,7 @@ export async function createTestContext(): Promise<TestContext> {
   // Helper to run CLI commands against test daemon
   const thoth = (args: string[]): ProcessPromise => {
     $.verbose = false;
-    return $`THOTH_HOST=localhost:${port} THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD=${TEST_ENV_DEFAULTS.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD} THOTH_DICTATION_ENABLED=${TEST_ENV_DEFAULTS.THOTH_DICTATION_ENABLED} THOTH_VOICE_MODE_ENABLED=${TEST_ENV_DEFAULTS.THOTH_VOICE_MODE_ENABLED} thoth ${args}`.nothrow();
+    return $`THOTH_HOST=localhost:${port} thoth ${args}`.nothrow();
   };
 
   // Cleanup function

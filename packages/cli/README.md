@@ -10,5 +10,3 @@ Intended responsibilities:
 4. Diagnostics.
 5. Scriptable quick and loop entrypoints.
 6. Scriptable read-only task, status and report commands.
-
-Current status: skeleton only. No implementation exists in this package yet.

@@ -3,12 +3,7 @@ import path from "node:path";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 
 import pino from "pino";
-import {
-  createThothDaemon,
-  type ThothDaemonConfig,
-  type ThothOpenAIConfig,
-  type ThothSpeechConfig,
-} from "../bootstrap.js";
+import { createThothDaemon, type ThothDaemonConfig } from "../bootstrap.js";
 import type { AgentClient, AgentProvider } from "@thoth/drivers/agent-runtime";
 import { createTestAgentClients } from "./fake-agent-client.js";
 import type { PushNotificationSender } from "../push/notifications.js";
@@ -28,12 +23,6 @@ interface TestThothDaemonOptions {
   thothHomeRoot?: string;
   staticDir?: string;
   cleanup?: boolean;
-  openai?: ThothOpenAIConfig;
-  speech?: ThothSpeechConfig;
-  voiceLlmProvider?: ThothDaemonConfig["voiceLlmProvider"];
-  voiceLlmProviderExplicit?: boolean;
-  voiceLlmModel?: string | null;
-  dictationFinalTimeoutMs?: number;
   auth?: ThothDaemonConfig["auth"];
   pushNotificationSender?: PushNotificationSender;
   serviceProxy?: ThothDaemonConfig["serviceProxy"];
@@ -172,12 +161,6 @@ async function prepareTestDaemonConfig(
     serviceProxy: options.serviceProxy,
     webUi: options.webUi,
     trustedProxies: options.trustedProxies,
-    openai: options.openai,
-    speech: options.speech,
-    voiceLlmProvider: options.voiceLlmProvider ?? null,
-    voiceLlmProviderExplicit: options.voiceLlmProviderExplicit ?? false,
-    voiceLlmModel: options.voiceLlmModel ?? null,
-    dictationFinalTimeoutMs: options.dictationFinalTimeoutMs,
     downloadTokenTtlMs: options.downloadTokenTtlMs,
   };
   return { config, thothHomeRoot, thothHome, staticDir };

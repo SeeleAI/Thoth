@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  resolveSendTooltipLabel,
-  resolveSubmitAccessibilityLabel,
-  resolveVoiceAccessibilityLabel,
-  resolveVoiceTooltipText,
-} from "./labels";
+import { resolveSendTooltipLabel, resolveSubmitAccessibilityLabel } from "./labels";
 
 const translations: Record<string, string> = {
   "composer.input.interruptAgent": "Interrupt agent",
@@ -13,13 +8,6 @@ const translations: Record<string, string> = {
   "composer.input.sendMessage": "Send message",
   "composer.input.queue": "Queue",
   "composer.input.send": "Send",
-  "composer.voice.unmuteVoiceMode": "Unmute Voice mode",
-  "composer.voice.muteVoiceMode": "Mute Voice mode",
-  "composer.voice.stopDictation": "Stop dictation",
-  "composer.voice.startDictation": "Start dictation",
-  "composer.voice.unmuteVoice": "Unmute voice",
-  "composer.voice.muteVoice": "Mute voice",
-  "composer.voice.dictation": "Dictation",
 };
 
 const t = ((key: string) => translations[key] ?? key) as never;
@@ -76,49 +64,7 @@ describe("composer input labels", () => {
     ).toBe("Run now");
   });
 
-  it("resolves voice labels from translations", () => {
-    expect(
-      resolveVoiceAccessibilityLabel({
-        isRealtimeVoiceForCurrentAgent: true,
-        isMuted: true,
-        isDictating: false,
-        t,
-      }),
-    ).toBe("Unmute Voice mode");
-    expect(
-      resolveVoiceAccessibilityLabel({
-        isRealtimeVoiceForCurrentAgent: true,
-        isMuted: false,
-        isDictating: false,
-        t,
-      }),
-    ).toBe("Mute Voice mode");
-    expect(
-      resolveVoiceAccessibilityLabel({
-        isRealtimeVoiceForCurrentAgent: false,
-        isMuted: false,
-        isDictating: true,
-        t,
-      }),
-    ).toBe("Stop dictation");
-    expect(
-      resolveVoiceAccessibilityLabel({
-        isRealtimeVoiceForCurrentAgent: false,
-        isMuted: false,
-        isDictating: false,
-        t,
-      }),
-    ).toBe("Start dictation");
-  });
-
   it("resolves tooltip labels from translations", () => {
-    expect(
-      resolveVoiceTooltipText({
-        isRealtimeVoiceForCurrentAgent: false,
-        isMuted: false,
-        t,
-      }),
-    ).toBe("Dictation");
     expect(
       resolveSendTooltipLabel({
         submitButtonAccessibilityLabel: undefined,

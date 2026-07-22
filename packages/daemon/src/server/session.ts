@@ -29,8 +29,6 @@ import type { TerminalActivity } from "@thoth/protocol/terminal-activity";
 import type { BinaryFrame } from "@thoth/protocol/binary-frames/index";
 import { CursorError } from "./pagination/cursor.js";
 import { SortablePager, type SortSpec } from "./pagination/sortable-pager.js";
-import type { SpeechToTextProvider, TextToSpeechProvider } from "./speech/speech-provider.js";
-import type { TurnDetectionProvider } from "./speech/turn-detection-provider.js";
 import {
   buildConfigOverrides,
   extractTimestamps,
@@ -49,7 +47,6 @@ import {
   resolveFirstAgentPromptTitle,
 } from "./agent/create-agent-title.js";
 import { respondToAgentPermission } from "./agent/permission-response.js";
-import type { VoiceCallerContext, VoiceSpeakHandler } from "./voice-types.js";
 import type { ScriptHealthState } from "./script-health-monitor.js";
 import { spawnWorkspaceScript } from "./worktree-bootstrap.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
@@ -109,7 +106,6 @@ import {
   type AgentPermissionResponse,
   type AgentPromptContentBlock,
   type AgentPromptInput,
-  type AgentRunOptions,
   type AgentSessionConfig,
 } from "@thoth/drivers/agent-runtime";
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
@@ -134,9 +130,6 @@ import {
   type ProjectRegistry,
   type WorkspaceRegistry,
 } from "./workspace-registry.js";
-import { wrapSpokenInput } from "./voice-config.js";
-import { isVoicePermissionAllowed } from "./voice-permission-policy.js";
-import { VoiceSession } from "./session/voice/voice-session.js";
 import { CheckoutSession } from "./session/checkout/checkout-session.js";
 import {
   createWorkspaceGitObserverService,
@@ -179,8 +172,6 @@ import {
 import { expandTilde } from "@thoth/drivers/internal/utils/path";
 import { searchHomeDirectories, searchWorkspaceEntries } from "../utils/directory-suggestions.js";
 import type { CheckoutDiffManager } from "./checkout-diff-manager.js";
-import type { Resolvable } from "./speech/provider-resolver.js";
-import type { SpeechReadinessSnapshot } from "./speech/speech-runtime.js";
 import type pino from "pino";
 import { WorkspaceChatService } from "./chat/chat-service.js";
 import type {
@@ -442,9 +433,6 @@ export interface SessionOptions {
   workspaceGitService: WorkspaceGitService;
   daemonConfigStore: DaemonConfigStore;
   mcpBaseUrl?: string | null;
-  stt: Resolvable<SpeechToTextProvider | null>;
-  sttLanguage?: string;
-  tts: Resolvable<TextToSpeechProvider | null>;
   terminalManager: TerminalManager | null;
   providerSnapshotManager: ProviderSnapshotManager;
   providerUsageService: ProviderUsageService;
@@ -460,21 +448,6 @@ export interface SessionOptions {
   getDaemonTcpHost?: () => string | null;
   serviceProxyPublicBaseUrl?: string | null;
   resolveScriptHealth?: (hostname: string) => ScriptHealthState | null;
-  voice?: {
-    turnDetection?: Resolvable<TurnDetectionProvider | null>;
-  };
-  voiceBridge?: {
-    registerVoiceSpeakHandler?: (agentId: string, handler: VoiceSpeakHandler) => void;
-    unregisterVoiceSpeakHandler?: (agentId: string) => void;
-    registerVoiceCallerContext?: (agentId: string, context: VoiceCallerContext) => void;
-    unregisterVoiceCallerContext?: (agentId: string) => void;
-  };
-  dictation?: {
-    finalTimeoutMs?: number;
-    stt?: Resolvable<SpeechToTextProvider | null>;
-    sttLanguage?: string;
-    getSpeechReadiness?: () => SpeechReadinessSnapshot;
-  };
   serverId?: string;
   daemonVersion?: string;
   daemonRuntimeConfig?: DaemonRuntimeConfig;
@@ -594,7 +567,6 @@ export class Session {
   private readonly workspaceSetupSnapshots: Map<string, WorkspaceSetupSnapshot>;
   private readonly workspaceGitObserver: WorkspaceGitObserverService;
   private readonly workspaceDirectory: WorkspaceDirectory;
-  private readonly voiceSession: VoiceSession;
   private readonly checkoutSession: CheckoutSession;
   private readonly chatScheduleSession: ChatScheduleSession;
   private readonly providerCatalogSession: ProviderCatalogSession;
@@ -637,9 +609,6 @@ export class Session {
       generateWorkspaceName,
       workspaceGitService,
       daemonConfigStore,
-      stt,
-      sttLanguage,
-      tts,
       terminalManager,
       providerSnapshotManager,
       providerUsageService,
@@ -651,9 +620,6 @@ export class Session {
       getDaemonTcpHost,
       serviceProxyPublicBaseUrl,
       resolveScriptHealth,
-      voice,
-      voiceBridge,
-      dictation,
       serverId,
       daemonVersion,
       daemonRuntimeConfig,
@@ -930,41 +896,6 @@ export class Session {
       buildWorkspaceDescriptor: (input) => this.buildWorkspaceDescriptor(input),
     });
 
-    this.voiceSession = new VoiceSession({
-      host: {
-        emit: (msg) => this.emit(msg),
-        loadAgent: (agentId) =>
-          ensureAgentLoaded(agentId, {
-            agentManager: this.agentManager,
-            agentStorage: this.agentStorage,
-            logger: this.sessionLogger,
-          }),
-        reloadAgentSession: (agentId, overrides) =>
-          this.agentManager.reloadAgentSession(agentId, overrides),
-        sendSpokenInput: async (agentId, text) => {
-          await this.handleSendAgentMessage(
-            agentId,
-            text,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            { spokenInput: true },
-          );
-        },
-        interruptAgentIfRunning: (agentId) => this.interruptAgentIfRunning(agentId),
-        hasActiveAgentRun: (agentId) => this.hasActiveAgentRun(agentId),
-      },
-      logger: this.sessionLogger,
-      sessionId: this.sessionId,
-      sttLanguage,
-      tts,
-      stt,
-      voice,
-      voiceBridge,
-      dictation,
-    });
-
     this.subscribeToAgentEvents();
 
     this.sessionLogger.trace({}, "agent.session.lifecycle.created");
@@ -1152,13 +1083,6 @@ export class Session {
     }
   }
 
-  private hasActiveAgentRun(agentId: string | null): boolean {
-    if (!agentId) {
-      return false;
-    }
-    return this.agentManager.hasInFlightRun(agentId);
-  }
-
   private handleAgentRunError(agentId: string, error: unknown, context: string): void {
     const message = errorToFriendlyMessage(error);
     this.sessionLogger.error({ err: error, agentId, context }, `${context} for agent ${agentId}`);
@@ -1232,28 +1156,6 @@ export class Session {
     const agent = this.agentManager.getAgent(event.agentId);
     if (agent?.internal && !options.allowInternalStream) {
       return;
-    }
-
-    if (
-      this.voiceSession.isActiveForAgent(event.agentId) &&
-      event.event.type === "permission_requested" &&
-      isVoicePermissionAllowed(event.event.request)
-    ) {
-      const requestId = event.event.request.id;
-      void this.agentManager
-        .respondToPermission(event.agentId, requestId, {
-          behavior: "allow",
-        })
-        .catch((error) => {
-          this.sessionLogger.warn(
-            {
-              err: error,
-              agentId: event.agentId,
-              requestId,
-            },
-            "Failed to auto-allow speak tool permission in voice mode",
-          );
-        });
     }
 
     const serializedEvent = serializeAgentStreamEvent(event.event);
@@ -1429,7 +1331,7 @@ export class Session {
 
   private async dispatchInboundMessage(msg: SessionInboundMessage): Promise<void> {
     const promise =
-      this.dispatchVoiceAndControlMessage(msg) ??
+      this.dispatchControlMessage(msg) ??
       this.dispatchAgentRewindMessage(msg) ??
       this.dispatchAgentRelationshipMessage(msg) ??
       this.dispatchAgentTimelineMessage(msg) ??
@@ -1445,31 +1347,8 @@ export class Session {
     if (promise) await promise;
   }
 
-  private dispatchVoiceAndControlMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+  private dispatchControlMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
-      case "voice_audio_chunk":
-        return this.voiceSession.handleAudioChunk(msg);
-      case "abort_request":
-        return this.voiceSession.handleAbort();
-      case "audio_played":
-        this.voiceSession.handleAudioPlayed(msg.id);
-        return undefined;
-      case "set_voice_mode":
-        return this.voiceSession.handleSetVoiceMode(msg.enabled, msg.agentId, msg.requestId);
-      case "dictation_stream_start":
-        return this.voiceSession.handleDictationStreamStart(msg);
-      case "dictation_stream_chunk":
-        return this.voiceSession.handleDictationChunk({
-          dictationId: msg.dictationId,
-          seq: msg.seq,
-          audioBase64: msg.audio,
-          format: msg.format,
-        });
-      case "dictation_stream_finish":
-        return this.voiceSession.handleDictationFinish(msg.dictationId, msg.finalSeq);
-      case "dictation_stream_cancel":
-        this.voiceSession.handleDictationCancel(msg.dictationId);
-        return undefined;
       case "restart_server_request":
         return this.handleRestartServerRequest(msg.requestId, msg.reason);
       case "shutdown_server_request":
@@ -1631,6 +1510,8 @@ export class Session {
         return this.handleTaskDecisionAnswerRequest(msg);
       case "execution.timeline.request":
         return this.handleExecutionTimelineRequest(msg);
+      case "execution.approval.resolve.request":
+        return this.handleExecutionApprovalResolveRequest(msg);
       default:
         return undefined;
     }
@@ -1791,6 +1672,37 @@ export class Session {
             : `Execution ${msg.executionId} was not found for Task ${msg.taskId}`
           : `Workspace ${msg.workspaceId} was not found`,
       },
+    });
+  }
+
+  private async handleExecutionApprovalResolveRequest(
+    msg: Extract<SessionInboundMessage, { type: "execution.approval.resolve.request" }>,
+  ): Promise<void> {
+    const registered = await this.registerAuthorityWorkspace(msg.workspaceId);
+    const result = registered
+      ? await this.workspaceTaskCoordinator.resolveExecutionApproval({
+          workspaceId: msg.workspaceId,
+          taskId: msg.taskId,
+          executionId: msg.executionId,
+          approvalId: msg.approvalId,
+          decision: msg.decision,
+          expectedRevision: msg.expectedRevision,
+          commandId: msg.commandId,
+          actorId: `user:${this.clientId}`,
+          clientId: this.clientId,
+          recordHumanDecision: true,
+        })
+      : {
+          task: null,
+          execution: null,
+          approval: null,
+          conflict: false,
+          duplicate: false,
+          error: `Workspace ${msg.workspaceId} was not found`,
+        };
+    this.emit({
+      type: "execution.approval.resolve.response",
+      payload: { requestId: msg.requestId, ...result },
     });
   }
 
@@ -2560,57 +2472,6 @@ export class Session {
   }
 
   /**
-   * Handle text message to agent (with optional image attachments)
-   */
-  private async handleSendAgentMessage(
-    agentId: string,
-    text: string,
-    messageId?: string,
-    images?: Array<{ data: string; mimeType: string }>,
-    attachments?: AgentAttachment[],
-    runOptions?: AgentRunOptions,
-    options?: { spokenInput?: boolean },
-  ): Promise<{ ok: true } | { ok: false; error: string }> {
-    this.sessionLogger.info(
-      {
-        agentId,
-        textPreview: text.substring(0, 50),
-        imageCount: images?.length ?? 0,
-        attachmentCount: attachments?.length ?? 0,
-      },
-      `Sending text to agent ${agentId}${
-        images && images.length > 0 ? ` with ${images.length} image attachment(s)` : ""
-      }${
-        attachments && attachments.length > 0
-          ? ` and ${attachments.length} structured attachment(s)`
-          : ""
-      }`,
-    );
-
-    const promptText = options?.spokenInput ? wrapSpokenInput(text) : text;
-    const prompt = this.buildAgentPrompt(promptText, images, attachments);
-
-    try {
-      await sendPromptToAgent({
-        agentManager: this.agentManager,
-        agentStorage: this.agentStorage,
-        agentId,
-        prompt,
-        messageId,
-        runOptions,
-        logger: this.sessionLogger,
-      });
-      return { ok: true };
-    } catch (error) {
-      this.handleAgentRunError(agentId, error, "Failed to send agent message");
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
-  /**
    * Handle create agent request
    */
   private async handleCreateAgentRequest(
@@ -2631,6 +2492,7 @@ export class Session {
       labels,
       env,
       thoth,
+      providerRunMode,
       contextRefs,
     } = msg;
     let createdWorktreeForCleanup: CreateThothWorktreeWorkflowResult | null = null;
@@ -2734,6 +2596,7 @@ export class Session {
           ...(images ? { images } : {}),
           ...(attachments ? { attachments } : {}),
           ...(thoth ? { thoth } : {}),
+          providerRunMode: providerRunMode ?? "default",
           contextRefs,
           rawPrompt: initialPromptPayload,
           ...(outputSchema ? { rawRunOptions: { outputSchema } } : {}),
@@ -3518,6 +3381,11 @@ export class Session {
         clientId: this.clientId,
         deviceId: null,
       });
+      if (
+        await this.foregroundTurnCoordinator.resolveProviderApproval(agentId, requestId, response)
+      ) {
+        return;
+      }
       await respondToAgentPermission({
         agentManager: this.agentManager,
         agentId,
@@ -3707,7 +3575,9 @@ export class Session {
 
   private async resolveAgentIdentifier(
     identifier: string,
-  ): Promise<{ ok: true; agentId: string } | { ok: false; error: string }> {
+  ): Promise<
+    { ok: true; agentId: string } | { ok: false; error: string; errorCode?: "agent_not_found" }
+  > {
     const trimmed = identifier.trim();
     if (!trimmed) {
       return { ok: false, error: "Agent identifier cannot be empty" };
@@ -3755,7 +3625,11 @@ export class Session {
       };
     }
 
-    return { ok: false, error: `Agent not found: ${trimmed}` };
+    return {
+      ok: false,
+      error: `Agent not found: ${trimmed}`,
+      errorCode: "agent_not_found",
+    };
   }
 
   private async getAgentPayloadById(agentId: string): Promise<AgentSnapshotPayload | null> {
@@ -5545,7 +5419,13 @@ export class Session {
     if (!resolved.ok) {
       this.emit({
         type: "fetch_agent_response",
-        payload: { requestId, agent: null, project: null, error: resolved.error },
+        payload: {
+          requestId,
+          agent: null,
+          project: null,
+          error: resolved.error,
+          ...(resolved.errorCode ? { errorCode: resolved.errorCode } : {}),
+        },
       });
       return;
     }
@@ -5559,6 +5439,7 @@ export class Session {
           agent: null,
           project: null,
           error: `Agent not found: ${resolved.agentId}`,
+          errorCode: "agent_not_found",
         },
       });
       return;
@@ -5858,6 +5739,7 @@ export class Session {
           ...(msg.images ? { images: msg.images } : {}),
           ...(msg.attachments ? { attachments: msg.attachments } : {}),
           ...(msg.thoth ? { thoth: msg.thoth } : {}),
+          providerRunMode: msg.providerRunMode ?? "default",
           contextRefs: msg.contextRefs,
           rawPrompt: prompt,
         });
@@ -6074,8 +5956,6 @@ export class Session {
       this.unsubscribeTerminalWorkspaceContributionEvents = null;
     }
     this.providerCatalogSession.dispose();
-
-    await this.voiceSession.cleanup();
 
     this.terminalController.dispose();
 

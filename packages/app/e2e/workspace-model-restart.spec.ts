@@ -250,8 +250,6 @@ async function startRestartDaemon(input: {
       THOTH_LISTEN: `127.0.0.1:${port}`,
       THOTH_CORS_ORIGINS: input.origin,
       THOTH_RELAY_ENABLED: "0",
-      THOTH_DICTATION_ENABLED: "0",
-      THOTH_VOICE_MODE_ENABLED: "0",
       THOTH_NODE_ENV: "development",
       NODE_ENV: "development",
     },

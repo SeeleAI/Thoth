@@ -12,8 +12,8 @@ describe("feature-preferences", () => {
     },
     {
       type: "toggle" as const,
-      id: "plan_mode",
-      label: "Plan",
+      id: "auto_accept",
+      label: "Auto accept",
       value: false,
     },
   ];
@@ -39,7 +39,7 @@ describe("feature-preferences", () => {
         features,
         persistedFeatureValues: {
           fast_mode: true,
-          plan_mode: false,
+          auto_accept: false,
         },
         localFeatureValues: {
           fast_mode: false,
@@ -47,7 +47,7 @@ describe("feature-preferences", () => {
       }),
     ).toEqual({
       fast_mode: false,
-      plan_mode: false,
+      auto_accept: false,
     });
   });
 });

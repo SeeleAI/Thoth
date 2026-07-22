@@ -39,9 +39,6 @@ export interface TestDaemonContext {
 
 const TEST_DAEMON_ENV_DEFAULTS: Record<string, string> = {
   THOTH_RELAY_ENABLED: "false",
-  THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD: process.env.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD ?? "0",
-  THOTH_DICTATION_ENABLED: process.env.THOTH_DICTATION_ENABLED ?? "0",
-  THOTH_VOICE_MODE_ENABLED: process.env.THOTH_VOICE_MODE_ENABLED ?? "0",
 };
 const TEST_DAEMON_HOST = "127.0.0.1";
 

@@ -88,11 +88,6 @@ export interface CreateAgentFromMcpInput {
   notifyOnFinish: boolean;
   detached?: boolean;
   callerAgentId?: string;
-  callerContext?: {
-    lockedCwd?: string;
-    allowCustomCwd?: boolean;
-    childAgentDefaultLabels?: Record<string, string>;
-  } | null;
   worktree?: {
     worktreeName?: string;
     branchName?: string;
@@ -234,8 +229,6 @@ async function resolveMcpCreateAgent(
     ? resolveChildAgentCwd({
         parentCwd: parentAgent.cwd,
         requestedCwd: input.cwd,
-        lockedCwd: input.callerContext?.lockedCwd,
-        allowCustomCwd: input.callerContext?.allowCustomCwd ?? true,
       })
     : expandUserPath(input.cwd ?? process.cwd());
   const { resolvedCwd, setupContinuation, createdWorkspaceId } = await resolveMcpCwd({
@@ -268,7 +261,6 @@ async function resolveMcpCreateAgent(
   const labels = mergeLabels({
     callerAgentId: input.callerAgentId,
     detached: input.detached ?? false,
-    childAgentDefaultLabels: input.callerContext?.childAgentDefaultLabels,
     labels: input.labels,
   });
 
@@ -367,19 +359,9 @@ function requireParentAgent(agentManager: AgentManager, parentAgentId: string): 
   return parentAgent;
 }
 
-function resolveChildAgentCwd(params: {
-  parentCwd: string;
-  requestedCwd?: string;
-  lockedCwd?: string;
-  allowCustomCwd: boolean;
-}): string {
-  const lockedCwd = params.lockedCwd?.trim();
-  if (lockedCwd) {
-    return expandUserPath(lockedCwd);
-  }
-
+function resolveChildAgentCwd(params: { parentCwd: string; requestedCwd?: string }): string {
   const requestedCwd = params.requestedCwd?.trim();
-  if (!requestedCwd || !params.allowCustomCwd) {
+  if (!requestedCwd) {
     return params.parentCwd;
   }
 
@@ -484,14 +466,12 @@ async function createMcpWorktree(
 function mergeLabels(params: {
   callerAgentId: string | undefined;
   detached: boolean;
-  childAgentDefaultLabels: Record<string, string> | undefined;
   labels: Record<string, string> | undefined;
 }): Record<string, string> | undefined {
   const mergedLabels = {
     ...(!params.detached && params.callerAgentId
       ? { [PARENT_AGENT_ID_LABEL]: params.callerAgentId }
       : {}),
-    ...params.childAgentDefaultLabels,
     ...params.labels,
   };
   if (params.detached) {

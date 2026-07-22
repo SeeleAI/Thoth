@@ -121,6 +121,7 @@ export function toAgentPayload(
     lastUserMessageAt: agent.lastUserMessageAt ? agent.lastUserMessageAt.toISOString() : null,
     status: agent.lifecycle,
     capabilities: cloneCapabilities(agent.capabilities),
+    ...(agent.planCapability ? { planCapability: agent.planCapability } : {}),
     currentModeId: agent.currentModeId,
     availableModes: cloneAvailableModes(agent.availableModes),
     features: normalizeFeatures(agent.features),

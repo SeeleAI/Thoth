@@ -22,11 +22,6 @@ const repoRoot = join(__dirname, "..", "..", "..");
 // packages live in the root. Prepend it so `npx thoth` resolves locally.
 const rootNodeModulesBin = join(repoRoot, "node_modules", ".bin");
 const args = process.argv.slice(2);
-const testEnvDefaults = {
-  THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD: process.env.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD ?? "0",
-  THOTH_DICTATION_ENABLED: process.env.THOTH_DICTATION_ENABLED ?? "0",
-  THOTH_VOICE_MODE_ENABLED: process.env.THOTH_VOICE_MODE_ENABLED ?? "0",
-};
 
 const DEFAULT_CONCURRENCY = 4;
 const concurrencyEnv = process.env.THOTH_CLI_TEST_CONCURRENCY;
@@ -201,9 +196,6 @@ async function runSingleTest(testFile: string): Promise<TestOutcome> {
           ...process.env,
           PATH: [rootNodeModulesBin, process.env.PATH].filter(Boolean).join(delimiter),
           npm_config_cache: npmCache,
-          THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD: testEnvDefaults.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD,
-          THOTH_DICTATION_ENABLED: testEnvDefaults.THOTH_DICTATION_ENABLED,
-          THOTH_VOICE_MODE_ENABLED: testEnvDefaults.THOTH_VOICE_MODE_ENABLED,
         },
         stdio: ["ignore", "pipe", "pipe"],
       });

@@ -826,6 +826,42 @@ test("preserves legacy fetchAgent id overload", async () => {
   await expect(responsePromise).rejects.toThrow("legacy fetch sentinel");
 });
 
+test("returns null only for a typed missing Agent response", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const responsePromise = client.fetchAgent({
+    agentId: "missing-agent",
+    requestId: "req-agent-not-found",
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "fetch_agent_response",
+      payload: {
+        requestId: "req-agent-not-found",
+        agent: null,
+        project: null,
+        error: "Agent not found: missing-agent",
+        errorCode: "agent_not_found",
+      },
+    }),
+  );
+
+  await expect(responsePromise).resolves.toBeNull();
+});
+
 test("honors explicit fetchAgentTimeline timeout below the session RPC default", async () => {
   useHeartbeatClock();
   const logger = createMockLogger();
@@ -3911,96 +3947,6 @@ test("imports an agent by provider handle id", async () => {
   await expect(promise).resolves.toMatchObject({
     id: "agent-1",
     provider: "custom-codex",
-  });
-});
-
-test("uses server-provided dictation finish timeout budget", async () => {
-  useHeartbeatClock();
-  const logger = createMockLogger();
-  const mock = createMockTransport();
-
-  const client = new DaemonClient({
-    url: "ws://test",
-    clientId: "clsk_unit_test",
-    logger,
-    reconnect: { enabled: false },
-    transportFactory: () => mock.transport,
-  });
-  clients.push(client);
-
-  const connectPromise = client.connect();
-  mock.triggerOpen();
-  await connectPromise;
-
-  const finishPromise = client.finishDictationStream("dict-1", 0);
-  const finishError = finishPromise.then(
-    () => null,
-    (error) => error,
-  );
-
-  expect(mock.sent).toHaveLength(1);
-  mock.triggerMessage(
-    wrapSessionMessage({
-      type: "dictation_stream_finish_accepted",
-      payload: {
-        dictationId: "dict-1",
-        timeoutMs: 100,
-      },
-    }),
-  );
-
-  await vi.advanceTimersByTimeAsync(5_101);
-  const error = await finishError;
-  expect(error).toBeInstanceOf(Error);
-  if (error instanceof Error) {
-    expect(error.message).toContain("Timeout waiting for dictation finalization (5100ms)");
-  }
-
-  vi.useRealTimers();
-});
-
-test("resolves dictation finish when final arrives after finish accepted", async () => {
-  const logger = createMockLogger();
-  const mock = createMockTransport();
-
-  const client = new DaemonClient({
-    url: "ws://test",
-    clientId: "clsk_unit_test",
-    logger,
-    reconnect: { enabled: false },
-    transportFactory: () => mock.transport,
-  });
-  clients.push(client);
-
-  const connectPromise = client.connect();
-  mock.triggerOpen();
-  await connectPromise;
-
-  const finishPromise = client.finishDictationStream("dict-2", 1);
-  expect(mock.sent).toHaveLength(1);
-
-  mock.triggerMessage(
-    wrapSessionMessage({
-      type: "dictation_stream_finish_accepted",
-      payload: {
-        dictationId: "dict-2",
-        timeoutMs: 1000,
-      },
-    }),
-  );
-  mock.triggerMessage(
-    wrapSessionMessage({
-      type: "dictation_stream_final",
-      payload: {
-        dictationId: "dict-2",
-        text: "hello",
-      },
-    }),
-  );
-
-  await expect(finishPromise).resolves.toEqual({
-    dictationId: "dict-2",
-    text: "hello",
   });
 });
 

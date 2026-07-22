@@ -1402,7 +1402,10 @@ export function readEventIdentifiers(message: SDKMessage): EventIdentifiers {
 export class ClaudeAgentClient implements AgentClient {
   readonly provider = "claude" as const;
   readonly capabilities = CLAUDE_CAPABILITIES;
-  readonly harnessCapabilities = defineHarnessCapabilities({ toolAttachment: ["mcp"] });
+  readonly harnessCapabilities = defineHarnessCapabilities({
+    toolAttachment: ["mcp"],
+    plan: { kind: "native" },
+  });
 
   private readonly defaults?: { agents?: Record<string, AgentDefinition> };
   private readonly logger: Logger;
@@ -1469,7 +1472,7 @@ export class ClaudeAgentClient implements AgentClient {
   async fetchCatalog(_options: FetchCatalogOptions): Promise<ProviderCatalog> {
     // Claude exposes a global catalog here; cwd/force are intentionally irrelevant.
     const models = await getClaudeModelsWithSettings(this.logger, this.configDir);
-    return { models, modes: DEFAULT_MODES };
+    return { models, modes: DEFAULT_MODES, planCapability: { kind: "native" } };
   }
 
   async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
@@ -2149,6 +2152,22 @@ class ClaudeAgentSession implements AgentSession {
 
   async getAvailableModes(): Promise<AgentMode[]> {
     return this.availableModes;
+  }
+
+  async getProviderRunModeCapability() {
+    return { kind: "native" } as const;
+  }
+
+  async applyProviderRunMode(mode: "default" | "plan") {
+    if (mode === "plan") {
+      await this.setMode("plan");
+    } else if (this.currentMode === "plan") {
+      await this.setMode(this.planResumeMode ?? "default");
+    }
+    return {
+      capability: { kind: "native" } as const,
+      nativeModeId: this.currentMode,
+    };
   }
 
   async getCurrentMode(): Promise<string | null> {

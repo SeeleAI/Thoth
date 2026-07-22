@@ -125,8 +125,21 @@ function executionStatusLabel(status: ExecutionProjection["status"]): string {
 function isExecutionBusy(execution: ExecutionProjection | null): boolean {
   return (
     execution !== null &&
-    ["created", "starting", "running", "awaiting_provider"].includes(execution.status)
+    ["created", "starting", "planning", "implementing", "running", "awaiting_provider"].includes(
+      execution.status,
+    )
   );
+}
+
+function approvalCountdownLabel(deadlineAt: string | null, now: number): string {
+  if (!deadlineAt) {
+    return "Waiting for a decision";
+  }
+  const remainingMs = Date.parse(deadlineAt) - now;
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) {
+    return "Automatic approval is being committed";
+  }
+  return `Automatic approval in ${Math.ceil(remainingMs / 1000)}s`;
 }
 
 function formatTimestamp(value: string | null): string {
@@ -239,7 +252,9 @@ export function BackgroundTasksSurface({
   const [nextBeforeSeq, setNextBeforeSeq] = useState<number | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
-  const [pendingAction, setPendingAction] = useState<TaskCommand | "decision" | null>(null);
+  const [pendingAction, setPendingAction] = useState<TaskCommand | "decision" | "approval" | null>(
+    null,
+  );
   const [decisionChoiceId, setDecisionChoiceId] = useState<string | null>(null);
   const [decisionNote, setDecisionNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -249,7 +264,12 @@ export function BackgroundTasksSurface({
     () => executions.find((execution) => execution.id === selectedExecutionId) ?? null,
     [executions, selectedExecutionId],
   );
-  const now = useElapsedTick(isExecutionBusy(selectedExecution));
+  const approvalExecution = useMemo(
+    () => executions.find((execution) => execution.pendingApproval !== null) ?? null,
+    [executions],
+  );
+  const pendingApproval = approvalExecution?.pendingApproval ?? null;
+  const now = useElapsedTick(isExecutionBusy(selectedExecution) || pendingApproval !== null);
   const taskListWidth = useMemo(
     () => clampBackgroundTasksListWidth(persistedSurface?.taskListWidth, surfaceWidth),
     [persistedSurface?.taskListWidth, surfaceWidth],
@@ -512,6 +532,46 @@ export function BackgroundTasksSurface({
     workspaceId,
   ]);
 
+  const handleExecutionApproval = useCallback(
+    async (decision: "allow" | "deny" | "implement") => {
+      if (!client || !selectedTask || !approvalExecution || !pendingApproval) {
+        return;
+      }
+      setPendingAction("approval");
+      try {
+        const response = await client.resolveExecutionApproval({
+          workspaceId,
+          taskId: selectedTask.id,
+          executionId: approvalExecution.id,
+          approvalId: pendingApproval.id,
+          decision,
+          expectedRevision: pendingApproval.revision,
+          commandId: commandId(pendingApproval.id, pendingApproval.revision, decision),
+        });
+        if (response.conflict) {
+          setError("该审批已由另一端或自动审批处理");
+        } else if (response.error) {
+          setError(response.error);
+        } else {
+          setError(null);
+        }
+        await refreshDetail(selectedTask.id);
+        await refreshList();
+      } finally {
+        setPendingAction(null);
+      }
+    },
+    [
+      approvalExecution,
+      client,
+      pendingApproval,
+      refreshDetail,
+      refreshList,
+      selectedTask,
+      workspaceId,
+    ],
+  );
+
   const selectedGoal = useMemo(
     () => selectedTask?.goals.find((goal) => goal.id === selectedGoalId) ?? null,
     [selectedGoalId, selectedTask],
@@ -686,6 +746,45 @@ export function BackgroundTasksSurface({
 
             <Text style={styles.detailSummary}>{selectedTask.summary}</Text>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+            {approvalExecution && pendingApproval ? (
+              <View style={styles.section} testID="background-execution-approval">
+                <Text style={styles.sectionTitle}>{pendingApproval.title}</Text>
+                {pendingApproval.description ? (
+                  <Text style={styles.sectionBody}>{pendingApproval.description}</Text>
+                ) : null}
+                <Text style={styles.sectionMuted}>{timelineText(pendingApproval.displayed)}</Text>
+                <Text style={styles.sectionMuted} testID="background-execution-approval-countdown">
+                  {approvalCountdownLabel(pendingApproval.deadlineAt, now)}
+                </Text>
+                <View style={styles.headerActions}>
+                  <ActionButton
+                    testID="background-execution-approval-accept"
+                    label={pendingApproval.kind === "implement" ? "Implement" : "Allow"}
+                    icon={
+                      pendingAction === "approval" ? (
+                        <ActivityIndicator size="small" />
+                      ) : (
+                        <CheckCircle2 size={14} />
+                      )
+                    }
+                    disabled={pendingAction !== null}
+                    onPress={() =>
+                      void handleExecutionApproval(
+                        pendingApproval.kind === "implement" ? "implement" : "allow",
+                      )
+                    }
+                  />
+                  <ActionButton
+                    testID="background-execution-approval-deny"
+                    label="Deny"
+                    icon={<XCircle size={14} />}
+                    disabled={pendingAction !== null}
+                    onPress={() => void handleExecutionApproval("deny")}
+                  />
+                </View>
+              </View>
+            ) : null}
 
             {selectedTask.pendingDecision ? (
               <View style={styles.section} testID="loop-user-decision-card">
@@ -880,6 +979,12 @@ export function BackgroundTasksSurface({
                 )}
                 {selectedExecution.summary ? (
                   <Text style={styles.sectionBody}>{selectedExecution.summary}</Text>
+                ) : null}
+                {selectedExecution.latestApproval?.resolution ? (
+                  <Text style={styles.sectionMuted} testID="background-execution-approval-result">
+                    Last approval: {selectedExecution.latestApproval.resolution.decision} by{" "}
+                    {selectedExecution.latestApproval.resolution.actorId}
+                  </Text>
                 ) : null}
               </View>
             ) : null}

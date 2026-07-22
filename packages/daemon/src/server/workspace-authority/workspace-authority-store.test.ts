@@ -305,6 +305,153 @@ describe("WorkspaceAuthorityStore", () => {
     catalog.close();
   });
 
+  it("resolves execution approvals with CAS, command idempotency, and an honest resolution actor", () => {
+    const { catalog, store } = createStore();
+    createTask(store, catalog);
+    store.createExecution({
+      execution: {
+        id: "execution_approval",
+        taskId: "task_test",
+        goalId: "goal_1",
+        phaseRunId: "phase_approval",
+        phase: "planexec",
+        providerThreadId: "thread_approval",
+        status: "planning",
+        generation: "generation_approval",
+        attachment: null,
+        startedAt: "2026-07-22T00:00:00.000Z",
+        lastActivityAt: "2026-07-22T00:00:00.000Z",
+        completedAt: null,
+        summary: null,
+        revision: 1,
+      },
+      providerThread: { id: "thread_approval", adapterId: "fixture" },
+    });
+    const approval = store.createExecutionApproval({
+      executionId: "execution_approval",
+      generation: "generation_approval",
+      request: {
+        id: "provider-plan-approval",
+        kind: "implement",
+        title: "Implement plan",
+        description: "The native Plan is ready.",
+        displayed: { plan: ["Inspect", "Implement", "Verify"] },
+        autoApproveEligible: true,
+      },
+      deadlineAt: "2026-07-22T00:00:20.000Z",
+    });
+    expect(store.getExecution("execution_approval")).toMatchObject({
+      status: "awaiting_implementation",
+      pendingApproval: { id: approval.id, kind: "implement", status: "pending" },
+    });
+
+    const resolved = store.resolveExecutionApproval({
+      taskId: "task_test",
+      executionId: "execution_approval",
+      approvalId: approval.id,
+      decision: "implement",
+      expectedRevision: approval.revision,
+      commandId: "human-implement-command",
+      actorId: "human:user-1",
+      clientId: "desktop",
+      deviceId: "device-1",
+      recordHumanDecision: true,
+    });
+    expect(resolved).toMatchObject({
+      duplicate: false,
+      execution: { status: "implementing", pendingApproval: null },
+      approval: {
+        status: "allowed",
+        resolution: { decision: "implement", actorId: "human:user-1" },
+      },
+    });
+    expect(store.listDecisions("task_test").at(-1)).toMatchObject({
+      kind: "execution_approval",
+      actorId: "human:user-1",
+      rawAnswer: { decision: "implement" },
+    });
+
+    expect(
+      store.markExecutionAwaitingProvider({
+        executionId: "execution_approval",
+        generation: "generation_approval",
+      }),
+    ).toMatchObject({ status: "awaiting_provider" });
+
+    const duplicate = store.resolveExecutionApproval({
+      taskId: "task_test",
+      executionId: "execution_approval",
+      approvalId: approval.id,
+      decision: "implement",
+      expectedRevision: approval.revision,
+      commandId: "human-implement-command",
+      actorId: "human:user-1",
+      clientId: "desktop",
+      recordHumanDecision: true,
+    });
+    expect(duplicate.duplicate).toBe(true);
+
+    expect(() =>
+      store.resolveExecutionApproval({
+        taskId: "task_test",
+        executionId: "execution_approval",
+        approvalId: approval.id,
+        decision: "deny",
+        expectedRevision: approval.revision,
+        commandId: "late-deny-command",
+        actorId: "daemon:auto-approval-timeout",
+        clientId: "daemon",
+        recordHumanDecision: false,
+      }),
+    ).toThrow("changed before this decision");
+    expect(store.getExecutionApproval(approval.id)?.resolution?.actorId).toBe("human:user-1");
+    store.close();
+    catalog.close();
+  });
+
+  it("never admits provider questions into the background approval authority", () => {
+    const { catalog, store } = createStore();
+    createTask(store, catalog);
+    store.createExecution({
+      execution: {
+        id: "execution_question",
+        taskId: "task_test",
+        goalId: "goal_1",
+        phaseRunId: "phase_question",
+        phase: "review",
+        providerThreadId: "thread_question",
+        status: "running",
+        generation: "generation_question",
+        attachment: null,
+        startedAt: "2026-07-22T00:00:00.000Z",
+        lastActivityAt: "2026-07-22T00:00:00.000Z",
+        completedAt: null,
+        summary: null,
+        revision: 1,
+      },
+      providerThread: { id: "thread_question", adapterId: "fixture" },
+    });
+
+    expect(() =>
+      store.createExecutionApproval({
+        executionId: "execution_question",
+        generation: "generation_question",
+        request: {
+          id: "provider-question",
+          kind: "question",
+          title: "Choose an implementation direction",
+          description: null,
+          displayed: { choices: ["A", "B"] },
+          autoApproveEligible: false,
+        },
+        deadlineAt: "2026-07-22T00:00:20.000Z",
+      }),
+    ).toThrow("Provider questions cannot enter");
+    expect(store.getPendingExecutionApproval("execution_question")).toBeNull();
+    store.close();
+    catalog.close();
+  });
+
   it("associates visible Agent permissions with the active foreground turn", () => {
     const { workspaceId, catalog, store } = createStore();
     const started = store.startForegroundTurn({
@@ -378,6 +525,19 @@ describe("WorkspaceAuthorityStore", () => {
       },
       providerThread: { id: "thread_stop", adapterId: "fixture" },
     });
+    const approval = store.createExecutionApproval({
+      executionId: "execution_stop",
+      generation: "generation_stop",
+      request: {
+        id: "provider-stop-permission",
+        kind: "command",
+        title: "Run a mutating command",
+        description: null,
+        displayed: { command: "npm test" },
+        autoApproveEligible: true,
+      },
+      deadlineAt: "2026-07-22T00:00:20.000Z",
+    });
     const current = store.getTask("task_test")!;
     const requested = store.requestStop({
       taskId: current.id,
@@ -388,6 +548,10 @@ describe("WorkspaceAuthorityStore", () => {
     });
     expect(requested.task.status).toBe("stopping");
     expect(requested.execution?.status).toBe("cancel_requested");
+    expect(store.getExecutionApproval(approval.id)).toMatchObject({
+      status: "canceled",
+      deadlineAt: null,
+    });
     expect(
       store.interruptExecution({
         executionId: "execution_stop",
@@ -413,6 +577,57 @@ describe("WorkspaceAuthorityStore", () => {
         clientId: "desktop",
       }).duplicate,
     ).toBe(true);
+    store.close();
+    catalog.close();
+  });
+
+  it("interrupts an unrecoverable pending approval on daemon restart", () => {
+    const { catalog, store } = createStore();
+    createTask(store, catalog);
+    store.createExecution({
+      execution: {
+        id: "execution_restart_approval",
+        taskId: "task_test",
+        goalId: "goal_1",
+        phaseRunId: "phase_restart_approval",
+        phase: "planexec",
+        providerThreadId: "thread_restart_approval",
+        status: "planning",
+        generation: "generation_restart_approval",
+        attachment: null,
+        startedAt: "2026-07-22T00:00:00.000Z",
+        lastActivityAt: "2026-07-22T00:00:00.000Z",
+        completedAt: null,
+        summary: null,
+        revision: 1,
+      },
+      providerThread: { id: "thread_restart_approval", adapterId: "fixture" },
+    });
+    const approval = store.createExecutionApproval({
+      executionId: "execution_restart_approval",
+      generation: "generation_restart_approval",
+      request: {
+        id: "provider-restart-plan",
+        kind: "implement",
+        title: "Implement plan",
+        description: null,
+        displayed: { plan: "Implement after approval." },
+        autoApproveEligible: true,
+      },
+      deadlineAt: "2026-07-22T00:00:20.000Z",
+    });
+
+    expect(store.recoverInterruptedExecutionsAfterRestart()).toEqual(["task_test"]);
+    expect(store.getExecution("execution_restart_approval")).toMatchObject({
+      status: "failed",
+      summary: expect.stringContaining("approval callback was pending"),
+      pendingApproval: null,
+    });
+    expect(store.getExecutionApproval(approval.id)?.status).toBe("canceled");
+    expect(store.getTask("task_test")).toMatchObject({
+      status: "interrupted",
+      currentExecutionId: null,
+    });
     store.close();
     catalog.close();
   });

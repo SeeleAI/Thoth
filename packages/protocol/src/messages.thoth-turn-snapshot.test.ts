@@ -54,6 +54,35 @@ describe("foreground Thoth turn snapshot", () => {
     ).toEqual(thoth);
   });
 
+  it("freezes provider Plan independently from the Thoth snapshot", () => {
+    const create = CreateAgentRequestMessageSchema.parse({
+      type: "create_agent_request",
+      requestId: "create-plan",
+      config,
+      initialPrompt: "Plan this turn",
+      thoth: { enabled: false },
+      providerRunMode: "plan",
+    });
+    const send = SendAgentMessageRequestSchema.parse({
+      type: "send_agent_message_request",
+      requestId: "send-default",
+      agentId: "agent-1",
+      text: "Use the default mode for the next turn",
+      thoth: {
+        enabled: true,
+        executionMode: "quick",
+        clarifyStrength: "light",
+      },
+      providerRunMode: "default",
+    });
+
+    expect(create).toMatchObject({ thoth: { enabled: false }, providerRunMode: "plan" });
+    expect(send).toMatchObject({
+      thoth: { enabled: true, executionMode: "quick" },
+      providerRunMode: "default",
+    });
+  });
+
   it("lets a remote daemon resolve cwd exclusively from workspaceId", () => {
     const parsed = CreateAgentRequestMessageSchema.parse({
       type: "create_agent_request",

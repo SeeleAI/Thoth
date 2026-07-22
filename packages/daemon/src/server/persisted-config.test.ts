@@ -125,24 +125,6 @@ describe("PersistedConfigSchema worktrees config", () => {
   });
 });
 
-describe("PersistedConfigSchema provider credentials", () => {
-  test("accepts OpenAI voice credentials", () => {
-    const parsed = PersistedConfigSchema.parse({
-      providers: {
-        openai: {
-          voice: {
-            apiKey: " voice-secret ",
-            baseUrl: " https://voice.example.com/v1 ",
-          },
-        },
-      },
-    });
-
-    expect(parsed.providers?.openai?.voice?.apiKey).toBe("voice-secret");
-    expect(parsed.providers?.openai?.voice?.baseUrl).toBe("https://voice.example.com/v1");
-  });
-});
-
 describe("PersistedConfigSchema daemon append system prompt", () => {
   test("accepts optional append system prompt", () => {
     const parsed = PersistedConfigSchema.parse({
@@ -593,42 +575,6 @@ describe("PersistedConfigSchema logging config", () => {
   });
 });
 
-describe("PersistedConfigSchema voice mode config", () => {
-  test("accepts a dedicated turn detection provider", () => {
-    const parsed = PersistedConfigSchema.parse({
-      features: {
-        voiceMode: {
-          turnDetection: {
-            provider: "local",
-          },
-        },
-      },
-    });
-
-    expect(parsed.features?.voiceMode?.turnDetection?.provider).toBe("local");
-  });
-
-  test("accepts trimmed STT language fields", () => {
-    const parsed = PersistedConfigSchema.parse({
-      features: {
-        dictation: {
-          stt: {
-            language: " fr ",
-          },
-        },
-        voiceMode: {
-          stt: {
-            language: " de ",
-          },
-        },
-      },
-    });
-
-    expect(parsed.features?.dictation?.stt?.language).toBe("fr");
-    expect(parsed.features?.voiceMode?.stt?.language).toBe("de");
-  });
-});
-
 describe("loadPersistedConfig", () => {
   test("initializes new homes on the Thoth direct daemon port", () => {
     const home = createTempHome();
@@ -636,6 +582,30 @@ describe("loadPersistedConfig", () => {
       const config = loadPersistedConfig(home);
 
       expect(config.daemon?.listen).toBe("127.0.0.1:6688");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("strips retired media settings from existing config files", () => {
+    const home = createTempHome();
+    try {
+      writeFileSync(
+        path.join(home, "config.json"),
+        JSON.stringify({
+          version: 1,
+          providers: { openai: { voice: { apiKey: "legacy-secret" } } },
+          features: {
+            dictation: { stt: { language: "fr" } },
+            voiceMode: { stt: { language: "de" } },
+          },
+        }),
+      );
+
+      const config = loadPersistedConfig(home);
+
+      expect("providers" in config).toBe(false);
+      expect(config.features).toEqual({});
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
@@ -704,10 +674,8 @@ describe.skipIf(process.platform === "win32")("persisted config file permissions
     const home = createTempHome();
     try {
       savePersistedConfig(home, {
-        providers: {
-          openai: {
-            apiKey: "secret",
-          },
+        thoth: {
+          enabled: true,
         },
       });
 

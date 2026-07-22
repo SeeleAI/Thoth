@@ -210,8 +210,6 @@ describe("ConnectionOfferV2 (daemon E2E)", () => {
       THOTH_HOME: tempHome,
       THOTH_LISTEN: `0.0.0.0:${port}`,
       OPENAI_API_KEY: "",
-      THOTH_DICTATION_ENABLED: "0",
-      THOTH_VOICE_MODE_ENABLED: "0",
       THOTH_LOG_FORMAT: "json",
     };
 

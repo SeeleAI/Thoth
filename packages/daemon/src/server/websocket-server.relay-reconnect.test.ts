@@ -99,9 +99,8 @@ vi.mock("./push/push-service.js", () => ({
 }));
 
 import { z } from "zod";
-import { VoiceAssistantWebSocketServer } from "./websocket-server";
+import { DaemonWebSocketServer } from "./websocket-server";
 import { parseServerInfoStatusPayload } from "./messages.js";
-import type { SpeechReadinessSnapshot } from "./speech/speech-runtime.js";
 
 interface WebSocketServerInternals {
   attachSocket(ws: unknown, req: unknown): Promise<void>;
@@ -126,12 +125,6 @@ function parseSentEnvelope(data: unknown): z.infer<typeof WireEnvelopeSchema> {
 
 function sentEnvelopes(socket: MockSocket): z.infer<typeof WireEnvelopeSchema>[] {
   return socket.sent.filter((data) => typeof data === "string").map(parseSentEnvelope);
-}
-
-function sentServerInfoEnvelopes(socket: MockSocket): z.infer<typeof WireEnvelopeSchema>[] {
-  return sentEnvelopes(socket).filter(
-    (envelope) => parseServerInfoStatusPayload(envelope.message?.payload) !== null,
-  );
 }
 
 function sentBinaryFrames(socket: MockSocket): Uint8Array[] {
@@ -214,16 +207,12 @@ function createLogger() {
   return logger;
 }
 
-function createServer(options?: {
-  speechReadiness?: SpeechReadinessSnapshot | null;
-  logger?: ReturnType<typeof createLogger>;
-}) {
-  const speechReadiness = options?.speechReadiness ?? null;
+function createServer(options?: { logger?: ReturnType<typeof createLogger> }) {
   const daemonConfigStore = {
     onChange: vi.fn(() => () => {}),
   };
   const logger = options?.logger ?? createLogger();
-  return new VoiceAssistantWebSocketServer(
+  return new DaemonWebSocketServer(
     createStub<HTTPServer>({}),
     createStub<pino.Logger>(logger),
     "srv_test",
@@ -245,22 +234,6 @@ function createServer(options?: {
     createStub<DaemonConfigStore>(daemonConfigStore),
     null,
     { allowedOrigins: new Set() },
-    undefined,
-    speechReadiness
-      ? {
-          resolveStt: () => null,
-          resolveSttLanguage: () => "en",
-          resolveTts: () => null,
-          resolveTurnDetection: () => null,
-          resolveDictationStt: () => null,
-          resolveDictationSttLanguage: () => "en",
-          getReadiness: () => speechReadiness,
-          onReadinessChange: vi.fn(() => () => {}),
-          start: vi.fn(),
-          stop: vi.fn(),
-          ready: Promise.resolve(),
-        }
-      : undefined,
     undefined,
     undefined,
     TEST_DAEMON_VERSION,
@@ -293,79 +266,6 @@ function createServer(options?: {
   );
 }
 
-function createReadySpeechReadinessSnapshot(): SpeechReadinessSnapshot {
-  return {
-    generatedAt: "2026-02-14T00:00:00.000Z",
-    requiredLocalModelIds: [],
-    missingLocalModelIds: [],
-    download: {
-      inProgress: false,
-      error: null,
-    },
-    dictation: {
-      enabled: true,
-      available: true,
-      reasonCode: "ready",
-      message: "Dictation is ready.",
-      retryable: false,
-      missingModelIds: [],
-    },
-    realtimeVoice: {
-      enabled: true,
-      available: true,
-      reasonCode: "ready",
-      message: "Realtime voice is ready.",
-      retryable: false,
-      missingModelIds: [],
-    },
-    voiceFeature: {
-      enabled: true,
-      available: true,
-      reasonCode: "ready",
-      message: "Voice features are ready.",
-      retryable: false,
-      missingModelIds: [],
-    },
-  };
-}
-
-function createDownloadInProgressSpeechReadinessSnapshot(): SpeechReadinessSnapshot {
-  return {
-    generatedAt: "2026-02-14T00:00:00.000Z",
-    requiredLocalModelIds: ["parakeet-tdt-0.6b-v2-int8"],
-    missingLocalModelIds: ["parakeet-tdt-0.6b-v2-int8"],
-    download: {
-      inProgress: true,
-      error: null,
-    },
-    dictation: {
-      enabled: true,
-      available: false,
-      reasonCode: "stt_unavailable",
-      message: "Dictation is unavailable: speech-to-text service is not ready.",
-      retryable: false,
-      missingModelIds: [],
-    },
-    realtimeVoice: {
-      enabled: true,
-      available: false,
-      reasonCode: "stt_unavailable",
-      message: "Realtime voice is unavailable: speech-to-text service is not ready.",
-      retryable: false,
-      missingModelIds: [],
-    },
-    voiceFeature: {
-      enabled: true,
-      available: false,
-      reasonCode: "model_download_in_progress",
-      message:
-        "Voice features are unavailable while models download in the background (parakeet-tdt-0.6b-v2-int8).",
-      retryable: true,
-      missingModelIds: ["parakeet-tdt-0.6b-v2-int8"],
-    },
-  };
-}
-
 function createHelloMessage(
   clientId: string,
   options?: { capabilities?: Record<string, boolean> },
@@ -394,7 +294,7 @@ function createDirectRequest() {
 }
 
 async function attachRelayAndHello(params: {
-  server: VoiceAssistantWebSocketServer;
+  server: DaemonWebSocketServer;
   socket: MockSocket;
   clientId: string;
 }) {
@@ -410,7 +310,7 @@ async function attachRelayAndHello(params: {
 }
 
 async function attachDirectAndHello(params: {
-  server: VoiceAssistantWebSocketServer;
+  server: DaemonWebSocketServer;
   socket: MockSocket;
   clientId: string;
 }) {
@@ -857,87 +757,6 @@ describe("relay external socket reconnect behavior", () => {
     socket1.emit("close", 1006, "");
     await vi.advanceTimersByTimeAsync(90_000);
     expect(session.cleanup).toHaveBeenCalledTimes(1);
-
-    await server.close();
-  });
-
-  test("includes voice capabilities in initial server_info when speech readiness exists", async () => {
-    const speechReadiness = createReadySpeechReadinessSnapshot();
-    const server = createServer({ speechReadiness });
-
-    const socket = new MockSocket();
-    const serverInfo = (await attachRelayAndHello({
-      server,
-      socket,
-      clientId: "cid-server-info-capabilities",
-    })) as {
-      version?: unknown;
-      capabilities?: {
-        voice?: {
-          dictation?: { enabled?: unknown; reason?: unknown };
-          voice?: { enabled?: unknown; reason?: unknown };
-        };
-      };
-    };
-    expect(serverInfo.version).toBe(TEST_DAEMON_VERSION);
-    expect(serverInfo.capabilities?.voice?.dictation?.enabled).toBe(
-      speechReadiness.dictation.enabled,
-    );
-    expect(serverInfo.capabilities?.voice?.dictation?.reason).toBe("");
-    expect(serverInfo.capabilities?.voice?.voice?.enabled).toBe(
-      speechReadiness.realtimeVoice.enabled,
-    );
-    expect(serverInfo.capabilities?.voice?.voice?.reason).toBe("");
-
-    await server.close();
-  });
-
-  test("broadcasts updated server_info when capabilities change", async () => {
-    const server = createServer();
-
-    const socket = new MockSocket();
-    await attachRelayAndHello({
-      server,
-      socket,
-      clientId: "cid-server-info-broadcast",
-    });
-    expect(sentServerInfoEnvelopes(socket)).toHaveLength(1);
-
-    const speechReadiness = createReadySpeechReadinessSnapshot();
-    server.publishSpeechReadiness(speechReadiness);
-    expect(sentServerInfoEnvelopes(socket)).toHaveLength(2);
-
-    const secondEnvelope = sentServerInfoEnvelopes(socket)[1];
-    const secondPayload = parseServerInfoStatusPayload(secondEnvelope.message?.payload);
-    expect(secondPayload?.capabilities?.voice?.dictation.enabled).toBe(true);
-    expect(secondPayload?.capabilities?.voice?.voice.enabled).toBe(true);
-
-    // Same readiness should not produce another server_info broadcast.
-    server.publishSpeechReadiness(speechReadiness);
-    expect(sentServerInfoEnvelopes(socket)).toHaveLength(2);
-
-    await server.close();
-  });
-
-  test("includes temporary retry guidance while models are downloading", async () => {
-    const server = createServer();
-    const socket = new MockSocket();
-    await attachRelayAndHello({
-      server,
-      socket,
-      clientId: "cid-server-info-download-guidance",
-    });
-    expect(sentServerInfoEnvelopes(socket)).toHaveLength(1);
-
-    server.publishSpeechReadiness(createDownloadInProgressSpeechReadinessSnapshot());
-    expect(sentServerInfoEnvelopes(socket)).toHaveLength(2);
-
-    const envelope = sentServerInfoEnvelopes(socket)[1];
-    const payload = parseServerInfoStatusPayload(envelope.message?.payload);
-    expect(payload?.capabilities?.voice?.dictation.enabled).toBe(true);
-    expect(payload?.capabilities?.voice?.voice.enabled).toBe(true);
-    expect(payload?.capabilities?.voice?.dictation.reason).toContain("Try again in a few minutes.");
-    expect(payload?.capabilities?.voice?.voice.reason).toContain("Try again in a few minutes.");
 
     await server.close();
   });

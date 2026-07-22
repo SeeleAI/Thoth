@@ -222,6 +222,8 @@ function makeConfig(providers: MutableDaemonConfig["providers"] = {}): MutableDa
     mcp: { injectIntoAgents: false },
     providers,
     metadataGeneration: { providers: [] },
+    thoth: {},
+    providerControl: {},
     autoArchiveAfterMerge: false,
     enableTerminalAgentHooks: false,
     appendSystemPrompt: "",

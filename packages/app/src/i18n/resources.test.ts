@@ -68,7 +68,6 @@ const untranslatedLocalFallbacks = [
   "No file found for ",
   "Unable to load pull request status",
   "Unable to load pull request activity",
-  "An unexpected error occurred while handling dictation.",
   "Unable to load desktop settings.",
   "Unable to save desktop settings.",
 ] as const;
@@ -191,7 +190,6 @@ describe("translation resources", () => {
     );
     expect(en.composer.input.addAttachment).toBe("Add attachment");
     expect(en.composer.input.sendMessage).toBe("Send message");
-    expect(en.composer.voice.startDictation).toBe("Start dictation");
     expect(en.composer.attachments.addIssueOrPr).toBe("Add issue or PR");
     expect(en.composer.github.title).toBe("Attach issue or PR");
     expect(en.agentControls.provider.fallback).toBe("Provider");
@@ -292,7 +290,6 @@ describe("translation resources", () => {
   });
 
   it("includes shared utility chrome keys for the Batch 4F migration", () => {
-    expect(en.realtimeVoice.actions.mute).toBe("Mute realtime voice");
     expect(en.rewind.actions.conversation).toBe("Rewind conversation");
     expect(en.rewind.warning).toBe("This action cannot be undone");
     expect(en.diffViewer.empty).toBe("No changes to display");
@@ -338,13 +335,6 @@ describe("translation resources", () => {
     expect(en.message.attachments.closeImage).toBe("Close image");
     expect(en.message.attachments.imageLoadFailed).toBe("Couldn't load image");
     expect(en.message.attachments.imageUnavailable).toBe("Image unavailable");
-    expect(en.message.dictation.start).toBe("Start voice dictation");
-    expect(en.message.dictation.cancel).toBe("Cancel dictation");
-    expect(en.message.dictation.retry).toBe("Retry dictation");
-    expect(en.message.dictation.insert).toBe("Insert transcription");
-    expect(en.message.dictation.insertAndSend).toBe("Insert transcription and send");
-    expect(en.message.dictation.failed).toBe("Dictation failed: {{error}}");
-    expect(en.message.dictation.failedRetry).toBe("Dictation failed. Tap retry.");
     expect(en.message.question.submit).toBe("Submit");
     expect(en.message.question.answerPlaceholder).toBe("Type your answer...");
     expect(en.message.question.otherPlaceholder).toBe("Other...");
@@ -422,9 +412,6 @@ describe("translation resources", () => {
     expect(en.common.errors.daemonClientUnavailable).toBe("Daemon client unavailable");
     expect(en.common.errors.daemonClientDisconnected).toBe("Daemon client is disconnected");
     expect(en.common.errors.noFileFound).toBe("No file found for {{token}}");
-    expect(en.common.errors.unexpectedDictationError).toBe(
-      "An unexpected error occurred while handling dictation.",
-    );
     expect(en.common.connectionStatus.online).toBe("Online");
     expect(en.common.connectionStatus.connecting).toBe("Connecting");
     expect(en.common.connectionStatus.offline).toBe("Offline");
@@ -566,13 +553,6 @@ describe("translation resources", () => {
     );
     expect(en.desktop.permissions.notifications.unexpectedState).toBe(
       "Unexpected notification permission state: {{state}}",
-    );
-    expect(en.desktop.permissions.microphone.granted).toBe("Microphone access is granted.");
-    expect(en.desktop.permissions.microphone.statusApiUnavailable).toBe(
-      "Microphone status API is unavailable in this runtime. Use Request to check access.",
-    );
-    expect(en.desktop.permissions.microphone.requestDenied).toBe(
-      "Microphone permission was denied by the user or system.",
     );
     expect(en.desktop.permissions.empty.notifications).toBe(
       "Notification status has not been checked yet.",

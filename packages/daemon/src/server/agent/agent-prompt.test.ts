@@ -8,6 +8,7 @@ import {
   isSystemInjectedEnvelope,
   sendPromptToAgent,
   setupFinishNotification,
+  unarchiveAgentState,
 } from "./agent-prompt.js";
 import type { AgentManagerEvent, ManagedAgent } from "./agent-manager.js";
 
@@ -105,6 +106,21 @@ function createFinishNotificationScenario(
 test("isSystemInjectedEnvelope matches the envelope formatSystemNotificationPrompt produces", () => {
   expect(isSystemInjectedEnvelope(formatSystemNotificationPrompt("child finished"))).toBe(true);
   expect(isSystemInjectedEnvelope("hello world")).toBe(false);
+});
+
+test("unarchiveAgentState does not notify before a stored Agent is registered live", async () => {
+  const unarchiveSnapshot = vi.fn(async () => true);
+  const notifyAgentState = vi.fn(() => {
+    throw new Error("Unknown agent");
+  });
+  const agentManager: AgentManager = Object.create(AgentManager.prototype);
+  Reflect.set(agentManager, "unarchiveSnapshot", unarchiveSnapshot);
+  Reflect.set(agentManager, "notifyAgentState", notifyAgentState);
+  const agentStorage: AgentStorage = Object.create(AgentStorage.prototype);
+
+  await expect(unarchiveAgentState(agentStorage, agentManager, "stored-agent")).resolves.toBe(true);
+  expect(unarchiveSnapshot).toHaveBeenCalledWith("stored-agent");
+  expect(notifyAgentState).not.toHaveBeenCalled();
 });
 
 test("sendPromptToAgent forwards the client message id as run options", async () => {

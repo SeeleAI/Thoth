@@ -1,3 +1,9 @@
+import type {
+  ProviderPlanCapability,
+  ProviderRunMode,
+  ProviderRunModeReceipt,
+} from "@thoth/protocol/provider-control";
+
 export type HarnessInstructionAttachment = "developer" | "system" | "session_prompt";
 
 export type HarnessToolAttachment = "native" | "mcp" | "acp";
@@ -11,6 +17,7 @@ export interface HarnessCapabilities {
   permissions: "interactive" | "unattended";
   threadPersistence: "native" | "adapter_owned" | "none";
   nativeRetention: "provider_owned" | "adapter_owned";
+  plan: ProviderPlanCapability;
 }
 
 export interface RuntimeBundleTool {
@@ -67,6 +74,29 @@ export interface HarnessExecutionEvent {
   nativeCursor?: string;
   occurredAt: string;
   payload: unknown;
+  control?: HarnessExecutionControlEvent;
+}
+
+export interface HarnessApprovalRequest {
+  id: string;
+  kind: "implement" | "command" | "file" | "tool" | "mode" | "permission" | "question";
+  title: string;
+  description: string | null;
+  displayed: unknown;
+  autoApproveEligible: boolean;
+}
+
+export type HarnessExecutionControlEvent =
+  | { type: "plan_ready"; plan: string; approval: HarnessApprovalRequest }
+  | { type: "plan_invalid"; reason: string }
+  | { type: "approval_requested"; approval: HarnessApprovalRequest }
+  | { type: "provider_question"; request: unknown };
+
+export interface HarnessApprovalResolution {
+  approvalId: string;
+  decision: "allow" | "deny" | "implement";
+  followUpPrompt: unknown | null;
+  runModeReceipt: ProviderRunModeReceipt | null;
 }
 
 export interface HarnessThreadInput {
@@ -81,6 +111,8 @@ export interface HarnessExecutionInput {
   generation: string;
   prompt: unknown;
   attachment: RuntimeAttachmentReceipt | null;
+  runMode: ProviderRunMode;
+  runModeReceipt: ProviderRunModeReceipt;
 }
 
 export interface LegacyHarnessThreadInspection {
@@ -107,6 +139,10 @@ export interface HarnessAdapter {
     bundle: RuntimeBundle;
     tools: HarnessRuntimeToolBinding;
   }): Promise<RuntimeAttachmentReceipt>;
+  prepareRunMode(input: {
+    thread: HarnessThreadDescriptor;
+    mode: ProviderRunMode;
+  }): Promise<ProviderRunModeReceipt>;
   startExecution(input: {
     thread: HarnessThreadDescriptor;
     execution: HarnessExecutionInput;
@@ -115,6 +151,12 @@ export interface HarnessAdapter {
     thread: HarnessThreadDescriptor;
     execution: HarnessExecutionInput;
   }): Promise<HarnessExecutionDescriptor>;
+  resolveApproval(input: {
+    thread: HarnessThreadDescriptor;
+    execution: HarnessExecutionDescriptor;
+    approvalId: string;
+    decision: "allow" | "deny" | "implement";
+  }): Promise<HarnessApprovalResolution>;
   interruptExecution(execution: HarnessExecutionDescriptor): Promise<void>;
   subscribeEvents(
     execution: HarnessExecutionDescriptor,

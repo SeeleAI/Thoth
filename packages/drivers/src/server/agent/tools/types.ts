@@ -51,8 +51,6 @@ export interface ThothToolRuntimeCallerConfig {
 export interface ThothToolRuntimeContext {
   callerAgentId?: string;
   callerAgentConfig?: ThothToolRuntimeCallerConfig;
-  enableVoiceTools?: boolean;
-  voiceOnly?: boolean;
 }
 
 export type ThothToolCatalogFactory = (

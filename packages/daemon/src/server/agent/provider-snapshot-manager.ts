@@ -777,6 +777,7 @@ export class ProviderSnapshotManager {
         enabled: true,
         models: catalog.models,
         modes: catalog.modes,
+        ...(catalog.planCapability ? { planCapability: catalog.planCapability } : {}),
         fetchedAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -951,6 +952,7 @@ function cloneEntry(entry: ProviderSnapshotEntry): ProviderSnapshotEntry {
     ...entry,
     models: entry.models?.map((model) => ({ ...model })),
     modes: entry.modes?.map((mode) => ({ ...mode })),
+    ...(entry.planCapability ? { planCapability: { ...entry.planCapability } } : {}),
   };
 }
 

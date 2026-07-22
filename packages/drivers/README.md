@@ -18,5 +18,3 @@ Hard boundary:
 2. Drivers start, resume and observe provider sessions through ACP, harness runtime, app-server, official harness SDK/control surfaces or local harness CLIs.
 3. Drivers must not call raw model inference APIs as a substitute for provider sessions.
 4. Provider-native session handles are recorded as resume metadata and evidence, not as task authority.
-
-Current status: skeleton only. No implementation exists in this package yet.

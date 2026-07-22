@@ -9,6 +9,10 @@ import {
   type AgentThothState,
   type AgentThothTurn,
 } from "@thoth/protocol/thoth/rpc-schemas";
+import {
+  ProviderRunModeReceiptSchema,
+  ProviderRunModeSchema,
+} from "@thoth/protocol/provider-control";
 
 export interface ForegroundAgentAuthorityRow {
   agent_id: string;
@@ -25,6 +29,8 @@ export interface ForegroundTurnRow {
   turn_kind: "raw" | "thoth";
   status: AgentThothLifecycle;
   controls_json: string | null;
+  provider_run_mode: string;
+  provider_mode_receipt_json: string | null;
   source_message_id: string | null;
   background_task_id: string | null;
   error: string | null;
@@ -52,6 +58,14 @@ function parseTurn(row: ForegroundTurnRow | null): AgentThothTurn | null {
     kind: row.turn_kind,
     lifecycle: row.status,
     ...(controls ? { controls } : {}),
+    providerRunMode: ProviderRunModeSchema.parse(row.provider_run_mode ?? "default"),
+    ...(row.provider_mode_receipt_json
+      ? {
+          providerRunModeReceipt: ProviderRunModeReceiptSchema.parse(
+            JSON.parse(row.provider_mode_receipt_json) as unknown,
+          ),
+        }
+      : {}),
     ...(row.source_message_id ? { sourceMessageId: row.source_message_id } : {}),
     ...(row.background_task_id ? { backgroundTaskId: row.background_task_id } : {}),
     ...(row.error ? { error: row.error } : {}),

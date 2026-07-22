@@ -7,7 +7,6 @@ import {
   truncateDiffText,
 } from "../tool-call-mapper-utils.js";
 import { deriveCodexToolDetail, normalizeCodexFilePath } from "./tool-call-detail-parser.js";
-import { isSpeakToolName } from "@thoth/protocol/tool-name-normalization";
 
 interface CodexMapperOptions {
   cwd?: string | null;
@@ -39,7 +38,7 @@ interface CodexNormalizedToolCallEnvelope {
   cwd?: string | null;
 }
 
-type CodexToolKind = "shell" | "read" | "write" | "edit" | "search" | "speak" | "unknown";
+type CodexToolKind = "shell" | "read" | "write" | "edit" | "search" | "unknown";
 
 const CODEX_SHELL_NAMES: ReadonlySet<string> = new Set([
   "Bash",
@@ -60,7 +59,6 @@ function resolveCodexToolKind(name: string): CodexToolKind {
   if (CODEX_WRITE_NAMES.has(name)) return "write";
   if (CODEX_EDIT_NAMES.has(name)) return "edit";
   if (CODEX_SEARCH_NAMES.has(name)) return "search";
-  if (isSpeakToolName(name)) return "speak";
   return "unknown";
 }
 
@@ -77,7 +75,7 @@ interface CodexResolvedToolCall {
 }
 
 function toToolCallTimelineItem(envelope: CodexResolvedToolCall): ToolCallTimelineItem {
-  const name = envelope.toolKind === "speak" ? ("speak" as const) : envelope.name;
+  const name = envelope.name;
   const parsedDetail = deriveCodexToolDetail({
     name,
     input: envelope.input,

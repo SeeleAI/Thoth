@@ -79,24 +79,11 @@ export function useDesktopPermissions(): UseDesktopPermissionsReturn {
               state: "unknown",
               detail: t("desktop.permissions.empty.notifications"),
             },
-            microphone: {
-              state: "unknown",
-              detail: t("desktop.permissions.empty.microphone"),
-            },
           };
-
-          if (kind === "notifications") {
-            return {
-              ...base,
-              checkedAt: Date.now(),
-              notifications: status,
-            };
-          }
-
           return {
             ...base,
             checkedAt: Date.now(),
-            microphone: status,
+            notifications: status,
           };
         });
       } catch (error) {

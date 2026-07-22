@@ -15,7 +15,7 @@ describe("keyboard-action-dispatcher", () => {
   it("dispatches to the highest-priority active handler", () => {
     const calls: string[] = [];
     const action: KeyboardActionDefinition = {
-      id: "message-input.dictation-toggle",
+      id: "message-input.mode-cycle",
       scope: "message-input",
     };
 
@@ -52,7 +52,7 @@ describe("keyboard-action-dispatcher", () => {
   it("skips disabled and inactive handlers", () => {
     const handle = vi.fn(() => true);
     const action: KeyboardActionDefinition = {
-      id: "message-input.dictation-toggle",
+      id: "message-input.mode-cycle",
       scope: "message-input",
     };
 
@@ -92,7 +92,7 @@ describe("keyboard-action-dispatcher", () => {
   it("dispatches to the active mounted tab when a newer hidden tab is inactive", () => {
     const calls: string[] = [];
     const action: KeyboardActionDefinition = {
-      id: "message-input.dictation-toggle",
+      id: "message-input.mode-cycle",
       scope: "message-input",
     };
 
@@ -166,7 +166,7 @@ describe("keyboard-action-dispatcher", () => {
   it("does not dispatch after a handler is unregistered", () => {
     const handle = vi.fn(() => true);
     const action: KeyboardActionDefinition = {
-      id: "message-input.dictation-cancel",
+      id: "message-input.send",
       scope: "message-input",
     };
 

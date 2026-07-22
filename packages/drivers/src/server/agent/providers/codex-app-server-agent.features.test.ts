@@ -97,7 +97,7 @@ async function createConnectedSession(
 }
 
 describe("Codex app-server provider features", () => {
-  test("features returns fast and plan toggles when supported", async () => {
+  test("features keeps native Plan out of the provider-specific feature catalog", async () => {
     const { session } = await createConnectedSession();
 
     expect(session.features).toEqual([
@@ -110,19 +110,9 @@ describe("Codex app-server provider features", () => {
         icon: "zap",
         value: false,
       },
-      {
-        type: "toggle",
-        id: "plan_mode",
-        label: "Plan",
-        description: "Switch Codex into planning-only collaboration mode",
-        tooltip: "Toggle plan mode",
-        icon: "list-todo",
-        value: false,
-      },
     ]);
 
     await session.setFeature?.("fast_mode", true);
-    await session.setFeature?.("plan_mode", true);
 
     expect(session.features).toEqual([
       {
@@ -134,32 +124,13 @@ describe("Codex app-server provider features", () => {
         icon: "zap",
         value: true,
       },
-      {
-        type: "toggle",
-        id: "plan_mode",
-        label: "Plan",
-        description: "Switch Codex into planning-only collaboration mode",
-        tooltip: "Toggle plan mode",
-        icon: "list-todo",
-        value: true,
-      },
     ]);
   });
 
-  test("features returns only plan toggle when model does not support fast mode", async () => {
+  test("features is empty when the model does not support fast mode", async () => {
     const { session } = await createConnectedSession({ model: "gpt-3.5-turbo" });
 
-    expect(session.features).toEqual([
-      {
-        type: "toggle",
-        id: "plan_mode",
-        label: "Plan",
-        description: "Switch Codex into planning-only collaboration mode",
-        tooltip: "Toggle plan mode",
-        icon: "list-todo",
-        value: false,
-      },
-    ]);
+    expect(session.features).toEqual([]);
   });
 
   test("constructor ignores restored fast mode when model does not support it", async () => {
@@ -168,17 +139,7 @@ describe("Codex app-server provider features", () => {
       featureValues: { fast_mode: true },
     });
 
-    expect(session.features).toEqual([
-      {
-        type: "toggle",
-        id: "plan_mode",
-        label: "Plan",
-        description: "Switch Codex into planning-only collaboration mode",
-        tooltip: "Toggle plan mode",
-        icon: "list-todo",
-        value: false,
-      },
-    ]);
+    expect(session.features).toEqual([]);
 
     await session.startTurn("hello");
     await expect(appServer.waitForTurnStart()).resolves.not.toMatchObject({
@@ -218,14 +179,14 @@ describe("Codex app-server provider features", () => {
     );
   });
 
-  test("setFeature invalidates runtime info", async () => {
+  test("provider run mode invalidates runtime info", async () => {
     const { session } = await createConnectedSession();
 
     await expect(session.getRuntimeInfo()).resolves.not.toMatchObject({
       extra: { collaborationMode: "Plan" },
     });
 
-    await session.setFeature?.("plan_mode", true);
+    await session.applyProviderRunMode?.("plan");
 
     await expect(session.getRuntimeInfo()).resolves.toMatchObject({
       extra: { collaborationMode: "Plan" },
@@ -240,7 +201,7 @@ describe("Codex app-server provider features", () => {
     );
   });
 
-  test("constructor restores feature flags from config.featureValues", async () => {
+  test("constructor restores fast mode but ignores retired public Plan feature state", async () => {
     const { session, appServer } = await createConnectedSession({
       featureValues: { fast_mode: true, plan_mode: true },
     });
@@ -255,23 +216,13 @@ describe("Codex app-server provider features", () => {
         icon: "zap",
         value: true,
       },
-      {
-        type: "toggle",
-        id: "plan_mode",
-        label: "Plan",
-        description: "Switch Codex into planning-only collaboration mode",
-        tooltip: "Toggle plan mode",
-        icon: "list-todo",
-        value: true,
-      },
     ]);
 
     await session.startTurn("hello");
-    await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
-      serviceTier: "fast",
-      collaborationMode: expect.objectContaining({
-        mode: "plan",
-      }),
+    const turnStart = await appServer.waitForTurnStart();
+    expect(turnStart).toMatchObject({ serviceTier: "fast" });
+    expect(turnStart).not.toMatchObject({
+      collaborationMode: expect.objectContaining({ mode: "plan" }),
     });
   });
 
@@ -316,17 +267,7 @@ describe("Codex app-server provider features", () => {
     await session.setFeature?.("fast_mode", true);
     await session.setModel("gpt-3.5-turbo");
 
-    expect(session.features).toEqual([
-      {
-        type: "toggle",
-        id: "plan_mode",
-        label: "Plan",
-        description: "Switch Codex into planning-only collaboration mode",
-        tooltip: "Toggle plan mode",
-        icon: "list-todo",
-        value: false,
-      },
-    ]);
+    expect(session.features).toEqual([]);
     await session.startTurn("hello");
 
     await expect(appServer.waitForTurnStart()).resolves.not.toMatchObject({
@@ -337,7 +278,7 @@ describe("Codex app-server provider features", () => {
   test("startTurn switches collaboration mode when plan mode is enabled", async () => {
     const { session, appServer } = await createConnectedSession();
 
-    await session.setFeature?.("plan_mode", true);
+    await session.applyProviderRunMode?.("plan");
     await session.startTurn("hello");
 
     await expect(appServer.waitForTurnStart()).resolves.toMatchObject({

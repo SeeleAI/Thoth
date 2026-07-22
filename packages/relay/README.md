@@ -15,5 +15,3 @@ Relay rules:
 1. No task truth.
 2. No plaintext.
 3. No offline queue.
-
-Current status: skeleton only. No implementation exists in this package yet.

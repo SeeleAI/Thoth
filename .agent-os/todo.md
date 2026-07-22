@@ -98,6 +98,29 @@ None.
    - Constraints preserved: no provider-home copying, provider-name business branch, old runtime fallback, dual read/write, hidden internal-Agent phase authority or acceptance-only product route; `main`, npm publication and Relay deployment remained untouched.
    - Related: `NTH-CD-060`, `NTH-REQ-020`, `NTH-TD-021`, `NTH-TD-022`
    - Verification: See `NTH-EV-043`. Adapter conformance, real Codex, public AppImage, public CLI over hosted Relay, native Actions, fixed-key APK and the replacement MVP Release all passed at `a705bbe8`.
+8. `NTH-TD-025` `[verified]`: Delete the retired Voice / Speech / Dictation / Audio product path.
+   - Scope: Remove disabled wire messages, client APIs, daemon SpeechService/VoiceSession lifecycle, speech configuration/providers, speak-tool specialization, App dictation/realtime voice UI and state, microphone settings, voice shortcuts/i18n, dead PCM tooling, CLI onboarding/config/test environment scaffolding and their obsolete tests.
+   - Preserved boundaries: text composer/send/queue/cancel, provider streaming and generic tool calls, task authority, Relay/WebSocket/terminal/notification behavior, generic ACP audio-content placeholder, browser media selection CSS, legacy config sanitation and Android `RECORD_AUDIO` denial remain intact.
+   - Related: `NTH-CD-017`, `NTH-CD-059`, `NTH-CD-062`, `NTH-REQ-022`, `NTH-AC-017`
+   - Verification: See `NTH-EV-045`. The affected 805 tests, four package type boundaries, repository/residue guards, targeted formatting and diff hygiene passed in a combined `48.602s`.
+9. `NTH-TD-026` `[verified]`: Delete the unreachable Core shadow implementation and same-class migration scaffolding.
+   - Scope: Remove all 65 files under `packages/core/src`, nine false package-test placeholders, the Expo starter README/reset command, the abandoned Code4Agent Relay mirror command and false package-status statements.
+   - Preserved boundaries: the formal `@thoth/core` package manifest and contracts remain; no stub, compatibility export or replacement path was added; active daemon/drivers implementations and all runtime, wire, SDK and UI behavior remain unchanged.
+   - Related: `NTH-CD-018`, `NTH-CD-022`, `NTH-CD-059`, `NTH-CD-062`, `NTH-REQ-022`, `NTH-AC-017`
+   - Verification: See `NTH-EV-046`. The independent slice removes `20,153` lines with zero additions; repository/package contracts, four foundation type boundaries, structural guards, targeted formatting, diff hygiene and 447 affected tests passed in `36s` plus final documentation hygiene.
+10. `NTH-TD-024` `[verified]`: Implement provider-neutral native Plan, Loop approval automation and update recovery.
+
+- Scope: Foreground Create/Send freeze `default | plan` independently of Thoth; Codex, Claude, OpenCode and capable ACP map that contract to native transport while Pi/non-Plan ACP report unsupported. Every Loop PlanExec runs native Plan -> durable Implement approval -> same-thread implementation -> semantic result; Review/audit permissions share the 20-second background approval authority.
+- Recovery: Stored Agent unarchive no longer emits before live registration; `fetch_agent_response.errorCode` distinguishes true stale tabs, and App removes only the matching server/workspace tab. Product App source has no Codex `plan_mode` feature path.
+- Related: `NTH-CD-060`, `NTH-CD-061`, `NTH-REQ-021`, `NTH-AC-016`
+- Verification: See `NTH-EV-047`. The two bounded gates, four package type boundaries, full foundation, static provider-neutral contract, formatting and diff hygiene passed without AppImage, Relay, real-provider, push or Release work.
+
+11. `NTH-TD-027` `[verified]`: Delete the disconnected Paseo file-backed Task subsystem.
+
+- Scope: Remove `packages/daemon/src/tasks`: `FileTaskStore`, Markdown task documents, dependency graph, execution ordering and their self-contained tests.
+- Preserved boundaries: Workspace-sharded SQLite Task authority, Task coordinator/orchestrator, Task Blackboard, Human Decisions, public APIs, provider execution and UI behavior remain unchanged; no replacement, compatibility path or empty directory was added.
+- Related: `NTH-CD-018`, `NTH-CD-059`, `NTH-CD-060`, `NTH-CD-062`, `NTH-REQ-022`, `NTH-AC-017`
+- Verification: See `NTH-EV-048`. Seven files and `2,244` lines were deleted with zero additions; structural guards, repository/Release contracts, foundation and Daemon type boundaries, 16 current Task-authority tests, targeted formatting and diff hygiene passed in a bounded source gate.
 
 ## Abandoned
 

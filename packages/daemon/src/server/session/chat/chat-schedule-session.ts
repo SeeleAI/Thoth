@@ -38,7 +38,7 @@ export interface ChatScheduleSessionOptions {
 /**
  * A client's chat and schedule request surface. Both families are stateless
  * request/response operations over their own service, with no shared observer,
- * git, or voice state and no subscriptions to tear down. They live in one subsystem
+ * git state and no subscriptions to tear down. They live in one subsystem
  * because they are dispatched together — schedule/* was historically reached through
  * the chat dispatcher's fall-through arm. Chat errors retain ChatServiceError codes.
  */

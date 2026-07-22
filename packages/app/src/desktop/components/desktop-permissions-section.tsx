@@ -37,10 +37,6 @@ export function DesktopPermissionsSection() {
     void requestPermission("notifications");
   }, [requestPermission]);
 
-  const handleRequestMicrophone = useCallback(() => {
-    void requestPermission("microphone");
-  }, [requestPermission]);
-
   const handleSendTestNotification = useCallback(() => {
     void sendTestNotification();
   }, [sendTestNotification]);
@@ -98,14 +94,6 @@ export function DesktopPermissionsSection() {
           onExtraAction={handleSendTestNotification}
         />
         {testNotificationError ? <Text style={errorTextStyle}>{testNotificationError}</Text> : null}
-        <DesktopPermissionRow
-          title={t("settings.permissions.microphone")}
-          showBorder
-          status={snapshot?.microphone ?? null}
-          isRequesting={requestingPermission === "microphone"}
-          onRequest={handleRequestMicrophone}
-          labels={permissionLabels}
-        />
       </View>
     </SettingsSection>
   );

@@ -37,7 +37,6 @@ export const ptBR: TranslationResources = {
       daemonClientUnavailable: "Cliente do daemon indisponível",
       daemonClientDisconnected: "O cliente do daemon está desconectado",
       noFileFound: "Nenhum arquivo encontrado para {{token}}",
-      unexpectedDictationError: "Ocorreu um erro inesperado ao processar o ditado.",
     },
     connectionStatus: {
       online: "Online",
@@ -84,18 +83,6 @@ export const ptBR: TranslationResources = {
       cancelingAgent: "Cancelando agente",
       stopAgent: "Parar agente",
       interrupt: "Interromper",
-    },
-    voice: {
-      enableVoiceMode: "Ativar modo de voz",
-      voiceMode: "Modo de voz",
-      unmuteVoiceMode: "Ativar som do modo de voz",
-      muteVoiceMode: "Silenciar modo de voz",
-      stopDictation: "Parar ditado",
-      startDictation: "Iniciar ditado",
-      unmuteVoice: "Ativar som da voz",
-      muteVoice: "Silenciar voz",
-      dictation: "Ditado",
-      interruptBeforeVoice: "Interrompa o agente antes de iniciar o modo de voz",
     },
     attachments: {
       addImage: "Adicionar imagem",
@@ -168,6 +155,11 @@ export const ptBR: TranslationResources = {
       mode: "Alterar modo de permissão",
     },
     runtime: {
+      plan: {
+        switch: "Enable native Plan mode",
+        tooltip: "Use the selected provider's native Plan for the next turn.",
+        unavailable: "Native Plan capability is not available for this provider yet.",
+      },
       thoth: {
         switch: "Ativar modo Thoth",
         tooltip: "Ativa o Clarify e o Loop do Thoth. Desativado envia diretamente ao provedor.",
@@ -285,20 +277,8 @@ export const ptBR: TranslationResources = {
       text: "Texto",
       file: "Arquivo",
     },
-    speak: {
-      header: "Falou",
-    },
     activity: {
       details: "Detalhes",
-    },
-    dictation: {
-      start: "Iniciar ditado por voz",
-      cancel: "Cancelar ditado",
-      retry: "Tentar ditado novamente",
-      insert: "Inserir transcrição",
-      insertAndSend: "Inserir transcrição e enviar",
-      failed: "Falha no ditado: {{error}}",
-      failedRetry: "Falha no ditado. Toque para tentar novamente.",
     },
     question: {
       submit: "Enviar",
@@ -1023,28 +1003,8 @@ export const ptBR: TranslationResources = {
         requestFailed: "Falha ao solicitar permissão de notificação: {{message}}",
         unexpectedState: "Estado inesperado de permissão de notificação: {{state}}",
       },
-      microphone: {
-        webOnly: "O status do microfone desktop só está disponível no runtime web.",
-        navigatorUnavailable: "Navigator não está disponível neste ambiente.",
-        granted: "O acesso ao microfone foi concedido.",
-        denied: "O acesso ao microfone está negado nas configurações do sistema.",
-        notGranted: "A permissão do microfone ainda não foi concedida.",
-        unexpectedState: "Estado inesperado de permissão do microfone: {{state}}",
-        statusApiUnavailable:
-          "A API de status do microfone não está disponível neste runtime. Use Solicitar para verificar o acesso.",
-        queryFailed: "Falha ao consultar o status do microfone: {{message}}",
-        captureUnavailable: "A captura do microfone não está disponível neste ambiente.",
-        permissionApiUnavailable:
-          "A API de status de permissão não está disponível. Use Solicitar para verificar o acesso.",
-        requestsWebOnly: "Solicitações de microfone desktop só estão disponíveis no runtime web.",
-        captureApiUnavailable: "A API de captura do microfone não está disponível neste ambiente.",
-        requestDenied: "A permissão do microfone foi negada pelo usuário ou pelo sistema.",
-        noDevice: "Nenhum dispositivo de microfone foi encontrado.",
-        requestFailed: "Falha ao solicitar permissão do microfone: {{message}}",
-      },
       empty: {
         notifications: "O status das notificações ainda não foi verificado.",
-        microphone: "O status do microfone ainda não foi verificado.",
       },
       testNotification: {
         title: "Teste de notificação do Thoth",
@@ -1320,13 +1280,6 @@ export const ptBR: TranslationResources = {
       copied: "Copiado",
     },
   },
-  realtimeVoice: {
-    actions: {
-      mute: "Silenciar voz em tempo real",
-      unmute: "Ativar voz em tempo real",
-      stop: "Parar voz em tempo real e interromper a resposta",
-    },
-  },
   rewind: {
     tooltip: "Voltar para esta mensagem",
     warning: "Esta ação não pode ser desfeita",
@@ -1498,10 +1451,6 @@ export const ptBR: TranslationResources = {
     },
     diagnostics: {
       title: "Diagnósticos",
-      testAudio: "Testar áudio",
-      playTest: "Reproduzir teste",
-      playing: "Reproduzindo...",
-      playbackFailed: "Falha na reprodução: {{message}}",
       app: {
         title: "App diagnostic",
         rowTitle: "App diagnostic",
@@ -1637,12 +1586,9 @@ export const ptBR: TranslationResources = {
         cycleTheme: "Alternar tema",
         focusMessageInput: "Focar entrada de mensagem",
         cycleAgentMode: "Alternar modo do agente",
-        toggleVoiceMode: "Alternar modo de voz",
-        startStopDictation: "Iniciar/parar ditado",
         interruptAgent: "Interromper agente",
         sendMessage: "Enviar mensagem",
         queueMessage: "Enfileirar mensagem",
-        muteUnmuteVoiceMode: "Silenciar/ativar modo de voz",
       },
       helpNotes: {
         showKeyboardShortcuts:
@@ -1688,7 +1634,6 @@ export const ptBR: TranslationResources = {
     permissions: {
       title: "Permissões",
       notifications: "Notificações",
-      microphone: "Microfone",
       refresh: "Atualizar",
       refreshing: "Atualizando...",
       refreshAccessibility: "Atualizar permissões do desktop",

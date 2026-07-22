@@ -14,6 +14,7 @@ import type { Logger } from "pino";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
 import type { HarnessCapabilities } from "@thoth/drivers/harness";
+import type { ProviderPlanCapability, ProviderRunMode } from "@thoth/protocol/provider-control";
 
 import {
   getAgentStreamEventTurnId,
@@ -279,6 +280,7 @@ interface ManagedAgentBase {
    */
   workspaceId?: string;
   capabilities: AgentCapabilityFlags;
+  planCapability?: ProviderPlanCapability;
   config: AgentSessionConfig;
   runtimeInfo?: AgentRuntimeInfo;
   createdAt: Date;
@@ -1245,8 +1247,8 @@ export class AgentManager {
   }
 
   // Hot-reload an active agent session with config overrides. By default the
-  // in-memory timeline is preserved (used for voice-mode toggles and similar
-  // config swaps). When `rehydrateFromDisk` is set, the timeline is wiped so a
+  // in-memory timeline is preserved across config swaps. When `rehydrateFromDisk`
+  // is set, the timeline is wiped so a
   // new epoch is minted and provider history is re-streamed — this is what the
   // user-facing "Reload agent" action wants when the on-disk session was
   // mutated outside Thoth.
@@ -1529,6 +1531,55 @@ export class AgentManager {
     this.touchUpdatedAt(agent);
     this.emitState(agent);
     return notice;
+  }
+
+  async getAgentPlanCapability(agentId: string): Promise<ProviderPlanCapability> {
+    const agent = this.requireSessionAgent(agentId);
+    if (agent.planCapability) {
+      return agent.planCapability;
+    }
+    const capability = agent.session.getProviderRunModeCapability
+      ? await agent.session.getProviderRunModeCapability()
+      : (this.clients.get(agent.provider)?.harnessCapabilities.plan ?? {
+          kind: "unsupported" as const,
+          reason: "Provider session does not expose native Plan.",
+        });
+    agent.planCapability = capability;
+    return capability;
+  }
+
+  async prepareAgentRunMode(
+    agentId: string,
+    mode: ProviderRunMode,
+  ): Promise<{ capability: ProviderPlanCapability; nativeModeId: string | null }> {
+    const agent = this.requireSessionAgent(agentId);
+    const capability = await this.getAgentPlanCapability(agentId);
+    if (mode === "plan" && capability.kind === "unsupported") {
+      return { capability, nativeModeId: null };
+    }
+    if (!agent.session.applyProviderRunMode) {
+      if (mode === "plan") {
+        return {
+          capability: {
+            kind: "unsupported",
+            reason: "Provider session does not implement native Plan control.",
+          },
+          nativeModeId: null,
+        };
+      }
+      return { capability, nativeModeId: agent.currentModeId };
+    }
+    const result = await agent.session.applyProviderRunMode(mode);
+    agent.planCapability = result.capability;
+    const runtimeInfo = await agent.session.getRuntimeInfo().catch(() => null);
+    if (runtimeInfo) {
+      agent.runtimeInfo = runtimeInfo;
+      agent.currentModeId = runtimeInfo.modeId ?? agent.currentModeId;
+    }
+    this.touchUpdatedAt(agent);
+    await this.persistSnapshot(agent);
+    this.emitState(agent, { persist: false });
+    return result;
   }
 
   async setAgentModel(agentId: string, modelId: string | null): Promise<void> {

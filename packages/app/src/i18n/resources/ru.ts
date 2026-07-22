@@ -37,7 +37,6 @@ export const ru: TranslationResources = {
       daemonClientUnavailable: "Клиент Daemon недоступен",
       daemonClientDisconnected: "Клиент Daemon отключен",
       noFileFound: "Файл для{{token}}не найден",
-      unexpectedDictationError: "При обработке диктовки произошла непредвиденная ошибка.",
     },
     connectionStatus: {
       online: "Онлайн",
@@ -84,18 +83,6 @@ export const ru: TranslationResources = {
       cancelingAgent: "Отменяющий агент",
       stopAgent: "Остановить агент",
       interrupt: "Прерывать",
-    },
-    voice: {
-      enableVoiceMode: "Включить голосовой режим",
-      voiceMode: "Голосовой режим",
-      unmuteVoiceMode: "Включить голосовой режим",
-      muteVoiceMode: "Отключить голосовой режим",
-      stopDictation: "Остановить диктовку",
-      startDictation: "Начать диктовку",
-      unmuteVoice: "Включить звук",
-      muteVoice: "Отключить голос",
-      dictation: "Диктант",
-      interruptBeforeVoice: "Прерывайте агента перед запуском голосового режима",
     },
     attachments: {
       addImage: "Добавить изображение",
@@ -168,6 +155,11 @@ export const ru: TranslationResources = {
       mode: "Изменить режим",
     },
     runtime: {
+      plan: {
+        switch: "Enable native Plan mode",
+        tooltip: "Use the selected provider's native Plan for the next turn.",
+        unavailable: "Native Plan capability is not available for this provider yet.",
+      },
       thoth: {
         switch: "Включить режим Thoth",
         tooltip:
@@ -285,20 +277,8 @@ export const ru: TranslationResources = {
       text: "Текст",
       file: "Файл",
     },
-    speak: {
-      header: "Говорил",
-    },
     activity: {
       details: "Подробности",
-    },
-    dictation: {
-      start: "Начать голосовой диктовку",
-      cancel: "Отменить диктовку",
-      retry: "Повторить диктовку",
-      insert: "Вставить транскрипцию",
-      insertAndSend: "Вставьте транскрипцию и отправьте",
-      failed: "Диктовка не удалась:{{error}}",
-      failedRetry: "Диктант не удался. Нажмите «Повторить».",
     },
     question: {
       submit: "Представлять на рассмотрение",
@@ -1027,29 +1007,8 @@ export const ru: TranslationResources = {
         requestFailed: "Не удалось запросить разрешение на уведомление:{{message}}.",
         unexpectedState: "Состояние разрешения на непредвиденное уведомление:{{state}}.",
       },
-      microphone: {
-        webOnly: "Статус настольного микрофона доступен только в веб- среде выполнения.",
-        navigatorUnavailable: "Навигатор недоступен в этой среде.",
-        granted: "Доступ к микрофону разрешен.",
-        denied: "Доступ к микрофону запрещен в настройках системы.",
-        notGranted: "Разрешение на использование микрофона еще не получено.",
-        unexpectedState: "Неожиданное состояние разрешения микрофона:{{state}}.",
-        statusApiUnavailable:
-          "API состояния микрофона недоступен в этой среде выполнения. Используйте Запрос, чтобы проверить доступ.",
-        queryFailed: "Не удалось запросить статус микрофона:{{message}}.",
-        captureUnavailable: "В этой среде захват микрофона недоступен.",
-        permissionApiUnavailable:
-          "API статуса разрешения недоступен. Используйте Запрос, чтобы проверить доступ.",
-        requestsWebOnly: "Запросы настольного микрофона доступны только в веб- среде выполнения.",
-        captureApiUnavailable: "API захвата микрофона недоступен в этой среде.",
-        requestDenied:
-          "Разрешение на использование микрофона было отклонено пользователем или системой.",
-        noDevice: "Микрофонное устройство не обнаружено.",
-        requestFailed: "Не удалось запросить разрешение микрофона:{{message}}.",
-      },
       empty: {
         notifications: "Статус уведомления еще не проверен.",
-        microphone: "Состояние микрофона еще не проверялось.",
       },
       testNotification: {
         title: "Тест уведомлений Thoth",
@@ -1327,13 +1286,6 @@ export const ru: TranslationResources = {
       copied: "Скопировано",
     },
   },
-  realtimeVoice: {
-    actions: {
-      mute: "Отключить звук в реальном времени",
-      unmute: "Включить звук голоса в реальном времени",
-      stop: "Остановить голос в реальном времени и прервать поворот",
-    },
-  },
   rewind: {
     tooltip: "Перемотка назад к этому сообщению",
     warning: "Это действие нельзя отменить.",
@@ -1504,10 +1456,6 @@ export const ru: TranslationResources = {
     },
     diagnostics: {
       title: "Диагностика",
-      testAudio: "Тестирование звука",
-      playTest: "Игровой тест",
-      playing: "Игра...",
-      playbackFailed: "Ошибка воспроизведения:{{message}}",
       app: {
         title: "App diagnostic",
         rowTitle: "App diagnostic",
@@ -1646,12 +1594,9 @@ export const ru: TranslationResources = {
         cycleTheme: "Циклическая тема",
         focusMessageInput: "Фокус ввода сообщения",
         cycleAgentMode: "Переключить режим агента",
-        toggleVoiceMode: "Переключить голосовой режим",
-        startStopDictation: "Начать диктовку /stop",
         interruptAgent: "Агент прерываний",
         sendMessage: "Отправить сообщение",
         queueMessage: "Сообщение в очереди",
-        muteUnmuteVoiceMode: "Отключить голосовой режим /unmute",
       },
       helpNotes: {
         showKeyboardShortcuts: "Доступно, когда фокус находится не в текстовом поле или терминале.",
@@ -1695,7 +1640,6 @@ export const ru: TranslationResources = {
     permissions: {
       title: "Разрешения",
       notifications: "Уведомления",
-      microphone: "Микрофон",
       refresh: "Обновить",
       refreshing: "Освежающий...",
       refreshAccessibility: "Обновить разрешения рабочего стола",

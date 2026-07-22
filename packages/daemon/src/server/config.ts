@@ -1,7 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveThothNodeEnv } from "@thoth/drivers/internal/server/thoth-env";
-import { z } from "zod";
 import { expandTilde } from "@thoth/drivers/internal/utils/path";
 
 import type { ThothDaemonConfig } from "./bootstrap.js";
@@ -11,7 +10,6 @@ import {
   LogLevelSchema,
   type PersistedConfig,
 } from "./persisted-config.js";
-import type { AgentProvider } from "@thoth/drivers/agent-runtime";
 import type {
   AgentProviderRuntimeSettingsMap,
   ProviderOverride,
@@ -24,7 +22,6 @@ import {
   DEFAULT_RELAY_ENDPOINT,
 } from "@thoth/protocol/daemon-endpoints";
 import { hashDaemonPassword } from "./auth.js";
-import { resolveSpeechConfig } from "./speech/speech-config-resolver.js";
 import { mergeHostnames, parseHostnamesEnv, type HostnamesConfig } from "./hostnames.js";
 
 const DEFAULT_PORT = DEFAULT_DIRECT_DAEMON_PORT;
@@ -102,18 +99,6 @@ function resolveLogConfigFromEnv(
     ...(envLogLevel.success ? { level: envLogLevel.data } : {}),
     ...(envLogFormat.success ? { format: envLogFormat.data } : {}),
   };
-}
-
-const OptionalVoiceLlmProviderSchema = z
-  .union([z.string(), z.null(), z.undefined()])
-  .transform((value): string | null =>
-    typeof value === "string" ? value.trim().toLowerCase() : null,
-  )
-  .pipe(z.union([AgentProviderSchema, z.null()]));
-
-function parseOptionalVoiceLlmProvider(value: unknown): AgentProvider | null {
-  const parsed = OptionalVoiceLlmProviderSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
 }
 
 function extractProviderOverrides(
@@ -225,12 +210,6 @@ function resolveRelayConfig(input: ResolveRelayInput): ResolvedRelay {
   return { enabled, endpoint, publicEndpoint, useTls, publicUseTls };
 }
 
-interface ResolvedVoiceLlm {
-  provider: AgentProvider | null;
-  providerExplicit: boolean;
-  model: string | null;
-}
-
 function resolveServiceProxyPublicBaseUrl(value: string | null): string | null {
   if (value === null) {
     return null;
@@ -290,21 +269,6 @@ function resolveWebUiConfig(
   return {
     enabled,
     distDir,
-  };
-}
-
-function resolveVoiceLlmConfig(
-  env: NodeJS.ProcessEnv,
-  persisted: ReturnType<typeof loadPersistedConfig>,
-): ResolvedVoiceLlm {
-  const envVoiceLlmProvider = parseOptionalVoiceLlmProvider(env.THOTH_VOICE_LLM_PROVIDER);
-  const persistedVoiceLlmProvider = parseOptionalVoiceLlmProvider(
-    persisted.features?.voiceMode?.llm?.provider,
-  );
-  return {
-    provider: envVoiceLlmProvider ?? persistedVoiceLlmProvider ?? null,
-    providerExplicit: envVoiceLlmProvider !== null || persistedVoiceLlmProvider !== null,
-    model: persisted.features?.voiceMode?.llm?.model ?? null,
   };
 }
 
@@ -456,13 +420,6 @@ export function loadConfig(
   const serviceProxy = resolveServiceProxyConfig(env, persisted);
   const webUi = resolveWebUiConfig(thothHome, env, options?.cli, persisted);
 
-  const { openai, speech } = resolveSpeechConfig({
-    thothHome,
-    env,
-    persisted,
-  });
-
-  const voiceLlm = resolveVoiceLlmConfig(env, persisted);
   const providerOverrides = extractProviderOverrides(
     persisted.agents?.providers as Record<string, unknown> | undefined,
   );
@@ -494,14 +451,10 @@ export function loadConfig(
     webUi,
     appBaseUrl,
     auth: resolveAuthConfig(env, persisted),
-    openai,
-    speech,
-    voiceLlmProvider: voiceLlm.provider,
-    voiceLlmProviderExplicit: voiceLlm.providerExplicit,
-    voiceLlmModel: voiceLlm.model,
     agentProviderSettings: extractAgentProviderSettings(providerOverrides),
     metadataGeneration: persisted.agents?.metadataGeneration,
     thoth: persisted.thoth,
+    providerControl: persisted.providerControl,
     providerOverrides,
     log: resolveLogConfigFromEnv(env, persisted),
   };

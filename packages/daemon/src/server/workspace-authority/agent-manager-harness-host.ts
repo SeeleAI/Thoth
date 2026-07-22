@@ -11,6 +11,7 @@ import type {
   RuntimeAttachmentReceipt,
   RuntimeBundle,
 } from "@thoth/drivers/harness";
+import type { ProviderRunMode, ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
 import type { AgentManager } from "../agent/agent-manager.js";
 import type {
   AgentPersistenceHandle,
@@ -38,6 +39,8 @@ interface HostedExecutionState {
   events: HarnessExecutionEvent[];
   subscribers: Set<(event: HarnessExecutionEvent) => void>;
   running: boolean;
+  settled: Promise<void>;
+  resolveSettled: () => void;
 }
 
 const TOOL_SCOPES = new Set<ThothRuntimeToolScope>([
@@ -173,6 +176,27 @@ export class AgentManagerHarnessHost implements HarnessAdapterHost {
     return receipt;
   }
 
+  async prepareRunMode(
+    adapterId: string,
+    input: { thread: HarnessThreadDescriptor; mode: ProviderRunMode },
+  ): Promise<ProviderRunModeReceipt> {
+    const thread = this.requireThread(adapterId, input.thread.id);
+    await this.ensureAgent(thread);
+    const result = await this.agentManager.prepareAgentRunMode(thread.agentId, input.mode);
+    const unsupportedReason =
+      input.mode === "plan" && result.capability.kind === "unsupported"
+        ? result.capability.reason
+        : null;
+    return {
+      id: `provider-mode-${randomUUID()}`,
+      requestedMode: input.mode,
+      status: unsupportedReason ? "unsupported" : "applied",
+      nativeModeId: result.nativeModeId,
+      reason: unsupportedReason,
+      appliedAt: new Date().toISOString(),
+    };
+  }
+
   async startExecution(
     adapterId: string,
     input: { thread: HarnessThreadDescriptor; execution: HarnessExecutionInput },
@@ -188,7 +212,37 @@ export class AgentManagerHarnessHost implements HarnessAdapterHost {
   ): Promise<HarnessExecutionDescriptor> {
     const thread = this.requireThread(adapterId, input.thread.id);
     await this.ensureAgent(thread);
+    const previous = this.executions.get(input.execution.executionId);
+    if (previous) {
+      if (previous.threadId !== thread.descriptor.id) {
+        throw new Error(
+          `Execution ${input.execution.executionId} belongs to a different provider thread`,
+        );
+      }
+      await previous.settled;
+    }
     return this.startAgentRun(thread, input.execution);
+  }
+
+  async resolveApproval(
+    adapterId: string,
+    input: {
+      thread: HarnessThreadDescriptor;
+      execution: HarnessExecutionDescriptor;
+      approvalId: string;
+      decision: "allow" | "deny" | "implement";
+    },
+  ): Promise<{ followUpPrompt: unknown | null }> {
+    const thread = this.requireThread(adapterId, input.thread.id);
+    const state = this.executions.get(input.execution.id);
+    if (!state || state.threadId !== thread.descriptor.id) {
+      throw new Error(`Execution ${input.execution.id} is not owned by this provider thread`);
+    }
+    const result = await this.agentManager.respondToPermission(thread.agentId, input.approvalId, {
+      behavior: input.decision === "deny" ? "deny" : "allow",
+      ...(input.decision === "implement" ? { selectedActionId: "implement" } : {}),
+    });
+    return { followUpPrompt: result?.followUpPrompt ?? null };
   }
 
   async interruptExecution(
@@ -378,12 +432,18 @@ export class AgentManagerHarnessHost implements HarnessAdapterHost {
       threadId: thread.descriptor.id,
       nativeTurnId: null,
     };
+    let resolveSettled!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      resolveSettled = resolve;
+    });
     const state: HostedExecutionState = {
       descriptor,
       threadId: thread.descriptor.id,
       events: [],
       subscribers: new Set(),
       running: true,
+      settled,
+      resolveSettled,
     };
     this.executions.set(descriptor.id, state);
     const events = this.agentManager.streamAgent(thread.agentId, toPrompt(execution.prompt));
@@ -410,6 +470,7 @@ export class AgentManagerHarnessHost implements HarnessAdapterHost {
       });
     } finally {
       state.running = false;
+      state.resolveSettled();
     }
   }
 

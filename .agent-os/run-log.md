@@ -3474,3 +3474,93 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - The public APK is `sh.thoth` version `0.0.0-mvp-beta`, verifies with Signature v2, matches the fixed MVP signing
   certificate and requests neither microphone nor overlay permission. `NTH-EV-043` and `NTH-TD-023` are now
   verified; the sole top next action returns to the distinct `NTH-TD-021` browser/device evidence boundary.
+
+## 2026-07-22 [Deletion-only Voice / Speech / Dictation retirement]
+
+- Recorded `NTH-CD-062`, `NTH-REQ-022` and `NTH-AC-017`: this refactor line only deletes disabled, prohibited,
+  duplicate or unreachable code, preserves valid behavior and the sole production path, and uses an affected
+  source-level acceptance gate capped at five minutes.
+- Completed `NTH-TD-025` without adding a replacement path. Removed retired media wire/client APIs,
+  SpeechService/VoiceSession daemon lifecycle and configuration, speak-tool specialization, App dictation/voice
+  UI/state/shortcuts/i18n/PCM tooling, microphone settings, and CLI media config/test scaffolding. Preserved text
+  send/queue/cancel, task authority, provider streaming, generic tools, WebSocket/Relay/terminal/notification,
+  config sanitation and explicit Android microphone-permission denial.
+- Conservative non-overlapping statistics exclude every file shared with the concurrent Provider Control work:
+  `103` files, `4,899` deletions, `172` additions, net `-4,727`; the combined worktree currently has `23`
+  deleted files. This intentionally undercounts media deletion in mixed files.
+- `NTH-EV-045` passed in two timed segments totaling `48.602s`: four relevant type boundaries, repository and
+  residue guards, targeted formatting, diff hygiene and `805` affected tests all passed. No package, browser,
+  Relay, real-provider or release smoke ran.
+- Wider diagnostics were kept honest and not repaired in this deletion task: concurrent Provider Control work
+  leaves one Client expectation failure, 22 Drivers native-Plan expectation failures, five daemon
+  `task-orchestrator` type errors, one Session SQLite binding failure, App type drift and full-format failures in
+  concurrent files. The global top next action remains `NTH-TD-024`; this session did not overwrite that work.
+
+## 2026-07-22 [Deletion-only Core shadow and migration scaffold retirement]
+
+- Completed `NTH-TD-026` without adding production code or a replacement path. Deleted the unreachable
+  65-file Core source tree while retaining the formal package boundary and all active daemon/drivers sources.
+- Removed nine false test placeholders, the Expo starter README and destructive reset command, the abandoned
+  Code4Agent Relay mirror command, and false package skeleton/readiness statements. Runtime, wire, SDK, provider
+  and UI behavior remain unchanged.
+- The independent pre-slice diff is `83` files, `20,153` deletions, zero additions and net `-20,153`; the four
+  additional `HEAD` deletions belong to the preceding App dictation README cleanup and are not counted twice.
+- `NTH-EV-046` passed the bounded source gate in `36s`: structural and zero-reference guards, repository and MVP
+  Release contracts, four foundation type boundaries and `447/447` affected tests passed. Targeted formatting
+  and diff hygiene also passed; no package, browser, Relay, provider or release smoke ran.
+- The known concurrent Client `providerControl: {}` expectation failure was excluded rather than repaired or
+  hidden. Global top next action remains `NTH-TD-024`, and no other Provider Control worktree file was changed.
+
+## 2026-07-22 [Provider-neutral native Plan and background approval authority]
+
+- Completed `NTH-TD-024` through the sole Harness/Workspace authority path. Create/Send freeze provider Plan per
+  turn independently of Thoth; Codex, Claude, OpenCode and capable ACP use native mode transitions, while Pi and
+  non-Plan ACP remain honest unsupported.
+- Loop PlanExec now runs native Plan -> durable Implement approval -> same-thread implementation -> semantic
+  result -> independent Review. Fixed the legal continuation race where a provider can submit its semantic result
+  while authority still projects `implementing`, before the queued `turn_started` event normalizes it to
+  `awaiting_provider`; planning, stale segments, stopped generations and invalid attachments remain fenced.
+- Added task-scoped execution approvals with 20-second deadlines, CAS/idempotency, explicit human or daemon actor,
+  fake-clock timeout/restart behavior, Stop cancellation and shared Review/audit permission handling. Provider
+  questions and Thoth Cards never enter this authority.
+- Removed App `plan_mode` specialization, fixed the enabled-but-unsupported Plan switch so it can always turn off,
+  added approval countdown/result UI, and repaired update recovery with typed `agent_not_found` plus atomic
+  server/workspace-scoped stale-tab removal.
+- Added `accept:provider-control:fast` and rebuilt `accept:thoth:fast` as one timed runner with a shared 300-second
+  deadline and a static provider-neutral contract. Final runs passed in `37.556s` (`475` assertions) and
+  `44.034s` (`502` assertions), respectively. Foundation passed `552` tests; Protocol/Client/Drivers/Daemon
+  typechecks, formatting and diff hygiene passed.
+- The full App typecheck still exposes its known broad React DOM/Unistyles/WebView debt; all new Provider Control
+  fixture drift was fixed and affected App tests passed. No AppImage, Android, Relay, real provider, push, tag,
+  npm publication or Release mutation occurred. Top next action returns to `NTH-TD-021`.
+
+## 2026-07-22 [Deletion-only disconnected Paseo Task subsystem retirement]
+
+- Completed `NTH-TD-027` without adding a replacement path. Deleted all seven files under
+  `packages/daemon/src/tasks`: the file-backed Markdown TaskStore, Task graph/order logic and their self-only
+  tests. The independent diff is `2,244` deletions, zero additions and net `-2,244`.
+- Live Thoth scanning found zero consumers outside the directory. Latest upstream Paseo history showed the old
+  Planner/Worker/Judge Task CLI was removed as unused in April 2026; only tests kept the lower-level files
+  reachable. No public App, protocol, client, daemon-session or package command was removed from Thoth.
+- `NTH-EV-048` passed the complete bounded gate in `30s`: structural/residue guards, repository and MVP Release
+  contracts, foundation and Daemon typechecks, plus `16/16` focused tests for the surviving Workspace-sharded
+  SQLite Task authority. Targeted formatting and diff hygiene passed afterward.
+- No AppImage, native package, browser, Relay, provider or release smoke ran. Top next action remains
+  `NTH-TD-021`; the newly verified `NTH-TD-024 / NTH-EV-047` Provider Control ledger was preserved.
+
+## 2026-07-22 [Provider Control final Stop and approval-race hardening]
+
+- Final review found that durable Stop projection was correct but a provider that confirmed interrupt without a
+  later terminal could leave the Orchestrator ActivePhase, ToolGateway binding, heartbeat and Workspace ownership
+  alive. Added an explicit Stop-settled scheduler callback that releases ephemeral ownership and reconsiders the
+  next queued Task.
+- Added a post-provider-await authority check before any approval continuation. Concurrent Stop, a changed current
+  execution or an already accepted semantic result now prevents a stale follow-up segment from starting. Harness
+  interrupt also retires pending approval bindings, and provider `mode` approvals retain their typed kind.
+- Final `accept:provider-control:fast` passed in `42.143s` with `478` assertions; final `accept:thoth:fast` passed in
+  `50.968s` with `506` assertions. The full public foreground suite passed `11/11`, and foundation passed all `552`
+  tests. Protocol, Client, Drivers and Daemon typechecks passed independently after respecting Protocol build order.
+- Full App typecheck was rerun diagnostically and remains red only on the known broad React DOM declarations,
+  Unistyles/WebView typing and unrelated historical fixtures; affected App behavior passed `107/107`. No AppImage,
+  Android, Relay, real provider, commit, push, tag, npm publication or Release mutation occurred. Top next action
+  remains `NTH-TD-021`.

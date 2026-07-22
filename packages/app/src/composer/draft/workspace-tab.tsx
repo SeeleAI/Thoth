@@ -34,6 +34,7 @@ import {
 } from "@/composer/draft/workspace-tab-core";
 import type { AgentCapabilityFlags } from "@thoth/protocol/agent-types";
 import type { AgentSnapshotPayload, ThothTurnSnapshot } from "@thoth/protocol/messages";
+import type { ProviderRunMode } from "@thoth/protocol/provider-control";
 import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import {
@@ -68,6 +69,7 @@ interface AutoSubmitConfig {
   thinkingOptionId: string | null;
   featureValues: Record<string, unknown>;
   thoth: ThothTurnSnapshot;
+  providerRunMode: ProviderRunMode;
 }
 
 function resolveAutoSubmitConfig(
@@ -78,6 +80,7 @@ function resolveAutoSubmitConfig(
     thinkingOptionId?: string | null;
     featureValues?: Record<string, unknown>;
     thoth: ThothTurnSnapshot;
+    providerRunMode: ProviderRunMode;
   } | null,
 ): AutoSubmitConfig | null {
   if (!pending) return null;
@@ -88,6 +91,7 @@ function resolveAutoSubmitConfig(
     thinkingOptionId: pending.thinkingOptionId ?? null,
     featureValues: pending.featureValues ?? {},
     thoth: pending.thoth,
+    providerRunMode: pending.providerRunMode,
   };
 }
 
@@ -133,6 +137,7 @@ async function submitDraftCreateRequest(input: {
   workspaceId: string | null;
   autoSubmitConfig: AutoSubmitConfig | null;
   thoth: ThothTurnSnapshot;
+  providerRunMode: ProviderRunMode;
   composerState: {
     selectedProvider: string | null;
     selectedMode: string;
@@ -195,6 +200,7 @@ async function submitDraftCreateRequest(input: {
     ...(attachmentsArray && attachmentsArray.length > 0 ? { attachments: attachmentsArray } : {}),
     ...(contextRefs && contextRefs.length > 0 ? { contextRefs } : {}),
     thoth: input.thoth,
+    providerRunMode: input.providerRunMode,
   });
 
   return {
@@ -376,6 +382,7 @@ export function WorkspaceDraftAgentTab({
     () => buildThothTurnSnapshot(daemonConfig?.thoth),
     [daemonConfig?.thoth],
   );
+  const providerRunMode = daemonConfig?.providerControl.runMode ?? "default";
   const clearDraftInput = draftInput.clear;
   const setDraftText = draftInput.setText;
   const setDraftAttachments = draftInput.setAttachments;
@@ -512,6 +519,7 @@ export function WorkspaceDraftAgentTab({
         workspaceId: workspaceFields?.id ?? null,
         autoSubmitConfig,
         thoth: autoSubmitConfig?.thoth ?? thothTurnSnapshot,
+        providerRunMode: autoSubmitConfig?.providerRunMode ?? providerRunMode,
         composerState,
         hostDisconnectedMessage: t("workspace.terminal.hostDisconnected"),
         selectModelMessage: t("workspaceSetup.errors.selectModel"),

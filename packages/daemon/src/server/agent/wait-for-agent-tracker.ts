@@ -3,8 +3,7 @@ import type { Logger } from "pino";
 export type WaitForAgentCanceler = (agentId: string, reason?: string) => boolean;
 
 /**
- * Tracks long-running wait_for_agent tool calls so they can be cancelled
- * explicitly (e.g., when a voice barge-in aborts the current turn).
+ * Tracks long-running wait_for_agent tool calls so they can be cancelled explicitly.
  */
 export class WaitForAgentTracker {
   private waiters = new Map<string, Set<(reason?: string) => void>>();

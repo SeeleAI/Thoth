@@ -13,6 +13,7 @@ function state(lifecycle: AgentThothState["lifecycle"]): AgentThothState {
       kind: "thoth",
       lifecycle,
       controls: { mode: "loop", clarifyStrength: "light", loop: "one_plan_one_do" },
+      providerRunMode: "default",
       startedAt: "2026-07-18T00:00:00.000Z",
       updatedAt: "2026-07-18T00:00:01.000Z",
     },

@@ -1183,6 +1183,33 @@ describe("workspace-layout-store actions", () => {
     expect(layout).toEqual(createDefaultLayout());
   });
 
+  it("removes a missing Agent tab only from its server and Workspace scope", () => {
+    const workspaceKey = createWorkspaceKey();
+    const otherWorkspaceKey = buildWorkspaceTabPersistenceKey({
+      serverId: "server-2",
+      workspaceId: "ws-other",
+    })!;
+    const store = workspaceLayoutStore.getState();
+    const tabId = store.openTabFocused(workspaceKey, {
+      kind: "agent",
+      agentId: "agent-shared",
+    })!;
+    store.openTabFocused(otherWorkspaceKey, { kind: "agent", agentId: "agent-shared" });
+    store.pinAgent(workspaceKey, "agent-shared");
+    store.pinAgent(otherWorkspaceKey, "agent-shared");
+
+    store.removeMissingAgentTab(workspaceKey, tabId, "agent-shared");
+
+    const state = workspaceLayoutStore.getState();
+    expect(collectAllTabs(state.layoutByWorkspace[workspaceKey].root)).toEqual([]);
+    expect(state.pinnedAgentIdsByWorkspace[workspaceKey]).toBeUndefined();
+    expect(state.hiddenAgentIdsByWorkspace[workspaceKey]).toEqual(new Set(["agent-shared"]));
+    expect(
+      collectAllTabs(state.layoutByWorkspace[otherWorkspaceKey].root).map((tab) => tab.target),
+    ).toEqual([{ kind: "agent", agentId: "agent-shared" }]);
+    expect(state.pinnedAgentIdsByWorkspace[otherWorkspaceKey]).toEqual(new Set(["agent-shared"]));
+  });
+
   it("keeps pinned archived agents in memory per workspace without persisting them", () => {
     const workspaceKey = createWorkspaceKey();
     const otherWorkspaceKey = buildWorkspaceTabPersistenceKey({

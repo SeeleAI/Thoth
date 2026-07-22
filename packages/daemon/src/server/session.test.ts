@@ -341,8 +341,6 @@ interface SessionForTestOptions {
   getDaemonTcpPort?: () => number | null;
   getDaemonTcpHost?: () => string | null;
   providerSnapshotManager?: ProviderSnapshotManager;
-  stt?: SessionOptions["stt"];
-  voice?: SessionOptions["voice"];
   thothHome?: string;
   serverId?: SessionOptions["serverId"];
   daemonVersion?: SessionOptions["daemonVersion"];
@@ -438,8 +436,6 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
       })),
       onChange: vi.fn(() => () => {}),
     }),
-    stt: options.stt ?? null,
-    tts: null,
     terminalManager: options.terminalManager ?? null,
     providerSnapshotManager:
       options.providerSnapshotManager ?? createProviderSnapshotManagerStub().manager,
@@ -447,7 +443,6 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     scriptRuntimeStore: options.scriptRuntimeStore,
     getDaemonTcpPort: options.getDaemonTcpPort,
     getDaemonTcpHost: options.getDaemonTcpHost,
-    voice: options.voice,
     serverId: options.serverId,
     daemonVersion: options.daemonVersion,
     daemonRuntimeConfig: options.daemonRuntimeConfig,

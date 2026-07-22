@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type {
+  ExecutionApprovalDecision,
+  ExecutionApprovalProjection,
   ExecutionProjection,
   HumanDecisionRecord,
   TaskCommand,
@@ -24,7 +26,18 @@ export interface TaskCommandScheduler {
     workspaceId: string;
     task: TaskProjection;
     execution: ExecutionProjection | null;
-    command: Exclude<TaskCommand, "stop">;
+    command: TaskCommand;
+  }): Promise<void>;
+  continueAfterExecutionApproval(input: {
+    workspaceId: string;
+    task: TaskProjection;
+    execution: ExecutionProjection;
+    approval: ExecutionApprovalProjection;
+  }): Promise<void>;
+  handleTaskStopSettled(input: {
+    workspaceId: string;
+    task: TaskProjection;
+    execution: ExecutionProjection | null;
   }): Promise<void>;
 }
 
@@ -39,6 +52,15 @@ export interface TaskCommandResult {
 export interface TaskDecisionResult {
   task: TaskProjection | null;
   decision: HumanDecisionRecord | null;
+  conflict: boolean;
+  duplicate: boolean;
+  error: string | null;
+}
+
+export interface ExecutionApprovalResult {
+  task: TaskProjection | null;
+  execution: ExecutionProjection | null;
+  approval: ExecutionApprovalProjection | null;
   conflict: boolean;
   duplicate: boolean;
   error: string | null;
@@ -229,22 +251,21 @@ export class WorkspaceTaskCoordinator {
     try {
       const result = store.requestCommand(input);
       if (!result.duplicate) {
+        void this.scheduler
+          ?.handleTaskCommand({
+            workspaceId: input.workspaceId,
+            task: result.task,
+            execution: result.execution,
+            command: input.command,
+          })
+          .catch((error: unknown) => {
+            this.logger.error(
+              { err: error, workspaceId: input.workspaceId, taskId: input.taskId },
+              "Task scheduler rejected a durable command",
+            );
+          });
         if (input.command === "stop") {
           void this.finishStop(store, result.task, result.execution);
-        } else {
-          void this.scheduler
-            ?.handleTaskCommand({
-              workspaceId: input.workspaceId,
-              task: result.task,
-              execution: result.execution,
-              command: input.command,
-            })
-            .catch((error: unknown) => {
-              this.logger.error(
-                { err: error, workspaceId: input.workspaceId, taskId: input.taskId },
-                "Task scheduler rejected a durable command",
-              );
-            });
         }
       }
       return { ...result, conflict: false, error: null };
@@ -253,6 +274,55 @@ export class WorkspaceTaskCoordinator {
       return {
         task,
         execution: task?.currentExecutionId ? store.getExecution(task.currentExecutionId) : null,
+        conflict: error instanceof WorkspaceAuthorityConflictError,
+        duplicate: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async resolveExecutionApproval(input: {
+    workspaceId: string;
+    taskId: string;
+    executionId: string;
+    approvalId: string;
+    decision: ExecutionApprovalDecision;
+    expectedRevision: number;
+    commandId: string;
+    actorId: string;
+    clientId: string;
+    deviceId?: string | null;
+    recordHumanDecision: boolean;
+  }): Promise<ExecutionApprovalResult> {
+    const store = this.store(input.workspaceId);
+    try {
+      const result = store.resolveExecutionApproval(input);
+      if (!result.duplicate) {
+        await this.scheduler?.continueAfterExecutionApproval({
+          workspaceId: input.workspaceId,
+          task: result.task,
+          execution: result.execution,
+          approval: result.approval,
+        });
+      }
+      const latestTask = store.getTask(input.taskId) ?? result.task;
+      const latestExecution = store.getExecution(input.executionId) ?? result.execution;
+      return {
+        task: latestTask,
+        execution: latestExecution,
+        approval: store.getExecutionApproval(input.approvalId) ?? result.approval,
+        conflict: false,
+        duplicate: result.duplicate,
+        error: null,
+      };
+    } catch (error) {
+      const task = store.getTask(input.taskId);
+      return {
+        task,
+        execution: task?.currentExecutionId
+          ? store.getExecution(task.currentExecutionId)
+          : store.getExecution(input.executionId),
+        approval: store.getExecutionApproval(input.approvalId),
         conflict: error instanceof WorkspaceAuthorityConflictError,
         duplicate: false,
         error: error instanceof Error ? error.message : String(error),
@@ -325,12 +395,24 @@ export class WorkspaceTaskCoordinator {
       ? await this.runtimes.interrupt({ workspaceId: task.workspaceId, execution })
       : "confirmed";
     try {
-      store.settleStop({
+      const settled = store.settleStop({
         taskId: task.id,
         executionId: execution?.id ?? null,
         generation: execution?.generation,
         orphaned: active && interruptResult === "orphaned",
       });
+      try {
+        await this.scheduler?.handleTaskStopSettled({
+          workspaceId: task.workspaceId,
+          task: settled.task,
+          execution: settled.execution,
+        });
+      } catch (error) {
+        this.logger.warn(
+          { err: error, workspaceId: task.workspaceId, taskId: task.id },
+          "Stopped Task runtime cleanup failed",
+        );
+      }
     } catch (error) {
       this.logger.warn(
         { err: error, workspaceId: task.workspaceId, taskId: task.id },

@@ -77,11 +77,6 @@ const MESSAGE_INPUT_DISPATCH: Record<
 > = {
   focus: { id: "message-input.focus", scope: "message-input" },
   send: { id: "message-input.send", scope: "message-input" },
-  "dictation-toggle": { id: "message-input.dictation-toggle", scope: "message-input" },
-  "dictation-cancel": { id: "message-input.dictation-cancel", scope: "message-input" },
-  "dictation-confirm": { id: "message-input.dictation-confirm", scope: "message-input" },
-  "voice-toggle": { id: "message-input.voice-toggle", scope: "message-input" },
-  "voice-mute-toggle": { id: "message-input.voice-mute-toggle", scope: "message-input" },
   "mode-cycle": { id: "message-input.mode-cycle", scope: "message-input" },
 };
 

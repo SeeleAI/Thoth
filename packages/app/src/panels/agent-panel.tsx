@@ -329,15 +329,23 @@ function useAgentPanelDescriptor(
 }
 
 function AgentPanel() {
-  const { serverId, target, openFileInWorkspace } = usePaneContext();
+  const { serverId, workspaceId, tabId, target, openFileInWorkspace } = usePaneContext();
   const { isInteractive } = usePaneFocus();
+  const removeMissingAgentTab = useWorkspaceLayoutStore((state) => state.removeMissingAgentTab);
   invariant(target.kind === "agent", "AgentPanel requires agent target");
+  const handleAgentNotFound = useCallback(() => {
+    const workspaceKey = buildWorkspaceTabPersistenceKey({ serverId, workspaceId });
+    if (workspaceKey) {
+      removeMissingAgentTab(workspaceKey, tabId, target.agentId);
+    }
+  }, [removeMissingAgentTab, serverId, tabId, target.agentId, workspaceId]);
 
   return (
     <AgentPanelContent
       serverId={serverId}
       agentId={target.agentId}
       isPaneFocused={isInteractive}
+      onAgentNotFound={handleAgentNotFound}
       onOpenWorkspaceFile={openFileInWorkspace}
     />
   );
@@ -458,10 +466,6 @@ function toErrorMessage(error: unknown): string {
   return String(error);
 }
 
-function isNotFoundErrorMessage(message: string): boolean {
-  return /agent not found|not found/i.test(message);
-}
-
 type AgentLookupState =
   | { tag: "idle" }
   | { tag: "loading" }
@@ -472,11 +476,13 @@ function AgentPanelContent({
   serverId,
   agentId,
   isPaneFocused,
+  onAgentNotFound,
   onOpenWorkspaceFile,
 }: {
   serverId: string;
   agentId: string;
   isPaneFocused: boolean;
+  onAgentNotFound: () => void;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
   const { t } = useTranslation();
@@ -522,6 +528,7 @@ function AgentPanelContent({
       client={runtimeClient}
       isConnected={runtimeIsConnected}
       connectionStatus={connectionStatus}
+      onAgentNotFound={onAgentNotFound}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
     />
   );
@@ -534,6 +541,7 @@ function AgentPanelBody({
   client,
   isConnected,
   connectionStatus,
+  onAgentNotFound,
   onOpenWorkspaceFile,
 }: {
   serverId: string;
@@ -542,6 +550,7 @@ function AgentPanelBody({
   client: NonNullable<ReturnType<typeof useHostRuntimeClient>>;
   isConnected: boolean;
   connectionStatus: HostRuntimeConnectionStatus;
+  onAgentNotFound: () => void;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
   const { t } = useTranslation();
@@ -600,6 +609,7 @@ function AgentPanelBody({
           return;
         }
         if (!result) {
+          onAgentNotFound();
           setLookupState({
             tag: "not_found",
             message: `Agent not found: ${agentId}`,
@@ -615,14 +625,18 @@ function AgentPanelBody({
         if (attemptToken !== lookupAttemptTokenRef.current) {
           return;
         }
-        const message = toErrorMessage(error);
-        if (isNotFoundErrorMessage(message)) {
-          setLookupState({ tag: "not_found", message });
-          return;
-        }
-        setLookupState({ tag: "error", message });
+        setLookupState({ tag: "error", message: toErrorMessage(error) });
       });
-  }, [agentId, agentState.id, client, hasSession, isConnected, lookupState.tag, serverId]);
+  }, [
+    agentId,
+    agentState.id,
+    client,
+    hasSession,
+    isConnected,
+    lookupState.tag,
+    onAgentNotFound,
+    serverId,
+  ]);
 
   if (lookupState.tag === "not_found") {
     return (
@@ -683,6 +697,7 @@ function AgentPanelBody({
       client={client}
       isConnected={isConnected}
       connectionStatus={connectionStatus}
+      onAgentNotFound={onAgentNotFound}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
     />
   );
@@ -695,6 +710,7 @@ function ChatAgentContent({
   client,
   isConnected,
   connectionStatus,
+  onAgentNotFound,
   onOpenWorkspaceFile,
 }: {
   serverId: string;
@@ -703,6 +719,7 @@ function ChatAgentContent({
   client: NonNullable<ReturnType<typeof useHostRuntimeClient>>;
   isConnected: boolean;
   connectionStatus: HostRuntimeConnectionStatus;
+  onAgentNotFound: () => void;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
   const { t } = useTranslation();
@@ -809,12 +826,19 @@ function ChatAgentContent({
           setMissingAgentState(clearHistorySyncErrorAfterSuccessfulSync);
           return undefined;
         })
-        .catch((error) => {
+        .catch(async (error) => {
+          try {
+            if (!(await client.fetchAgent({ agentId }))) {
+              onAgentNotFound();
+              return;
+            }
+          } catch {
+            // Preserve the original initialization failure below.
+          }
           handleHistorySyncFailure({ origin, error });
-          return undefined;
         });
     },
-    [agentId, ensureAgentIsInitialized, handleHistorySyncFailure],
+    [agentId, client, ensureAgentIsInitialized, handleHistorySyncFailure, onAgentNotFound],
   );
 
   useEffect(() => {
@@ -1003,6 +1027,7 @@ function ChatAgentContent({
             return;
           }
           if (!result) {
+            onAgentNotFound();
             setMissingAgentState({
               kind: "not_found",
               message: `Agent not found: ${agentId}`,
@@ -1017,16 +1042,23 @@ function ChatAgentContent({
         setMissingAgentState({ kind: "idle" });
         return;
       })
-      .catch((error) => {
+      .catch(async (error) => {
         if (attemptToken !== initAttemptTokenRef.current) {
           return;
         }
-        const message = toErrorMessage(error);
-        if (isNotFoundErrorMessage(message)) {
-          setMissingAgentState({ kind: "not_found", message });
-          return;
+        try {
+          if (!(await client.fetchAgent({ agentId }))) {
+            if (attemptToken === initAttemptTokenRef.current) {
+              onAgentNotFound();
+            }
+            return;
+          }
+        } catch {
+          // Keep the original recovery error as the user-visible failure.
         }
-        setMissingAgentState({ kind: "error", message });
+        if (attemptToken === initAttemptTokenRef.current) {
+          setMissingAgentState({ kind: "error", message: toErrorMessage(error) });
+        }
       });
   }, [
     agentState.id,
@@ -1036,6 +1068,7 @@ function ChatAgentContent({
     hasSession,
     isConnected,
     missingAgentState.kind,
+    onAgentNotFound,
     serverId,
   ]);
 

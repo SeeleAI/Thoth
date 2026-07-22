@@ -29,12 +29,12 @@ function createRecord(overrides?: Partial<StoredAgentRecord>): StoredAgentRecord
 describe("persistence hooks", () => {
   test("buildConfigOverrides carries systemPrompt and mcpServers", () => {
     const record = createRecord({
-      title: "Voice agent (current)",
+      title: "Current agent",
       config: {
         modeId: "default",
         model: "gpt-5.4-mini",
         thinkingOptionId: "minimal",
-        systemPrompt: "Use speak first.",
+        systemPrompt: "Use concise answers.",
         mcpServers: {
           thoth: {
             type: "stdio",
@@ -50,7 +50,7 @@ describe("persistence hooks", () => {
       modeId: "plan",
       model: "gpt-5.4-mini",
       thinkingOptionId: "minimal",
-      systemPrompt: "Use speak first.",
+      systemPrompt: "Use concise answers.",
       mcpServers: {
         thoth: {
           type: "stdio",
@@ -68,7 +68,7 @@ describe("persistence hooks", () => {
       config: {
         modeId: "default",
         model: "gpt-5.4-mini",
-        systemPrompt: "Confirm and speak first.",
+        systemPrompt: "Confirm changes first.",
         mcpServers: {
           thoth: {
             type: "stdio",
@@ -84,7 +84,7 @@ describe("persistence hooks", () => {
       cwd: "/tmp/project",
       modeId: "plan",
       model: "gpt-5.4-mini",
-      systemPrompt: "Confirm and speak first.",
+      systemPrompt: "Confirm changes first.",
       mcpServers: {
         thoth: {
           type: "stdio",

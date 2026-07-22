@@ -89,6 +89,29 @@ Provider transport fixtures live outside the Journey and may prescribe semantic 
 the real provider adapter and runtime-tool handlers; they may not insert Cards, tasks, phases or verdicts into
 authority storage.
 
+## Fast Provider Control Acceptance
+
+Use the provider-control gate while changing native Plan, Implement transitions, background approvals or
+installed-Agent recovery:
+
+```bash
+npm run accept:provider-control:fast
+```
+
+The runner has one shared 300-second deadline and prints each phase duration. It exercises protocol snapshots,
+the real provider adapters with deterministic external transports, approval authority and fake-clock deadlines,
+the public foreground/Loop API, typed missing-Agent recovery, scoped App tab cleanup and the static
+provider-neutral architecture contract. It does not build an AppImage or contact Relay or a real provider.
+
+Run the broader source-level Thoth gate before handoff:
+
+```bash
+npm run accept:thoth:fast
+```
+
+This reuses the same runner, executes the complete foreground authority journey and adds storage migration, Task
+coordination, Task context and the wider App Task surface under the same hard deadline.
+
 ## Acceptance Layers
 
 Use the cheapest layer that can disprove the current change, then promote the same Journey:

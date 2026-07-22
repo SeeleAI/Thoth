@@ -77,7 +77,6 @@ describe("bootstrap provider availability", () => {
       relayEnabled: false,
       appBaseUrl: "https://app.thoth.seeles.ai",
       openai: undefined,
-      speech: undefined,
     };
     const processFailures: Error[] = [];
     const onUnhandledRejection = (reason: unknown) => {

@@ -2789,6 +2789,38 @@ test("fetch_agent_request still resolves archived historical agents", async () =
   ]);
 });
 
+test("fetch_agent_request types a genuinely missing Agent without hiding other errors", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const session = createSessionForWorkspaceTests();
+  session.emit = (message) => {
+    if (isSessionOutboundMessage(message)) emitted.push(message);
+  };
+  session.resolveAgentIdentifier = async (identifier: string) => ({
+    ok: false,
+    error: `Agent not found: ${identifier}`,
+    errorCode: "agent_not_found" as const,
+  });
+
+  await session.handleMessage({
+    type: "fetch_agent_request",
+    requestId: "req-missing-agent",
+    agentId: "missing-agent",
+  });
+
+  expect(emitted).toEqual([
+    {
+      type: "fetch_agent_response",
+      payload: {
+        requestId: "req-missing-agent",
+        agent: null,
+        project: null,
+        error: "Agent not found: missing-agent",
+        errorCode: "agent_not_found",
+      },
+    },
+  ]);
+});
+
 test("git branch workspace uses branch as canonical name", async () => {
   const session = createSessionForWorkspaceTests();
   session.workspaceRegistry.list = async () => [

@@ -1,14 +1,7 @@
 import { cancel, intro, log, note, outro, spinner } from "@clack/prompts";
 import { Command, Option } from "commander";
-import { writeFileSync } from "node:fs";
 import path from "node:path";
-import {
-  generateLocalPairingOffer,
-  loadConfig,
-  loadPersistedConfig,
-  type CliConfigOverrides,
-  type PersistedConfig,
-} from "@thoth/daemon";
+import { generateLocalPairingOffer, loadConfig, type CliConfigOverrides } from "@thoth/daemon";
 import { DEFAULT_APP_BASE_URL } from "@thoth/protocol/daemon-endpoints";
 import {
   resolveLocalThothHome,
@@ -26,17 +19,6 @@ interface OnboardOptions extends DaemonStartOptions {
 
 type RawOnboardOptions = OnboardOptions & {
   allowedHosts?: string;
-};
-
-type OnboardPersistedConfig = PersistedConfig & {
-  features?: PersistedConfig["features"] & {
-    dictation?: PersistedConfig["features"] extends { dictation?: infer T }
-      ? T & { enabled?: boolean }
-      : { enabled?: boolean };
-    voiceMode?: PersistedConfig["features"] extends { voiceMode?: infer T }
-      ? T & { enabled?: boolean }
-      : { enabled?: boolean };
-  };
 };
 
 const DEFAULT_READY_TIMEOUT_MS = 10 * 60 * 1000;
@@ -98,65 +80,6 @@ function toCliOverrides(options: OnboardOptions): CliConfigOverrides {
   return cliOverrides;
 }
 
-function savePersistedConfig(thothHome: string, config: OnboardPersistedConfig): void {
-  const configPath = path.join(thothHome, "config.json");
-  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-}
-
-function applyVoiceSelection(
-  config: OnboardPersistedConfig,
-  enabled: boolean,
-): OnboardPersistedConfig {
-  return {
-    ...config,
-    features: {
-      ...config.features,
-      dictation: {
-        ...config.features?.dictation,
-        enabled,
-      },
-      voiceMode: {
-        ...config.features?.voiceMode,
-        enabled,
-      },
-    },
-  };
-}
-
-interface DownloadProgress {
-  modelId: string | null;
-  pct: number | null;
-}
-
-function parseDownloadProgress(logTail: string): DownloadProgress | null {
-  const lines = logTail.split("\n").filter(Boolean);
-
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index];
-    if (!line || !line.includes("Downloading model artifact")) {
-      continue;
-    }
-
-    const pctMatch = line.match(/"pct"\s*:\s*(\d{1,3})|\bpct[=:]\s*(\d{1,3})/);
-    const modelMatch = line.match(/"modelId"\s*:\s*"([^"]+)"|\bmodelId[=:]\s*"?([^\s",}]+)/);
-
-    return {
-      modelId: modelMatch?.[1] ?? modelMatch?.[2] ?? null,
-      pct: pctMatch ? Number(pctMatch[1] ?? pctMatch[2]) : null,
-    };
-  }
-
-  return null;
-}
-
-function renderProgressLine(progress: DownloadProgress): string {
-  const modelSuffix = progress.modelId ? ` (${progress.modelId})` : "";
-  if (progress.pct === null) {
-    return `Downloading model artifact${modelSuffix}...`;
-  }
-  return `Downloading model artifact${modelSuffix}: ${progress.pct}%`;
-}
-
 type ProbeResult = { kind: "ready"; listen: string; host: string | null } | { kind: "pending" };
 
 async function probeDaemonReady(home: string, timeoutMs: number): Promise<ProbeResult> {
@@ -195,13 +118,10 @@ interface ProgressState {
 }
 
 function announceProgress(
-  home: string,
   state: ProgressState,
   onStatus: ((message: string) => void) | undefined,
 ): ProgressState {
-  const progress = parseDownloadProgress(tailDaemonLog(home, 120) ?? "");
-  const progressLine = progress ? renderProgressLine(progress) : null;
-  const statusMessage = progressLine ?? "Waiting for daemon to become ready...";
+  const statusMessage = "Waiting for daemon to become ready...";
 
   if (statusMessage !== state.lastStatus) {
     onStatus?.(statusMessage);
@@ -240,7 +160,7 @@ async function waitForDaemonReady(args: {
     if (probe.kind === "ready") {
       return { listen: probe.listen, host: probe.host };
     }
-    const nextState = announceProgress(args.home, state, args.onStatus);
+    const nextState = announceProgress(state, args.onStatus);
     if (Date.now() >= deadline) {
       throw createTimeoutError();
     }
@@ -308,18 +228,6 @@ export function onboardCommand(): Command {
         hostnames: options.hostnames ?? options.allowedHosts,
       });
     });
-}
-
-async function resolveAndPersistVoice(
-  thothHome: string,
-  _options: OnboardOptions,
-): Promise<boolean> {
-  let persisted = loadPersistedConfig(thothHome) as OnboardPersistedConfig;
-  const voiceEnabled = false;
-
-  persisted = applyVoiceSelection(persisted, voiceEnabled);
-  savePersistedConfig(thothHome, persisted);
-  return voiceEnabled;
 }
 
 async function ensureDaemonStarted(options: OnboardOptions, richUi: boolean): Promise<void> {
@@ -413,10 +321,7 @@ export async function runOnboard(options: OnboardOptions): Promise<void> {
     renderNote(thothHome, "Thoth home");
   }
 
-  await resolveAndPersistVoice(thothHome, options);
   const config = loadConfig(thothHome, { cli: toCliOverrides(options) });
-
-  log.message("Voice, speech and dictation are disabled in the current Thoth MVP.");
 
   await ensureDaemonStarted(options, richUi);
   await waitForDaemonReadyWithUi({

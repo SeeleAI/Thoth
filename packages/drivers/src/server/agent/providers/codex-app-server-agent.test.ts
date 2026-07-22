@@ -111,6 +111,17 @@ function asInternals(session: CodexTestSession): CodexSessionTestAccess {
   return castInternals<CodexSessionTestAccess>(session);
 }
 
+async function enableNativePlanMode(session: CodexTestSession): Promise<void> {
+  asInternals(session).collaborationModes = [
+    { name: "Code", mode: "code", developer_instructions: "Built-in code mode" },
+    { name: "Plan", mode: "plan", developer_instructions: "Built-in plan mode" },
+  ];
+  asInternals(session).refreshResolvedCollaborationMode();
+  await expect(session.applyProviderRunMode?.("plan")).resolves.toMatchObject({
+    capability: { kind: "native" },
+  });
+}
+
 function createRuntimeToolCatalogStub(input?: {
   toolNames?: string[];
   execute?: (
@@ -2596,10 +2607,11 @@ describe("Codex app-server provider", () => {
     });
   });
 
-  test("emits a synthetic plan approval permission after a successful Codex plan turn", () => {
+  test("emits a synthetic plan approval permission after a successful Codex plan turn", async () => {
     const session = createSession({
-      featureValues: { plan_mode: true, fast_mode: true },
+      featureValues: { fast_mode: true },
     });
+    await enableNativePlanMode(session);
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
 
@@ -2677,10 +2689,11 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
-  test("does not emit Codex plan thread items as timeline cards while plan approval is pending", () => {
+  test("does not emit Codex plan thread items as timeline cards while plan approval is pending", async () => {
     const session = createSession({
-      featureValues: { plan_mode: true, fast_mode: true },
+      featureValues: { fast_mode: true },
     });
+    await enableNativePlanMode(session);
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
 
@@ -3097,8 +3110,9 @@ describe("Codex app-server provider", () => {
 
   test("approving a synthetic Codex plan permission disables plan mode, preserves fast mode, and returns follow-up prompt", async () => {
     const session = createSession({
-      featureValues: { plan_mode: true, fast_mode: true },
+      featureValues: { fast_mode: true },
     });
+    await enableNativePlanMode(session);
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
 
@@ -3151,8 +3165,9 @@ describe("Codex app-server provider", () => {
 
   test("approving a synthetic Codex plan permission keeps fast mode disabled when it started disabled", async () => {
     const session = createSession({
-      featureValues: { plan_mode: true, fast_mode: false },
+      featureValues: { fast_mode: false },
     });
+    await enableNativePlanMode(session);
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
 
@@ -3193,21 +3208,9 @@ describe("Codex app-server provider", () => {
 
   test("follow-up implementation turn keeps fast service tier and switches back to code collaboration mode", async () => {
     const session = createSession({
-      featureValues: { plan_mode: true, fast_mode: true },
+      featureValues: { fast_mode: true },
     });
-    asInternals(session).collaborationModes = [
-      {
-        name: "Code",
-        mode: "code",
-        developer_instructions: "Built-in code mode",
-      },
-      {
-        name: "Plan",
-        mode: "plan",
-        developer_instructions: "Built-in plan mode",
-      },
-    ];
-    asInternals(session).refreshResolvedCollaborationMode();
+    await enableNativePlanMode(session);
     const request = vi.fn(async (method: string) => {
       if (method === "thread/loaded/list") {
         return { data: ["test-thread"] };

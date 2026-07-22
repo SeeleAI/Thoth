@@ -78,6 +78,7 @@ import type {
 } from "@thoth/protocol/messages";
 import type { CreateThothWorktreeInput } from "@thoth/client/internal/daemon-client";
 import type { AgentProvider } from "@thoth/protocol/agent-types";
+import type { ProviderRunMode } from "@thoth/protocol/provider-control";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/stores/workspace-tabs-store";
 import { isEmptyWorkspaceSubmission, runCreateEmptyWorkspace } from "./new-workspace-empty";
 import {
@@ -811,6 +812,7 @@ interface SubmitDraftInput {
   attachments: ComposerAttachment[];
   provider: AgentProvider;
   thoth: ThothTurnSnapshot;
+  providerRunMode: ProviderRunMode;
   composerState: NewWorkspaceComposerState;
 }
 
@@ -922,6 +924,7 @@ interface CreateChatAgentInput {
     selectModel: string;
   };
   thoth: ThothTurnSnapshot;
+  providerRunMode: ProviderRunMode;
 }
 
 function buildWorkspaceDraftSetupFromComposer(input: {
@@ -1013,6 +1016,7 @@ async function runCreateChatAgent(input: CreateChatAgentInput): Promise<void> {
     attachments,
     provider,
     thoth: input.thoth,
+    providerRunMode: input.providerRunMode,
     composerState,
   });
 }
@@ -1130,6 +1134,7 @@ function submitWorkspaceDraft(input: SubmitDraftInput): void {
     attachments,
     provider,
     thoth,
+    providerRunMode,
     composerState,
     initialSetup,
   } = input;
@@ -1164,6 +1169,7 @@ function submitWorkspaceDraft(input: SubmitDraftInput): void {
     cwd: submission.cwd,
     provider: submission.provider,
     thoth,
+    providerRunMode,
     clientMessageId,
     timestamp,
     ...(submission.modeId ? { modeId: submission.modeId } : {}),
@@ -2147,6 +2153,7 @@ export function NewWorkspaceScreen({
           draftKey,
           draftId,
           thoth: buildThothTurnSnapshot(daemonConfig?.thoth),
+          providerRunMode: daemonConfig?.providerControl.runMode ?? "default",
           labels: {
             composerStateRequired: t("newWorkspace.errors.composerStateRequired"),
             selectModel: t("newWorkspace.errors.selectModel"),
@@ -2162,6 +2169,7 @@ export function NewWorkspaceScreen({
     [
       composerState,
       daemonConfig?.thoth,
+      daemonConfig?.providerControl.runMode,
       draftId,
       draftKey,
       ensureWorkspace,

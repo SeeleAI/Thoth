@@ -6,6 +6,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RuntimeControls } from "./runtime-controls";
 
+interface RuntimeConfigFixture {
+  thoth: {
+    enabled?: boolean;
+    mode: string;
+    clarifyStrength: string;
+    loopStrength: string;
+  };
+  providerControl?: { runMode: "default" | "plan" };
+}
+
 const { patchConfigMock, toastErrorMock, configState, theme } = vi.hoisted(() => ({
   patchConfigMock: vi.fn(async () => undefined),
   toastErrorMock: vi.fn(),
@@ -16,7 +26,8 @@ const { patchConfigMock, toastErrorMock, configState, theme } = vi.hoisted(() =>
         clarifyStrength: "dive",
         loopStrength: "balanced",
       },
-    },
+      providerControl: { runMode: "default" },
+    } as RuntimeConfigFixture,
   },
   theme: {
     spacing: { 1: 4, 2: 8 },
@@ -45,6 +56,7 @@ vi.mock("lucide-react-native", () => ({
   ChevronLeft: () => React.createElement("span", { "data-icon": "ChevronLeft" }),
   ChevronRight: () => React.createElement("span", { "data-icon": "ChevronRight" }),
   GitBranch: () => React.createElement("span", { "data-icon": "GitBranch" }),
+  ListChecks: () => React.createElement("span", { "data-icon": "ListChecks" }),
   SearchCheck: () => React.createElement("span", { "data-icon": "SearchCheck" }),
   Sparkles: () => React.createElement("span", { "data-icon": "Sparkles" }),
 }));
@@ -110,7 +122,7 @@ vi.mock("@/components/ui/dropdown-trigger", () => ({
         "aria-label": accessibilityLabel,
         onClick: onPress as React.MouseEventHandler<HTMLButtonElement>,
       },
-      children,
+      children as React.ReactNode,
     );
   }),
 }));
@@ -171,6 +183,7 @@ afterEach(() => {
       clarifyStrength: "dive",
       loopStrength: "balanced",
     },
+    providerControl: { runMode: "default" },
   };
 });
 
@@ -292,5 +305,27 @@ describe("RuntimeControls", () => {
     fireEvent.click(screen.getByTestId("thoth-mode-menu-quick"));
 
     expect(patchConfigMock).not.toHaveBeenCalled();
+  });
+
+  it("always allows an enabled Plan mode to be switched off", async () => {
+    configState.current.providerControl = { runMode: "plan" };
+
+    render(
+      <RuntimeControls
+        serverId="server-1"
+        planCapability={{ kind: "unsupported", reason: "Native Plan is unavailable." }}
+      />,
+    );
+
+    const planSwitch = screen.getByTestId("provider-plan-switch");
+    expect(planSwitch.getAttribute("aria-checked")).toBe("true");
+    expect((planSwitch as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(planSwitch);
+
+    await waitFor(() =>
+      expect(patchConfigMock).toHaveBeenCalledWith({
+        providerControl: { runMode: "default" },
+      }),
+    );
   });
 });

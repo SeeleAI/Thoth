@@ -230,48 +230,6 @@ async function stopCurrentDaemonFromPidLock(): Promise<void> {
   await stopProcessByPid(pid);
 }
 
-function summarizeOpenAiErrorBody(body: string): string {
-  const trimmed = body.trim();
-  if (!trimmed) {
-    return "empty response body";
-  }
-  if (trimmed.length <= 240) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, 240)}…`;
-}
-
-async function isOpenAiApiKeyUsable(apiKey: string | undefined): Promise<boolean> {
-  const key = apiKey?.trim();
-  if (!key) {
-    return false;
-  }
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/models?limit=1", {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${key}`,
-      },
-    });
-    if (response.ok) {
-      return true;
-    }
-    const body = await response.text();
-    console.warn(
-      `[e2e] OPENAI_API_KEY probe failed (${response.status}): ${summarizeOpenAiErrorBody(body)}`,
-    );
-    return false;
-  } catch (error) {
-    console.warn(
-      `[e2e] OPENAI_API_KEY probe request failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-    return false;
-  }
-}
-
 let daemonProcess: ChildProcess | null = null;
 let metroProcess: ChildProcess | null = null;
 let thothHome: string | null = null;
@@ -423,15 +381,6 @@ async function waitForPairingOfferFromDaemon(args: {
   );
 }
 
-const LOCAL_SPEECH_ENV_KEYS = [
-  "THOTH_LOCAL_MODELS_DIR",
-  "THOTH_DICTATION_LOCAL_STT_MODEL",
-  "THOTH_VOICE_LOCAL_STT_MODEL",
-  "THOTH_VOICE_LOCAL_TTS_MODEL",
-  "THOTH_VOICE_LOCAL_TTS_SPEAKER_ID",
-  "THOTH_VOICE_LOCAL_TTS_SPEED",
-] as const;
-
 async function loadEnvTestFile(repoRoot: string): Promise<void> {
   const envTestPath = path.join(repoRoot, ".env.test");
   if (existsSync(envTestPath)) {
@@ -462,33 +411,6 @@ async function applyThothHomeFork(targetHome: string): Promise<void> {
       `[e2e] Thoth metadata fork skipped missing paths: ${forkResult.skippedMissing.join(", ")}`,
     );
   }
-}
-
-async function logSpeechHarnessConfig(): Promise<void> {
-  const openAiUsable = await isOpenAiApiKeyUsable(process.env.OPENAI_API_KEY);
-  const defaultLocalModelsDir = path.join(
-    process.env.HOME ?? "",
-    ".thoth",
-    "models",
-    "local-speech",
-  );
-  const hasDefaultLocalModelsDir =
-    defaultLocalModelsDir.trim().length > 0 && existsSync(defaultLocalModelsDir);
-
-  // Default app E2E does not cover speech flows. Keep speech disabled here so
-  // unrelated tests never start background local-model downloads.
-  if (!openAiUsable && !hasDefaultLocalModelsDir) {
-    console.warn(
-      "[e2e] Neither OPENAI_API_KEY nor local speech models found — app E2E keeps dictation/voice disabled. " +
-        "Tests that require dictation should gate on THOTH_DICTATION_ENABLED.",
-    );
-    return;
-  }
-
-  const speechAssets = openAiUsable ? "OpenAI" : `local models at ${defaultLocalModelsDir}`;
-  console.log(
-    `[e2e] Speech assets available from ${speechAssets}; app E2E keeps dictation/voice disabled.`,
-  );
 }
 
 interface RelayStreamState {
@@ -709,21 +631,9 @@ function startDaemon(args: DaemonSpawnArgs): ChildProcess {
     ]
       .filter((origin): origin is string => Boolean(origin))
       .join(","),
-    // Default app E2E does not cover speech flows. Keep these disabled so
-    // unrelated tests never start background local-model downloads.
-    THOTH_DICTATION_ENABLED: "0",
-    THOTH_VOICE_MODE_ENABLED: "0",
-    THOTH_DICTATION_STT_PROVIDER: "openai",
-    THOTH_VOICE_TURN_DETECTION_PROVIDER: "openai",
-    THOTH_VOICE_STT_PROVIDER: "openai",
-    THOTH_VOICE_TTS_PROVIDER: "openai",
     THOTH_NODE_ENV: "development",
     NODE_ENV: "development",
   };
-
-  for (const key of LOCAL_SPEECH_ENV_KEYS) {
-    delete env[key];
-  }
 
   const child = spawn(tsxBin, ["scripts/supervisor-entrypoint.ts", "--dev"], {
     cwd: serverDir,
@@ -808,8 +718,6 @@ export default async function globalSetup() {
   await applyThothHomeFork(thothHome);
 
   const cleanup = () => performCleanup(shouldRemoveThothHome);
-
-  await logSpeechHarnessConfig();
 
   try {
     const relayPort = await startRelay(new Set([port, metroPort]));

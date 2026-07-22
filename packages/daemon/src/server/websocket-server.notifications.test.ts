@@ -39,7 +39,7 @@ vi.mock("./session.js", () => ({
   },
 }));
 
-import { VoiceAssistantWebSocketServer } from "./websocket-server.js";
+import { DaemonWebSocketServer } from "./websocket-server.js";
 
 interface WebSocketServerInternals {
   sessions: Map<unknown, unknown>;
@@ -94,7 +94,7 @@ function createServer(agentManagerOverrides?: Record<string, unknown>) {
     onChange: vi.fn(() => () => {}),
   };
 
-  const server = new VoiceAssistantWebSocketServer(
+  const server = new DaemonWebSocketServer(
     createStub<HTTPServer>({}),
     createStub<pino.Logger>(createLogger()),
     "srv-test",
@@ -105,8 +105,6 @@ function createServer(agentManagerOverrides?: Record<string, unknown>) {
     createStub<DaemonConfigStore>(daemonConfigStore),
     null,
     { allowedOrigins: new Set() },
-    undefined,
-    undefined,
     undefined,
     undefined,
     "1.2.3-test",
@@ -166,7 +164,7 @@ function createSessionWithActivity(
 }
 
 function connectClient(
-  server: VoiceAssistantWebSocketServer,
+  server: DaemonWebSocketServer,
   activity: {
     deviceType: "web" | "mobile";
     focusedAgentId: string | null;
@@ -198,7 +196,7 @@ function readAttentionRequiredMessage(ws: ReturnType<typeof createOpenSocket>) {
   return message.message.payload.event;
 }
 
-describe("VoiceAssistantWebSocketServer notification payloads", () => {
+describe("DaemonWebSocketServer notification payloads", () => {
   afterEach(() => {
     vi.clearAllMocks();
   });

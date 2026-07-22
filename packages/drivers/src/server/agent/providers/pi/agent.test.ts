@@ -86,6 +86,23 @@ test("forwards launch-context env to the Pi process launch", async () => {
   await session.close();
 });
 
+test("reports native Plan as unsupported without mutating the Pi transport", async () => {
+  const { pi, session } = await createSession();
+  const launchCount = pi.recordedLaunches.length;
+
+  await expect(session.applyProviderRunMode("plan")).resolves.toEqual({
+    capability: {
+      kind: "unsupported",
+      reason: "Pi does not expose a native Plan mode.",
+    },
+    nativeModeId: null,
+  });
+  expect(pi.recordedLaunches).toHaveLength(launchCount);
+  expect(await session.getCurrentMode()).toBeNull();
+
+  await session.close();
+});
+
 class SessionEvents {
   private readonly events: AgentStreamEvent[] = [];
   private readonly waiters: Array<{

@@ -43,29 +43,6 @@ const ClaudeToolEnvelopeSchema = z
   })
   .passthrough();
 
-const ClaudeSpeakToolDetailSchema = z
-  .object({
-    name: z.literal("speak"),
-    input: z
-      .union([
-        z.string().transform((text) => ({ text })),
-        z.object({ text: z.string() }).passthrough(),
-      ])
-      .nullable(),
-    output: z.unknown().nullable(),
-  })
-  .transform(({ input }) => {
-    const text = input?.text?.trim() ?? "";
-    if (!text) {
-      return undefined;
-    }
-    return {
-      type: "unknown",
-      input: text,
-      output: null,
-    } satisfies ToolCallDetail;
-  });
-
 const ClaudeToolDetailPass2Schema = z.union([
   toolDetailBranchByName("Bash", ToolShellInputSchema, ToolShellOutputSchema, toShellToolDetail),
   toolDetailBranchByName("bash", ToolShellInputSchema, ToolShellOutputSchema, toShellToolDetail),
@@ -211,7 +188,6 @@ const ClaudeToolDetailPass2Schema = z.union([
       } satisfies ToolCallDetail;
     },
   ),
-  ClaudeSpeakToolDetailSchema,
 ]);
 
 export function deriveClaudeToolDetail(

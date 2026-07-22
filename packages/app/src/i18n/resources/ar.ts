@@ -37,7 +37,6 @@ export const ar: TranslationResources = {
       daemonClientUnavailable: "عميل Daemon غير متوفر",
       daemonClientDisconnected: "تم قطع اتصال عميل Daemon",
       noFileFound: "لم يتم العثور على ملف لـ{{token}}",
-      unexpectedDictationError: "حدث خطأ غير متوقع أثناء معالجة الإملاء.",
     },
     connectionStatus: {
       online: "متصل",
@@ -84,18 +83,6 @@ export const ar: TranslationResources = {
       cancelingAgent: "وكيل الإلغاء",
       stopAgent: "توقف الوكيل",
       interrupt: "مقاطعة",
-    },
-    voice: {
-      enableVoiceMode: "تمكين الوضع الصوتي",
-      voiceMode: "وضع الصوت",
-      unmuteVoiceMode: "إلغاء كتم وضع الصوت",
-      muteVoiceMode: "وضع كتم الصوت",
-      stopDictation: "توقف عن الإملاء",
-      startDictation: "بدء الإملاء",
-      unmuteVoice: "إلغاء كتم الصوت",
-      muteVoice: "كتم الصوت",
-      dictation: "الإملاء",
-      interruptBeforeVoice: "قم بمقاطعة الوكيل قبل بدء الوضع الصوتي",
     },
     attachments: {
       addImage: "أضف صورة",
@@ -168,6 +155,11 @@ export const ar: TranslationResources = {
       mode: "تغيير الوضع",
     },
     runtime: {
+      plan: {
+        switch: "Enable native Plan mode",
+        tooltip: "Use the selected provider's native Plan for the next turn.",
+        unavailable: "Native Plan capability is not available for this provider yet.",
+      },
       thoth: {
         switch: "تفعيل وضع Thoth",
         tooltip: "فعّل Clarify وLoop في Thoth. عند الإيقاف تُرسل الرسائل مباشرة إلى المزوّد.",
@@ -282,20 +274,8 @@ export const ar: TranslationResources = {
       text: "نص",
       file: "ملف",
     },
-    speak: {
-      header: "تكلم",
-    },
     activity: {
       details: "تفاصيل",
-    },
-    dictation: {
-      start: "بدء الإملاء الصوتي",
-      cancel: "إلغاء الإملاء",
-      retry: "أعد محاولة الإملاء",
-      insert: "إدراج النسخ",
-      insertAndSend: "أدخل النسخ وأرسل",
-      failed: "فشل الإملاء:{{error}}",
-      failedRetry: "فشل الإملاء. اضغط على إعادة المحاولة.",
     },
     question: {
       submit: "يُقدِّم",
@@ -1002,28 +982,8 @@ export const ar: TranslationResources = {
         requestFailed: "فشل طلب إذن الإعلام:{{message}}",
         unexpectedState: "حالة إذن الإعلام غير المتوقعة:{{state}}",
       },
-      microphone: {
-        webOnly: "حالة ميكروفون سطح المكتب متاحة فقط في وقت تشغيل الويب.",
-        navigatorUnavailable: "Navigator غير متوفر في هذه البيئة.",
-        granted: "تم منح الوصول إلى الميكروفون.",
-        denied: "تم رفض الوصول إلى الميكروفون في إعدادات النظام.",
-        notGranted: "لم يتم منح إذن الميكروفون بعد.",
-        unexpectedState: "حالة إذن الميكروفون غير متوقعة:{{state}}",
-        statusApiUnavailable:
-          "واجهة برمجة التطبيقات لحالة الميكروفون غير متاحة في وقت التشغيل هذا. استخدم الطلب للتحقق من الوصول.",
-        queryFailed: "فشل الاستعلام عن حالة الميكروفون:{{message}}",
-        captureUnavailable: "التقاط الميكروفون غير متوفر في هذه البيئة.",
-        permissionApiUnavailable:
-          "واجهة برمجة تطبيقات حالة الإذن غير متاحة. استخدم الطلب للتحقق من الوصول.",
-        requestsWebOnly: "طلبات ميكروفون سطح المكتب متاحة فقط في وقت تشغيل الويب.",
-        captureApiUnavailable: "واجهة برمجة تطبيقات التقاط الميكروفون غير متاحة في هذه البيئة.",
-        requestDenied: "تم رفض إذن الميكروفون من قبل المستخدم أو النظام.",
-        noDevice: "لم يتم العثور على جهاز ميكروفون.",
-        requestFailed: "فشل طلب إذن الميكروفون:{{message}}",
-      },
       empty: {
         notifications: "لم يتم التحقق من حالة الإخطار بعد.",
-        microphone: "لم يتم التحقق من حالة الميكروفون بعد.",
       },
       testNotification: {
         title: "اختبار الإخطار Thoth",
@@ -1295,13 +1255,6 @@ export const ar: TranslationResources = {
       copied: "منقول",
     },
   },
-  realtimeVoice: {
-    actions: {
-      mute: "كتم صوت الوقت الحقيقي",
-      unmute: "إلغاء كتم صوت الوقت الحقيقي",
-      stop: "إيقاف الصوت في الوقت الحقيقي ومقاطعة الدوران",
-    },
-  },
   rewind: {
     tooltip: "الترجيع إلى هذه الرسالة",
     warning: "لا يمكن التراجع عن هذا الإجراء",
@@ -1473,10 +1426,6 @@ export const ar: TranslationResources = {
     },
     diagnostics: {
       title: "التشخيص",
-      testAudio: "اختبار الصوت",
-      playTest: "لعب الاختبار",
-      playing: "جارٍ اللعب...",
-      playbackFailed: "فشل التشغيل:{{message}}",
       app: {
         title: "App diagnostic",
         rowTitle: "App diagnostic",
@@ -1612,12 +1561,9 @@ export const ar: TranslationResources = {
         cycleTheme: "موضوع الدورة",
         focusMessageInput: "التركيز على إدخال الرسالة",
         cycleAgentMode: "تبديل وضع الوكيل",
-        toggleVoiceMode: "تبديل الوضع الصوتي",
-        startStopDictation: "بدء إملاء /stop",
         interruptAgent: "عامل المقاطعة",
         sendMessage: "أرسل رسالة",
         queueMessage: "رسالة قائمة الانتظار",
-        muteUnmuteVoiceMode: "كتم وضع الصوت /unmute",
       },
       helpNotes: {
         showKeyboardShortcuts: "متاح عندما لا يكون التركيز في حقل نص أو محطة طرفية.",
@@ -1661,7 +1607,6 @@ export const ar: TranslationResources = {
     permissions: {
       title: "الأذونات",
       notifications: "إشعارات",
-      microphone: "ميكروفون",
       refresh: "ينعش",
       refreshing: "منعش...",
       refreshAccessibility: "تحديث أذونات سطح المكتب",

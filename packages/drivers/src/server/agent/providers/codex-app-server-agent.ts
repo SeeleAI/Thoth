@@ -3031,10 +3031,6 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (this.config.featureValues?.fast_mode && codexModelSupportsFastMode(this.config.model)) {
       this.serviceTier = "fast";
     }
-    if (this.config.featureValues?.plan_mode) {
-      this.planModeEnabled = true;
-    }
-
     if (this.resumeHandle?.sessionId) {
       this.currentThreadId = this.resumeHandle.sessionId;
       this.historyPending = true;
@@ -3049,8 +3045,6 @@ export class CodexAppServerAgentSession implements AgentSession {
     return buildCodexFeatures({
       modelId: this.config.model,
       fastModeEnabled: this.serviceTier === "fast",
-      planModeEnabled: this.planModeEnabled,
-      planModeAvailable: this.hasPlanCollaborationMode(),
     });
   }
 
@@ -3710,6 +3704,28 @@ export class CodexAppServerAgentSession implements AgentSession {
     return CODEX_MODES.filter((mode) => mode.id !== "auto-review");
   }
 
+  async getProviderRunModeCapability() {
+    await this.connect();
+    return this.hasPlanCollaborationMode()
+      ? ({ kind: "native" } as const)
+      : ({
+          kind: "unsupported",
+          reason: "Codex app-server does not expose a native Plan collaboration mode.",
+        } as const);
+  }
+
+  async applyProviderRunMode(mode: "default" | "plan") {
+    const capability = await this.getProviderRunModeCapability();
+    if (mode === "plan" && capability.kind === "unsupported") {
+      return { capability, nativeModeId: null };
+    }
+    this.applyFeatureValue("plan_mode", mode === "plan");
+    return {
+      capability,
+      nativeModeId: this.resolvedCollaborationMode?.name ?? null,
+    };
+  }
+
   async getCurrentMode(): Promise<string | null> {
     return this.currentMode ?? null;
   }
@@ -3749,10 +3765,6 @@ export class CodexAppServerAgentSession implements AgentSession {
         );
       }
       this.applyFeatureValue("fast_mode", Boolean(value));
-      return;
-    }
-    if (featureId === "plan_mode") {
-      this.applyFeatureValue("plan_mode", Boolean(value));
       return;
     }
     throw new Error(`Unknown Codex feature: ${featureId}`);
@@ -5471,6 +5483,7 @@ export class CodexAppServerAgentClient implements AgentClient {
   readonly harnessCapabilities = defineHarnessCapabilities({
     toolAttachment: ["native"],
     eventReplay: "cursor",
+    plan: { kind: "native" },
   });
   private goalsEnabledPromise: Promise<boolean> | null = null;
   private autoReviewEnabledPromise: Promise<boolean> | null = null;
@@ -5695,13 +5708,12 @@ export class CodexAppServerAgentClient implements AgentClient {
   }
 
   async fetchCatalog(options: FetchCatalogOptions): Promise<ProviderCatalog> {
-    const models = await this.fetchModelsFromAppServer(options.launchContext?.env);
-    return { models, modes: CODEX_MODES };
+    return this.fetchCatalogFromAppServer(options.launchContext?.env);
   }
 
-  private async fetchModelsFromAppServer(
+  private async fetchCatalogFromAppServer(
     launchEnv?: Record<string, string>,
-  ): Promise<AgentModelDefinition[]> {
+  ): Promise<ProviderCatalog> {
     // Codex model/list is global to the app server in this flow; cwd/force are intentionally ignored.
     const child = await this.spawnAppServer(launchEnv);
     const client = new CodexAppServerClient(child, this.logger);
@@ -5720,13 +5732,34 @@ export class CodexAppServerAgentClient implements AgentClient {
         typeof configuredDefaultModelId === "string"
           ? models.some((model) => model?.id === configuredDefaultModelId)
           : false;
-      return models.map((model) =>
+      const mappedModels = models.map((model) =>
         buildCodexModelDefinition(model, {
           configuredDefaultModelId,
           configuredDefaultThinkingOptionId,
           hasConfiguredDefaultModel,
         }),
       );
+      let planCapability: ProviderCatalog["planCapability"];
+      try {
+        const response = toObjectRecord(await client.request("collaborationMode/list", {}));
+        const modes = Array.isArray(response?.data) ? response.data : [];
+        const hasPlan = modes.some((entry) => {
+          const name = toObjectRecord(entry)?.name;
+          return typeof name === "string" && /plan|read/iu.test(name);
+        });
+        planCapability = hasPlan
+          ? { kind: "native" }
+          : {
+              kind: "unsupported",
+              reason: "Codex app-server does not expose a native Plan collaboration mode.",
+            };
+      } catch (error) {
+        planCapability = {
+          kind: "unsupported",
+          reason: `Codex Plan capability probe failed: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+      return { models: mappedModels, modes: CODEX_MODES, planCapability };
     } finally {
       await client.dispose();
     }

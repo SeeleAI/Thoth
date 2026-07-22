@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import type { ToolCallTimelineItem } from "../../agent-sdk-types.js";
-import { isSpeakToolName } from "@thoth/protocol/tool-name-normalization";
 import { deriveClaudeToolDetail } from "./tool-call-detail-parser.js";
 
 interface MapperParams {
@@ -27,15 +26,7 @@ const ClaudeRawToolCallSchema = z
   })
   .passthrough();
 
-type ClaudeToolKind =
-  | "shell"
-  | "read"
-  | "write"
-  | "edit"
-  | "search"
-  | "fetch"
-  | "speak"
-  | "unknown";
+type ClaudeToolKind = "shell" | "read" | "write" | "edit" | "search" | "fetch" | "unknown";
 
 const SHELL_NAMES: ReadonlySet<string> = new Set(["Bash", "bash", "shell", "exec_command"]);
 const READ_NAMES: ReadonlySet<string> = new Set(["Read", "read", "read_file", "view_file"]);
@@ -73,7 +64,6 @@ function resolveClaudeToolKind(name: string): ClaudeToolKind {
   if (EDIT_NAMES.has(name)) return "edit";
   if (SEARCH_NAMES.has(name)) return "search";
   if (FETCH_NAMES.has(name)) return "fetch";
-  if (isSpeakToolName(name)) return "speak";
   return "unknown";
 }
 
@@ -90,8 +80,6 @@ function resolveDetailName(toolKind: ClaudeToolKind, name: string): string {
     case "search":
     case "fetch":
       return name;
-    case "speak":
-      return "speak";
     default:
       return name;
   }
@@ -114,7 +102,7 @@ function mapClaudeToolCall(
 
   const trimmedName = raw.name.trim();
   const toolKind = resolveClaudeToolKind(trimmedName);
-  const name = toolKind === "speak" ? "speak" : trimmedName;
+  const name = trimmedName;
   const input = raw.input ?? null;
   const output = raw.output ?? null;
   const detail = deriveClaudeToolDetail(resolveDetailName(toolKind, name), input, output);

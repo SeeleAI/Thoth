@@ -16,11 +16,6 @@ import { getAvailablePort } from "./helpers/network.ts";
 $.verbose = false;
 
 const pollIntervalMs = 100;
-const testEnv = {
-  THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD: process.env.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD ?? "0",
-  THOTH_DICTATION_ENABLED: process.env.THOTH_DICTATION_ENABLED ?? "0",
-  THOTH_VOICE_MODE_ENABLED: process.env.THOTH_VOICE_MODE_ENABLED ?? "0",
-};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -66,7 +61,7 @@ interface DaemonStatus {
 
 async function readDaemonStatus(thothHome: string): Promise<DaemonStatus> {
   const result =
-    await $`THOTH_HOME=${thothHome} THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD=${testEnv.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD} THOTH_DICTATION_ENABLED=${testEnv.THOTH_DICTATION_ENABLED} THOTH_VOICE_MODE_ENABLED=${testEnv.THOTH_VOICE_MODE_ENABLED} npx thoth daemon status --home ${thothHome} --json`.nothrow();
+    await $`THOTH_HOME=${thothHome} npx thoth daemon status --home ${thothHome} --json`.nothrow();
   if (result.exitCode !== 0) {
     return { localDaemon: null, pid: null };
   }
@@ -173,7 +168,7 @@ try {
 
   console.log("Test 2: `thoth daemon stop` should stop without respawn");
   const stopResult =
-    await $`THOTH_HOME=${thothHome} THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD=${testEnv.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD} THOTH_DICTATION_ENABLED=${testEnv.THOTH_DICTATION_ENABLED} THOTH_VOICE_MODE_ENABLED=${testEnv.THOTH_VOICE_MODE_ENABLED} npx thoth daemon stop --home ${thothHome} --json`.nothrow();
+    await $`THOTH_HOME=${thothHome} npx thoth daemon stop --home ${thothHome} --json`.nothrow();
   assert.strictEqual(stopResult.exitCode, 0, `stop should succeed: ${stopResult.stderr}`);
   const stopJson = JSON.parse(stopResult.stdout) as { action?: unknown };
   assert.strictEqual(stopJson.action, "stopped", "stop should report stopped action");
@@ -239,7 +234,7 @@ try {
     });
   }
 
-  await $`THOTH_HOME=${thothHome} THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD=${testEnv.THOTH_LOCAL_SPEECH_AUTO_DOWNLOAD} THOTH_DICTATION_ENABLED=${testEnv.THOTH_DICTATION_ENABLED} THOTH_VOICE_MODE_ENABLED=${testEnv.THOTH_VOICE_MODE_ENABLED} npx thoth daemon stop --home ${thothHome} --force`.nothrow();
+  await $`THOTH_HOME=${thothHome} npx thoth daemon stop --home ${thothHome} --force`.nothrow();
   await rm(thothHome, { recursive: true, force: true });
 }
 

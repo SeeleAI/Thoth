@@ -9,6 +9,7 @@ import type {
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type { ThothToolCatalog } from "./tools/types.js";
 import type { HarnessCapabilities } from "../../harness/index.js";
+import type { ProviderPlanCapability, ProviderRunMode } from "@thoth/protocol/provider-control";
 
 export type { AgentProviderNotice };
 
@@ -118,6 +119,7 @@ export interface ProviderSnapshotEntry {
   label?: string;
   description?: string;
   defaultModeId?: string | null;
+  planCapability?: import("@thoth/protocol/provider-control").ProviderPlanCapability;
 }
 
 export interface AgentCreateConfigParent {
@@ -624,6 +626,11 @@ export interface AgentPermissionResult {
   followUpPrompt?: AgentPromptInput;
 }
 
+export interface AgentProviderRunModeResult {
+  capability: ProviderPlanCapability;
+  nativeModeId: string | null;
+}
+
 export interface AgentSession {
   readonly provider: AgentProvider;
   readonly id: string | null;
@@ -637,6 +644,8 @@ export interface AgentSession {
   getAvailableModes(): Promise<AgentMode[]>;
   getCurrentMode(): Promise<string | null>;
   setMode(modeId: string): Promise<void | AgentProviderNotice>;
+  getProviderRunModeCapability?(): Promise<ProviderPlanCapability>;
+  applyProviderRunMode?(mode: ProviderRunMode): Promise<AgentProviderRunModeResult>;
   getPendingPermissions(): AgentPermissionRequest[];
   respondToPermission(
     requestId: string,
@@ -687,6 +696,7 @@ export type FetchCatalogOptions = (
 export interface ProviderCatalog {
   models: AgentModelDefinition[];
   modes: AgentMode[];
+  planCapability?: import("@thoth/protocol/provider-control").ProviderPlanCapability;
 }
 
 export interface AgentResumeSessionOptions {

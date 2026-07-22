@@ -35,7 +35,6 @@ export const en = {
       daemonClientUnavailable: "Daemon client unavailable",
       daemonClientDisconnected: "Daemon client is disconnected",
       noFileFound: "No file found for {{token}}",
-      unexpectedDictationError: "An unexpected error occurred while handling dictation.",
     },
     connectionStatus: {
       online: "Online",
@@ -82,18 +81,6 @@ export const en = {
       cancelingAgent: "Canceling agent",
       stopAgent: "Stop agent",
       interrupt: "Interrupt",
-    },
-    voice: {
-      enableVoiceMode: "Enable Voice mode",
-      voiceMode: "Voice mode",
-      unmuteVoiceMode: "Unmute Voice mode",
-      muteVoiceMode: "Mute Voice mode",
-      stopDictation: "Stop dictation",
-      startDictation: "Start dictation",
-      unmuteVoice: "Unmute voice",
-      muteVoice: "Mute voice",
-      dictation: "Dictation",
-      interruptBeforeVoice: "Interrupt the agent before starting voice mode",
     },
     attachments: {
       addImage: "Add image",
@@ -169,6 +156,11 @@ export const en = {
       thoth: {
         switch: "Enable Thoth mode",
         tooltip: "Turn on Thoth Clarify and Loop. Off sends directly to the provider.",
+      },
+      plan: {
+        switch: "Enable native Plan mode",
+        tooltip: "Use the selected provider's native Plan for the next turn.",
+        unavailable: "Native Plan capability is not available for this provider yet.",
       },
       clarify: {
         tooltip: "Clarify",
@@ -281,20 +273,8 @@ export const en = {
       text: "Text",
       file: "File",
     },
-    speak: {
-      header: "Spoke",
-    },
     activity: {
       details: "Details",
-    },
-    dictation: {
-      start: "Start voice dictation",
-      cancel: "Cancel dictation",
-      retry: "Retry dictation",
-      insert: "Insert transcription",
-      insertAndSend: "Insert transcription and send",
-      failed: "Dictation failed: {{error}}",
-      failedRetry: "Dictation failed. Tap retry.",
     },
     question: {
       submit: "Submit",
@@ -1009,28 +989,8 @@ export const en = {
         requestFailed: "Failed to request notification permission: {{message}}",
         unexpectedState: "Unexpected notification permission state: {{state}}",
       },
-      microphone: {
-        webOnly: "Desktop microphone status is only available on web runtime.",
-        navigatorUnavailable: "Navigator is unavailable in this environment.",
-        granted: "Microphone access is granted.",
-        denied: "Microphone access is denied in system settings.",
-        notGranted: "Microphone permission has not been granted yet.",
-        unexpectedState: "Unexpected microphone permission state: {{state}}",
-        statusApiUnavailable:
-          "Microphone status API is unavailable in this runtime. Use Request to check access.",
-        queryFailed: "Failed to query microphone status: {{message}}",
-        captureUnavailable: "Microphone capture is unavailable in this environment.",
-        permissionApiUnavailable:
-          "Permission status API is unavailable. Use Request to check access.",
-        requestsWebOnly: "Desktop microphone requests are only available on web runtime.",
-        captureApiUnavailable: "Microphone capture API is unavailable in this environment.",
-        requestDenied: "Microphone permission was denied by the user or system.",
-        noDevice: "No microphone device was found.",
-        requestFailed: "Failed to request microphone permission: {{message}}",
-      },
       empty: {
         notifications: "Notification status has not been checked yet.",
-        microphone: "Microphone status has not been checked yet.",
       },
       testNotification: {
         title: "Thoth notification test",
@@ -1303,13 +1263,6 @@ export const en = {
       copied: "Copied",
     },
   },
-  realtimeVoice: {
-    actions: {
-      mute: "Mute realtime voice",
-      unmute: "Unmute realtime voice",
-      stop: "Stop realtime voice and interrupt turn",
-    },
-  },
   rewind: {
     tooltip: "Rewind to this message",
     warning: "This action cannot be undone",
@@ -1480,10 +1433,6 @@ export const en = {
     },
     diagnostics: {
       title: "Diagnostics",
-      testAudio: "Test audio",
-      playTest: "Play test",
-      playing: "Playing...",
-      playbackFailed: "Playback failed: {{message}}",
       app: {
         title: "App diagnostic",
         rowTitle: "App diagnostic",
@@ -1619,12 +1568,9 @@ export const en = {
         cycleTheme: "Cycle theme",
         focusMessageInput: "Focus message input",
         cycleAgentMode: "Cycle agent mode",
-        toggleVoiceMode: "Toggle voice mode",
-        startStopDictation: "Start/stop dictation",
         interruptAgent: "Interrupt agent",
         sendMessage: "Send message",
         queueMessage: "Queue message",
-        muteUnmuteVoiceMode: "Mute/unmute voice mode",
       },
       helpNotes: {
         showKeyboardShortcuts: "Available when focus is not in a text field or terminal.",
@@ -1669,7 +1615,6 @@ export const en = {
     permissions: {
       title: "Permissions",
       notifications: "Notifications",
-      microphone: "Microphone",
       refresh: "Refresh",
       refreshing: "Refreshing...",
       refreshAccessibility: "Refresh desktop permissions",

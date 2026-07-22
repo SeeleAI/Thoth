@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type { AgentAttachment, ThothTurnAck, ThothTurnSnapshot } from "@thoth/protocol/messages";
+import type { ProviderRunMode, ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
 import type { TaskContextReference } from "@thoth/protocol/task-authority";
 import type {
   AgentThothCardAnswerRequest,
@@ -49,6 +50,7 @@ interface StartForegroundTurnInput {
   images?: Array<{ data: string; mimeType: string }>;
   attachments?: AgentAttachment[];
   thoth?: ThothTurnSnapshot;
+  providerRunMode: ProviderRunMode;
   rawPrompt: AgentPromptInput;
   rawRunOptions?: AgentRunOptions;
   contextRefs?: TaskContextReference[];
@@ -381,6 +383,7 @@ export class ForegroundTurnCoordinator {
       agentId: agent.id,
       kind,
       ...(input.thoth?.enabled === true ? { controls: toControls(input.thoth) } : {}),
+      providerRunMode: input.providerRunMode,
       ...(input.messageId ? { sourceMessageId: input.messageId } : {}),
       workspaceId: input.workspaceId,
       workspacePath: input.workspacePath,
@@ -391,6 +394,10 @@ export class ForegroundTurnCoordinator {
         turnKind: started.turn.kind,
         turnId: started.turn.id,
         authorityRevision: started.state.revision,
+        providerRunMode: started.turn.providerRunMode,
+        ...(started.turn.providerRunModeReceipt
+          ? { providerRunModeReceipt: started.turn.providerRunModeReceipt }
+          : {}),
       };
     }
 
@@ -451,9 +458,11 @@ export class ForegroundTurnCoordinator {
         images: input.images,
         attachments: input.attachments,
       });
-      this.startProviderRun(started.turn, prompt, { replace: false, structured: true });
+      const preparedTurn = await this.prepareProviderRunMode(started.turn);
+      this.startProviderRun(preparedTurn, prompt, { replace: false, structured: true });
     } else {
-      this.startProviderRun(started.turn, appendPromptContext(input.rawPrompt, taskContextPrompt), {
+      const preparedTurn = await this.prepareProviderRunMode(started.turn);
+      this.startProviderRun(preparedTurn, appendPromptContext(input.rawPrompt, taskContextPrompt), {
         replace: false,
         structured: false,
         runOptions: input.rawRunOptions,
@@ -464,7 +473,71 @@ export class ForegroundTurnCoordinator {
       turnKind: kind,
       turnId: started.turn.id,
       authorityRevision: started.state.revision,
+      providerRunMode: input.providerRunMode,
+      ...(this.options.authorityStore.getTurn(started.turn.id)?.providerRunModeReceipt
+        ? {
+            providerRunModeReceipt: this.options.authorityStore.getTurn(started.turn.id)!
+              .providerRunModeReceipt!,
+          }
+        : {}),
     };
+  }
+
+  async resolveProviderApproval(
+    agentId: string,
+    requestId: string,
+    response: import("@thoth/drivers/agent-runtime").AgentPermissionResponse,
+  ): Promise<boolean> {
+    const turn = this.options.authorityStore.getActiveTurn(agentId);
+    const agent = this.options.agentManager.getAgent(agentId);
+    const request = agent?.pendingPermissions.get(requestId);
+    if (!turn || !request) {
+      return false;
+    }
+    const result = await this.options.agentManager.respondToPermission(
+      agentId,
+      requestId,
+      response,
+    );
+    if (request.kind === "plan") {
+      if (response.behavior === "deny") {
+        endForegroundTurnFence({ agentId, generation: turn.generation });
+        this.options.authorityStore.markLifecycle({
+          agentId,
+          turnId: turn.id,
+          generation: turn.generation,
+          lifecycle: "interrupted",
+          reason: "turn_interrupted",
+          error: "The native Plan was not approved for implementation.",
+        });
+        return true;
+      }
+      const transition = await this.options.agentManager.prepareAgentRunMode(agentId, "default");
+      if (transition.capability.kind === "unsupported") {
+        throw new Error(transition.capability.reason);
+      }
+      this.options.authorityStore.markLifecycle({
+        agentId,
+        turnId: turn.id,
+        generation: turn.generation,
+        lifecycle: "running",
+        reason: "turn_started",
+        error: null,
+      });
+    }
+    if (result?.followUpPrompt) {
+      const current = this.options.authorityStore.getTurn(turn.id) ?? turn;
+      const cards = this.options.authorityStore.listCardsForTurn(current.id);
+      const hasApprovedGoals = cards.some(
+        (card) => card.kind === "goal_card" && card.status === "answered",
+      );
+      this.startProviderRun(current, result.followUpPrompt, {
+        replace: true,
+        structured:
+          current.kind === "thoth" && !(current.controls?.mode === "quick" && hasApprovedGoals),
+      });
+    }
+    return true;
   }
 
   async getState(agentId: string): Promise<AgentThothState> {
@@ -503,6 +576,18 @@ export class ForegroundTurnCoordinator {
         state: this.options.authorityStore.getState(request.agentId),
         error: validationError,
       };
+    }
+    if (record.kind === "goal_card" && request.answer.intent === "accept_loop") {
+      const capability = await this.options.agentManager.getAgentPlanCapability(request.agentId);
+      if (capability.kind === "unsupported") {
+        return {
+          requestId: request.requestId,
+          accepted: false,
+          conflict: false,
+          state: this.options.authorityStore.getState(request.agentId),
+          error: capability.reason,
+        };
+      }
     }
 
     const summary = summarizeAnswer(request.answer);
@@ -638,6 +723,17 @@ export class ForegroundTurnCoordinator {
             });
           }
         }
+        if (event.type === "permission_requested" && event.request.kind === "plan") {
+          this.options.authorityStore.markLifecycle({
+            agentId: input.turn.agentId,
+            turnId: input.turn.id,
+            generation: input.turn.generation,
+            lifecycle: "awaiting_implementation",
+            reason: "turn_started",
+            error: null,
+          });
+          continue;
+        }
         if (
           event.type !== "turn_completed" &&
           event.type !== "turn_failed" &&
@@ -653,6 +749,7 @@ export class ForegroundTurnCoordinator {
         const state = this.options.authorityStore.getState(input.turn.agentId);
         if (
           state.lifecycle === "awaiting_card" ||
+          state.lifecycle === "awaiting_implementation" ||
           state.lifecycle === "background_handoff" ||
           state.lifecycle === "canceled"
         ) {
@@ -742,8 +839,11 @@ export class ForegroundTurnCoordinator {
       reason: "turn_started",
       error: null,
     });
-    this.startProviderRun(
+    const preparedTurn = await this.prepareProviderRunMode(
       this.options.authorityStore.getTurn(turn.id) ?? turn,
+    );
+    this.startProviderRun(
+      preparedTurn,
       appendTextContext(
         buildThothAuthorityPrompt({ turn, cards }),
         this.options.taskContextBroker.renderTurn(turn.id),
@@ -770,8 +870,11 @@ export class ForegroundTurnCoordinator {
       reason: "quick_exec_started",
       error: null,
     });
-    this.startProviderRun(
+    const preparedTurn = await this.prepareProviderRunMode(
       this.options.authorityStore.getTurn(turn.id) ?? turn,
+    );
+    this.startProviderRun(
+      preparedTurn,
       appendTextContext(
         buildQuickExecutionPrompt({ turn, cards, resume }),
         this.options.taskContextBroker.renderTurn(turn.id),
@@ -1005,5 +1108,47 @@ export class ForegroundTurnCoordinator {
       });
       return null;
     }
+  }
+
+  private async prepareProviderRunMode(
+    turn: ForegroundTurnAuthorityRecord,
+  ): Promise<ForegroundTurnAuthorityRecord> {
+    if (turn.providerRunModeReceipt) {
+      return turn;
+    }
+    const result = await this.options.agentManager.prepareAgentRunMode(
+      turn.agentId,
+      turn.providerRunMode,
+    );
+    const unsupportedReason =
+      turn.providerRunMode === "plan" && result.capability.kind === "unsupported"
+        ? result.capability.reason
+        : null;
+    const receipt: ProviderRunModeReceipt = {
+      id: `foreground-mode-${randomUUID()}`,
+      requestedMode: turn.providerRunMode,
+      status: unsupportedReason ? "unsupported" : "applied",
+      nativeModeId: result.nativeModeId,
+      reason: unsupportedReason,
+      appliedAt: new Date().toISOString(),
+    };
+    const updated = this.options.authorityStore.recordRunModeReceipt({
+      agentId: turn.agentId,
+      turnId: turn.id,
+      generation: turn.generation,
+      receipt,
+    });
+    if (unsupportedReason) {
+      this.options.authorityStore.markLifecycle({
+        agentId: turn.agentId,
+        turnId: turn.id,
+        generation: turn.generation,
+        lifecycle: "unsupported",
+        reason: "turn_interrupted",
+        error: unsupportedReason,
+      });
+      throw new Error(unsupportedReason);
+    }
+    return updated;
   }
 }

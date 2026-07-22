@@ -33,30 +33,6 @@ const CodexToolEnvelopeSchema = z
   })
   .passthrough();
 
-const CodexSpeakToolDetailSchema = z
-  .object({
-    name: z.literal("speak"),
-    input: z
-      .union([
-        z.string().transform((text) => ({ text })),
-        z.object({ text: z.string() }).passthrough(),
-      ])
-      .nullable(),
-    output: z.unknown().nullable(),
-    cwd: z.string().nullable().optional(),
-  })
-  .transform(({ input }) => {
-    const text = input?.text?.trim() ?? "";
-    if (!text) {
-      return undefined;
-    }
-    return {
-      type: "unknown",
-      input: text,
-      output: null,
-    } satisfies ToolCallDetail;
-  });
-
 const CodexLooseEditOutputSchema = z.unknown().transform((value) => {
   const parsed = ToolEditOutputSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
@@ -182,7 +158,6 @@ const CodexToolDetailPass2Schema = z.union([
   toolDetailBranchByNameWithCwd("web_search", ToolSearchInputSchema, z.unknown(), (input) =>
     toSearchToolDetail({ input, toolName: "web_search" }),
   ),
-  CodexSpeakToolDetailSchema,
 ]);
 
 export function deriveCodexToolDetail(params: {

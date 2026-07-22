@@ -1,4 +1,5 @@
 import type { GitHubSearchItem, ThothTurnSnapshot } from "@thoth/protocol/messages";
+import type { ProviderRunMode } from "@thoth/protocol/provider-control";
 import type {
   AttachmentMetadata,
   ComposerAttachment,
@@ -49,6 +50,7 @@ export interface ComposerSendClient {
       attachments: ReturnType<typeof splitComposerAttachmentsForSubmit>["attachments"];
       contextRefs: ReturnType<typeof splitComposerAttachmentsForSubmit>["contextRefs"];
       thoth?: ThothTurnSnapshot;
+      providerRunMode?: ProviderRunMode;
     },
   ) => Promise<void>;
   uploadFile: (input: { fileName: string; mimeType: string; bytes: Uint8Array }) => Promise<{
@@ -163,6 +165,7 @@ export interface DispatchComposerAgentMessageInput {
   ) => Promise<Array<{ data: string; mimeType: string }> | undefined>;
   stream: AgentStreamWriter;
   thoth?: ThothTurnSnapshot;
+  providerRunMode?: ProviderRunMode;
 }
 
 export async function dispatchComposerAgentMessage(
@@ -185,6 +188,7 @@ export async function dispatchComposerAgentMessage(
     attachments: wirePayload.attachments,
     contextRefs: wirePayload.contextRefs,
     ...(input.thoth ? { thoth: input.thoth } : {}),
+    ...(input.providerRunMode ? { providerRunMode: input.providerRunMode } : {}),
   });
 }
 

@@ -116,6 +116,7 @@ export interface ProviderSnapshotEntry {
   label?: string;
   description?: string;
   defaultModeId?: string | null;
+  planCapability?: import("./provider-control.js").ProviderPlanCapability;
 }
 
 export interface AgentFeatureToggle {

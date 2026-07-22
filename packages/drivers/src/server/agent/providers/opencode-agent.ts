@@ -12,6 +12,7 @@ import {
   type TextPartInput as OpenCodeTextPartInput,
 } from "@opencode-ai/sdk/v2/client";
 import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { createPathEquivalenceMatcher } from "../../../utils/path.js";
 import pLimit from "p-limit";
 import type { Logger } from "pino";
@@ -29,6 +30,7 @@ import {
   type AgentPermissionAction,
   type AgentPermissionRequest,
   type AgentPermissionResponse,
+  type AgentPermissionResult,
   type AgentPersistenceHandle,
   type AgentPromptInput,
   type AgentRunOptions,
@@ -1231,7 +1233,10 @@ function createSdkOpenCodeClient(options: { baseUrl: string; directory: string }
 export class OpenCodeAgentClient implements AgentClient {
   readonly provider = "opencode" as const;
   readonly capabilities = OPENCODE_CAPABILITIES;
-  readonly harnessCapabilities = defineHarnessCapabilities({ toolAttachment: ["mcp"] });
+  readonly harnessCapabilities = defineHarnessCapabilities({
+    toolAttachment: ["mcp"],
+    plan: { kind: "native" },
+  });
   readonly resolveCreateConfig = resolveOpenCodeCreateConfig;
   readonly isCreateConfigUnattended = isOpenCodeCreateConfigUnattended;
 
@@ -1377,7 +1382,13 @@ export class OpenCodeAgentClient implements AgentClient {
         this.fetchModelsFromClient(client, directory),
         this.fetchModesFromClient(client, directory),
       ]);
-      return { models, modes };
+      return {
+        models,
+        modes,
+        planCapability: modes.some((mode) => mode.id === "plan")
+          ? { kind: "native" }
+          : { kind: "unsupported", reason: "OpenCode does not expose its native plan mode." },
+      };
     } finally {
       acquisition.release();
     }
@@ -2788,6 +2799,8 @@ class OpenCodeAgentSession implements AgentSession {
   private subAgentCallIdByChildSessionId = new Map<string, string>();
   private pendingChildToolPartsBySessionId = new Map<string, OpenCodeToolPartEventPart[]>();
   private selectedModelContextWindowMaxTokens: number | undefined;
+  private providerRunMode: "default" | "plan" = "default";
+  private planTextParts: string[] = [];
   private releaseServer: (() => void) | null;
   private eventStreamAbortController: AbortController | null = null;
   private eventStreamReady: Deferred<void> | null = null;
@@ -2949,6 +2962,7 @@ class OpenCodeAgentSession implements AgentSession {
     await this.awaitPendingAbortBeforeStartingTurn();
 
     this.runningToolCalls.clear();
+    this.planTextParts = [];
     this.subAgentsByCallId.clear();
     this.subAgentCallIdByChildSessionId.clear();
     this.pendingChildToolPartsBySessionId.clear();
@@ -3303,12 +3317,56 @@ class OpenCodeAgentSession implements AgentSession {
       if (e.type === "timeline" && e.item.type === "tool_call") {
         this.trackToolCall(e.item);
       }
+      if (e.type === "timeline" && e.item.type === "assistant_message") {
+        const text = e.item.text.trim();
+        if (text) this.planTextParts.push(text);
+      }
       const terminalEvent = toTerminalTurnEvent(e);
       if (terminalEvent) {
         this.traceOpenCode("provider.opencode.event.terminal", {
           turnId,
           type: terminalEvent.type,
         });
+        if (terminalEvent.type === "turn_completed" && this.providerRunMode === "plan") {
+          const plan = this.planTextParts.join("\n\n").trim();
+          if (!plan) {
+            this.finishForegroundTurn(
+              {
+                type: "turn_failed",
+                provider: "opencode",
+                error: "Native Plan completed without usable plan content.",
+              },
+              turnId,
+            );
+            return;
+          }
+          const requestId = `opencode-plan-${randomUUID()}`;
+          const request: AgentPermissionRequest = {
+            id: requestId,
+            provider: "opencode",
+            name: "OpenCodePlanApproval",
+            kind: "plan",
+            title: "Plan",
+            description: "Review the native OpenCode plan before implementation starts.",
+            input: { plan },
+            actions: [
+              { id: "reject", label: "Reject", behavior: "deny", variant: "secondary" },
+              {
+                id: "implement",
+                label: "Implement",
+                behavior: "allow",
+                variant: "primary",
+                intent: "implement",
+              },
+            ],
+            metadata: { source: "provider_run_mode_plan", planText: plan },
+          };
+          this.pendingPermissions.set(requestId, request);
+          this.notifySubscribers(
+            { type: "permission_requested", provider: "opencode", request },
+            turnId,
+          );
+        }
         this.finishForegroundTurn(terminalEvent, turnId);
         return;
       }
@@ -3456,6 +3514,27 @@ class OpenCodeAgentSession implements AgentSession {
     return this.availableModesCache;
   }
 
+  async getProviderRunModeCapability() {
+    const modes = await this.getAvailableModes();
+    return modes.some((mode) => mode.id === "plan")
+      ? ({ kind: "native" } as const)
+      : ({
+          kind: "unsupported",
+          reason: "OpenCode does not expose its native plan mode.",
+        } as const);
+  }
+
+  async applyProviderRunMode(mode: "default" | "plan") {
+    const capability = await this.getProviderRunModeCapability();
+    if (mode === "plan" && capability.kind === "unsupported") {
+      return { capability, nativeModeId: null };
+    }
+    const nativeModeId = mode === "plan" ? "plan" : OPENCODE_BUILD_MODE_ID;
+    await this.setMode(nativeModeId);
+    this.providerRunMode = mode;
+    return { capability, nativeModeId };
+  }
+
   async getCurrentMode(): Promise<string | null> {
     return this.currentMode;
   }
@@ -3493,7 +3572,10 @@ class OpenCodeAgentSession implements AgentSession {
     return Array.from(this.pendingPermissions.values());
   }
 
-  async respondToPermission(requestId: string, response: AgentPermissionResponse): Promise<void> {
+  async respondToPermission(
+    requestId: string,
+    response: AgentPermissionResponse,
+  ): Promise<AgentPermissionResult | void> {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) {
       throw new Error(`No pending permission request with id '${requestId}'`);
@@ -3529,6 +3611,23 @@ class OpenCodeAgentSession implements AgentSession {
 
       this.pendingPermissions.delete(requestId);
       return;
+    }
+
+    if (pending.kind === "plan" && pending.metadata?.source === "provider_run_mode_plan") {
+      this.pendingPermissions.delete(requestId);
+      if (response.behavior === "deny") {
+        return;
+      }
+      await this.applyProviderRunMode("default");
+      const plan = typeof pending.metadata.planText === "string" ? pending.metadata.planText : "";
+      return {
+        followUpPrompt: [
+          "Implement the approved native plan now in this same OpenCode session.",
+          plan,
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+      };
     }
 
     const reply = resolveOpenCodePermissionReply(response);

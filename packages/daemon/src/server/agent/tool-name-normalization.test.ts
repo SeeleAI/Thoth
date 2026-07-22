@@ -8,15 +8,9 @@ describe("isThothToolName", () => {
     expect(isThothToolName("mcp__thoth__list_agents")).toBe(true);
   });
 
-  it("detects thoth_voice variant", () => {
-    expect(isThothToolName("mcp__thoth_voice__create_agent")).toBe(true);
-    expect(isThothToolName("thoth_voice.create_agent")).toBe(true);
-  });
-
-  it("excludes speak tools", () => {
-    expect(isThothToolName("mcp__thoth_voice__speak")).toBe(false);
-    expect(isThothToolName("mcp__thoth__speak")).toBe(false);
-    expect(isThothToolName("thoth.speak")).toBe(false);
+  it("detects extended Thoth namespaces", () => {
+    expect(isThothToolName("mcp__thoth_runtime__create_agent")).toBe(true);
+    expect(isThothToolName("thoth_runtime.create_agent")).toBe(true);
   });
 
   it("detects Codex dot format", () => {

@@ -14,6 +14,9 @@ import type {
   AgentLaunchContext,
   AgentMode,
   AgentModelDefinition,
+  AgentPermissionRequest,
+  AgentPermissionResponse,
+  AgentPermissionResult,
   AgentPersistenceHandle,
   AgentPromptInput,
   AgentRunOptions,
@@ -78,6 +81,8 @@ class ScriptedThothSession implements AgentSession {
   private toolOrdinal = 0;
   private closed = false;
   private mcpClient: Promise<ScriptedMcpClient> | null = null;
+  private providerRunMode: "default" | "plan" = "default";
+  private readonly pendingPermissions = new Map<string, AgentPermissionRequest>();
 
   constructor(
     id: string,
@@ -128,18 +133,60 @@ class ScriptedThothSession implements AgentSession {
   }
 
   async getAvailableModes(): Promise<AgentMode[]> {
-    return [{ id: "auto", label: "Auto" }];
+    return [
+      { id: "auto", label: "Auto" },
+      { id: "plan", label: "Plan" },
+    ];
   }
 
   async getCurrentMode(): Promise<string | null> {
-    return "auto";
+    return this.providerRunMode === "plan" ? "plan" : "auto";
   }
 
-  async setMode(): Promise<void> {}
-  getPendingPermissions() {
-    return [];
+  async setMode(modeId: string): Promise<void> {
+    this.providerRunMode = modeId === "plan" ? "plan" : "default";
   }
-  async respondToPermission(): Promise<void> {}
+
+  async getProviderRunModeCapability() {
+    return { kind: "native" } as const;
+  }
+
+  async applyProviderRunMode(mode: "default" | "plan") {
+    this.providerRunMode = mode;
+    return {
+      capability: { kind: "native" } as const,
+      nativeModeId: mode === "plan" ? "plan" : "auto",
+    };
+  }
+
+  getPendingPermissions() {
+    return [...this.pendingPermissions.values()];
+  }
+
+  async respondToPermission(
+    requestId: string,
+    response: AgentPermissionResponse,
+  ): Promise<AgentPermissionResult | void> {
+    const request = this.pendingPermissions.get(requestId);
+    if (!request) throw new Error(`Unknown scripted provider permission ${requestId}`);
+    this.pendingPermissions.delete(requestId);
+    this.emit({
+      type: "permission_resolved",
+      provider: this.provider,
+      requestId,
+      resolution: response,
+    });
+    if (response.behavior === "deny") return;
+    if (request.kind === "plan") {
+      await this.applyProviderRunMode("default");
+      const plan = typeof request.metadata?.planText === "string" ? request.metadata.planText : "";
+      return {
+        followUpPrompt: ["Implement the approved native plan now.", plan]
+          .filter(Boolean)
+          .join("\n\n"),
+      };
+    }
+  }
 
   describePersistence(): AgentPersistenceHandle {
     return { provider: this.provider, sessionId: this.id, metadata: { threadId: this.id } };
@@ -230,7 +277,48 @@ class ScriptedThothSession implements AgentSession {
     });
     try {
       const scope = readThothRuntimeToolsConfig(this.config)?.scope ?? null;
-      if (scope === "clarify_audit") {
+      if (this.providerRunMode === "plan") {
+        const plan = [
+          "Inspect the current Workspace state.",
+          "Implement the approved Goal in this same provider thread.",
+          "Run the Goal acceptance checks and submit the semantic PlanExec result.",
+        ].join("\n");
+        this.emit({
+          type: "timeline",
+          provider: this.provider,
+          turnId,
+          providerTurnId: turnId,
+          item: { type: "assistant_message", text: plan },
+        });
+        const request: AgentPermissionRequest = {
+          id: `${turnId}-implement`,
+          provider: this.provider,
+          name: "ScriptedNativePlanApproval",
+          kind: "plan",
+          title: "Plan",
+          description: "Review the provider-native Plan before implementation.",
+          input: { plan },
+          actions: [
+            { id: "reject", label: "Reject", behavior: "deny", variant: "secondary" },
+            {
+              id: "implement",
+              label: "Implement",
+              behavior: "allow",
+              variant: "primary",
+              intent: "implement",
+            },
+          ],
+          metadata: { source: "scripted_native_plan", planText: plan },
+        };
+        this.pendingPermissions.set(request.id, request);
+        this.emit({
+          type: "permission_requested",
+          provider: this.provider,
+          request,
+          turnId,
+          providerTurnId: turnId,
+        });
+      } else if (scope === "clarify_audit") {
         await this.callTool(
           "thoth_submit_clarify_convergence_audit",
           {
@@ -330,6 +418,7 @@ class ScriptedThothClient implements AgentClient {
     };
     this.harnessCapabilities = defineHarnessCapabilities({
       toolAttachment: [this.transport],
+      plan: { kind: "native" },
     });
   }
 
@@ -409,7 +498,11 @@ class ScriptedThothClient implements AgentClient {
     );
   }
 
-  async fetchCatalog(): Promise<{ models: AgentModelDefinition[]; modes: AgentMode[] }> {
+  async fetchCatalog(): Promise<{
+    models: AgentModelDefinition[];
+    modes: AgentMode[];
+    planCapability: { kind: "native" };
+  }> {
     return {
       models: [
         {
@@ -419,7 +512,11 @@ class ScriptedThothClient implements AgentClient {
           isDefault: true,
         },
       ],
-      modes: [{ id: "auto", label: "Auto" }],
+      modes: [
+        { id: "auto", label: "Auto" },
+        { id: "plan", label: "Plan" },
+      ],
+      planCapability: { kind: "native" },
     };
   }
 
@@ -439,6 +536,7 @@ async function waitFor<T>(read: () => Promise<T | null>, timeoutMs = 15_000): Pr
 }
 
 let cardCommandSequence = 0;
+let approvalCommandSequence = 0;
 
 async function waitForPendingCard(
   client: DaemonClient,
@@ -499,6 +597,7 @@ async function waitForThothLifecycle(
     | "idle"
     | "running"
     | "awaiting_card"
+    | "awaiting_implementation"
     | "quick_exec"
     | "background_handoff"
     | "interrupted"
@@ -608,6 +707,38 @@ async function waitForCompletedTask(client: DaemonClient, workspaceId: string, t
     if (task?.status === "completed") return task;
     if (task) {
       lastDetail = await client.getTask({ taskId: task.id, workspaceId });
+      for (const execution of lastDetail.executions) {
+        const approval = execution.pendingApproval;
+        if (!approval) continue;
+        const resolved = await client.resolveExecutionApproval({
+          workspaceId,
+          taskId: task.id,
+          executionId: execution.id,
+          approvalId: approval.id,
+          decision: approval.kind === "implement" ? "implement" : "allow",
+          expectedRevision: approval.revision,
+          commandId: `e2e-execution-approval-${++approvalCommandSequence}`,
+        });
+        if (resolved.error && !resolved.conflict) {
+          throw new Error(resolved.error);
+        }
+      }
+      if (task.status === "interrupted") {
+        const timelines = await Promise.all(
+          lastDetail.executions.map(async (execution) => ({
+            executionId: execution.id,
+            timeline: await client.getExecutionTimeline({
+              workspaceId,
+              taskId: task.id,
+              executionId: execution.id,
+              limit: 100,
+            }),
+          })),
+        );
+        throw new Error(
+          `Task interrupted before completion: detail=${JSON.stringify(lastDetail)} timelines=${JSON.stringify(timelines)}`,
+        );
+      }
     } else {
       lastDetail = payload;
     }
@@ -712,6 +843,74 @@ describe("public foreground Thoth router", () => {
     expect(visibleSession.turnCount).toBe(7);
     expect(provider.sessions[0]).toBe(visibleSession);
   }, 45_000);
+
+  it("UT-02b hot-switches default -> native Plan -> default on one provider thread", async () => {
+    const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickDirect;
+    const provider = new ScriptedThothClient(script);
+    daemon = await createTestThothDaemon({ agentClients: { codex: provider } });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const cwd = mkdtempSync(join(tmpdir(), "thoth-public-plan-switch-"));
+    workspaces.push(cwd);
+    const agent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd,
+      initialPrompt: "DEFAULT_FIRST",
+      thoth: { enabled: false },
+      providerRunMode: "default",
+    });
+    await waitForAgentIdle(client, agent.id);
+    const visibleSession = provider.sessions[0]!;
+
+    await client.sendAgentMessage(agent.id, "PLAN_THIS_TURN", {
+      thoth: { enabled: false },
+      providerRunMode: "plan",
+    });
+    const awaitingImplementation = await waitForThothLifecycle(
+      client,
+      agent.id,
+      "awaiting_implementation",
+    );
+    expect(awaitingImplementation.turn).toMatchObject({
+      kind: "raw",
+      providerRunMode: "plan",
+      providerRunModeReceipt: { requestedMode: "plan", status: "applied" },
+    });
+    expect(awaitingImplementation.pendingCard).toBeNull();
+    const planPermission = await waitFor(async () => {
+      const snapshot = await client!.fetchAgent({ agentId: agent.id });
+      return (
+        snapshot?.agent.pendingPermissions.find((permission) => permission.kind === "plan") ?? null
+      );
+    });
+    await client.respondToPermission(agent.id, planPermission.id, {
+      behavior: "allow",
+      selectedActionId: "implement",
+    });
+    await waitForThothLifecycle(client, agent.id, "done");
+    await waitForAgentIdle(client, agent.id);
+
+    await client.sendAgentMessage(agent.id, "DEFAULT_LAST", {
+      thoth: { enabled: false },
+      providerRunMode: "default",
+    });
+    const defaultTurn = await waitForThothLifecycle(client, agent.id, "done");
+    await waitForAgentIdle(client, agent.id);
+    expect(defaultTurn.turn).toMatchObject({
+      kind: "raw",
+      providerRunMode: "default",
+      providerRunModeReceipt: { requestedMode: "default", status: "applied" },
+    });
+    expect(provider.sessions).toHaveLength(1);
+    expect(provider.sessions[0]).toBe(visibleSession);
+    expect(visibleSession.turnCount).toBe(4);
+  }, 30_000);
 
   it("UT-03 preserves an open Card across daemon restart, then cancels and resumes on the same Agent", async () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyRecovery;
@@ -950,7 +1149,6 @@ describe("public foreground Thoth router", () => {
     { providerId: "codex", transport: "native" as const },
     { providerId: "claude", transport: "mcp" as const },
     { providerId: "opencode", transport: "mcp" as const },
-    { providerId: "pi", transport: "mcp" as const },
     { providerId: "acp-fixture", transport: "mcp" as const },
   ])(
     "Harness lifecycle conformance: $providerId over $transport",

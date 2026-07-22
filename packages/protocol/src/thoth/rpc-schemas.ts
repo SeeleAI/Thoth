@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ProviderRunModeReceiptSchema, ProviderRunModeSchema } from "../provider-control.js";
 import {
   ClarifyFrontierLedgerSchema,
   ClarifyDecisionDeltaSchema,
@@ -177,6 +178,7 @@ export const AgentThothLifecycleSchema = z.enum([
   "idle",
   "running",
   "awaiting_card",
+  "awaiting_implementation",
   "quick_exec",
   "background_handoff",
   "interrupted",
@@ -192,6 +194,8 @@ export const AgentThothTurnSchema = z
     kind: z.enum(["raw", "thoth"]),
     lifecycle: AgentThothLifecycleSchema,
     controls: ThothTurnControlSnapshotSchema.optional(),
+    providerRunMode: ProviderRunModeSchema.default("default"),
+    providerRunModeReceipt: ProviderRunModeReceiptSchema.optional(),
     sourceMessageId: NonEmptyStringSchema.optional(),
     backgroundTaskId: NonEmptyStringSchema.optional(),
     error: z.string().optional(),

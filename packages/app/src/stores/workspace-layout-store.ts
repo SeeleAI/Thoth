@@ -84,6 +84,7 @@ interface WorkspaceLayoutStore {
   ) => string | null;
   openTabInBackground: (workspaceKey: string, target: WorkspaceTabTarget) => string | null;
   closeTab: (workspaceKey: string, tabId: string) => void;
+  removeMissingAgentTab: (workspaceKey: string, tabId: string, agentId: string) => void;
   focusTab: (workspaceKey: string, tabId: string) => void;
   retargetTab: (workspaceKey: string, tabId: string, target: WorkspaceTabTarget) => string | null;
   convertDraftToAgent: (workspaceKey: string, tabId: string, agentId: string) => string | null;
@@ -354,6 +355,46 @@ export function createWorkspaceLayoutStore(
                 ...state.layoutByWorkspace,
                 [normalizedWorkspaceKey]: nextLayout,
               },
+            };
+          });
+        },
+        removeMissingAgentTab: (workspaceKey, tabId, agentId) => {
+          const normalizedWorkspaceKey = trimNonEmpty(workspaceKey);
+          const normalizedTabId = trimNonEmpty(tabId);
+          const normalizedAgentId = trimNonEmpty(agentId);
+          if (!normalizedWorkspaceKey || !normalizedTabId || !normalizedAgentId) {
+            return;
+          }
+
+          set((state) => {
+            const nextLayout = closeTabInLayout({
+              layout: getWorkspaceLayout(state.layoutByWorkspace, normalizedWorkspaceKey),
+              tabId: normalizedTabId,
+            });
+            if (!nextLayout) {
+              return state;
+            }
+            return {
+              ...withoutFocusRestoration(state, normalizedWorkspaceKey),
+              layoutByWorkspace: {
+                ...state.layoutByWorkspace,
+                [normalizedWorkspaceKey]: nextLayout,
+              },
+              pinnedAgentIdsByWorkspace: removeAgentIdFromWorkspaceSet(
+                state.pinnedAgentIdsByWorkspace,
+                normalizedWorkspaceKey,
+                normalizedAgentId,
+              ),
+              hiddenAgentIdsByWorkspace: addAgentIdToWorkspaceSet(
+                state.hiddenAgentIdsByWorkspace,
+                normalizedWorkspaceKey,
+                normalizedAgentId,
+              ),
+              restoredAgentIdsByWorkspace: removeAgentIdFromWorkspaceSet(
+                state.restoredAgentIdsByWorkspace,
+                normalizedWorkspaceKey,
+                normalizedAgentId,
+              ),
             };
           });
         },

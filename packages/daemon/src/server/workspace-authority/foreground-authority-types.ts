@@ -7,6 +7,7 @@ import type {
   ThothTaskCardModel,
   ThothTurnControlSnapshot,
 } from "@thoth/protocol/thoth/rpc-schemas";
+import type { ProviderRunMode, ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
 
 export type ForegroundAuthorityUpdateReason =
   | "turn_started"
@@ -41,6 +42,8 @@ export interface ForegroundTurnAuthorityRecord {
   kind: "raw" | "thoth";
   lifecycle: AgentThothLifecycle;
   controls: ThothTurnControlSnapshot | null;
+  providerRunMode: ProviderRunMode;
+  providerRunModeReceipt: ProviderRunModeReceipt | null;
   sourceMessageId: string | null;
   workspaceId: string;
   workspacePath: string;
@@ -70,6 +73,7 @@ export interface StartForegroundTurnInput {
   agentId: string;
   kind: "raw" | "thoth";
   controls?: ThothTurnControlSnapshot;
+  providerRunMode: ProviderRunMode;
   sourceMessageId?: string;
   workspaceId: string;
   workspacePath: string;

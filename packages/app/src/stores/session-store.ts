@@ -21,6 +21,7 @@ import type {
   AgentUsage,
   AgentPersistenceHandle,
 } from "@thoth/protocol/agent-types";
+import type { ProviderPlanCapability } from "@thoth/protocol/provider-control";
 import type {
   ServerInfoStatusPayload,
   ProjectPlacementPayload,
@@ -99,6 +100,7 @@ export interface Agent {
   lastUserMessageAt: Date | null;
   lastActivityAt: Date;
   capabilities: AgentCapabilityFlags;
+  planCapability?: ProviderPlanCapability;
   currentModeId: string | null;
   availableModes: AgentMode[];
   pendingPermissions: AgentPermissionRequest[];
@@ -328,9 +330,6 @@ export interface SessionState {
   hasHydratedAgents: boolean;
   hasHydratedWorkspaces: boolean;
 
-  // Audio state
-  isPlayingAudio: boolean;
-
   // Focus
   focusedAgentId: string | null;
   focusedTerminalId: string | null;
@@ -393,9 +392,6 @@ interface SessionStoreActions {
   getSession: (serverId: string) => SessionState | undefined;
   updateSessionClient: (serverId: string, client: DaemonClient) => void;
   updateSessionServerInfo: (serverId: string, info: DaemonServerInfo) => void;
-
-  // Audio state
-  setIsPlayingAudio: (serverId: string, playing: boolean) => void;
 
   // Focus
   setFocusedAgentId: (serverId: string, agentId: string | null) => void;
@@ -553,7 +549,6 @@ function createInitialSessionState(serverId: string, client: DaemonClient): Sess
     serverInfo: null,
     hasHydratedAgents: false,
     hasHydratedWorkspaces: false,
-    isPlayingAudio: false,
     focusedAgentId: null,
     focusedTerminalId: null,
     messages: [],
@@ -764,23 +759,6 @@ export const useSessionStore = create<SessionStore>()(
 
       getSession: (serverId) => {
         return get().sessions[serverId];
-      },
-
-      // Audio state
-      setIsPlayingAudio: (serverId, playing) => {
-        set((prev) => {
-          const session = prev.sessions[serverId];
-          if (!session || session.isPlayingAudio === playing) {
-            return prev;
-          }
-          return {
-            ...prev,
-            sessions: {
-              ...prev.sessions,
-              [serverId]: { ...session, isPlayingAudio: playing },
-            },
-          };
-        });
       },
 
       // Focus

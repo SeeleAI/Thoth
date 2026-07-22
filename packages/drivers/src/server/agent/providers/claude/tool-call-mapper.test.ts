@@ -397,42 +397,6 @@ describe("claude tool-call mapper", () => {
     });
   });
 
-  it("normalizes claude speak tool names through schema transforms", () => {
-    const item = expectMapped(
-      mapClaudeCompletedToolCall({
-        callId: "claude-speak-1",
-        name: "mcp__thoth__speak",
-        input: { text: "Voice response from Claude." },
-        output: { ok: true },
-      }),
-    );
-
-    expect(item.name).toBe("speak");
-    expect(item.detail).toEqual({
-      type: "unknown",
-      input: "Voice response from Claude.",
-      output: null,
-    });
-  });
-
-  it("normalizes namespaced voice MCP speak tools", () => {
-    const item = expectMapped(
-      mapClaudeCompletedToolCall({
-        callId: "claude-speak-2",
-        name: "mcp__thoth_voice__speak",
-        input: { text: "Hey! I can hear you." },
-        output: { ok: true },
-      }),
-    );
-
-    expect(item.name).toBe("speak");
-    expect(item.detail).toEqual({
-      type: "unknown",
-      input: "Hey! I can hear you.",
-      output: null,
-    });
-  });
-
   it("drops tool calls when callId is missing", () => {
     const item = mapClaudeCompletedToolCall({
       callId: null,

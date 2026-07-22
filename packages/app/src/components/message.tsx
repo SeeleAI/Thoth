@@ -43,7 +43,6 @@ import {
   Copy,
   TriangleAlertIcon,
   Scissors,
-  MicVocal,
   FileSymlink,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -164,7 +163,6 @@ const MARKDOWN_ALLOWED_IMAGE_HANDLERS = [
 ] as const;
 const MARKDOWN_TOP_LEVEL_MAX_EXCEEDED_ITEM = <Text key="dotdotdot">...</Text>;
 
-const ThemedMicVocal = withUnistyles(MicVocal);
 const ThemedTodoCheckIcon = withUnistyles(Check);
 const ThemedFileSymlinkIcon = withUnistyles(FileSymlink);
 const ThemedTriangleAlertIcon = withUnistyles(TriangleAlertIcon);
@@ -1911,65 +1909,6 @@ export const AssistantMessage = memo(function AssistantMessage({
           />
         </AssistantMessageBlockContainer>
       ))}
-    </View>
-  );
-});
-
-interface SpeakMessageProps {
-  message: string;
-  timestamp: number;
-  disableOuterSpacing?: boolean;
-}
-
-const speakMessageStylesheet = StyleSheet.create((theme) => ({
-  container: {
-    paddingVertical: theme.spacing[3],
-  },
-  containerSpacing: {
-    marginBottom: theme.spacing[4],
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    marginBottom: theme.spacing[2],
-  },
-  headerLabel: {
-    fontFamily: theme.fontFamily.ui,
-    fontSize: theme.fontSize.base,
-    fontWeight: theme.fontWeight.normal,
-    color: theme.colors.foregroundMuted,
-  },
-  text: {
-    fontFamily: theme.fontFamily.ui,
-    fontSize: theme.fontSize.base,
-    lineHeight: 22,
-    color: theme.colors.foreground,
-  },
-}));
-
-export const SpeakMessage = memo(function SpeakMessage({
-  message,
-  timestamp: _timestamp,
-  disableOuterSpacing,
-}: SpeakMessageProps) {
-  const { t } = useTranslation();
-  const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
-  const containerStyle = useMemo(
-    () => [
-      speakMessageStylesheet.container,
-      !resolvedDisableOuterSpacing && speakMessageStylesheet.containerSpacing,
-    ],
-    [resolvedDisableOuterSpacing],
-  );
-
-  return (
-    <View testID="speak-message" style={containerStyle}>
-      <View style={speakMessageStylesheet.header}>
-        <ThemedMicVocal size={12} uniProps={foregroundMutedColorMapping} />
-        <Text style={speakMessageStylesheet.headerLabel}>{t("message.speak.header")}</Text>
-      </View>
-      <Text style={speakMessageStylesheet.text}>{message}</Text>
     </View>
   );
 });

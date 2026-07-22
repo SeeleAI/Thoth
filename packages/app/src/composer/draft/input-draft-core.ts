@@ -49,6 +49,9 @@ export function buildDraftAgentControls(input: {
     onRetryModelProvider: formState.refreshProviderModels,
     isRetryingModelProvider: formState.isProviderModelsRefreshing,
     modelSelectorServerId: formState.selectedServerId,
+    planCapability:
+      formState.allProviderEntries?.find((entry) => entry.provider === formState.selectedProvider)
+        ?.planCapability ?? null,
   };
 }
 
