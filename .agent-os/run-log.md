@@ -3580,3 +3580,7 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   formatting, secret/path validation and diff hygiene passed.
 - Native Actions and public Release verification remain pending. No local AppImage, real-provider, Relay or long
   browser smoke ran, matching the approved bounded acceptance.
+- Actions run `29919172438` stopped safely in preflight because two Cursor ACP catalog fixtures predated the
+  provider-neutral `planCapability` receipt. Production returned the required honest unsupported result; the
+  fixtures were updated to assert it before triggering a replacement run. The existing public Release was not
+  modified by the failed run.

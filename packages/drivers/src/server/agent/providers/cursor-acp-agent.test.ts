@@ -63,6 +63,10 @@ describe("CursorACPAgentClient model discovery", () => {
         },
       ],
       modes: [],
+      planCapability: {
+        kind: "unsupported",
+        reason: "acp does not expose a native ACP Plan mode.",
+      },
     });
   });
 
@@ -78,6 +82,10 @@ describe("CursorACPAgentClient model discovery", () => {
     ).resolves.toEqual({
       models: [],
       modes: [],
+      planCapability: {
+        kind: "unsupported",
+        reason: "acp does not expose a native ACP Plan mode.",
+      },
     });
   });
 });
