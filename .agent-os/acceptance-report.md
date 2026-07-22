@@ -2781,3 +2781,8 @@ Local evidence on `2026-07-22`:
 7. After correcting only those fixture constructors, the exact preflight daemon unit command passed `187/187`
    files with `2405` tests passed and `26` skipped. The focused Plan/tab gate passed again in `19.162s`; the MVP
    Release contract, repository formatting and diff hygiene also passed.
+8. Replacement run `29944547453` passed the complete clean preflight, including the corrected daemon suite, but
+   the hosted Relay packaged journey retained a `90s` pre-native-Plan wait budget. Three required `20s` automatic
+   Implement windows plus Relay and phase work reached that cap. The journey budget is now aligned with the
+   existing AppImage gate at `120s`; product approval timing and assertions are unchanged. The failed run did not
+   publish or replace the existing Release.

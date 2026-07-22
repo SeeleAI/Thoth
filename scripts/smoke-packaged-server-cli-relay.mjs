@@ -10,6 +10,7 @@ import { ThothApiJourney } from "./acceptance/thoth-api-journey.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
+const JOURNEY_TIMEOUT_MS = 120_000;
 
 function option(name, fallback) {
   const index = args.indexOf(name);
@@ -119,7 +120,7 @@ try {
   client = await harness.connectRelay();
   let journey = new ThothApiJourney({
     client,
-    timeoutMs: 90_000,
+    timeoutMs: JOURNEY_TIMEOUT_MS,
     commandPrefix: "server-cli-relay",
   });
   const core = await journey.runCore({
@@ -141,7 +142,7 @@ try {
   client = await harness.connectRelay();
   journey = new ThothApiJourney({
     client,
-    timeoutMs: 90_000,
+    timeoutMs: JOURNEY_TIMEOUT_MS,
     commandPrefix: "server-cli-client-restart",
   });
   const restoredAgent = await client.fetchAgent({ agentId: core.agent.id });
@@ -167,7 +168,7 @@ try {
   client = await harness.connectRelay();
   journey = new ThothApiJourney({
     client,
-    timeoutMs: 90_000,
+    timeoutMs: JOURNEY_TIMEOUT_MS,
     commandPrefix: "server-cli-daemon-restart",
   });
   const pendingAfterRestart = await client.getAgentThothState(core.agent.id);

@@ -3642,3 +3642,8 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   The exact daemon preflight suite then passed `187/187` files and `2405` tests (`26` skipped); the focused
   Plan/tab gate passed in `19.162s`, and Release-contract, formatting and diff checks passed. A replacement Actions
   run and public desktop-only asset verification remain pending.
+- Replacement run `29944547453` passed the full clean preflight and crossed the repaired fixture boundary. Its
+  hosted Relay health/E2EE check passed, but the packaged Loop journey timed out at the obsolete `90s` cap. The
+  deterministic core requires three real 20-second daemon auto-Implement windows before Relay and phase overhead.
+  Aligned all Relay Journey instances with the already-correct AppImage budget of `120s`; no approval deadline,
+  state assertion or product behavior was shortened or bypassed. The failed run did not reach publish.
