@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "commit": "743e8d29f8a3e752bd4b53af31bcf0a15a5bed14",
+  "sampleCount": 7,
+  "measurement": {
+    "viewport": {
+      "width": 1440,
+      "height": 960
+    },
+    "warmupSampleCount": 1,
+    "isolation": "fresh browser context per sample with stable daemon reconnect identity",
+    "workspaceInteractiveReady": "workspace tab bar and Message agent textbox visible",
+    "interaction": "Settings button click to settings route",
+    "heap": "CDP Runtime.getHeapUsage.usedSize after forced GC and workspace interactive"
+  },
+  "samples": [
+    {
+      "workspaceInteractiveMs": 1817.5111110000003,
+      "jsHeapBytes": 50762040,
+      "settingsNavigationMs": 236.81899500000054
+    },
+    {
+      "workspaceInteractiveMs": 1692.8249560000004,
+      "jsHeapBytes": 50689132,
+      "settingsNavigationMs": 192.42881299999954
+    },
+    {
+      "workspaceInteractiveMs": 1858.8276350000006,
+      "jsHeapBytes": 50742068,
+      "settingsNavigationMs": 205.26629299999877
+    },
+    {
+      "workspaceInteractiveMs": 1775.904797000001,
+      "jsHeapBytes": 50750664,
+      "settingsNavigationMs": 222.6520930000006
+    },
+    {
+      "workspaceInteractiveMs": 1843.4732750000003,
+      "jsHeapBytes": 50696588,
+      "settingsNavigationMs": 207.0499060000002
+    },
+    {
+      "workspaceInteractiveMs": 1858.965118000002,
+      "jsHeapBytes": 50766064,
+      "settingsNavigationMs": 286.89456599999903
+    },
+    {
+      "workspaceInteractiveMs": 1723.1469290000023,
+      "jsHeapBytes": 50737304,
+      "settingsNavigationMs": 182.56242099999872
+    }
+  ],
+  "summary": {
+    "workspaceInteractiveMs": {
+      "median": 1817.5111110000003,
+      "p95": 1858.965118000002,
+      "mad": 41.45400700000164,
+      "min": 1692.8249560000004,
+      "max": 1858.965118000002
+    },
+    "jsHeapBytes": {
+      "median": 50742068,
+      "p95": 50766064,
+      "mad": 19972,
+      "min": 50689132,
+      "max": 50766064
+    },
+    "settingsNavigationMs": {
+      "median": 207.0499060000002,
+      "p95": 286.89456599999903,
+      "mad": 15.602187000000413,
+      "min": 182.56242099999872,
+      "max": 286.89456599999903
+    }
+  }
+}

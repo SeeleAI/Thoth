@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const fullThoth = process.argv.includes("--all");
+const prebuilt = process.env.THOTH_ACCEPT_PREBUILT === "1";
 const deadlineMs = 300_000;
 const startedAt = Date.now();
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -11,7 +12,7 @@ const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const targetedForegroundPattern = "UT-02b|UT-04|UT-05|Harness lifecycle conformance";
 
 const phases = [
-  { name: "protocol build", command: npm, args: ["run", "build:protocol"] },
+  ...(prebuilt ? [] : [{ name: "protocol build", command: npm, args: ["run", "build:protocol"] }]),
   {
     name: "protocol snapshots",
     command: npm,

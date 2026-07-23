@@ -1230,7 +1230,14 @@ describe("public foreground Thoth router", () => {
   it("UT-05 retries the failed goal automatically and completes before the Light budget", async () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopRetryAndBudget;
     const provider = new ScriptedThothClient(script);
-    daemon = await createTestThothDaemon({ agentClients: { codex: provider } });
+    const fixtureHomeRoot = process.env.THOTH_REFACTOR_RELEASE_FIXTURE_HOME?.trim();
+    if (fixtureHomeRoot) {
+      rmSync(fixtureHomeRoot, { recursive: true, force: true });
+    }
+    daemon = await createTestThothDaemon({
+      agentClients: { codex: provider },
+      ...(fixtureHomeRoot ? { thothHomeRoot: fixtureHomeRoot, cleanup: false } : undefined),
+    });
     client = new DaemonClient({
       url: `ws://127.0.0.1:${daemon.port}/ws`,
       reconnect: { enabled: false },

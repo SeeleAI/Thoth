@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "commit": "743e8d29f8a3e752bd4b53af31bcf0a15a5bed14",
+  "node": "v24.14.0",
+  "platform": "linux-x64",
+  "sampleCount": 7,
+  "measurement": {
+    "daemonEntrypoint": "packages/daemon/dist/scripts/supervisor-entrypoint.js",
+    "warmupSampleCount": 1,
+    "idleSettleMs": 2000,
+    "idleCpuWindowMs": 750,
+    "healthWarmupRequestCount": 20,
+    "healthRequestCount": 400,
+    "responseIndependentProcessCount": 7,
+    "responseWarmupTurnCount": 1
+  },
+  "samples": [
+    {
+      "startupMs": 2755.273271,
+      "idleRssBytes": 472928256,
+      "idleCpuMs": 0,
+      "healthRoundTripP50Ms": 0.19288099999903352,
+      "healthRoundTripP95Ms": 0.3049169999994774,
+      "processCount": 3
+    },
+    {
+      "startupMs": 2149.396708,
+      "idleRssBytes": 463319040,
+      "idleCpuMs": 10,
+      "healthRoundTripP50Ms": 0.15203599999949802,
+      "healthRoundTripP95Ms": 0.3254850000012084,
+      "processCount": 3
+    },
+    {
+      "startupMs": 2342.7752849999997,
+      "idleRssBytes": 474001408,
+      "idleCpuMs": 0,
+      "healthRoundTripP50Ms": 0.2689639999989595,
+      "healthRoundTripP95Ms": 0.4501010000021779,
+      "processCount": 3
+    },
+    {
+      "startupMs": 2622.9688870000027,
+      "idleRssBytes": 478449664,
+      "idleCpuMs": 0,
+      "healthRoundTripP50Ms": 0.13345099999787635,
+      "healthRoundTripP95Ms": 0.19922399999995832,
+      "processCount": 3
+    },
+    {
+      "startupMs": 2241.076785000001,
+      "idleRssBytes": 472637440,
+      "idleCpuMs": 0,
+      "healthRoundTripP50Ms": 0.15066400000068825,
+      "healthRoundTripP95Ms": 0.21684800000366522,
+      "processCount": 3
+    },
+    {
+      "startupMs": 2111.8558660000053,
+      "idleRssBytes": 473382912,
+      "idleCpuMs": 0,
+      "healthRoundTripP50Ms": 0.1254010000047856,
+      "healthRoundTripP95Ms": 0.21897899999748915,
+      "processCount": 3
+    },
+    {
+      "startupMs": 2524.995536000002,
+      "idleRssBytes": 472002560,
+      "idleCpuMs": 0,
+      "healthRoundTripP50Ms": 0.12846699999499833,
+      "healthRoundTripP95Ms": 0.22964800000045216,
+      "processCount": 3
+    }
+  ],
+  "summary": {
+    "startupMs": {
+      "median": 2342.7752849999997,
+      "p95": 2755.273271,
+      "mad": 193.3785769999995,
+      "min": 2111.8558660000053,
+      "max": 2755.273271
+    },
+    "idleRssBytes": {
+      "median": 472928256,
+      "p95": 478449664,
+      "mad": 925696,
+      "min": 463319040,
+      "max": 478449664
+    },
+    "idleCpuMs": {
+      "median": 0,
+      "p95": 10,
+      "mad": 0,
+      "min": 0,
+      "max": 10
+    },
+    "healthRoundTripP50Ms": {
+      "median": 0.15066400000068825,
+      "p95": 0.2689639999989595,
+      "mad": 0.022197000005689915,
+      "min": 0.1254010000047856,
+      "max": 0.2689639999989595
+    },
+    "healthRoundTripP95Ms": {
+      "median": 0.22964800000045216,
+      "p95": 0.4501010000021779,
+      "mad": 0.030424000000493834,
+      "min": 0.19922399999995832,
+      "max": 0.4501010000021779
+    }
+  },
+  "response": {
+    "providerDelayExcludedFromOverhead": true,
+    "samples": [
+      {
+        "clientToAdapterMs": 7.608255000000099,
+        "providerDelayMs": 7.7600109999998494,
+        "adapterEventToClientMs": 8.327827999999954,
+        "localResponseOverheadMs": 15.936083000000053
+      },
+      {
+        "clientToAdapterMs": 7.269709000000148,
+        "providerDelayMs": 7.104143999999906,
+        "adapterEventToClientMs": 8.24783000000025,
+        "localResponseOverheadMs": 15.517539000000397
+      },
+      {
+        "clientToAdapterMs": 7.922546000000239,
+        "providerDelayMs": 7.372164999999768,
+        "adapterEventToClientMs": 8.077026999999816,
+        "localResponseOverheadMs": 15.999573000000055
+      },
+      {
+        "clientToAdapterMs": 7.161272000000281,
+        "providerDelayMs": 6.566784999999982,
+        "adapterEventToClientMs": 7.325080000000071,
+        "localResponseOverheadMs": 14.486352000000352
+      },
+      {
+        "clientToAdapterMs": 7.099613999999747,
+        "providerDelayMs": 6.732038000000102,
+        "adapterEventToClientMs": 7.04199299999982,
+        "localResponseOverheadMs": 14.141606999999567
+      },
+      {
+        "clientToAdapterMs": 6.9345180000000255,
+        "providerDelayMs": 6.527405000000272,
+        "adapterEventToClientMs": 7.018453000000136,
+        "localResponseOverheadMs": 13.952971000000161
+      },
+      {
+        "clientToAdapterMs": 7.8757620000001225,
+        "providerDelayMs": 7.430499000000054,
+        "adapterEventToClientMs": 7.4305609999996705,
+        "localResponseOverheadMs": 15.306322999999793
+      }
+    ],
+    "summary": {
+      "clientToAdapterMs": {
+        "median": 7.269709000000148,
+        "p95": 7.922546000000239,
+        "mad": 0.3351910000001226,
+        "min": 6.9345180000000255,
+        "max": 7.922546000000239
+      },
+      "providerDelayMs": {
+        "median": 7.104143999999906,
+        "p95": 7.7600109999998494,
+        "mad": 0.3721059999998033,
+        "min": 6.527405000000272,
+        "max": 7.7600109999998494
+      },
+      "adapterEventToClientMs": {
+        "median": 7.4305609999996705,
+        "p95": 8.327827999999954,
+        "mad": 0.4121079999995345,
+        "min": 7.018453000000136,
+        "max": 8.327827999999954
+      },
+      "localResponseOverheadMs": {
+        "median": 15.306322999999793,
+        "p95": 15.999573000000055,
+        "mad": 0.6932500000002619,
+        "min": 13.952971000000161,
+        "max": 15.999573000000055
+      }
+    }
+  }
+}

@@ -311,7 +311,7 @@ export const selectProvider = async (page: Page, provider: string) => {
 
   const providerTrigger = page
     .locator(
-      '[data-testid="agent-provider-selector"]:visible, [data-testid="draft-provider-select"]:visible',
+      '[data-testid="agent-provider-selector"]:visible, [data-testid="draft-provider-select"]:visible, [data-testid="combined-model-selector"]:visible',
     )
     .first();
   if (
@@ -327,12 +327,29 @@ export const selectProvider = async (page: Page, provider: string) => {
   if (await providerTrigger.isVisible().catch(() => false)) {
     await providerTrigger.click();
   } else {
-    const providerLabel = page.getByText("PROVIDER", { exact: true }).first();
-    await expect(providerLabel).toBeVisible();
-    await providerLabel.click();
+    const providerButton = page
+      .getByRole("button", { name: /Select agent provider/i })
+      .filter({ visible: true })
+      .first();
+    if (await providerButton.isVisible().catch(() => false)) {
+      await providerButton.click();
+    } else {
+      const providerLabel = page.getByText("PROVIDER", { exact: true }).first();
+      await expect(providerLabel).toBeVisible();
+      await providerLabel.click();
+    }
   }
 
-  const dialog = page.getByRole("dialog").last();
+  let dialog = page.getByRole("dialog").last();
+  const nestedProviderTrigger = page
+    .getByRole("button", { name: /Provider.*Select provider/i })
+    .filter({ visible: true })
+    .first();
+  if (await nestedProviderTrigger.isVisible().catch(() => false)) {
+    await nestedProviderTrigger.click();
+    dialog = page.getByRole("dialog").last();
+  }
+
   const searchInput = dialog.getByRole("textbox", { name: /search provider/i }).first();
   if (await searchInput.isVisible().catch(() => false)) {
     await searchInput.fill(normalizedProvider);
@@ -349,39 +366,45 @@ export const selectModel = async (page: Page, model: string) => {
     throw new Error("Model must be a non-empty string.");
   }
 
+  const searchInput = page
+    .getByRole("textbox", { name: /search model/i })
+    .filter({ visible: true })
+    .first();
   const modelTrigger = page
     .locator(
-      '[data-testid="agent-model-selector"]:visible, [data-testid="draft-model-select"]:visible',
+      '[data-testid="agent-model-selector"]:visible, [data-testid="draft-model-select"]:visible, [data-testid="combined-model-selector"]:visible',
     )
     .first();
   if (
-    await modelTrigger
+    !(await searchInput.isVisible().catch(() => false)) &&
+    (await modelTrigger
       .getByText(new RegExp(`^${escapeRegex(normalizedModel)}$`, "i"))
       .first()
       .isVisible()
-      .catch(() => false)
+      .catch(() => false))
   ) {
     return;
   }
 
-  if (await modelTrigger.isVisible().catch(() => false)) {
-    await modelTrigger.click();
-  } else {
-    const modelButton = page
-      .getByRole("button", { name: /Select model/i })
-      .filter({ visible: true })
-      .first();
-    if (await modelButton.isVisible().catch(() => false)) {
-      await modelButton.click();
+  if (!(await searchInput.isVisible().catch(() => false))) {
+    if (await modelTrigger.isVisible().catch(() => false)) {
+      await modelTrigger.click();
     } else {
-      const modelLabel = page.getByText("MODEL", { exact: true }).first();
-      await expect(modelLabel).toBeVisible();
-      await modelLabel.click();
+      const modelButton = page
+        .getByRole("button", { name: /Select model/i })
+        .filter({ visible: true })
+        .first();
+      if (await modelButton.isVisible().catch(() => false)) {
+        await modelButton.click();
+      } else {
+        const modelLabel = page.getByText("MODEL", { exact: true }).first();
+        await expect(modelLabel).toBeVisible();
+        await modelLabel.click();
+      }
     }
   }
 
   // Wait for the model dropdown to open
-  const searchInput = page.getByRole("textbox", { name: /search model/i });
   await expect(searchInput).toBeVisible({ timeout: 10000 });
 
   // Type to search/filter models

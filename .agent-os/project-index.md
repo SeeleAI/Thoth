@@ -3,11 +3,11 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-021`
+2. Top next action: `NTH-TD-032`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
 4. Active blockers: None.
-5. Current branch: `agent/dev/mvp`
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-029` is verified and published at `05775486`: Agent-scoped native Plan, durable Plan results, archive-before-layout tab close and the desktop-only fixed MVP Release passed local, real-provider, packaged Relay, native Actions and public-asset verification. `NTH-CD-065` restores Plan's App presentation to the `Provider Features` list without changing its Agent-scoped authority.
+5. Current branch: `agent/refactor/final-architecture-50k` in ignored worktree `.dev/worktrees/final-architecture-50k`, based on clean commit `743e8d29` from `agent/dev/mvp`.
+6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-CD-066` governs a seven-cut atomic convergence of that path onto the final Core/Harness/RPC/App/UI/VCS/lifecycle architecture with no feature or UX change. `NTH-TD-031` has verified the clean source, storage, visual, behavior and performance baseline plus the sole shared-`300s` gate; `NTH-TD-032` is the first production cut.
 
 ## Objective Summary
 
@@ -24,7 +24,7 @@
 
 ## Top Next Action
 
-`NTH-TD-021` `[doing]`: Harden Loop background into Loop Engineering authority. Complete the remaining real browser/device evidence for budget wait, Pause/Resume/Stop and daemon restart/reconnect, including Background Task detail and phase Timeline restoration.
+`NTH-TD-032` `[doing]`: Atomically move Workspace authority into pure `@thoth/core` transitions plus one Repository/Unit of Work, losslessly migrate the Release `05775486` fixture and delete the old monolithic persistence/event/constructor-DDL/migration paths without dual read or write.
 
 ## Active Blockers
 
@@ -108,6 +108,8 @@ None.
 74. `NTH-CD-064`: Native Plan is Agent-scoped and live-session-owned; Plan output is durable; tab close is archive-first; the public fixed MVP Release is desktop-only.
 75. `NTH-EV-050`: Agent-scoped native Plan, id-only Implement continuation, reliable tab archive and the desktop-only fixed MVP Release are fully verified at `05775486` by local gates, authenticated Codex, packaged hosted Relay, native Actions run `29949640876` and re-downloaded public AppImage metadata/checksums.
 76. `NTH-EV-051`: Plan is again the first row inside the Provider Features list, with no separate Run Mode or Composer control. The existing per-Agent `default | plan` authority and capability states remain unchanged; the bounded Plan/tab gate and real Web export pass.
+77. `NTH-CD-066`: The production refactor is a seven-cut final-architecture convergence with one main chain, complete semantic/UX preservation, at least `50,000` production LOC removed and hard startup/RSS/App/response performance targets. No dual path, fallback, Provider cognition in Thoth or unapproved push/release is allowed.
+78. `NTH-EV-052`: Cut 0 is verified. It froze commit `743e8d29`, `308,531` production LOC, `1,298,564` scanner tokens, `1,346,659` AST nodes, `5,057` static import edges, `165` runtime dependency edges, the Release `05775486` semantic SQLite fixture, real Web visual/interaction transcripts and independent daemon/App/response performance samples. The sole `npm run accept:refactor:fast` entry passed every phase in `270.302s` under one `300s` deadline.
 
 ## Read Next
 

@@ -28,7 +28,8 @@
     "test:e2e:real": "cross-env E2E_FORK_THOTH_HOME_FROM=../../.dev/thoth-home playwright test --project=real-provider",
     "test:e2e:ui": "playwright test --ui",
     "build": "npm run build:web",
-    "build:web": "npm run clean && npm --prefix ../.. run build:app-deps && npm run build:terminal-webview && expo export --platform web && node ../../scripts/post-export-web.mjs",
+    "build:web": "npm run clean && npm --prefix ../.. run build:app-deps && npm run build:terminal-webview && expo export --platform web --max-workers 8 && node ../../scripts/post-export-web.mjs",
+    "build:web:prepared": "npm run clean && npm run build:terminal-webview && expo export --platform web --max-workers 8 && node ../../scripts/post-export-web.mjs",
     "profile:workspace-tabs": "node ./scripts/profile-workspace-tabs.mjs",
     "deploy:web": "npm run build:web && wrangler pages deploy dist --project-name thoth-app --branch main",
     "build:terminal-webview": "node ./scripts/build-terminal-webview-html.mjs"

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, rmSync, readdirSync } from "node:fs";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { performance } from "node:perf_hooks";
 import path from "node:path";
 import type {
   AgentCapabilityFlags,
@@ -45,6 +46,11 @@ const TEST_MODES: AgentMode[] = [
   { id: "auto", label: "Auto", description: "Ask/allow based on policy" },
   { id: "always-ask", label: "Always Ask", description: "Always prompt" },
 ];
+
+export interface FakeAgentProbe {
+  onStartTurn?(input: { provider: string; prompt: AgentPromptInput; timestampMs: number }): void;
+  onEvent?(input: { provider: string; event: AgentStreamEvent; timestampMs: number }): void;
+}
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -322,6 +328,7 @@ class FakeAgentSession implements AgentSession {
     config: AgentSessionConfig,
     sessionId?: string,
     memoryMarker?: string | null,
+    private readonly probe?: FakeAgentProbe,
   ) {
     this.providerName = providerName;
     this.config = config;
@@ -417,6 +424,11 @@ class FakeAgentSession implements AgentSession {
 
     const turnId = `fake-turn-${this.nextTurnOrdinal++}`;
     this.activeForegroundTurnId = turnId;
+    this.probe?.onStartTurn?.({
+      provider: this.providerName,
+      prompt,
+      timestampMs: performance.now(),
+    });
 
     void this.emitTurnEvents(prompt);
 
@@ -433,6 +445,11 @@ class FakeAgentSession implements AgentSession {
   private notifySubscribers(event: AgentStreamEvent): void {
     const turnId = this.activeForegroundTurnId;
     const tagged = turnId ? { ...event, turnId } : event;
+    this.probe?.onEvent?.({
+      provider: this.providerName,
+      event: tagged,
+      timestampMs: performance.now(),
+    });
     for (const callback of this.subscribers) {
       try {
         callback(tagged);
@@ -1157,13 +1174,16 @@ class FakeAgentSession implements AgentSession {
 class FakeAgentClient implements AgentClient {
   readonly capabilities = TEST_CAPABILITIES;
   readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
-  constructor(public readonly provider: string) {}
+  constructor(
+    public readonly provider: string,
+    private readonly probe?: FakeAgentProbe,
+  ) {}
 
   async createSession(
     config: AgentSessionConfig,
     _launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
-    return new FakeAgentSession(this.provider, { ...config });
+    return new FakeAgentSession(this.provider, { ...config }, undefined, undefined, this.probe);
   }
 
   async resumeSession(
@@ -1185,6 +1205,7 @@ class FakeAgentClient implements AgentClient {
       cfg,
       handle.sessionId,
       typeof marker === "string" ? marker : null,
+      this.probe,
     );
   }
 
@@ -1224,10 +1245,10 @@ class FakeAgentClient implements AgentClient {
   }
 }
 
-export function createTestAgentClients(): Record<string, AgentClient> {
+export function createTestAgentClients(probe?: FakeAgentProbe): Record<string, AgentClient> {
   return {
-    claude: new FakeAgentClient("claude"),
-    codex: new FakeAgentClient("codex"),
-    opencode: new FakeAgentClient("opencode"),
+    claude: new FakeAgentClient("claude", probe),
+    codex: new FakeAgentClient("codex", probe),
+    opencode: new FakeAgentClient("opencode", probe),
   };
 }

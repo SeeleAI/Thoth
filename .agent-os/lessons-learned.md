@@ -964,3 +964,117 @@ Retry condition:
 Future interaction features must prove one durable owner, explicit identity translation and resource lifetime.
 UI may project authority but may not persist a second queue, invent provider anchors or turn previews into durable
 attachments.
+
+## `NTH-EXP-036` Baseline Fixtures Must Enter Through Reachable Product Authority
+
+Observed on `2026-07-23` during `NTH-TD-031`:
+
+1. Seeding an Agent record did not materialize a visible Workspace tab, so it could not establish a real App
+   first-interactive baseline.
+2. A `seed-client.ts` attempt used CommonJS `__dirname` inside the ESM test environment and was reverted instead
+   of adding a compatibility shim.
+3. The dev mock Provider existed in runtime code but was intentionally absent from the production Draft Provider
+   selector, so selecting it would have required an acceptance-only UI path.
+
+Conclusion:
+
+Baseline data is valid only when it traverses the same public Workspace/Agent API and visible production entry as
+users. Storage records, module-loader shortcuts and hidden dev Providers cannot substitute for reachable product
+authority.
+
+Retry condition:
+
+When a deterministic external Provider is required, configure it behind the normal HarnessAdapter and public
+Create/Send path. Never add a hidden selector, direct store write or test-only RPC to make a baseline convenient.
+
+## `NTH-EXP-037` Performance Baselines Need Stable Boundaries, Independent Samples And One Build Owner
+
+Observed on `2026-07-23` during `NTH-TD-031`:
+
+1. `tsx` process startup noise dominated the first daemon measurement; sampling RSS at `250ms` occurred before
+   the process reached the stable idle boundary; forty health samples produced an unstable p95.
+2. Foundation and acceptance initially rebuilt/cleaned the same Protocol output concurrently, causing a transient
+   missing `@thoth/protocol/agent-lifecycle`; repeated daemon/Web builds also consumed most of the shared deadline.
+3. App timing initially observed `about:blank`, matched more than one Settings locator and reused one browser page.
+   `performance.memory.usedJSHeapSize` was coarsely rounded and varied from `77.6MiB` to `91.7MB` on identical
+   source, creating a false statistical regression.
+4. Fresh browser contexts fixed sample independence but initially created many daemon reconnect identities and an
+   EventEmitter listener warning. Reusing one stable reconnect identity retained browser isolation without growing
+   daemon sessions.
+5. A formal gate then timed out at exactly `300.011s` because Expo workers spent minutes in CFS
+   `rpc_wait_bit_killable` before a real `4415`-module bundle that itself needed only about `10s`. Limiting Metro to
+   eight workers still required `2m30s`; it reduced fan-out but did not remove remote-filesystem metadata latency.
+   Synchronizing current sources into a lockfile-keyed local dependency stage and running the same Expo export
+   there completed in `11.960s`. Source synchronization remains inside every timed gate; the large dependency copy
+   is an explicit one-time ignored toolchain cache, analogous to `npm install`.
+6. The next formal gate reached isolated performance after all functional and visual phases, then failed at
+   `237.050s` because local response overhead measured `14.71ms` against a `13.99ms` baseline with a `3.5%` noise
+   ceiling. The probe had called seven sequential turns on one daemon/Client/Agent, so its samples were correlated
+   and its baseline MAD understated cross-run scheduler variance. Unchanged-source debug repetitions ranged from
+   `13.50ms` to `16.94ms`. The corrected probe runs each of the seven samples in a fresh process with a fresh
+   daemon, Client and Agent, performs one independent warmup turn, and leaves the Mann-Whitney plus median/MAD
+   failure rules unchanged. The refreshed clean baseline is `15.31ms` median with `0.69ms` MAD; an independent
+   candidate run passed at `15.17ms` median.
+
+Conclusion:
+
+Measure a named ready/idle/interactive boundary, warm up separately, take seven independent samples and use the
+lowest-level exact metric available. Build artifacts require one sequential owner before behavior phases fan out;
+parallel consumers may reuse them but must not clean them.
+
+Retry condition:
+
+Daemon sampling starts only after health-ready and a stable idle window; response samples use separate processes
+and warmup turns; App samples use fresh contexts, stable daemon reconnect identity and CDP forced-GC heap. Any
+future metric change requires a new clean-baseline run before production edits and may not relax the Mann-Whitney
+or median/MAD failure rule. The Web gate must build the real export from the synchronized local stage and fail if
+its dependency signature differs from the current lockfile; it may never serve a stale prebuilt bundle.
+
+## `NTH-EXP-038` Release Storage Fixtures Must Follow The Observed Schema And Seal SQLite Sidecars
+
+Observed on `2026-07-23` during `NTH-TD-031`:
+
+1. The first fixture verifier queried a nonexistent `timeline_entries.entry_kind`; Release `05775486` stores the
+   canonical item under `item_json`.
+2. The first generated fixture retained WAL/SHM sidecars, so copying only the main SQLite files would not have
+   frozen all committed data.
+
+Conclusion:
+
+Migration evidence must be derived from the real Release schema and public API, not an inferred column layout.
+An immutable fixture is incomplete until WAL is checkpointed, journal mode returns to `DELETE`, sidecars are
+absent and integrity/foreign-key/entity/digest checks all pass.
+
+Retry condition:
+
+Every authority schema cut first verifies the sealed `refactor-release-05775486` fixture, injects failures into
+copy/transform/validate/activate and compares the canonical entity digest before deleting old migration code.
+
+## `NTH-EXP-039` Visual Baselines Must Isolate Responsive State And Drive Explicit Product Refresh
+
+Observed on `2026-07-23` during `NTH-TD-031`:
+
+1. An untracked Git file did not reliably appear in Changes; a tracked README still required explicit refresh
+   before the subscription snapshot exposed it.
+2. YAML a11y snapshots were semantically unchanged but `oxfmt` rewrote indentation, causing byte mismatches; JSON
+   snapshots removed that formatter ambiguity.
+3. Desktop and mobile viewports in one test shared Explorer width preference. Mobile clamped the desktop `400px`
+   width to about `280px`, producing intermittent Git-diff screenshot drift. Fresh viewport-specific Workspaces
+   removed the cross-breakpoint authority leak.
+4. The Mode backdrop intercepted later Explorer clicks. Closing it explicitly fixed the real interaction order.
+   Closing Changes, reopening Explorer and then selecting Files added no coverage and was removed in favor of the
+   existing Files tab.
+5. Compact Workspace already opens its visible `New Agent` composer and has neither the desktop inline plus nor
+   desktop new-tab menu trigger. Trying to click those controls was a test assumption, not a product regression.
+
+Conclusion:
+
+Visual acceptance must reproduce existing user-visible controls exactly, isolate persisted responsive layout per
+viewport and wait for explicit product invalidation/refresh. Tests must not invent desktop controls on compact
+layouts or preserve redundant navigation simply to resemble an earlier script.
+
+Retry condition:
+
+Keep desktop and compact/mobile in fresh Workspaces, close overlays before downstream actions, mutate tracked Git
+content, request the public refresh, use formatter-stable JSON transcripts and reject screenshot threshold
+increases as a flake fix.

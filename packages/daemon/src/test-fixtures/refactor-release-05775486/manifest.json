@@ -1,0 +1,3928 @@
+{
+  "schemaVersion": 1,
+  "releaseCommit": "05775486ba72457f4c7f9506b217ca7c88ebd07a",
+  "cleanBaselineCommit": "743e8d29f8a3e752bd4b53af31bcf0a15a5bed14",
+  "node": "v24.14.0",
+  "workspaceId": "wks_7750ea4a4c79ecff",
+  "sourceProof": [
+    {
+      "path": "packages/daemon/src/server/agent/agent-storage.ts",
+      "sha256": "1a525b79eb6648853ad630472cea4782baee57be9ec30459fcfca70263636e69"
+    },
+    {
+      "path": "packages/daemon/src/server/workspace-authority/catalog-store.ts",
+      "sha256": "323bce17ba95bb8e1076774e40dfe2a8e803ef6e33d6f1cc823147529c24e0e0"
+    },
+    {
+      "path": "packages/daemon/src/server/workspace-authority/workspace-agent-storage.ts",
+      "sha256": "5414dd8f4c2df48efe34cf0e0716e48ae1362b0932bc8add9e68941a6e1d32f7"
+    },
+    {
+      "path": "packages/daemon/src/server/workspace-authority/workspace-agent-timeline-store.ts",
+      "sha256": "bab6c9471af9c8046214fa285717bfc4305193a9937eeb07c1404abb53fe0e8b"
+    },
+    {
+      "path": "packages/daemon/src/server/workspace-authority/workspace-authority-store.ts",
+      "sha256": "f325ff9bf8b483a4a40452ff37552058152d02c449e5448964f3f58a4e5cd8c3"
+    },
+    {
+      "path": "packages/protocol/src/task-authority.ts",
+      "sha256": "a4b8133abca53a675ae2dc9899ad82f2af8682e523b0e1efde5c940b615e1f3c"
+    }
+  ],
+  "databases": {
+    "catalog": {
+      "file": "catalog.sqlite",
+      "bytes": 98304,
+      "sha256": "af3a315de764100d1561dda273901a79fce3185af926f8394f7ac766ee4ab24c",
+      "integrity": "ok",
+      "foreignKeyFailures": 0,
+      "schemaDigest": "d1428bbb8bda14d68887c836fb612b2f7c4bbaa490312a3ca67419882ad1ad5d",
+      "schema": [
+        {
+          "type": "index",
+          "name": "catalog_task_locator_workspace_updated",
+          "table": "catalog_task_locator",
+          "sql": "CREATE INDEX catalog_task_locator_workspace_updated ON catalog_task_locator(workspace_id, updated_at DESC)"
+        },
+        {
+          "type": "table",
+          "name": "catalog_agent_locator",
+          "table": "catalog_agent_locator",
+          "sql": "CREATE TABLE catalog_agent_locator ( agent_id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(workspace_id) REFERENCES catalog_workspaces(workspace_id) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_card_locator",
+          "table": "catalog_card_locator",
+          "sql": "CREATE TABLE catalog_card_locator ( card_id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL, agent_id TEXT NOT NULL, turn_id TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(workspace_id) REFERENCES catalog_workspaces(workspace_id) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_projects",
+          "table": "catalog_projects",
+          "sql": "CREATE TABLE catalog_projects ( project_id TEXT PRIMARY KEY NOT NULL, root_path TEXT NOT NULL UNIQUE, kind TEXT NOT NULL CHECK(kind IN ('git', 'non_git')), display_name TEXT NOT NULL, custom_name TEXT, archived_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_provider_profiles",
+          "table": "catalog_provider_profiles",
+          "sql": "CREATE TABLE catalog_provider_profiles ( profile_id TEXT PRIMARY KEY NOT NULL, adapter_id TEXT NOT NULL, config_json TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_schema_migrations",
+          "table": "catalog_schema_migrations",
+          "sql": "CREATE TABLE catalog_schema_migrations ( version INTEGER PRIMARY KEY NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_settings",
+          "table": "catalog_settings",
+          "sql": "CREATE TABLE catalog_settings ( setting_key TEXT PRIMARY KEY NOT NULL, value_json TEXT NOT NULL, revision INTEGER NOT NULL, updated_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_task_locator",
+          "table": "catalog_task_locator",
+          "sql": "CREATE TABLE catalog_task_locator ( task_id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL, revision INTEGER NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(workspace_id) REFERENCES catalog_workspaces(workspace_id) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_turn_locator",
+          "table": "catalog_turn_locator",
+          "sql": "CREATE TABLE catalog_turn_locator ( turn_id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL, agent_id TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(workspace_id) REFERENCES catalog_workspaces(workspace_id) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_workspaces",
+          "table": "catalog_workspaces",
+          "sql": "CREATE TABLE catalog_workspaces ( workspace_id TEXT PRIMARY KEY NOT NULL, canonical_path TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('workspace', 'worktree')), parent_workspace_id TEXT, archived_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , project_id TEXT, registry_kind TEXT, title TEXT, branch TEXT, base_branch TEXT) STRICT"
+        }
+      ],
+      "dataDigest": "b06ff8c060206707e9b4479b019dbeae49a4737c6f3bc155de8698f76862b871",
+      "tables": [
+        {
+          "name": "catalog_agent_locator",
+          "count": 7,
+          "columns": [
+            {
+              "name": "agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "workspace_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "6b3903cfec708b08b62c45805ddf0890071bf575ab03823ad6659a05b2272464"
+        },
+        {
+          "name": "catalog_card_locator",
+          "count": 3,
+          "columns": [
+            {
+              "name": "card_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "workspace_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "turn_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "48468806e556cb7efcd531a3668b2a9d7c25bcb0c67a0d798cc3ff52ee1a7474"
+        },
+        {
+          "name": "catalog_projects",
+          "count": 1,
+          "columns": [
+            {
+              "name": "project_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "root_path",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "display_name",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "custom_name",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "archived_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "96fa1eb719896129b6820764563b44fb75e00c1d3aca099e5f96c43ff3128c3b"
+        },
+        {
+          "name": "catalog_provider_profiles",
+          "count": 1,
+          "columns": [
+            {
+              "name": "profile_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "adapter_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "config_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "enabled",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "33164882e3314269b116776ffcbe134b76c58585b6e0016f0ed41115e7198114"
+        },
+        {
+          "name": "catalog_schema_migrations",
+          "count": 1,
+          "columns": [
+            {
+              "name": "version",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "checksum",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "applied_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "048e869434c9c440788338e130eed3bbb32e6ea3c005a868a5c327cc0111425c"
+        },
+        {
+          "name": "catalog_settings",
+          "count": 0,
+          "columns": [
+            {
+              "name": "setting_key",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "value_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "name": "catalog_task_locator",
+          "count": 1,
+          "columns": [
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "workspace_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "title",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "b1fb89aeccda881da3c5619a26afd797ea9793878cde19a6b8d06f970349c549"
+        },
+        {
+          "name": "catalog_turn_locator",
+          "count": 1,
+          "columns": [
+            {
+              "name": "turn_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "workspace_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "edf73ce9079a3a06ec99750663ffd4bf598cde1f7e26897a8dc14e495f3f3d13"
+        },
+        {
+          "name": "catalog_workspaces",
+          "count": 1,
+          "columns": [
+            {
+              "name": "workspace_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "canonical_path",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "display_name",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "parent_workspace_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "archived_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "project_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "registry_kind",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "title",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "branch",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "base_branch",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "00f8e59614957b9c9e216d01aab168d562681203d9e84dd839691d0160bad6e6"
+        }
+      ]
+    },
+    "authority": {
+      "file": "authority.sqlite",
+      "bytes": 491520,
+      "sha256": "6ebaeffd82c969ba673920b1ea468733246b23c2f74ba855b4d423ba5d4866e9",
+      "integrity": "ok",
+      "foreignKeyFailures": 0,
+      "schemaDigest": "489a26741404772c97b73862839b5ecb5b1cd5c57428eeefc6d3cf08caccdbcd",
+      "schema": [
+        {
+          "type": "index",
+          "name": "authority_events_aggregate_revision",
+          "table": "authority_events",
+          "sql": "CREATE INDEX authority_events_aggregate_revision ON authority_events(aggregate_type, aggregate_id, revision)"
+        },
+        {
+          "type": "index",
+          "name": "cards_turn_created",
+          "table": "cards",
+          "sql": "CREATE INDEX cards_turn_created ON cards(turn_id, created_at ASC)"
+        },
+        {
+          "type": "index",
+          "name": "chat_messages_room_created",
+          "table": "chat_messages",
+          "sql": "CREATE INDEX chat_messages_room_created ON chat_messages(room_id, created_at, message_id)"
+        },
+        {
+          "type": "index",
+          "name": "context_bindings_turn_task",
+          "table": "context_bindings",
+          "sql": "CREATE UNIQUE INDEX context_bindings_turn_task ON context_bindings(turn_id, task_id)"
+        },
+        {
+          "type": "index",
+          "name": "execution_approvals_one_pending",
+          "table": "execution_approvals",
+          "sql": "CREATE UNIQUE INDEX execution_approvals_one_pending ON execution_approvals(execution_id) WHERE status = 'pending'"
+        },
+        {
+          "type": "index",
+          "name": "execution_attempts_task_time",
+          "table": "execution_attempts",
+          "sql": "CREATE INDEX execution_attempts_task_time ON execution_attempts(task_id, started_at DESC)"
+        },
+        {
+          "type": "index",
+          "name": "foreground_turn_queue_agent_order",
+          "table": "foreground_turn_queue",
+          "sql": "CREATE INDEX foreground_turn_queue_agent_order ON foreground_turn_queue(agent_id, queue_order ASC, created_at ASC)"
+        },
+        {
+          "type": "index",
+          "name": "human_decisions_task_time",
+          "table": "human_decisions",
+          "sql": "CREATE INDEX human_decisions_task_time ON human_decisions(task_id, decided_at ASC)"
+        },
+        {
+          "type": "index",
+          "name": "schedule_runs_schedule_started",
+          "table": "schedule_runs",
+          "sql": "CREATE INDEX schedule_runs_schedule_started ON schedule_runs(schedule_id, started_at, run_id)"
+        },
+        {
+          "type": "index",
+          "name": "schedules_status_next_run",
+          "table": "schedules",
+          "sql": "CREATE INDEX schedules_status_next_run ON schedules(status, next_run_at)"
+        },
+        {
+          "type": "index",
+          "name": "task_blackboard_task_time",
+          "table": "task_blackboard",
+          "sql": "CREATE INDEX task_blackboard_task_time ON task_blackboard(task_id, created_at ASC)"
+        },
+        {
+          "type": "index",
+          "name": "task_decision_requests_one_pending",
+          "table": "task_decision_requests",
+          "sql": "CREATE UNIQUE INDEX task_decision_requests_one_pending ON task_decision_requests(task_id) WHERE status = 'pending'"
+        },
+        {
+          "type": "index",
+          "name": "tasks_source_registration",
+          "table": "tasks",
+          "sql": "CREATE UNIQUE INDEX tasks_source_registration ON tasks(source_turn_id, source_goals_card_id) WHERE source_turn_id IS NOT NULL AND source_goals_card_id IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "tasks_status_updated",
+          "table": "tasks",
+          "sql": "CREATE INDEX tasks_status_updated ON tasks(status, updated_at DESC)"
+        },
+        {
+          "type": "index",
+          "name": "turns_agent_created",
+          "table": "turns",
+          "sql": "CREATE INDEX turns_agent_created ON turns(agent_id, created_at DESC)"
+        },
+        {
+          "type": "index",
+          "name": "turns_agent_source_message",
+          "table": "turns",
+          "sql": "CREATE UNIQUE INDEX turns_agent_source_message ON turns(agent_id, source_message_id) WHERE source_message_id IS NOT NULL"
+        },
+        {
+          "type": "table",
+          "name": "agent_timeline_meta",
+          "table": "agent_timeline_meta",
+          "sql": "CREATE TABLE agent_timeline_meta ( agent_id TEXT PRIMARY KEY NOT NULL, epoch TEXT NOT NULL, next_seq INTEGER NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "agent_timeline_rows",
+          "table": "agent_timeline_rows",
+          "sql": "CREATE TABLE agent_timeline_rows ( agent_id TEXT NOT NULL, seq INTEGER NOT NULL, timestamp TEXT NOT NULL, item_json TEXT, item_digest TEXT, PRIMARY KEY(agent_id, seq), FOREIGN KEY(agent_id) REFERENCES agent_timeline_meta(agent_id) ON DELETE CASCADE, CHECK((item_json IS NOT NULL) != (item_digest IS NOT NULL)) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "agents",
+          "table": "agents",
+          "sql": "CREATE TABLE agents ( agent_id TEXT PRIMARY KEY NOT NULL, provider_thread_id TEXT, title TEXT, visible INTEGER NOT NULL CHECK(visible IN (0, 1)), authority_revision INTEGER NOT NULL DEFAULT 0, provider_run_mode TEXT NOT NULL DEFAULT 'default', provider_control_revision INTEGER NOT NULL DEFAULT 0, active_turn_id TEXT, thoth_lifecycle TEXT NOT NULL DEFAULT 'idle', background_task_id TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL , provider TEXT, cwd TEXT, last_activity_at TEXT, last_user_message_at TEXT, labels_json TEXT, last_status TEXT, last_mode_id TEXT, config_json TEXT, runtime_info_json TEXT, features_json TEXT, persistence_json TEXT, last_error TEXT, requires_attention INTEGER, attention_reason TEXT, attention_timestamp TEXT, internal INTEGER, archived_at TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "authority_commands",
+          "table": "authority_commands",
+          "sql": "CREATE TABLE authority_commands ( command_id TEXT PRIMARY KEY NOT NULL, aggregate_type TEXT NOT NULL, aggregate_id TEXT NOT NULL, command_kind TEXT NOT NULL, result_revision INTEGER NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "authority_events",
+          "table": "authority_events",
+          "sql": "CREATE TABLE authority_events ( seq INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL UNIQUE, aggregate_type TEXT NOT NULL, aggregate_id TEXT NOT NULL, revision INTEGER NOT NULL, kind TEXT NOT NULL, payload_json TEXT NOT NULL, payload_digest TEXT NOT NULL, causation_id TEXT NOT NULL, correlation_id TEXT NOT NULL, occurred_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "authority_schema_migrations",
+          "table": "authority_schema_migrations",
+          "sql": "CREATE TABLE authority_schema_migrations ( version INTEGER PRIMARY KEY NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "cards",
+          "table": "cards",
+          "sql": "CREATE TABLE cards ( card_id TEXT PRIMARY KEY NOT NULL, turn_id TEXT NOT NULL, task_id TEXT, kind TEXT NOT NULL, status TEXT NOT NULL, displayed_digest TEXT NOT NULL, answer_digest TEXT, submitted_summary TEXT, runtime_digest TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(turn_id) REFERENCES turns(turn_id) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "chat_messages",
+          "table": "chat_messages",
+          "sql": "CREATE TABLE chat_messages ( message_id TEXT PRIMARY KEY NOT NULL, room_id TEXT NOT NULL, author_agent_id TEXT NOT NULL, body TEXT NOT NULL, reply_to_message_id TEXT, mention_agent_ids_json TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY(room_id) REFERENCES chat_rooms(room_id) ON DELETE CASCADE, FOREIGN KEY(reply_to_message_id) REFERENCES chat_messages(message_id) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "chat_rooms",
+          "table": "chat_rooms",
+          "sql": "CREATE TABLE chat_rooms ( room_id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, normalized_name TEXT NOT NULL UNIQUE, purpose TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "context_bindings",
+          "table": "context_bindings",
+          "sql": "CREATE TABLE context_bindings ( binding_id TEXT PRIMARY KEY NOT NULL, agent_id TEXT NOT NULL, turn_id TEXT NOT NULL, task_id TEXT NOT NULL, task_revision INTEGER NOT NULL, context_digest TEXT, created_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "evidence_refs",
+          "table": "evidence_refs",
+          "sql": "CREATE TABLE evidence_refs ( evidence_id TEXT PRIMARY KEY NOT NULL, task_id TEXT NOT NULL, execution_id TEXT, kind TEXT NOT NULL, content_digest TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "execution_approvals",
+          "table": "execution_approvals",
+          "sql": "CREATE TABLE execution_approvals ( approval_id TEXT PRIMARY KEY NOT NULL, provider_request_id TEXT NOT NULL, task_id TEXT NOT NULL, execution_id TEXT NOT NULL, generation TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, description TEXT, displayed_digest TEXT NOT NULL, auto_approve_eligible INTEGER NOT NULL CHECK(auto_approve_eligible IN (0, 1)), deadline_at TEXT, status TEXT NOT NULL CHECK(status IN ('pending', 'allowed', 'denied', 'canceled')), resolution_decision TEXT, resolution_actor_id TEXT, resolved_at TEXT, revision INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE, FOREIGN KEY(execution_id) REFERENCES execution_attempts(execution_id) ON DELETE CASCADE, UNIQUE(execution_id, provider_request_id) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "execution_attempts",
+          "table": "execution_attempts",
+          "sql": "CREATE TABLE execution_attempts ( execution_id TEXT PRIMARY KEY NOT NULL, task_id TEXT NOT NULL, goal_id TEXT, phase_run_id TEXT NOT NULL, phase_kind TEXT NOT NULL, provider_thread_id TEXT, status TEXT NOT NULL, generation TEXT NOT NULL, run_mode_receipt_json TEXT, started_at TEXT, last_activity_at TEXT, completed_at TEXT, summary TEXT, revision INTEGER NOT NULL, FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE, FOREIGN KEY(phase_run_id) REFERENCES phase_runs(phase_run_id), FOREIGN KEY(provider_thread_id) REFERENCES provider_threads(thread_id) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "foreground_continuations",
+          "table": "foreground_continuations",
+          "sql": "CREATE TABLE foreground_continuations ( turn_id TEXT NOT NULL, continuation_key TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(turn_id, continuation_key), FOREIGN KEY(turn_id) REFERENCES turns(turn_id) ON DELETE CASCADE ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "foreground_turn_queue",
+          "table": "foreground_turn_queue",
+          "sql": "CREATE TABLE foreground_turn_queue ( queued_turn_id TEXT PRIMARY KEY NOT NULL, agent_id TEXT NOT NULL, source_message_id TEXT NOT NULL, delivery_mode TEXT NOT NULL CHECK(delivery_mode IN ('queue', 'interrupt')), text_digest TEXT NOT NULL, payload_digest TEXT NOT NULL, attachment_count INTEGER NOT NULL DEFAULT 0, queue_order INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(agent_id, source_message_id), FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "human_decisions",
+          "table": "human_decisions",
+          "sql": "CREATE TABLE human_decisions ( decision_id TEXT PRIMARY KEY NOT NULL, task_id TEXT, turn_id TEXT, card_id TEXT, kind TEXT NOT NULL, displayed_digest TEXT NOT NULL, raw_answer_digest TEXT NOT NULL, normalized_digest TEXT NOT NULL, actor_id TEXT NOT NULL, client_id TEXT NOT NULL, device_id TEXT, command_id TEXT NOT NULL UNIQUE, expected_revision INTEGER NOT NULL, result_revision INTEGER NOT NULL, supersedes_decision_id TEXT, fidelity TEXT NOT NULL, decided_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "phase_runs",
+          "table": "phase_runs",
+          "sql": "CREATE TABLE phase_runs ( phase_run_id TEXT PRIMARY KEY NOT NULL, task_id TEXT NOT NULL, goal_id TEXT, phase_kind TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "provider_message_anchors",
+          "table": "provider_message_anchors",
+          "sql": "CREATE TABLE provider_message_anchors ( agent_id TEXT NOT NULL, canonical_message_id TEXT NOT NULL, provider_thread_id TEXT, native_anchor_receipt_json TEXT NOT NULL, scopes_json TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(agent_id, canonical_message_id), FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE, FOREIGN KEY(provider_thread_id) REFERENCES provider_threads(thread_id) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "provider_threads",
+          "table": "provider_threads",
+          "sql": "CREATE TABLE provider_threads ( thread_id TEXT PRIMARY KEY NOT NULL, adapter_id TEXT NOT NULL, native_handle TEXT, persistence_json TEXT, lineage_parent_id TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "runtime_attachments",
+          "table": "runtime_attachments",
+          "sql": "CREATE TABLE runtime_attachments ( attachment_id TEXT PRIMARY KEY NOT NULL, execution_id TEXT NOT NULL UNIQUE, adapter_id TEXT NOT NULL, provider_thread_id TEXT NOT NULL, bundle_id TEXT NOT NULL, bundle_digest TEXT NOT NULL, instruction_attachment TEXT NOT NULL, tool_attachment TEXT NOT NULL, status TEXT NOT NULL, attached_at TEXT NOT NULL, FOREIGN KEY(execution_id) REFERENCES execution_attempts(execution_id) ON DELETE CASCADE ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "schedule_runs",
+          "table": "schedule_runs",
+          "sql": "CREATE TABLE schedule_runs ( run_id TEXT PRIMARY KEY NOT NULL, schedule_id TEXT NOT NULL, scheduled_for TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT, status TEXT NOT NULL CHECK(status IN ('running', 'succeeded', 'failed')), agent_id TEXT, output TEXT, error TEXT, FOREIGN KEY(schedule_id) REFERENCES schedules(schedule_id) ON DELETE CASCADE ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "schedules",
+          "table": "schedules",
+          "sql": "CREATE TABLE schedules ( schedule_id TEXT PRIMARY KEY NOT NULL, name TEXT, prompt TEXT NOT NULL, cadence_json TEXT NOT NULL, target_json TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active', 'paused', 'completed')), created_at TEXT NOT NULL, updated_at TEXT NOT NULL, next_run_at TEXT, last_run_at TEXT, paused_at TEXT, expires_at TEXT, max_runs INTEGER ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "task_blackboard",
+          "table": "task_blackboard",
+          "sql": "CREATE TABLE task_blackboard ( entry_id TEXT PRIMARY KEY NOT NULL, task_id TEXT NOT NULL, kind TEXT NOT NULL, producer TEXT NOT NULL, content_digest TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "task_decision_requests",
+          "table": "task_decision_requests",
+          "sql": "CREATE TABLE task_decision_requests ( decision_id TEXT PRIMARY KEY NOT NULL, task_id TEXT NOT NULL, request_digest TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending', 'answered')), answer_decision_id TEXT, created_at TEXT NOT NULL, answered_at TEXT, FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE, FOREIGN KEY(answer_decision_id) REFERENCES human_decisions(decision_id) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "task_goals",
+          "table": "task_goals",
+          "sql": "CREATE TABLE task_goals ( goal_id TEXT PRIMARY KEY NOT NULL, task_id TEXT NOT NULL, goal_order INTEGER NOT NULL, title TEXT NOT NULL, goal TEXT NOT NULL, constraints_json TEXT NOT NULL, acceptance_json TEXT NOT NULL, status TEXT NOT NULL, revision INTEGER NOT NULL, FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE, UNIQUE(task_id, goal_order) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "tasks",
+          "table": "tasks",
+          "sql": "CREATE TABLE tasks ( task_id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL, source_agent_id TEXT NOT NULL, execution_mode TEXT NOT NULL, title TEXT NOT NULL, goal TEXT NOT NULL, constraints_json TEXT NOT NULL, acceptance_json TEXT NOT NULL, status TEXT NOT NULL, summary TEXT NOT NULL, current_goal_id TEXT, current_execution_id TEXT, latest_review_direction TEXT, source_turn_id TEXT, source_goals_card_id TEXT, provider_profile_id TEXT, budget_strength TEXT NOT NULL DEFAULT 'single', used_failed_reviews INTEGER NOT NULL DEFAULT 0, max_failed_reviews INTEGER NOT NULL DEFAULT 1, active_duration_ms INTEGER NOT NULL DEFAULT 0, token_count INTEGER NOT NULL DEFAULT 0, tool_call_count INTEGER NOT NULL DEFAULT 0, pending_control TEXT, goals_revision INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "timeline_entries",
+          "table": "timeline_entries",
+          "sql": "CREATE TABLE timeline_entries ( execution_id TEXT NOT NULL, seq INTEGER NOT NULL, occurred_at TEXT NOT NULL, item_json TEXT, item_digest TEXT, PRIMARY KEY(execution_id, seq), FOREIGN KEY(execution_id) REFERENCES execution_attempts(execution_id) ON DELETE CASCADE ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "turns",
+          "table": "turns",
+          "sql": "CREATE TABLE turns ( turn_id TEXT PRIMARY KEY NOT NULL, agent_id TEXT NOT NULL, task_id TEXT, provider_thread_id TEXT, generation TEXT NOT NULL, status TEXT NOT NULL, turn_kind TEXT NOT NULL DEFAULT 'raw', controls_json TEXT, provider_run_mode TEXT NOT NULL DEFAULT 'default', provider_mode_receipt_json TEXT, source_message_id TEXT, workspace_path TEXT, user_text_digest TEXT, provider_turn_id TEXT, background_task_id TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(agent_id) REFERENCES agents(agent_id), FOREIGN KEY(provider_thread_id) REFERENCES provider_threads(thread_id) ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "workspace_leases",
+          "table": "workspace_leases",
+          "sql": "CREATE TABLE workspace_leases ( lease_key TEXT PRIMARY KEY NOT NULL, task_id TEXT NOT NULL, execution_id TEXT, status TEXT NOT NULL, generation TEXT NOT NULL, expires_at TEXT, updated_at TEXT NOT NULL ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "workspace_meta",
+          "table": "workspace_meta",
+          "sql": "CREATE TABLE workspace_meta ( workspace_id TEXT PRIMARY KEY NOT NULL, authority_revision INTEGER NOT NULL, updated_at TEXT NOT NULL ) STRICT"
+        }
+      ],
+      "dataDigest": "cc13c52cc3ea6647c15e38a04e92663d4e9de7a51880cc596d3379c8b10353ae",
+      "tables": [
+        {
+          "name": "agent_timeline_meta",
+          "count": 3,
+          "columns": [
+            {
+              "name": "agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "epoch",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "next_seq",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "595bb936adfe08cc670fa92774000b96d9050400bbab65f05d3a2d25a9e5725b"
+        },
+        {
+          "name": "agent_timeline_rows",
+          "count": 17,
+          "columns": [
+            {
+              "name": "agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "seq",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 2,
+              "hidden": 0
+            },
+            {
+              "name": "timestamp",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "item_json",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "item_digest",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "0b601cd38aaa4275f59d94d01c2b1f525e19941af26a786dd9f27a817790fe8e"
+        },
+        {
+          "name": "agents",
+          "count": 7,
+          "columns": [
+            {
+              "name": "agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "provider_thread_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "title",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "visible",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "authority_revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": "0",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "provider_run_mode",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": "'default'",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "provider_control_revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": "0",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "active_turn_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "thoth_lifecycle",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": "'idle'",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "background_task_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "error",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "provider",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "cwd",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "last_activity_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "last_user_message_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "labels_json",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "last_status",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "last_mode_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "config_json",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "runtime_info_json",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "features_json",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "persistence_json",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "last_error",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "requires_attention",
+              "type": "INTEGER",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "attention_reason",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "attention_timestamp",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "internal",
+              "type": "INTEGER",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "archived_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "b465c9ebc676f78542d787f9af72b714f7de9243043ab151589b4cdc095be6b6"
+        },
+        {
+          "name": "authority_commands",
+          "count": 6,
+          "columns": [
+            {
+              "name": "command_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "aggregate_type",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "aggregate_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "command_kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "result_revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "result_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "87d95709c66dd31d4d369471049c7c4d32f0db0a9a05f7786f28af81f314b4b0"
+        },
+        {
+          "name": "authority_events",
+          "count": 50,
+          "columns": [
+            {
+              "name": "seq",
+              "type": "INTEGER",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "event_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "aggregate_type",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "aggregate_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "payload_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "payload_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "causation_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "correlation_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "occurred_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "a7bb1cf0d7eee4bd33262bd4cddf8833678c9cf73869b56cb7b263aaeceb3664"
+        },
+        {
+          "name": "authority_schema_migrations",
+          "count": 4,
+          "columns": [
+            {
+              "name": "version",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "checksum",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "applied_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "130a3bbbeb437d348843d5ad3d36e6eea5e0389e105c988d42d370e0082ad789"
+        },
+        {
+          "name": "cards",
+          "count": 3,
+          "columns": [
+            {
+              "name": "card_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "turn_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "displayed_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "answer_digest",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "submitted_summary",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "runtime_digest",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "0614eae9877eb1b30286691bd696788a69476f9e3094e5f7d50238af3890cd11"
+        },
+        {
+          "name": "chat_messages",
+          "count": 0,
+          "columns": [
+            {
+              "name": "message_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "room_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "author_agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "body",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "reply_to_message_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "mention_agent_ids_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "name": "chat_rooms",
+          "count": 0,
+          "columns": [
+            {
+              "name": "room_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "name",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "normalized_name",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "purpose",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "name": "context_bindings",
+          "count": 0,
+          "columns": [
+            {
+              "name": "binding_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "turn_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "task_revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "context_digest",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "name": "evidence_refs",
+          "count": 0,
+          "columns": [
+            {
+              "name": "evidence_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "execution_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "content_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "name": "execution_approvals",
+          "count": 3,
+          "columns": [
+            {
+              "name": "approval_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "provider_request_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "execution_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "generation",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "title",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "description",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "displayed_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "auto_approve_eligible",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "deadline_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "resolution_decision",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "resolution_actor_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "resolved_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "d6c98db5442bcfd88a8112772fc079cd68026912dbed5f1ac05b2e29ccb6aa18"
+        },
+        {
+          "name": "execution_attempts",
+          "count": 6,
+          "columns": [
+            {
+              "name": "execution_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "goal_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "phase_run_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "phase_kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "provider_thread_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "generation",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "run_mode_receipt_json",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "started_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "last_activity_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "completed_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "summary",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "3f1efdbdcfabd365c60cd26f1845447b3bb30a0a16922d3817a34be1db8c04ec"
+        },
+        {
+          "name": "foreground_continuations",
+          "count": 2,
+          "columns": [
+            {
+              "name": "turn_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "continuation_key",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 2,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "8380fc17fbbf8187c73e69997d0bc02f2d5e138c1b7abfcfb6e8480216c8edd2"
+        },
+        {
+          "name": "foreground_turn_queue",
+          "count": 0,
+          "columns": [
+            {
+              "name": "queued_turn_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "source_message_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "delivery_mode",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "text_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "payload_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "attachment_count",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": "0",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "queue_order",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "name": "human_decisions",
+          "count": 6,
+          "columns": [
+            {
+              "name": "decision_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "turn_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "card_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "displayed_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "raw_answer_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "normalized_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "actor_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "client_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "device_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "command_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "expected_revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "result_revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "supersedes_decision_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "fidelity",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "decided_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "3d4ca68eaf2f280c452263dd0ebc4efc9af04f827ac91f7636e8a59f84cdd5e1"
+        },
+        {
+          "name": "phase_runs",
+          "count": 6,
+          "columns": [
+            {
+              "name": "phase_run_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "goal_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "phase_kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "8d7818e12fbfa75375720ee4642aeaf0fe7acf7a96a744192ecbb64047a80adc"
+        },
+        {
+          "name": "provider_message_anchors",
+          "count": 0,
+          "columns": [
+            {
+              "name": "agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "canonical_message_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 2,
+              "hidden": 0
+            },
+            {
+              "name": "provider_thread_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "native_anchor_receipt_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "scopes_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "name": "provider_threads",
+          "count": 12,
+          "columns": [
+            {
+              "name": "thread_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "adapter_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "native_handle",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "persistence_json",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "lineage_parent_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "5aeb9425d547088940aadc5732a36827701c45be11d4755ac66622976193dbd6"
+        },
+        {
+          "name": "runtime_attachments",
+          "count": 6,
+          "columns": [
+            {
+              "name": "attachment_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "execution_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "adapter_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "provider_thread_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "bundle_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "bundle_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "instruction_attachment",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "tool_attachment",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "attached_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "1ee0f2ec4e1303ef4f8fc5b86c681f31ad1e760095600deb7e5055b20d940324"
+        },
+        {
+          "name": "schedule_runs",
+          "count": 0,
+          "columns": [
+            {
+              "name": "run_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "schedule_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "scheduled_for",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "started_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "ended_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "agent_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "output",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "error",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "name": "schedules",
+          "count": 0,
+          "columns": [
+            {
+              "name": "schedule_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "name",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "prompt",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "cadence_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "target_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "next_run_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "last_run_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "paused_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "expires_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "max_runs",
+              "type": "INTEGER",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "name": "task_blackboard",
+          "count": 12,
+          "columns": [
+            {
+              "name": "entry_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "producer",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "content_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "ff740a3b0d15f9ae41416e8c8790cce283ddcb7bb6cb88bbbc3f5766c17505e9"
+        },
+        {
+          "name": "task_decision_requests",
+          "count": 0,
+          "columns": [
+            {
+              "name": "decision_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "request_digest",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "answer_decision_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "answered_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "name": "task_goals",
+          "count": 2,
+          "columns": [
+            {
+              "name": "goal_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "goal_order",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "title",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "goal",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "constraints_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "acceptance_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "7d15a636fd0b4f686ed29694eb6632f3dff02988cf1971b1584cbfb0c9dedc41"
+        },
+        {
+          "name": "tasks",
+          "count": 1,
+          "columns": [
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "workspace_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "source_agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "execution_mode",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "title",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "goal",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "constraints_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "acceptance_json",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "summary",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "current_goal_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "current_execution_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "latest_review_direction",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "source_turn_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "source_goals_card_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "provider_profile_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "budget_strength",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": "'single'",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "used_failed_reviews",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": "0",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "max_failed_reviews",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": "1",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "active_duration_ms",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": "0",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "token_count",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": "0",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "tool_call_count",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": "0",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "pending_control",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "goals_revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": "0",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "0b13de2fa3e3740fda350568cdcaeb2c545998539c5dfd2fdb69d7154e5e0c74"
+        },
+        {
+          "name": "timeline_entries",
+          "count": 27,
+          "columns": [
+            {
+              "name": "execution_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "seq",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 2,
+              "hidden": 0
+            },
+            {
+              "name": "occurred_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "item_json",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "item_digest",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "17c0f8df504e6f18181e1e19b59849daf5ebb76a7cf8d1c283d3bb81eac8b36f"
+        },
+        {
+          "name": "turns",
+          "count": 1,
+          "columns": [
+            {
+              "name": "turn_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "agent_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "provider_thread_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "generation",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "turn_kind",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": "'raw'",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "controls_json",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "provider_run_mode",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": "'default'",
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "provider_mode_receipt_json",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "source_message_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "workspace_path",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "user_text_digest",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "provider_turn_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "background_task_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "error",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "created_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "8d4e1855faa3a010853bd32dc1edb26695ffbe9f916787c82912de06285e22df"
+        },
+        {
+          "name": "workspace_leases",
+          "count": 0,
+          "columns": [
+            {
+              "name": "lease_key",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "task_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "execution_id",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "status",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "generation",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "expires_at",
+              "type": "TEXT",
+              "notNull": 0,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "name": "workspace_meta",
+          "count": 1,
+          "columns": [
+            {
+              "name": "workspace_id",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 1,
+              "hidden": 0
+            },
+            {
+              "name": "authority_revision",
+              "type": "INTEGER",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            },
+            {
+              "name": "updated_at",
+              "type": "TEXT",
+              "notNull": 1,
+              "defaultValue": null,
+              "primaryKeyOrder": 0,
+              "hidden": 0
+            }
+          ],
+          "rowDigest": "ac8fd56667742eb7a2b53094270576b4e2da01af5c7880d43854553ab7eca7e2"
+        }
+      ]
+    }
+  },
+  "behavior": {
+    "tasks": [
+      {
+        "budget_strength": "light",
+        "execution_mode": "loop",
+        "max_failed_reviews": 5,
+        "pending_control": null,
+        "revision": 19,
+        "status": "completed",
+        "used_failed_reviews": 1
+      }
+    ],
+    "goals": [
+      {
+        "goal_order": 1,
+        "revision": 5,
+        "status": "passed"
+      },
+      {
+        "goal_order": 2,
+        "revision": 3,
+        "status": "passed"
+      }
+    ],
+    "executionPhases": [
+      {
+        "has_run_mode_receipt": 1,
+        "phase_kind": "planexec",
+        "revision": 5,
+        "status": "succeeded"
+      },
+      {
+        "has_run_mode_receipt": 1,
+        "phase_kind": "review",
+        "revision": 3,
+        "status": "succeeded"
+      },
+      {
+        "has_run_mode_receipt": 1,
+        "phase_kind": "planexec",
+        "revision": 5,
+        "status": "succeeded"
+      },
+      {
+        "has_run_mode_receipt": 1,
+        "phase_kind": "review",
+        "revision": 3,
+        "status": "succeeded"
+      },
+      {
+        "has_run_mode_receipt": 1,
+        "phase_kind": "planexec",
+        "revision": 5,
+        "status": "succeeded"
+      },
+      {
+        "has_run_mode_receipt": 1,
+        "phase_kind": "review",
+        "revision": 3,
+        "status": "succeeded"
+      }
+    ],
+    "cards": [
+      {
+        "answered": 1,
+        "has_runtime": 1,
+        "kind": "clarify_card",
+        "status": "answered"
+      },
+      {
+        "answered": 1,
+        "has_runtime": 1,
+        "kind": "task_card",
+        "status": "answered"
+      },
+      {
+        "answered": 1,
+        "has_runtime": 1,
+        "kind": "goal_card",
+        "status": "answered"
+      }
+    ],
+    "decisions": [
+      {
+        "fidelity": "exact",
+        "kind": "card_clarify_card"
+      },
+      {
+        "fidelity": "exact",
+        "kind": "card_task_card"
+      },
+      {
+        "fidelity": "exact",
+        "kind": "card_goal_card"
+      },
+      {
+        "fidelity": "exact",
+        "kind": "execution_approval"
+      },
+      {
+        "fidelity": "exact",
+        "kind": "execution_approval"
+      },
+      {
+        "fidelity": "exact",
+        "kind": "execution_approval"
+      }
+    ],
+    "attachments": [
+      {
+        "bundle_id": "thoth.loop",
+        "instruction_attachment": "system",
+        "status": "attached",
+        "tool_attachment": "native"
+      },
+      {
+        "bundle_id": "thoth.loop",
+        "instruction_attachment": "system",
+        "status": "attached",
+        "tool_attachment": "native"
+      },
+      {
+        "bundle_id": "thoth.loop",
+        "instruction_attachment": "system",
+        "status": "attached",
+        "tool_attachment": "native"
+      },
+      {
+        "bundle_id": "thoth.loop",
+        "instruction_attachment": "system",
+        "status": "attached",
+        "tool_attachment": "native"
+      },
+      {
+        "bundle_id": "thoth.loop",
+        "instruction_attachment": "system",
+        "status": "attached",
+        "tool_attachment": "native"
+      },
+      {
+        "bundle_id": "thoth.loop",
+        "instruction_attachment": "system",
+        "status": "attached",
+        "tool_attachment": "native"
+      }
+    ],
+    "providerThreads": [
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      },
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      },
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      },
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      },
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      },
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      },
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      },
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      },
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      },
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      },
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      },
+      {
+        "adapter_id": "codex",
+        "has_lineage_parent": 0,
+        "has_native_handle": 1,
+        "status": "active"
+      }
+    ],
+    "timeline": [
+      {
+        "seq": 1,
+        "type": "tool_call",
+        "detailType": "plain_text",
+        "status": "running"
+      },
+      {
+        "seq": 2,
+        "type": "clarify_card",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 3,
+        "type": "tool_call",
+        "detailType": "plain_text",
+        "status": "completed"
+      },
+      {
+        "seq": 4,
+        "type": "clarify_card",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 5,
+        "type": "tool_call",
+        "detailType": "plain_text",
+        "status": "running"
+      },
+      {
+        "seq": 6,
+        "type": "task_card",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 7,
+        "type": "tool_call",
+        "detailType": "plain_text",
+        "status": "completed"
+      },
+      {
+        "seq": 8,
+        "type": "task_card",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 9,
+        "type": "tool_call",
+        "detailType": "plain_text",
+        "status": "running"
+      },
+      {
+        "seq": 10,
+        "type": "goal_card",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 11,
+        "type": "tool_call",
+        "detailType": "plain_text",
+        "status": "completed"
+      },
+      {
+        "seq": 12,
+        "type": "registered_task",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 13,
+        "type": "goal_card",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 14,
+        "type": "assistant_message",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 1,
+        "type": "assistant_message",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 2,
+        "type": "assistant_message",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 1,
+        "type": "assistant_message",
+        "detailType": null,
+        "status": null
+      }
+    ],
+    "executionTimeline": [
+      {
+        "seq": 1,
+        "type": "turn_started",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 2,
+        "type": "timeline",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 3,
+        "type": "permission_requested",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 4,
+        "type": "turn_completed",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 5,
+        "type": "provider_mode_receipt",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 6,
+        "type": "turn_started",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 7,
+        "type": "turn_completed",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 1,
+        "type": "turn_started",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 2,
+        "type": "timeline",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 3,
+        "type": "permission_requested",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 4,
+        "type": "turn_completed",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 5,
+        "type": "provider_mode_receipt",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 6,
+        "type": "turn_started",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 7,
+        "type": "turn_completed",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 1,
+        "type": "turn_started",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 2,
+        "type": "turn_completed",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 1,
+        "type": "turn_started",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 2,
+        "type": "timeline",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 3,
+        "type": "permission_requested",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 4,
+        "type": "turn_completed",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 5,
+        "type": "provider_mode_receipt",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 6,
+        "type": "turn_started",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 7,
+        "type": "turn_completed",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 1,
+        "type": "turn_started",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 2,
+        "type": "turn_completed",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 1,
+        "type": "turn_started",
+        "detailType": null,
+        "status": null
+      },
+      {
+        "seq": 2,
+        "type": "turn_completed",
+        "detailType": null,
+        "status": null
+      }
+    ]
+  },
+  "semanticDigest": "74f79a53c1cae8d58dbedb7d57a553b8696170371a11650e2d70e91720f74d5f"
+}

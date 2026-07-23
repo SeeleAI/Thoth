@@ -1,0 +1,45 @@
+{
+  "keyboardAndFocus": [
+    {
+      "step": "before-composer-focus",
+      "tag": "button",
+      "role": "button",
+      "name": "Mode: Quick",
+      "testId": "thoth-mode-control"
+    },
+    {
+      "step": "composer-focused",
+      "tag": "textarea",
+      "role": null,
+      "name": "Message agent...",
+      "testId": null
+    },
+    {
+      "step": "composer-tab-forward",
+      "tag": "button",
+      "role": "button",
+      "name": "Add attachment",
+      "testId": "message-input-attach-button"
+    },
+    {
+      "step": "composer-tab-back",
+      "tag": "textarea",
+      "role": null,
+      "name": "Message agent...",
+      "testId": null
+    }
+  ],
+  "responsive": {
+    "layout": "desktop",
+    "viewport": {
+      "width": 1440,
+      "height": 960
+    },
+    "sidebarVisible": true,
+    "tabRowVisible": true,
+    "composerVisible": true,
+    "providerVisible": true,
+    "clarifyVisible": true,
+    "modeVisible": true
+  }
+}

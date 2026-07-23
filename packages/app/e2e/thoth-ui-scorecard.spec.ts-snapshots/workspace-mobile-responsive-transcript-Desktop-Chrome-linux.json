@@ -1,0 +1,15 @@
+{
+  "responsive": {
+    "layout": "mobile",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "sidebarVisible": false,
+    "tabRowVisible": true,
+    "composerVisible": true,
+    "providerVisible": true,
+    "clarifyVisible": true,
+    "modeVisible": true
+  }
+}

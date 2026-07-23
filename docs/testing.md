@@ -21,6 +21,29 @@ This expands to repository validation, format check, foundation lint, foundation
 
 If this gate fails, fix it before starting or continuing product feature work.
 
+## Final-Architecture Refactor Gate
+
+After `npm install`, prepare the ignored local Expo dependency cache once per lockfile/Node version:
+
+```bash
+npm run setup:refactor-web-cache
+```
+
+The cache lives under `/tmp`, is never project authority and is rejected automatically when its dependency
+signature differs from the current lockfile. Every timed run still synchronizes the current candidate source and
+builds a real Web export; the cache only prevents Metro from repeatedly reading the unchanged multi-gigabyte
+dependency tree through the remote CFS mount.
+
+The sole acceptance command for the production main-chain refactor is:
+
+```bash
+npm run accept:refactor:fast
+```
+
+It applies one shared 300-second deadline to source/storage/architecture guards, foundation, affected product
+behavior, real Web visual/interaction evidence, App/TUI contracts and performance. Do not reuse a stale Web dist,
+skip a phase or run the phases separately as completion evidence.
+
 ## Narrow Iteration
 
 Use narrow checks while iterating:

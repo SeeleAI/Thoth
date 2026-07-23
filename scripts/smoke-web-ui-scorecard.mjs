@@ -2,6 +2,7 @@
 import { spawn } from "node:child_process";
 import { request } from "node:http";
 import net from "node:net";
+import { buildRefactorWebStage } from "./refactor-web-stage.mjs";
 
 async function getAvailablePort() {
   return new Promise((resolve, reject) => {
@@ -86,13 +87,19 @@ async function stopProcess(child) {
   });
 }
 
-await run("npm", ["run", "build:web"]);
+if (process.env.THOTH_ACCEPT_PREBUILT !== "1") {
+  await run("npm", ["run", "build:daemon"]);
+}
+const webDist =
+  process.env.THOTH_ACCEPT_WEB_PREBUILT === "1"
+    ? "packages/app/dist"
+    : (await buildRefactorWebStage()).dist;
 
 const port = await getAvailablePort();
 const baseUrl = `http://127.0.0.1:${port}`;
 const server = spawn(
   process.execPath,
-  ["scripts/serve-static.mjs", "packages/app/dist", String(port), "127.0.0.1"],
+  ["scripts/serve-static.mjs", webDist, String(port), "127.0.0.1"],
   {
     stdio: "inherit",
   },
@@ -102,11 +109,22 @@ try {
   await waitForHttp(baseUrl);
   await run(
     "npm",
-    ["--workspace=@thoth/app", "run", "test:e2e", "--", "thoth-ui-scorecard.spec.ts"],
+    [
+      "--workspace=@thoth/app",
+      "run",
+      "test:e2e",
+      "--",
+      "thoth-ui-scorecard.spec.ts",
+      "refactor-app-performance.spec.ts",
+      ...process.argv.slice(2),
+    ],
     {
       env: {
         ...process.env,
         E2E_BASE_URL: baseUrl,
+        THOTH_REFACTOR_APP_PERF_OUTPUT:
+          process.env.THOTH_REFACTOR_APP_PERF_OUTPUT ??
+          ".dev/refactor-app-performance-current.json",
       },
     },
   );

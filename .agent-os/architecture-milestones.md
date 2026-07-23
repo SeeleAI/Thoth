@@ -458,3 +458,51 @@ Acceptance:
 8. UI does not expose packet, skill or provider role concepts.
 9. Relevant UI tests, daemon/client tests and `npm run check:foundation` pass.
 10. `.agent-os/acceptance-report.md`, `.agent-os/project-index.md` and `.agent-os/run-log.md` record the MVP closure evidence.
+
+### `NTH-MS-018` Final Production Main-Chain Architecture And 50k Refactor
+
+State: `doing`
+
+Goal: Replace the repeated Paseo-derived production layers with one final Thoth main chain, preserve all current
+public semantics and user experience, remove at least `50,000` real production lines and meet the locked startup,
+memory, interaction and response-overhead targets.
+
+Architecture:
+
+1. Pure deterministic Core transitions own Task, Turn, Card, HumanDecision, ExecutionAttempt and Evidence rules.
+2. Daemon application use cases transact through one Workspace Repository/Unit of Work and publish normalized
+   projection deltas; SQLite shards are adapters, not business authority.
+3. Drivers expose direct capability-segregated HarnessAdapters with lazy manifests; one ExecutionService and
+   ToolGateway fence all foreground/background provider work.
+4. Protocol owns one Zod RPC Registry plus binary codecs; Client and Daemon dispatch derive from that registry.
+5. App consumes normalized authority projection, QueryClient server state and versioned local UI preferences;
+   React Context injects dependencies only.
+6. Timeline views and VCS actions each use one declarative registry and one shared responsive component/service
+   path.
+7. One lazy composition root and ServiceSupervisor own process, provider, shard, terminal, MCP, GitHub and Relay
+   lifecycle.
+
+Atomic sequence:
+
+1. `NTH-TD-031` `[verified]`: freeze source, behavior, visual, storage and performance baselines plus the shared 300-second gate.
+2. `NTH-TD-032` `[doing]`: pure Core, Repository/UoW and lossless SQLite authority cutover.
+3. `NTH-TD-033`: direct capability HarnessAdapter, ExecutionService and ToolGateway cutover.
+4. `NTH-TD-034`: single Protocol RPC Registry and derived Client/Daemon dispatch.
+5. `NTH-TD-035`: App authority projection, query state and UI preference separation.
+6. `NTH-TD-036`: shared Timeline/View Registry, responsive composition and real lazy UI boundaries.
+7. `NTH-TD-037`: VcsRepository, VcsApplicationService and VcsActionRegistry convergence.
+8. `NTH-TD-038`: lazy composition root, ServiceSupervisor and on-demand shard/process lifecycle.
+9. `NTH-TD-039`: final LOC, migration, behavior, visual, Relay and performance closure.
+
+Acceptance:
+
+1. Every cut is one local atomic commit containing final module, full consumer switch, old-path deletion, tests and
+   bookkeeping; no commit contains old/new runtime dual paths.
+2. Every cut passes `npm run accept:refactor:fast` inside one shared `300s` deadline and reduces production LOC,
+   scanner tokens, AST nodes and non-type static import edges without increasing runtime dependencies.
+3. Public Client/Protocol/Provider/AgentTimeline/VCS semantics, Release `05775486` data, screenshots, keyboard,
+   focus, a11y, responsive behavior and TUI frame remain equivalent.
+4. Final production LOC is at least `50,000` below the clean baseline and all performance targets in
+   `NTH-REQ-025` pass without touching Paseo `127.0.0.1:6767`.
+5. No push, merge, native package, real Provider, tag, Release or publication occurs without a new explicit user
+   authorization.

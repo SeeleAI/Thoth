@@ -8,6 +8,23 @@
    - Related: `NTH-MS-004`, `NTH-REQ-005`
 3. `NTH-TD-006` `[backlog]`: Design E2EE relay deployment path for Cloudflare prototype and seeles.ai hosted/self-hosted service.
    - Related: `NTH-MS-005`, `NTH-REQ-006`
+4. `NTH-TD-033` `[backlog]`: Atomically cut every Provider and foreground/background execution path over to direct capability HarnessAdapters, one ExecutionService and one ToolGateway, then delete the AgentClient/Session/Manager/host bridge stack.
+   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-054`
+5. `NTH-TD-034` `[backlog]`: Replace Protocol/Client/Daemon hand-written RPC synchronization with one Zod registry and derived semantic facade/dispatch, preserving every public operation and binary codec.
+   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-055`
+6. `NTH-TD-035` `[backlog]`: Atomically migrate App authority consumers to one non-React normalized projection service, QueryClient server state and versioned UI preferences, then delete Session authority Context/reducers and the third Timeline model.
+   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-056`
+7. `NTH-TD-036` `[backlog]`: Converge AgentTimeline rendering and responsive desktop/compact/mobile composition through one View Registry and shared primitives, adding real lazy boundaries without any visual or interaction change.
+   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-057`
+8. `NTH-TD-037` `[backlog]`: Converge Git, Worktree and GitHub through VcsRepository, VcsApplicationService and one VcsActionRegistry; delete duplicate RPC/actions/results/polling while preserving every current capability.
+   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-058`
+9. `NTH-TD-038` `[backlog]`: Install one lazy composition root and ServiceSupervisor, open Workspace shards and Provider/GitHub/MCP/Terminal/Relay resources on demand, and delete eager heavy imports, duplicate controllers and idle polling.
+
+- Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-059`
+
+10. `NTH-TD-039` `[backlog]`: Close the final 50k production reduction, public capability, Release migration, visual/interaction, source Relay, 300-second and four hard performance targets; remove any architecture-guarded dual path.
+
+- Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-060`
 
 ## Ready
 
@@ -34,7 +51,10 @@
 
 ## Doing
 
-1. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
+1. `NTH-TD-032` `[doing]`: Atomically cut authority over to pure `@thoth/core` transitions and one Workspace Repository/Unit of Work, migrate Release `05775486` losslessly and delete monolithic persistence, `authority_events`, constructor DDL and obsolete migrations.
+   - Acceptance: preserve every public authority behavior and Release entity digest; transaction, revision conflict, Card suspension, restart/reconnect, migration lock/failure injection/atomic activation and Timeline cursor tests must pass through `npm run accept:refactor:fast` within the shared `300s` deadline.
+   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-053`
+2. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
    - Goal: Keep restored Paseo surface and Codex dynamicTools path, but make Clarify behave like a pending authority decision lifecycle with intelligent timeline badges and model-submitted frontier ledger.
    - Scope: `thoth_submit_clarify_card` carries `public_badge_summary` and `frontier_ledger`; `thoth_submit_task_card` carries convergence review; `balanced` has a 5-10 card soft range and `dive` has a 10-20 card soft range; cards must not show completed/idle footer before user submission; `decision_it_changes` is legacy optional input only. Under `NTH-CD-052`, raw Provider conversation is an explicit Thoth-off state rather than an ambiguous `Quick + Direct` sub-selection; only Thoth-on exposes structured Clarify and Loop controls. Under `NTH-CD-053`, that off/on choice is strictly per turn: one Workspace Secretary topic reuses one foreground provider session, and a daemon authority fence blocks remembered runtime tools during raw turns instead of using historical `bare` / `structured` sessions.
    - Verification: Reopened under `NTH-EV-029`; unit/build/foundation gates and most real Codex web paths now pass after the frontier-ledger repair, including local/public Balanced sort, local Dive sort, local Balanced PathTracing and local Loop `registered_pending`. Under `NTH-CD-057` / `NTH-EV-038`, ordinary Agent sends now reuse the visible provider session for Thoth Clarify/Quick, remote workspace identity overrides client cwd, and packaged Clarify/Loop skills were confirmed in the public Linux `app.asar`. Do not return this TODO to verified until installed/Relay real-provider behavior is exercised from the replacement build.
@@ -139,6 +159,13 @@ None.
 - Scope: delete the standalone Run Mode segmented section; render Plan as the first Provider Feature row; preserve per-Agent CAS updates, native/unsupported/unavailable/retry states and the absence of a Composer Plan control.
 - Related: `NTH-CD-064`, `NTH-CD-065`, `NTH-REQ-024`, `NTH-AC-019`
 - Verification: See `NTH-EV-051`. The bounded Plan/tab gate passed in `18.441s`, the strengthened source contract proves Plan's exact feature-list placement and Default/Plan mapping, and the real Web export bundled `4415` modules successfully.
+
+15. `NTH-TD-031` `[verified]`: Freeze the clean final-architecture refactor baseline and make one shared `300s` acceptance gate real before production code changes.
+
+- Baseline: commit `743e8d29f8a3e752bd4b53af31bcf0a15a5bed14`, Node `24.14.0`, npm `11.9.0`, `308,531` production LOC, `1,298,564` scanner tokens, `1,346,659` AST nodes, `5,057` non-type static imports and `165` runtime dependency edges.
+- Scope: Release `05775486` SQLite fixture/digest, independent daemon/App/response performance, real Web screenshots, keyboard/focus/a11y/responsive transcripts, TUI frame, architecture guards and one shared-deadline runner.
+- Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`
+- Verification: See `NTH-EV-052`. `npm run accept:refactor:fast` passed every source, storage, architecture, foundation, runtime build, public behavior, real Web/visual, App, TUI and performance phase in `270.302s` under one `300s` deadline.
 
 ## Abandoned
 

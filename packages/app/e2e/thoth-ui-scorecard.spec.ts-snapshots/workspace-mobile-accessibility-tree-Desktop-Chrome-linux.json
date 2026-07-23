@@ -1,0 +1,6 @@
+{
+  "mobile": {
+    "tabs": "- button \"Switch tabs (1 open)\":\n  - img\n  - text: New Agent\n  - img",
+    "composer": "- textbox \"Message agent...\":\n  - /placeholder: Message, @files, /commands\n- text: Ctrl+L to focus\n- button \"Add attachment\":\n  - img\n- button \"Select agent provider\": Provider Provider\n- img\n- text: Thoth\n- switch \"Enable Thoth mode\" [checked]\n- 'button \"Mode: Quick\"':\n  - img\n  - text: Loop Quick\n  - img\n- 'button \"Clarify: Light\"':\n  - img\n  - text: Clarify Light\n  - img"
+  }
+}

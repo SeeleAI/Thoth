@@ -3685,3 +3685,29 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   React DOM/Unistyles/WebView and unrelated fixture baseline; the changed Agent controls file has no type error.
   No AppImage/native packaging, provider run, push or Release mutation occurred. Top next action remains
   `NTH-TD-021`.
+
+## 2026-07-23 [Final-architecture Cut 0 clean baseline verified]
+
+- Created isolated branch `agent/refactor/final-architecture-50k` from clean commit `743e8d29` and froze the
+  production baseline at `1,234` files, `308,531` physical LOC, `1,298,564` scanner tokens, `1,346,659` AST nodes,
+  `5,057` non-type static import edges and `165` runtime dependency edges. No production business logic changed.
+- Froze the sealed Release `05775486` catalog/authority SQLite fixture with semantic digest
+  `74f79a53c1cae8d58dbedb7d57a553b8696170371a11650e2d70e91720f74d5f`, integrity/FK/entity checks and no
+  WAL/SHM sidecars. It retains the authority/event rows that Cut 1 must migrate before deleting the duplicate
+  `authority_events` path.
+- Froze real Web desktop/mobile screenshots plus keyboard, focus, a11y and responsive transcripts; App performance
+  uses seven fresh browser contexts, stable reconnect identity and CDP forced-GC heap. Daemon and response
+  performance use seven independent processes/samples with explicit warmup and unchanged Mann-Whitney/MAD rules.
+- Preserved two formal failures: the first gate expired at `300.011s` on remote-CFS Metro metadata waits; a
+  lockfile/Node-keyed ignored local dependency stage reduced the same real `4415`-module export to `11.960s`. The
+  next gate failed at `237.050s` because the original response probe used correlated same-process turns; unchanged
+  source ranged from `13.50ms` to `16.94ms`, so the clean baseline was correctly regenerated with independent
+  processes rather than weakening the statistical threshold.
+- Final `npm run accept:refactor:fast` passed every source/storage/architecture, Foundation, runtime build, public
+  behavior, real Web/Playwright, App, TUI and performance phase in `270.302s` under one shared `300s` deadline.
+  The final response sample set retained a `30.86ms` outlier and still passed by its seven-sample median; no retry
+  or hidden sample replacement occurred.
+- `NTH-TD-031` / `NTH-EV-052` are verified. The sole top next action advances to `NTH-TD-032`: pure Core,
+  Repository/UoW and lossless Release migration, with no dual read/write or old-store fallback. No AppImage,
+  native package, real Provider, hosted Relay, push, tag, Release or publication ran, and reserved Paseo
+  `127.0.0.1:6767` was not probed or modified.

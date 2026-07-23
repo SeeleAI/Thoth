@@ -2836,3 +2836,100 @@ The full App typecheck was rerun diagnostically. It remains red on the pre-exist
 Unistyles, WebView and unrelated fixture debt; it reports no error in the changed
 `composer/agent-controls/index.tsx`. No AppImage/native packaging, provider run, push or Release mutation was
 requested or performed.
+
+### `NTH-EV-052` Final-Architecture Refactor Clean Baseline
+
+Status: verified.
+
+Evidence on `2026-07-23`:
+
+1. Clean authority commit is `743e8d29f8a3e752bd4b53af31bcf0a15a5bed14` on the isolated local branch
+   `agent/refactor/final-architecture-50k`, with Node `24.14.0` and npm `11.9.0`. No production source changed in
+   Cut 0.
+2. `scripts/refactor-baseline.json` freezes `1,234` production files, `308,531` physical lines, `1,298,564`
+   scanner tokens, `1,346,659` AST nodes, `5,057` non-type static import edges and `165` runtime dependency
+   edges. Its public surface records `628` exported names, `153` DaemonClient methods, Protocol discriminants and
+   the seven production Provider ids; the scanner also counts non-ignored untracked candidate sources so a
+   pre-commit gate cannot hide new production code.
+3. `packages/daemon/src/test-fixtures/refactor-release-05775486/` was generated through the real public API from
+   Release `05775486`. It contains catalog and authority SQLite files without WAL/SHM sidecars, one completed Task,
+   two passed Goals, six Executions, all three Card types, three approvals, six RuntimeBundle attachments, twelve
+   provider threads, seventeen Agent Timeline items and twenty-seven execution Timeline items. `integrity_check`,
+   `foreign_key_check` and `npm run check:refactor-storage` pass; canonical semantic digest is
+   `74f79a53c1cae8d58dbedb7d57a553b8696170371a11650e2d70e91720f74d5f`.
+4. Seven-sample daemon/response baseline is frozen in `scripts/refactor-performance-baseline.json`: cold ready
+   median `2342.78ms`, idle RSS `472928256` bytes, idle CPU `0ms/750ms`, health p50/p95
+   `0.1507/0.2296ms`, Client-to-adapter `7.2697ms`, adapter-event-to-Client `7.4306ms`, local response overhead
+   median/p95 `15.3063/15.9996ms`. Every response sample now uses a fresh process, daemon, Client and Agent plus
+   one independent warmup; the prior same-process sequential samples were correlated and are superseded.
+5. App performance now uses seven fresh browser contexts with one stable daemon reconnect identity and CDP
+   forced-GC heap measurement. The frozen baseline medians are Workspace interactive `1817.51ms`, JS heap
+   `50,742,068` bytes and Settings navigation `207.05ms`; an independent candidate run passed the unchanged
+   Mann-Whitney plus median/MAD guard at `1848.9ms`, `48.4MiB` and `215.6ms`.
+6. The real Web export baseline covers desktop/mobile Welcome, desktop Composer/provider/Clarify/Mode, Git diff,
+   File pane, Terminal and Settings plus compact Workspace composer. JSON snapshots freeze keyboard/focus,
+   desktop/mobile responsive state and a11y trees. The update run passed `4/4` in `41.0s`; two independent
+   no-update runs passed `4/4` in `48.3s` and `49.0s` with `maxDiffPixelRatio=0.001` unchanged.
+7. Targeted preflight passes: `npm run format:check`, `npm run check:refactor-architecture`,
+   `npm run check:refactor-storage`, source metrics comparison, App performance comparison and
+   `git diff --check`.
+8. The first complete shared gate proved static contracts, foundation, runtime build and full
+   `accept:thoth:fast` behavior, but the real Expo export hit remote-CFS metadata waits and the runner expired at
+   `300.011s`; it is preserved as a failure, not a pass. The lockfile-keyed local dependency stage subsequently
+   built the same real `4415`-module export in `11.960s` without serving a stale bundle.
+9. The next formal gate passed static contracts, foundation, runtime build, real Web/visual/interaction, App
+   performance and TUI, then failed at `237.050s` on the correlated response baseline (`13.99ms -> 14.71ms`). The
+   corrected seven-independent-process measurement refreshed the clean baseline before production edits and an
+   independent candidate run passed at `15.17ms` median without changing the statistical thresholds.
+10. Final `npm run accept:refactor:fast` passed in `270.302s` under one shared `300s` deadline. Static source,
+    storage and architecture contracts, Foundation, daemon runtime build, complete public Thoth behavior, the real
+    `4415`-module Web export, `4/4` Playwright visual/keyboard/focus/a11y/responsive checks, App performance, TUI
+    frame and seven-independent-sample daemon/response performance all exited successfully. The final App probe
+    measured `1804.8ms` first interactive, `48.4MiB` heap and `212.7ms` Settings navigation; the performance phase
+    passed in `71.570s`, including one retained `30.86ms` response outlier without hiding or retrying it.
+
+Boundary:
+
+No AppImage, Android/iOS/native package, real Provider, hosted Relay journey, GitHub Action, push, tag, Release or
+publication ran. Thoth did not probe, stop, restart or reuse reserved Paseo `127.0.0.1:6767`.
+
+### `NTH-EV-053` Pure Core And Workspace Authority Cutover
+
+Status: not started. Reserved for `NTH-TD-032` implementation, Release `05775486` migration/failure-injection,
+single-transaction authority, restart/cursor behavior, source/performance deltas and the shared gate.
+
+### `NTH-EV-054` Direct Capability Harness Cutover
+
+Status: not started. Reserved for `NTH-TD-033` Provider conformance, foreground/background semantic parity,
+ToolGateway fencing, legacy-chain absence, lazy SDK loading, source/performance deltas and the shared gate.
+
+### `NTH-EV-055` Single RPC Registry Cutover
+
+Status: not started. Reserved for `NTH-TD-034` public Client operation coverage, Daemon handler/schema coverage,
+binary-codec isolation, old message/waiter/dispatch absence, source/performance deltas and the shared gate.
+
+### `NTH-EV-056` App Authority Projection Cutover
+
+Status: not started. Reserved for `NTH-TD-035` snapshot/delta/epoch/cursor behavior, authority-write guards,
+server/preference state separation, visual equality, source/performance deltas and the shared gate.
+
+### `NTH-EV-057` Timeline View And Responsive UI Convergence
+
+Status: not started. Reserved for `NTH-TD-036` complete Timeline/tool-detail rendering, desktop/compact/mobile
+component reuse, lazy boundaries, screenshot/keyboard/focus/a11y equality, source/performance deltas and the gate.
+
+### `NTH-EV-058` VCS Service And Action Registry Cutover
+
+Status: not started. Reserved for `NTH-TD-037` Git/Worktree/GitHub action parity, Workspace path fencing,
+invalidation behavior, duplicate model/polling absence, source/performance deltas and the shared gate.
+
+### `NTH-EV-059` Lazy Composition Root And Service Supervisor Cutover
+
+Status: not started. Reserved for `NTH-TD-038` on-demand Provider/shard/GitHub/MCP/Terminal/Relay lifecycle,
+idle polling absence, desktop/source controller parity, startup/RSS progress, source deltas and the shared gate.
+
+### `NTH-EV-060` Final 50k Architecture Refactor Acceptance
+
+Status: not started. It requires the full public semantic and Release migration contract, at least `50,000`
+production LOC removed, lower tokens/AST/import/dependencies, all four hard performance targets, stable visual and
+interaction transcripts, source daemon/Client hosted Relay journey, one `300s` gate and no remaining dual path.
