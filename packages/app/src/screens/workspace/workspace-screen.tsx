@@ -59,7 +59,7 @@ import {
   FloatingPanelPortalHost,
   FloatingPanelPortalHostNameProvider,
 } from "@/components/ui/floating-panel-portal";
-import { ExplorerSidebar } from "@/components/explorer-sidebar";
+import { LazyExplorerSidebar } from "@/components/lazy-explorer-sidebar";
 import { ResizeHandle } from "@/components/resize-handle";
 import { MountedTabActiveContext, SplitContainer } from "@/components/split-container";
 import { SourceControlPanelIcon } from "@/components/icons/source-control-panel-icon";
@@ -3885,7 +3885,7 @@ function WorkspaceScreenContent({
               ) : null}
 
               {showExplorerSidebar && workspaceDirectory ? (
-                <ExplorerSidebar
+                <LazyExplorerSidebar
                   serverId={normalizedServerId}
                   workspaceId={normalizedWorkspaceId}
                   workspaceRoot={workspaceDirectory}

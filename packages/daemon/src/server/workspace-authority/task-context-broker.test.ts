@@ -74,7 +74,14 @@ function createTask(
     createdAt: "2026-07-21T00:00:00.000Z",
     updatedAt: "2026-07-21T00:00:00.000Z",
   };
-  return manager.forWorkspace(workspaceId).createTask(task, manager.catalog);
+  return manager.forWorkspace(workspaceId).registerTask({
+    task,
+    sourceTurnId: `source-turn-${taskId}`,
+    sourceGoalsCardId: `source-goals-card-${taskId}`,
+    providerProfileId: "provider-profile-test",
+    taskContract: { title: task.title, goal: task.goal },
+    goalsContract: { goals: task.goals },
+  }).task;
 }
 
 afterEach(() => {

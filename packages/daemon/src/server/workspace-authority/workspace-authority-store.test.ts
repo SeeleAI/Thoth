@@ -28,40 +28,45 @@ function createStore() {
   return { root, workspaceId, catalog, store };
 }
 
-function createTask(store: WorkspaceAuthorityStore, catalog: WorkspaceCatalogStore) {
-  return store.createTask(
-    {
-      id: "task_test",
-      workspaceId: "wks_test",
-      sourceAgentId: "agent_visible",
-      mode: "loop",
-      title: "Exercise the final authority",
-      goal: "Prove Task and Execution identities stay separate.",
-      constraints: ["No provider-specific authority"],
-      acceptance: ["Stop fences the active execution"],
-      status: "queued",
-      summary: "Queued",
-      currentGoalId: "goal_1",
-      currentExecutionId: null,
-      goals: [
-        {
-          id: "goal_1",
-          order: 1,
-          title: "Run one phase",
-          goal: "Run one phase through the authority store.",
-          constraints: ["Keep Task Truth semantic"],
-          acceptance: ["Execution has its own lifecycle"],
-          status: "queued",
-          revision: 0,
-        },
-      ],
-      latestReviewDirection: null,
-      revision: 1,
-      createdAt: "2026-07-20T00:00:00.000Z",
-      updatedAt: "2026-07-20T00:00:00.000Z",
-    },
-    catalog,
-  );
+function createTask(store: WorkspaceAuthorityStore) {
+  const task = {
+    id: "task_test",
+    workspaceId: "wks_test",
+    sourceAgentId: "agent_visible",
+    mode: "loop",
+    title: "Exercise the final authority",
+    goal: "Prove Task and Execution identities stay separate.",
+    constraints: ["No provider-specific authority"],
+    acceptance: ["Stop fences the active execution"],
+    status: "queued",
+    summary: "Queued",
+    currentGoalId: "goal_1",
+    currentExecutionId: null,
+    goals: [
+      {
+        id: "goal_1",
+        order: 1,
+        title: "Run one phase",
+        goal: "Run one phase through the authority store.",
+        constraints: ["Keep Task Truth semantic"],
+        acceptance: ["Execution has its own lifecycle"],
+        status: "queued",
+        revision: 0,
+      },
+    ],
+    latestReviewDirection: null,
+    revision: 1,
+    createdAt: "2026-07-20T00:00:00.000Z",
+    updatedAt: "2026-07-20T00:00:00.000Z",
+  };
+  return store.registerTask({
+    task,
+    sourceTurnId: "source-turn-test",
+    sourceGoalsCardId: "source-goals-card-test",
+    providerProfileId: "provider-profile-test",
+    taskContract: { title: task.title, goal: task.goal },
+    goalsContract: { goals: task.goals },
+  }).task;
 }
 
 afterEach(() => {
@@ -117,7 +122,7 @@ describe("WorkspaceAuthorityStore", () => {
 
   it("stores normalized Task and Execution projections without full projection events", () => {
     const { root, catalog, store } = createStore();
-    createTask(store, catalog);
+    createTask(store);
     const execution = store.createExecution({
       execution: {
         id: "execution_1",
@@ -143,10 +148,18 @@ describe("WorkspaceAuthorityStore", () => {
     const db = new DatabaseSync(path.join(root, "workspaces", "wks_test", "authority.sqlite"), {
       readOnly: true,
     });
-    const columns = db.prepare("PRAGMA table_info(authority_events)").all() as Array<{
-      name: string;
-    }>;
-    expect(columns.map((column) => column.name)).not.toContain("projection_json");
+    expect(
+      db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'authority_events'")
+        .get(),
+    ).toBeUndefined();
+    expect(
+      (
+        db
+          .prepare("SELECT authority_revision FROM workspace_meta WHERE workspace_id = ?")
+          .get("wks_test") as { authority_revision: number }
+      ).authority_revision,
+    ).toBe(2);
     db.close();
     store.close();
     catalog.close();
@@ -154,25 +167,48 @@ describe("WorkspaceAuthorityStore", () => {
 
   it("never resumes unavailable legacy context and records an explicit replacement lineage", () => {
     const { catalog, store } = createStore();
-    createTask(store, catalog);
-    store.importLegacyExecution({
-      taskId: "task_test",
-      goalId: "goal_1",
-      executionId: "execution_legacy",
-      phaseRunId: "phase_legacy",
-      phase: "planexec",
-      providerThreadId: "thread_legacy",
-      adapterId: "fixture",
-      providerThreadNativeHandle: "native_legacy",
-      providerThreadPersistence: { migration: { disposition: "replacement_required" } },
-      providerThreadStatus: "native_context_unavailable",
-      status: "orphaned",
-      generation: "generation_legacy",
-      startedAt: "2026-07-20T00:00:01.000Z",
-      completedAt: "2026-07-20T00:00:02.000Z",
-      summary: "Native context is unavailable.",
-      semanticHistory: { phase: "planexec" },
+    createTask(store);
+    const legacy = store.createExecution({
+      execution: {
+        id: "execution_legacy",
+        taskId: "task_test",
+        goalId: "goal_1",
+        phaseRunId: "phase_legacy",
+        phase: "planexec",
+        providerThreadId: "thread_legacy",
+        status: "starting",
+        generation: "generation_legacy",
+        attachment: null,
+        startedAt: "2026-07-20T00:00:01.000Z",
+        lastActivityAt: "2026-07-20T00:00:01.000Z",
+        completedAt: null,
+        summary: null,
+        revision: 1,
+      },
+      providerThread: {
+        id: "thread_legacy",
+        adapterId: "fixture",
+        nativeHandle: "native_legacy",
+        persistence: { migration: { disposition: "replacement_required" } },
+      },
     });
+    expect(
+      store.updateProviderThread({
+        threadId: "thread_legacy",
+        nativeHandle: "native_legacy",
+        persistence: { migration: { disposition: "replacement_required" } },
+        status: "native_context_unavailable",
+      }),
+    ).toBe(true);
+    expect(
+      store.updateExecution({
+        executionId: legacy.id,
+        generation: legacy.generation,
+        expectedRevision: legacy.revision,
+        status: "orphaned",
+        summary: "Native context is unavailable.",
+      }),
+    ).toMatchObject({ status: "orphaned" });
 
     expect(store.findLatestPlanExecThread("task_test", "goal_1")).toBeNull();
     expect(store.findLatestPlanExecLineageThread("task_test", "goal_1")).toMatchObject({
@@ -213,7 +249,7 @@ describe("WorkspaceAuthorityStore", () => {
 
   it("rejects a replayed turn_started event after semantic execution success", () => {
     const { catalog, store } = createStore();
-    createTask(store, catalog);
+    createTask(store);
     store.createExecution({
       execution: {
         id: "execution_terminal",
@@ -254,36 +290,45 @@ describe("WorkspaceAuthorityStore", () => {
 
   it("deduplicates exact human decisions and preserves their original payloads", () => {
     const { catalog, store } = createStore();
-    createTask(store, catalog);
+    createTask(store);
     const input = {
       taskId: "task_test",
-      turnId: null,
-      cardId: "card_1",
-      kind: "goal_card_answer",
-      displayed: { title: "Choose", options: ["A", "B"] },
-      rawAnswer: { choice: "A", note: "exact text" },
-      normalized: { choiceId: "a" },
+      command: "pause" as const,
       actorId: "human",
       clientId: "desktop",
       deviceId: "device_1",
       commandId: "command_1",
       expectedRevision: 1,
-      resultRevision: 2,
-      supersedesDecisionId: null,
-      fidelity: "exact" as const,
     };
-    const first = store.appendDecision(input);
-    const duplicate = store.appendDecision(input);
-    expect(duplicate).toEqual(first);
-    expect(store.listDecisions("task_test")).toEqual([first]);
-    expect(first.rawAnswer).toEqual({ choice: "A", note: "exact text" });
+    const first = store.requestCommand(input);
+    const revisionAfterFirst = store.readSnapshot("wks_test").revision;
+    const duplicate = store.requestCommand(input);
+    expect(duplicate).toMatchObject({ task: first.task, duplicate: true });
+    expect(store.readSnapshot("wks_test").revision).toBe(revisionAfterFirst);
+    expect(() =>
+      store.requestCommand({
+        ...input,
+        commandId: "command-stale",
+        expectedRevision: 1,
+      }),
+    ).toThrow("revision changed");
+    expect(store.readSnapshot("wks_test").revision).toBe(revisionAfterFirst);
+    const decisions = store.listDecisions("task_test");
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]).toMatchObject({
+      displayed: { command: "pause", taskId: "task_test" },
+      rawAnswer: { command: "pause" },
+      normalized: { controlIntent: "pause" },
+      deviceId: "device_1",
+      fidelity: "exact",
+    });
     store.close();
     catalog.close();
   });
 
   it("records provider permission before execution resumes and preserves the displayed payload", () => {
     const { catalog, store } = createStore();
-    createTask(store, catalog);
+    createTask(store);
     store.createExecution({
       execution: {
         id: "execution_permission",
@@ -351,7 +396,7 @@ describe("WorkspaceAuthorityStore", () => {
 
   it("resolves execution approvals with CAS, command idempotency, and an honest resolution actor", () => {
     const { catalog, store } = createStore();
-    createTask(store, catalog);
+    createTask(store);
     store.createExecution({
       execution: {
         id: "execution_approval",
@@ -455,7 +500,7 @@ describe("WorkspaceAuthorityStore", () => {
 
   it("never admits provider questions into the background approval authority", () => {
     const { catalog, store } = createStore();
-    createTask(store, catalog);
+    createTask(store);
     store.createExecution({
       execution: {
         id: "execution_question",
@@ -491,7 +536,7 @@ describe("WorkspaceAuthorityStore", () => {
         deadlineAt: "2026-07-22T00:00:20.000Z",
       }),
     ).toThrow("Provider questions cannot enter");
-    expect(store.getPendingExecutionApproval("execution_question")).toBeNull();
+    expect(store.getExecution("execution_question")?.pendingApproval).toBeNull();
     store.close();
     catalog.close();
   });
@@ -549,7 +594,7 @@ describe("WorkspaceAuthorityStore", () => {
 
   it("commits Stop before interrupt completion and never projects a running spinner state", () => {
     const { catalog, store } = createStore();
-    createTask(store, catalog);
+    createTask(store);
     store.createExecution({
       execution: {
         id: "execution_stop",
@@ -583,8 +628,9 @@ describe("WorkspaceAuthorityStore", () => {
       deadlineAt: "2026-07-22T00:00:20.000Z",
     });
     const current = store.getTask("task_test")!;
-    const requested = store.requestStop({
+    const requested = store.requestCommand({
       taskId: current.id,
+      command: "stop",
       expectedRevision: current.revision,
       commandId: "stop_command",
       actorId: "human",
@@ -613,8 +659,9 @@ describe("WorkspaceAuthorityStore", () => {
     expect(settled.task.status).toBe("stopped");
     expect(settled.execution?.status).toBe("canceled");
     expect(
-      store.requestStop({
+      store.requestCommand({
         taskId: current.id,
+        command: "stop",
         expectedRevision: current.revision,
         commandId: "stop_command",
         actorId: "human",
@@ -627,7 +674,7 @@ describe("WorkspaceAuthorityStore", () => {
 
   it("interrupts an unrecoverable pending approval on daemon restart", () => {
     const { catalog, store } = createStore();
-    createTask(store, catalog);
+    createTask(store);
     store.createExecution({
       execution: {
         id: "execution_restart_approval",
@@ -678,7 +725,7 @@ describe("WorkspaceAuthorityStore", () => {
 
   it("pauses atomically after PlanExec and resumes at the Review boundary", () => {
     const { catalog, store } = createStore();
-    createTask(store, catalog);
+    createTask(store);
     store.createExecution({
       execution: {
         id: "execution_pause",
@@ -760,7 +807,7 @@ describe("WorkspaceAuthorityStore", () => {
 
   it("requires a durable RuntimeBundle attachment receipt for an execution", () => {
     const { catalog, store } = createStore();
-    createTask(store, catalog);
+    createTask(store);
     store.createExecution({
       execution: {
         id: "execution_bundle",
@@ -801,15 +848,13 @@ describe("WorkspaceAuthorityStore", () => {
 
   it("returns complete semantic Task context without runtime mechanics", () => {
     const { catalog, store } = createStore();
-    createTask(store, catalog);
-    const entry = store.appendBlackboard({
-      taskId: "task_test",
-      kind: "review_direction",
-      producer: "review",
-      content: { conclusion: "Reframe around the real invariant." },
-    });
+    createTask(store);
     const context = store.getTaskContext("task_test");
-    expect(context?.blackboard).toEqual([entry]);
+    expect(context?.blackboard.map((item) => item.kind)).toEqual([
+      "task_contract",
+      "goal_contract",
+    ]);
+    const entry = context!.blackboard[0]!;
     const serialized = JSON.stringify(context);
     expect(serialized).not.toContain("generation");
     expect(serialized).not.toContain("providerThreadId");

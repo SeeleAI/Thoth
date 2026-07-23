@@ -81,10 +81,10 @@ const result = {
   },
 };
 
-if (args.baseline)
-  comparePerformance(result, readJson(resolve(repoRoot, args.baseline)), args.final);
 if (args.write)
   writeFileSync(resolve(repoRoot, args.write), `${JSON.stringify(result, null, 2)}\n`, "utf8");
+if (args.baseline)
+  comparePerformance(result, readJson(resolve(repoRoot, args.baseline)), args.final);
 
 console.log(JSON.stringify(result.summary, null, 2));
 

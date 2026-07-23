@@ -1,7 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync, StatementSync } from "node:sqlite";
 import {
   ExecutionApprovalProjectionSchema,
   ExecutionProjectionSchema,
@@ -24,6 +23,19 @@ import {
   type TaskUserDecisionProjection,
 } from "@thoth/protocol/task-authority";
 import type { HarnessApprovalRequest, RuntimeAttachmentReceipt } from "@thoth/drivers/harness";
+import {
+  AuthorityTransitionError,
+  transitionAuthority,
+  type AuthorityBlackboardAppend,
+  type AuthorityCommand,
+  type AuthorityMutation,
+  type AuthorityState,
+  type DeterministicAuthorityInput,
+  type WorkspaceAuthorityRepository,
+  type WorkspaceAuthoritySnapshot,
+  type WorkspaceTimelineCursor,
+  type WorkspaceTimelinePage,
+} from "@thoth/core/authority";
 import {
   ProviderRunModeReceiptSchema,
   ProviderRunModeSchema,
@@ -81,8 +93,8 @@ import type {
   StartForegroundTurnInput,
   StartForegroundTurnResult,
 } from "./foreground-authority-types.js";
-import { deriveDurableGoalId } from "./task-identity.js";
 import { WorkspaceCoordinationRepository } from "./coordination-repository.js";
+import { openWorkspaceDatabase } from "../storage-schema.js";
 
 export interface WorkspaceAuthorityUpdate {
   workspaceId: string;
@@ -115,6 +127,16 @@ interface TaskRow extends Record<string, unknown> {
   revision: number;
   created_at: string;
   updated_at: string;
+}
+
+interface WorkspaceSql {
+  begin: StatementSync;
+  commit: StatementSync;
+  rollback: StatementSync;
+  totalChanges: StatementSync;
+  bumpRevision: StatementSync;
+  ensureTimelineMeta: StatementSync;
+  insertTimelineRow: StatementSync;
 }
 
 interface ExecutionRow extends Record<string, unknown> {
@@ -209,43 +231,6 @@ export interface ProviderThreadRecord {
   status: string;
 }
 
-export interface LegacyForegroundImport {
-  agentId: string;
-  revision: number;
-  activeTurnId: string | null;
-  lifecycle: AgentThothLifecycle;
-  backgroundTaskId: string | null;
-  error: string | null;
-  updatedAt: string;
-  turns: Array<{
-    id: string;
-    generation: string;
-    kind: "raw" | "thoth";
-    lifecycle: AgentThothLifecycle;
-    controls: unknown | null;
-    sourceMessageId: string | null;
-    workspacePath: string;
-    userText: string;
-    providerTurnId: string | null;
-    backgroundTaskId: string | null;
-    error: string | null;
-    startedAt: string;
-    updatedAt: string;
-    cards: Array<{
-      id: string;
-      kind: ForegroundAuthorityCardKind;
-      status: "pending" | "answered" | "canceled" | "blocked";
-      card: unknown;
-      answer: unknown | null;
-      submittedSummary: string | null;
-      runtime: ForegroundAuthorityRuntimeBinding;
-      commandId: string | null;
-      createdAt: string;
-      updatedAt: string;
-    }>;
-  }>;
-}
-
 type WorkspaceAuthoritySubscriber = (update: WorkspaceAuthorityUpdate) => void;
 type ForegroundAuthoritySubscriber = (
   state: AgentThothState,
@@ -254,10 +239,6 @@ type ForegroundAuthoritySubscriber = (
 
 function nowIso(): string {
   return new Date().toISOString();
-}
-
-function digestJson(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 function parseStringArray(value: string): string[] {
@@ -273,22 +254,6 @@ function assertWorkspaceId(workspaceId: string): void {
   }
 }
 
-function nextTaskStrength(strength: TaskProjection["budget"]["strength"]): {
-  strength: TaskProjection["budget"]["strength"];
-  maxFailedReviews: number;
-} | null {
-  switch (strength) {
-    case "single":
-      return { strength: "light", maxFailedReviews: 5 };
-    case "light":
-      return { strength: "balanced", maxFailedReviews: 10 };
-    case "balanced":
-      return { strength: "infinite", maxFailedReviews: 30 };
-    case "infinite":
-      return null;
-  }
-}
-
 export class WorkspaceAuthorityConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -296,11 +261,8 @@ export class WorkspaceAuthorityConflictError extends Error {
   }
 }
 
-/**
- * The single durable writer for one Workspace. Current projections and small
- * append-only event deltas commit in the same SQLite transaction.
- */
-export class WorkspaceAuthorityStore {
+/** The normalized SQLite Repository and Unit of Work for one Workspace authority shard. */
+export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
   readonly workspaceId: string;
   readonly workspaceRoot: string;
   readonly blobs: ContentAddressedBlobStore;
@@ -308,6 +270,7 @@ export class WorkspaceAuthorityStore {
 
   private readonly database: DatabaseSync;
   private readonly catalog: WorkspaceCatalogStore;
+  private readonly sql: WorkspaceSql;
   private readonly subscribers = new Set<WorkspaceAuthoritySubscriber>();
   private readonly foregroundSubscribers = new Set<ForegroundAuthoritySubscriber>();
 
@@ -316,448 +279,31 @@ export class WorkspaceAuthorityStore {
     this.workspaceId = input.workspaceId;
     this.catalog = input.catalog;
     this.workspaceRoot = path.join(input.thothHome, "workspaces", input.workspaceId);
-    mkdirSync(this.workspaceRoot, { recursive: true });
     this.blobs = new ContentAddressedBlobStore(this.workspaceRoot);
-    this.database = new DatabaseSync(path.join(this.workspaceRoot, "authority.sqlite"), {
-      enableForeignKeyConstraints: true,
-    });
-    this.database.exec(
-      "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;",
+    this.database = openWorkspaceDatabase(input.thothHome, input.workspaceId);
+    this.sql = {
+      begin: this.database.prepare("BEGIN IMMEDIATE"),
+      commit: this.database.prepare("COMMIT"),
+      rollback: this.database.prepare("ROLLBACK"),
+      totalChanges: this.database.prepare("SELECT total_changes() AS count"),
+      bumpRevision: this.database.prepare(
+        `UPDATE workspace_meta
+         SET authority_revision = authority_revision + 1, updated_at = ?
+         WHERE workspace_id = ?`,
+      ),
+      ensureTimelineMeta: this.database.prepare(
+        `INSERT OR IGNORE INTO agent_timeline_meta(agent_id, epoch, next_seq, updated_at)
+         VALUES (?, ?, 1, ?)`,
+      ),
+      insertTimelineRow: this.database.prepare(
+        `INSERT OR IGNORE INTO agent_timeline_rows(
+         agent_id, seq, timestamp, item_json, item_digest
+         ) VALUES (?, ?, ?, ?, ?)`,
+      ),
+    };
+    this.coordination = new WorkspaceCoordinationRepository(this.database, (run) =>
+      this.transaction(run),
     );
-    this.coordination = new WorkspaceCoordinationRepository(this.database);
-    this.database.exec(`
-      CREATE TABLE IF NOT EXISTS authority_schema_migrations (
-        version INTEGER PRIMARY KEY NOT NULL,
-        checksum TEXT NOT NULL,
-        applied_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS workspace_meta (
-        workspace_id TEXT PRIMARY KEY NOT NULL,
-        authority_revision INTEGER NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS agents (
-        agent_id TEXT PRIMARY KEY NOT NULL,
-        provider_thread_id TEXT,
-        title TEXT,
-        visible INTEGER NOT NULL CHECK(visible IN (0, 1)),
-        authority_revision INTEGER NOT NULL DEFAULT 0,
-        provider_run_mode TEXT NOT NULL DEFAULT 'default',
-        provider_control_revision INTEGER NOT NULL DEFAULT 0,
-        active_turn_id TEXT,
-        thoth_lifecycle TEXT NOT NULL DEFAULT 'idle',
-        background_task_id TEXT,
-        error TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS provider_threads (
-        thread_id TEXT PRIMARY KEY NOT NULL,
-        adapter_id TEXT NOT NULL,
-        native_handle TEXT,
-        persistence_json TEXT,
-        lineage_parent_id TEXT,
-        status TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS turns (
-        turn_id TEXT PRIMARY KEY NOT NULL,
-        agent_id TEXT NOT NULL,
-        task_id TEXT,
-        provider_thread_id TEXT,
-        generation TEXT NOT NULL,
-        status TEXT NOT NULL,
-        turn_kind TEXT NOT NULL DEFAULT 'raw',
-        controls_json TEXT,
-        provider_run_mode TEXT NOT NULL DEFAULT 'default',
-        provider_mode_receipt_json TEXT,
-        source_message_id TEXT,
-        workspace_path TEXT,
-        user_text_digest TEXT,
-        provider_turn_id TEXT,
-        background_task_id TEXT,
-        error TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(agent_id) REFERENCES agents(agent_id),
-        FOREIGN KEY(provider_thread_id) REFERENCES provider_threads(thread_id)
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS foreground_turn_queue (
-        queued_turn_id TEXT PRIMARY KEY NOT NULL,
-        agent_id TEXT NOT NULL,
-        source_message_id TEXT NOT NULL,
-        delivery_mode TEXT NOT NULL CHECK(delivery_mode IN ('queue', 'interrupt')),
-        text_digest TEXT NOT NULL,
-        payload_digest TEXT NOT NULL,
-        attachment_count INTEGER NOT NULL DEFAULT 0,
-        queue_order INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE(agent_id, source_message_id),
-        FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS provider_message_anchors (
-        agent_id TEXT NOT NULL,
-        canonical_message_id TEXT NOT NULL,
-        provider_thread_id TEXT,
-        native_anchor_receipt_json TEXT NOT NULL,
-        scopes_json TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY(agent_id, canonical_message_id),
-        FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE,
-        FOREIGN KEY(provider_thread_id) REFERENCES provider_threads(thread_id)
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS cards (
-        card_id TEXT PRIMARY KEY NOT NULL,
-        turn_id TEXT NOT NULL,
-        task_id TEXT,
-        kind TEXT NOT NULL,
-        status TEXT NOT NULL,
-        displayed_digest TEXT NOT NULL,
-        answer_digest TEXT,
-        submitted_summary TEXT,
-        runtime_digest TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(turn_id) REFERENCES turns(turn_id)
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS human_decisions (
-        decision_id TEXT PRIMARY KEY NOT NULL,
-        task_id TEXT,
-        turn_id TEXT,
-        card_id TEXT,
-        kind TEXT NOT NULL,
-        displayed_digest TEXT NOT NULL,
-        raw_answer_digest TEXT NOT NULL,
-        normalized_digest TEXT NOT NULL,
-        actor_id TEXT NOT NULL,
-        client_id TEXT NOT NULL,
-        device_id TEXT,
-        command_id TEXT NOT NULL UNIQUE,
-        expected_revision INTEGER NOT NULL,
-        result_revision INTEGER NOT NULL,
-        supersedes_decision_id TEXT,
-        fidelity TEXT NOT NULL,
-        decided_at TEXT NOT NULL
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS human_decisions_task_time
-        ON human_decisions(task_id, decided_at ASC);
-      CREATE TABLE IF NOT EXISTS tasks (
-        task_id TEXT PRIMARY KEY NOT NULL,
-        workspace_id TEXT NOT NULL,
-        source_agent_id TEXT NOT NULL,
-        execution_mode TEXT NOT NULL,
-        title TEXT NOT NULL,
-        goal TEXT NOT NULL,
-        constraints_json TEXT NOT NULL,
-        acceptance_json TEXT NOT NULL,
-        status TEXT NOT NULL,
-        summary TEXT NOT NULL,
-        current_goal_id TEXT,
-        current_execution_id TEXT,
-        latest_review_direction TEXT,
-        source_turn_id TEXT,
-        source_goals_card_id TEXT,
-        provider_profile_id TEXT,
-        budget_strength TEXT NOT NULL DEFAULT 'single',
-        used_failed_reviews INTEGER NOT NULL DEFAULT 0,
-        max_failed_reviews INTEGER NOT NULL DEFAULT 1,
-        active_duration_ms INTEGER NOT NULL DEFAULT 0,
-        token_count INTEGER NOT NULL DEFAULT 0,
-        tool_call_count INTEGER NOT NULL DEFAULT 0,
-        pending_control TEXT,
-        goals_revision INTEGER NOT NULL DEFAULT 0,
-        revision INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS tasks_status_updated ON tasks(status, updated_at DESC);
-      CREATE TABLE IF NOT EXISTS task_goals (
-        goal_id TEXT PRIMARY KEY NOT NULL,
-        task_id TEXT NOT NULL,
-        goal_order INTEGER NOT NULL,
-        title TEXT NOT NULL,
-        goal TEXT NOT NULL,
-        constraints_json TEXT NOT NULL,
-        acceptance_json TEXT NOT NULL,
-        status TEXT NOT NULL,
-        revision INTEGER NOT NULL,
-        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
-        UNIQUE(task_id, goal_order)
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS phase_runs (
-        phase_run_id TEXT PRIMARY KEY NOT NULL,
-        task_id TEXT NOT NULL,
-        goal_id TEXT,
-        phase_kind TEXT NOT NULL,
-        status TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS execution_attempts (
-        execution_id TEXT PRIMARY KEY NOT NULL,
-        task_id TEXT NOT NULL,
-        goal_id TEXT,
-        phase_run_id TEXT NOT NULL,
-        phase_kind TEXT NOT NULL,
-        provider_thread_id TEXT,
-        status TEXT NOT NULL,
-        generation TEXT NOT NULL,
-        run_mode_receipt_json TEXT,
-        started_at TEXT,
-        last_activity_at TEXT,
-        completed_at TEXT,
-        summary TEXT,
-        revision INTEGER NOT NULL,
-        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
-        FOREIGN KEY(phase_run_id) REFERENCES phase_runs(phase_run_id),
-        FOREIGN KEY(provider_thread_id) REFERENCES provider_threads(thread_id)
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS execution_attempts_task_time
-        ON execution_attempts(task_id, started_at DESC);
-      CREATE TABLE IF NOT EXISTS execution_approvals (
-        approval_id TEXT PRIMARY KEY NOT NULL,
-        provider_request_id TEXT NOT NULL,
-        task_id TEXT NOT NULL,
-        execution_id TEXT NOT NULL,
-        generation TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT,
-        displayed_digest TEXT NOT NULL,
-        auto_approve_eligible INTEGER NOT NULL CHECK(auto_approve_eligible IN (0, 1)),
-        deadline_at TEXT,
-        status TEXT NOT NULL CHECK(status IN ('pending', 'allowed', 'denied', 'canceled')),
-        resolution_decision TEXT,
-        resolution_actor_id TEXT,
-        resolved_at TEXT,
-        revision INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
-        FOREIGN KEY(execution_id) REFERENCES execution_attempts(execution_id) ON DELETE CASCADE,
-        UNIQUE(execution_id, provider_request_id)
-      ) STRICT;
-      CREATE UNIQUE INDEX IF NOT EXISTS execution_approvals_one_pending
-        ON execution_approvals(execution_id) WHERE status = 'pending';
-      CREATE TABLE IF NOT EXISTS runtime_attachments (
-        attachment_id TEXT PRIMARY KEY NOT NULL,
-        execution_id TEXT NOT NULL UNIQUE,
-        adapter_id TEXT NOT NULL,
-        provider_thread_id TEXT NOT NULL,
-        bundle_id TEXT NOT NULL,
-        bundle_digest TEXT NOT NULL,
-        instruction_attachment TEXT NOT NULL,
-        tool_attachment TEXT NOT NULL,
-        status TEXT NOT NULL,
-        attached_at TEXT NOT NULL,
-        FOREIGN KEY(execution_id) REFERENCES execution_attempts(execution_id) ON DELETE CASCADE
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS task_blackboard (
-        entry_id TEXT PRIMARY KEY NOT NULL,
-        task_id TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        producer TEXT NOT NULL,
-        content_digest TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS task_blackboard_task_time
-        ON task_blackboard(task_id, created_at ASC);
-      CREATE TABLE IF NOT EXISTS task_decision_requests (
-        decision_id TEXT PRIMARY KEY NOT NULL,
-        task_id TEXT NOT NULL,
-        request_digest TEXT NOT NULL,
-        status TEXT NOT NULL CHECK(status IN ('pending', 'answered')),
-        answer_decision_id TEXT,
-        created_at TEXT NOT NULL,
-        answered_at TEXT,
-        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
-        FOREIGN KEY(answer_decision_id) REFERENCES human_decisions(decision_id)
-      ) STRICT;
-      CREATE UNIQUE INDEX IF NOT EXISTS task_decision_requests_one_pending
-        ON task_decision_requests(task_id) WHERE status = 'pending';
-      CREATE TABLE IF NOT EXISTS context_bindings (
-        binding_id TEXT PRIMARY KEY NOT NULL,
-        agent_id TEXT NOT NULL,
-        turn_id TEXT NOT NULL,
-        task_id TEXT NOT NULL,
-        task_revision INTEGER NOT NULL,
-        context_digest TEXT,
-        created_at TEXT NOT NULL
-      ) STRICT;
-      CREATE UNIQUE INDEX IF NOT EXISTS context_bindings_turn_task
-        ON context_bindings(turn_id, task_id);
-      CREATE TABLE IF NOT EXISTS timeline_entries (
-        execution_id TEXT NOT NULL,
-        seq INTEGER NOT NULL,
-        occurred_at TEXT NOT NULL,
-        item_json TEXT,
-        item_digest TEXT,
-        PRIMARY KEY(execution_id, seq),
-        FOREIGN KEY(execution_id) REFERENCES execution_attempts(execution_id) ON DELETE CASCADE
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS agent_timeline_meta (
-        agent_id TEXT PRIMARY KEY NOT NULL,
-        epoch TEXT NOT NULL,
-        next_seq INTEGER NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS agent_timeline_rows (
-        agent_id TEXT NOT NULL,
-        seq INTEGER NOT NULL,
-        timestamp TEXT NOT NULL,
-        item_json TEXT,
-        item_digest TEXT,
-        PRIMARY KEY(agent_id, seq),
-        FOREIGN KEY(agent_id) REFERENCES agent_timeline_meta(agent_id) ON DELETE CASCADE,
-        CHECK((item_json IS NOT NULL) != (item_digest IS NOT NULL))
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS evidence_refs (
-        evidence_id TEXT PRIMARY KEY NOT NULL,
-        task_id TEXT NOT NULL,
-        execution_id TEXT,
-        kind TEXT NOT NULL,
-        content_digest TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS authority_commands (
-        command_id TEXT PRIMARY KEY NOT NULL,
-        aggregate_type TEXT NOT NULL,
-        aggregate_id TEXT NOT NULL,
-        command_kind TEXT NOT NULL,
-        result_revision INTEGER NOT NULL,
-        result_json TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS foreground_continuations (
-        turn_id TEXT NOT NULL,
-        continuation_key TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY(turn_id, continuation_key),
-        FOREIGN KEY(turn_id) REFERENCES turns(turn_id) ON DELETE CASCADE
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS workspace_leases (
-        lease_key TEXT PRIMARY KEY NOT NULL,
-        task_id TEXT NOT NULL,
-        execution_id TEXT,
-        status TEXT NOT NULL,
-        generation TEXT NOT NULL,
-        expires_at TEXT,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS authority_events (
-        seq INTEGER PRIMARY KEY AUTOINCREMENT,
-        event_id TEXT NOT NULL UNIQUE,
-        aggregate_type TEXT NOT NULL,
-        aggregate_id TEXT NOT NULL,
-        revision INTEGER NOT NULL,
-        kind TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        payload_digest TEXT NOT NULL,
-        causation_id TEXT NOT NULL,
-        correlation_id TEXT NOT NULL,
-        occurred_at TEXT NOT NULL
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS authority_events_aggregate_revision
-        ON authority_events(aggregate_type, aggregate_id, revision);
-      CREATE INDEX IF NOT EXISTS turns_agent_created ON turns(agent_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS foreground_turn_queue_agent_order
-        ON foreground_turn_queue(agent_id, queue_order ASC, created_at ASC);
-      CREATE INDEX IF NOT EXISTS cards_turn_created ON cards(turn_id, created_at ASC);
-    `);
-    this.ensureColumn("agents", "authority_revision", "INTEGER NOT NULL DEFAULT 0");
-    this.ensureColumn("agents", "provider_run_mode", "TEXT NOT NULL DEFAULT 'default'");
-    this.ensureColumn("agents", "provider_control_revision", "INTEGER NOT NULL DEFAULT 0");
-    this.ensureColumn("agents", "active_turn_id", "TEXT");
-    this.ensureColumn("agents", "thoth_lifecycle", "TEXT NOT NULL DEFAULT 'idle'");
-    this.ensureColumn("agents", "background_task_id", "TEXT");
-    this.ensureColumn("agents", "error", "TEXT");
-    this.ensureColumn("agents", "provider", "TEXT");
-    this.ensureColumn("agents", "cwd", "TEXT");
-    this.ensureColumn("agents", "last_activity_at", "TEXT");
-    this.ensureColumn("agents", "last_user_message_at", "TEXT");
-    this.ensureColumn("agents", "labels_json", "TEXT");
-    this.ensureColumn("agents", "last_status", "TEXT");
-    this.ensureColumn("agents", "last_mode_id", "TEXT");
-    this.ensureColumn("agents", "config_json", "TEXT");
-    this.ensureColumn("agents", "runtime_info_json", "TEXT");
-    this.ensureColumn("agents", "features_json", "TEXT");
-    this.ensureColumn("agents", "persistence_json", "TEXT");
-    this.ensureColumn("agents", "last_error", "TEXT");
-    this.ensureColumn("agents", "requires_attention", "INTEGER");
-    this.ensureColumn("agents", "attention_reason", "TEXT");
-    this.ensureColumn("agents", "attention_timestamp", "TEXT");
-    this.ensureColumn("agents", "internal", "INTEGER");
-    this.ensureColumn("agents", "archived_at", "TEXT");
-    this.ensureColumn("turns", "turn_kind", "TEXT NOT NULL DEFAULT 'raw'");
-    this.ensureColumn("turns", "provider_run_mode", "TEXT NOT NULL DEFAULT 'default'");
-    this.ensureColumn("turns", "provider_mode_receipt_json", "TEXT");
-    this.ensureColumn("turns", "source_message_id", "TEXT");
-    this.ensureColumn("turns", "workspace_path", "TEXT");
-    this.ensureColumn("turns", "provider_turn_id", "TEXT");
-    this.ensureColumn("turns", "background_task_id", "TEXT");
-    this.ensureColumn("turns", "error", "TEXT");
-    this.ensureColumn("provider_message_anchors", "provider_thread_id", "TEXT");
-    this.ensureColumn("provider_message_anchors", "native_anchor_receipt_json", "TEXT");
-    this.ensureColumn("provider_message_anchors", "scopes_json", "TEXT");
-    this.ensureColumn("cards", "answer_digest", "TEXT");
-    this.ensureColumn("cards", "submitted_summary", "TEXT");
-    this.ensureColumn("cards", "runtime_digest", "TEXT");
-    this.ensureColumn("tasks", "source_turn_id", "TEXT");
-    this.ensureColumn("tasks", "source_goals_card_id", "TEXT");
-    this.ensureColumn("tasks", "provider_profile_id", "TEXT");
-    this.ensureColumn("tasks", "budget_strength", "TEXT NOT NULL DEFAULT 'single'");
-    this.ensureColumn("tasks", "used_failed_reviews", "INTEGER NOT NULL DEFAULT 0");
-    this.ensureColumn("tasks", "max_failed_reviews", "INTEGER NOT NULL DEFAULT 1");
-    this.ensureColumn("tasks", "active_duration_ms", "INTEGER NOT NULL DEFAULT 0");
-    this.ensureColumn("tasks", "token_count", "INTEGER NOT NULL DEFAULT 0");
-    this.ensureColumn("tasks", "tool_call_count", "INTEGER NOT NULL DEFAULT 0");
-    this.ensureColumn("tasks", "pending_control", "TEXT");
-    this.ensureColumn("tasks", "goals_revision", "INTEGER NOT NULL DEFAULT 0");
-    this.ensureColumn("execution_attempts", "run_mode_receipt_json", "TEXT");
-    this.ensureColumn("context_bindings", "context_digest", "TEXT");
-    this.database.exec(`
-      CREATE UNIQUE INDEX IF NOT EXISTS turns_agent_source_message
-        ON turns(agent_id, source_message_id) WHERE source_message_id IS NOT NULL;
-      CREATE UNIQUE INDEX IF NOT EXISTS tasks_source_registration
-        ON tasks(source_turn_id, source_goals_card_id)
-        WHERE source_turn_id IS NOT NULL AND source_goals_card_id IS NOT NULL;
-    `);
-    this.database
-      .prepare(
-        `INSERT OR IGNORE INTO authority_schema_migrations(version, checksum, applied_at)
-         VALUES (1, 'workspace-task-authority-v1', ?)`,
-      )
-      .run(nowIso());
-    this.database
-      .prepare(
-        `INSERT OR IGNORE INTO authority_schema_migrations(version, checksum, applied_at)
-         VALUES (4, 'foreground-queue-rewind-anchors-v4', ?)`,
-      )
-      .run(nowIso());
-    this.database
-      .prepare(
-        `INSERT OR IGNORE INTO authority_schema_migrations(version, checksum, applied_at)
-         VALUES (3, 'provider-control-approvals-v3', ?)`,
-      )
-      .run(nowIso());
-    this.database
-      .prepare(
-        `INSERT OR IGNORE INTO authority_schema_migrations(version, checksum, applied_at)
-         VALUES (2, 'task-decision-request-v2', ?)`,
-      )
-      .run(nowIso());
-    this.database
-      .prepare(
-        `INSERT OR IGNORE INTO workspace_meta(workspace_id, authority_revision, updated_at)
-         VALUES (?, 0, ?)`,
-      )
-      .run(this.workspaceId, nowIso());
   }
 
   subscribe(subscriber: WorkspaceAuthoritySubscriber): () => void {
@@ -768,6 +314,74 @@ export class WorkspaceAuthorityStore {
   subscribeForeground(subscriber: ForegroundAuthoritySubscriber): () => void {
     this.foregroundSubscribers.add(subscriber);
     return () => this.foregroundSubscribers.delete(subscriber);
+  }
+
+  readSnapshot(workspaceId: string): WorkspaceAuthoritySnapshot {
+    this.assertWorkspace(workspaceId);
+    const tasks = this.listTasks();
+    const executions = tasks.flatMap((task) => this.listExecutions(task.id));
+    const approvals = this.database
+      .prepare("SELECT * FROM execution_approvals ORDER BY created_at, approval_id")
+      .all() as ExecutionApprovalRow[];
+    const revision = (
+      this.database
+        .prepare("SELECT authority_revision FROM workspace_meta WHERE workspace_id = ?")
+        .get(this.workspaceId) as { authority_revision: number }
+    ).authority_revision;
+    return {
+      workspaceId: this.workspaceId,
+      revision,
+      tasks: Object.fromEntries(tasks.map((task) => [task.id, task])),
+      executions: Object.fromEntries(executions.map((execution) => [execution.id, execution])),
+      approvals: Object.fromEntries(
+        approvals.map((approval) => [
+          approval.approval_id,
+          this.toExecutionApprovalProjection(approval),
+        ]),
+      ),
+    };
+  }
+
+  readTimelinePage(workspaceId: string, cursor: WorkspaceTimelineCursor): WorkspaceTimelinePage {
+    this.assertWorkspace(workspaceId);
+    const entries = this.readTimeline(cursor);
+    return {
+      entries,
+      nextCursor:
+        entries.length === cursor.limit && entries[0]
+          ? { ...cursor, beforeSeq: entries[0].seq }
+          : null,
+    };
+  }
+
+  transact(
+    workspaceId: string,
+    expectedRevision: number,
+    operation: (snapshot: WorkspaceAuthoritySnapshot) => AuthorityMutation,
+  ): AuthorityMutation {
+    this.assertWorkspace(workspaceId);
+    let mutation!: AuthorityMutation;
+    this.transaction(() => {
+      const snapshot = this.readSnapshot(workspaceId);
+      if (snapshot.revision !== expectedRevision) {
+        throw new WorkspaceAuthorityConflictError(
+          `Workspace ${workspaceId} revision changed from ${expectedRevision} to ${snapshot.revision}`,
+        );
+      }
+      mutation = operation(snapshot);
+      if (mutation.projectionDelta.workspaceRevision !== expectedRevision + 1) {
+        throw new WorkspaceAuthorityConflictError(
+          "Authority mutation revision does not follow CAS",
+        );
+      }
+      this.applyAuthorityMutationInTransaction(mutation);
+    });
+    this.syncTaskLocator(mutation.task);
+    this.emit(
+      [...mutation.projectionDelta.changedTaskIds],
+      [...mutation.projectionDelta.changedExecutionIds],
+    );
+    return mutation;
   }
 
   startForegroundTurn(input: StartForegroundTurnInput): StartForegroundTurnResult {
@@ -785,96 +399,94 @@ export class WorkspaceAuthorityStore {
     }
 
     let result!: StartForegroundTurnResult;
-    this.transaction(() => {
-      if (input.sourceMessageId) {
-        const existing = this.database
-          .prepare("SELECT * FROM turns WHERE agent_id = ? AND source_message_id = ?")
-          .get(input.agentId, input.sourceMessageId) as Record<string, unknown> | undefined;
-        if (existing) {
-          result = {
-            turn: this.toForegroundTurn(existing),
-            state: this.getForegroundStateInTransaction(input.agentId),
-            created: false,
-          };
-          return;
+    this.transaction(
+      () => {
+        if (input.sourceMessageId) {
+          const existing = this.database
+            .prepare("SELECT * FROM turns WHERE agent_id = ? AND source_message_id = ?")
+            .get(input.agentId, input.sourceMessageId) as Record<string, unknown> | undefined;
+          if (existing) {
+            result = {
+              turn: this.toForegroundTurn(existing),
+              state: this.getForegroundStateInTransaction(input.agentId),
+              created: false,
+            };
+            return;
+          }
         }
-      }
 
-      const authority = this.getForegroundAgentRow(input.agentId);
-      if (
-        authority &&
-        ["running", "awaiting_card", "awaiting_implementation", "quick_exec"].includes(
-          authority.thoth_lifecycle,
-        )
-      ) {
-        throw new WorkspaceAuthorityConflictError(
-          `Agent ${input.agentId} already has an active foreground turn.`,
-        );
-      }
+        const authority = this.getForegroundAgentRow(input.agentId);
+        if (
+          authority &&
+          ["running", "awaiting_card", "awaiting_implementation", "quick_exec"].includes(
+            authority.thoth_lifecycle,
+          )
+        ) {
+          throw new WorkspaceAuthorityConflictError(
+            `Agent ${input.agentId} already has an active foreground turn.`,
+          );
+        }
 
-      const now = nowIso();
-      const turnId = `foreground-turn-${randomUUID()}`;
-      const generation = randomUUID();
-      const userText = this.blobs.putJson(input.userText);
-      this.database
-        .prepare(
-          `INSERT INTO agents(
+        const now = nowIso();
+        const turnId = `foreground-turn-${randomUUID()}`;
+        const generation = randomUUID();
+        const userText = this.blobs.putJson(input.userText);
+        this.database
+          .prepare(
+            `INSERT INTO agents(
              agent_id, provider_thread_id, title, visible, authority_revision,
              active_turn_id, thoth_lifecycle, background_task_id, error, created_at, updated_at
            ) VALUES (?, NULL, NULL, 1, 0, NULL, 'idle', NULL, NULL, ?, ?)
            ON CONFLICT(agent_id) DO UPDATE SET visible = 1, updated_at = excluded.updated_at`,
-        )
-        .run(input.agentId, now, now);
-      this.database
-        .prepare(
-          `INSERT INTO turns(
+          )
+          .run(input.agentId, now, now);
+        this.database
+          .prepare(
+            `INSERT INTO turns(
              turn_id, agent_id, task_id, provider_thread_id, generation, status, turn_kind,
              controls_json, provider_run_mode, provider_mode_receipt_json,
              source_message_id, workspace_path, user_text_digest,
              provider_turn_id, background_task_id, error, created_at, updated_at
            ) VALUES (?, ?, NULL, NULL, ?, 'running', ?, ?, ?, NULL, ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
-        )
-        .run(
-          turnId,
-          input.agentId,
-          generation,
-          input.kind,
-          controls ? JSON.stringify(controls) : null,
-          input.providerRunMode ?? "default",
-          input.sourceMessageId ?? null,
-          input.workspacePath,
-          userText.digest,
-          now,
-          now,
-        );
-      const nextRevision = (authority?.authority_revision ?? 0) + 1;
-      this.database
-        .prepare(
-          `UPDATE agents SET authority_revision = ?, active_turn_id = ?,
+          )
+          .run(
+            turnId,
+            input.agentId,
+            generation,
+            input.kind,
+            controls ? JSON.stringify(controls) : null,
+            input.providerRunMode ?? "default",
+            input.sourceMessageId ?? null,
+            input.workspacePath,
+            userText.digest,
+            now,
+            now,
+          );
+        const nextRevision = (authority?.authority_revision ?? 0) + 1;
+        this.database
+          .prepare(
+            `UPDATE agents SET authority_revision = ?, active_turn_id = ?,
              thoth_lifecycle = 'running', background_task_id = NULL, error = NULL, updated_at = ?
            WHERE agent_id = ?`,
-        )
-        .run(nextRevision, turnId, now, input.agentId);
-      this.appendEventInTransaction({
-        aggregateType: "turn",
-        aggregateId: turnId,
-        revision: 1,
-        kind: "foreground_turn_started",
-        payload: { agentId: input.agentId, turnKind: input.kind },
-      });
-      result = {
-        turn: this.getForegroundTurnInTransaction(turnId)!,
-        state: this.getForegroundStateInTransaction(input.agentId),
-        created: true,
-      };
-    });
+          )
+          .run(nextRevision, turnId, now, input.agentId);
+        result = {
+          turn: this.getForegroundTurnInTransaction(turnId)!,
+          state: this.getForegroundStateInTransaction(input.agentId),
+          created: true,
+        };
+      },
+      () => result.created,
+    );
 
     if (result.created) {
-      this.catalog.updateAgentLocator({
-        agentId: input.agentId,
-        workspaceId: this.workspaceId,
-        updatedAt: result.turn.updatedAt,
-      });
+      if (this.catalog.locateAgent(input.agentId) !== this.workspaceId) {
+        this.catalog.updateAgentLocator({
+          agentId: input.agentId,
+          workspaceId: this.workspaceId,
+          updatedAt: result.turn.updatedAt,
+        });
+      }
       this.catalog.updateTurnLocator({
         turnId: result.turn.id,
         workspaceId: this.workspaceId,
@@ -957,13 +569,6 @@ export class WorkspaceAuthorityStore {
       this.database
         .prepare("UPDATE agents SET authority_revision = ?, updated_at = ? WHERE agent_id = ?")
         .run(revision, now, input.agentId);
-      this.appendEventInTransaction({
-        aggregateType: "agent",
-        aggregateId: input.agentId,
-        revision,
-        kind: "foreground_turn_queued",
-        payload: { queuedTurnId, deliveryMode: input.deliveryMode },
-      });
       output = {
         queuedTurn: this.toQueuedTurn(
           this.database
@@ -997,36 +602,46 @@ export class WorkspaceAuthorityStore {
   }
 
   removeForegroundQueuedTurn(agentId: string, queuedTurnId: string): boolean {
-    const result = this.database
-      .prepare("DELETE FROM foreground_turn_queue WHERE agent_id = ? AND queued_turn_id = ?")
-      .run(agentId, queuedTurnId);
-    if (result.changes === 0) return false;
-    const authority = this.getForegroundAgentRow(agentId);
-    if (authority) {
-      this.database
-        .prepare("UPDATE agents SET authority_revision = ?, updated_at = ? WHERE agent_id = ?")
-        .run(authority.authority_revision + 1, nowIso(), agentId);
-    }
-    this.emit([], []);
-    this.emitForeground(this.getForegroundState(agentId), "queue_changed");
-    return true;
-  }
-
-  clearForegroundQueue(agentId: string): number {
-    const result = this.database
-      .prepare("DELETE FROM foreground_turn_queue WHERE agent_id = ?")
-      .run(agentId);
-    if (result.changes > 0) {
+    let removed = false;
+    this.transaction(() => {
+      const result = this.database
+        .prepare("DELETE FROM foreground_turn_queue WHERE agent_id = ? AND queued_turn_id = ?")
+        .run(agentId, queuedTurnId);
+      if (result.changes === 0) return;
       const authority = this.getForegroundAgentRow(agentId);
       if (authority) {
         this.database
           .prepare("UPDATE agents SET authority_revision = ?, updated_at = ? WHERE agent_id = ?")
           .run(authority.authority_revision + 1, nowIso(), agentId);
       }
+      removed = true;
+    });
+    if (!removed) return false;
+    this.emit([], []);
+    this.emitForeground(this.getForegroundState(agentId), "queue_changed");
+    return true;
+  }
+
+  clearForegroundQueue(agentId: string): number {
+    let removed = 0;
+    this.transaction(() => {
+      const result = this.database
+        .prepare("DELETE FROM foreground_turn_queue WHERE agent_id = ?")
+        .run(agentId);
+      removed = Number(result.changes);
+      if (removed === 0) return;
+      const authority = this.getForegroundAgentRow(agentId);
+      if (authority) {
+        this.database
+          .prepare("UPDATE agents SET authority_revision = ?, updated_at = ? WHERE agent_id = ?")
+          .run(authority.authority_revision + 1, nowIso(), agentId);
+      }
+    });
+    if (removed > 0) {
       this.emit([], []);
       this.emitForeground(this.getForegroundState(agentId), "queue_changed");
     }
-    return Number(result.changes);
+    return removed;
   }
 
   commandForegroundQueue(input: ForegroundQueueCommandInput): ForegroundQueueCommandResult {
@@ -1179,30 +794,32 @@ export class WorkspaceAuthorityStore {
     receipt: ProviderMessageAnchorReceipt,
     scopes: readonly ProviderRewindScope[],
   ): void {
-    const agent = this.database
-      .prepare("SELECT provider_thread_id FROM agents WHERE agent_id = ?")
-      .get(agentId) as { provider_thread_id: string | null } | undefined;
-    if (!agent) throw new Error(`Agent ${agentId} is not registered in Workspace authority`);
-    this.database
-      .prepare(
-        `INSERT INTO provider_message_anchors(
-           agent_id, canonical_message_id, provider_thread_id,
-           native_anchor_receipt_json, scopes_json, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(agent_id, canonical_message_id)
-         DO UPDATE SET
-           provider_thread_id = excluded.provider_thread_id,
-           native_anchor_receipt_json = excluded.native_anchor_receipt_json,
-           scopes_json = excluded.scopes_json`,
-      )
-      .run(
-        agentId,
-        canonicalMessageId,
-        agent.provider_thread_id,
-        JSON.stringify(receipt),
-        JSON.stringify([...new Set(scopes)]),
-        nowIso(),
-      );
+    this.transaction(() => {
+      const agent = this.database
+        .prepare("SELECT provider_thread_id FROM agents WHERE agent_id = ?")
+        .get(agentId) as { provider_thread_id: string | null } | undefined;
+      if (!agent) throw new Error(`Agent ${agentId} is not registered in Workspace authority`);
+      this.database
+        .prepare(
+          `INSERT INTO provider_message_anchors(
+             agent_id, canonical_message_id, provider_thread_id,
+             native_anchor_receipt_json, scopes_json, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(agent_id, canonical_message_id)
+           DO UPDATE SET
+             provider_thread_id = excluded.provider_thread_id,
+             native_anchor_receipt_json = excluded.native_anchor_receipt_json,
+             scopes_json = excluded.scopes_json`,
+        )
+        .run(
+          agentId,
+          canonicalMessageId,
+          agent.provider_thread_id,
+          JSON.stringify(receipt),
+          JSON.stringify([...new Set(scopes)]),
+          nowIso(),
+        );
+    });
   }
 
   truncateAgentTimelineFromMessage(agentId: string, canonicalMessageId: string): void {
@@ -1265,13 +882,16 @@ export class WorkspaceAuthorityStore {
     generation: string;
     providerTurnId: string;
   }): boolean {
-    const result = this.database
-      .prepare(
-        `UPDATE turns SET provider_turn_id = ?, updated_at = ?
-         WHERE turn_id = ? AND agent_id = ? AND generation = ?`,
-      )
-      .run(input.providerTurnId, nowIso(), input.turnId, input.agentId, input.generation);
-    return result.changes === 1;
+    return this.transaction(
+      () =>
+        this.database
+          .prepare(
+            `UPDATE turns SET provider_turn_id = ?, updated_at = ?
+             WHERE turn_id = ? AND agent_id = ? AND generation = ?`,
+          )
+          .run(input.providerTurnId, nowIso(), input.turnId, input.agentId, input.generation)
+          .changes === 1,
+    );
   }
 
   recordForegroundRunModeReceipt(input: {
@@ -1281,16 +901,21 @@ export class WorkspaceAuthorityStore {
     receipt: ProviderRunModeReceipt;
   }): ForegroundTurnAuthorityRecord {
     const receipt = ProviderRunModeReceiptSchema.parse(input.receipt);
-    const updated = this.database
-      .prepare(
-        `UPDATE turns SET provider_mode_receipt_json = ?, updated_at = ?
-         WHERE turn_id = ? AND agent_id = ? AND generation = ?`,
-      )
-      .run(JSON.stringify(receipt), nowIso(), input.turnId, input.agentId, input.generation);
-    if (updated.changes !== 1) {
-      throw new WorkspaceAuthorityConflictError("Foreground turn changed before mode receipt.");
-    }
-    return this.getForegroundTurnInTransaction(input.turnId)!;
+    return this.transaction(
+      () => {
+        const updated = this.database
+          .prepare(
+            `UPDATE turns SET provider_mode_receipt_json = ?, updated_at = ?
+           WHERE turn_id = ? AND agent_id = ? AND generation = ?`,
+          )
+          .run(JSON.stringify(receipt), nowIso(), input.turnId, input.agentId, input.generation);
+        if (updated.changes !== 1) {
+          throw new WorkspaceAuthorityConflictError("Foreground turn changed before mode receipt.");
+        }
+        return this.getForegroundTurnInTransaction(input.turnId)!;
+      },
+      () => true,
+    );
   }
 
   openForegroundCard(input: {
@@ -1343,13 +968,6 @@ export class WorkspaceAuthorityStore {
         turnId: input.turnId,
         lifecycle: "awaiting_card",
         now,
-      });
-      this.appendEventInTransaction({
-        aggregateType: "card",
-        aggregateId: cardId,
-        revision: 1,
-        kind: "foreground_card_opened",
-        payload: { turnId: input.turnId, cardKind: input.card.kind },
       });
       output = {
         record: this.getForegroundCardInTransaction(cardId)!,
@@ -1437,38 +1055,71 @@ export class WorkspaceAuthorityStore {
       }
 
       const now = nowIso();
-      const displayed = this.blobs.putJson(input.submittedCard);
-      const rawAnswer = this.blobs.putJson(answer);
+      const workspaceRevision = (
+        this.database
+          .prepare("SELECT authority_revision FROM workspace_meta WHERE workspace_id = ?")
+          .get(this.workspaceId) as { authority_revision: number }
+      ).authority_revision;
+      const mutation = transitionAuthority(
+        {
+          workspaceId: this.workspaceId,
+          workspaceRevision,
+          agent: {
+            id: input.agentId,
+            revision: authority.authority_revision,
+            activeTurnId: authority.active_turn_id,
+            lifecycle: authority.thoth_lifecycle,
+          },
+          turn: {
+            id: turn.id,
+            agentId: turn.agentId,
+            generation: turn.generation,
+            lifecycle: turn.lifecycle,
+          },
+          card: {
+            id: card.id,
+            turnId: card.turnId,
+            agentId: card.agentId,
+            kind: card.kind,
+            status: card.status,
+            displayed: card.card,
+          },
+        },
+        {
+          type: "card.answered",
+          expectedRevision: input.expectedRevision,
+          answer,
+          submittedCard: input.submittedCard,
+          submittedSummary: input.submittedSummary,
+          nextLifecycle: input.nextLifecycle,
+          commandId: input.commandId,
+          actorId: input.actorId,
+          clientId: input.clientId,
+          deviceId: input.deviceId,
+        },
+        { now, ids: { decisionId: `decision-${randomUUID()}` } },
+      );
+      const displayed = this.blobs.putJson(mutation.card.submittedCard);
+      const rawAnswer = this.blobs.putJson(mutation.card.answer);
       this.database
         .prepare(
           `UPDATE cards SET status = 'answered', displayed_digest = ?, answer_digest = ?,
              submitted_summary = ?, updated_at = ? WHERE card_id = ?`,
         )
-        .run(displayed.digest, rawAnswer.digest, input.submittedSummary, now, input.cardId);
+        .run(
+          displayed.digest,
+          rawAnswer.digest,
+          mutation.card.submittedSummary,
+          mutation.card.updatedAt,
+          input.cardId,
+        );
       this.updateForegroundLifecycleInTransaction({
         agentId: input.agentId,
         turnId: turn.id,
-        lifecycle: input.nextLifecycle,
+        lifecycle: mutation.agent.lifecycle,
         now,
       });
-      const resultRevision = authority.authority_revision + 1;
-      this.appendDecisionInTransaction({
-        taskId: null,
-        turnId: turn.id,
-        cardId: card.id,
-        kind: `card_${card.kind}`,
-        displayed: card.card,
-        rawAnswer: answer,
-        normalized: input.submittedCard,
-        actorId: input.actorId,
-        clientId: input.clientId,
-        deviceId: input.deviceId ?? null,
-        commandId: input.commandId,
-        expectedRevision: input.expectedRevision,
-        resultRevision,
-        supersedesDecisionId: null,
-        fidelity: "exact",
-      });
+      this.insertDecisionInTransaction(mutation.decision);
       const response = { accepted: true, conflict: false, error: null };
       this.database
         .prepare(
@@ -1477,15 +1128,7 @@ export class WorkspaceAuthorityStore {
              result_revision, result_json, created_at
            ) VALUES (?, 'card', ?, 'answer', ?, ?, ?)`,
         )
-        .run(input.commandId, card.id, resultRevision, JSON.stringify(response), now);
-      this.appendEventInTransaction({
-        aggregateType: "card",
-        aggregateId: card.id,
-        revision: 2,
-        kind: "foreground_card_answered",
-        payload: { turnId: turn.id, nextLifecycle: input.nextLifecycle },
-        causationId: input.commandId,
-      });
+        .run(input.commandId, card.id, mutation.agent.revision, JSON.stringify(response), now);
       emitReason = true;
       return {
         ...response,
@@ -1531,17 +1174,6 @@ export class WorkspaceAuthorityStore {
         now: nowIso(),
         error: input.error,
         backgroundTaskId: input.backgroundTaskId,
-      });
-      this.appendEventInTransaction({
-        aggregateType: "turn",
-        aggregateId: input.turnId,
-        revision: this.getForegroundAgentRow(input.agentId)!.authority_revision,
-        kind: `foreground_${input.reason}`,
-        payload: {
-          lifecycle: input.lifecycle,
-          backgroundTaskId: input.backgroundTaskId ?? null,
-          hasError: Boolean(input.error),
-        },
       });
       state = this.getForegroundStateInTransaction(input.agentId);
     });
@@ -1589,13 +1221,6 @@ export class WorkspaceAuthorityStore {
         now,
         error: null,
       });
-      this.appendEventInTransaction({
-        aggregateType: "turn",
-        aggregateId: turn.id,
-        revision: this.getForegroundAgentRow(input.agentId)!.authority_revision,
-        kind: "foreground_turn_canceled",
-        payload: { pendingCardIds: pendingCards.map((card) => card.id) },
-      });
       result = { state: this.getForegroundStateInTransaction(input.agentId), pendingCards };
       changed = true;
     });
@@ -1637,97 +1262,18 @@ export class WorkspaceAuthorityStore {
   }
 
   claimForegroundContinuation(input: { turnId: string; generation: string; key: string }): boolean {
-    const turn = this.getForegroundTurnInTransaction(input.turnId);
-    if (!turn || turn.generation !== input.generation) {
-      return false;
-    }
-    const result = this.database
-      .prepare(
-        `INSERT OR IGNORE INTO foreground_continuations(turn_id, continuation_key, created_at)
-         VALUES (?, ?, ?)`,
-      )
-      .run(input.turnId, input.key, nowIso());
-    return result.changes === 1;
-  }
-
-  createTask(taskInput: TaskProjection, catalog: WorkspaceCatalogStore): TaskProjection {
-    const task = TaskProjectionSchema.parse(taskInput);
-    if (task.workspaceId !== this.workspaceId) {
-      throw new Error("Task workspace does not match authority shard");
-    }
-    this.transaction(() => {
-      this.database
-        .prepare(
-          `INSERT INTO tasks(
-             task_id, workspace_id, source_agent_id, execution_mode, title, goal,
-             constraints_json, acceptance_json, status, summary, current_goal_id,
-             current_execution_id, latest_review_direction, budget_strength,
-             used_failed_reviews, max_failed_reviews, active_duration_ms, token_count,
-             tool_call_count, pending_control, revision, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          task.id,
-          task.workspaceId,
-          task.sourceAgentId,
-          task.mode,
-          task.title,
-          task.goal,
-          JSON.stringify(task.constraints),
-          JSON.stringify(task.acceptance),
-          task.status,
-          task.summary,
-          task.currentGoalId,
-          task.currentExecutionId,
-          task.latestReviewDirection,
-          task.budget.strength,
-          task.budget.usedFailedReviews,
-          task.budget.maxFailedReviews,
-          task.budget.activeDurationMs,
-          task.budget.tokenCount,
-          task.budget.toolCallCount,
-          task.pendingControl,
-          task.revision,
-          task.createdAt,
-          task.updatedAt,
-        );
-      const insertGoal = this.database.prepare(
-        `INSERT INTO task_goals(
-           goal_id, task_id, goal_order, title, goal, constraints_json,
-           acceptance_json, status, revision
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    return this.transaction(() => {
+      const turn = this.getForegroundTurnInTransaction(input.turnId);
+      if (!turn || turn.generation !== input.generation) return false;
+      return (
+        this.database
+          .prepare(
+            `INSERT OR IGNORE INTO foreground_continuations(turn_id, continuation_key, created_at)
+             VALUES (?, ?, ?)`,
+          )
+          .run(input.turnId, input.key, nowIso()).changes === 1
       );
-      for (const goal of task.goals) {
-        insertGoal.run(
-          goal.id,
-          task.id,
-          goal.order,
-          goal.title,
-          goal.goal,
-          JSON.stringify(goal.constraints),
-          JSON.stringify(goal.acceptance),
-          goal.status,
-          goal.revision,
-        );
-      }
-      this.appendEventInTransaction({
-        aggregateType: "task",
-        aggregateId: task.id,
-        revision: task.revision,
-        kind: "task_created",
-        payload: { mode: task.mode, sourceAgentId: task.sourceAgentId },
-      });
     });
-    catalog.updateTaskLocator({
-      taskId: task.id,
-      workspaceId: task.workspaceId,
-      title: task.title,
-      status: task.status,
-      revision: task.revision,
-      updatedAt: task.updatedAt,
-    });
-    this.emit([task.id], []);
-    return task;
   }
 
   registerTask(input: {
@@ -1830,18 +1376,6 @@ export class WorkspaceAuthorityStore {
         producer: "secretary",
         content: input.goalsContract,
       });
-      this.appendEventInTransaction({
-        aggregateType: "task",
-        aggregateId: task.id,
-        revision: task.revision,
-        kind: "task_registered",
-        payload: {
-          mode: task.mode,
-          sourceAgentId: task.sourceAgentId,
-          sourceTurnId: input.sourceTurnId,
-          sourceGoalsCardId: input.sourceGoalsCardId,
-        },
-      });
       result = { task: this.getTask(task.id)!, created: true };
     });
     if (result.created) {
@@ -1926,12 +1460,10 @@ export class WorkspaceAuthorityStore {
   }): ExecutionProjection {
     const execution = ExecutionProjectionSchema.parse(input.execution);
     const task = this.getTask(execution.taskId);
-    if (!task) {
-      throw new Error(`Task ${execution.taskId} does not exist`);
-    }
+    if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
     this.transaction(() => {
+      const now = nowIso();
       if (input.providerThread) {
-        const now = nowIso();
         this.database
           .prepare(
             `INSERT OR IGNORE INTO provider_threads(
@@ -1962,8 +1494,8 @@ export class WorkspaceAuthorityStore {
           execution.taskId,
           execution.goalId,
           execution.phase,
-          execution.startedAt ?? nowIso(),
-          execution.lastActivityAt ?? nowIso(),
+          execution.startedAt ?? now,
+          execution.lastActivityAt ?? now,
         );
       this.database
         .prepare(
@@ -1989,37 +1521,17 @@ export class WorkspaceAuthorityStore {
           execution.summary,
           execution.revision,
         );
-      this.database
-        .prepare(
-          `UPDATE tasks SET current_execution_id = ?, status = 'running',
-             pending_control = CASE
-               WHEN ? = 'review' AND pending_control = 'review_only' THEN NULL
-               ELSE pending_control
-             END,
-             revision = revision + 1, updated_at = ? WHERE task_id = ?`,
-        )
-        .run(execution.id, execution.phase, nowIso(), execution.taskId);
-      if (execution.goalId) {
-        this.database
-          .prepare(
-            `UPDATE task_goals SET status = 'running', revision = revision + 1
-             WHERE goal_id = ? AND status IN ('queued', 'interrupted')`,
-          )
-          .run(execution.goalId);
-      }
-      this.appendEventInTransaction({
-        aggregateType: "execution",
-        aggregateId: execution.id,
-        revision: execution.revision,
-        kind: "execution_created",
-        payload: { taskId: execution.taskId, phase: execution.phase },
-      });
+      const mutation = this.transition(
+        this.authorityState({ task }),
+        { type: "execution.created", execution },
+        now,
+      );
+      this.applyAuthorityMutationInTransaction(mutation);
     });
     this.emit([execution.taskId], [execution.id]);
     this.syncTaskLocator(this.getTask(execution.taskId)!);
     return execution;
   }
-
   getExecution(executionId: string): ExecutionProjection | null {
     const row = this.database
       .prepare("SELECT * FROM execution_attempts WHERE execution_id = ?")
@@ -2082,35 +1594,27 @@ export class WorkspaceAuthorityStore {
     return row ? this.getProviderThread(String(row.thread_id)) : null;
   }
 
-  listProviderThreadsByStatus(status: string): ProviderThreadRecord[] {
-    const rows = this.database
-      .prepare("SELECT thread_id FROM provider_threads WHERE status = ? ORDER BY created_at ASC")
-      .all(status) as Array<{ thread_id: string }>;
-    return rows.flatMap((row) => {
-      const thread = this.getProviderThread(row.thread_id);
-      return thread ? [thread] : [];
-    });
-  }
-
   updateProviderThread(input: {
     threadId: string;
     nativeHandle: string | null;
     persistence: Record<string, unknown> | null;
     status?: string;
   }): boolean {
-    const result = this.database
-      .prepare(
-        `UPDATE provider_threads SET native_handle = ?, persistence_json = ?,
-           status = COALESCE(?, status), updated_at = ? WHERE thread_id = ?`,
-      )
-      .run(
-        input.nativeHandle,
-        input.persistence ? JSON.stringify(input.persistence) : null,
-        input.status ?? null,
-        nowIso(),
-        input.threadId,
-      );
-    return result.changes === 1;
+    return this.transaction(
+      () =>
+        this.database
+          .prepare(
+            `UPDATE provider_threads SET native_handle = ?, persistence_json = ?,
+               status = COALESCE(?, status), updated_at = ? WHERE thread_id = ?`,
+          )
+          .run(
+            input.nativeHandle,
+            input.persistence ? JSON.stringify(input.persistence) : null,
+            input.status ?? null,
+            nowIso(),
+            input.threadId,
+          ).changes === 1,
+    );
   }
 
   updateExecution(input: {
@@ -2122,50 +1626,30 @@ export class WorkspaceAuthorityStore {
   }): ExecutionProjection | null {
     let changed = false;
     this.transaction(() => {
-      const current = this.getExecution(input.executionId);
+      const execution = this.getExecution(input.executionId);
       if (
-        !current ||
-        current.generation !== input.generation ||
-        current.revision !== input.expectedRevision
+        !execution ||
+        execution.generation !== input.generation ||
+        execution.revision !== input.expectedRevision
       ) {
         return;
       }
-      const now = nowIso();
-      const terminal = ["canceled", "succeeded", "failed", "orphaned"].includes(input.status);
-      const result = this.database
-        .prepare(
-          `UPDATE execution_attempts SET status = ?, summary = ?,
-             last_activity_at = ?, completed_at = ?, revision = revision + 1
-           WHERE execution_id = ? AND generation = ? AND revision = ?`,
-        )
-        .run(
-          input.status,
-          input.summary === undefined ? current.summary : input.summary,
-          now,
-          terminal ? now : current.completedAt,
-          input.executionId,
-          input.generation,
-          input.expectedRevision,
-        );
-      if (result.changes !== 1) {
-        return;
-      }
-      changed = true;
-      this.appendEventInTransaction({
-        aggregateType: "execution",
-        aggregateId: input.executionId,
-        revision: input.expectedRevision + 1,
-        kind: `execution_${input.status}`,
-        payload: { summary: input.summary ?? null },
+      const task = this.getTask(execution.taskId);
+      if (!task) return;
+      const mutation = this.transition(this.authorityState({ task, execution }), {
+        type: "execution.status.changed",
+        generation: input.generation,
+        expectedRevision: input.expectedRevision,
+        status: input.status,
+        summary: input.summary,
       });
+      this.applyAuthorityMutationInTransaction(mutation);
+      changed = true;
     });
     const updated = changed ? this.getExecution(input.executionId) : null;
-    if (updated) {
-      this.emit([updated.taskId], [updated.id]);
-    }
+    if (updated) this.emit([updated.taskId], [updated.id]);
     return updated;
   }
-
   recordExecutionRunModeReceipt(input: {
     executionId: string;
     generation: string;
@@ -2176,53 +1660,32 @@ export class WorkspaceAuthorityStore {
     const receipt = ProviderRunModeReceiptSchema.parse(input.receipt);
     let changed = false;
     this.transaction(() => {
-      const current = this.getExecution(input.executionId);
+      const execution = this.getExecution(input.executionId);
       if (
-        !current ||
-        current.generation !== input.generation ||
-        current.revision !== input.expectedRevision ||
-        current.status !== "starting"
+        !execution ||
+        execution.generation !== input.generation ||
+        execution.revision !== input.expectedRevision ||
+        execution.status !== "starting"
       ) {
         return;
       }
-      const now = nowIso();
-      const result = this.database
-        .prepare(
-          `UPDATE execution_attempts SET run_mode_receipt_json = ?, status = ?,
-             last_activity_at = ?, revision = revision + 1
-           WHERE execution_id = ? AND generation = ? AND revision = ? AND status = 'starting'`,
-        )
-        .run(
-          JSON.stringify(receipt),
-          input.status,
-          now,
-          input.executionId,
-          input.generation,
-          input.expectedRevision,
-        );
-      if (result.changes !== 1) {
-        return;
-      }
-      changed = true;
-      this.appendEventInTransaction({
-        aggregateType: "execution",
-        aggregateId: input.executionId,
-        revision: input.expectedRevision + 1,
-        kind: "execution_provider_mode_applied",
-        payload: {
-          requestedMode: receipt.requestedMode,
-          status: receipt.status,
-          nativeModeId: receipt.nativeModeId,
-        },
+      const task = this.getTask(execution.taskId);
+      if (!task) return;
+      const mutation = this.transition(this.authorityState({ task, execution }), {
+        type: "execution.status.changed",
+        generation: input.generation,
+        expectedRevision: input.expectedRevision,
+        expectedStatus: "starting",
+        status: input.status,
+        runModeReceipt: receipt,
       });
+      this.applyAuthorityMutationInTransaction(mutation);
+      changed = true;
     });
     const updated = changed ? this.getExecution(input.executionId) : null;
-    if (updated) {
-      this.emit([updated.taskId], [updated.id]);
-    }
+    if (updated) this.emit([updated.taskId], [updated.id]);
     return updated;
   }
-
   createExecutionApproval(input: {
     executionId: string;
     generation: string;
@@ -2232,8 +1695,8 @@ export class WorkspaceAuthorityStore {
     if (input.request.kind === "question" || !input.request.autoApproveEligible) {
       throw new Error("Provider questions cannot enter the execution approval authority.");
     }
-    let approvalId: string | null = null;
-    let taskId: string | null = null;
+    let approvalId = "";
+    let taskId = "";
     this.transaction(() => {
       const existing = this.database
         .prepare(
@@ -2248,14 +1711,7 @@ export class WorkspaceAuthorityStore {
       }
       const execution = this.getExecution(input.executionId);
       const task = execution ? this.getTask(execution.taskId) : null;
-      if (
-        !execution ||
-        !task ||
-        execution.generation !== input.generation ||
-        task.currentExecutionId !== execution.id ||
-        task.status === "stopping" ||
-        ["canceled", "succeeded", "failed", "orphaned"].includes(execution.status)
-      ) {
+      if (!execution || !task || execution.generation !== input.generation) {
         throw new WorkspaceAuthorityConflictError(
           "Execution changed before the provider approval could be recorded.",
         );
@@ -2272,7 +1728,7 @@ export class WorkspaceAuthorityStore {
       }
       const now = nowIso();
       approvalId = `execution-approval-${randomUUID()}`;
-      taskId = execution.taskId;
+      taskId = task.id;
       const displayed = this.blobs.putJson(input.request.displayed);
       this.database
         .prepare(
@@ -2286,7 +1742,7 @@ export class WorkspaceAuthorityStore {
         .run(
           approvalId,
           input.request.id,
-          execution.taskId,
+          task.id,
           execution.id,
           execution.generation,
           input.request.kind,
@@ -2297,65 +1753,25 @@ export class WorkspaceAuthorityStore {
           now,
           now,
         );
-      const nextStatus: ExecutionLifecycle =
-        input.request.kind === "implement" ? "awaiting_implementation" : "awaiting_user";
-      this.database
-        .prepare(
-          `UPDATE execution_attempts SET status = ?, last_activity_at = ?, revision = revision + 1
-           WHERE execution_id = ? AND generation = ?`,
-        )
-        .run(nextStatus, now, execution.id, execution.generation);
-      this.database
-        .prepare(
-          `UPDATE tasks SET summary = ?, revision = revision + 1, updated_at = ?
-           WHERE task_id = ?`,
-        )
-        .run(
-          input.request.kind === "implement"
-            ? "Native Plan is ready for implementation approval."
-            : "Provider approval is waiting for a user decision.",
-          now,
-          execution.taskId,
-        );
-      this.appendEventInTransaction({
-        aggregateType: "execution_approval",
-        aggregateId: approvalId,
-        revision: 1,
-        kind: "execution_approval_requested",
-        payload: {
-          taskId: execution.taskId,
-          executionId: execution.id,
-          kind: input.request.kind,
-          deadlineAt: input.deadlineAt,
-        },
-      });
+      const approval = this.getExecutionApproval(approvalId);
+      if (!approval) throw new Error(`Execution approval ${approvalId} was not recorded`);
+      const mutation = this.transition(
+        this.authorityState({ task, execution }),
+        { type: "execution.approval.requested", approval },
+        now,
+      );
+      this.applyAuthorityMutationInTransaction(mutation);
     });
-    if (!approvalId || !taskId) {
-      throw new Error("Execution approval was not recorded.");
-    }
     const approval = this.getExecutionApproval(approvalId);
-    if (!approval) {
-      throw new Error(`Execution approval ${approvalId} disappeared after commit.`);
-    }
+    if (!approval || !taskId) throw new Error("Execution approval was not recorded.");
     this.emit([taskId], [input.executionId]);
     this.syncTaskLocator(this.getTask(taskId)!);
     return approval;
   }
-
   getExecutionApproval(approvalId: string): ExecutionApprovalProjection | null {
     const row = this.database
       .prepare("SELECT * FROM execution_approvals WHERE approval_id = ?")
       .get(approvalId) as ExecutionApprovalRow | undefined;
-    return row ? this.toExecutionApprovalProjection(row) : null;
-  }
-
-  getPendingExecutionApproval(executionId: string): ExecutionApprovalProjection | null {
-    const row = this.database
-      .prepare(
-        `SELECT * FROM execution_approvals
-         WHERE execution_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 1`,
-      )
-      .get(executionId) as ExecutionApprovalRow | undefined;
     return row ? this.toExecutionApprovalProjection(row) : null;
   }
 
@@ -2411,134 +1827,42 @@ export class WorkspaceAuthorityStore {
 
       const task = this.getTask(input.taskId);
       const execution = this.getExecution(input.executionId);
-      const row = this.database
-        .prepare("SELECT * FROM execution_approvals WHERE approval_id = ?")
-        .get(input.approvalId) as ExecutionApprovalRow | undefined;
+      const approval = this.getExecutionApproval(input.approvalId);
+      const approvalRow = this.database
+        .prepare("SELECT generation FROM execution_approvals WHERE approval_id = ?")
+        .get(input.approvalId) as { generation: string } | undefined;
       if (
         !task ||
         !execution ||
-        !row ||
+        !approval ||
         execution.taskId !== task.id ||
-        row.task_id !== task.id ||
-        row.execution_id !== execution.id
+        approval.taskId !== task.id ||
+        approval.executionId !== execution.id
       ) {
         throw new Error("Execution approval does not belong to the requested Task.");
       }
-      if (
-        row.status !== "pending" ||
-        row.revision !== input.expectedRevision ||
-        row.generation !== execution.generation ||
-        task.currentExecutionId !== execution.id ||
-        task.status === "stopping"
-      ) {
+      if (approvalRow?.generation !== execution.generation) {
         throw new WorkspaceAuthorityConflictError(
           "Execution approval changed before this decision was committed.",
         );
       }
-      if (row.kind === "implement" && !["implement", "deny"].includes(input.decision)) {
-        throw new Error("A native Plan approval requires Implement or Deny.");
-      }
-      if (row.kind !== "implement" && input.decision === "implement") {
-        throw new Error("Implement is only valid for a native Plan approval.");
-      }
-
       const now = nowIso();
-      const approvalStatus = input.decision === "deny" ? "denied" : "allowed";
-      const approvalUpdate = this.database
-        .prepare(
-          `UPDATE execution_approvals SET status = ?, resolution_decision = ?,
-             resolution_actor_id = ?, resolved_at = ?, revision = revision + 1, updated_at = ?
-           WHERE approval_id = ? AND status = 'pending' AND revision = ?`,
-        )
-        .run(
-          approvalStatus,
-          input.decision,
-          input.actorId,
-          now,
-          now,
-          input.approvalId,
-          input.expectedRevision,
-        );
-      if (approvalUpdate.changes !== 1) {
-        throw new WorkspaceAuthorityConflictError("Another approval decision won the CAS race.");
-      }
-
-      const denied = input.decision === "deny";
-      const nextExecutionStatus: ExecutionLifecycle = denied
-        ? "failed"
-        : row.kind === "implement"
-          ? "implementing"
-          : "awaiting_provider";
-      this.database
-        .prepare(
-          `UPDATE execution_attempts SET status = ?, last_activity_at = ?,
-             completed_at = ?, summary = ?, revision = revision + 1
-           WHERE execution_id = ? AND generation = ?`,
-        )
-        .run(
-          nextExecutionStatus,
-          now,
-          denied ? now : null,
-          denied ? "Provider approval was denied." : execution.summary,
-          execution.id,
-          execution.generation,
-        );
-      const nextTaskRevision = task.revision + 1;
-      this.database
-        .prepare(
-          `UPDATE tasks SET status = ?, summary = ?, current_execution_id = ?,
-             revision = ?, updated_at = ? WHERE task_id = ? AND revision = ?`,
-        )
-        .run(
-          denied ? "interrupted" : "running",
-          denied
-            ? "Provider approval was denied; resume reruns this phase."
-            : row.kind === "implement"
-              ? "Native Plan approved; implementation is running."
-              : "Provider approval resolved; execution is continuing.",
-          denied ? null : execution.id,
-          nextTaskRevision,
-          now,
-          task.id,
-          task.revision,
-        );
-      if (input.recordHumanDecision) {
-        this.appendDecisionInTransaction({
-          taskId: task.id,
-          turnId: null,
-          cardId: null,
-          kind: "execution_approval",
-          displayed: this.blobs.readJson(row.displayed_digest),
-          rawAnswer: { decision: input.decision },
-          normalized: {
-            approvalId: input.approvalId,
-            executionId: execution.id,
-            kind: row.kind,
-            decision: input.decision,
-          },
+      const mutation = this.transition(
+        this.authorityState({ task, execution, approval }),
+        {
+          type: "execution.approval.resolved",
+          decision: input.decision,
+          expectedRevision: input.expectedRevision,
+          commandId: input.commandId,
           actorId: input.actorId,
           clientId: input.clientId,
-          deviceId: input.deviceId ?? null,
-          commandId: input.commandId,
-          expectedRevision: input.expectedRevision,
-          resultRevision: nextTaskRevision,
-          supersedesDecisionId: null,
-          fidelity: "exact",
-        });
-      }
-      this.appendEventInTransaction({
-        aggregateType: "execution_approval",
-        aggregateId: input.approvalId,
-        revision: input.expectedRevision + 1,
-        kind: `execution_approval_${approvalStatus}`,
-        payload: {
-          taskId: task.id,
-          executionId: execution.id,
-          decision: input.decision,
-          actorId: input.actorId,
+          deviceId: input.deviceId,
+          recordHumanDecision: input.recordHumanDecision,
         },
-        causationId: input.commandId,
-      });
+        now,
+      );
+      this.applyAuthorityMutationInTransaction(mutation);
+      if (!mutation.approval) throw new Error("Approval transition produced no approval");
       this.database
         .prepare(
           `INSERT INTO authority_commands(
@@ -2549,7 +1873,7 @@ export class WorkspaceAuthorityStore {
         .run(
           input.commandId,
           input.approvalId,
-          input.expectedRevision + 1,
+          mutation.approval.revision,
           JSON.stringify({
             taskId: task.id,
             executionId: execution.id,
@@ -2568,350 +1892,134 @@ export class WorkspaceAuthorityStore {
     this.syncTaskLocator(result.task);
     return result;
   }
-
   acceptPlanExecResult(input: {
     executionId: string;
     generation: string;
     result: ThothLoopPlanExecResultInput;
     callId: string;
   }): boolean {
-    let taskId: string | null = null;
+    let taskId = "";
     this.transaction(() => {
-      const execution = this.requireActiveSemanticExecution({
-        executionId: input.executionId,
-        generation: input.generation,
-        phase: "planexec",
-      });
-      taskId = execution.taskId;
-      const task = this.getTask(execution.taskId)!;
-      const pauseAtBoundary = task.pendingControl === "pause";
-      this.appendBlackboardInTransaction({
-        taskId: task.id,
-        kind: "planexec_report",
-        producer: "planexec",
-        content: input.result,
-      });
-      const now = nowIso();
-      this.database
-        .prepare(
-          `UPDATE execution_attempts SET status = 'succeeded', summary = ?,
-             last_activity_at = ?, completed_at = ?, revision = revision + 1
-           WHERE execution_id = ? AND generation = ?`,
-        )
-        .run(input.result.execution_summary, now, now, execution.id, execution.generation);
-      this.database
-        .prepare(
-          "UPDATE phase_runs SET status = 'succeeded', updated_at = ? WHERE phase_run_id = ?",
-        )
-        .run(now, execution.phaseRunId);
-      this.database
-        .prepare(
-          `UPDATE tasks SET status = ?, summary = ?, current_execution_id = NULL,
-             pending_control = NULL, revision = revision + 1, updated_at = ? WHERE task_id = ?`,
-        )
-        .run(
-          pauseAtBoundary ? "paused" : "queued",
-          pauseAtBoundary
-            ? "Paused after PlanExec; independent Review remains queued."
-            : "PlanExec completed; independent Review is queued.",
-          now,
-          task.id,
+      const execution = this.getExecution(input.executionId);
+      if (!execution) {
+        throw new WorkspaceAuthorityConflictError(
+          `Execution ${input.executionId} is not the active semantic tool authority`,
         );
-      this.appendEventInTransaction({
-        aggregateType: "execution",
-        aggregateId: execution.id,
-        revision: execution.revision + 1,
-        kind: "planexec_result_accepted",
-        payload: {
-          taskId: task.id,
-          goalId: execution.goalId,
-          nextTaskStatus: pauseAtBoundary ? "paused" : "queued",
-        },
-        causationId: input.callId,
+      }
+      const task = this.getTask(execution.taskId);
+      if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
+      const mutation = this.transition(this.authorityState({ task, execution }), {
+        type: "execution.planexec.completed",
+        generation: input.generation,
+        result: input.result,
       });
+      this.applyAuthorityMutationInTransaction(mutation);
+      taskId = task.id;
     });
-    if (!taskId) {
-      return false;
-    }
     const task = this.getTask(taskId)!;
     this.syncTaskLocator(task);
     this.emit([taskId], [input.executionId]);
     return true;
   }
-
   acceptReviewAssessment(input: {
     executionId: string;
     generation: string;
     assessment: ThothLoopReviewIndependentAssessmentInput;
   }): string {
     let taskId = "";
+    let reportContent: unknown;
     this.transaction(() => {
-      const execution = this.requireActiveSemanticExecution({
-        executionId: input.executionId,
-        generation: input.generation,
-        phase: "review",
-      });
-      taskId = execution.taskId;
-      this.appendBlackboardInTransaction({
-        taskId,
-        kind: "review_assessment",
-        producer: "review",
-        content: input.assessment,
-      });
-      this.appendEventInTransaction({
-        aggregateType: "execution",
-        aggregateId: execution.id,
-        revision: execution.revision,
-        kind: "review_independent_assessment_accepted",
-        payload: { taskId, goalId: execution.goalId },
-      });
+      const execution = this.getExecution(input.executionId);
+      if (!execution) {
+        throw new WorkspaceAuthorityConflictError(
+          `Execution ${input.executionId} is not the active semantic tool authority`,
+        );
+      }
+      const task = this.getTask(execution.taskId);
+      if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
+      reportContent = this.listBlackboard(task.id)
+        .filter((entry) => entry.kind === "planexec_report")
+        .at(-1)?.content;
+      const mutation = this.transition(
+        this.authorityState({ task, execution, latestPlanExecReport: reportContent }),
+        {
+          type: "execution.review.assessed",
+          generation: input.generation,
+          assessment: input.assessment,
+        },
+      );
+      this.applyAuthorityMutationInTransaction(mutation);
+      taskId = task.id;
     });
     this.emit([taskId], [input.executionId]);
-    const report = this.listBlackboard(taskId)
-      .filter((entry) => entry.kind === "planexec_report")
-      .at(-1);
-    if (!report) {
-      throw new Error("Review cannot compare reality before a PlanExec report exists");
-    }
     return [
       "Independent assessment recorded. Now compare it with PlanExec's semantic account:",
-      JSON.stringify(report.content),
+      JSON.stringify(reportContent),
       "Return one Review outcome based on workspace reality, the approved goal, and this account.",
     ].join("\n\n");
   }
-
   acceptReviewVerdict(input: {
     executionId: string;
     generation: string;
     verdict: ThothLoopReviewVerdictInput;
     callId: string;
   }): boolean {
-    let taskId: string | null = null;
+    let taskId = "";
     this.transaction(() => {
-      const execution = this.requireActiveSemanticExecution({
-        executionId: input.executionId,
-        generation: input.generation,
-        phase: "review",
-      });
-      if (!execution.goalId) {
-        throw new Error("Review execution is missing its Goal identity");
+      const execution = this.getExecution(input.executionId);
+      if (!execution) {
+        throw new WorkspaceAuthorityConflictError(
+          `Execution ${input.executionId} is not the active semantic tool authority`,
+        );
       }
-      taskId = execution.taskId;
-      const task = this.getTask(execution.taskId)!;
-      const goal = task.goals.find((candidate) => candidate.id === execution.goalId);
-      if (!goal) {
-        throw new Error(`Goal ${execution.goalId} does not belong to Task ${task.id}`);
-      }
-      const now = nowIso();
-      this.appendBlackboardInTransaction({
-        taskId: task.id,
-        kind: "evidence_summary",
-        producer: "review",
-        content: {
-          outcome: input.verdict.outcome,
-          summary: input.verdict.summary,
-          evidenceSummary: input.verdict.evidence_summary ?? null,
+      const task = this.getTask(execution.taskId);
+      if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
+      const mutation = this.transition(
+        this.authorityState({
+          task,
+          execution,
+          goalsRevision: this.getTaskRuntimeMetadata(task.id)?.goalsRevision,
+        }),
+        {
+          type: "execution.review.completed",
+          generation: input.generation,
+          verdict: input.verdict,
         },
-      });
-      if (input.verdict.direction_memo) {
-        this.appendBlackboardInTransaction({
-          taskId: task.id,
-          kind: "review_direction",
-          producer: "review",
-          content: input.verdict.direction_memo,
-        });
-      }
-      if (input.verdict.user_decision) {
-        const decisionRequest = TaskUserDecisionProjectionSchema.parse({
-          id: `task-decision-${randomUUID()}`,
-          title: input.verdict.user_decision.title,
-          question: input.verdict.user_decision.question,
-          options: input.verdict.user_decision.options,
-          ...(input.verdict.user_decision.note_placeholder === undefined
-            ? {}
-            : { notePlaceholder: input.verdict.user_decision.note_placeholder }),
-          createdAt: now,
-        });
-        const requestBlob = this.blobs.putJson(decisionRequest);
-        this.database
-          .prepare(
-            `INSERT INTO task_decision_requests(
-               decision_id, task_id, request_digest, status, created_at
-             ) VALUES (?, ?, ?, 'pending', ?)`,
-          )
-          .run(decisionRequest.id, task.id, requestBlob.digest, now);
-        this.appendBlackboardInTransaction({
-          taskId: task.id,
-          kind: "user_decision_request",
-          producer: "review",
-          content: decisionRequest,
-        });
-      }
-      if (input.verdict.deferred_goal_replan_proposal) {
-        this.appendBlackboardInTransaction({
-          taskId: task.id,
-          kind: "replan_proposal",
-          producer: "review",
-          content: input.verdict.deferred_goal_replan_proposal,
-        });
-      }
-
-      let nextTaskStatus: TaskProjection["status"] = "queued";
-      let nextGoalStatus: TaskProjection["goals"][number]["status"] = "queued";
-      let nextGoalId: string | null = goal.id;
-      let usedFailedReviews = task.budget.usedFailedReviews;
-      let summary = input.verdict.summary;
-      let latestDirection = task.latestReviewDirection;
-
-      switch (input.verdict.outcome) {
-        case "pass": {
-          nextGoalStatus = "passed";
-          const nextGoal = task.goals.find(
-            (candidate) => candidate.order > goal.order && candidate.status === "queued",
-          );
-          nextGoalId = nextGoal?.id ?? null;
-          nextTaskStatus = nextGoal ? "queued" : "completed";
-          break;
-        }
-        case "continue":
-        case "reframe_current_goal":
-          usedFailedReviews += 1;
-          nextTaskStatus =
-            usedFailedReviews >= task.budget.maxFailedReviews ? "budget_wait" : "queued";
-          latestDirection = input.verdict.direction_memo
-            ? JSON.stringify(input.verdict.direction_memo)
-            : null;
-          break;
-        case "replan_unstarted_goals":
-          this.applyFutureGoalReplanInTransaction(task, goal.id, input.verdict);
-          nextGoalStatus = "passed";
-          nextGoalId =
-            input.verdict
-              .deferred_goal_replan_proposal!.goals.slice()
-              .sort((left, right) => left.order - right.order)[0]?.id ?? null;
-          nextTaskStatus = nextGoalId ? "queued" : "completed";
-          break;
-        case "return_to_user_decision":
-          nextTaskStatus = "awaiting_user";
-          nextGoalStatus = "awaiting_user";
-          break;
-        case "real_blocker":
-          nextTaskStatus = "blocked";
-          nextGoalStatus = "blocked";
-          this.appendBlackboardInTransaction({
-            taskId: task.id,
-            kind: "blocker",
-            producer: "review",
-            content: { summary: input.verdict.summary },
-          });
-          break;
-      }
-
-      if (task.pendingControl === "pause" && nextTaskStatus === "queued") {
-        nextTaskStatus = "paused";
-      }
-      this.database
-        .prepare(`UPDATE task_goals SET status = ?, revision = revision + 1 WHERE goal_id = ?`)
-        .run(nextGoalStatus, goal.id);
-      this.database
-        .prepare(
-          `UPDATE execution_attempts SET status = 'succeeded', summary = ?,
-             last_activity_at = ?, completed_at = ?, revision = revision + 1
-           WHERE execution_id = ? AND generation = ?`,
-        )
-        .run(input.verdict.summary, now, now, execution.id, execution.generation);
-      this.database
-        .prepare(
-          "UPDATE phase_runs SET status = 'succeeded', updated_at = ? WHERE phase_run_id = ?",
-        )
-        .run(now, execution.phaseRunId);
-      this.database
-        .prepare(
-          `UPDATE tasks SET status = ?, summary = ?, current_goal_id = ?,
-             current_execution_id = NULL, latest_review_direction = ?,
-             used_failed_reviews = ?, pending_control = NULL,
-             revision = revision + 1, updated_at = ? WHERE task_id = ?`,
-        )
-        .run(nextTaskStatus, summary, nextGoalId, latestDirection, usedFailedReviews, now, task.id);
-      this.appendEventInTransaction({
-        aggregateType: "execution",
-        aggregateId: execution.id,
-        revision: execution.revision + 1,
-        kind: "review_verdict_accepted",
-        payload: {
-          taskId: task.id,
-          goalId: goal.id,
-          outcome: input.verdict.outcome,
-          nextTaskStatus,
-        },
-        causationId: input.callId,
-      });
+      );
+      this.applyAuthorityMutationInTransaction(mutation);
+      taskId = task.id;
     });
-    if (!taskId) {
-      return false;
-    }
-    const task = this.getTask(taskId)!;
-    this.syncTaskLocator(task);
+    this.syncTaskLocator(this.getTask(taskId)!);
     this.emit([taskId], [input.executionId]);
     return true;
   }
-
   acceptExecutionBlocker(input: {
     executionId: string;
     generation: string;
     report: ThothLoopReportBlockedInput;
   }): boolean {
-    let taskId: string | null = null;
+    let taskId = "";
     this.transaction(() => {
-      const execution = this.requireActiveSemanticExecution({
-        executionId: input.executionId,
-        generation: input.generation,
-        phase: undefined,
-      });
-      taskId = execution.taskId;
-      const now = nowIso();
-      this.appendBlackboardInTransaction({
-        taskId,
-        kind: "blocker",
-        producer: execution.phase === "review" ? "review" : "planexec",
-        content: input.report,
-      });
-      this.database
-        .prepare(
-          `UPDATE execution_attempts SET status = 'failed', summary = ?,
-             last_activity_at = ?, completed_at = ?, revision = revision + 1
-           WHERE execution_id = ? AND generation = ?`,
-        )
-        .run(input.report.reason, now, now, execution.id, execution.generation);
-      this.database
-        .prepare(
-          `UPDATE tasks SET status = 'blocked', summary = ?, current_execution_id = NULL,
-             revision = revision + 1, updated_at = ? WHERE task_id = ?`,
-        )
-        .run(input.report.reason, now, execution.taskId);
-      if (execution.goalId) {
-        this.database
-          .prepare(
-            "UPDATE task_goals SET status = 'blocked', revision = revision + 1 WHERE goal_id = ?",
-          )
-          .run(execution.goalId);
+      const execution = this.getExecution(input.executionId);
+      if (!execution) {
+        throw new WorkspaceAuthorityConflictError(
+          `Execution ${input.executionId} is not the active semantic tool authority`,
+        );
       }
-      this.appendEventInTransaction({
-        aggregateType: "execution",
-        aggregateId: execution.id,
-        revision: execution.revision + 1,
-        kind: "execution_blocked",
-        payload: { taskId, goalId: execution.goalId },
+      const task = this.getTask(execution.taskId);
+      if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
+      const mutation = this.transition(this.authorityState({ task, execution }), {
+        type: "execution.blocked",
+        generation: input.generation,
+        report: input.report,
       });
+      this.applyAuthorityMutationInTransaction(mutation);
+      taskId = task.id;
     });
-    if (!taskId) {
-      return false;
-    }
     this.syncTaskLocator(this.getTask(taskId)!);
     this.emit([taskId], [input.executionId]);
     return true;
   }
-
   markExecutionAwaitingProvider(input: {
     executionId: string;
     generation: string;
@@ -2953,53 +2061,20 @@ export class WorkspaceAuthorityStore {
         return;
       }
       const task = this.getTask(execution.taskId);
-      if (execution.status === "cancel_requested" || task?.status === "stopping") {
-        return;
-      }
-      taskId = execution.taskId;
-      const now = nowIso();
-      this.database
-        .prepare(
-          `UPDATE execution_attempts SET status = 'failed', summary = ?,
-             last_activity_at = ?, completed_at = ?, revision = revision + 1
-           WHERE execution_id = ? AND generation = ?`,
-        )
-        .run(input.summary, now, now, execution.id, execution.generation);
-      this.database
-        .prepare(
-          `UPDATE phase_runs SET status = 'interrupted', updated_at = ? WHERE phase_run_id = ?`,
-        )
-        .run(now, execution.phaseRunId);
-      this.database
-        .prepare(
-          `UPDATE tasks SET status = 'interrupted', summary = ?, current_execution_id = NULL,
-             revision = revision + 1, updated_at = ? WHERE task_id = ?`,
-        )
-        .run(input.summary, now, execution.taskId);
-      if (execution.goalId) {
-        this.database
-          .prepare(
-            `UPDATE task_goals SET status = 'interrupted', revision = revision + 1
-             WHERE goal_id = ? AND status = 'running'`,
-          )
-          .run(execution.goalId);
-      }
-      this.appendEventInTransaction({
-        aggregateType: "execution",
-        aggregateId: execution.id,
-        revision: execution.revision + 1,
-        kind: "execution_interrupted",
-        payload: { taskId, summary: input.summary },
+      if (!task || execution.status === "cancel_requested" || task.status === "stopping") return;
+      const mutation = this.transition(this.authorityState({ task, execution }), {
+        type: "execution.interrupted",
+        generation: input.generation,
+        summary: input.summary,
       });
+      this.applyAuthorityMutationInTransaction(mutation);
+      taskId = task.id;
     });
-    if (!taskId) {
-      return false;
-    }
+    if (!taskId) return false;
     this.syncTaskLocator(this.getTask(taskId)!);
     this.emit([taskId], [input.executionId]);
     return true;
   }
-
   recordAttachment(input: {
     executionId: string;
     receipt: RuntimeAttachmentReceipt;
@@ -3037,40 +2112,9 @@ export class WorkspaceAuthorityStore {
           input.receipt.toolAttachment,
           input.receipt.attachedAt,
         );
-      this.appendEventInTransaction({
-        aggregateType: "execution",
-        aggregateId: input.executionId,
-        revision: execution.revision,
-        kind: "runtime_bundle_attached",
-        payload: { bundleId: projection.bundleId, bundleDigest: projection.bundleDigest },
-      });
     });
     this.emit([execution.taskId], [execution.id]);
     return projection;
-  }
-
-  appendBlackboard(input: {
-    taskId: string;
-    kind: TaskBlackboardEntry["kind"];
-    producer: TaskBlackboardEntry["producer"];
-    content: unknown;
-  }): TaskBlackboardEntry {
-    if (!this.getTask(input.taskId)) {
-      throw new Error(`Task ${input.taskId} does not exist`);
-    }
-    let entry!: TaskBlackboardEntry;
-    this.transaction(() => {
-      entry = this.appendBlackboardInTransaction(input);
-      this.appendEventInTransaction({
-        aggregateType: "task",
-        aggregateId: input.taskId,
-        revision: this.getTask(input.taskId)!.revision,
-        kind: "blackboard_appended",
-        payload: { entryId: entry.id, kind: entry.kind, contentDigest: entry.contentDigest },
-      });
-    });
-    this.emit([input.taskId], []);
-    return entry;
   }
 
   listBlackboard(taskId: string): TaskBlackboardEntry[] {
@@ -3088,16 +2132,6 @@ export class WorkspaceAuthorityStore {
         createdAt: String(row.created_at),
       }),
     );
-  }
-
-  appendDecision(
-    input: Omit<HumanDecisionRecord, "id" | "workspaceId" | "decidedAt">,
-  ): HumanDecisionRecord {
-    const decision = this.transaction(() => this.appendDecisionInTransaction(input));
-    if (decision.taskId) {
-      this.emit([decision.taskId], []);
-    }
-    return decision;
   }
 
   listDecisions(taskId: string): HumanDecisionRecord[] {
@@ -3211,133 +2245,6 @@ export class WorkspaceAuthorityStore {
     });
   }
 
-  requestStop(input: {
-    taskId: string;
-    expectedRevision: number;
-    commandId: string;
-    actorId: string;
-    clientId: string;
-    deviceId?: string | null;
-  }): {
-    task: TaskProjection;
-    execution: ExecutionProjection | null;
-    duplicate: boolean;
-  } {
-    let result!: {
-      task: TaskProjection;
-      execution: ExecutionProjection | null;
-      duplicate: boolean;
-    };
-    this.transaction(() => {
-      const duplicate = this.database
-        .prepare("SELECT result_json FROM authority_commands WHERE command_id = ?")
-        .get(input.commandId) as { result_json: string } | undefined;
-      if (duplicate) {
-        const stored = JSON.parse(duplicate.result_json) as {
-          taskId: string;
-          executionId: string | null;
-        };
-        const task = this.getTask(stored.taskId);
-        if (!task) {
-          throw new Error(`Recorded task ${stored.taskId} is missing`);
-        }
-        result = {
-          task,
-          execution: stored.executionId ? this.getExecution(stored.executionId) : null,
-          duplicate: true,
-        };
-        return;
-      }
-      const task = this.getTask(input.taskId);
-      if (!task) {
-        throw new Error(`Task ${input.taskId} does not exist`);
-      }
-      if (task.revision !== input.expectedRevision) {
-        throw new WorkspaceAuthorityConflictError(
-          `Task ${input.taskId} revision changed from ${input.expectedRevision} to ${task.revision}`,
-        );
-      }
-      if (["completed", "stopped"].includes(task.status)) {
-        throw new Error(`Cannot stop a ${task.status} task`);
-      }
-      const nextRevision = task.revision + 1;
-      const now = nowIso();
-      this.database
-        .prepare(
-          `UPDATE tasks SET status = 'stopping', pending_control = 'stop',
-             summary = ?, revision = ?, updated_at = ?
-           WHERE task_id = ? AND revision = ?`,
-        )
-        .run("Stopping the active execution.", nextRevision, now, task.id, task.revision);
-      let execution = task.currentExecutionId ? this.getExecution(task.currentExecutionId) : null;
-      if (
-        execution &&
-        [
-          "created",
-          "starting",
-          "planning",
-          "awaiting_implementation",
-          "implementing",
-          "running",
-          "awaiting_provider",
-          "awaiting_user",
-        ].includes(execution.status)
-      ) {
-        this.cancelPendingExecutionApprovalsInTransaction(execution.id, now);
-        this.database
-          .prepare(
-            `UPDATE execution_attempts SET status = 'cancel_requested', revision = revision + 1,
-               last_activity_at = ?, summary = ? WHERE execution_id = ?`,
-          )
-          .run(now, "Cancellation requested by the user.", execution.id);
-        execution = this.getExecution(execution.id);
-      }
-      this.appendDecisionInTransaction({
-        taskId: task.id,
-        turnId: null,
-        cardId: null,
-        kind: "task_stop",
-        displayed: { command: "stop", taskId: task.id, taskTitle: task.title },
-        rawAnswer: { command: "stop" },
-        normalized: { controlIntent: "stop" },
-        actorId: input.actorId,
-        clientId: input.clientId,
-        deviceId: input.deviceId ?? null,
-        commandId: input.commandId,
-        expectedRevision: input.expectedRevision,
-        resultRevision: nextRevision,
-        supersedesDecisionId: null,
-        fidelity: "exact",
-      });
-      this.appendEventInTransaction({
-        aggregateType: "task",
-        aggregateId: task.id,
-        revision: nextRevision,
-        kind: "task_stop_requested",
-        payload: { executionId: execution?.id ?? null },
-        causationId: input.commandId,
-      });
-      this.database
-        .prepare(
-          `INSERT INTO authority_commands(
-             command_id, aggregate_type, aggregate_id, command_kind,
-             result_revision, result_json, created_at
-           ) VALUES (?, 'task', ?, 'stop', ?, ?, ?)`,
-        )
-        .run(
-          input.commandId,
-          task.id,
-          nextRevision,
-          JSON.stringify({ taskId: task.id, executionId: execution?.id ?? null }),
-          now,
-        );
-      result = { task: this.getTask(task.id)!, execution, duplicate: false };
-    });
-    this.emit([input.taskId], result.execution ? [result.execution.id] : []);
-    this.syncTaskLocator(result.task);
-    return result;
-  }
-
   requestCommand(input: {
     taskId: string;
     command: TaskCommand;
@@ -3351,10 +2258,6 @@ export class WorkspaceAuthorityStore {
     execution: ExecutionProjection | null;
     duplicate: boolean;
   } {
-    if (input.command === "stop") {
-      return this.requestStop(input);
-    }
-
     let result!: {
       task: TaskProjection;
       execution: ExecutionProjection | null;
@@ -3370,9 +2273,7 @@ export class WorkspaceAuthorityStore {
           executionId: string | null;
         };
         const task = this.getTask(stored.taskId);
-        if (!task) {
-          throw new Error(`Recorded task ${stored.taskId} is missing`);
-        }
+        if (!task) throw new Error(`Recorded task ${stored.taskId} is missing`);
         result = {
           task,
           execution: stored.executionId ? this.getExecution(stored.executionId) : null,
@@ -3382,122 +2283,23 @@ export class WorkspaceAuthorityStore {
       }
 
       const task = this.getTask(input.taskId);
-      if (!task) {
-        throw new Error(`Task ${input.taskId} does not exist`);
-      }
-      if (task.revision !== input.expectedRevision) {
-        throw new WorkspaceAuthorityConflictError(
-          `Task ${input.taskId} revision changed from ${input.expectedRevision} to ${task.revision}`,
-        );
-      }
-      if (["stopping", "stopped"].includes(task.status)) {
-        throw new Error(`Cannot ${input.command} a ${task.status} task`);
-      }
-
+      if (!task) throw new Error(`Task ${input.taskId} does not exist`);
       const execution = task.currentExecutionId ? this.getExecution(task.currentExecutionId) : null;
-      const hasActiveExecution =
-        execution !== null &&
-        [
-          "created",
-          "starting",
-          "planning",
-          "awaiting_implementation",
-          "implementing",
-          "running",
-          "awaiting_provider",
-          "awaiting_user",
-        ].includes(execution.status);
-      let status = task.status;
-      let summary = task.summary;
-      let pendingControl: TaskCommand | null = null;
-      let budgetStrength = task.budget.strength;
-      let maxFailedReviews = task.budget.maxFailedReviews;
-      switch (input.command) {
-        case "pause":
-          if (task.status === "completed") {
-            throw new Error("Cannot pause a completed task");
-          }
-          status = hasActiveExecution ? task.status : "paused";
-          pendingControl = hasActiveExecution ? "pause" : null;
-          summary = hasActiveExecution
-            ? "Pause requested; the task will pause at the current phase boundary."
-            : "Paused by the user.";
-          break;
-        case "resume":
-          if (!["paused", "interrupted", "budget_wait"].includes(task.status)) {
-            throw new Error(`Cannot resume a ${task.status} task`);
-          }
-          status = "queued";
-          pendingControl = null;
-          summary = "Resume requested; the task is queued for execution.";
-          break;
-        case "raise_budget":
-          if (task.status === "completed") {
-            throw new Error("Cannot raise the budget of a completed task");
-          }
-          const raised = nextTaskStrength(task.budget.strength);
-          if (!raised) {
-            throw new Error("The task already has the maximum Review budget");
-          }
-          budgetStrength = raised.strength;
-          maxFailedReviews = raised.maxFailedReviews;
-          status = task.status === "budget_wait" ? "queued" : task.status;
-          summary = "A budget extension was approved by the user.";
-          break;
-        case "review_only":
-          status = "queued";
-          pendingControl = "review_only";
-          summary = "An independent Review was requested by the user.";
-          break;
-      }
-
       const now = nowIso();
-      const nextRevision = task.revision + 1;
-      const update = this.database
-        .prepare(
-          `UPDATE tasks SET status = ?, summary = ?, pending_control = ?,
-             budget_strength = ?, max_failed_reviews = ?, revision = ?, updated_at = ?
-           WHERE task_id = ? AND revision = ?`,
-        )
-        .run(
-          status,
-          summary,
-          pendingControl,
-          budgetStrength,
-          maxFailedReviews,
-          nextRevision,
-          now,
-          task.id,
-          task.revision,
-        );
-      if (update.changes !== 1) {
-        throw new WorkspaceAuthorityConflictError("Task revision changed while applying command");
-      }
-      this.appendDecisionInTransaction({
-        taskId: task.id,
-        turnId: null,
-        cardId: null,
-        kind: `task_${input.command}`,
-        displayed: { command: input.command, taskId: task.id, taskTitle: task.title },
-        rawAnswer: { command: input.command },
-        normalized: { controlIntent: input.command },
-        actorId: input.actorId,
-        clientId: input.clientId,
-        deviceId: input.deviceId ?? null,
-        commandId: input.commandId,
-        expectedRevision: input.expectedRevision,
-        resultRevision: nextRevision,
-        supersedesDecisionId: null,
-        fidelity: "exact",
-      });
-      this.appendEventInTransaction({
-        aggregateType: "task",
-        aggregateId: task.id,
-        revision: nextRevision,
-        kind: `task_${input.command}_requested`,
-        payload: { executionId: execution?.id ?? null, deferred: hasActiveExecution },
-        causationId: input.commandId,
-      });
+      const mutation = this.transition(
+        this.authorityState({ task, execution }),
+        {
+          type: "task.control",
+          command: input.command,
+          expectedRevision: input.expectedRevision,
+          commandId: input.commandId,
+          actorId: input.actorId,
+          clientId: input.clientId,
+          deviceId: input.deviceId,
+        },
+        now,
+      );
+      this.applyAuthorityMutationInTransaction(mutation);
       this.database
         .prepare(
           `INSERT INTO authority_commands(
@@ -3509,11 +2311,18 @@ export class WorkspaceAuthorityStore {
           input.commandId,
           task.id,
           input.command,
-          nextRevision,
-          JSON.stringify({ taskId: task.id, executionId: execution?.id ?? null }),
+          mutation.task.revision,
+          JSON.stringify({
+            taskId: task.id,
+            executionId: mutation.execution?.id ?? null,
+          }),
           now,
         );
-      result = { task: this.getTask(task.id)!, execution, duplicate: false };
+      result = {
+        task: this.getTask(task.id)!,
+        execution: mutation.execution ? this.getExecution(mutation.execution.id) : null,
+        duplicate: false,
+      };
     });
     this.emit([input.taskId], result.execution ? [result.execution.id] : []);
     this.syncTaskLocator(result.task);
@@ -3566,87 +2375,26 @@ export class WorkspaceAuthorityStore {
       }
 
       const task = this.getTask(input.taskId);
-      if (!task) {
-        throw new Error(`Task ${input.taskId} does not exist`);
-      }
-      if (task.revision !== input.expectedRevision) {
-        throw new WorkspaceAuthorityConflictError(
-          `Task ${input.taskId} revision changed from ${input.expectedRevision} to ${task.revision}`,
-        );
-      }
-      if (task.status !== "awaiting_user" || !task.currentGoalId) {
-        throw new Error(`Task ${input.taskId} is not awaiting a user decision`);
-      }
-      const pending = this.getPendingTaskDecision(task.id);
-      if (!pending || pending.id !== input.decisionId) {
-        throw new WorkspaceAuthorityConflictError(
-          `Task decision ${input.decisionId} is no longer pending`,
-        );
-      }
-      const selected = pending.options.find((option) => option.id === input.optionId);
-      if (!selected) {
-        throw new Error(`Decision option ${input.optionId} does not belong to ${pending.id}`);
-      }
-
-      const nextRevision = task.revision + 1;
-      const normalized = {
-        decisionId: pending.id,
-        option: selected,
-        note: input.note?.trim() || null,
-      };
-      const decision = this.appendDecisionInTransaction({
-        taskId: task.id,
-        turnId: null,
-        cardId: null,
-        kind: "task_user_decision",
-        displayed: pending,
-        rawAnswer: { optionId: input.optionId, note: input.note ?? null },
-        normalized,
-        actorId: input.actorId,
-        clientId: input.clientId,
-        deviceId: input.deviceId ?? null,
-        commandId: input.commandId,
-        expectedRevision: input.expectedRevision,
-        resultRevision: nextRevision,
-        supersedesDecisionId: null,
-        fidelity: "exact",
-      });
+      if (!task) throw new Error(`Task ${input.taskId} does not exist`);
+      const pendingDecision = this.getPendingTaskDecision(task.id);
       const now = nowIso();
-      this.database
-        .prepare(
-          `UPDATE task_decision_requests SET status = 'answered', answer_decision_id = ?,
-             answered_at = ? WHERE decision_id = ? AND task_id = ? AND status = 'pending'`,
-        )
-        .run(decision.id, now, pending.id, task.id);
-      this.database
-        .prepare(
-          `UPDATE task_goals SET status = 'queued', revision = revision + 1
-           WHERE goal_id = ? AND task_id = ? AND status = 'awaiting_user'`,
-        )
-        .run(task.currentGoalId, task.id);
-      const update = this.database
-        .prepare(
-          `UPDATE tasks SET status = 'queued', summary = ?, pending_control = NULL,
-             revision = ?, updated_at = ? WHERE task_id = ? AND revision = ?`,
-        )
-        .run(`User selected: ${selected.label}`, nextRevision, now, task.id, task.revision);
-      if (update.changes !== 1) {
-        throw new WorkspaceAuthorityConflictError("Task changed while recording the user decision");
-      }
-      this.appendBlackboardInTransaction({
-        taskId: task.id,
-        kind: "human_decision",
-        producer: "user",
-        content: normalized,
-      });
-      this.appendEventInTransaction({
-        aggregateType: "task",
-        aggregateId: task.id,
-        revision: nextRevision,
-        kind: "task_user_decision_answered",
-        payload: { decisionId: pending.id, optionId: selected.id },
-        causationId: input.commandId,
-      });
+      const mutation = this.transition(
+        this.authorityState({ task, pendingDecision }),
+        {
+          type: "task.decision.answered",
+          decisionId: input.decisionId,
+          optionId: input.optionId,
+          note: input.note,
+          expectedRevision: input.expectedRevision,
+          commandId: input.commandId,
+          actorId: input.actorId,
+          clientId: input.clientId,
+          deviceId: input.deviceId,
+        },
+        now,
+      );
+      this.applyAuthorityMutationInTransaction(mutation);
+      if (!mutation.decision) throw new Error("Task decision transition produced no decision");
       this.database
         .prepare(
           `INSERT INTO authority_commands(
@@ -3657,17 +2405,20 @@ export class WorkspaceAuthorityStore {
         .run(
           input.commandId,
           task.id,
-          nextRevision,
-          JSON.stringify({ taskId: task.id, decisionRecordId: decision.id }),
+          mutation.task.revision,
+          JSON.stringify({ taskId: task.id, decisionRecordId: mutation.decision.id }),
           now,
         );
-      result = { task: this.getTask(task.id)!, decision, duplicate: false };
+      result = {
+        task: this.getTask(task.id)!,
+        decision: mutation.decision,
+        duplicate: false,
+      };
     });
     this.emit([input.taskId], []);
     this.syncTaskLocator(result.task);
     return result;
   }
-
   recordProviderPermissionDecision(input: {
     agentId: string;
     providerThreadId?: string | null;
@@ -3756,14 +2507,6 @@ export class WorkspaceAuthorityStore {
           producer: "user",
           content: normalized,
         });
-        this.appendEventInTransaction({
-          aggregateType: "task",
-          aggregateId: task.id,
-          revision: resultRevision,
-          kind: "provider_permission_decided",
-          payload: { requestId: input.requestId },
-          causationId: commandId,
-        });
       } else {
         const updated = this.database
           .prepare(
@@ -3814,104 +2557,47 @@ export class WorkspaceAuthorityStore {
     let result!: { task: TaskProjection; execution: ExecutionProjection | null };
     this.transaction(() => {
       const task = this.getTask(input.taskId);
-      if (!task || task.status !== "stopping") {
-        throw new WorkspaceAuthorityConflictError("Task is no longer stopping");
-      }
-      let execution = input.executionId ? this.getExecution(input.executionId) : null;
-      if (execution) {
-        if (input.generation && execution.generation !== input.generation) {
-          throw new WorkspaceAuthorityConflictError("Execution generation changed during Stop");
-        }
-        if (execution.status === "cancel_requested") {
-          const status: ExecutionLifecycle = input.orphaned ? "orphaned" : "canceled";
-          const now = nowIso();
-          this.database
-            .prepare(
-              `UPDATE execution_attempts SET status = ?, revision = revision + 1,
-                 last_activity_at = ?, completed_at = ?, summary = ? WHERE execution_id = ?`,
-            )
-            .run(
-              status,
-              now,
-              now,
-              input.orphaned
-                ? "Provider interruption could not be confirmed; execution is quarantined."
-                : "Execution canceled by the user.",
-              execution.id,
-            );
-          execution = this.getExecution(execution.id);
-        }
-      }
-      const nextRevision = task.revision + 1;
-      this.database
-        .prepare(
-          `UPDATE tasks SET status = 'stopped', pending_control = NULL,
-             summary = ?, revision = ?, updated_at = ?
-           WHERE task_id = ? AND revision = ?`,
-        )
-        .run(
-          input.orphaned
-            ? "Stopped; an orphaned provider execution remains quarantined."
-            : "Stopped by the user.",
-          nextRevision,
-          nowIso(),
-          task.id,
-          task.revision,
-        );
-      if (input.orphaned && execution) {
-        this.database
-          .prepare(
-            `INSERT INTO workspace_leases(
-               lease_key, task_id, execution_id, status, generation, expires_at, updated_at
-             ) VALUES ('mutation', ?, ?, 'cancel_quarantine', ?, NULL, ?)
-             ON CONFLICT(lease_key) DO UPDATE SET
-               task_id = excluded.task_id,
-               execution_id = excluded.execution_id,
-               status = excluded.status,
-               generation = excluded.generation,
-               expires_at = NULL,
-               updated_at = excluded.updated_at`,
-          )
-          .run(task.id, execution.id, execution.generation, nowIso());
-      } else {
-        this.database.prepare("DELETE FROM workspace_leases WHERE task_id = ?").run(task.id);
-      }
-      this.appendEventInTransaction({
-        aggregateType: "task",
-        aggregateId: task.id,
-        revision: nextRevision,
-        kind: input.orphaned ? "task_stopped_with_orphan" : "task_stopped",
-        payload: { executionId: execution?.id ?? null },
+      if (!task) throw new WorkspaceAuthorityConflictError("Task is no longer stopping");
+      const execution = input.executionId ? this.getExecution(input.executionId) : null;
+      const mutation = this.transition(this.authorityState({ task, execution }), {
+        type: "execution.stop.settled",
+        generation: input.generation,
+        orphaned: input.orphaned ?? false,
       });
-      result = { task: this.getTask(task.id)!, execution };
+      this.applyAuthorityMutationInTransaction(mutation);
+      result = {
+        task: this.getTask(task.id)!,
+        execution: mutation.execution ? this.getExecution(mutation.execution.id) : null,
+      };
     });
     this.emit([input.taskId], input.executionId ? [input.executionId] : []);
     this.syncTaskLocator(result.task);
     return result;
   }
-
   appendTimeline(input: { executionId: string; occurredAt?: string; item: unknown }): number {
-    const itemJson = JSON.stringify(input.item);
-    const external = Buffer.byteLength(itemJson, "utf8") > 64 * 1024;
-    const itemDigest = external ? this.blobs.put(itemJson).digest : null;
-    const row = this.database
-      .prepare(
-        "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM timeline_entries WHERE execution_id = ?",
-      )
-      .get(input.executionId) as { next_seq: number };
-    this.database
-      .prepare(
-        `INSERT INTO timeline_entries(execution_id, seq, occurred_at, item_json, item_digest)
-         VALUES (?, ?, ?, ?, ?)`,
-      )
-      .run(
-        input.executionId,
-        row.next_seq,
-        input.occurredAt ?? nowIso(),
-        external ? null : itemJson,
-        itemDigest,
-      );
-    return row.next_seq;
+    return this.transaction(() => {
+      const itemJson = JSON.stringify(input.item);
+      const external = Buffer.byteLength(itemJson, "utf8") > 64 * 1024;
+      const itemDigest = external ? this.blobs.put(itemJson).digest : null;
+      const row = this.database
+        .prepare(
+          "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM timeline_entries WHERE execution_id = ?",
+        )
+        .get(input.executionId) as { next_seq: number };
+      this.database
+        .prepare(
+          `INSERT INTO timeline_entries(execution_id, seq, occurred_at, item_json, item_digest)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.executionId,
+          row.next_seq,
+          input.occurredAt ?? nowIso(),
+          external ? null : itemJson,
+          itemDigest,
+        );
+      return row.next_seq;
+    });
   }
 
   readTimeline(input: {
@@ -3989,17 +2675,6 @@ export class WorkspaceAuthorityStore {
           new Date(Date.now() + input.ttlMs).toISOString(),
           now,
         );
-      this.appendEventInTransaction({
-        aggregateType: "lease",
-        aggregateId: this.workspaceId,
-        revision: 1,
-        kind: "workspace_mutation_lease_claimed",
-        payload: {
-          taskId: input.taskId,
-          executionId: input.executionId,
-          generation: input.generation,
-        },
-      });
       claimed = true;
     });
     if (claimed) {
@@ -4014,20 +2689,22 @@ export class WorkspaceAuthorityStore {
     generation: string;
     ttlMs: number;
   }): boolean {
-    const result = this.database
-      .prepare(
-        `UPDATE workspace_leases SET expires_at = ?, updated_at = ?
-         WHERE lease_key = 'mutation' AND task_id = ? AND execution_id = ?
-           AND generation = ? AND status = 'active'`,
-      )
-      .run(
-        new Date(Date.now() + input.ttlMs).toISOString(),
-        nowIso(),
-        input.taskId,
-        input.executionId,
-        input.generation,
-      );
-    return result.changes === 1;
+    return this.transaction(
+      () =>
+        this.database
+          .prepare(
+            `UPDATE workspace_leases SET expires_at = ?, updated_at = ?
+             WHERE lease_key = 'mutation' AND task_id = ? AND execution_id = ?
+               AND generation = ? AND status = 'active'`,
+          )
+          .run(
+            new Date(Date.now() + input.ttlMs).toISOString(),
+            nowIso(),
+            input.taskId,
+            input.executionId,
+            input.generation,
+          ).changes === 1,
+    );
   }
 
   releaseMutationLease(input: {
@@ -4035,13 +2712,15 @@ export class WorkspaceAuthorityStore {
     executionId: string;
     generation: string;
   }): boolean {
-    const result = this.database
-      .prepare(
-        `DELETE FROM workspace_leases WHERE lease_key = 'mutation' AND task_id = ?
-         AND execution_id = ? AND generation = ? AND status = 'active'`,
-      )
-      .run(input.taskId, input.executionId, input.generation);
-    return result.changes === 1;
+    return this.transaction(
+      () =>
+        this.database
+          .prepare(
+            `DELETE FROM workspace_leases WHERE lease_key = 'mutation' AND task_id = ?
+             AND execution_id = ? AND generation = ? AND status = 'active'`,
+          )
+          .run(input.taskId, input.executionId, input.generation).changes === 1,
+    );
   }
 
   hasMutationQuarantine(): boolean {
@@ -4057,102 +2736,58 @@ export class WorkspaceAuthorityStore {
     this.transaction(() => {
       const rows = this.database
         .prepare(
-          `SELECT * FROM execution_attempts
+          `SELECT execution_id FROM execution_attempts
            WHERE status IN (
              'created', 'starting', 'planning', 'awaiting_implementation', 'implementing',
              'running', 'awaiting_provider', 'awaiting_user', 'cancel_requested'
            )`,
         )
-        .all() as ExecutionRow[];
-      const now = nowIso();
+        .all() as Array<{ execution_id: string }>;
       for (const row of rows) {
-        const task = this.getTask(row.task_id);
-        if (!task) {
-          continue;
-        }
-        const stopping = task.status === "stopping" || row.status === "cancel_requested";
-        const executionStatus = stopping ? "orphaned" : "failed";
-        const taskStatus = stopping ? "stopped" : "interrupted";
-        const summary = stopping
-          ? "Daemon restarted before provider cancellation could be confirmed."
-          : row.status === "awaiting_implementation" || row.status === "awaiting_user"
-            ? "Daemon restarted while a provider approval callback was pending; this phase must be rerun."
-            : "Daemon restarted while the provider execution was active.";
-        this.cancelPendingExecutionApprovalsInTransaction(row.execution_id, now);
-        this.database
-          .prepare(
-            `UPDATE execution_attempts SET status = ?, summary = ?, last_activity_at = ?,
-               completed_at = ?, revision = revision + 1 WHERE execution_id = ?`,
-          )
-          .run(executionStatus, summary, now, now, row.execution_id);
-        this.database
-          .prepare(
-            `UPDATE tasks SET status = ?, summary = ?, current_execution_id = NULL,
-               pending_control = NULL, revision = revision + 1, updated_at = ? WHERE task_id = ?`,
-          )
-          .run(taskStatus, summary, now, task.id);
-        if (row.goal_id) {
-          this.database
-            .prepare(`UPDATE task_goals SET status = ?, revision = revision + 1 WHERE goal_id = ?`)
-            .run(stopping ? "stopped" : "interrupted", row.goal_id);
-        }
-        if (stopping) {
-          this.database
-            .prepare(
-              `INSERT INTO workspace_leases(
-                 lease_key, task_id, execution_id, status, generation, expires_at, updated_at
-               ) VALUES ('mutation', ?, ?, 'cancel_quarantine', ?, NULL, ?)
-               ON CONFLICT(lease_key) DO UPDATE SET
-                 task_id = excluded.task_id,
-                 execution_id = excluded.execution_id,
-                 status = excluded.status,
-                 generation = excluded.generation,
-                 expires_at = NULL,
-                 updated_at = excluded.updated_at`,
-            )
-            .run(task.id, row.execution_id, row.generation, now);
-        }
-        this.appendEventInTransaction({
-          aggregateType: "execution",
-          aggregateId: row.execution_id,
-          revision: row.revision + 1,
-          kind: stopping ? "execution_restart_orphaned" : "execution_restart_interrupted",
-          payload: { taskId: task.id },
+        const execution = this.getExecution(row.execution_id);
+        const task = execution ? this.getTask(execution.taskId) : null;
+        if (!execution || !task) continue;
+        const mutation = this.transition(this.authorityState({ task, execution }), {
+          type: "execution.restart.interrupted",
         });
+        this.applyAuthorityMutationInTransaction(mutation);
         changedTaskIds.push(task.id);
-        changedExecutionIds.push(row.execution_id);
+        changedExecutionIds.push(execution.id);
       }
-      if (rows.length > 0 && !rows.some((row) => row.status === "cancel_requested")) {
+      if (
+        rows.length > 0 &&
+        !rows.some((row) => this.getExecution(row.execution_id)?.status === "orphaned")
+      ) {
         this.database.prepare("DELETE FROM workspace_leases WHERE status = 'active'").run();
       }
     });
     for (const taskId of changedTaskIds) {
       const task = this.getTask(taskId);
-      if (task) {
-        this.syncTaskLocator(task);
-      }
+      if (task) this.syncTaskLocator(task);
     }
-    if (changedTaskIds.length > 0) {
-      this.emit(changedTaskIds, changedExecutionIds);
-    }
+    if (changedTaskIds.length > 0) this.emit(changedTaskIds, changedExecutionIds);
     return changedTaskIds;
   }
-
   upsertAgentRecord(record: StoredAgentRecord): void {
     if (record.workspaceId !== this.workspaceId) {
       throw new Error(`Agent ${record.id} does not belong to Workspace ${this.workspaceId}`);
     }
-    this.transaction(() => {
-      const existing = this.database
-        .prepare("SELECT provider_thread_id FROM agents WHERE agent_id = ?")
-        .get(record.id) as { provider_thread_id: string | null } | undefined;
-      const providerThreadId = record.persistence
-        ? (existing?.provider_thread_id ?? `provider-thread-visible-${record.id}`)
-        : (existing?.provider_thread_id ?? null);
-      if (record.persistence && providerThreadId) {
-        this.database
-          .prepare(
-            `INSERT INTO provider_threads(
+    let registerLocator = false;
+    this.transaction(
+      () => {
+        const existing = this.database
+          .prepare("SELECT provider_thread_id, provider FROM agents WHERE agent_id = ?")
+          .get(record.id) as
+          | { provider_thread_id: string | null; provider: string | null }
+          | undefined;
+        registerLocator = !existing || existing.provider === null;
+        const providerThreadId = record.persistence
+          ? (existing?.provider_thread_id ?? `provider-thread-visible-${record.id}`)
+          : (existing?.provider_thread_id ?? null);
+        if (record.persistence && providerThreadId) {
+          this.database
+            .prepare(
+              `INSERT INTO provider_threads(
                thread_id, adapter_id, native_handle, persistence_json,
                lineage_parent_id, status, created_at, updated_at
              ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
@@ -4162,77 +2797,96 @@ export class WorkspaceAuthorityStore {
                persistence_json = excluded.persistence_json,
                status = excluded.status,
                updated_at = excluded.updated_at`,
-          )
-          .run(
-            providerThreadId,
-            record.provider,
-            record.persistence.nativeHandle ?? record.persistence.sessionId,
-            JSON.stringify(record.persistence),
-            record.archivedAt ? "archived" : "active",
-            record.createdAt,
-            record.updatedAt,
-          );
-      }
-      this.database
-        .prepare(
-          `INSERT INTO agents(
+            )
+            .run(
+              providerThreadId,
+              record.provider,
+              record.persistence.nativeHandle ?? record.persistence.sessionId,
+              JSON.stringify(record.persistence),
+              record.archivedAt ? "archived" : "active",
+              record.createdAt,
+              record.updatedAt,
+            );
+        }
+        this.database
+          .prepare(
+            `INSERT INTO agents(
              agent_id, provider_thread_id, title, visible, authority_revision,
              active_turn_id, thoth_lifecycle, background_task_id, error,
-             created_at, updated_at
-           ) VALUES (?, ?, ?, ?, 0, NULL, 'idle', NULL, NULL, ?, ?)
+             created_at, updated_at, provider, cwd, last_activity_at,
+             last_user_message_at, labels_json, last_status, last_mode_id,
+             config_json, runtime_info_json, features_json, persistence_json,
+             last_error, requires_attention, attention_reason, attention_timestamp,
+             internal, archived_at, provider_run_mode, provider_control_revision
+           ) VALUES (
+             ?, ?, ?, ?, 0, NULL, 'idle', NULL, NULL,
+             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+           )
            ON CONFLICT(agent_id) DO UPDATE SET
              provider_thread_id = COALESCE(excluded.provider_thread_id, agents.provider_thread_id),
              title = excluded.title,
              visible = excluded.visible,
-             updated_at = excluded.updated_at`,
-        )
-        .run(
-          record.id,
-          providerThreadId,
-          record.title ?? null,
-          record.internal === true ? 0 : 1,
-          record.createdAt,
-          record.updatedAt,
-        );
-      this.database
-        .prepare(
-          `UPDATE agents SET
-             provider = ?, cwd = ?, last_activity_at = ?, last_user_message_at = ?,
-             labels_json = ?, last_status = ?, last_mode_id = ?, config_json = ?,
-             runtime_info_json = ?, features_json = ?, persistence_json = ?,
-             last_error = ?, requires_attention = ?, attention_reason = ?,
-             attention_timestamp = ?, internal = ?, archived_at = ?,
-             provider_run_mode = ?, provider_control_revision = ?
-           WHERE agent_id = ?`,
-        )
-        .run(
-          record.provider,
-          record.cwd,
-          record.lastActivityAt ?? null,
-          record.lastUserMessageAt ?? null,
-          JSON.stringify(record.labels ?? {}),
-          record.lastStatus,
-          record.lastModeId ?? null,
-          record.config === undefined ? null : JSON.stringify(record.config),
-          record.runtimeInfo === undefined ? null : JSON.stringify(record.runtimeInfo),
-          record.features === undefined ? null : JSON.stringify(record.features),
-          record.persistence === undefined ? null : JSON.stringify(record.persistence),
-          record.lastError ?? null,
-          record.requiresAttention === true ? 1 : 0,
-          record.attentionReason ?? null,
-          record.attentionTimestamp ?? null,
-          record.internal === true ? 1 : 0,
-          record.archivedAt ?? null,
-          record.providerRunMode ?? "default",
-          record.providerControlRevision ?? 0,
-          record.id,
-        );
-    });
-    this.catalog.updateAgentLocator({
-      agentId: record.id,
-      workspaceId: this.workspaceId,
-      updatedAt: record.updatedAt,
-    });
+             updated_at = excluded.updated_at,
+             provider = excluded.provider,
+             cwd = excluded.cwd,
+             last_activity_at = excluded.last_activity_at,
+             last_user_message_at = excluded.last_user_message_at,
+             labels_json = excluded.labels_json,
+             last_status = excluded.last_status,
+             last_mode_id = excluded.last_mode_id,
+             config_json = excluded.config_json,
+             runtime_info_json = excluded.runtime_info_json,
+             features_json = excluded.features_json,
+             persistence_json = excluded.persistence_json,
+             last_error = excluded.last_error,
+             requires_attention = excluded.requires_attention,
+             attention_reason = excluded.attention_reason,
+             attention_timestamp = excluded.attention_timestamp,
+             internal = excluded.internal,
+             archived_at = excluded.archived_at,
+             provider_run_mode = excluded.provider_run_mode,
+             provider_control_revision = excluded.provider_control_revision`,
+          )
+          .run(
+            record.id,
+            providerThreadId,
+            record.title ?? null,
+            record.internal === true ? 0 : 1,
+            record.createdAt,
+            record.updatedAt,
+            record.provider,
+            record.cwd,
+            record.lastActivityAt ?? null,
+            record.lastUserMessageAt ?? null,
+            JSON.stringify(record.labels ?? {}),
+            record.lastStatus,
+            record.lastModeId ?? null,
+            record.config === undefined ? null : JSON.stringify(record.config),
+            record.runtimeInfo === undefined ? null : JSON.stringify(record.runtimeInfo),
+            record.features === undefined ? null : JSON.stringify(record.features),
+            record.persistence === undefined ? null : JSON.stringify(record.persistence),
+            record.lastError ?? null,
+            record.requiresAttention === true ? 1 : 0,
+            record.attentionReason ?? null,
+            record.attentionTimestamp ?? null,
+            record.internal === true ? 1 : 0,
+            record.archivedAt ?? null,
+            record.providerRunMode ?? "default",
+            record.providerControlRevision ?? 0,
+          );
+        if (registerLocator) {
+          this.sql.ensureTimelineMeta.run(record.id, randomUUID(), record.updatedAt);
+        }
+      },
+      () => true,
+    );
+    if (registerLocator) {
+      this.catalog.updateAgentLocator({
+        agentId: record.id,
+        workspaceId: this.workspaceId,
+        updatedAt: record.updatedAt,
+      });
+    }
   }
 
   getAgentRecord(agentId: string): StoredAgentRecord | null {
@@ -4327,15 +2981,6 @@ export class WorkspaceAuthorityStore {
            ) VALUES (?, 'agent', ?, 'provider_control.update', ?, ?, ?)`,
         )
         .run(input.commandId, input.agentId, result.revision, JSON.stringify(result), now);
-      this.appendEventInTransaction({
-        aggregateType: "agent",
-        aggregateId: input.agentId,
-        revision: result.revision,
-        kind: "agent_provider_control_updated",
-        payload: { runMode: result.runMode },
-        causationId: input.commandId,
-        correlationId: input.commandId,
-      });
       return result;
     });
   }
@@ -4351,7 +2996,13 @@ export class WorkspaceAuthorityStore {
 
   getAgentTimelineMeta(agentId: string): { epoch: string; nextSeq: number } | null {
     const row = this.database
-      .prepare("SELECT epoch, next_seq FROM agent_timeline_meta WHERE agent_id = ?")
+      .prepare(
+        `SELECT meta.epoch, COALESCE(MAX(rows.seq), 0) + 1 AS next_seq
+         FROM agent_timeline_meta AS meta
+         LEFT JOIN agent_timeline_rows AS rows ON rows.agent_id = meta.agent_id
+         WHERE meta.agent_id = ?
+         GROUP BY meta.agent_id, meta.epoch`,
+      )
       .get(agentId) as { epoch: string; next_seq: number } | undefined;
     return row ? { epoch: row.epoch, nextSeq: row.next_seq } : null;
   }
@@ -4381,36 +3032,25 @@ export class WorkspaceAuthorityStore {
     if (rows.length === 0) {
       return;
     }
-    this.transaction(() => {
-      if (!this.getAgentRecord(agentId)) {
-        throw new Error(`Agent ${agentId} is not registered in Workspace ${this.workspaceId}`);
-      }
-      this.database
-        .prepare(
-          `INSERT OR IGNORE INTO agent_timeline_meta(agent_id, epoch, next_seq, updated_at)
-           VALUES (?, ?, 1, ?)`,
-        )
-        .run(agentId, randomUUID(), nowIso());
-      const insert = this.database.prepare(
-        `INSERT OR IGNORE INTO agent_timeline_rows(
-           agent_id, seq, timestamp, item_json, item_digest
-         ) VALUES (?, ?, ?, ?, ?)`,
-      );
-      let nextSeq = 1;
-      for (const row of rows) {
-        const serialized = JSON.stringify(row.item);
-        const blob =
-          Buffer.byteLength(serialized, "utf8") > 16_384 ? this.blobs.put(serialized) : null;
-        insert.run(agentId, row.seq, row.timestamp, blob ? null : serialized, blob?.digest ?? null);
-        nextSeq = Math.max(nextSeq, row.seq + 1);
-      }
-      this.database
-        .prepare(
-          `UPDATE agent_timeline_meta
-           SET next_seq = MAX(next_seq, ?), updated_at = ? WHERE agent_id = ?`,
-        )
-        .run(nextSeq, nowIso(), agentId);
-    });
+    let changed = false;
+    this.transaction(
+      () => {
+        for (const row of rows) {
+          const serialized = JSON.stringify(row.item);
+          const blob =
+            Buffer.byteLength(serialized, "utf8") > 16_384 ? this.blobs.put(serialized) : null;
+          const result = this.sql.insertTimelineRow.run(
+            agentId,
+            row.seq,
+            row.timestamp,
+            blob ? null : serialized,
+            blob?.digest ?? null,
+          );
+          changed ||= result.changes > 0;
+        }
+      },
+      () => changed,
+    );
   }
 
   deleteAgentTimeline(agentId: string): void {
@@ -4418,313 +3058,6 @@ export class WorkspaceAuthorityStore {
       this.database.prepare("DELETE FROM agent_timeline_rows WHERE agent_id = ?").run(agentId);
       this.database.prepare("DELETE FROM agent_timeline_meta WHERE agent_id = ?").run(agentId);
     });
-  }
-
-  importLegacyForeground(input: LegacyForegroundImport): void {
-    const turnLocators: Array<{ turnId: string; updatedAt: string }> = [];
-    const cardLocators: Array<{ cardId: string; turnId: string; updatedAt: string }> = [];
-    this.transaction(() => {
-      const agent = this.database
-        .prepare("SELECT agent_id FROM agents WHERE agent_id = ?")
-        .get(input.agentId);
-      if (!agent) {
-        throw new Error(`Legacy foreground Agent ${input.agentId} was not imported`);
-      }
-      for (const turn of input.turns) {
-        const userText = this.blobs.putJson(turn.userText);
-        this.database
-          .prepare(
-            `INSERT OR IGNORE INTO turns(
-               turn_id, agent_id, task_id, provider_thread_id, generation, status,
-               turn_kind, controls_json, source_message_id, workspace_path,
-               user_text_digest, provider_turn_id, background_task_id, error,
-               created_at, updated_at
-             ) VALUES (?, ?, NULL, (SELECT provider_thread_id FROM agents WHERE agent_id = ?),
-                       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          )
-          .run(
-            turn.id,
-            input.agentId,
-            input.agentId,
-            turn.generation,
-            turn.lifecycle,
-            turn.kind,
-            turn.controls === null ? null : JSON.stringify(turn.controls),
-            turn.sourceMessageId,
-            turn.workspacePath,
-            userText.digest,
-            turn.providerTurnId,
-            turn.backgroundTaskId,
-            turn.error,
-            turn.startedAt,
-            turn.updatedAt,
-          );
-        turnLocators.push({ turnId: turn.id, updatedAt: turn.updatedAt });
-        for (const card of turn.cards) {
-          const displayed = this.blobs.putJson(card.card);
-          const answer = card.answer === null ? null : this.blobs.putJson(card.answer);
-          const runtime = this.blobs.putJson(card.runtime);
-          this.database
-            .prepare(
-              `INSERT OR IGNORE INTO cards(
-                 card_id, turn_id, task_id, kind, status, displayed_digest,
-                 answer_digest, submitted_summary, runtime_digest, created_at, updated_at
-               ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            )
-            .run(
-              card.id,
-              turn.id,
-              card.kind,
-              card.status,
-              displayed.digest,
-              answer?.digest ?? null,
-              card.submittedSummary,
-              runtime.digest,
-              card.createdAt,
-              card.updatedAt,
-            );
-          cardLocators.push({ cardId: card.id, turnId: turn.id, updatedAt: card.updatedAt });
-          if (card.answer !== null) {
-            this.appendDecisionInTransaction({
-              taskId: null,
-              turnId: turn.id,
-              cardId: card.id,
-              kind: `${card.kind}_answer`,
-              displayed: card.card,
-              rawAnswer: card.answer,
-              normalized: card.answer,
-              actorId: "legacy-user",
-              clientId: "legacy-client",
-              deviceId: null,
-              commandId: card.commandId ?? `legacy-card-answer-${card.id}`,
-              expectedRevision: Math.max(0, input.revision - 1),
-              resultRevision: Math.max(1, input.revision),
-              supersedesDecisionId: null,
-              fidelity: "exact",
-            });
-          }
-        }
-      }
-      this.database
-        .prepare(
-          `UPDATE agents SET authority_revision = MAX(authority_revision, ?),
-             active_turn_id = ?, thoth_lifecycle = ?, background_task_id = ?,
-             error = ?, updated_at = MAX(updated_at, ?) WHERE agent_id = ?`,
-        )
-        .run(
-          input.revision,
-          input.activeTurnId,
-          input.lifecycle,
-          input.backgroundTaskId,
-          input.error,
-          input.updatedAt,
-          input.agentId,
-        );
-    });
-    for (const turn of turnLocators) {
-      this.catalog.updateTurnLocator({
-        turnId: turn.turnId,
-        workspaceId: this.workspaceId,
-        agentId: input.agentId,
-        updatedAt: turn.updatedAt,
-      });
-    }
-    for (const card of cardLocators) {
-      this.catalog.updateCardLocator({
-        cardId: card.cardId,
-        workspaceId: this.workspaceId,
-        agentId: input.agentId,
-        turnId: card.turnId,
-        updatedAt: card.updatedAt,
-      });
-    }
-  }
-
-  importLegacyTaskMemory(input: {
-    taskId: string;
-    kind: TaskBlackboardEntry["kind"];
-    producer: TaskBlackboardEntry["producer"];
-    content: unknown;
-    createdAt: string;
-  }): void {
-    const blob = this.blobs.putJson(input.content);
-    const existing = this.database
-      .prepare(
-        `SELECT entry_id FROM task_blackboard
-         WHERE task_id = ? AND kind = ? AND content_digest = ? LIMIT 1`,
-      )
-      .get(input.taskId, input.kind, blob.digest);
-    if (existing) return;
-    this.database
-      .prepare(
-        `INSERT INTO task_blackboard(
-           entry_id, task_id, kind, producer, content_digest, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        `blackboard-legacy-${randomUUID()}`,
-        input.taskId,
-        input.kind,
-        input.producer,
-        blob.digest,
-        input.createdAt,
-      );
-  }
-
-  importLegacyExecution(input: {
-    taskId: string;
-    goalId: string;
-    executionId: string;
-    phaseRunId: string;
-    phase: "planexec" | "review";
-    providerThreadId: string | null;
-    adapterId: string;
-    providerThreadNativeHandle?: string | null;
-    providerThreadPersistence?: Record<string, unknown> | null;
-    providerThreadStatus?: "legacy_pending_adoption" | "native_context_unavailable";
-    status: ExecutionLifecycle;
-    generation: string;
-    startedAt: string | null;
-    completedAt: string | null;
-    summary: string | null;
-    semanticHistory: unknown;
-  }): void {
-    if (this.getExecution(input.executionId)) return;
-    this.transaction(() => {
-      if (!this.getTask(input.taskId)) {
-        throw new Error(`Legacy execution Task ${input.taskId} is missing`);
-      }
-      if (input.providerThreadId) {
-        this.database
-          .prepare(
-            `INSERT OR IGNORE INTO provider_threads(
-               thread_id, adapter_id, native_handle, persistence_json,
-               lineage_parent_id, status, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
-          )
-          .run(
-            input.providerThreadId,
-            input.adapterId,
-            input.providerThreadNativeHandle ?? null,
-            input.providerThreadPersistence
-              ? JSON.stringify(input.providerThreadPersistence)
-              : null,
-            input.providerThreadStatus ?? "native_context_unavailable",
-            input.startedAt ?? nowIso(),
-            input.completedAt ?? input.startedAt ?? nowIso(),
-          );
-      }
-      this.database
-        .prepare(
-          `INSERT OR IGNORE INTO phase_runs(
-             phase_run_id, task_id, goal_id, phase_kind, status, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          input.phaseRunId,
-          input.taskId,
-          input.goalId,
-          input.phase,
-          input.status,
-          input.startedAt ?? nowIso(),
-          input.completedAt ?? input.startedAt ?? nowIso(),
-        );
-      this.database
-        .prepare(
-          `INSERT INTO execution_attempts(
-             execution_id, task_id, goal_id, phase_run_id, phase_kind,
-             provider_thread_id, status, generation, started_at, last_activity_at,
-             completed_at, summary, revision
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        )
-        .run(
-          input.executionId,
-          input.taskId,
-          input.goalId,
-          input.phaseRunId,
-          input.phase,
-          input.providerThreadId,
-          input.status,
-          input.generation,
-          input.startedAt,
-          input.completedAt ?? input.startedAt,
-          input.completedAt,
-          input.summary,
-        );
-      const serialized = JSON.stringify(input.semanticHistory);
-      const blob =
-        Buffer.byteLength(serialized, "utf8") > 16_384 ? this.blobs.put(serialized) : null;
-      this.database
-        .prepare(
-          `INSERT INTO timeline_entries(
-             execution_id, seq, occurred_at, item_json, item_digest
-           ) VALUES (?, 1, ?, ?, ?)`,
-        )
-        .run(
-          input.executionId,
-          input.completedAt ?? input.startedAt ?? nowIso(),
-          blob ? null : serialized,
-          blob?.digest ?? null,
-        );
-    });
-  }
-
-  importLegacyTaskDecision(input: {
-    taskId: string;
-    decision: unknown;
-    answer?: unknown;
-    submittedAt?: string;
-  }): void {
-    const raw = input.decision as Record<string, unknown>;
-    const request = TaskUserDecisionProjectionSchema.parse({
-      id: raw.id,
-      title: raw.title,
-      question: raw.question,
-      options: raw.options,
-      ...(typeof raw.notePlaceholder === "string" ? { notePlaceholder: raw.notePlaceholder } : {}),
-      createdAt: raw.createdAt,
-    });
-    const requestBlob = this.blobs.putJson(request);
-    this.database
-      .prepare(
-        `INSERT OR IGNORE INTO task_decision_requests(
-           decision_id, task_id, request_digest, status, created_at, answered_at
-         ) VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        request.id,
-        input.taskId,
-        requestBlob.digest,
-        input.answer === undefined ? "pending" : "answered",
-        request.createdAt,
-        input.submittedAt ?? null,
-      );
-    this.importLegacyTaskMemory({
-      taskId: input.taskId,
-      kind: "user_decision_request",
-      producer: "review",
-      content: request,
-      createdAt: request.createdAt,
-    });
-    if (input.answer !== undefined) {
-      this.appendDecision({
-        taskId: input.taskId,
-        turnId: null,
-        cardId: null,
-        kind: "loop_user_decision",
-        displayed: request,
-        rawAnswer: input.answer,
-        normalized: input.answer,
-        actorId: "legacy-user",
-        clientId: "legacy-client",
-        deviceId: null,
-        commandId: `legacy-task-decision-${request.id}`,
-        expectedRevision: 0,
-        resultRevision: 1,
-        supersedesDecisionId: null,
-        fidelity: "exact",
-      });
-    }
   }
 
   close(): void {
@@ -4950,15 +3283,20 @@ export class WorkspaceAuthorityStore {
     if (existing) {
       return this.toDecision(existing);
     }
-    const displayed = this.blobs.putJson(input.displayed);
-    const rawAnswer = this.blobs.putJson(input.rawAnswer);
-    const normalized = this.blobs.putJson(input.normalized);
     const decision = HumanDecisionRecordSchema.parse({
       ...input,
       id: `decision-${randomUUID()}`,
       workspaceId: this.workspaceId,
       decidedAt: nowIso(),
     });
+    this.insertDecisionInTransaction(decision);
+    return decision;
+  }
+
+  private insertDecisionInTransaction(decision: HumanDecisionRecord): void {
+    const displayed = this.blobs.putJson(decision.displayed);
+    const rawAnswer = this.blobs.putJson(decision.rawAnswer);
+    const normalized = this.blobs.putJson(decision.normalized);
     this.database
       .prepare(
         `INSERT INTO human_decisions(
@@ -4987,118 +3325,243 @@ export class WorkspaceAuthorityStore {
         decision.fidelity,
         decision.decidedAt,
       );
-    return decision;
   }
 
-  private requireActiveSemanticExecution(input: {
-    executionId: string;
-    generation: string;
-    phase: "planexec" | "review" | undefined;
-  }): ExecutionProjection {
-    const execution = this.getExecution(input.executionId);
-    const implementationMaySubmit =
-      input.phase === "planexec" && execution?.status === "implementing";
-    if (
-      !execution ||
-      execution.generation !== input.generation ||
-      (input.phase && execution.phase !== input.phase) ||
-      (!implementationMaySubmit &&
-        !["starting", "running", "awaiting_provider"].includes(execution.status))
-    ) {
-      throw new WorkspaceAuthorityConflictError(
-        `Execution ${input.executionId} is not the active semantic tool authority`,
-      );
-    }
-    const task = this.getTask(execution.taskId);
-    if (!task || task.currentExecutionId !== execution.id || task.status === "stopping") {
-      throw new WorkspaceAuthorityConflictError(
-        `Execution ${input.executionId} no longer owns Task ${execution.taskId}`,
-      );
-    }
-    if (!execution.attachment || execution.attachment.status !== "attached") {
-      throw new WorkspaceAuthorityConflictError(
-        `Execution ${input.executionId} has no valid RuntimeBundle attachment`,
-      );
-    }
-    return execution;
+  private authorityState(input: {
+    task: TaskProjection;
+    execution?: ExecutionProjection | null;
+    approval?: ExecutionApprovalProjection | null;
+    pendingDecision?: TaskUserDecisionProjection | null;
+    goalsRevision?: number;
+    latestPlanExecReport?: unknown;
+  }): AuthorityState {
+    const row = this.database
+      .prepare("SELECT authority_revision FROM workspace_meta WHERE workspace_id = ?")
+      .get(this.workspaceId) as { authority_revision: number };
+    return {
+      workspaceRevision: row.authority_revision,
+      task: input.task,
+      execution: input.execution ?? null,
+      approval: input.approval,
+      pendingDecision: input.pendingDecision,
+      goalsRevision: input.goalsRevision,
+      latestPlanExecReport: input.latestPlanExecReport,
+    };
   }
 
-  private applyFutureGoalReplanInTransaction(
-    task: TaskProjection,
-    currentGoalId: string,
-    verdict: ThothLoopReviewVerdictInput,
-  ): void {
-    const proposal = verdict.deferred_goal_replan_proposal;
-    if (!proposal) {
-      throw new Error("Review replan outcome is missing its proposal");
+  private transition(
+    state: AuthorityState,
+    command: AuthorityCommand,
+    now = nowIso(),
+  ): AuthorityMutation {
+    const deterministic: DeterministicAuthorityInput = {
+      now,
+      ids: {
+        decisionId: `decision-${randomUUID()}`,
+        decisionRequestId: `task-decision-${randomUUID()}`,
+        blackboardIds: Array.from({ length: 8 }, () => `blackboard-${randomUUID()}`),
+      },
+    };
+    try {
+      return transitionAuthority(state, command, deterministic);
+    } catch (error) {
+      if (error instanceof AuthorityTransitionError) {
+        if (error.kind === "conflict") throw new WorkspaceAuthorityConflictError(error.message);
+        throw new Error(error.message);
+      }
+      throw error;
     }
-    const metadata = this.getTaskRuntimeMetadata(task.id);
-    if (!metadata || metadata.goalsRevision !== proposal.base_goals_revision) {
-      throw new WorkspaceAuthorityConflictError(
-        `Goals revision changed before replan ${proposal.base_goals_revision} could be applied`,
+  }
+
+  private applyAuthorityMutationInTransaction(mutation: AuthorityMutation): void {
+    this.writeTaskProjectionInTransaction(mutation.task, mutation.goalsRevision);
+    if (mutation.execution) this.writeExecutionProjectionInTransaction(mutation.execution);
+    if (mutation.approval) this.writeApprovalProjectionInTransaction(mutation.approval);
+    if (mutation.cancelPendingApprovals && mutation.execution) {
+      this.cancelPendingExecutionApprovalsInTransaction(
+        mutation.execution.id,
+        mutation.task.updatedAt,
       );
     }
-    const current = task.goals.find((goal) => goal.id === currentGoalId);
-    if (!current) {
-      throw new Error(`Current Goal ${currentGoalId} is missing`);
+    if (mutation.decision) this.insertDecisionInTransaction(mutation.decision);
+    if (mutation.decisionRequest?.type === "open") {
+      const request = mutation.decisionRequest.request;
+      const blob = this.blobs.putJson(request);
+      this.database
+        .prepare(
+          `INSERT INTO task_decision_requests(
+             decision_id, task_id, request_digest, status, created_at
+           ) VALUES (?, ?, ?, 'pending', ?)`,
+        )
+        .run(request.id, mutation.task.id, blob.digest, request.createdAt);
+    } else if (mutation.decisionRequest?.type === "answer") {
+      this.database
+        .prepare(
+          `UPDATE task_decision_requests SET status = 'answered', answer_decision_id = ?,
+             answered_at = ? WHERE decision_id = ? AND task_id = ? AND status = 'pending'`,
+        )
+        .run(
+          mutation.decisionRequest.decisionId,
+          mutation.decisionRequest.answeredAt,
+          mutation.decisionRequest.requestId,
+          mutation.task.id,
+        );
     }
-    const affected = new Set(proposal.affected_goal_ids);
-    for (const goalId of affected) {
-      const goal = task.goals.find((candidate) => candidate.id === goalId);
-      if (!goal || goal.order <= current.order || goal.status !== "queued") {
-        throw new Error(`Replan may only replace unstarted future Goal ${goalId}`);
+    for (const entry of mutation.blackboard) this.insertBlackboardInTransaction(entry);
+    if (mutation.phaseRunStatus && mutation.execution) {
+      this.database
+        .prepare("UPDATE phase_runs SET status = ?, updated_at = ? WHERE phase_run_id = ?")
+        .run(mutation.phaseRunStatus, mutation.task.updatedAt, mutation.execution.phaseRunId);
+    }
+    for (const effect of mutation.effects) {
+      if (effect.type === "quarantine_execution") {
+        this.database
+          .prepare(
+            `INSERT INTO workspace_leases(
+               lease_key, task_id, execution_id, status, generation, expires_at, updated_at
+             ) VALUES ('mutation', ?, ?, 'cancel_quarantine', ?, NULL, ?)
+             ON CONFLICT(lease_key) DO UPDATE SET
+               task_id = excluded.task_id,
+               execution_id = excluded.execution_id,
+               status = excluded.status,
+               generation = excluded.generation,
+               expires_at = NULL,
+               updated_at = excluded.updated_at`,
+          )
+          .run(mutation.task.id, effect.executionId, effect.generation, mutation.task.updatedAt);
+      } else if (effect.type === "release_task_runtime") {
+        this.database.prepare("DELETE FROM workspace_leases WHERE task_id = ?").run(effect.taskId);
       }
     }
-    const proposedIds = new Set<string>();
-    const proposedOrders = new Set<number>();
-    for (const goal of proposal.goals) {
-      if (
-        proposedIds.has(goal.id) ||
-        proposedOrders.has(goal.order) ||
-        goal.order <= current.order
-      ) {
-        throw new Error("Replanned Goals must have unique future ids and order values");
-      }
-      proposedIds.add(goal.id);
-      proposedOrders.add(goal.order);
-    }
-    for (const existing of task.goals) {
-      if (!affected.has(existing.id) && proposedOrders.has(existing.order)) {
-        throw new Error(`Replanned Goal order ${existing.order} collides with an approved Goal`);
-      }
-    }
-    const deleteGoal = this.database.prepare(
-      "DELETE FROM task_goals WHERE task_id = ? AND goal_id = ?",
-    );
-    for (const goalId of affected) {
-      deleteGoal.run(task.id, goalId);
-    }
-    const insertGoal = this.database.prepare(
+  }
+
+  private writeTaskProjectionInTransaction(task: TaskProjection, goalsRevision?: number): void {
+    const update = this.database
+      .prepare(
+        `UPDATE tasks SET status = ?, summary = ?, current_goal_id = ?,
+           current_execution_id = ?, latest_review_direction = ?, budget_strength = ?,
+           used_failed_reviews = ?, max_failed_reviews = ?, active_duration_ms = ?,
+           token_count = ?, tool_call_count = ?, pending_control = ?,
+           goals_revision = COALESCE(?, goals_revision), revision = ?, updated_at = ?
+         WHERE task_id = ?`,
+      )
+      .run(
+        task.status,
+        task.summary,
+        task.currentGoalId,
+        task.currentExecutionId,
+        task.latestReviewDirection,
+        task.budget.strength,
+        task.budget.usedFailedReviews,
+        task.budget.maxFailedReviews,
+        task.budget.activeDurationMs,
+        task.budget.tokenCount,
+        task.budget.toolCallCount,
+        task.pendingControl,
+        goalsRevision ?? null,
+        task.revision,
+        task.updatedAt,
+        task.id,
+      );
+    if (update.changes !== 1) throw new Error(`Task ${task.id} disappeared during mutation`);
+    const goalIds = task.goals.map((goal) => goal.id);
+    this.database
+      .prepare(
+        `DELETE FROM task_goals WHERE task_id = ? AND goal_id NOT IN (${goalIds.map(() => "?").join(", ")})`,
+      )
+      .run(task.id, ...goalIds);
+    const upsert = this.database.prepare(
       `INSERT INTO task_goals(
          goal_id, task_id, goal_order, title, goal, constraints_json,
          acceptance_json, status, revision
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 1)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(goal_id) DO UPDATE SET
+         goal_order = excluded.goal_order,
+         title = excluded.title,
+         goal = excluded.goal,
+         constraints_json = excluded.constraints_json,
+         acceptance_json = excluded.acceptance_json,
+         status = excluded.status,
+         revision = excluded.revision`,
     );
-    const replanLineage = `replan-${metadata.goalsRevision + 1}`;
-    for (const goal of proposal.goals) {
-      insertGoal.run(
-        deriveDurableGoalId({
-          taskId: task.id,
-          sourceGoalId: goal.id,
-          order: goal.order,
-          lineage: replanLineage,
-        }),
+    for (const goal of task.goals) {
+      upsert.run(
+        goal.id,
         task.id,
         goal.order,
         goal.title,
         goal.goal,
         JSON.stringify(goal.constraints),
         JSON.stringify(goal.acceptance),
+        goal.status,
+        goal.revision,
       );
     }
+  }
+
+  private writeExecutionProjectionInTransaction(execution: ExecutionProjection): void {
+    const update = this.database
+      .prepare(
+        `UPDATE execution_attempts SET status = ?, generation = ?, run_mode_receipt_json = ?,
+           started_at = ?, last_activity_at = ?, completed_at = ?, summary = ?, revision = ?
+         WHERE execution_id = ?`,
+      )
+      .run(
+        execution.status,
+        execution.generation,
+        execution.runModeReceipt ? JSON.stringify(execution.runModeReceipt) : null,
+        execution.startedAt,
+        execution.lastActivityAt,
+        execution.completedAt,
+        execution.summary,
+        execution.revision,
+        execution.id,
+      );
+    if (update.changes !== 1) {
+      throw new Error(`Execution ${execution.id} disappeared during mutation`);
+    }
+  }
+
+  private writeApprovalProjectionInTransaction(approval: ExecutionApprovalProjection): void {
+    const update = this.database
+      .prepare(
+        `UPDATE execution_approvals SET status = ?, resolution_decision = ?,
+           resolution_actor_id = ?, resolved_at = ?, revision = ?, updated_at = ?
+         WHERE approval_id = ?`,
+      )
+      .run(
+        approval.status,
+        approval.resolution?.decision ?? null,
+        approval.resolution?.actorId ?? null,
+        approval.resolution?.resolvedAt ?? null,
+        approval.revision,
+        approval.updatedAt,
+        approval.id,
+      );
+    if (update.changes !== 1)
+      throw new Error(`Approval ${approval.id} disappeared during mutation`);
+  }
+
+  private insertBlackboardInTransaction(input: AuthorityBlackboardAppend): TaskBlackboardEntry {
+    const blob = this.blobs.putJson(input.content);
+    const entry = TaskBlackboardEntrySchema.parse({
+      ...input,
+      contentDigest: blob.digest,
+    });
     this.database
-      .prepare("UPDATE tasks SET goals_revision = goals_revision + 1 WHERE task_id = ?")
-      .run(task.id);
+      .prepare(
+        `INSERT INTO task_blackboard(entry_id, task_id, kind, producer, content_digest, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.id,
+        entry.taskId,
+        entry.kind,
+        entry.producer,
+        entry.contentDigest,
+        entry.createdAt,
+      );
+    return entry;
   }
 
   private appendBlackboardInTransaction(input: {
@@ -5277,13 +3740,6 @@ export class WorkspaceAuthorityStore {
            WHERE approval_id = ? AND status = 'pending'`,
         )
         .run(now, row.approval_id);
-      this.appendEventInTransaction({
-        aggregateType: "execution_approval",
-        aggregateId: row.approval_id,
-        revision: row.revision + 1,
-        kind: "execution_approval_canceled",
-        payload: { executionId },
-      });
     }
   }
 
@@ -5318,60 +3774,39 @@ export class WorkspaceAuthorityStore {
     });
   }
 
-  private appendEventInTransaction(input: {
-    aggregateType: string;
-    aggregateId: string;
-    revision: number;
-    kind: string;
-    payload: unknown;
-    causationId?: string;
-    correlationId?: string;
-  }): number {
-    const eventId = randomUUID();
-    const payloadJson = JSON.stringify(input.payload);
-    const result = this.database
-      .prepare(
-        `INSERT INTO authority_events(
-           event_id, aggregate_type, aggregate_id, revision, kind, payload_json,
-           payload_digest, causation_id, correlation_id, occurred_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        eventId,
-        input.aggregateType,
-        input.aggregateId,
-        input.revision,
-        input.kind,
-        payloadJson,
-        digestJson(input.payload),
-        input.causationId ?? eventId,
-        input.correlationId ?? input.aggregateId,
-        nowIso(),
-      );
-    this.database
-      .prepare(
-        "UPDATE workspace_meta SET authority_revision = authority_revision + 1, updated_at = ? WHERE workspace_id = ?",
-      )
-      .run(nowIso(), this.workspaceId);
-    return Number(result.lastInsertRowid);
-  }
-
-  private transaction<T>(run: () => T): T {
-    this.database.exec("BEGIN IMMEDIATE");
+  private transaction<T>(run: () => T, didChange?: () => boolean): T {
+    this.sql.begin.run();
     try {
+      const before = didChange
+        ? null
+        : Number((this.sql.totalChanges.get() as { count: number }).count);
       const result = run();
-      this.database.exec("COMMIT");
+      const changed = didChange
+        ? didChange()
+        : Number((this.sql.totalChanges.get() as { count: number }).count) > before!;
+      if (changed) {
+        this.sql.bumpRevision.run(nowIso(), this.workspaceId);
+      }
+      this.sql.commit.run();
       return result;
     } catch (error) {
-      this.database.exec("ROLLBACK");
+      this.sql.rollback.run();
       throw error;
+    }
+  }
+
+  private assertWorkspace(workspaceId: string): void {
+    if (workspaceId !== this.workspaceId) {
+      throw new Error(
+        `Workspace ${workspaceId} does not match authority shard ${this.workspaceId}`,
+      );
     }
   }
 
   private emit(changedTaskIds: string[], changedExecutionIds: string[]): void {
     const row = this.database
-      .prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM authority_events")
-      .get() as { seq: number };
+      .prepare("SELECT authority_revision AS seq FROM workspace_meta WHERE workspace_id = ?")
+      .get(this.workspaceId) as { seq: number };
     const update: WorkspaceAuthorityUpdate = {
       workspaceId: this.workspaceId,
       seq: row.seq,
@@ -5392,14 +3827,5 @@ export class WorkspaceAuthorityStore {
       revision: task.revision,
       updatedAt: task.updatedAt,
     });
-  }
-
-  private ensureColumn(table: string, column: string, definition: string): void {
-    const columns = this.database.prepare(`PRAGMA table_info(${table})`).all() as Array<{
-      name: string;
-    }>;
-    if (!columns.some((candidate) => candidate.name === column)) {
-      this.database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-    }
   }
 }

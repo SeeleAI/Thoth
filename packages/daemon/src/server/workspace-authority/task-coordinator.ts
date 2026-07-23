@@ -12,13 +12,13 @@ import type {
 } from "@thoth/protocol/task-authority";
 import type { ThothGoalsCardModel, ThothTaskCardModel } from "@thoth/protocol/thoth/rpc-schemas";
 import type { ThothRuntimeLoopStrength } from "@thoth/protocol/thoth-runtime-contract";
+import { createTaskAuthority } from "@thoth/core/authority";
 import { ExecutionRuntimeRegistry } from "./execution-runtime-registry.js";
 import {
   WorkspaceAuthorityConflictError,
   type WorkspaceAuthorityStore,
 } from "./workspace-authority-store.js";
 import type { WorkspaceAuthorityManager } from "./workspace-authority-manager.js";
-import { deriveDurableGoalId } from "./task-identity.js";
 
 export interface TaskCommandScheduler {
   scheduleTask(input: { workspaceId: string; taskId: string }): Promise<void>;
@@ -112,29 +112,7 @@ export class WorkspaceTaskCoordinator {
       updatedAt: now,
     });
     const taskId = `task-${randomUUID()}`;
-    const goals = input.goalsCard.goals
-      .slice()
-      .sort((left, right) => left.order - right.order)
-      .map((goal) => ({
-        id: deriveDurableGoalId({
-          taskId,
-          sourceGoalId: goal.id,
-          order: goal.order,
-          lineage: "approved-goals",
-        }),
-        order: goal.order,
-        title: goal.title,
-        goal: goal.goal,
-        constraints: goal.constraints,
-        acceptance: goal.acceptance,
-        status: "queued" as const,
-        revision: 1,
-      }));
-    const firstGoal = goals[0];
-    if (!firstGoal) {
-      throw new Error("Task registration requires at least one approved goal");
-    }
-    const task: TaskProjection = {
+    const task = createTaskAuthority({
       id: taskId,
       workspaceId: input.workspaceId,
       sourceAgentId: input.sourceAgentId,
@@ -143,26 +121,17 @@ export class WorkspaceTaskCoordinator {
       goal: input.taskCard.goal,
       constraints: input.taskCard.constraints,
       acceptance: input.taskCard.acceptance,
-      status: "queued",
-      summary: "Approved task queued for execution.",
-      currentGoalId: firstGoal.id,
-      currentExecutionId: null,
-      goals,
-      latestReviewDirection: null,
-      pendingDecision: null,
-      budget: {
-        strength,
-        usedFailedReviews: 0,
-        maxFailedReviews: failedReviewLimit(strength),
-        activeDurationMs: 0,
-        tokenCount: 0,
-        toolCallCount: 0,
-      },
-      pendingControl: null,
-      revision: 1,
-      createdAt: now,
-      updatedAt: now,
-    };
+      strength,
+      goals: input.goalsCard.goals.map((goal) => ({
+        sourceId: goal.id,
+        order: goal.order,
+        title: goal.title,
+        goal: goal.goal,
+        constraints: goal.constraints,
+        acceptance: goal.acceptance,
+      })),
+      now,
+    });
     const registered = this.store(input.workspaceId).registerTask({
       task,
       sourceTurnId: input.sourceTurnId,
@@ -434,18 +403,5 @@ function normalizeStrength(strength: ThothRuntimeLoopStrength | null): TaskStren
     case "one_plan_one_do":
     case null:
       return "single";
-  }
-}
-
-function failedReviewLimit(strength: TaskStrength): number {
-  switch (strength) {
-    case "single":
-      return 1;
-    case "light":
-      return 5;
-    case "balanced":
-      return 10;
-    case "infinite":
-      return 30;
   }
 }

@@ -1078,3 +1078,56 @@ Retry condition:
 Keep desktop and compact/mobile in fresh Workspaces, close overlays before downstream actions, mutate tracked Git
 content, request the public refresh, use formatter-stable JSON transcripts and reject screenshot threshold
 increases as a flake fix.
+
+## `NTH-EXP-040` A Shared Performance Gate Must Expose Redundant Durable Work, Not Encourage Reruns
+
+Observed on `2026-07-23` during `NTH-TD-032`:
+
+1. Five App candidate runs failed with Workspace-interactive medians from `1871.01ms` through `2040.53ms`; one
+   diagnostic pass did not erase those failures. Real lazy boundaries for Explorer, File and Terminal produced a
+   stable final `1603.73ms` without changing the UI. The first lazy build rendered white and then raised
+   `process is not defined`: Expo's Metro runtime must remain a classic script, while chunks containing
+   `import.meta` must be modules. Marking every script the same way was incorrect.
+2. Reusing Wrangler's previous local durable state caused Relay setup to return `401`. Each App E2E run now owns
+   an isolated temporary Wrangler state directory; deleting or accepting the stale room was rejected because it
+   would make the test depend on prior runs.
+3. The first complete Cut 1 gate expired at `300.018s` during response sample `3/7`. Functional work consumed
+   about `231s`, so Daemon and real Web builds were made parallel and TUI moved into the existing behavior group.
+   The first parallel attempt failed with `rsync 24` because Web staging copied `packages/daemon/dist` while the
+   Daemon build cleaned it; excluding that non-Web build output preserved both real builds and removed the race.
+4. Removing the one-second daemon sample cleanup interval made processes interfere and worsened ready median to
+   `2821.44ms`. The frozen cadence was restored. A separate health p95 failure around `0.31ms` was traced to
+   Express response serialization/ETag overhead; the equivalent health route now writes the same validated JSON,
+   status and dynamic timestamp directly after the same host/CORS checks.
+5. A complete gate at `284.809s` failed `clientToAdapterMs` and local overhead with one-sided Mann-Whitney
+   `p=0.0265/0.0364`. Agent/Turn/Card locator read-through caching and a single Agent UPSERT removed repeated SQL,
+   but no sample or threshold was changed. A later complete gate passed in `265.753s`; closeout review then found
+   that Core was built but its direct state-machine tests were missing from the sole gate. The run was not used to
+   verify the TODO; Core `9/9` was added to the same deadline.
+6. The first complete run with Core tests reached performance at `240.303s` and again failed only
+   `clientToAdapterMs` with `p=0.0265`. Seven independent response diagnostics were used before another full run,
+   rather than rerunning the gate. Method-level timing showed every foreground Turn rewrote the already-durable
+   Agent-to-Workspace catalog locator at roughly `1.4ms`, then separately wrote the new Turn locator. Agent
+   registration already owns the first write. Updating it only when missing or misrouted, plus skipping two
+   `total_changes()` probes for transactions known to change, reduced the diagnostic Client-to-adapter median to
+   `6.56ms` and final formal median to `6.80ms` while retaining Turn durability and Workspace revision ordering.
+7. A pre-performance formal attempt also stopped at `14.611s` on one unformatted catalog cache file. It remained
+   a failed gate; the repository formatter was applied only to that file before the complete rerun.
+8. The final gate passed all phases in `245.631s`. It retained all seven response samples, including the highest
+   `15.70ms` local-overhead sample, and passed without retrying, replacing samples, reducing coverage or changing
+   the Mann-Whitney/MAD rules.
+
+Conclusion:
+
+A bounded gate is useful only when every mandatory test is inside it and a red performance distribution triggers
+hot-path accounting. Routing projections may be cached, but durable business truth may not. The fastest safe
+write is usually the write whose ownership proves it is already complete, not an asynchronous durability
+shortcut.
+
+Retry condition:
+
+On another statistical regression, preserve `.dev/refactor-performance-current.json`, inspect every independent
+sample and time the exact synchronous operations before the adapter or projection boundary. Remove duplicate SQL,
+catalog writes, serialization or routing work while keeping commit-before-publish ordering. Do not tighten sample
+spacing, rerun for a lucky distribution, replace an outlier, move persistence after notification or omit a newly
+introduced module's direct tests from the shared gate.

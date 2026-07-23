@@ -2,7 +2,18 @@
 import { spawn } from "node:child_process";
 import { request } from "node:http";
 import net from "node:net";
-import { buildRefactorWebStage } from "./refactor-web-stage.mjs";
+import { buildRefactorWebStage, getBuiltRefactorWebStage } from "./refactor-web-stage.mjs";
+
+const visualMode = process.env.THOTH_REFACTOR_VISUAL_MODE ?? "all";
+const specs =
+  visualMode === "scorecard"
+    ? ["thoth-ui-scorecard.spec.ts"]
+    : visualMode === "performance"
+      ? ["refactor-app-performance.spec.ts"]
+      : visualMode === "all"
+        ? ["thoth-ui-scorecard.spec.ts", "refactor-app-performance.spec.ts"]
+        : null;
+if (!specs) throw new Error(`Unknown THOTH_REFACTOR_VISUAL_MODE: ${visualMode}`);
 
 async function getAvailablePort() {
   return new Promise((resolve, reject) => {
@@ -91,9 +102,11 @@ if (process.env.THOTH_ACCEPT_PREBUILT !== "1") {
   await run("npm", ["run", "build:daemon"]);
 }
 const webDist =
-  process.env.THOTH_ACCEPT_WEB_PREBUILT === "1"
-    ? "packages/app/dist"
-    : (await buildRefactorWebStage()).dist;
+  process.env.THOTH_ACCEPT_WEB_STAGE_PREBUILT === "1"
+    ? getBuiltRefactorWebStage().dist
+    : process.env.THOTH_ACCEPT_WEB_PREBUILT === "1"
+      ? "packages/app/dist"
+      : (await buildRefactorWebStage()).dist;
 
 const port = await getAvailablePort();
 const baseUrl = `http://127.0.0.1:${port}`;
@@ -109,15 +122,7 @@ try {
   await waitForHttp(baseUrl);
   await run(
     "npm",
-    [
-      "--workspace=@thoth/app",
-      "run",
-      "test:e2e",
-      "--",
-      "thoth-ui-scorecard.spec.ts",
-      "refactor-app-performance.spec.ts",
-      ...process.argv.slice(2),
-    ],
+    ["--workspace=@thoth/app", "run", "test:e2e", "--", ...specs, ...process.argv.slice(2)],
     {
       env: {
         ...process.env,

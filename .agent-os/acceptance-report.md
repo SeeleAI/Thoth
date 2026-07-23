@@ -2895,8 +2895,60 @@ publication ran. Thoth did not probe, stop, restart or reuse reserved Paseo `127
 
 ### `NTH-EV-053` Pure Core And Workspace Authority Cutover
 
-Status: not started. Reserved for `NTH-TD-032` implementation, Release `05775486` migration/failure-injection,
-single-transaction authority, restart/cursor behavior, source/performance deltas and the shared gate.
+Status: verified.
+
+Evidence on `2026-07-23`:
+
+1. `@thoth/core` is now a real pure package. `transitionAuthority(state, command, deterministicInput)` owns
+   deterministic Task, Execution, Card/HumanDecision and blackboard mutations; callers supply time and IDs, and
+   Core has no database, process, UI or Provider runtime dependency. Its direct state-machine suite passed `9/9`
+   and is now a mandatory command inside `accept:refactor:fast`, not an optional narrow check.
+2. Daemon authority uses one normalized per-Workspace SQLite Repository/Unit of Work. The checked schema is
+   created only for a new database by the explicit schema module; opening an existing database validates
+   `user_version` and rejects an unsupported layout. Runtime constructor `CREATE IF NOT EXISTS`, `ensureColumn`,
+   schema guessing and the duplicate `authority_events` write/read path are absent.
+3. Every successful changing transaction advances durable `workspace_meta.authority_revision`; Core mutations,
+   normalized entity writes, Timeline append and projections commit in one transaction. Agent/Turn/Card catalog
+   locators remain durable routing projections, while their read-through caches do not contain Task or Agent
+   business state. Repeated foreground turns no longer rewrite an unchanged Agent locator.
+4. Release `05775486` migrates under an exclusive lock through copy, transform, integrity/FK/entity/digest
+   validation, fsync and atomic activation. Copy/transform/validate/activate failure injection preserves the old
+   files and refuses startup. The migrated canonical semantic digest remains
+   `74f79a53c1cae8d58dbedb7d57a553b8696170371a11650e2d70e91720f74d5f`, including Tasks, Goals, Executions,
+   Cards, approvals, RuntimeBundle attachments, provider handles and both Timeline families.
+5. All daemon consumers now use the new Core/store path. The old task/review/replan reducers, `task-identity.ts`,
+   monolithic migration implementation and unused Daemon `openai` / `@anthropic-ai/sdk` runtime dependencies are
+   removed. No old/new read or write fallback, stub Core or alternate authority implementation remains.
+6. Real UI behavior remained equivalent. The final gate rebuilt the actual `4416`-module Expo Web export and
+   passed desktop plus compact/mobile Workspace, Git changes, File Explorer/README pane, Terminal, Settings,
+   screenshot, keyboard, focus, a11y and responsive transcripts, together with the OpenTUI fixed frame. File,
+   Terminal and Explorer boundaries load lazily without changing navigation, layout, copy or interaction.
+7. Source metrics, including non-ignored untracked production candidates, are all below the clean baseline:
+   `1,237` files (`+3`), `307,869` physical LOC (`-662`), `1,296,453` scanner tokens (`-2,111`), `1,343,037`
+   AST nodes (`-3,622`), `5,053` non-type static imports (`-4`) and `164` runtime dependency edges (`-1`). The
+   file-count increase is the final Core/schema/lazy-boundary module split; code and graph complexity are net
+   lower.
+8. Final seven-sample medians were daemon ready `2211.68ms`, idle RSS `472506368` bytes, idle CPU `0ms`, health
+   p50/p95 `0.0972/0.1523ms`, Client-to-adapter `6.8044ms`, adapter-event-to-Client `7.2938ms` and local response
+   overhead `14.0867ms` with p95 `15.6977ms`. App medians were Workspace interactive `1603.73ms`, heap
+   `49340928` bytes and Settings navigation `202.14ms`. All unchanged Mann-Whitney plus median/MAD guards passed;
+   no sample was hidden or replaced.
+9. The final complete `npm run accept:refactor:fast` passed in `245.631s` under one shared `300s` deadline:
+   static contracts `3.133s`, Foundation `39.731s`, Core/Drivers/TUI build plus Core tests `7.130s`, parallel
+   Daemon/real-Web build `16.235s`, full behavior/visual/TUI `83.557s`, App performance `27.261s` and isolated
+   daemon/response performance `68.550s`. Foundation alone passed `559` tests; the behavior phase also covered
+   migration, public Plan/Loop/Queue/reconnect, Provider controls, rewind, file transport and Task authority.
+10. Failed runs and rejected shortcuts are preserved in `NTH-EXP-040`: App performance regressions, Wrangler
+    state contamination, lazy-bundle script-mode failures, the `300.018s` timeout, over-dense daemon sampling,
+    health p95 regression, concurrent staging `rsync 24`, response Mann-Whitney failures, the missing Core-test
+    coverage discovery and the final redundant catalog-write root cause. Thresholds, sample count and public
+    behavior were not weakened.
+
+Boundary:
+
+No AppImage, Android/iOS/native package, real Provider, hosted Relay journey, GitHub Action, push, tag, Release or
+publication ran. Thoth did not probe, stop, restart or reuse reserved Paseo `127.0.0.1:6767`. Final 50k LOC and
+hard end-state performance targets remain open under `NTH-TD-033` through `NTH-TD-039`.
 
 ### `NTH-EV-054` Direct Capability Harness Cutover
 

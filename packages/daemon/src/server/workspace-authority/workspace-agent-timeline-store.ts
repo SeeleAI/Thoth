@@ -114,9 +114,10 @@ export class WorkspaceAgentTimelineStore implements AgentTimelineStore {
   close(): void {}
 
   private store(agentId: string): WorkspaceAuthorityStore {
-    const located = this.authority.forAgent(agentId);
     const workspaceId = this.workspaceByAgent.get(agentId);
-    const store = located ?? (workspaceId ? this.authority.forWorkspace(workspaceId) : null);
+    const store = workspaceId
+      ? this.authority.forWorkspace(workspaceId)
+      : this.authority.forAgent(agentId);
     if (!store) {
       throw new Error(`Agent ${agentId} has no Workspace timeline authority`);
     }

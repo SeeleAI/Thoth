@@ -29,23 +29,46 @@ try {
 
   await runGroup("foundation", [command(npm, ["run", "check:foundation"])]);
 
-  await runGroup("runtime build", [command(npm, ["run", "build:daemon"])]);
+  await runGroup("runtime dependency build", [
+    command(npm, ["run", "build", "--workspace=@thoth/core"]),
+    command(npm, ["run", "test", "--workspace=@thoth/core"]),
+    command(npm, ["run", "build", "--workspace=@thoth/drivers"]),
+    command(npm, ["run", "build", "--workspace=@thoth/tui"]),
+  ]);
+
+  await runGroup("daemon and real web build", [
+    command(npm, ["run", "build", "--workspace=@thoth/daemon"]),
+    command(process.execPath, ["scripts/refactor-web-stage.mjs", "--build"]),
+  ]);
 
   await runGroup("behavior and real web contracts", [
     command(npm, ["run", "accept:thoth:fast"], { THOTH_ACCEPT_PREBUILT: "1" }),
-    command(npm, ["run", "accept:refactor:visual"], { THOTH_ACCEPT_PREBUILT: "1" }),
+    command(npm, ["run", "accept:refactor:visual"], {
+      THOTH_ACCEPT_PREBUILT: "1",
+      THOTH_ACCEPT_WEB_STAGE_PREBUILT: "1",
+      THOTH_REFACTOR_VISUAL_MODE: "scorecard",
+    }),
+    command(npm, ["run", "smoke:tui:navigation"]),
+  ]);
+
+  await runGroup("exclusive App performance sampling", [
+    command(npm, ["run", "accept:refactor:visual"], {
+      THOTH_ACCEPT_PREBUILT: "1",
+      THOTH_ACCEPT_WEB_STAGE_PREBUILT: "1",
+      THOTH_REFACTOR_VISUAL_MODE: "performance",
+    }),
   ]);
 
   const appPerformanceArgs = ["scripts/check-refactor-app-performance.mjs"];
   if (stage.stage >= 7) appPerformanceArgs.push("--final");
   await runGroup("App performance contract", [command(process.execPath, appPerformanceArgs)]);
 
-  await runGroup("TUI frame contract", [command(npm, ["run", "smoke:tui:navigation"])]);
-
   const performanceArgs = [
     "scripts/refactor-performance.mjs",
     "--baseline",
     "scripts/refactor-performance-baseline.json",
+    "--write",
+    ".dev/refactor-performance-current.json",
   ];
   if (stage.stage >= 7) performanceArgs.push("--final");
   await runGroup("isolated performance", [command(process.execPath, performanceArgs)]);

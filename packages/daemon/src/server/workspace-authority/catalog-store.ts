@@ -1,7 +1,7 @@
-import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import type { PersistedProjectRecord, PersistedWorkspaceRecord } from "../workspace-registry.js";
+import { openCatalogDatabase } from "../storage-schema.js";
 
 export interface CatalogWorkspaceRecord {
   id: string;
@@ -25,99 +25,12 @@ export interface CatalogProviderProfile {
 
 export class WorkspaceCatalogStore {
   private readonly database: DatabaseSync;
+  private readonly agentLocations = new Map<string, string | null>();
+  private readonly turnLocations = new Map<string, string | null>();
+  private readonly cardLocations = new Map<string, string | null>();
 
   constructor(thothHome: string) {
-    mkdirSync(thothHome, { recursive: true });
-    this.database = new DatabaseSync(path.join(thothHome, "catalog.sqlite"), {
-      enableForeignKeyConstraints: true,
-    });
-    this.database.exec(
-      "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;",
-    );
-    this.database.exec(`
-      CREATE TABLE IF NOT EXISTS catalog_schema_migrations (
-        version INTEGER PRIMARY KEY NOT NULL,
-        checksum TEXT NOT NULL,
-        applied_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS catalog_workspaces (
-        workspace_id TEXT PRIMARY KEY NOT NULL,
-        canonical_path TEXT NOT NULL UNIQUE,
-        display_name TEXT NOT NULL,
-        kind TEXT NOT NULL CHECK(kind IN ('workspace', 'worktree')),
-        parent_workspace_id TEXT,
-        archived_at TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS catalog_projects (
-        project_id TEXT PRIMARY KEY NOT NULL,
-        root_path TEXT NOT NULL UNIQUE,
-        kind TEXT NOT NULL CHECK(kind IN ('git', 'non_git')),
-        display_name TEXT NOT NULL,
-        custom_name TEXT,
-        archived_at TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS catalog_provider_profiles (
-        profile_id TEXT PRIMARY KEY NOT NULL,
-        adapter_id TEXT NOT NULL,
-        config_json TEXT NOT NULL,
-        enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS catalog_settings (
-        setting_key TEXT PRIMARY KEY NOT NULL,
-        value_json TEXT NOT NULL,
-        revision INTEGER NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS catalog_task_locator (
-        task_id TEXT PRIMARY KEY NOT NULL,
-        workspace_id TEXT NOT NULL,
-        title TEXT NOT NULL,
-        status TEXT NOT NULL,
-        revision INTEGER NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(workspace_id) REFERENCES catalog_workspaces(workspace_id)
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS catalog_task_locator_workspace_updated
-        ON catalog_task_locator(workspace_id, updated_at DESC);
-      CREATE TABLE IF NOT EXISTS catalog_agent_locator (
-        agent_id TEXT PRIMARY KEY NOT NULL,
-        workspace_id TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(workspace_id) REFERENCES catalog_workspaces(workspace_id)
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS catalog_turn_locator (
-        turn_id TEXT PRIMARY KEY NOT NULL,
-        workspace_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(workspace_id) REFERENCES catalog_workspaces(workspace_id)
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS catalog_card_locator (
-        card_id TEXT PRIMARY KEY NOT NULL,
-        workspace_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        turn_id TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(workspace_id) REFERENCES catalog_workspaces(workspace_id)
-      ) STRICT;
-    `);
-    this.ensureColumn("catalog_workspaces", "project_id", "TEXT");
-    this.ensureColumn("catalog_workspaces", "registry_kind", "TEXT");
-    this.ensureColumn("catalog_workspaces", "title", "TEXT");
-    this.ensureColumn("catalog_workspaces", "branch", "TEXT");
-    this.ensureColumn("catalog_workspaces", "base_branch", "TEXT");
-    this.database
-      .prepare(
-        `INSERT OR IGNORE INTO catalog_schema_migrations(version, checksum, applied_at)
-         VALUES (1, 'workspace-task-authority-v1', ?)`,
-      )
-      .run(new Date().toISOString());
+    this.database = openCatalogDatabase(thothHome);
   }
 
   upsertWorkspace(record: CatalogWorkspaceRecord): void {
@@ -360,24 +273,27 @@ export class WorkspaceCatalogStore {
   }
 
   locateAgent(agentId: string): string | null {
-    const row = this.database
-      .prepare("SELECT workspace_id FROM catalog_agent_locator WHERE agent_id = ?")
-      .get(agentId) as { workspace_id: string } | undefined;
-    return row?.workspace_id ?? null;
+    return this.locate(
+      this.agentLocations,
+      "SELECT workspace_id FROM catalog_agent_locator WHERE agent_id = ?",
+      agentId,
+    );
   }
 
   locateTurn(turnId: string): string | null {
-    const row = this.database
-      .prepare("SELECT workspace_id FROM catalog_turn_locator WHERE turn_id = ?")
-      .get(turnId) as { workspace_id: string } | undefined;
-    return row?.workspace_id ?? null;
+    return this.locate(
+      this.turnLocations,
+      "SELECT workspace_id FROM catalog_turn_locator WHERE turn_id = ?",
+      turnId,
+    );
   }
 
   locateCard(cardId: string): string | null {
-    const row = this.database
-      .prepare("SELECT workspace_id FROM catalog_card_locator WHERE card_id = ?")
-      .get(cardId) as { workspace_id: string } | undefined;
-    return row?.workspace_id ?? null;
+    return this.locate(
+      this.cardLocations,
+      "SELECT workspace_id FROM catalog_card_locator WHERE card_id = ?",
+      cardId,
+    );
   }
 
   updateAgentLocator(input: { agentId: string; workspaceId: string; updatedAt: string }): void {
@@ -390,10 +306,12 @@ export class WorkspaceCatalogStore {
            updated_at = excluded.updated_at`,
       )
       .run(input.agentId, input.workspaceId, input.updatedAt);
+    this.agentLocations.set(input.agentId, input.workspaceId);
   }
 
   removeAgentLocator(agentId: string): void {
     this.database.prepare("DELETE FROM catalog_agent_locator WHERE agent_id = ?").run(agentId);
+    this.agentLocations.set(agentId, null);
   }
 
   updateTurnLocator(input: {
@@ -412,6 +330,7 @@ export class WorkspaceCatalogStore {
            updated_at = excluded.updated_at`,
       )
       .run(input.turnId, input.workspaceId, input.agentId, input.updatedAt);
+    this.turnLocations.set(input.turnId, input.workspaceId);
   }
 
   updateCardLocator(input: {
@@ -432,10 +351,22 @@ export class WorkspaceCatalogStore {
            updated_at = excluded.updated_at`,
       )
       .run(input.cardId, input.workspaceId, input.agentId, input.turnId, input.updatedAt);
+    this.cardLocations.set(input.cardId, input.workspaceId);
   }
 
   close(): void {
+    this.agentLocations.clear();
+    this.turnLocations.clear();
+    this.cardLocations.clear();
     this.database.close();
+  }
+
+  private locate(cache: Map<string, string | null>, query: string, id: string): string | null {
+    if (cache.has(id)) return cache.get(id) ?? null;
+    const row = this.database.prepare(query).get(id) as { workspace_id: string } | undefined;
+    const workspaceId = row?.workspace_id ?? null;
+    cache.set(id, workspaceId);
+    return workspaceId;
   }
 
   private toWorkspace(row: Record<string, unknown>): CatalogWorkspaceRecord {
@@ -483,14 +414,5 @@ export class WorkspaceCatalogStore {
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
     };
-  }
-
-  private ensureColumn(table: string, column: string, definition: string): void {
-    const columns = this.database.prepare(`PRAGMA table_info(${table})`).all() as Array<{
-      name: string;
-    }>;
-    if (!columns.some((entry) => entry.name === column)) {
-      this.database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-    }
   }
 }

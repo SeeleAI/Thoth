@@ -118,10 +118,7 @@ import { WorkspaceChatService } from "./chat/chat-service.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { ScheduleService } from "./schedule/service.js";
 import { DaemonConfigStore } from "./daemon-config-store.js";
-import {
-  ensureThothStorageLayout,
-  finalizeThothStorageLayoutMigration,
-} from "./storage-layout-migration.js";
+import { ensureThothStorageLayout } from "./storage-layout-migration.js";
 import { WorkspaceGitServiceImpl } from "./workspace-git-service.js";
 import { resolveWorkspaceIdForPath } from "./resolve-workspace-id-for-path.js";
 import {
@@ -438,7 +435,7 @@ export async function createThothDaemon(
   const bootstrapStart = performance.now();
   const elapsed = () => `${(performance.now() - bootstrapStart).toFixed(0)}ms`;
   const daemonVersion = resolveDaemonVersion(import.meta.url);
-  const storageLayout = await ensureThothStorageLayout(config.thothHome, logger);
+  await ensureThothStorageLayout(config.thothHome, logger);
   const daemonConfigStore = new DaemonConfigStore(
     config.thothHome,
     {
@@ -589,6 +586,14 @@ export async function createThothDaemon(
     next();
   });
 
+  // Liveness keeps service-host classification, Host validation and CORS, then
+  // returns before Web UI, bearer, body-parser and static-file middleware.
+  app.get("/api/health", (_req, res) => {
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(`{"status":"ok","timestamp":"${new Date().toISOString()}"}`);
+  });
+
   // Local, harmless, and token-gated; deliberately skips daemon auth.
   app.post(
     "/api/terminal-activity",
@@ -612,11 +617,6 @@ export async function createThothDaemon(
 
   // Serve static files from public directory
   app.use("/public", express.static(staticDir));
-
-  // Health check endpoint
-  app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
 
   app.get("/api/status", (_req, res) => {
     res.json({
@@ -770,14 +770,6 @@ export async function createThothDaemon(
   });
   for (const adapterId of Object.keys(initialAgentManagerState.clients)) {
     harnessAdapters.get(adapterId);
-  }
-  if (storageLayout.requiresProviderThreadFinalization) {
-    await finalizeThothStorageLayoutMigration({
-      thothHome: config.thothHome,
-      logger,
-      authority: workspaceAuthorityManager,
-      adapters: harnessAdapters,
-    });
   }
   const workspaceTaskOrchestrator = new WorkspaceTaskOrchestrator(
     workspaceAuthorityManager,

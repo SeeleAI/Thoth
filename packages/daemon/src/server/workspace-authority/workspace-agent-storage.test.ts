@@ -70,18 +70,25 @@ describe("Workspace Agent persistence", () => {
       },
     });
     timeline.bindAgentWorkspace("agent-1", workspace.workspaceId);
-    await timeline.bulkInsert("agent-1", [
+    const rows = [
       {
         seq: 1,
         timestamp: createdAt,
-        item: { type: "assistant_message", text: "ready" },
+        item: { type: "assistant_message" as const, text: "ready" },
       },
       {
         seq: 2,
         timestamp: createdAt,
-        item: { type: "assistant_message", text: "x".repeat(20_000) },
+        item: { type: "assistant_message" as const, text: "x".repeat(20_000) },
       },
-    ]);
+    ];
+    const authorityStore = authority.forWorkspace(workspace.workspaceId);
+    const revisionBeforeTimeline = authorityStore.readSnapshot(workspace.workspaceId).revision;
+    await timeline.bulkInsert("agent-1", rows);
+    const revisionAfterTimeline = authorityStore.readSnapshot(workspace.workspaceId).revision;
+    expect(revisionAfterTimeline).toBe(revisionBeforeTimeline + 1);
+    await timeline.bulkInsert("agent-1", rows);
+    expect(authorityStore.readSnapshot(workspace.workspaceId).revision).toBe(revisionAfterTimeline);
 
     expect(await agents.get("agent-1")).toMatchObject({
       provider: "future-acp",

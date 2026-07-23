@@ -47,84 +47,34 @@ function scheduleId(): string {
 
 /** Chat and schedule rows owned by the same connection as one Workspace authority shard. */
 export class WorkspaceCoordinationRepository {
-  constructor(private readonly database: DatabaseSync) {
-    this.database.exec(`
-      CREATE TABLE IF NOT EXISTS chat_rooms (
-        room_id TEXT PRIMARY KEY NOT NULL,
-        name TEXT NOT NULL,
-        normalized_name TEXT NOT NULL UNIQUE,
-        purpose TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS chat_messages (
-        message_id TEXT PRIMARY KEY NOT NULL,
-        room_id TEXT NOT NULL,
-        author_agent_id TEXT NOT NULL,
-        body TEXT NOT NULL,
-        reply_to_message_id TEXT,
-        mention_agent_ids_json TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(room_id) REFERENCES chat_rooms(room_id) ON DELETE CASCADE,
-        FOREIGN KEY(reply_to_message_id) REFERENCES chat_messages(message_id)
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS chat_messages_room_created
-        ON chat_messages(room_id, created_at, message_id);
-      CREATE TABLE IF NOT EXISTS schedules (
-        schedule_id TEXT PRIMARY KEY NOT NULL,
-        name TEXT,
-        prompt TEXT NOT NULL,
-        cadence_json TEXT NOT NULL,
-        target_json TEXT NOT NULL,
-        status TEXT NOT NULL CHECK(status IN ('active', 'paused', 'completed')),
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        next_run_at TEXT,
-        last_run_at TEXT,
-        paused_at TEXT,
-        expires_at TEXT,
-        max_runs INTEGER
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS schedule_runs (
-        run_id TEXT PRIMARY KEY NOT NULL,
-        schedule_id TEXT NOT NULL,
-        scheduled_for TEXT NOT NULL,
-        started_at TEXT NOT NULL,
-        ended_at TEXT,
-        status TEXT NOT NULL CHECK(status IN ('running', 'succeeded', 'failed')),
-        agent_id TEXT,
-        output TEXT,
-        error TEXT,
-        FOREIGN KEY(schedule_id) REFERENCES schedules(schedule_id) ON DELETE CASCADE
-      ) STRICT;
-      CREATE INDEX IF NOT EXISTS schedule_runs_schedule_started
-        ON schedule_runs(schedule_id, started_at, run_id);
-      CREATE INDEX IF NOT EXISTS schedules_status_next_run
-        ON schedules(status, next_run_at);
-    `);
-  }
+  constructor(
+    private readonly database: DatabaseSync,
+    private readonly transact: <T>(run: () => T) => T,
+  ) {}
 
   createChatRoom(input: { name: string; purpose?: string | null }): ChatRoomDetail {
     const name = input.name.trim();
     if (!name) {
       throw new WorkspaceCoordinationError("invalid_chat_room_name", "Chat room name is required");
     }
-    if (this.findChatRoomByName(name)) {
-      throw new WorkspaceCoordinationError(
-        "chat_room_name_taken",
-        `Chat room already exists with name: ${name}`,
-      );
-    }
-    const now = new Date().toISOString();
-    const room = ChatRoomSchema.parse({
-      id: randomUUID(),
-      name,
-      purpose: trimToNull(input.purpose),
-      createdAt: now,
-      updatedAt: now,
+    return this.transact(() => {
+      if (this.findChatRoomByName(name)) {
+        throw new WorkspaceCoordinationError(
+          "chat_room_name_taken",
+          `Chat room already exists with name: ${name}`,
+        );
+      }
+      const now = new Date().toISOString();
+      const room = ChatRoomSchema.parse({
+        id: randomUUID(),
+        name,
+        purpose: trimToNull(input.purpose),
+        createdAt: now,
+        updatedAt: now,
+      });
+      this.insertChatRoom(room);
+      return this.toChatRoomDetail(room);
     });
-    this.insertChatRoom(room);
-    return this.toChatRoomDetail(room);
   }
 
   listChatRooms(): ChatRoomDetail[] {
@@ -139,10 +89,12 @@ export class WorkspaceCoordinationRepository {
   }
 
   deleteChatRoom(selector: string): ChatRoomDetail {
-    const room = this.resolveChatRoom(selector);
-    const detail = this.toChatRoomDetail(room);
-    this.database.prepare("DELETE FROM chat_rooms WHERE room_id = ?").run(room.id);
-    return detail;
+    return this.transact(() => {
+      const room = this.resolveChatRoom(selector);
+      const detail = this.toChatRoomDetail(room);
+      this.database.prepare("DELETE FROM chat_rooms WHERE room_id = ?").run(room.id);
+      return detail;
+    });
   }
 
   postChatMessage(input: {
@@ -186,17 +138,12 @@ export class WorkspaceCoordinationRepository {
       mentionAgentIds: input.mentionAgentIds,
       createdAt,
     });
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
+    this.transact(() => {
       this.insertChatMessage(message);
       this.database
         .prepare("UPDATE chat_rooms SET updated_at = ? WHERE room_id = ?")
         .run(createdAt, room.id);
-      this.database.exec("COMMIT");
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
+    });
     return message;
   }
 
@@ -272,15 +219,10 @@ export class WorkspaceCoordinationRepository {
 
   importChatSnapshot(value: unknown): { rooms: number; messages: number } {
     const payload = ChatStorePayloadSchema.parse(value);
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
+    this.transact(() => {
       for (const room of payload.rooms) this.insertChatRoom(room);
       for (const message of payload.messages) this.insertChatMessage(message);
-      this.database.exec("COMMIT");
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
+    });
     return { rooms: payload.rooms.length, messages: payload.messages.length };
   }
 
@@ -330,8 +272,7 @@ export class WorkspaceCoordinationRepository {
 
   putSchedule(scheduleValue: StoredSchedule): void {
     const schedule = StoredScheduleSchema.parse(scheduleValue);
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
+    this.transact(() => {
       this.database
         .prepare(
           `INSERT INTO schedules(
@@ -387,15 +328,13 @@ export class WorkspaceCoordinationRepository {
           run.error,
         );
       }
-      this.database.exec("COMMIT");
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
   deleteSchedule(id: string): void {
-    this.database.prepare("DELETE FROM schedules WHERE schedule_id = ?").run(id);
+    this.transact(() => {
+      this.database.prepare("DELETE FROM schedules WHERE schedule_id = ?").run(id);
+    });
   }
 
   private insertChatRoom(room: ChatRoom): void {

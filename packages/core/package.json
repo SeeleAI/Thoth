@@ -4,5 +4,32 @@
   "private": true,
   "description": "Pure domain model and lifecycle rules for Thoth",
   "license": "AGPL-3.0-or-later",
-  "type": "module"
+  "files": [
+    "dist",
+    "!dist/**/*.map",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./authority": {
+      "types": "./dist/authority.d.ts",
+      "default": "./dist/authority.js"
+    }
+  },
+  "scripts": {
+    "clean": "node ../../scripts/clean-package-dist.mjs",
+    "build": "npm run clean && tsc -p tsconfig.json --incremental false",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@thoth/protocol": "0.0.0-mvp-beta",
+    "@types/node": "^20.9.0",
+    "typescript": "^5.2.2",
+    "vitest": "^4.1.6"
+  }
 }

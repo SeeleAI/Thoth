@@ -3711,3 +3711,33 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   Repository/UoW and lossless Release migration, with no dual read/write or old-store fallback. No AppImage,
   native package, real Provider, hosted Relay, push, tag, Release or publication ran, and reserved Paseo
   `127.0.0.1:6767` was not probed or modified.
+
+## 2026-07-23 [Final-architecture Cut 1 Core and authority cutover verified]
+
+- Promoted `@thoth/core` into the deterministic authority owner and switched Daemon Task, Execution, Card,
+  HumanDecision and blackboard mutations to `transitionAuthority`. The normalized Workspace SQLite adapter now
+  provides Repository/UoW, revision/CAS, Timeline and projection commits without a second authority path.
+- Replaced constructor DDL and schema guessing with explicit schema creation/version validation. Release
+  `05775486` migrates under a lock through copy/transform/integrity/FK/entity/digest/fsync/atomic activation;
+  failure injection preserves old files. The canonical digest remained
+  `74f79a53c1cae8d58dbedb7d57a553b8696170371a11650e2d70e91720f74d5f`.
+- Deleted `authority_events`, old task/review/replan reducers, `task-identity.ts`, the old monolithic migration path
+  and unused Daemon `openai` / `@anthropic-ai/sdk` dependencies. Consolidated Agent persistence into one UPSERT,
+  reused one catalog routing cache and removed the duplicate AgentStorage cache; durable SQLite remains the sole
+  authority.
+- Preserved every failed exploration in `NTH-EXP-040`: repeated App performance failures, isolated Wrangler
+  `401`, lazy chunk white screen/`process` error, `300.018s` timeout, over-dense `2821.44ms` daemon sampling,
+  health p95 failure, `rsync 24`, response Mann-Whitney failures, the missing Core-test discovery and the
+  redundant Agent locator write. No threshold, sample or feature was removed.
+- The final complete gate explicitly ran Core `9/9` and passed in `245.631s`: static `3.133s`, Foundation
+  `39.731s`, runtime build/Core tests `7.130s`, Daemon/real Web `16.235s`, behavior/visual/TUI `83.557s`, App
+  performance `27.261s` and daemon/response performance `68.550s`. The real Web export contained `4416` modules;
+  desktop and compact/mobile screenshot, keyboard, focus, a11y and responsive evidence remained equal.
+- Final production metrics are `307,869` LOC (`-662`), `1,296,453` scanner tokens (`-2,111`), `1,343,037` AST
+  nodes (`-3,622`), `5,053` static imports (`-4`) and `164` runtime dependency edges (`-1`). Performance medians
+  are App interactive `1603.73ms`, daemon ready `2211.68ms`, idle RSS `472506368` bytes and local response
+  overhead `14.0867ms`.
+- `NTH-TD-032` / `NTH-EV-053` are verified. The sole top next action advances to `NTH-TD-033`: direct capability
+  HarnessAdapters, one ExecutionService and ToolGateway, followed by deletion of the AgentClient/Session/Manager
+  bridge stack. No AppImage, native package, real Provider, hosted Relay, push, tag, Release or publication ran;
+  reserved Paseo `127.0.0.1:6767` was not probed or modified.

@@ -13,7 +13,10 @@ if (!existsSync(indexPath)) {
 const before = readFileSync(indexPath, "utf8");
 const after = before.replace(
   /<script(?![^>]*\btype=)([^>]*\bsrc=["']\/_expo\/static\/js\/web\/[^"']+\.js["'][^>]*)><\/script>/g,
-  '<script type="module"$1></script>',
+  (script, attributes) =>
+    /\/_expo\/static\/js\/web\/__expo-metro-runtime-[^/"']+\.js/u.test(attributes)
+      ? script
+      : `<script type="module"${attributes}></script>`,
 );
 
 if (after === before) {

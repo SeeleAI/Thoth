@@ -235,6 +235,7 @@ let metroProcess: ChildProcess | null = null;
 let thothHome: string | null = null;
 let fakeEditorBinDir: string | null = null;
 let relayProcess: ChildProcess | null = null;
+let relayStateDir: string | null = null;
 
 function resolveOptionalThothHomeEnv(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -504,7 +505,7 @@ async function getAvailablePortExcluding(excludedPorts: Set<number>): Promise<nu
   }
 }
 
-async function startRelay(excludedPorts: Set<number>): Promise<number> {
+async function startRelay(excludedPorts: Set<number>, persistTo: string): Promise<number> {
   const relayDir = path.resolve(currentDirectory, "..", "..", "relay");
   const maxRelayStartupAttempts = 5;
   let lastRelayStartupError: unknown = null;
@@ -526,6 +527,8 @@ async function startRelay(excludedPorts: Set<number>): Promise<number> {
         String(relayPort),
         "--live-reload=false",
         "--show-interactive-dev-session=false",
+        "--persist-to",
+        persistTo,
       ],
       {
         cwd: relayDir,
@@ -688,6 +691,10 @@ async function performCleanup(shouldRemoveThothHome: boolean): Promise<void> {
   daemonProcess = null;
   metroProcess = null;
   relayProcess = null;
+  if (relayStateDir) {
+    await removeTempTree(relayStateDir);
+    relayStateDir = null;
+  }
   if (thothHome && shouldRemoveThothHome) {
     await removeTempTree(thothHome);
     thothHome = null;
@@ -710,6 +717,7 @@ export default async function globalSetup() {
   const requestedThothHome = resolveOptionalThothHomeEnv(process.env.E2E_THOTH_HOME);
   const shouldRemoveThothHome = !requestedThothHome && process.env.E2E_KEEP_THOTH_HOME !== "1";
   thothHome = requestedThothHome ?? (await mkdtemp(path.join(tmpdir(), "thoth-e2e-home-")));
+  relayStateDir = await mkdtemp(path.join(tmpdir(), "thoth-e2e-relay-"));
   const editorRecordPath = path.join(thothHome, "editor-open-records.jsonl");
   fakeEditorBinDir = await createFakeEditorBin();
   const metroLineBuffer = createLineBuffer();
@@ -720,7 +728,7 @@ export default async function globalSetup() {
   const cleanup = () => performCleanup(shouldRemoveThothHome);
 
   try {
-    const relayPort = await startRelay(new Set([port, metroPort]));
+    const relayPort = await startRelay(new Set([port, metroPort]), relayStateDir);
     metroProcess = startMetro({
       metroPort,
       daemonPort: port,

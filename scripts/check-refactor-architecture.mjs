@@ -15,7 +15,35 @@ if (!Number.isInteger(stage.stage) || stage.stage < 0 || stage.stage > 7) {
 
 if (stage.stage >= 1) {
   requirePath("packages/core/src/index.ts");
-  forbidText("packages/daemon/src", /\bauthority_events\b/, "authority_events duplicate log");
+  requirePath("packages/core/src/authority.ts");
+  requirePath("packages/daemon/src/server/storage-schema.ts");
+  forbidPath("packages/daemon/src/server/workspace-authority/task-identity.ts");
+  for (const path of [
+    "packages/daemon/src/server/storage-schema.ts",
+    "packages/daemon/src/server/workspace-authority/workspace-authority-store.ts",
+  ]) {
+    forbidText(path, /\bauthority_events\b/, "authority_events runtime path");
+  }
+  for (const path of [
+    "packages/daemon/src/server/workspace-authority/catalog-store.ts",
+    "packages/daemon/src/server/workspace-authority/coordination-repository.ts",
+    "packages/daemon/src/server/workspace-authority/workspace-authority-store.ts",
+  ]) {
+    forbidText(path, /\b(CREATE TABLE|ALTER TABLE|ensureColumn)\b/, "constructor/runtime DDL");
+  }
+  forbidText(
+    "packages/daemon/src/server/workspace-authority/workspace-authority-store.ts",
+    /\b(importLegacyForeground|importLegacyTaskMemory|importLegacyExecution|importLegacyTaskDecision)\b/,
+    "pre-Release import API",
+  );
+  const daemonPackage = JSON.parse(
+    readFileSync(resolve(repoRoot, "packages/daemon/package.json"), "utf8"),
+  );
+  if (!daemonPackage.dependencies?.["@thoth/core"]) failures.push("Daemon does not depend on Core");
+  for (const dependency of ["openai", "@anthropic-ai/sdk"]) {
+    if (daemonPackage.dependencies?.[dependency])
+      failures.push(`Daemon still declares ${dependency}`);
+  }
 }
 
 if (stage.stage >= 2) {

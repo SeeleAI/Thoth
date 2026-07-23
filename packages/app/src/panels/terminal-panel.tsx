@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { lazy, Suspense, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Terminal } from "lucide-react-native";
@@ -6,7 +6,6 @@ import { Text, View } from "react-native";
 import invariant from "tiny-invariant";
 import type { ListTerminalsResponse } from "@thoth/protocol/messages";
 import { deriveTerminalActivityStatusBucket } from "@thoth/protocol/terminal-activity";
-import { TerminalPane } from "@/components/terminal-pane";
 import { usePaneContext, usePaneFocus } from "@/panels/pane-context";
 import type { PanelDescriptor, PanelRegistration } from "@/panels/panel-registry";
 import { queryClient } from "@/query/query-client";
@@ -18,6 +17,9 @@ import { useWorkspaceDirectory, useWorkspaceFields } from "@/stores/session-stor
 type ListTerminalsPayload = ListTerminalsResponse["payload"];
 
 const FLEX_FILL_STYLE = { flex: 1 } as const;
+const TerminalPane = lazy(() =>
+  import("@/components/terminal-pane").then((module) => ({ default: module.TerminalPane })),
+);
 const CENTERED_PADDED_STYLE = {
   flex: 1,
   alignItems: "center",
@@ -108,15 +110,17 @@ function TerminalPanel() {
   }
 
   return (
-    <TerminalPane
-      serverId={serverId}
-      cwd={workspaceDirectory}
-      terminalId={target.terminalId}
-      isWorkspaceFocused={isWorkspaceFocused}
-      isPaneFocused={isPaneFocused}
-      onOpenFileExplorer={handleOpenFileExplorer}
-      onOpenWorkspaceFile={openFileInWorkspace}
-    />
+    <Suspense fallback={<View style={FLEX_FILL_STYLE} />}>
+      <TerminalPane
+        serverId={serverId}
+        cwd={workspaceDirectory}
+        terminalId={target.terminalId}
+        isWorkspaceFocused={isWorkspaceFocused}
+        isPaneFocused={isPaneFocused}
+        onOpenFileExplorer={handleOpenFileExplorer}
+        onOpenWorkspaceFile={openFileInWorkspace}
+      />
+    </Suspense>
   );
 }
 

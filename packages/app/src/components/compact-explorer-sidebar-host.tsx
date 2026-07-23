@@ -3,7 +3,7 @@ import { View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { useWorkspace } from "@/stores/session-store-hooks";
-import { CompactExplorerSidebar } from "@/components/explorer-sidebar";
+import { LazyCompactExplorerSidebar } from "@/components/lazy-explorer-sidebar";
 import { useExplorerOpenGesture } from "@/hooks/use-explorer-open-gesture";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { selectIsFileExplorerOpen, usePanelStore } from "@/stores/panel-store";
@@ -143,7 +143,7 @@ export function CompactExplorerSidebarHost({ children, enabled }: CompactExplore
         {children}
       </CompactExplorerOpenGestureSurface>
       {enabled && model ? (
-        <CompactExplorerSidebar
+        <LazyCompactExplorerSidebar
           serverId={model.serverId}
           workspaceId={model.workspaceId}
           workspaceRoot={model.workspaceRoot}

@@ -45,7 +45,7 @@ import { buildWorkspaceAttachmentScopeKey } from "@/attachments/workspace-attach
 const MIN_CHAT_WIDTH = 400;
 function logExplorerSidebar(_event: string, _details: Record<string, unknown>): void {}
 
-interface ExplorerSidebarProps {
+export interface ExplorerSidebarProps {
   serverId: string;
   workspaceId?: string | null;
   workspaceRoot: string;

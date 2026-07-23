@@ -3,11 +3,11 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-032`
+2. Top next action: `NTH-TD-033`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
 4. Active blockers: None.
 5. Current branch: `agent/refactor/final-architecture-50k` in ignored worktree `.dev/worktrees/final-architecture-50k`, based on clean commit `743e8d29` from `agent/dev/mvp`.
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-CD-066` governs a seven-cut atomic convergence of that path onto the final Core/Harness/RPC/App/UI/VCS/lifecycle architecture with no feature or UX change. `NTH-TD-031` has verified the clean source, storage, visual, behavior and performance baseline plus the sole shared-`300s` gate; `NTH-TD-032` is the first production cut.
+6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-CD-066` governs a seven-cut atomic convergence of that path onto the final Core/Harness/RPC/App/UI/VCS/lifecycle architecture with no feature or UX change. `NTH-TD-031` froze the clean baseline and shared-`300s` gate; `NTH-TD-032` has verified the pure Core, Repository/UoW and lossless normalized SQLite cutover. `NTH-TD-033` is the active direct Provider Harness cut.
 
 ## Objective Summary
 
@@ -24,7 +24,7 @@
 
 ## Top Next Action
 
-`NTH-TD-032` `[doing]`: Atomically move Workspace authority into pure `@thoth/core` transitions plus one Repository/Unit of Work, losslessly migrate the Release `05775486` fixture and delete the old monolithic persistence/event/constructor-DDL/migration paths without dual read or write.
+`NTH-TD-033` `[doing]`: Atomically move every Provider and foreground/background execution path onto direct capability HarnessAdapters, one ExecutionService and one ToolGateway, then delete the AgentClient/Session/Manager/host bridge stack without a compatibility path.
 
 ## Active Blockers
 
@@ -110,6 +110,7 @@ None.
 76. `NTH-EV-051`: Plan is again the first row inside the Provider Features list, with no separate Run Mode or Composer control. The existing per-Agent `default | plan` authority and capability states remain unchanged; the bounded Plan/tab gate and real Web export pass.
 77. `NTH-CD-066`: The production refactor is a seven-cut final-architecture convergence with one main chain, complete semantic/UX preservation, at least `50,000` production LOC removed and hard startup/RSS/App/response performance targets. No dual path, fallback, Provider cognition in Thoth or unapproved push/release is allowed.
 78. `NTH-EV-052`: Cut 0 is verified. It froze commit `743e8d29`, `308,531` production LOC, `1,298,564` scanner tokens, `1,346,659` AST nodes, `5,057` static import edges, `165` runtime dependency edges, the Release `05775486` semantic SQLite fixture, real Web visual/interaction transcripts and independent daemon/App/response performance samples. The sole `npm run accept:refactor:fast` entry passed every phase in `270.302s` under one `300s` deadline.
+79. `NTH-EV-053`: Cut 1 is verified. `@thoth/core` now owns deterministic authority transitions; the Daemon uses one normalized Workspace Repository/UoW and losslessly migrates Release `05775486` without `authority_events`, constructor DDL or fallback reads. Production source is `662` lines, `2,111` scanner tokens, `3,622` AST nodes, `4` static imports and `1` runtime dependency edge below baseline. The final complete `npm run accept:refactor:fast`, including Core `9/9`, passed in `245.631s`; App interactive was `1603.73ms`, daemon ready `2211.68ms`, idle RSS `472506368` bytes and local response overhead `14.09ms`.
 
 ## Read Next
 

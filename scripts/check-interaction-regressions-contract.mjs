@@ -42,9 +42,14 @@ requireText(
   "Harness adapters must own a versioned opaque rewind receipt.",
 );
 requireText(
-  "packages/daemon/src/server/workspace-authority/workspace-authority-store.ts",
-  /CREATE TABLE IF NOT EXISTS foreground_turn_queue[\s\S]*provider_message_anchors/,
+  "packages/daemon/src/server/storage-schema.ts",
+  /CREATE TABLE foreground_turn_queue[\s\S]*CREATE TABLE provider_message_anchors/,
   "Workspace authority must persist both queued turns and provider message anchors.",
+);
+requireText(
+  "packages/daemon/src/server/workspace-authority/workspace-authority-store.ts",
+  /commandForegroundQueue[\s\S]*this\.transaction[\s\S]*bindProviderMessageAnchor[\s\S]*this\.transaction/,
+  "Queue and provider-anchor writes must share the Workspace Unit of Work.",
 );
 requireText(
   "packages/app/src/file-explorer/use-file-preview-source.ts",

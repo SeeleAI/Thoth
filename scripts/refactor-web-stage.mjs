@@ -17,10 +17,16 @@ export async function buildRefactorWebStage() {
   requirePreparedDependencies();
   await syncSources();
   await run("npm", ["run", "build:web:prepared"], { cwd: stageRoot });
-  return {
-    root: stageRoot,
-    dist: resolve(stageRoot, "packages/app/dist"),
-  };
+  return getBuiltRefactorWebStage();
+}
+
+export function getBuiltRefactorWebStage() {
+  requirePreparedDependencies();
+  const dist = resolve(stageRoot, "packages/app/dist");
+  if (!existsSync(resolve(dist, "index.html"))) {
+    throw new Error(`Refactor Web stage has not been built at ${dist}`);
+  }
+  return { root: stageRoot, dist };
 }
 
 export async function prepareRefactorWebDependencies() {
@@ -111,6 +117,7 @@ async function syncSources() {
       "--exclude=packages/app/test-results/",
       "--exclude=packages/app/android/",
       "--exclude=packages/app/ios/",
+      "--exclude=packages/daemon/dist/",
       "--exclude=packages/desktop/release/",
       `${repoRoot}/`,
       `${stageRoot}/`,

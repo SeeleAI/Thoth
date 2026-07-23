@@ -11,4 +11,8 @@ Intended responsibilities:
 5. Review verdict and evidence model.
 6. Permission risk model.
 
-Current status: skeleton only. No implementation exists in this package yet.
+The package is the functional core of Workspace authority. `transitionAuthority` is the only
+domain-state transition entry: callers supply validated projections, a command, a timestamp and
+all required IDs. The result is a normalized mutation for a Repository/Unit of Work to commit.
+
+The package has no database, process, UI or Provider runtime dependency.
