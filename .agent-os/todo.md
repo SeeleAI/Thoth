@@ -130,9 +130,15 @@ None.
 
 13. `NTH-TD-029` `[verified]`: Restore Agent-scoped native Plan, durable Plan output, reliable tab archive and desktop-only Release publication.
 
-- Scope: live-session capability projection; per-Agent `default | plan` CAS authority; Provider settings segmented control; canonical Plan Timeline persistence; archive-before-layout single/bulk close; no Android updater/install permission; no public APK or server CLI tgz.
+- Scope: live-session capability projection; per-Agent `default | plan` CAS authority; Provider Features Plan control; canonical Plan Timeline persistence; archive-before-layout single/bulk close; no Android updater/install permission; no public APK or server CLI tgz.
 - Related: `NTH-CD-060`, `NTH-CD-061`, `NTH-CD-064`, `NTH-REQ-024`, `NTH-AC-019`
 - Verification: See `NTH-EV-050`. Local and authenticated Codex gates passed; hosted Relay packaged Plan/Loop passed; GitHub Actions run `29949640876` completed every required desktop, Relay and internal CLI job; the fixed prerelease and downloaded AppImage metadata/checksum all resolve to `05775486`.
+
+14. `NTH-TD-030` `[verified]`: Restore Plan to the Provider Features list without changing Provider Plan authority.
+
+- Scope: delete the standalone Run Mode segmented section; render Plan as the first Provider Feature row; preserve per-Agent CAS updates, native/unsupported/unavailable/retry states and the absence of a Composer Plan control.
+- Related: `NTH-CD-064`, `NTH-CD-065`, `NTH-REQ-024`, `NTH-AC-019`
+- Verification: See `NTH-EV-051`. The bounded Plan/tab gate passed in `18.441s`, the strengthened source contract proves Plan's exact feature-list placement and Default/Plan mapping, and the real Web export bundled `4415` modules successfully.
 
 ## Abandoned
 

@@ -16,11 +16,32 @@ if (
 
 const agentControls = read("packages/app/src/composer/agent-controls/index.tsx");
 for (const required of [
-  "provider-run-mode-control",
+  "provider-plan-feature",
+  "Provider Features",
+  'onSelectRunMode(enabled ? "default" : "plan")',
   "updateAgentProviderControl",
   "getAgentProviderControl",
 ]) {
   if (!agentControls.includes(required)) failures.push(`Provider sheet is missing ${required}`);
+}
+const providerFeaturesIndex = agentControls.indexOf(">Provider Features</Text>");
+const providerPlanFeatureIndex = agentControls.indexOf(
+  "<ProviderPlanFeatureItem",
+  providerFeaturesIndex,
+);
+const nativeProviderFeaturesIndex = agentControls.indexOf(
+  "(features ?? []).map",
+  providerPlanFeatureIndex,
+);
+if (
+  providerFeaturesIndex < 0 ||
+  providerPlanFeatureIndex <= providerFeaturesIndex ||
+  nativeProviderFeaturesIndex <= providerPlanFeatureIndex
+) {
+  failures.push("Provider Plan is not the first row inside Provider Features");
+}
+if (agentControls.includes("provider-run-mode-control") || agentControls.includes(">Run Mode<")) {
+  failures.push("Provider Plan is still rendered as a separate Run Mode control");
 }
 if (agentControls.includes("snapshotSelectedEntry?.planCapability")) {
   failures.push("Existing Agent Plan capability still falls back to a provider snapshot");

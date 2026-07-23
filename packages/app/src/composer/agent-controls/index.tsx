@@ -47,7 +47,6 @@ import { selectProviderModel } from "@/composer/agent-controls/provider-session-
 import { AgentModeControlView } from "@/composer/agent-controls/mode-control";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import type {
   AgentFeature,
   AgentMode,
@@ -1243,7 +1242,7 @@ function ProviderConfigSheet({
   const header = useMemo<SheetHeader>(() => ({ title: t("agentControls.provider.select") }), [t]);
   const hasProviderMode = modeOptions.length > 0 && onSelectMode;
   const hasThinking = Boolean(thinkingOptions && thinkingOptions.length > 0);
-  const hasFeatures = Boolean(features && features.length > 0);
+  const hasProviderFeatures = Boolean(onSelectProviderRunMode || (features && features.length > 0));
   const thinkingPressableStyle = useMemo(
     () =>
       makeBadgePressableStyle(
@@ -1286,57 +1285,6 @@ function ProviderConfigSheet({
             serverId={modelSelectorServerId}
           />
         </View>
-
-        {onSelectProviderRunMode ? (
-          <View style={styles.providerConfigSection}>
-            <View style={styles.providerControlHeader}>
-              <Text style={styles.sheetSectionLabel}>Run Mode</Text>
-              {planCapability?.kind === "unavailable" && onRetryProviderPlanCapability ? (
-                <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
-                  <TooltipTrigger asChild>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Retry Plan capability"
-                      disabled={providerControlBusy}
-                      onPress={onRetryProviderPlanCapability}
-                      style={styles.providerControlRetry}
-                      testID="provider-plan-retry"
-                    >
-                      <RefreshCw size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
-                    </Pressable>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" align="center" offset={8}>
-                    <Text style={styles.tooltipText}>Retry Plan capability</Text>
-                  </TooltipContent>
-                </Tooltip>
-              ) : null}
-            </View>
-            <SegmentedControl<ProviderRunMode>
-              value={providerRunMode}
-              onValueChange={onSelectProviderRunMode}
-              options={[
-                {
-                  value: "default",
-                  label: "Default",
-                  disabled: providerControlBusy,
-                  testID: "provider-run-mode-default",
-                },
-                {
-                  value: "plan",
-                  label: "Plan",
-                  disabled: providerControlBusy || planCapability?.kind !== "native",
-                  testID: "provider-run-mode-plan",
-                },
-              ]}
-              testID="provider-run-mode-control"
-            />
-            {providerControlBusy ? (
-              <Text style={styles.providerControlStatus}>Checking...</Text>
-            ) : planCapability?.kind === "unsupported" || planCapability?.kind === "unavailable" ? (
-              <Text style={styles.providerControlStatus}>{planCapability.reason}</Text>
-            ) : null}
-          </View>
-        ) : null}
 
         {hasProviderMode ? (
           <View style={styles.providerConfigSection}>
@@ -1385,10 +1333,19 @@ function ProviderConfigSheet({
           </View>
         ) : null}
 
-        {hasFeatures ? (
+        {hasProviderFeatures ? (
           <View style={styles.providerConfigSection}>
             <Text style={styles.sheetSectionLabel}>Provider Features</Text>
             <View style={styles.providerFeatureList}>
+              {onSelectProviderRunMode ? (
+                <ProviderPlanFeatureItem
+                  runMode={providerRunMode}
+                  capability={planCapability}
+                  busy={providerControlBusy}
+                  onSelectRunMode={onSelectProviderRunMode}
+                  onRetryCapability={onRetryProviderPlanCapability}
+                />
+              ) : null}
               {(features ?? []).map((feature) => (
                 <SheetFeatureItem
                   key={`feature-${feature.id}`}
@@ -1404,6 +1361,110 @@ function ProviderConfigSheet({
         ) : null}
       </View>
     </AdaptiveModalSheet>
+  );
+}
+
+function ProviderPlanFeatureItem({
+  runMode,
+  capability,
+  busy,
+  onSelectRunMode,
+  onRetryCapability,
+}: {
+  runMode: ProviderRunMode;
+  capability: ProviderPlanCapability | null;
+  busy: boolean;
+  onSelectRunMode: (runMode: ProviderRunMode) => void;
+  onRetryCapability?: () => void;
+}) {
+  const { t } = useTranslation();
+  const { theme } = useUnistyles();
+  const enabled = runMode === "plan";
+  const native = capability?.kind === "native";
+  const retryable = !busy && capability?.kind === "unavailable" && Boolean(onRetryCapability);
+
+  const handleToggle = useCallback(() => {
+    onSelectRunMode(enabled ? "default" : "plan");
+  }, [enabled, onSelectRunMode]);
+
+  const featureRowStyle = useCallback(
+    ({ pressed }: PressableStateCallbackType) => [
+      styles.sheetSelect,
+      pressed && styles.sheetSelectPressed,
+    ],
+    [],
+  );
+
+  const icon = (
+    <ListTodo
+      size={theme.iconSize.md}
+      color={enabled ? theme.colors.palette.blue[400] : theme.colors.foregroundMuted}
+    />
+  );
+
+  if (native && !busy) {
+    return (
+      <View style={styles.sheetSection}>
+        <Pressable
+          onPress={handleToggle}
+          style={featureRowStyle}
+          accessibilityRole="switch"
+          accessibilityLabel="Plan"
+          accessibilityState={{ checked: enabled }}
+          testID="provider-plan-feature"
+        >
+          {icon}
+          <Text style={styles.sheetSelectText}>Plan</Text>
+          <Text style={styles.modeBadgeText} testID="provider-plan-feature-status">
+            {enabled ? t("agentControls.features.on") : t("agentControls.features.off")}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const reason =
+    capability?.kind === "unsupported" || capability?.kind === "unavailable"
+      ? capability.reason
+      : null;
+
+  return (
+    <View style={styles.sheetSection}>
+      <View
+        style={[styles.sheetSelect, !retryable && styles.disabledSheetSelect]}
+        accessibilityRole="button"
+        accessibilityLabel="Plan"
+        accessibilityState={{ disabled: !retryable, busy }}
+        testID="provider-plan-feature"
+      >
+        {icon}
+        <Text style={styles.sheetSelectText}>Plan</Text>
+        {retryable ? (
+          <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+            <TooltipTrigger asChild>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Retry Plan capability"
+                disabled={busy}
+                onPress={onRetryCapability}
+                style={styles.providerControlRetry}
+                testID="provider-plan-retry"
+              >
+                <RefreshCw size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
+              </Pressable>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="center" offset={8}>
+              <Text style={styles.tooltipText}>Retry Plan capability</Text>
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <Text style={styles.modeBadgeText} testID="provider-plan-feature-status">
+            {busy ? "Checking..." : "Unavailable"}
+          </Text>
+        )}
+      </View>
+      {reason ? <Text style={styles.providerControlStatus}>{reason}</Text> : null}
+    </View>
   );
 }
 
@@ -2236,12 +2297,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   providerConfigSection: {
     gap: theme.spacing[2],
-  },
-  providerControlHeader: {
-    minHeight: 24,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
   },
   providerControlRetry: {
     width: 28,

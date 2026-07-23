@@ -7,7 +7,7 @@
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
 4. Active blockers: None.
 5. Current branch: `agent/dev/mvp`
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-029` is verified and published at `05775486`: Agent-scoped native Plan, durable Plan results, archive-before-layout tab close and the desktop-only fixed MVP Release passed local, real-provider, packaged Relay, native Actions and public-asset verification.
+6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-029` is verified and published at `05775486`: Agent-scoped native Plan, durable Plan results, archive-before-layout tab close and the desktop-only fixed MVP Release passed local, real-provider, packaged Relay, native Actions and public-asset verification. `NTH-CD-065` restores Plan's App presentation to the `Provider Features` list without changing its Agent-scoped authority.
 
 ## Objective Summary
 
@@ -107,6 +107,7 @@ None.
 73. `NTH-EV-049`: The interaction-regression implementation passed the bounded local gates and GitHub Actions run `29926576540`. The fixed MVP prerelease now targets `0eff56c0`; re-downloaded AppImage, APK and server CLI assets match `SHA256SUMS`, and the AppImage contains the expected Queue, rewind, Timeline epoch, transient preview and build-identity code.
 74. `NTH-CD-064`: Native Plan is Agent-scoped and live-session-owned; Plan output is durable; tab close is archive-first; the public fixed MVP Release is desktop-only.
 75. `NTH-EV-050`: Agent-scoped native Plan, id-only Implement continuation, reliable tab archive and the desktop-only fixed MVP Release are fully verified at `05775486` by local gates, authenticated Codex, packaged hosted Relay, native Actions run `29949640876` and re-downloaded public AppImage metadata/checksums.
+76. `NTH-EV-051`: Plan is again the first row inside the Provider Features list, with no separate Run Mode or Composer control. The existing per-Agent `default | plan` authority and capability states remain unchanged; the bounded Plan/tab gate and real Web export pass.
 
 ## Read Next
 

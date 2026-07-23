@@ -2809,3 +2809,30 @@ Local evidence on `2026-07-22`:
     provider-neutral captured-Plan binding used by id-only Implement approvals. The archive Release remains
     present, remote `main` remains `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`, and no npm publication or
     Relay deployment occurred.
+
+### `NTH-EV-051` Provider Plan Restored To Provider Features
+
+Status: verified locally.
+
+Evidence on `2026-07-23`:
+
+1. `ProviderConfigSheet` no longer renders a standalone `Run Mode` label, segmented control or Default/Plan
+   options. It renders `ProviderPlanFeatureItem` as the first row under `Provider Features`, before provider-native
+   feature rows such as Fast.
+2. The row maps enabled/disabled directly to the existing `onSelectProviderRunMode("plan" | "default")` callback.
+   Native capability toggles Plan; unsupported is disabled with its honest reason; temporary unavailability keeps
+   the retry action; capability checking remains visible. No daemon, protocol, Harness or execution path changed.
+3. The strengthened `check-provider-plan-tabs-contract.mjs` verifies the exact source placement, the
+   `default <-> plan` mapping, absence of the old standalone control, Agent provider-control APIs and the existing
+   archive/desktop-Release constraints.
+4. Final `npm run accept:provider-plan-tabs:fast` passed in `18.441s`: Protocol `3/3`, Codex adapter `95/95`, Agent
+   authority `136/136`, App controls/archive `18/18`, and the updated product contract.
+5. `npm run build:web` passed and Expo/Metro exported the real App bundle with `4415` modules. Repository formatting
+   passed after applying the standard formatter.
+
+Boundary:
+
+The full App typecheck was rerun diagnostically. It remains red on the pre-existing broad React DOM declarations,
+Unistyles, WebView and unrelated fixture debt; it reports no error in the changed
+`composer/agent-controls/index.tsx`. No AppImage/native packaging, provider run, push or Release mutation was
+requested or performed.

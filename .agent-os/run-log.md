@@ -3670,3 +3670,18 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - `NTH-EV-050` and `NTH-TD-029` are verified. `thoth-plugin-final-archive` remains present, remote `main` remains
   `e74c6e0d`, and no npm publication or Relay deployment occurred. The sole top next action returns to
   `NTH-TD-021`; this documentation-only closeout does not push `release/mvp-actions` or trigger another publish.
+
+## 2026-07-23 [Provider Plan restored to Provider Features]
+
+- Recorded `NTH-CD-065` and completed `NTH-TD-030`: removed the standalone Provider `Run Mode` segmented section
+  and restored Plan as the first row inside `Provider Features`, alongside provider-native features such as Fast.
+- Preserved the final authority path. The Plan feature still calls the existing Agent-scoped
+  `onSelectProviderRunMode(default | plan)` CAS path, retains native/unsupported/unavailable/retry projections and
+  does not add global state, provider-specific logic, a Composer control or a second execution route.
+- Strengthened the existing product contract to verify exact feature-list placement, Default/Plan toggle mapping
+  and absence of the old standalone control. Final `accept:provider-plan-tabs:fast` passed in `18.441s`, covering `3`
+  Protocol, `95` Codex adapter, `136` Agent authority and `18` App/archive tests plus the product contract.
+- The real Web export passed and bundled `4415` modules. Full App typecheck remains red only on its known broad
+  React DOM/Unistyles/WebView and unrelated fixture baseline; the changed Agent controls file has no type error.
+  No AppImage/native packaging, provider run, push or Release mutation occurred. Top next action remains
+  `NTH-TD-021`.
