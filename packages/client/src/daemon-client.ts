@@ -9,9 +9,13 @@ import {
   parseServerInfoStatusPayload,
   RenameTerminalResponseSchema,
   RestartRequestedStatusPayloadSchema,
+  RPC_PROTOCOL_VERSION,
   ShutdownRequestedStatusPayloadSchema,
-  DaemonUpdateResponseSchema,
   SessionInboundMessageSchema,
+  rpcRegistry,
+  type ProtocolRpcInput,
+  type ProtocolRpcOperation,
+  type ProtocolRpcResponse,
   type ServerInfoStatusPayload,
   WSOutboundMessageSchema,
 } from "@thoth/protocol/messages";
@@ -22,63 +26,17 @@ import type {
   AgentPermissionResolvedMessage,
   CreateAgentRequestMessage,
   CreateThothWorktreeRequest,
-  FileDownloadTokenResponse,
   FileUploadResponse,
   FileExplorerResponse,
   FetchAgentTimelineResponseMessage,
   AgentForkContextResponseMessage,
   GitSetupOptions,
   CheckoutStatusResponse,
-  CheckoutCommitResponse,
-  CheckoutMergeResponse,
-  CheckoutMergeFromBaseResponse,
-  CheckoutPullResponse,
-  CheckoutPushResponse,
-  CheckoutRefreshResponse,
-  CheckoutPrCreateResponse,
-  CheckoutPrMergeResponse,
   CheckoutPrMergeMethod,
-  CheckoutGithubSetAutoMergeResponse,
-  CheckoutGithubGetCheckDetailsResponse,
-  CheckoutPrStatusResponse,
-  PullRequestTimelineResponse,
-  CheckoutSwitchBranchResponse,
-  StashSaveResponse,
-  StashPopResponse,
-  StashListResponse,
-  ValidateBranchResponse,
-  BranchSuggestionsResponse,
-  GitHubSearchResponse,
   GitHubSearchRequest,
-  DirectorySuggestionsResponse,
-  ThothWorktreeListResponse,
-  ThothWorktreeArchiveResponse,
-  ProjectIconResponse,
-  ProjectAddResponse,
-  OpenProjectResponseMessage,
-  ArchiveWorkspaceResponseMessage,
-  WorkspaceSetupStatusResponseMessage,
   ListCommandsResponse,
-  ListProviderFeaturesResponseMessage,
-  ListProviderModelsResponseMessage,
-  ListProviderModesResponseMessage,
-  ListAvailableProvidersResponse,
-  GetProvidersSnapshotResponseMessage,
-  RefreshProvidersSnapshotResponseMessage,
-  ProviderDiagnosticResponseMessage,
-  ProviderUsageListResponseMessage,
-  DaemonGetStatusResponse,
-  DaemonGetPairingOfferResponse,
-  DaemonIssueRelayDeviceTokenResponse,
-  DiagnosticsResponse,
-  AgentRewindResponseMessage,
-  ListTerminalsResponse,
-  CreateTerminalResponse,
   SubscribeTerminalResponse,
   SubscribeTerminalRequest,
-  CloseItemsResponse,
-  KillTerminalResponse,
-  CaptureTerminalResponse,
   TerminalInput,
   SessionInboundMessage,
   SessionOutboundMessage,
@@ -91,19 +49,11 @@ import type {
   AgentPermissionRequest,
   AgentPermissionResponse,
   AgentPersistenceHandle,
-  AgentProviderNotice,
   AgentProvider,
   AgentSessionConfig,
 } from "@thoth/protocol/agent-types";
-import type {
-  AgentThothCardAnswerResponse,
-  AgentThothStateResponse,
-  AgentThothStateUpdate,
-  ThothCardAnswerPayload,
-} from "@thoth/protocol/thoth/rpc-schemas";
-import type { MutableDaemonConfig, MutableDaemonConfigPatch } from "@thoth/protocol/messages";
-import type { TaskCommand } from "@thoth/protocol/task-authority";
-import type { AgentProviderControl, ProviderRunMode } from "@thoth/protocol/provider-control";
+import type { AgentThothStateUpdate } from "@thoth/protocol/thoth/rpc-schemas";
+import type { ProviderRunMode } from "@thoth/protocol/provider-control";
 import { isRelayClientWebSocketUrl } from "@thoth/protocol/daemon-endpoints";
 import { terminalSubscriptionKey } from "@thoth/protocol/terminal-subscription-key";
 import {
@@ -318,66 +268,8 @@ type SubscribeCheckoutDiffPayload = Extract<
   { type: "subscribe_checkout_diff_response" }
 >["payload"];
 type CheckoutDiffPayload = Omit<SubscribeCheckoutDiffPayload, "subscriptionId">;
-type CheckoutCommitPayload = CheckoutCommitResponse["payload"];
-type CheckoutMergePayload = CheckoutMergeResponse["payload"];
-type CheckoutMergeFromBasePayload = CheckoutMergeFromBaseResponse["payload"];
-type CheckoutPullPayload = CheckoutPullResponse["payload"];
-type CheckoutPushPayload = CheckoutPushResponse["payload"];
-type CheckoutRefreshPayload = CheckoutRefreshResponse["payload"];
-type CheckoutPrCreatePayload = CheckoutPrCreateResponse["payload"];
-type CheckoutPrMergePayload = CheckoutPrMergeResponse["payload"];
-type CheckoutGithubSetAutoMergePayload = CheckoutGithubSetAutoMergeResponse["payload"];
-type CheckoutGithubGetCheckDetailsPayload = CheckoutGithubGetCheckDetailsResponse["payload"];
-type CheckoutPrStatusPayload = CheckoutPrStatusResponse["payload"];
-type PullRequestTimelinePayload = PullRequestTimelineResponse["payload"];
-type CheckoutSwitchBranchPayload = CheckoutSwitchBranchResponse["payload"];
 export type RenameBranchResult = z.infer<typeof CheckoutRenameBranchResponseSchema>["payload"];
-type StashSavePayload = StashSaveResponse["payload"];
-type StashPopPayload = StashPopResponse["payload"];
-type StashListPayload = StashListResponse["payload"];
-type ValidateBranchPayload = ValidateBranchResponse["payload"];
-type BranchSuggestionsPayload = BranchSuggestionsResponse["payload"];
-type GitHubSearchPayload = GitHubSearchResponse["payload"];
-type DirectorySuggestionsPayload = DirectorySuggestionsResponse["payload"];
-type ThothWorktreeListPayload = ThothWorktreeListResponse["payload"];
-type ThothWorktreeArchivePayload = ThothWorktreeArchiveResponse["payload"];
-type CreateThothWorktreePayload = Extract<
-  SessionOutboundMessage,
-  { type: "create_thoth_worktree_response" }
->["payload"];
-type WorkspaceCreatePayload = Extract<
-  SessionOutboundMessage,
-  { type: "workspace.create.response" }
->["payload"];
-type AgentThothStatePayload = AgentThothStateResponse["payload"];
-type AgentThothCardAnswerPayload = AgentThothCardAnswerResponse["payload"];
 type AgentThothStateUpdatePayload = AgentThothStateUpdate["payload"];
-type TaskListPayload = Extract<SessionOutboundMessage, { type: "task.list.response" }>["payload"];
-type TaskGetPayload = Extract<SessionOutboundMessage, { type: "task.get.response" }>["payload"];
-type TaskCommandPayload = Extract<
-  SessionOutboundMessage,
-  { type: "task.command.response" }
->["payload"];
-type TaskDecisionAnswerPayload = Extract<
-  SessionOutboundMessage,
-  { type: "task.decision.answer.response" }
->["payload"];
-type TaskContextSearchPayload = Extract<
-  SessionOutboundMessage,
-  { type: "task.context.search.response" }
->["payload"];
-type TaskContextGetPayload = Extract<
-  SessionOutboundMessage,
-  { type: "task.context.get.response" }
->["payload"];
-type ExecutionTimelinePayload = Extract<
-  SessionOutboundMessage,
-  { type: "execution.timeline.response" }
->["payload"];
-type ExecutionApprovalResolvePayload = Extract<
-  SessionOutboundMessage,
-  { type: "execution.approval.resolve.response" }
->["payload"];
 type FileExplorerPayload = FileExplorerResponse["payload"];
 export type FileExplorerDirectoryPayload = NonNullable<FileExplorerPayload["directory"]>;
 type LegacyFileExplorerFilePayload = NonNullable<FileExplorerPayload["file"]>;
@@ -398,27 +290,6 @@ export interface FileUploadInput {
   chunkSize?: number;
 }
 export type FileUploadResult = FileUploadResponse["payload"];
-type FileDownloadTokenPayload = FileDownloadTokenResponse["payload"];
-type ListProviderFeaturesPayload = ListProviderFeaturesResponseMessage["payload"];
-type ListProviderModelsPayload = ListProviderModelsResponseMessage["payload"];
-type ListProviderModesPayload = ListProviderModesResponseMessage["payload"];
-type ListAvailableProvidersPayload = ListAvailableProvidersResponse["payload"];
-type GetProvidersSnapshotPayload = GetProvidersSnapshotResponseMessage["payload"];
-type RefreshProvidersSnapshotPayload = RefreshProvidersSnapshotResponseMessage["payload"];
-type ProviderDiagnosticPayload = ProviderDiagnosticResponseMessage["payload"];
-type ProviderUsageListPayload = ProviderUsageListResponseMessage["payload"];
-type DaemonStatusPayload = DaemonGetStatusResponse["payload"];
-type DaemonPairingOfferPayload = DaemonGetPairingOfferResponse["payload"];
-type DaemonIssueRelayDeviceTokenPayload = DaemonIssueRelayDeviceTokenResponse["payload"];
-type DiagnosticsPayload = DiagnosticsResponse["payload"];
-type ReadProjectConfigPayload = Extract<
-  SessionOutboundMessage,
-  { type: "read_project_config_response" }
->["payload"];
-type WriteProjectConfigPayload = Extract<
-  SessionOutboundMessage,
-  { type: "write_project_config_response" }
->["payload"];
 type ListCommandsPayload = ListCommandsResponse["payload"];
 type ListCommandsDraftConfig = Pick<
   AgentSessionConfig,
@@ -437,65 +308,8 @@ interface ListCommandsOptions {
 }
 type LegacyListCommandsOptions = Omit<ListCommandsOptions, "agentId">;
 type AgentPermissionResolvedPayload = AgentPermissionResolvedMessage["payload"];
-type ListTerminalsPayload = ListTerminalsResponse["payload"];
-type CreateTerminalPayload = CreateTerminalResponse["payload"];
 export type RenameTerminalResult = z.infer<typeof RenameTerminalResponseSchema>["payload"];
 type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
-type CloseItemsPayload = CloseItemsResponse["payload"];
-type KillTerminalPayload = KillTerminalResponse["payload"];
-type CaptureTerminalPayload = CaptureTerminalResponse["payload"];
-type ChatCreatePayload = Extract<
-  SessionOutboundMessage,
-  { type: "chat/create/response" }
->["payload"];
-type ChatListPayload = Extract<SessionOutboundMessage, { type: "chat/list/response" }>["payload"];
-type ChatInspectPayload = Extract<
-  SessionOutboundMessage,
-  { type: "chat/inspect/response" }
->["payload"];
-type ChatDeletePayload = Extract<
-  SessionOutboundMessage,
-  { type: "chat/delete/response" }
->["payload"];
-type ChatPostPayload = Extract<SessionOutboundMessage, { type: "chat/post/response" }>["payload"];
-type ChatReadPayload = Extract<SessionOutboundMessage, { type: "chat/read/response" }>["payload"];
-type ChatWaitPayload = Extract<SessionOutboundMessage, { type: "chat/wait/response" }>["payload"];
-type ScheduleCreatePayload = Extract<
-  SessionOutboundMessage,
-  { type: "schedule/create/response" }
->["payload"];
-type ScheduleListPayload = Extract<
-  SessionOutboundMessage,
-  { type: "schedule/list/response" }
->["payload"];
-type ScheduleInspectPayload = Extract<
-  SessionOutboundMessage,
-  { type: "schedule/inspect/response" }
->["payload"];
-type ScheduleLogsPayload = Extract<
-  SessionOutboundMessage,
-  { type: "schedule/logs/response" }
->["payload"];
-type SchedulePausePayload = Extract<
-  SessionOutboundMessage,
-  { type: "schedule/pause/response" }
->["payload"];
-type ScheduleResumePayload = Extract<
-  SessionOutboundMessage,
-  { type: "schedule/resume/response" }
->["payload"];
-type ScheduleDeletePayload = Extract<
-  SessionOutboundMessage,
-  { type: "schedule/delete/response" }
->["payload"];
-type ScheduleRunOncePayload = Extract<
-  SessionOutboundMessage,
-  { type: "schedule/run-once/response" }
->["payload"];
-type ScheduleUpdatePayload = Extract<
-  SessionOutboundMessage,
-  { type: "schedule/update/response" }
->["payload"];
 export type FetchAgentTimelinePayload = FetchAgentTimelineResponseMessage["payload"];
 export type AgentForkContextPayload = AgentForkContextResponseMessage["payload"];
 
@@ -549,9 +363,6 @@ export interface AgentForkContextOptions {
   requestId?: string;
 }
 
-type AgentRefreshedStatusPayload = z.infer<typeof AgentRefreshedStatusPayloadSchema>;
-type RestartRequestedStatusPayload = z.infer<typeof RestartRequestedStatusPayloadSchema>;
-type ShutdownRequestedStatusPayload = z.infer<typeof ShutdownRequestedStatusPayloadSchema>;
 export interface ShutdownServerOptions {
   requestId?: string;
   timeout?: number;
@@ -568,7 +379,6 @@ export interface DaemonIssueRelayDeviceTokenOptions {
   requestId?: string;
   timeout?: number;
 }
-type DaemonUpdateResponse = z.infer<typeof DaemonUpdateResponseSchema>;
 type FetchAgentsPayload = Extract<
   SessionOutboundMessage,
   { type: "fetch_agents_response" }
@@ -743,11 +553,6 @@ export interface RenameTerminalInput {
   title: string;
   requestId?: string;
 }
-type OpenProjectPayload = OpenProjectResponseMessage["payload"];
-type ProjectAddPayload = ProjectAddResponse["payload"];
-type ArchiveWorkspacePayload = ArchiveWorkspaceResponseMessage["payload"];
-type WorkspaceSetupStatusPayload = WorkspaceSetupStatusResponseMessage["payload"];
-
 export interface FetchAgentResult {
   agent: AgentSnapshotPayload;
   project: ProjectPlacementPayload | null;
@@ -789,23 +594,6 @@ interface BinaryFileTransferState extends PendingBinaryFileRead {
 }
 
 type RpcWaitResult<T> = { kind: "ok"; value: T } | { kind: "error"; error: DaemonRpcError };
-type GetDaemonConfigResponse = Extract<
-  SessionOutboundMessage,
-  { type: "get_daemon_config_response" }
->;
-type SetDaemonConfigResponse = Extract<
-  SessionOutboundMessage,
-  { type: "set_daemon_config_response" }
->;
-type CorrelatedResponseMessage =
-  | Extract<SessionOutboundMessage, { payload: { requestId: string } }>
-  | GetDaemonConfigResponse
-  | SetDaemonConfigResponse;
-type CorrelatedResponseType = CorrelatedResponseMessage["type"];
-type CorrelatedResponsePayload<TType extends CorrelatedResponseType> = Extract<
-  CorrelatedResponseMessage,
-  { type: TType }
->["payload"];
 
 class DaemonRpcError extends Error {
   readonly requestId: string;
@@ -938,6 +726,188 @@ function toReasonCode(reason: string | null | undefined): string | null {
   return "unknown";
 }
 
+type RpcResponseOperation = {
+  [Operation in ProtocolRpcOperation]: [ProtocolRpcResponse<Operation>] extends [never]
+    ? never
+    : Operation;
+}[ProtocolRpcOperation];
+
+type RpcResponsePayload<Operation extends RpcResponseOperation> =
+  ProtocolRpcResponse<Operation> extends { payload: infer Payload } ? Payload : never;
+
+type RpcRequestBody<Operation extends ProtocolRpcOperation> = Omit<
+  ProtocolRpcInput<Operation>,
+  "type" | "requestId"
+>;
+
+interface RpcInvocation<Operation extends RpcResponseOperation> {
+  body: RpcRequestBody<Operation>;
+  requestId?: string;
+  timeout?: number;
+}
+
+const RPC_INVOKE = Symbol("rpc.invoke");
+
+interface RpcClientInvoker {
+  [RPC_INVOKE]<Operation extends RpcResponseOperation>(
+    operation: Operation,
+    invocation: RpcInvocation<Operation>,
+  ): Promise<RpcResponsePayload<Operation>>;
+}
+
+interface ClientRpcBinding<
+  Method extends string,
+  Operation extends RpcResponseOperation,
+  Args extends unknown[],
+  Result,
+> {
+  clientMethod: Method;
+  operation: Operation;
+  invoke(client: RpcClientInvoker, args: Args): Promise<Result>;
+}
+
+type RpcBodyField<Operation extends RpcResponseOperation> = Extract<
+  keyof RpcRequestBody<Operation>,
+  string
+>;
+
+type PositionalValues<
+  Operation extends RpcResponseOperation,
+  Fields extends readonly RpcBodyField<Operation>[],
+> = {
+  -readonly [Index in keyof Fields]: Fields[Index] extends keyof RpcRequestBody<Operation>
+    ? RpcRequestBody<Operation>[Fields[Index]]
+    : never;
+};
+
+type PositionalRpcArgs<
+  Operation extends RpcResponseOperation,
+  Fields extends readonly RpcBodyField<Operation>[],
+> = [...PositionalValues<Operation, Fields>, requestId?: string];
+
+function positionalRpc<
+  const Operation extends RpcResponseOperation,
+  const Fields extends readonly RpcBodyField<Operation>[],
+>(options: {
+  clientMethod: Operation;
+  fields: Fields;
+  timeout?: number;
+}): ClientRpcBinding<
+  Operation,
+  Operation,
+  PositionalRpcArgs<Operation, Fields>,
+  RpcResponsePayload<Operation>
+> {
+  return {
+    clientMethod: options.clientMethod,
+    operation: options.clientMethod,
+    invoke(client, args) {
+      const body: Record<string, unknown> = {};
+      for (const [index, field] of options.fields.entries()) body[field] = args[index];
+      return client[RPC_INVOKE](options.clientMethod, {
+        body: body as RpcRequestBody<Operation>,
+        requestId: args[options.fields.length] as string | undefined,
+        timeout: options.timeout,
+      });
+    },
+  };
+}
+
+type RpcObjectInput<Operation extends RpcResponseOperation> = RpcRequestBody<Operation> & {
+  requestId?: string;
+};
+
+function objectRpc<const Operation extends RpcResponseOperation>(options: {
+  clientMethod: Operation;
+  timeout?: number;
+}): ClientRpcBinding<
+  Operation,
+  Operation,
+  [input: RpcObjectInput<Operation>],
+  RpcResponsePayload<Operation>
+> {
+  return mappedRpc({
+    clientMethod: options.clientMethod,
+    request: (input: RpcObjectInput<Operation>) => {
+      const { requestId, ...body } = input;
+      return { body: body as RpcRequestBody<Operation>, requestId, timeout: options.timeout };
+    },
+  });
+}
+
+function requestIdRpc<const Operation extends RpcResponseOperation>(options: {
+  clientMethod: Operation;
+  timeout?: number;
+}): ClientRpcBinding<Operation, Operation, [requestId?: string], RpcResponsePayload<Operation>> {
+  return mappedRpc({
+    clientMethod: options.clientMethod,
+    request: (requestId?: string) => ({
+      body: {} as RpcRequestBody<Operation>,
+      requestId,
+      timeout: options.timeout,
+    }),
+  });
+}
+
+function mappedRpc<const Operation extends RpcResponseOperation, Args extends unknown[]>(options: {
+  clientMethod: Operation;
+  request: (...args: Args) => RpcInvocation<Operation>;
+}): ClientRpcBinding<Operation, Operation, Args, RpcResponsePayload<Operation>> {
+  return {
+    clientMethod: options.clientMethod,
+    operation: options.clientMethod,
+    invoke: (client, args) => client[RPC_INVOKE](options.clientMethod, options.request(...args)),
+  };
+}
+
+function mappedRpcResult<
+  const Operation extends RpcResponseOperation,
+  Args extends unknown[],
+  Result,
+>(options: {
+  clientMethod: Operation;
+  request: (...args: Args) => RpcInvocation<Operation>;
+  select: (payload: RpcResponsePayload<Operation>) => Result | Promise<Result>;
+}): ClientRpcBinding<Operation, Operation, Args, Result> {
+  return {
+    clientMethod: options.clientMethod,
+    operation: options.clientMethod,
+    async invoke(client, args) {
+      return options.select(
+        await client[RPC_INVOKE](options.clientMethod, options.request(...args)),
+      );
+    },
+  };
+}
+
+function scheduleByIdRpc<
+  const Operation extends
+    | "scheduleInspect"
+    | "scheduleLogs"
+    | "schedulePause"
+    | "scheduleResume"
+    | "scheduleDelete"
+    | "scheduleRunOnce",
+>(options: {
+  clientMethod: Operation;
+}): ClientRpcBinding<
+  Operation,
+  Operation,
+  [options: InspectScheduleOptions],
+  RpcResponsePayload<Operation>
+> {
+  return mappedRpc({
+    clientMethod: options.clientMethod,
+    request: (options: InspectScheduleOptions) => ({
+      body: {
+        workspaceId: options.workspaceId,
+        scheduleId: options.id,
+      } as RpcRequestBody<Operation>,
+      requestId: options.requestId,
+    }),
+  });
+}
+
 interface PendingSend {
   message: SessionInboundMessage;
   resolve: () => void;
@@ -957,7 +927,780 @@ interface PingProbe {
   drivesLivenessFailure: boolean;
 }
 
-export class DaemonClient {
+const clientRpcBindings = {
+  clearAgentAttention: mappedRpcResult({
+    clientMethod: "clearAgentAttention",
+    request: (agentId: string | string[]) => ({ body: { agentId } }),
+    select: (): void => undefined,
+  }),
+  clearWorkspaceAttention: mappedRpcResult({
+    clientMethod: "clearWorkspaceAttention",
+    request: (workspaceId: string | string[]) => ({ body: { workspaceId } }),
+    select: (payload) => {
+      if (!payload.success) throw new Error(payload.error ?? "Failed to clear workspace attention");
+    },
+  }),
+  fetchAgents: mappedRpc({
+    clientMethod: "fetchAgents",
+    request: (options?: FetchAgentsOptions) => {
+      const { requestId, timeout, ...body } = options ?? {};
+      return { body, requestId, timeout };
+    },
+  }),
+  fetchAgentHistory: mappedRpc({
+    clientMethod: "fetchAgentHistory",
+    request: (options?: FetchAgentHistoryOptions) => {
+      const { requestId, ...body } = options ?? {};
+      return { body, requestId };
+    },
+  }),
+  fetchRecentProviderSessions: mappedRpc({
+    clientMethod: "fetchRecentProviderSessions",
+    request: (options?: FetchRecentProviderSessionsOptions) => {
+      const { requestId, ...body } = options ?? {};
+      return { body, requestId };
+    },
+  }),
+  fetchWorkspaces: mappedRpc({
+    clientMethod: "fetchWorkspaces",
+    request: (options?: FetchWorkspacesOptions) => {
+      const { requestId, ...body } = options ?? {};
+      return { body, requestId };
+    },
+  }),
+  openProject: positionalRpc({ clientMethod: "openProject", fields: ["cwd"] }),
+  addProject: positionalRpc({ clientMethod: "addProject", fields: ["cwd"] }),
+  startWorkspaceScript: positionalRpc({
+    clientMethod: "startWorkspaceScript",
+    fields: ["workspaceId", "scriptName"],
+  }),
+  archiveWorkspace: positionalRpc({
+    clientMethod: "archiveWorkspace",
+    fields: ["workspaceId"],
+  }),
+  fetchWorkspaceSetupStatus: positionalRpc({
+    clientMethod: "fetchWorkspaceSetupStatus",
+    fields: ["workspaceId"],
+  }),
+  getAgentThothState: positionalRpc({
+    clientMethod: "getAgentThothState",
+    fields: ["agentId"],
+  }),
+  answerAgentThothCard: objectRpc({ clientMethod: "answerAgentThothCard" }),
+  listTasks: positionalRpc({ clientMethod: "listTasks", fields: ["workspaceId"] }),
+  getTask: objectRpc({ clientMethod: "getTask" }),
+  commandTask: objectRpc({ clientMethod: "commandTask" }),
+  answerTaskDecision: objectRpc({ clientMethod: "answerTaskDecision" }),
+  searchTaskContext: objectRpc({ clientMethod: "searchTaskContext" }),
+  getTaskContext: objectRpc({ clientMethod: "getTaskContext" }),
+  getExecutionTimeline: objectRpc({ clientMethod: "getExecutionTimeline" }),
+  resolveExecutionApproval: objectRpc({ clientMethod: "resolveExecutionApproval" }),
+  commandAgentTurnQueue: objectRpc({ clientMethod: "commandAgentTurnQueue" }),
+  createAgent: mappedRpcResult({
+    clientMethod: "createAgent",
+    request: (options: CreateAgentRequestOptions) => ({
+      body: {
+        config: resolveAgentConfig(options),
+        ...(options.env ? { env: options.env } : {}),
+        ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
+        ...(options.initialPrompt ? { initialPrompt: options.initialPrompt } : {}),
+        ...(options.thoth ? { thoth: options.thoth } : {}),
+        ...(options.providerRunMode ? { providerRunMode: options.providerRunMode } : {}),
+        ...(options.contextRefs ? { contextRefs: options.contextRefs } : {}),
+        ...(options.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
+        ...(options.outputSchema ? { outputSchema: options.outputSchema } : {}),
+        ...(options.images?.length ? { images: options.images } : {}),
+        ...(options.attachments?.length ? { attachments: options.attachments } : {}),
+        ...(options.git ? { git: options.git } : {}),
+        ...(options.worktree ? { worktree: options.worktree } : {}),
+        ...(options.autoArchive !== undefined ? { autoArchive: options.autoArchive } : {}),
+        ...(options.worktreeName ? { worktreeName: options.worktreeName } : {}),
+        ...(options.labels && Object.keys(options.labels).length ? { labels: options.labels } : {}),
+      },
+      requestId: options.requestId,
+    }),
+    select: (payload) => {
+      const created = AgentCreatedStatusPayloadSchema.safeParse(payload);
+      if (created.success) return created.data.agent;
+      const failed = AgentCreateFailedStatusPayloadSchema.safeParse(payload);
+      if (failed.success) throw new Error(failed.data.error);
+      throw new Error("Invalid createAgent status response");
+    },
+  }),
+  deleteAgent: mappedRpcResult({
+    clientMethod: "deleteAgent",
+    request: (agentId: string) => ({ body: { agentId } }),
+    select: (): void => undefined,
+  }),
+  archiveAgent: mappedRpcResult({
+    clientMethod: "archiveAgent",
+    request: (agentId: string) => ({ body: { agentId } }),
+    select: (payload) => ({ archivedAt: payload.archivedAt }),
+  }),
+  detachAgent: mappedRpcResult({
+    clientMethod: "detachAgent",
+    request: (agentId: string) => ({ body: { agentId } }),
+    select: (payload) => {
+      if (!payload.accepted) throw new Error(payload.error ?? "detachAgent rejected");
+    },
+  }),
+  updateAgent: mappedRpcResult({
+    clientMethod: "updateAgent",
+    request: (agentId: string, updates: { name?: string; labels?: Record<string, string> }) => ({
+      body: {
+        agentId,
+        ...(updates.name !== undefined ? { name: updates.name } : {}),
+        ...(updates.labels && Object.keys(updates.labels).length ? { labels: updates.labels } : {}),
+      },
+    }),
+    select: (payload) => {
+      if (!payload.accepted) throw new Error(payload.error ?? "updateAgent rejected");
+    },
+  }),
+  renameProject: mappedRpcResult({
+    clientMethod: "renameProject",
+    request: (projectId: string, customName: string | null, requestId?: string) => ({
+      body: { projectId, customName },
+      requestId,
+    }),
+    select: (payload) => {
+      if (!payload.accepted) throw new Error(payload.error ?? "renameProject rejected");
+      return { customName: payload.customName };
+    },
+  }),
+  removeProject: mappedRpcResult({
+    clientMethod: "removeProject",
+    request: (projectId: string, requestId?: string) => ({ body: { projectId }, requestId }),
+    select: (payload) => {
+      if (!payload.accepted) throw new Error(payload.error ?? "removeProject rejected");
+      return { removedWorkspaceIds: payload.removedWorkspaceIds };
+    },
+  }),
+  setWorkspaceTitle: mappedRpcResult({
+    clientMethod: "setWorkspaceTitle",
+    request: (workspaceId: string, title: string | null, requestId?: string) => ({
+      body: { workspaceId, title },
+      requestId,
+    }),
+    select: (payload) => {
+      if (!payload.accepted) throw new Error(payload.error ?? "setWorkspaceTitle rejected");
+      return { title: payload.title };
+    },
+  }),
+  resumeAgent: mappedRpcResult({
+    clientMethod: "resumeAgent",
+    request: (handle: AgentPersistenceHandle, overrides?: Partial<AgentSessionConfig>) => ({
+      body: { handle, ...(overrides ? { overrides } : {}) },
+    }),
+    select: (payload) => {
+      const resumed = AgentResumedStatusPayloadSchema.safeParse(payload);
+      if (!resumed.success) throw new Error("Invalid resumeAgent status response");
+      return resumed.data.agent;
+    },
+  }),
+  importAgent: mappedRpcResult({
+    clientMethod: "importAgent",
+    request: (input: ImportAgentInput) => ({
+      body: {
+        ...("providerId" in input
+          ? { providerId: input.providerId, providerHandleId: input.providerHandleId }
+          : { provider: input.provider, sessionId: input.sessionId }),
+        ...(input.cwd ? { cwd: input.cwd } : {}),
+        ...(input.labels && Object.keys(input.labels).length ? { labels: input.labels } : {}),
+      },
+    }),
+    select: (payload) => {
+      const resumed = AgentResumedStatusPayloadSchema.safeParse(payload);
+      if (resumed.success) return resumed.data.agent;
+      const failed = AgentCreateFailedStatusPayloadSchema.safeParse(payload);
+      if (failed.success) throw new Error(failed.data.error);
+      throw new Error("Invalid importAgent status response");
+    },
+  }),
+  refreshAgent: mappedRpcResult({
+    clientMethod: "refreshAgent",
+    request: (agentId: string, requestId?: string) => ({ body: { agentId }, requestId }),
+    select: (payload) => {
+      const refreshed = AgentRefreshedStatusPayloadSchema.safeParse(payload);
+      if (!refreshed.success) throw new Error("Invalid refreshAgent status response");
+      return refreshed.data;
+    },
+  }),
+  fetchAgentTimeline: mappedRpcResult({
+    clientMethod: "fetchAgentTimeline",
+    request: (agentId: string, options: FetchAgentTimelineOptions = {}) => ({
+      body: {
+        agentId,
+        ...(options.direction ? { direction: options.direction } : {}),
+        ...(options.cursor ? { cursor: options.cursor } : {}),
+        ...(typeof options.limit === "number" ? { limit: options.limit } : {}),
+        ...(options.projection ? { projection: options.projection } : {}),
+      },
+      requestId: options.requestId,
+      timeout: options.timeout,
+    }),
+    select: (payload) => {
+      if (payload.error) throw new Error(payload.error);
+      return payload;
+    },
+  }),
+  buildAgentForkContext: mappedRpcResult({
+    clientMethod: "buildAgentForkContext",
+    request: (agentId: string, options: AgentForkContextOptions = {}) => ({
+      body: {
+        agentId,
+        ...(options.boundaryMessageId ? { boundaryMessageId: options.boundaryMessageId } : {}),
+      },
+      requestId: options.requestId,
+      timeout: 15_000,
+    }),
+    select: (payload) => {
+      if (payload.error) throw new Error(payload.error);
+      return payload;
+    },
+  }),
+  sendAgentMessage: mappedRpcResult({
+    clientMethod: "sendAgentMessage",
+    request: (agentId: string, text: string, options?: SendMessageOptions) => ({
+      body: {
+        agentId,
+        text,
+        messageId: options?.messageId ?? crypto.randomUUID(),
+        ...(options?.images ? { images: options.images } : {}),
+        ...(options?.attachments ? { attachments: options.attachments } : {}),
+        ...(options?.thoth ? { thoth: options.thoth } : {}),
+        ...(options?.providerRunMode ? { providerRunMode: options.providerRunMode } : {}),
+        ...(options?.contextRefs ? { contextRefs: options.contextRefs } : {}),
+        deliveryMode: options?.deliveryMode ?? "queue",
+      },
+    }),
+    select: (payload) => {
+      if (!payload.accepted) throw new Error(payload.error ?? "sendAgentMessage rejected");
+      return payload;
+    },
+  }),
+  rewindAgent: mappedRpcResult({
+    clientMethod: "rewindAgent",
+    request: (agentId: string, messageId: string, mode: "conversation" | "files" | "both") => ({
+      body: { agentId, messageId, mode },
+    }),
+    select: (payload) => {
+      if (!payload.ok) throw new Error(payload.error ?? "Agent rewind failed");
+      return payload;
+    },
+  }),
+  cancelAgent: mappedRpcResult({
+    clientMethod: "cancelAgent",
+    request: (agentId: string) => ({ body: { agentId } }),
+    select: (payload) => {
+      if (payload.error) throw new Error(payload.error);
+    },
+  }),
+  setAgentMode: mappedRpcResult({
+    clientMethod: "setAgentMode",
+    request: (agentId: string, modeId: string) => ({ body: { agentId, modeId } }),
+    select: (payload) => {
+      if (!payload.accepted) throw new Error(payload.error ?? "setAgentMode rejected");
+      return payload.notice ?? null;
+    },
+  }),
+  getAgentProviderControl: mappedRpcResult({
+    clientMethod: "getAgentProviderControl",
+    request: (agentId: string, options?: { refresh?: boolean }) => ({
+      body: { agentId, ...(options?.refresh ? { refresh: true } : {}) },
+    }),
+    select: (payload) => {
+      if (!payload.accepted || !payload.providerControl) {
+        throw new Error(payload.error ?? "getAgentProviderControl rejected");
+      }
+      return payload.providerControl;
+    },
+  }),
+  updateAgentProviderControl: mappedRpcResult({
+    clientMethod: "updateAgentProviderControl",
+    request: (input: {
+      agentId: string;
+      runMode: ProviderRunMode;
+      expectedRevision: number;
+      commandId?: string;
+    }) => ({ body: { ...input, commandId: input.commandId ?? crypto.randomUUID() } }),
+    select: (payload) => {
+      if (!payload.accepted || !payload.providerControl) {
+        throw new Error(payload.error ?? "updateAgentProviderControl rejected");
+      }
+      return payload.providerControl;
+    },
+  }),
+  setAgentModel: mappedRpcResult({
+    clientMethod: "setAgentModel",
+    request: (agentId: string, modelId: string | null) => ({ body: { agentId, modelId } }),
+    select: (payload) => {
+      if (!payload.accepted) throw new Error(payload.error ?? "setAgentModel rejected");
+    },
+  }),
+  setAgentFeature: mappedRpcResult({
+    clientMethod: "setAgentFeature",
+    request: (agentId: string, featureId: string, value: unknown) => ({
+      body: { agentId, featureId, value },
+    }),
+    select: (payload) => {
+      if (!payload.accepted) throw new Error(payload.error ?? "setAgentFeature rejected");
+    },
+  }),
+  setAgentThinkingOption: mappedRpcResult({
+    clientMethod: "setAgentThinkingOption",
+    request: (agentId: string, thinkingOptionId: string | null) => ({
+      body: { agentId, thinkingOptionId },
+    }),
+    select: (payload) => {
+      if (!payload.accepted) {
+        throw new Error(payload.error ?? "setAgentThinkingOption rejected");
+      }
+      return payload.notice ?? null;
+    },
+  }),
+  restartServer: mappedRpcResult({
+    clientMethod: "restartServer",
+    request: (reason?: string, requestId?: string) => ({
+      body: reason?.trim() ? { reason } : {},
+      requestId,
+    }),
+    select: (payload) => {
+      const restarted = RestartRequestedStatusPayloadSchema.safeParse(payload);
+      if (!restarted.success) throw new Error("Invalid restartServer status response");
+      return restarted.data;
+    },
+  }),
+  shutdownServer: mappedRpcResult({
+    clientMethod: "shutdownServer",
+    request: (options?: ShutdownServerOptions) => ({
+      body: {},
+      requestId: options?.requestId,
+      timeout: options?.timeout,
+    }),
+    select: (payload) => {
+      const shutdown = ShutdownRequestedStatusPayloadSchema.safeParse(payload);
+      if (!shutdown.success) throw new Error("Invalid shutdownServer status response");
+      return shutdown.data;
+    },
+  }),
+  updateDaemon: mappedRpc({
+    clientMethod: "updateDaemon",
+    request: (requestId?: string) => ({ body: {}, requestId, timeout: 300_000 }),
+  }),
+  checkoutPull: positionalRpc({ clientMethod: "checkoutPull", fields: ["cwd"] }),
+  checkoutPush: positionalRpc({ clientMethod: "checkoutPush", fields: ["cwd"] }),
+  checkoutRefresh: positionalRpc({ clientMethod: "checkoutRefresh", fields: ["cwd"] }),
+  checkoutPrStatus: positionalRpc({ clientMethod: "checkoutPrStatus", fields: ["cwd"] }),
+  checkoutSwitchBranch: positionalRpc({
+    clientMethod: "checkoutSwitchBranch",
+    fields: ["cwd", "branch"],
+  }),
+  checkoutCommit: mappedRpc({
+    clientMethod: "checkoutCommit",
+    request: (cwd: string, input: { message?: string; addAll?: boolean }, requestId?: string) => ({
+      body: { cwd, message: input.message, addAll: input.addAll },
+      requestId,
+    }),
+  }),
+  checkoutMerge: mappedRpc({
+    clientMethod: "checkoutMerge",
+    request: (
+      cwd: string,
+      input: { baseRef?: string; strategy?: "merge" | "squash"; requireCleanTarget?: boolean },
+      requestId?: string,
+    ) => ({ body: { cwd, ...input }, requestId }),
+  }),
+  checkoutMergeFromBase: mappedRpc({
+    clientMethod: "checkoutMergeFromBase",
+    request: (
+      cwd: string,
+      input: { baseRef?: string; requireCleanTarget?: boolean },
+      requestId?: string,
+    ) => ({ body: { cwd, ...input }, requestId }),
+  }),
+  checkoutPrCreate: mappedRpc({
+    clientMethod: "checkoutPrCreate",
+    request: (
+      cwd: string,
+      input: { title?: string; body?: string; baseRef?: string },
+      requestId?: string,
+    ) => ({ body: { cwd, ...input }, requestId }),
+  }),
+  checkoutPrMerge: mappedRpc({
+    clientMethod: "checkoutPrMerge",
+    request: (cwd: string, input: { method: CheckoutPrMergeMethod }, requestId?: string) => ({
+      body: { cwd, mergeMethod: input.method },
+      requestId,
+    }),
+  }),
+  checkoutGithubSetAutoMerge: mappedRpc({
+    clientMethod: "checkoutGithubSetAutoMerge",
+    request: (
+      cwd: string,
+      input: { enabled: true; method: CheckoutPrMergeMethod } | { enabled: false },
+      requestId?: string,
+    ) => ({
+      body: {
+        cwd,
+        enabled: input.enabled,
+        ...(input.enabled ? { mergeMethod: input.method } : {}),
+      },
+      requestId,
+    }),
+  }),
+  checkoutGithubGetCheckDetails: mappedRpc({
+    clientMethod: "checkoutGithubGetCheckDetails",
+    request: (
+      input: {
+        cwd: string;
+        repoOwner: string;
+        repoName: string;
+        checkRunId: number;
+        workflowRunId?: number;
+      },
+      requestId?: string,
+    ) => ({ body: input, requestId }),
+  }),
+  pullRequestTimeline: mappedRpc({
+    clientMethod: "pullRequestTimeline",
+    request: (
+      input: { cwd: string; prNumber: number; repoOwner: string; repoName: string },
+      requestId?: string,
+    ) => ({ body: input, requestId }),
+  }),
+  stashSave: mappedRpc({
+    clientMethod: "stashSave",
+    request: (cwd: string, options?: { branch?: string }, requestId?: string) => ({
+      body: { cwd, branch: options?.branch },
+      requestId,
+    }),
+  }),
+  stashPop: positionalRpc({ clientMethod: "stashPop", fields: ["cwd", "stashIndex"] }),
+  stashList: mappedRpc({
+    clientMethod: "stashList",
+    request: (cwd: string, options?: { thothOnly?: boolean }, requestId?: string) => ({
+      body: { cwd, thothOnly: options?.thothOnly },
+      requestId,
+    }),
+  }),
+  getThothWorktreeList: mappedRpc({
+    clientMethod: "getThothWorktreeList",
+    request: (input: { cwd?: string; repoRoot?: string }, requestId?: string) => ({
+      body: input,
+      requestId,
+    }),
+  }),
+  archiveThothWorktree: mappedRpc({
+    clientMethod: "archiveThothWorktree",
+    request: (
+      input: {
+        worktreePath?: string;
+        repoRoot?: string;
+        branchName?: string;
+        workspaceId?: string;
+        scope?: "workspace" | "worktree";
+      },
+      requestId?: string,
+    ) => ({ body: input, requestId }),
+  }),
+  createThothWorktree: mappedRpc({
+    clientMethod: "createThothWorktree",
+    request: (input: CreateThothWorktreeInput, requestId?: string) => ({
+      body: input,
+      requestId,
+    }),
+  }),
+  createWorkspace: mappedRpc({
+    clientMethod: "createWorkspace",
+    request: (
+      input: {
+        source: WorkspaceCreateRequest["source"];
+        title?: string;
+        firstAgentContext?: WorkspaceCreateRequest["firstAgentContext"];
+      },
+      requestId?: string,
+    ) => ({ body: input, requestId }),
+  }),
+  validateBranch: mappedRpc({
+    clientMethod: "validateBranch",
+    request: (options: { cwd: string; branchName: string }, requestId?: string) => ({
+      body: options,
+      requestId,
+    }),
+  }),
+  getBranchSuggestions: mappedRpc({
+    clientMethod: "getBranchSuggestions",
+    request: (options: { cwd: string; query?: string; limit?: number }, requestId?: string) => ({
+      body: options,
+      requestId,
+    }),
+  }),
+  searchGitHub: mappedRpc({
+    clientMethod: "searchGitHub",
+    request: (
+      options: {
+        cwd: string;
+        query: string;
+        limit?: number;
+        kinds?: GitHubSearchRequest["kinds"];
+      },
+      requestId?: string,
+    ) => ({ body: options, requestId }),
+  }),
+  getDirectorySuggestions: mappedRpc({
+    clientMethod: "getDirectorySuggestions",
+    request: (
+      options: {
+        query: string;
+        limit?: number;
+        cwd?: string;
+        includeFiles?: boolean;
+        includeDirectories?: boolean;
+        matchMode?: "fuzzy" | "suffix";
+      },
+      requestId?: string,
+    ) => ({ body: options, requestId }),
+  }),
+  requestDownloadToken: positionalRpc({
+    clientMethod: "requestDownloadToken",
+    fields: ["cwd", "path"],
+  }),
+  requestProjectIcon: positionalRpc({
+    clientMethod: "requestProjectIcon",
+    fields: ["cwd"],
+  }),
+  getDaemonConfig: requestIdRpc({ clientMethod: "getDaemonConfig" }),
+  collectDiagnostics: requestIdRpc({ clientMethod: "collectDiagnostics" }),
+  patchDaemonConfig: positionalRpc({
+    clientMethod: "patchDaemonConfig",
+    fields: ["config"],
+  }),
+  readProjectConfig: positionalRpc({
+    clientMethod: "readProjectConfig",
+    fields: ["repoRoot"],
+  }),
+  writeProjectConfig: objectRpc({ clientMethod: "writeProjectConfig" }),
+  listProviderModels: mappedRpc({
+    clientMethod: "listProviderModels",
+    request: (provider: AgentProvider, options?: { cwd?: string; requestId?: string }) => ({
+      body: { provider, cwd: options?.cwd },
+      requestId: options?.requestId,
+    }),
+  }),
+  listProviderModes: mappedRpc({
+    clientMethod: "listProviderModes",
+    request: (provider: AgentProvider, options?: { cwd?: string; requestId?: string }) => ({
+      body: { provider, cwd: options?.cwd },
+      requestId: options?.requestId,
+    }),
+  }),
+  listProviderFeatures: mappedRpc({
+    clientMethod: "listProviderFeatures",
+    request: (draftConfig: ListCommandsDraftConfig, options?: { requestId?: string }) => ({
+      body: { draftConfig },
+      requestId: options?.requestId,
+    }),
+  }),
+  listAvailableProviders: mappedRpc({
+    clientMethod: "listAvailableProviders",
+    request: (options?: { requestId?: string }) => ({
+      body: {},
+      requestId: options?.requestId,
+    }),
+  }),
+  getProvidersSnapshot: mappedRpc({
+    clientMethod: "getProvidersSnapshot",
+    request: (options?: { cwd?: string; requestId?: string }) => ({
+      body: { cwd: options?.cwd },
+      requestId: options?.requestId,
+    }),
+  }),
+  getDaemonStatus: mappedRpc({
+    clientMethod: "getDaemonStatus",
+    request: (options?: DaemonStatusOptions) => ({
+      body: {},
+      requestId: options?.requestId,
+      timeout: options?.timeout,
+    }),
+  }),
+  getDaemonPairingOffer: mappedRpc({
+    clientMethod: "getDaemonPairingOffer",
+    request: (options?: DaemonPairingOfferOptions) => ({
+      body: {},
+      requestId: options?.requestId,
+      timeout: options?.timeout,
+    }),
+  }),
+  issueRelayDeviceToken: mappedRpc({
+    clientMethod: "issueRelayDeviceToken",
+    request: (options?: DaemonIssueRelayDeviceTokenOptions) => ({
+      body: {},
+      requestId: options?.requestId,
+      timeout: options?.timeout,
+    }),
+  }),
+  refreshProvidersSnapshot: mappedRpc({
+    clientMethod: "refreshProvidersSnapshot",
+    request: (options?: { cwd?: string; providers?: AgentProvider[]; requestId?: string }) => ({
+      body: { cwd: options?.cwd, providers: options?.providers },
+      requestId: options?.requestId,
+      timeout: 120_000,
+    }),
+  }),
+  getProviderDiagnostic: mappedRpc({
+    clientMethod: "getProviderDiagnostic",
+    request: (provider: AgentProvider, options?: { requestId?: string }) => ({
+      body: { provider },
+      requestId: options?.requestId,
+      timeout: 180_000,
+    }),
+  }),
+  listProviderUsage: mappedRpc({
+    clientMethod: "listProviderUsage",
+    request: (options?: { requestId?: string }) => ({
+      body: {},
+      requestId: options?.requestId,
+    }),
+  }),
+  renameBranch: objectRpc({ clientMethod: "renameBranch" }),
+  renameTerminal: objectRpc({ clientMethod: "renameTerminal" }),
+  listTerminals: mappedRpc({
+    clientMethod: "listTerminals",
+    request: (cwd?: string, requestId?: string, options?: { workspaceId?: string }) => ({
+      body: { cwd, workspaceId: options?.workspaceId },
+      requestId,
+    }),
+  }),
+  createTerminal: mappedRpc({
+    clientMethod: "createTerminal",
+    request: (
+      cwd: string,
+      name?: string,
+      requestId?: string,
+      options?: { agentId?: string; command?: string; args?: string[]; workspaceId?: string },
+    ) => ({ body: { cwd, name, ...options }, requestId }),
+  }),
+  killTerminal: positionalRpc({ clientMethod: "killTerminal", fields: ["terminalId"] }),
+  closeItems: mappedRpc({
+    clientMethod: "closeItems",
+    request: (input: { agentIds?: string[]; terminalIds?: string[] }, requestId?: string) => ({
+      body: { agentIds: input.agentIds ?? [], terminalIds: input.terminalIds ?? [] },
+      requestId,
+    }),
+  }),
+  captureTerminal: mappedRpc({
+    clientMethod: "captureTerminal",
+    request: (
+      terminalId: string,
+      options?: { start?: number; end?: number; stripAnsi?: boolean },
+      requestId?: string,
+    ) => ({ body: { terminalId, ...options }, requestId }),
+  }),
+  createChatRoom: mappedRpc({
+    clientMethod: "createChatRoom",
+    request: (options: CreateChatRoomOptions) => ({
+      body: {
+        workspaceId: options.workspaceId,
+        name: options.name,
+        ...(options.purpose ? { purpose: options.purpose } : {}),
+      },
+      requestId: options.requestId,
+    }),
+  }),
+  listChatRooms: objectRpc({ clientMethod: "listChatRooms" }),
+  inspectChatRoom: objectRpc({ clientMethod: "inspectChatRoom" }),
+  deleteChatRoom: objectRpc({ clientMethod: "deleteChatRoom" }),
+  postChatMessage: mappedRpc({
+    clientMethod: "postChatMessage",
+    request: (options: PostChatMessageOptions) => ({
+      body: {
+        workspaceId: options.workspaceId,
+        room: options.room,
+        body: options.body,
+        ...(options.authorAgentId ? { authorAgentId: options.authorAgentId } : {}),
+        ...(options.replyToMessageId ? { replyToMessageId: options.replyToMessageId } : {}),
+      },
+      requestId: options.requestId,
+    }),
+  }),
+  readChatMessages: mappedRpc({
+    clientMethod: "readChatMessages",
+    request: (options: ReadChatMessagesOptions) => ({
+      body: {
+        workspaceId: options.workspaceId,
+        room: options.room,
+        limit: options.limit,
+        since: options.since,
+        authorAgentId: options.authorAgentId,
+      },
+      requestId: options.requestId,
+      timeout: options.timeout,
+    }),
+  }),
+  waitForChatMessages: mappedRpc({
+    clientMethod: "waitForChatMessages",
+    request: (options: WaitForChatMessagesOptions) => ({
+      body: {
+        workspaceId: options.workspaceId,
+        room: options.room,
+        ...(options.afterMessageId ? { afterMessageId: options.afterMessageId } : {}),
+        ...(typeof options.timeoutMs === "number" ? { timeoutMs: options.timeoutMs } : {}),
+      },
+      requestId: options.requestId,
+      timeout: (options.timeoutMs ?? 0) + 10_000,
+    }),
+  }),
+  scheduleCreate: mappedRpc({
+    clientMethod: "scheduleCreate",
+    request: (options: CreateScheduleOptions) => ({
+      body: {
+        workspaceId: options.workspaceId,
+        prompt: options.prompt,
+        cadence: options.cadence,
+        target: options.target,
+        ...(options.name ? { name: options.name } : {}),
+        ...(typeof options.maxRuns === "number" ? { maxRuns: options.maxRuns } : {}),
+        ...(options.expiresAt ? { expiresAt: options.expiresAt } : {}),
+        ...(typeof options.runOnCreate === "boolean" ? { runOnCreate: options.runOnCreate } : {}),
+      },
+      requestId: options.requestId,
+    }),
+  }),
+  scheduleList: objectRpc({ clientMethod: "scheduleList" }),
+  scheduleInspect: scheduleByIdRpc({ clientMethod: "scheduleInspect" }),
+  scheduleLogs: scheduleByIdRpc({ clientMethod: "scheduleLogs" }),
+  schedulePause: scheduleByIdRpc({ clientMethod: "schedulePause" }),
+  scheduleResume: scheduleByIdRpc({ clientMethod: "scheduleResume" }),
+  scheduleDelete: scheduleByIdRpc({ clientMethod: "scheduleDelete" }),
+  scheduleRunOnce: scheduleByIdRpc({ clientMethod: "scheduleRunOnce" }),
+  scheduleUpdate: mappedRpc({
+    clientMethod: "scheduleUpdate",
+    request: (options: UpdateScheduleOptions) => ({
+      body: {
+        workspaceId: options.workspaceId,
+        scheduleId: options.id,
+        name: options.name,
+        prompt: options.prompt,
+        cadence: options.cadence,
+        newAgentConfig: options.newAgentConfig,
+        maxRuns: options.maxRuns,
+        expiresAt: options.expiresAt,
+      },
+      requestId: options.requestId,
+    }),
+  }),
+} as const;
+
+type ClientRpcMethods = {
+  [Method in keyof typeof clientRpcBindings]: (typeof clientRpcBindings)[Method] extends {
+    invoke(client: RpcClientInvoker, args: infer Args extends unknown[]): Promise<infer Result>;
+  }
+    ? (...args: Args) => Promise<Result>
+    : never;
+};
+
+class DaemonClientRuntime {
   private transport: DaemonTransport | null = null;
   private transportCleanup: Array<() => void> = [];
   private rawMessageListeners: Set<(message: SessionOutboundMessage) => void> = new Set();
@@ -1492,6 +2235,46 @@ export class DaemonClient {
     }
   }
 
+  async [RPC_INVOKE]<Operation extends RpcResponseOperation>(
+    operation: Operation,
+    invocation: RpcInvocation<Operation>,
+  ): Promise<RpcResponsePayload<Operation>> {
+    const descriptor = rpcRegistry.entries[operation];
+    if (
+      !("input" in descriptor) ||
+      !descriptor.output ||
+      !descriptor.requestType ||
+      !descriptor.responseType
+    ) {
+      throw new Error(`RPC ${operation} does not have a correlated response`);
+    }
+    const requestId = this.createRequestId(invocation.requestId);
+    const message = descriptor.input.parse({
+      ...invocation.body,
+      type: descriptor.requestType,
+      requestId,
+    }) as SessionInboundMessage;
+    return this.sendRequest({
+      requestId,
+      message,
+      timeout: invocation.timeout,
+      options: { skipQueue: true },
+      select: (candidate) => {
+        if (candidate.type !== descriptor.responseType || !("payload" in candidate)) return null;
+        const payload = candidate.payload;
+        if (
+          !payload ||
+          typeof payload !== "object" ||
+          !("requestId" in payload) ||
+          payload.requestId !== requestId
+        ) {
+          return null;
+        }
+        return payload as RpcResponsePayload<Operation>;
+      },
+    });
+  }
+
   private async sendRequest<T>(params: {
     requestId: string;
     message: SessionInboundMessage;
@@ -1537,132 +2320,6 @@ export class DaemonClient {
       throw result.error;
     }
     return result.value;
-  }
-
-  private async sendCorrelatedRequest<
-    TResponseType extends CorrelatedResponseType,
-    TResult = CorrelatedResponsePayload<TResponseType>,
-  >(params: {
-    requestId: string;
-    message: SessionInboundMessage;
-    timeout?: number;
-    responseType: TResponseType;
-    options?: { skipQueue?: boolean };
-    selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
-  }): Promise<TResult> {
-    return this.sendRequest({
-      requestId: params.requestId,
-      message: params.message,
-      timeout: params.timeout,
-      options: params.options,
-      select: (msg) => {
-        const correlated = msg as CorrelatedResponseMessage;
-        if (correlated.type !== params.responseType) {
-          return null;
-        }
-        const payload = correlated.payload as unknown as CorrelatedResponsePayload<TResponseType>;
-        if (payload.requestId !== params.requestId) {
-          return null;
-        }
-        if (!params.selectPayload) {
-          return payload as TResult;
-        }
-        return params.selectPayload(payload);
-      },
-    });
-  }
-
-  private sendCorrelatedSessionRequest<
-    TResponseType extends CorrelatedResponseType,
-    TResult = CorrelatedResponsePayload<TResponseType>,
-  >(params: {
-    requestId?: string;
-    message: { type: SessionInboundMessage["type"] } & Record<string, unknown>;
-    responseType: TResponseType;
-    timeout?: number;
-    selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
-  }): Promise<TResult> {
-    const resolvedRequestId = this.createRequestId(params.requestId);
-    const message = SessionInboundMessageSchema.parse({
-      ...params.message,
-      requestId: resolvedRequestId,
-    });
-    return this.sendCorrelatedRequest({
-      requestId: resolvedRequestId,
-      message,
-      responseType: params.responseType,
-      timeout: params.timeout,
-      options: { skipQueue: true },
-      ...(params.selectPayload ? { selectPayload: params.selectPayload } : {}),
-    });
-  }
-
-  private sendNamespacedCorrelatedSessionRequest<
-    TResponseType extends CorrelatedResponseType,
-    TResult = CorrelatedResponsePayload<TResponseType>,
-  >(params: {
-    requestId?: string;
-    message: { type: Extract<SessionInboundMessage["type"], `${string}.request`> } & Record<
-      string,
-      unknown
-    >;
-    timeout?: number;
-    selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
-  }): Promise<TResult> {
-    const responseType = params.message.type.replace(/\.request$/, ".response") as TResponseType;
-    return this.sendCorrelatedSessionRequest({
-      ...params,
-      responseType,
-    });
-  }
-
-  async clearAgentAttention(agentId: string | string[]): Promise<void> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "clear_agent_attention",
-      agentId,
-      requestId,
-    });
-    await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "clear_agent_attention_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-  }
-
-  async clearWorkspaceAttention(workspaceId: string | string[]): Promise<void> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "workspace.clear_attention.request",
-      workspaceId,
-      requestId,
-    });
-    const response = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "workspace.clear_attention.response") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-    if (!response.success) {
-      throw new Error(response.error ?? "Failed to clear workspace attention");
-    }
   }
 
   sendHeartbeat(params: {
@@ -1830,374 +2487,10 @@ export class DaemonClient {
   // Agent RPCs (requestId-correlated)
   // ============================================================================
 
-  async fetchAgents(options?: FetchAgentsOptions): Promise<FetchAgentsPayload> {
-    const resolvedRequestId = this.createRequestId(options?.requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "fetch_agents_request",
-      requestId: resolvedRequestId,
-      ...(options?.scope ? { scope: options.scope } : {}),
-      ...(options?.filter ? { filter: options.filter } : {}),
-      ...(options?.sort ? { sort: options.sort } : {}),
-      ...(options?.page ? { page: options.page } : {}),
-      ...(options?.subscribe ? { subscribe: options.subscribe } : {}),
-    });
-    return this.sendRequest({
-      requestId: resolvedRequestId,
-      message,
-      timeout: options?.timeout,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "fetch_agents_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== resolvedRequestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-  }
-
-  async fetchAgentHistory(options?: FetchAgentHistoryOptions): Promise<FetchAgentHistoryPayload> {
-    const resolvedRequestId = this.createRequestId(options?.requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "fetch_agent_history_request",
-      requestId: resolvedRequestId,
-      ...(options?.filter ? { filter: options.filter } : {}),
-      ...(options?.sort ? { sort: options.sort } : {}),
-      ...(options?.page ? { page: options.page } : {}),
-    });
-    return this.sendRequest({
-      requestId: resolvedRequestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "fetch_agent_history_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== resolvedRequestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-  }
-
-  async fetchRecentProviderSessions(
-    options?: FetchRecentProviderSessionsOptions,
-  ): Promise<FetchRecentProviderSessionsPayload> {
-    const resolvedRequestId = this.createRequestId(options?.requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "fetch_recent_provider_sessions_request",
-      requestId: resolvedRequestId,
-      ...(options?.cwd ? { cwd: options.cwd } : {}),
-      ...(options?.providers ? { providers: options.providers } : {}),
-      ...(options?.since ? { since: options.since } : {}),
-      ...(options?.limit ? { limit: options.limit } : {}),
-    });
-    return this.sendRequest({
-      requestId: resolvedRequestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "fetch_recent_provider_sessions_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== resolvedRequestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-  }
-
-  async fetchWorkspaces(options?: FetchWorkspacesOptions): Promise<FetchWorkspacesPayload> {
-    const resolvedRequestId = this.createRequestId(options?.requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "fetch_workspaces_request",
-      requestId: resolvedRequestId,
-      ...(options?.filter ? { filter: options.filter } : {}),
-      ...(options?.sort ? { sort: options.sort } : {}),
-      ...(options?.page ? { page: options.page } : {}),
-      ...(options?.subscribe ? { subscribe: options.subscribe } : {}),
-    });
-    return this.sendRequest({
-      requestId: resolvedRequestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "fetch_workspaces_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== resolvedRequestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-  }
-
-  async openProject(cwd: string, requestId?: string): Promise<OpenProjectPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "open_project_request",
-        cwd,
-      },
-      responseType: "open_project_response",
-    });
-  }
-
-  async addProject(cwd: string, requestId?: string): Promise<ProjectAddPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "project.add.request",
-        cwd,
-      },
-      responseType: "project.add.response",
-    });
-  }
-
-  async startWorkspaceScript(
-    workspaceId: string,
-    scriptName: string,
-    requestId?: string,
-  ): Promise<
-    Extract<SessionOutboundMessage, { type: "start_workspace_script_response" }>["payload"]
-  > {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "start_workspace_script_request",
-        workspaceId,
-        scriptName,
-      },
-      responseType: "start_workspace_script_response",
-    });
-  }
-
-  async archiveWorkspace(
-    workspaceId: string,
-    requestId?: string,
-  ): Promise<ArchiveWorkspacePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "archive_workspace_request",
-        workspaceId,
-      },
-      responseType: "archive_workspace_response",
-    });
-  }
-
-  async fetchWorkspaceSetupStatus(
-    workspaceId: string,
-    requestId?: string,
-  ): Promise<WorkspaceSetupStatusPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "workspace_setup_status_request",
-        workspaceId,
-      },
-      responseType: "workspace_setup_status_response",
-    });
-  }
-
-  async getAgentThothState(agentId: string, requestId?: string): Promise<AgentThothStatePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "agent.thoth.state.request",
-        agentId,
-      },
-      responseType: "agent.thoth.state.response",
-    });
-  }
-
-  async answerAgentThothCard(input: {
-    agentId: string;
-    cardId: string;
-    answer: ThothCardAnswerPayload;
-    expectedRevision: number;
-    commandId: string;
-    requestId?: string;
-  }): Promise<AgentThothCardAnswerPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "agent.thoth.card.answer.request",
-        agentId: input.agentId,
-        cardId: input.cardId,
-        answer: input.answer,
-        expectedRevision: input.expectedRevision,
-        commandId: input.commandId,
-      },
-      responseType: "agent.thoth.card.answer.response",
-    });
-  }
-
   subscribeAgentThothStateUpdates(
     handler: (payload: AgentThothStateUpdatePayload) => void,
   ): () => void {
     return this.on("agent.thoth.state.update", (message) => handler(message.payload));
-  }
-
-  async listTasks(workspaceId: string, requestId?: string): Promise<TaskListPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: { type: "task.list.request", workspaceId },
-      responseType: "task.list.response",
-    });
-  }
-
-  async getTask(input: {
-    workspaceId: string;
-    taskId: string;
-    requestId?: string;
-  }): Promise<TaskGetPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "task.get.request",
-        workspaceId: input.workspaceId,
-        taskId: input.taskId,
-      },
-      responseType: "task.get.response",
-    });
-  }
-
-  async commandTask(input: {
-    workspaceId: string;
-    taskId: string;
-    command: TaskCommand;
-    expectedRevision: number;
-    commandId: string;
-    requestId?: string;
-  }): Promise<TaskCommandPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "task.command.request",
-        workspaceId: input.workspaceId,
-        taskId: input.taskId,
-        command: input.command,
-        expectedRevision: input.expectedRevision,
-        commandId: input.commandId,
-      },
-      responseType: "task.command.response",
-    });
-  }
-
-  async answerTaskDecision(input: {
-    workspaceId: string;
-    taskId: string;
-    decisionId: string;
-    optionId: string;
-    note?: string;
-    expectedRevision: number;
-    commandId: string;
-    requestId?: string;
-  }): Promise<TaskDecisionAnswerPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "task.decision.answer.request",
-        workspaceId: input.workspaceId,
-        taskId: input.taskId,
-        decisionId: input.decisionId,
-        optionId: input.optionId,
-        ...(input.note === undefined ? {} : { note: input.note }),
-        expectedRevision: input.expectedRevision,
-        commandId: input.commandId,
-      },
-      responseType: "task.decision.answer.response",
-    });
-  }
-
-  async searchTaskContext(input: {
-    workspaceId: string;
-    query: string;
-    limit?: number;
-    requestId?: string;
-  }): Promise<TaskContextSearchPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "task.context.search.request",
-        workspaceId: input.workspaceId,
-        query: input.query,
-        ...(input.limit === undefined ? {} : { limit: input.limit }),
-      },
-      responseType: "task.context.search.response",
-    });
-  }
-
-  async getTaskContext(input: {
-    workspaceId: string;
-    taskId: string;
-    revision?: number;
-    requestId?: string;
-  }): Promise<TaskContextGetPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "task.context.get.request",
-        workspaceId: input.workspaceId,
-        taskId: input.taskId,
-        ...(input.revision === undefined ? {} : { revision: input.revision }),
-      },
-      responseType: "task.context.get.response",
-    });
-  }
-
-  async getExecutionTimeline(input: {
-    workspaceId: string;
-    taskId: string;
-    executionId: string;
-    beforeSeq?: number;
-    limit?: number;
-    requestId?: string;
-  }): Promise<ExecutionTimelinePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "execution.timeline.request",
-        workspaceId: input.workspaceId,
-        taskId: input.taskId,
-        executionId: input.executionId,
-        ...(input.beforeSeq === undefined ? {} : { beforeSeq: input.beforeSeq }),
-        ...(input.limit === undefined ? {} : { limit: input.limit }),
-      },
-      responseType: "execution.timeline.response",
-    });
-  }
-
-  async resolveExecutionApproval(input: {
-    workspaceId: string;
-    taskId: string;
-    executionId: string;
-    approvalId: string;
-    decision: "allow" | "deny" | "implement";
-    expectedRevision: number;
-    commandId: string;
-    requestId?: string;
-  }): Promise<ExecutionApprovalResolvePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "execution.approval.resolve.request",
-        workspaceId: input.workspaceId,
-        taskId: input.taskId,
-        executionId: input.executionId,
-        approvalId: input.approvalId,
-        decision: input.decision,
-        expectedRevision: input.expectedRevision,
-        commandId: input.commandId,
-      },
-      responseType: "execution.approval.resolve.response",
-    });
   }
 
   subscribeWorkspaceAuthorityUpdates(
@@ -2287,760 +2580,12 @@ export class DaemonClient {
   // Agent Lifecycle
   // ============================================================================
 
-  async createAgent(options: CreateAgentRequestOptions): Promise<AgentSnapshotPayload> {
-    const requestId = this.createRequestId(options.requestId);
-    const config = resolveAgentConfig(options);
-
-    const message = SessionInboundMessageSchema.parse({
-      type: "create_agent_request",
-      requestId,
-      config,
-      ...(options.env ? { env: options.env } : {}),
-      ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
-      ...(options.initialPrompt ? { initialPrompt: options.initialPrompt } : {}),
-      ...(options.thoth ? { thoth: options.thoth } : {}),
-      ...(options.providerRunMode ? { providerRunMode: options.providerRunMode } : {}),
-      ...(options.contextRefs ? { contextRefs: options.contextRefs } : {}),
-      ...(options.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
-      ...(options.outputSchema ? { outputSchema: options.outputSchema } : {}),
-      ...(options.images && options.images.length > 0 ? { images: options.images } : {}),
-      ...(options.attachments && options.attachments.length > 0
-        ? { attachments: options.attachments }
-        : {}),
-      ...(options.git ? { git: options.git } : {}),
-      ...(options.worktree ? { worktree: options.worktree } : {}),
-      ...(options.autoArchive !== undefined ? { autoArchive: options.autoArchive } : {}),
-      ...(options.worktreeName ? { worktreeName: options.worktreeName } : {}),
-      ...(options.labels && Object.keys(options.labels).length > 0
-        ? { labels: options.labels }
-        : {}),
-    });
-
-    const status = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "status") {
-          return null;
-        }
-        const created = AgentCreatedStatusPayloadSchema.safeParse(msg.payload);
-        if (created.success && created.data.requestId === requestId) {
-          return created.data;
-        }
-        const failed = AgentCreateFailedStatusPayloadSchema.safeParse(msg.payload);
-        if (failed.success && failed.data.requestId === requestId) {
-          return failed.data;
-        }
-        return null;
-      },
-    });
-    if (status.status === "agent_create_failed") {
-      throw new Error(status.error);
-    }
-
-    return status.agent;
-  }
-
-  async deleteAgent(agentId: string): Promise<void> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "delete_agent_request",
-      agentId,
-      requestId,
-    });
-    await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "agent_deleted") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-  }
-
-  async archiveAgent(agentId: string): Promise<{ archivedAt: string }> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "archive_agent_request",
-      agentId,
-      requestId,
-    });
-    const result = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "agent_archived") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-    return { archivedAt: result.archivedAt };
-  }
-
-  async detachAgent(agentId: string): Promise<void> {
-    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.detach.response">({
-      message: {
-        type: "agent.detach.request",
-        agentId,
-      },
-    });
-    if (!payload.accepted) {
-      throw new Error(payload.error ?? "detachAgent rejected");
-    }
-  }
-
-  async updateAgent(
-    agentId: string,
-    updates: { name?: string; labels?: Record<string, string> },
-  ): Promise<void> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "update_agent_request",
-      agentId,
-      ...(updates.name !== undefined ? { name: updates.name } : {}),
-      ...(updates.labels && Object.keys(updates.labels).length > 0
-        ? { labels: updates.labels }
-        : {}),
-      requestId,
-    });
-    const payload = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "update_agent_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-    if (!payload.accepted) {
-      throw new Error(payload.error ?? "updateAgent rejected");
-    }
-  }
-
-  async renameProject(
-    projectId: string,
-    customName: string | null,
-    requestId?: string,
-  ): Promise<{ customName: string | null }> {
-    const payload = await this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "project.rename.request",
-        projectId,
-        customName,
-      },
-      responseType: "project.rename.response",
-    });
-    if (!payload.accepted) {
-      throw new Error(payload.error ?? "renameProject rejected");
-    }
-    return { customName: payload.customName };
-  }
-
-  async removeProject(
-    projectId: string,
-    requestId?: string,
-  ): Promise<{ removedWorkspaceIds: string[] }> {
-    const payload = await this.sendNamespacedCorrelatedSessionRequest<"project.remove.response">({
-      requestId,
-      message: {
-        type: "project.remove.request",
-        projectId,
-      },
-    });
-    if (!payload.accepted) {
-      throw new Error(payload.error ?? "removeProject rejected");
-    }
-    return { removedWorkspaceIds: payload.removedWorkspaceIds };
-  }
-
-  async setWorkspaceTitle(
-    workspaceId: string,
-    title: string | null,
-    requestId?: string,
-  ): Promise<{ title: string | null }> {
-    const payload = await this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "workspace.title.set.request",
-        workspaceId,
-        title,
-      },
-      responseType: "workspace.title.set.response",
-    });
-    if (!payload.accepted) {
-      throw new Error(payload.error ?? "setWorkspaceTitle rejected");
-    }
-    return { title: payload.title };
-  }
-
-  async resumeAgent(
-    handle: AgentPersistenceHandle,
-    overrides?: Partial<AgentSessionConfig>,
-  ): Promise<AgentSnapshotPayload> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "resume_agent_request",
-      requestId,
-      handle,
-      ...(overrides ? { overrides } : {}),
-    });
-
-    const status = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "status") {
-          return null;
-        }
-        const resumed = AgentResumedStatusPayloadSchema.safeParse(msg.payload);
-        if (resumed.success && resumed.data.requestId === requestId) {
-          return resumed.data;
-        }
-        return null;
-      },
-    });
-
-    return status.agent;
-  }
-
-  async importAgent(input: ImportAgentInput): Promise<AgentSnapshotPayload> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "import_agent_request",
-      requestId,
-      ...("providerId" in input
-        ? { providerId: input.providerId, providerHandleId: input.providerHandleId }
-        : { provider: input.provider, sessionId: input.sessionId }),
-      ...(input.cwd ? { cwd: input.cwd } : {}),
-      ...(input.labels && Object.keys(input.labels).length > 0 ? { labels: input.labels } : {}),
-    });
-
-    const status = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "status") {
-          return null;
-        }
-        const resumed = AgentResumedStatusPayloadSchema.safeParse(msg.payload);
-        if (resumed.success && resumed.data.requestId === requestId) {
-          return resumed.data;
-        }
-
-        const failed = AgentCreateFailedStatusPayloadSchema.safeParse(msg.payload);
-        if (failed.success && failed.data.requestId === requestId) {
-          return failed.data;
-        }
-
-        return null;
-      },
-    });
-
-    if (status.status === "agent_create_failed") {
-      throw new Error(status.error);
-    }
-
-    return status.agent;
-  }
-
-  async refreshAgent(agentId: string, requestId?: string): Promise<AgentRefreshedStatusPayload> {
-    const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "refresh_agent_request",
-      agentId,
-      requestId: resolvedRequestId,
-    });
-    return this.sendRequest({
-      requestId: resolvedRequestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "status") {
-          return null;
-        }
-        const refreshed = AgentRefreshedStatusPayloadSchema.safeParse(msg.payload);
-        if (refreshed.success && refreshed.data.requestId === resolvedRequestId) {
-          return refreshed.data;
-        }
-        return null;
-      },
-    });
-  }
-
-  async fetchAgentTimeline(
-    agentId: string,
-    options: FetchAgentTimelineOptions = {},
-  ): Promise<FetchAgentTimelinePayload> {
-    const resolvedRequestId = this.createRequestId(options.requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "fetch_agent_timeline_request",
-      agentId,
-      requestId: resolvedRequestId,
-      ...(options.direction ? { direction: options.direction } : {}),
-      ...(options.cursor ? { cursor: options.cursor } : {}),
-      ...(typeof options.limit === "number" ? { limit: options.limit } : {}),
-      ...(options.projection ? { projection: options.projection } : {}),
-    });
-
-    const payload = await this.sendRequest({
-      requestId: resolvedRequestId,
-      message,
-      timeout: options.timeout,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "fetch_agent_timeline_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== resolvedRequestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-
-    if (payload.error) {
-      throw new Error(payload.error);
-    }
-
-    return payload;
-  }
-
-  async buildAgentForkContext(
-    agentId: string,
-    options: AgentForkContextOptions = {},
-  ): Promise<AgentForkContextPayload> {
-    const resolvedRequestId = this.createRequestId(options.requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "agent.fork_context.request",
-      agentId,
-      requestId: resolvedRequestId,
-      ...(options.boundaryMessageId ? { boundaryMessageId: options.boundaryMessageId } : {}),
-    });
-
-    const payload = await this.sendRequest({
-      requestId: resolvedRequestId,
-      message,
-      timeout: 15000,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "agent.fork_context.response") {
-          return null;
-        }
-        if (msg.payload.requestId !== resolvedRequestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-
-    if (payload.error) {
-      throw new Error(payload.error);
-    }
-
-    return payload;
-  }
-
   // ============================================================================
   // Agent Interaction
   // ============================================================================
 
-  async sendAgentMessage(
-    agentId: string,
-    text: string,
-    options?: SendMessageOptions,
-  ): Promise<Extract<SessionOutboundMessage, { type: "send_agent_message_response" }>["payload"]> {
-    const requestId = this.createRequestId();
-    const messageId = options?.messageId ?? crypto.randomUUID();
-    const message = SessionInboundMessageSchema.parse({
-      type: "send_agent_message_request",
-      requestId,
-      agentId,
-      text,
-      ...(messageId ? { messageId } : {}),
-      ...(options?.images ? { images: options.images } : {}),
-      ...(options?.attachments ? { attachments: options.attachments } : {}),
-      ...(options?.thoth ? { thoth: options.thoth } : {}),
-      ...(options?.providerRunMode ? { providerRunMode: options.providerRunMode } : {}),
-      ...(options?.contextRefs ? { contextRefs: options.contextRefs } : {}),
-      deliveryMode: options?.deliveryMode ?? "queue",
-    });
-    const payload = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "send_agent_message_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-    if (!payload.accepted) {
-      throw new Error(payload.error ?? "sendAgentMessage rejected");
-    }
-    return payload;
-  }
-
   async sendMessage(agentId: string, text: string, options?: SendMessageOptions): Promise<void> {
-    await this.sendAgentMessage(agentId, text, options);
-  }
-
-  async commandAgentTurnQueue(
-    input: {
-      agentId: string;
-      queuedTurnId: string;
-      expectedRevision: number;
-      commandId: string;
-      requestId?: string;
-    } & ({ command: "edit"; text: string } | { command: "delete" | "interrupt" }),
-  ) {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "agent.turn_queue.command.request",
-        agentId: input.agentId,
-        queuedTurnId: input.queuedTurnId,
-        command: input.command,
-        ...("text" in input ? { text: input.text } : {}),
-        expectedRevision: input.expectedRevision,
-        commandId: input.commandId,
-      },
-      responseType: "agent.turn_queue.command.response",
-    });
-  }
-
-  async rewindAgent(
-    agentId: string,
-    messageId: string,
-    mode: "conversation" | "files" | "both",
-  ): Promise<AgentRewindResponseMessage["payload"]> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "agent.rewind.request",
-      requestId,
-      agentId,
-      messageId,
-      mode,
-    });
-    const payload = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "agent.rewind.response") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-    if (!payload.ok) {
-      throw new Error(payload.error ?? "Agent rewind failed");
-    }
-    return payload;
-  }
-
-  async cancelAgent(agentId: string): Promise<void> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "cancel_agent_request",
-      agentId,
-      requestId,
-    });
-    const payload = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "cancel_agent_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-    if (payload.error) {
-      throw new Error(payload.error);
-    }
-  }
-
-  async setAgentMode(agentId: string, modeId: string): Promise<AgentProviderNotice | null> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "set_agent_mode_request",
-      agentId,
-      modeId,
-      requestId,
-    });
-    const payload = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "set_agent_mode_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-    if (!payload.accepted) {
-      throw new Error(payload.error ?? "setAgentMode rejected");
-    }
-    return payload.notice ?? null;
-  }
-
-  async getAgentProviderControl(
-    agentId: string,
-    options?: { refresh?: boolean },
-  ): Promise<AgentProviderControl> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "agent.provider_control.get.request",
-      agentId,
-      ...(options?.refresh ? { refresh: true } : {}),
-      requestId,
-    });
-    const payload = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "agent.provider_control.get.response") {
-          return null;
-        }
-        return msg.payload.requestId === requestId ? msg.payload : null;
-      },
-    });
-    if (!payload.accepted || !payload.providerControl) {
-      throw new Error(payload.error ?? "getAgentProviderControl rejected");
-    }
-    return payload.providerControl;
-  }
-
-  async updateAgentProviderControl(input: {
-    agentId: string;
-    runMode: ProviderRunMode;
-    expectedRevision: number;
-    commandId?: string;
-  }): Promise<AgentProviderControl> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "agent.provider_control.update.request",
-      agentId: input.agentId,
-      runMode: input.runMode,
-      expectedRevision: input.expectedRevision,
-      commandId: input.commandId ?? this.createRequestId(),
-      requestId,
-    });
-    const payload = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "agent.provider_control.update.response") {
-          return null;
-        }
-        return msg.payload.requestId === requestId ? msg.payload : null;
-      },
-    });
-    if (!payload.accepted || !payload.providerControl) {
-      throw new Error(payload.error ?? "updateAgentProviderControl rejected");
-    }
-    return payload.providerControl;
-  }
-
-  async setAgentModel(agentId: string, modelId: string | null): Promise<void> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "set_agent_model_request",
-      agentId,
-      modelId,
-      requestId,
-    });
-    const payload = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "set_agent_model_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-    if (!payload.accepted) {
-      throw new Error(payload.error ?? "setAgentModel rejected");
-    }
-  }
-
-  async setAgentFeature(agentId: string, featureId: string, value: unknown): Promise<void> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "set_agent_feature_request",
-      agentId,
-      featureId,
-      value,
-      requestId,
-    });
-    const payload = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "set_agent_feature_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-    if (!payload.accepted) {
-      throw new Error(payload.error ?? "setAgentFeature rejected");
-    }
-  }
-
-  async setAgentThinkingOption(
-    agentId: string,
-    thinkingOptionId: string | null,
-  ): Promise<AgentProviderNotice | null> {
-    const requestId = this.createRequestId();
-    const message = SessionInboundMessageSchema.parse({
-      type: "set_agent_thinking_request",
-      agentId,
-      thinkingOptionId,
-      requestId,
-    });
-    const payload = await this.sendRequest({
-      requestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "set_agent_thinking_response") {
-          return null;
-        }
-        if (msg.payload.requestId !== requestId) {
-          return null;
-        }
-        return msg.payload;
-      },
-    });
-    if (!payload.accepted) {
-      throw new Error(payload.error ?? "setAgentThinkingOption rejected");
-    }
-    return payload.notice ?? null;
-  }
-
-  async restartServer(reason?: string, requestId?: string): Promise<RestartRequestedStatusPayload> {
-    const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "restart_server_request",
-      ...(reason && reason.trim().length > 0 ? { reason } : {}),
-      requestId: resolvedRequestId,
-    });
-    return this.sendRequest({
-      requestId: resolvedRequestId,
-      message,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "status") {
-          return null;
-        }
-        const restarted = RestartRequestedStatusPayloadSchema.safeParse(msg.payload);
-        if (!restarted.success) {
-          return null;
-        }
-        if (restarted.data.requestId !== resolvedRequestId) {
-          return null;
-        }
-        return restarted.data;
-      },
-    });
-  }
-
-  async shutdownServer(options?: ShutdownServerOptions): Promise<ShutdownRequestedStatusPayload> {
-    const resolvedRequestId = this.createRequestId(options?.requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "shutdown_server_request",
-      requestId: resolvedRequestId,
-    });
-    return this.sendRequest({
-      requestId: resolvedRequestId,
-      message,
-      timeout: options?.timeout,
-      options: { skipQueue: true },
-      select: (msg) => {
-        if (msg.type !== "status") {
-          return null;
-        }
-        const shutdown = ShutdownRequestedStatusPayloadSchema.safeParse(msg.payload);
-        if (!shutdown.success) {
-          return null;
-        }
-        if (shutdown.data.requestId !== resolvedRequestId) {
-          return null;
-        }
-        return shutdown.data;
-      },
-    });
-  }
-
-  async updateDaemon(requestId?: string): Promise<DaemonUpdateResponse["payload"]> {
-    const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "daemon.update.request",
-      requestId: resolvedRequestId,
-    });
-    return this.sendRequest({
-      requestId: resolvedRequestId,
-      message,
-      timeout: 300_000, // 5 minutes — npm update can be slow on remote machines
-      options: { skipQueue: true },
-      select: (msg) => {
-        const parsed = DaemonUpdateResponseSchema.safeParse(msg);
-        if (!parsed.success) {
-          return null;
-        }
-        if (parsed.data.payload.requestId !== resolvedRequestId) {
-          return null;
-        }
-        return parsed.data.payload;
-      },
-    });
+    await clientRpcBindings.sendAgentMessage.invoke(this, [agentId, text, options]);
   }
 
   // ============================================================================
@@ -3157,27 +2702,15 @@ export class DaemonClient {
     });
 
     const resolvedRequestId = this.createRequestId(options?.requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "subscribe_checkout_diff_request",
-      subscriptionId,
-      cwd,
-      compare: normalizedCompare,
-      requestId: resolvedRequestId,
-    });
-
     try {
-      return await this.sendCorrelatedRequest({
+      const payload = await this[RPC_INVOKE]("subscribeCheckoutDiff", {
+        body: { subscriptionId, cwd, compare: normalizedCompare },
         requestId: resolvedRequestId,
-        message,
-        responseType: "subscribe_checkout_diff_response",
-        options: { skipQueue: true },
-        selectPayload: (payload) => {
-          if (payload.subscriptionId !== subscriptionId) {
-            return null;
-          }
-          return payload;
-        },
       });
+      if (payload.subscriptionId !== subscriptionId) {
+        throw new Error(`Unexpected checkout subscription ${payload.subscriptionId}`);
+      }
+      return payload;
     } catch (error) {
       if (previousSubscription) {
         this.checkoutDiffSubscriptions.set(subscriptionId, previousSubscription);
@@ -3196,425 +2729,6 @@ export class DaemonClient {
     });
   }
 
-  async checkoutCommit(
-    cwd: string,
-    input: { message?: string; addAll?: boolean },
-    requestId?: string,
-  ): Promise<CheckoutCommitPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "checkout_commit_request",
-        cwd,
-        message: input.message,
-        addAll: input.addAll,
-      },
-      responseType: "checkout_commit_response",
-    });
-  }
-
-  async checkoutMerge(
-    cwd: string,
-    input: { baseRef?: string; strategy?: "merge" | "squash"; requireCleanTarget?: boolean },
-    requestId?: string,
-  ): Promise<CheckoutMergePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "checkout_merge_request",
-        cwd,
-        baseRef: input.baseRef,
-        strategy: input.strategy,
-        requireCleanTarget: input.requireCleanTarget,
-      },
-      responseType: "checkout_merge_response",
-    });
-  }
-
-  async checkoutMergeFromBase(
-    cwd: string,
-    input: { baseRef?: string; requireCleanTarget?: boolean },
-    requestId?: string,
-  ): Promise<CheckoutMergeFromBasePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "checkout_merge_from_base_request",
-        cwd,
-        baseRef: input.baseRef,
-        requireCleanTarget: input.requireCleanTarget,
-      },
-      responseType: "checkout_merge_from_base_response",
-    });
-  }
-
-  async checkoutPull(cwd: string, requestId?: string): Promise<CheckoutPullPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "checkout_pull_request",
-        cwd,
-      },
-      responseType: "checkout_pull_response",
-    });
-  }
-
-  async checkoutPush(cwd: string, requestId?: string): Promise<CheckoutPushPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "checkout_push_request",
-        cwd,
-      },
-      responseType: "checkout_push_response",
-    });
-  }
-
-  async checkoutRefresh(cwd: string, requestId?: string): Promise<CheckoutRefreshPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "checkout.refresh.request",
-        cwd,
-      },
-      responseType: "checkout.refresh.response",
-    });
-  }
-
-  async checkoutPrCreate(
-    cwd: string,
-    input: { title?: string; body?: string; baseRef?: string },
-    requestId?: string,
-  ): Promise<CheckoutPrCreatePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "checkout_pr_create_request",
-        cwd,
-        title: input.title,
-        body: input.body,
-        baseRef: input.baseRef,
-      },
-      responseType: "checkout_pr_create_response",
-    });
-  }
-
-  async checkoutPrMerge(
-    cwd: string,
-    input: { method: CheckoutPrMergeMethod },
-    requestId?: string,
-  ): Promise<CheckoutPrMergePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "checkout_pr_merge_request",
-        cwd,
-        mergeMethod: input.method,
-      },
-      responseType: "checkout_pr_merge_response",
-    });
-  }
-
-  async checkoutGithubSetAutoMerge(
-    cwd: string,
-    input: { enabled: true; method: CheckoutPrMergeMethod } | { enabled: false },
-    requestId?: string,
-  ): Promise<CheckoutGithubSetAutoMergePayload> {
-    return this.sendNamespacedCorrelatedSessionRequest<"checkout.github.set_auto_merge.response">({
-      requestId,
-      message: {
-        type: "checkout.github.set_auto_merge.request",
-        cwd,
-        enabled: input.enabled,
-        ...(input.enabled ? { mergeMethod: input.method } : {}),
-      },
-    });
-  }
-
-  async checkoutGithubGetCheckDetails(
-    input: {
-      cwd: string;
-      repoOwner: string;
-      repoName: string;
-      checkRunId: number;
-      workflowRunId?: number;
-    },
-    requestId?: string,
-  ): Promise<CheckoutGithubGetCheckDetailsPayload> {
-    return this.sendNamespacedCorrelatedSessionRequest<"checkout.github.get_check_details.response">(
-      {
-        requestId,
-        message: {
-          type: "checkout.github.get_check_details.request",
-          cwd: input.cwd,
-          repoOwner: input.repoOwner,
-          repoName: input.repoName,
-          checkRunId: input.checkRunId,
-          workflowRunId: input.workflowRunId,
-        },
-      },
-    );
-  }
-
-  async checkoutPrStatus(cwd: string, requestId?: string): Promise<CheckoutPrStatusPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "checkout_pr_status_request",
-        cwd,
-      },
-      responseType: "checkout_pr_status_response",
-    });
-  }
-
-  async pullRequestTimeline(
-    input: { cwd: string; prNumber: number; repoOwner: string; repoName: string },
-    requestId?: string,
-  ): Promise<PullRequestTimelinePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "pull_request_timeline_request",
-        cwd: input.cwd,
-        prNumber: input.prNumber,
-        repoOwner: input.repoOwner,
-        repoName: input.repoName,
-      },
-      responseType: "pull_request_timeline_response",
-    });
-  }
-
-  async checkoutSwitchBranch(
-    cwd: string,
-    branch: string,
-    requestId?: string,
-  ): Promise<CheckoutSwitchBranchPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "checkout_switch_branch_request",
-        cwd,
-        branch,
-      },
-      responseType: "checkout_switch_branch_response",
-    });
-  }
-
-  async renameBranch(input: RenameBranchInput): Promise<RenameBranchResult> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "checkout.rename_branch.request",
-        cwd: input.cwd,
-        branch: input.branch,
-      },
-      responseType: "checkout.rename_branch.response",
-    });
-  }
-
-  async stashSave(
-    cwd: string,
-    options?: { branch?: string },
-    requestId?: string,
-  ): Promise<StashSavePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "stash_save_request",
-        cwd,
-        branch: options?.branch,
-      },
-      responseType: "stash_save_response",
-    });
-  }
-
-  async stashPop(cwd: string, stashIndex: number, requestId?: string): Promise<StashPopPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "stash_pop_request",
-        cwd,
-        stashIndex,
-      },
-      responseType: "stash_pop_response",
-    });
-  }
-
-  async stashList(
-    cwd: string,
-    options?: { thothOnly?: boolean },
-    requestId?: string,
-  ): Promise<StashListPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "stash_list_request",
-        cwd,
-        thothOnly: options?.thothOnly,
-      },
-      responseType: "stash_list_response",
-    });
-  }
-
-  async getThothWorktreeList(
-    input: { cwd?: string; repoRoot?: string },
-    requestId?: string,
-  ): Promise<ThothWorktreeListPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "thoth_worktree_list_request",
-        cwd: input.cwd,
-        repoRoot: input.repoRoot,
-      },
-      responseType: "thoth_worktree_list_response",
-    });
-  }
-
-  async archiveThothWorktree(
-    input: {
-      worktreePath?: string;
-      repoRoot?: string;
-      branchName?: string;
-      workspaceId?: string;
-      scope?: "workspace" | "worktree";
-    },
-    requestId?: string,
-  ): Promise<ThothWorktreeArchivePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "thoth_worktree_archive_request",
-        worktreePath: input.worktreePath,
-        repoRoot: input.repoRoot,
-        branchName: input.branchName,
-        ...(input.workspaceId !== undefined ? { workspaceId: input.workspaceId } : {}),
-        ...(input.scope !== undefined ? { scope: input.scope } : {}),
-      },
-      responseType: "thoth_worktree_archive_response",
-    });
-  }
-
-  async createThothWorktree(
-    input: CreateThothWorktreeInput,
-    requestId?: string,
-  ): Promise<CreateThothWorktreePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "create_thoth_worktree_request",
-        cwd: input.cwd,
-        ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
-        worktreeSlug: input.worktreeSlug,
-        ...(input.firstAgentContext !== undefined
-          ? { firstAgentContext: input.firstAgentContext }
-          : {}),
-        ...(input.refName !== undefined ? { refName: input.refName } : {}),
-        ...(input.action !== undefined ? { action: input.action } : {}),
-        ...(input.githubPrNumber !== undefined ? { githubPrNumber: input.githubPrNumber } : {}),
-      },
-      responseType: "create_thoth_worktree_response",
-    });
-  }
-
-  async createWorkspace(
-    input: {
-      source: WorkspaceCreateRequest["source"];
-      title?: string;
-      firstAgentContext?: WorkspaceCreateRequest["firstAgentContext"];
-    },
-    requestId?: string,
-  ): Promise<WorkspaceCreatePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "workspace.create.request",
-        source: input.source,
-        ...(input.title !== undefined ? { title: input.title } : {}),
-        ...(input.firstAgentContext !== undefined
-          ? { firstAgentContext: input.firstAgentContext }
-          : {}),
-      },
-      responseType: "workspace.create.response",
-    });
-  }
-
-  async validateBranch(
-    options: { cwd: string; branchName: string },
-    requestId?: string,
-  ): Promise<ValidateBranchPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "validate_branch_request",
-        cwd: options.cwd,
-        branchName: options.branchName,
-      },
-      responseType: "validate_branch_response",
-    });
-  }
-
-  async getBranchSuggestions(
-    options: { cwd: string; query?: string; limit?: number },
-    requestId?: string,
-  ): Promise<BranchSuggestionsPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "branch_suggestions_request",
-        cwd: options.cwd,
-        query: options.query,
-        limit: options.limit,
-      },
-      responseType: "branch_suggestions_response",
-    });
-  }
-
-  async searchGitHub(
-    options: { cwd: string; query: string; limit?: number; kinds?: GitHubSearchRequest["kinds"] },
-    requestId?: string,
-  ): Promise<GitHubSearchPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "github_search_request",
-        cwd: options.cwd,
-        query: options.query,
-        limit: options.limit,
-        kinds: options.kinds,
-      },
-      responseType: "github_search_response",
-    });
-  }
-
-  async getDirectorySuggestions(
-    options: {
-      query: string;
-      limit?: number;
-      cwd?: string;
-      includeFiles?: boolean;
-      includeDirectories?: boolean;
-      matchMode?: "fuzzy" | "suffix";
-    },
-    requestId?: string,
-  ): Promise<DirectorySuggestionsPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "directory_suggestions_request",
-        query: options.query,
-        cwd: options.cwd,
-        includeFiles: options.includeFiles,
-        includeDirectories: options.includeDirectories,
-        matchMode: options.matchMode,
-        limit: options.limit,
-      },
-      responseType: "directory_suggestions_response",
-      // Home-tree scans on large home dirs can take several seconds; don't cut
-      // the suggestion request off early (it would surface as an empty list).
-    });
-  }
-
   // ============================================================================
   // File Explorer
   // ============================================================================
@@ -3626,16 +2740,14 @@ export class DaemonClient {
     requestId?: string,
     acceptBinary = false,
   ): Promise<FileExplorerPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "file_explorer_request",
+    return this[RPC_INVOKE]("requestFileExplorer", {
+      body: {
         cwd,
         path,
         mode,
         ...(acceptBinary ? { acceptBinary: true } : {}),
       },
-      responseType: "file_explorer_response",
+      requestId,
     });
   }
 
@@ -3684,18 +2796,14 @@ export class DaemonClient {
     }
     const resolvedRequestId = this.createRequestId(input.requestId);
     const modifiedAt = input.modifiedAt ?? new Date().toISOString();
-    const responsePromise = this.sendCorrelatedRequest({
-      requestId: resolvedRequestId,
-      message: {
-        type: "file.upload.request",
+    const responsePromise = this[RPC_INVOKE]("uploadFile", {
+      body: {
         fileName: input.fileName,
         mimeType: input.mimeType,
         size: bytes.byteLength,
         modifiedAt,
-        requestId: resolvedRequestId,
       },
-      responseType: "file.upload.response",
-      options: { skipQueue: true },
+      requestId: resolvedRequestId,
     });
 
     this.sendBinaryFrame(
@@ -3733,250 +2841,9 @@ export class DaemonClient {
     return responsePromise;
   }
 
-  async requestDownloadToken(
-    cwd: string,
-    path: string,
-    requestId?: string,
-  ): Promise<FileDownloadTokenPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "file_download_token_request",
-        cwd,
-        path,
-      },
-      responseType: "file_download_token_response",
-    });
-  }
-
-  async requestProjectIcon(
-    cwd: string,
-    requestId?: string,
-  ): Promise<ProjectIconResponse["payload"]> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "project_icon_request",
-        cwd,
-      },
-      responseType: "project_icon_response",
-    });
-  }
-
   // ============================================================================
   // Provider Models / Commands
   // ============================================================================
-
-  async listProviderModels(
-    provider: AgentProvider,
-    options?: { cwd?: string; requestId?: string },
-  ): Promise<ListProviderModelsPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "list_provider_models_request",
-        provider,
-        cwd: options?.cwd,
-      },
-      responseType: "list_provider_models_response",
-      // Provider SDK cold starts (especially model discovery) can exceed 60s.
-      timeout: 90000,
-    });
-  }
-
-  async listProviderModes(
-    provider: AgentProvider,
-    options?: { cwd?: string; requestId?: string },
-  ): Promise<ListProviderModesPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "list_provider_modes_request",
-        provider,
-        cwd: options?.cwd,
-      },
-      responseType: "list_provider_modes_response",
-      timeout: 90000,
-    });
-  }
-
-  async listProviderFeatures(
-    draftConfig: ListCommandsDraftConfig,
-    options?: { requestId?: string },
-  ): Promise<ListProviderFeaturesPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "list_provider_features_request",
-        draftConfig,
-      },
-      responseType: "list_provider_features_response",
-      timeout: 90000,
-    });
-  }
-
-  async listAvailableProviders(options?: {
-    requestId?: string;
-  }): Promise<ListAvailableProvidersPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "list_available_providers_request",
-      },
-      responseType: "list_available_providers_response",
-    });
-  }
-
-  async getProvidersSnapshot(options?: {
-    cwd?: string;
-    requestId?: string;
-  }): Promise<GetProvidersSnapshotPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "get_providers_snapshot_request",
-        cwd: options?.cwd,
-      },
-      responseType: "get_providers_snapshot_response",
-    });
-  }
-
-  async getDaemonConfig(
-    requestId?: string,
-  ): Promise<{ requestId: string; config: MutableDaemonConfig }> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "get_daemon_config_request",
-      },
-      responseType: "get_daemon_config_response",
-    });
-  }
-
-  async getDaemonStatus(options?: DaemonStatusOptions): Promise<DaemonStatusPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "daemon.get_status.request",
-      },
-      responseType: "daemon.get_status.response",
-      timeout: options?.timeout,
-    });
-  }
-
-  async getDaemonPairingOffer(
-    options?: DaemonPairingOfferOptions,
-  ): Promise<DaemonPairingOfferPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "daemon.get_pairing_offer.request",
-      },
-      responseType: "daemon.get_pairing_offer.response",
-      timeout: options?.timeout,
-    });
-  }
-
-  async issueRelayDeviceToken(
-    options?: DaemonIssueRelayDeviceTokenOptions,
-  ): Promise<DaemonIssueRelayDeviceTokenPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "daemon.issue_relay_device_token.request",
-      },
-      responseType: "daemon.issue_relay_device_token.response",
-      timeout: options?.timeout,
-    });
-  }
-
-  async collectDiagnostics(requestId?: string): Promise<DiagnosticsPayload> {
-    return this.sendNamespacedCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "diagnostics.request",
-      },
-    });
-  }
-
-  async patchDaemonConfig(
-    config: MutableDaemonConfigPatch,
-    requestId?: string,
-  ): Promise<{ requestId: string; config: MutableDaemonConfig }> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "set_daemon_config_request",
-        config,
-      },
-      responseType: "set_daemon_config_response",
-    });
-  }
-
-  async readProjectConfig(repoRoot: string, requestId?: string): Promise<ReadProjectConfigPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId,
-      message: {
-        type: "read_project_config_request",
-        repoRoot,
-      },
-      responseType: "read_project_config_response",
-    });
-  }
-
-  async writeProjectConfig(input: WriteProjectConfigInput): Promise<WriteProjectConfigPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "write_project_config_request",
-        repoRoot: input.repoRoot,
-        config: input.config,
-        expectedRevision: input.expectedRevision,
-      },
-      responseType: "write_project_config_response",
-    });
-  }
-
-  async refreshProvidersSnapshot(options?: {
-    cwd?: string;
-    providers?: AgentProvider[];
-    requestId?: string;
-  }): Promise<RefreshProvidersSnapshotPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "refresh_providers_snapshot_request",
-        cwd: options?.cwd,
-        providers: options?.providers,
-      },
-      responseType: "refresh_providers_snapshot_response",
-      timeout: 120000,
-    });
-  }
-
-  async getProviderDiagnostic(
-    provider: AgentProvider,
-    options?: { requestId?: string },
-  ): Promise<ProviderDiagnosticPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "provider_diagnostic_request",
-        provider,
-      },
-      responseType: "provider_diagnostic_response",
-      timeout: 180000,
-    });
-  }
-
-  async listProviderUsage(options?: { requestId?: string }): Promise<ProviderUsageListPayload> {
-    return this.sendNamespacedCorrelatedSessionRequest({
-      requestId: options?.requestId,
-      message: {
-        type: "provider.usage.list.request",
-      },
-    });
-  }
 
   async listCommands(options: ListCommandsOptions): Promise<ListCommandsPayload>;
   async listCommands(agentId: string, requestId?: string): Promise<ListCommandsPayload>;
@@ -3989,14 +2856,12 @@ export class DaemonClient {
     legacyOptions?: LegacyListCommandsOptions | string,
   ): Promise<ListCommandsPayload> {
     const options = normalizeListCommandsOptions(input, legacyOptions);
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "list_commands_request",
+    return this[RPC_INVOKE]("listCommands", {
+      body: {
         agentId: options.agentId,
         ...(options.draftConfig ? { draftConfig: options.draftConfig } : {}),
       },
-      responseType: "list_commands_response",
+      requestId: options.requestId,
     });
   }
 
@@ -4161,18 +3026,10 @@ export class DaemonClient {
   async waitForFinish(agentId: string, timeout = 60000): Promise<WaitForFinishResult> {
     const requestId = this.createRequestId();
     const hasTimeout = Number.isFinite(timeout) && timeout > 0;
-    const message = SessionInboundMessageSchema.parse({
-      type: "wait_for_finish_request",
+    const payload = await this[RPC_INVOKE]("waitForFinish", {
+      body: { agentId, ...(hasTimeout ? { timeoutMs: timeout } : {}) },
       requestId,
-      agentId,
-      ...(hasTimeout ? { timeoutMs: timeout } : {}),
-    });
-    const payload = await this.sendCorrelatedRequest({
-      requestId,
-      message,
-      responseType: "wait_for_finish_response",
       timeout: hasTimeout ? timeout + 5000 : 0,
-      options: { skipQueue: true },
     });
     return {
       status: payload.status,
@@ -4215,63 +3072,6 @@ export class DaemonClient {
     });
   }
 
-  async listTerminals(
-    cwd?: string,
-    requestId?: string,
-    options?: { workspaceId?: string },
-  ): Promise<ListTerminalsPayload> {
-    const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "list_terminals_request",
-      ...(cwd === undefined ? {} : { cwd }),
-      ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
-      requestId: resolvedRequestId,
-    });
-    return this.sendCorrelatedRequest({
-      requestId: resolvedRequestId,
-      message,
-      responseType: "list_terminals_response",
-      options: { skipQueue: true },
-    });
-  }
-
-  async createTerminal(
-    cwd: string,
-    name?: string,
-    requestId?: string,
-    options?: { agentId?: string; command?: string; args?: string[]; workspaceId?: string },
-  ): Promise<CreateTerminalPayload> {
-    const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "create_terminal_request",
-      cwd,
-      name,
-      agentId: options?.agentId,
-      command: options?.command,
-      args: options?.args,
-      ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
-      requestId: resolvedRequestId,
-    });
-    return this.sendCorrelatedRequest({
-      requestId: resolvedRequestId,
-      message,
-      responseType: "create_terminal_response",
-      options: { skipQueue: true },
-    });
-  }
-
-  async renameTerminal(input: RenameTerminalInput): Promise<RenameTerminalResult> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: input.requestId,
-      message: {
-        type: "terminal.rename.request",
-        terminalId: input.terminalId,
-        title: input.title,
-      },
-      responseType: "terminal.rename.response",
-    });
-  }
-
   async subscribeTerminal(
     terminalId: string,
     optionsOrRequestId?:
@@ -4282,17 +3082,9 @@ export class DaemonClient {
     const requestId =
       typeof optionsOrRequestId === "object" ? optionsOrRequestId.requestId : optionsOrRequestId;
     const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "subscribe_terminal_request",
-      terminalId,
+    const payload = await this[RPC_INVOKE]("subscribeTerminal", {
+      body: { terminalId, ...(restore ? { restore } : {}) },
       requestId: resolvedRequestId,
-      ...(restore ? { restore } : {}),
-    });
-    const payload = await this.sendCorrelatedRequest({
-      requestId: resolvedRequestId,
-      message,
-      responseType: "subscribe_terminal_response",
-      options: { skipQueue: true },
     });
     if (payload.error === null) {
       this.terminalStreams.setSlot(terminalId, payload.slot);
@@ -4318,281 +3110,6 @@ export class DaemonClient {
       type: "terminal_input",
       terminalId,
       message,
-    });
-  }
-
-  async killTerminal(terminalId: string, requestId?: string): Promise<KillTerminalPayload> {
-    const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "kill_terminal_request",
-      terminalId,
-      requestId: resolvedRequestId,
-    });
-    return this.sendCorrelatedRequest({
-      requestId: resolvedRequestId,
-      message,
-      responseType: "kill_terminal_response",
-      options: { skipQueue: true },
-    });
-  }
-
-  async closeItems(
-    input: { agentIds?: string[]; terminalIds?: string[] },
-    requestId?: string,
-  ): Promise<CloseItemsPayload> {
-    const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "close_items_request",
-      agentIds: input.agentIds ?? [],
-      terminalIds: input.terminalIds ?? [],
-      requestId: resolvedRequestId,
-    });
-    return this.sendCorrelatedRequest({
-      requestId: resolvedRequestId,
-      message,
-      responseType: "close_items_response",
-      options: { skipQueue: true },
-    });
-  }
-
-  async captureTerminal(
-    terminalId: string,
-    options?: { start?: number; end?: number; stripAnsi?: boolean },
-    requestId?: string,
-  ): Promise<CaptureTerminalPayload> {
-    const resolvedRequestId = this.createRequestId(requestId);
-    const message = SessionInboundMessageSchema.parse({
-      type: "capture_terminal_request",
-      terminalId,
-      ...(options?.start === undefined ? {} : { start: options.start }),
-      ...(options?.end === undefined ? {} : { end: options.end }),
-      ...(options?.stripAnsi === undefined ? {} : { stripAnsi: options.stripAnsi }),
-      requestId: resolvedRequestId,
-    });
-    return this.sendCorrelatedRequest({
-      requestId: resolvedRequestId,
-      message,
-      responseType: "capture_terminal_response",
-      options: { skipQueue: true },
-    });
-  }
-
-  async createChatRoom(options: CreateChatRoomOptions): Promise<ChatCreatePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "chat/create",
-        workspaceId: options.workspaceId,
-        name: options.name,
-        ...(options.purpose ? { purpose: options.purpose } : {}),
-      },
-      responseType: "chat/create/response",
-    });
-  }
-
-  async listChatRooms(options: {
-    workspaceId: string;
-    requestId?: string;
-  }): Promise<ChatListPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "chat/list",
-        workspaceId: options.workspaceId,
-      },
-      responseType: "chat/list/response",
-    });
-  }
-
-  async inspectChatRoom(options: InspectChatRoomOptions): Promise<ChatInspectPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "chat/inspect",
-        workspaceId: options.workspaceId,
-        room: options.room,
-      },
-      responseType: "chat/inspect/response",
-    });
-  }
-
-  async deleteChatRoom(options: DeleteChatRoomOptions): Promise<ChatDeletePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "chat/delete",
-        workspaceId: options.workspaceId,
-        room: options.room,
-      },
-      responseType: "chat/delete/response",
-    });
-  }
-
-  async postChatMessage(options: PostChatMessageOptions): Promise<ChatPostPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "chat/post",
-        workspaceId: options.workspaceId,
-        room: options.room,
-        body: options.body,
-        ...(options.authorAgentId ? { authorAgentId: options.authorAgentId } : {}),
-        ...(options.replyToMessageId ? { replyToMessageId: options.replyToMessageId } : {}),
-      },
-      responseType: "chat/post/response",
-    });
-  }
-
-  async readChatMessages(options: ReadChatMessagesOptions): Promise<ChatReadPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "chat/read",
-        workspaceId: options.workspaceId,
-        room: options.room,
-        ...(typeof options.limit === "number" ? { limit: options.limit } : {}),
-        ...(options.since ? { since: options.since } : {}),
-        ...(options.authorAgentId ? { authorAgentId: options.authorAgentId } : {}),
-      },
-      responseType: "chat/read/response",
-      timeout: options.timeout,
-    });
-  }
-
-  async waitForChatMessages(options: WaitForChatMessagesOptions): Promise<ChatWaitPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "chat/wait",
-        workspaceId: options.workspaceId,
-        room: options.room,
-        ...(options.afterMessageId ? { afterMessageId: options.afterMessageId } : {}),
-        ...(typeof options.timeoutMs === "number" ? { timeoutMs: options.timeoutMs } : {}),
-      },
-      responseType: "chat/wait/response",
-      timeout: (options.timeoutMs ?? 0) + 10000,
-    });
-  }
-
-  async scheduleCreate(options: CreateScheduleOptions): Promise<ScheduleCreatePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "schedule/create",
-        workspaceId: options.workspaceId,
-        prompt: options.prompt,
-        cadence: options.cadence,
-        target: options.target,
-        ...(options.name ? { name: options.name } : {}),
-        ...(typeof options.maxRuns === "number" ? { maxRuns: options.maxRuns } : {}),
-        ...(options.expiresAt ? { expiresAt: options.expiresAt } : {}),
-        ...(typeof options.runOnCreate === "boolean" ? { runOnCreate: options.runOnCreate } : {}),
-      },
-      responseType: "schedule/create/response",
-    });
-  }
-
-  async scheduleList(options: {
-    workspaceId: string;
-    requestId?: string;
-  }): Promise<ScheduleListPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "schedule/list",
-        workspaceId: options.workspaceId,
-      },
-      responseType: "schedule/list/response",
-    });
-  }
-
-  async scheduleInspect(options: InspectScheduleOptions): Promise<ScheduleInspectPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "schedule/inspect",
-        workspaceId: options.workspaceId,
-        scheduleId: options.id,
-      },
-      responseType: "schedule/inspect/response",
-    });
-  }
-
-  async scheduleLogs(options: InspectScheduleOptions): Promise<ScheduleLogsPayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "schedule/logs",
-        workspaceId: options.workspaceId,
-        scheduleId: options.id,
-      },
-      responseType: "schedule/logs/response",
-    });
-  }
-
-  async schedulePause(options: InspectScheduleOptions): Promise<SchedulePausePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "schedule/pause",
-        workspaceId: options.workspaceId,
-        scheduleId: options.id,
-      },
-      responseType: "schedule/pause/response",
-    });
-  }
-
-  async scheduleResume(options: InspectScheduleOptions): Promise<ScheduleResumePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "schedule/resume",
-        workspaceId: options.workspaceId,
-        scheduleId: options.id,
-      },
-      responseType: "schedule/resume/response",
-    });
-  }
-
-  async scheduleDelete(options: InspectScheduleOptions): Promise<ScheduleDeletePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "schedule/delete",
-        workspaceId: options.workspaceId,
-        scheduleId: options.id,
-      },
-      responseType: "schedule/delete/response",
-    });
-  }
-
-  async scheduleRunOnce(options: InspectScheduleOptions): Promise<ScheduleRunOncePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "schedule/run-once",
-        workspaceId: options.workspaceId,
-        scheduleId: options.id,
-      },
-      responseType: "schedule/run-once/response",
-    });
-  }
-
-  async scheduleUpdate(options: UpdateScheduleOptions): Promise<ScheduleUpdatePayload> {
-    return this.sendCorrelatedSessionRequest({
-      requestId: options.requestId,
-      message: {
-        type: "schedule/update",
-        workspaceId: options.workspaceId,
-        scheduleId: options.id,
-        ...(options.name !== undefined ? { name: options.name } : {}),
-        ...(options.prompt !== undefined ? { prompt: options.prompt } : {}),
-        ...(options.cadence !== undefined ? { cadence: options.cadence } : {}),
-        ...(options.newAgentConfig !== undefined ? { newAgentConfig: options.newAgentConfig } : {}),
-        ...(options.maxRuns !== undefined ? { maxRuns: options.maxRuns } : {}),
-        ...(options.expiresAt !== undefined ? { expiresAt: options.expiresAt } : {}),
-      },
-      responseType: "schedule/update/response",
     });
   }
 
@@ -4653,7 +3170,7 @@ export class DaemonClient {
           type: "hello",
           clientId: this.config.clientId,
           clientType: this.config.clientType ?? "cli",
-          protocolVersion: 1,
+          protocolVersion: RPC_PROTOCOL_VERSION,
           capabilities: {
             [CLIENT_CAPS.customModeIcons]: true,
             [CLIENT_CAPS.reasoningMergeEnum]: true,
@@ -5229,6 +3746,32 @@ export class DaemonClient {
     return { promise, cancel };
   }
 }
+
+export type DaemonClient = InstanceType<typeof DaemonClientRuntime> & ClientRpcMethods;
+
+type RuntimeClientRpcBinding = {
+  clientMethod: string;
+  invoke(client: RpcClientInvoker, args: unknown[]): Promise<unknown>;
+};
+
+for (const binding of Object.values(clientRpcBindings) as unknown as RuntimeClientRpcBinding[]) {
+  if (Object.prototype.hasOwnProperty.call(DaemonClientRuntime.prototype, binding.clientMethod)) {
+    throw new Error(`Duplicate DaemonClient RPC method: ${binding.clientMethod}`);
+  }
+  Object.defineProperty(DaemonClientRuntime.prototype, binding.clientMethod, {
+    configurable: false,
+    enumerable: false,
+    value(this: DaemonClient, ...args: unknown[]) {
+      return binding.invoke(this, args);
+    },
+    writable: false,
+  });
+}
+
+export const DaemonClient = DaemonClientRuntime as {
+  new (...args: ConstructorParameters<typeof DaemonClientRuntime>): DaemonClient;
+  readonly prototype: DaemonClient;
+};
 
 function resolveAgentConfig(
   options: CreateAgentRequestOptions,

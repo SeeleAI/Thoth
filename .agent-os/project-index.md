@@ -3,11 +3,11 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-034`
+2. Top next action: `NTH-TD-035`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
 4. Active blockers: None.
 5. Current branch: `agent/refactor/final-architecture-50k` in ignored worktree `.dev/worktrees/final-architecture-50k`, based on clean commit `743e8d29` from `agent/dev/mvp`.
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-CD-066` governs a seven-cut atomic convergence of that path onto the final Core/Harness/RPC/App/UI/VCS/lifecycle architecture with no feature or UX change. `NTH-TD-031` froze the clean baseline and shared-`300s` gate; `NTH-TD-032` verified the pure Core, Repository/UoW and lossless normalized SQLite cutover; `NTH-TD-033` verified the direct Provider Harness, one ExecutionService and one ToolGateway cutover. `NTH-TD-034` is the active single RPC Registry cut.
+6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-CD-066` governs a seven-cut atomic convergence of that path onto the final Core/Harness/RPC/App/UI/VCS/lifecycle architecture with no feature or UX change. `NTH-TD-031` froze the clean baseline and shared-`300s` gate; `NTH-TD-032` verified the pure Core, Repository/UoW and lossless normalized SQLite cutover; `NTH-TD-033` verified the direct Provider Harness, one ExecutionService and one ToolGateway cutover; `NTH-TD-034` verified the single Protocol RPC Registry, derived Client facade and typed Daemon dispatch. `NTH-TD-035` is the active App authority projection cut.
 
 ## Objective Summary
 
@@ -24,7 +24,7 @@
 
 ## Top Next Action
 
-`NTH-TD-034` `[doing]`: Atomically replace Protocol/Client/Daemon hand-written RPC synchronization with one Zod Registry and derived semantic Client facade/Daemon dispatch, preserving every public operation and keeping binary codecs independent.
+`NTH-TD-035` `[doing]`: Atomically replace App Session authority Context/reducers with one non-React normalized projection service, QueryClient server state and versioned UI preferences while preserving exact UX.
 
 ## Active Blockers
 
@@ -112,6 +112,7 @@ None.
 78. `NTH-EV-052`: Cut 0 is verified. It froze commit `743e8d29`, `308,531` production LOC, `1,298,564` scanner tokens, `1,346,659` AST nodes, `5,057` static import edges, `165` runtime dependency edges, the Release `05775486` semantic SQLite fixture, real Web visual/interaction transcripts and independent daemon/App/response performance samples. The sole `npm run accept:refactor:fast` entry passed every phase in `270.302s` under one `300s` deadline.
 79. `NTH-EV-053`: Cut 1 is verified. `@thoth/core` now owns deterministic authority transitions; the Daemon uses one normalized Workspace Repository/UoW and losslessly migrates Release `05775486` without `authority_events`, constructor DDL or fallback reads. Production source is `662` lines, `2,111` scanner tokens, `3,622` AST nodes, `4` static imports and `1` runtime dependency edge below baseline. The final complete `npm run accept:refactor:fast`, including Core `9/9`, passed in `245.631s`; App interactive was `1603.73ms`, daemon ready `2211.68ms`, idle RSS `472506368` bytes and local response overhead `14.09ms`.
 80. `NTH-EV-054`: Cut 2 is verified. Every Provider now implements the direct Harness contract behind a lazy manifest; foreground/background/PlanExec/Review share one ExecutionService and one ToolGateway. The manager/session/host bridge, duplicate fences and eager registry APIs are absent. Focused Daemon `337/337`, Drivers `256/256`, public Harness lifecycle `4/4`, Provider Control and the full shared gate passed; `npm run accept:refactor:fast` completed in `238.109s`. Cumulative production source is `992` LOC, `6,336` scanner tokens, `4,775` AST nodes, `22` static imports and `1` runtime dependency edge below baseline.
+81. `NTH-EV-055`: Cut 3 is verified. Protocol now has one 131-operation Registry and 139 derived outbound schemas; 112 Client methods share one typed broker, Daemon requests share one 131-handler table, and binary frames remain independent. Protocol `351/351`, Client `119/119`, Session/Wire `133/133`, WebSocket lifecycle `17/17` and public foreground `12/12` passed. The final no-warning shared gate passed in `240.108s`; cumulative source is `2,476` LOC, `8,823` scanner tokens, `7,814` AST nodes, `23` static imports and `1` runtime dependency edge below baseline.
 
 ## Read Next
 

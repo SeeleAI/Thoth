@@ -1,5 +1,5 @@
 {
   "schemaVersion": 1,
-  "stage": 2,
-  "name": "provider-harness"
+  "stage": 3,
+  "name": "rpc-registry"
 }

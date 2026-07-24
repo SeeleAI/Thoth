@@ -2998,12 +2998,65 @@ Boundary:
 
 No AppImage, Android/iOS/native package, real Provider, hosted Relay journey, GitHub Action, push, tag, Release or
 publication ran. Thoth did not probe, stop, restart or reuse reserved Paseo `127.0.0.1:6767`. The final `50,000`
-production-LOC and hard end-state performance targets remain open under `NTH-TD-034` through `NTH-TD-039`.
+production-LOC and hard end-state performance targets remain open under `NTH-TD-035` through `NTH-TD-039`.
 
 ### `NTH-EV-055` Single RPC Registry Cutover
 
-Status: not started. Reserved for `NTH-TD-034` public Client operation coverage, Daemon handler/schema coverage,
-binary-codec isolation, old message/waiter/dispatch absence, source/performance deltas and the shared gate.
+Status: verified.
+
+Evidence on `2026-07-24`:
+
+1. Protocol 中的 `rpcRegistry` 是 JSON Session message 的唯一声明源：共 `131` 个 inbound operation、`139`
+   个 outbound response/event schema，统一声明 `unary | subscription | serverEvent`、handler key、公共
+   `rpc_error`、协议版本和 session permission。原先两份手写 `SessionInboundMessageSchema` /
+   `SessionOutboundMessageSchema` discriminated union 已删除，两个 union 均从 Registry schema 集合派生。
+2. `packages/protocol/src/rpc-registry.ts` 是正式公开入口；过度泛化的额外 Registry core 层已删除。Protocol
+   typecheck/build 通过，`42` 个文件、`351/351` 个测试通过。Registry coverage 精确验证 `131/139`、每个
+   request 唯一 handler、公共 error/version contract，以及 `file_begin`、`file_chunk`、`file_end`、
+   `terminal_frame` 不进入 JSON RPC。
+3. Client 的 `112` 个声明式方法统一进入一个 symbol-owned typed RPC broker。request schema、wire type、
+   response type、requestId correlation、timeout 和 `rpc_error -> DaemonRpcError` 不再由每个方法重复维护；
+   `sendCorrelatedRequest`、`sendCorrelatedSessionRequest`、
+   `sendNamespacedCorrelatedSessionRequest` 和逐方法 `responseType` 字符串全部归零。复杂 binary、连接、
+   subscription/reconnect 和事件 projection 生命周期仍由 Client 正式边界拥有，没有被塞进 Registry。
+4. Client 的 typed constructor/facade 保留所有公开方法与构造签名，同时避免 class/interface unsafe
+   declaration merging；Foundation lint 最终为 `0 warnings / 0 errors`。Client typecheck/build 通过，`4`
+   个文件、`119/119` 个测试通过，其中新增证据证明错误 requestId 不唤醒 waiter、公共 `rpc_error`
+   生成 `DaemonRpcError`、transport 断开清空 pending waiter，binary file/terminal frame 仍走独立 codec。
+5. Daemon `Session` 使用一个 mapped `SessionRpcHandlers` table 覆盖全部 `131` 个 request；编译期漏掉任意
+   handler 即失败。Runtime dispatch 只执行 request type -> Registry entry -> handler key -> handler，原有
+   `13` 组 control/lifecycle/config/task/VCS/workspace/provider/terminal/chat/schedule/misc switch 全部删除，
+   `session.ts` 中不存在 `switch (msg.type)`。
+6. 聚焦 Daemon 验证通过：Session/Wire `133/133`、WebSocket protocol/reconnect/binary lifecycle `17/17`、
+   public foreground API `12/12`。协议版本不匹配在创建 Session 前以 `4003` 明确拒绝；相同版本的
+   Create/Get/Update/Send、Task、Provider、VCS、Terminal、Chat、Schedule 和 reconnect 路径继续经过正式
+   Client/Daemon 主链。测试 Session 也恢复为真实 ToolGateway 边界，WebSocket 测试使用独立且正式初始化的
+   SQLite home，不再依赖共享 schema-0 `/tmp` 文件。
+7. Stage 3 architecture guard 要求 Registry、derived unions、`clientRpcBindings`、唯一 `RPC_INVOKE`、typed
+   handler table、`131/139` coverage 和四类 binary isolation；同时禁止额外 Registry core、三类旧 Client
+   waiter helper、手写 response type、手写 Daemon request switch 和旧 grouped dispatch。Guard 与
+   `git diff --check` 均通过。
+8. 最终 production metrics 为 `1,234` files、`306,055` physical LOC、`1,289,741` scanner tokens、
+   `1,338,845` AST nodes、`5,034` non-type static imports、`164` runtime dependency edges。相对 clean
+   baseline 分别为 `0 / -2,476 / -8,823 / -7,814 / -23 / -1`；Cut 3 独立净减 `1,484` LOC、`2,487`
+   tokens、`3,039` AST nodes 和 `1` static import edge，runtime dependency 不增加。
+9. 初始 Registry 泛型层造成 tokens/imports 相对 Cut 2 回升、测试装配缺口、共享 SQLite 污染，以及首个完整
+   gate 虽在 `239.673s` 通过但仍有 unsafe declaration-merging warning，均未作为完成证据。相关失败、
+   被拒绝的捷径和最终修正记录在 `NTH-EXP-042`；没有改统计口径、降低断言、更新 golden 或隐藏失败。
+10. 最终无 warning 的 `npm run accept:refactor:fast` 在共享 `300s` deadline 内以 `240.108s` 通过。
+    它再次覆盖 Release migration digest、Foundation、Core/Drivers/TUI/Daemon build、真实 `4416`-module Web
+    export、public Thoth/Provider/interaction behavior、Playwright screenshot/a11y/keyboard/focus/responsive、
+    TUI frame、App 与七个独立 daemon/response samples。
+11. 最终中位数：App interactive `1613.17ms`、heap `49,437,824` bytes、Settings `210.29ms`；Daemon
+    ready `1813.53ms`、idle RSS `408,375,296` bytes、idle CPU `0ms`、health p50/p95
+    `0.1235/0.1660ms`；Client-to-adapter `7.2252ms`、adapter-event-to-Client `7.5547ms`、local response
+    overhead `14.7321ms`。七个样本全部保留，统计阈值和 Mann-Whitney/MAD 规则未改变。
+
+Boundary:
+
+本刀未运行 AppImage、Android/iOS/native package、真实 Provider、hosted Relay journey、GitHub Action、push、
+tag、Release 或 publication；未探测、停止、重启或复用 Paseo `127.0.0.1:6767`。最终 `50,000` LOC 与
+四项 hard end-state performance 目标仍由 `NTH-TD-035` 至 `NTH-TD-039` 继续完成。
 
 ### `NTH-EV-056` App Authority Projection Cutover
 

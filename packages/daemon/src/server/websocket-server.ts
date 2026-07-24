@@ -21,6 +21,7 @@ import {
   type WSInboundMessage,
   WSInboundMessageSchema,
   type WSOutboundMessage,
+  RPC_PROTOCOL_VERSION,
   wrapSessionMessage,
 } from "./messages.js";
 import { asUint8Array, decodeBinaryFrame } from "@thoth/protocol/binary-frames/index";
@@ -264,7 +265,6 @@ const HELLO_TIMEOUT_MS = 15_000;
 const WS_CLOSE_HELLO_TIMEOUT = 4001;
 const WS_CLOSE_INVALID_HELLO = 4002;
 const WS_CLOSE_INCOMPATIBLE_PROTOCOL = 4003;
-const WS_PROTOCOL_VERSION = 1;
 const WS_RUNTIME_METRICS_FLUSH_MS = 30_000;
 
 export class MissingDaemonVersionError extends Error {
@@ -957,12 +957,12 @@ export class DaemonWebSocketServer {
   }): void {
     const { ws, message, pending } = params;
 
-    if (message.protocolVersion !== WS_PROTOCOL_VERSION) {
+    if (message.protocolVersion !== RPC_PROTOCOL_VERSION) {
       this.clearPendingConnection(ws);
       pending.connectionLogger.warn(
         {
           receivedProtocolVersion: message.protocolVersion,
-          expectedProtocolVersion: WS_PROTOCOL_VERSION,
+          expectedProtocolVersion: RPC_PROTOCOL_VERSION,
         },
         "Rejected hello due to protocol version mismatch",
       );

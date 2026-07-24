@@ -3767,3 +3767,26 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - `NTH-TD-033` / `NTH-EV-054` are verified. The sole top next action advances to `NTH-TD-034`: one Protocol Zod
   RPC Registry with derived Client facade and Daemon dispatch. No AppImage, native package, real Provider, hosted
   Relay, push, tag, Release or publication ran; reserved Paseo `127.0.0.1:6767` was not probed or modified.
+
+## 2026-07-24 [Final-architecture Cut 3 single RPC Registry verified]
+
+- Protocol 现在以一个 Registry 声明 `131` 个 inbound operation 和 `139` 个 outbound response/event schema；
+  Session inbound/outbound union、公共 error/version contract、request lookup 与 typed operation types 都从该
+  声明源派生。Binary file/terminal frame 继续由独立 codec 拥有。
+- Client 的 `112` 个声明式方法共用一个 typed broker；旧 correlated request helpers、逐方法 response type
+  与 waiter predicate 已删除。Daemon 的 `131` 个 handler 由一个 mapped table 编译期覆盖，原 `13` 组
+  request switch/dispatch 已删除，Runtime 只执行 Registry lookup 和 handler call。
+- 增加 requestId 错配、`rpc_error -> DaemonRpcError`、断线 waiter cleanup、协议版本拒绝和 binary isolation
+  证据；Protocol `351/351`、Client `119/119`、Session/Wire `133/133`、WebSocket `17/17`、public foreground
+  `12/12` 均通过。Session test helper 使用真实 ToolGateway，WebSocket fixture 使用独立正式 SQLite schema。
+- `NTH-EXP-042` 保留了第一版 token/import 回升、ToolGateway fixture 缺口、共享 schema-0 SQLite 污染，
+  以及第一个完整 gate 虽在 `239.673s` 通过但仍有 unsafe declaration-merging warning 的过程。最终 typed
+  constructor/facade 将 Foundation lint 收敛为 `0 warnings / 0 errors`，没有 suppress 或降级。
+- 最终 `npm run accept:refactor:fast` 在共享 `300s` deadline 内以 `240.108s` 通过，覆盖 Release migration、
+  Foundation、真实 `4416`-module Web、公共行为、视觉/交互/TUI 与七样本性能。App interactive 中位数
+  `1613.17ms`；Daemon ready `1813.53ms`、idle RSS `408375296` bytes；local response overhead `14.7321ms`。
+- 累计 production metrics 为 `306,055` LOC (`-2,476`)、`1,289,741` tokens (`-8,823`)、`1,338,845`
+  AST nodes (`-7,814`)、`5,034` imports (`-23`) 和 `164` runtime dependency edges (`-1`) 相对 clean
+  baseline；Cut 3 独立净减 `1,484` LOC、`2,487` tokens、`3,039` AST nodes 和 `1` import。
+- `NTH-TD-034` / `NTH-EV-055` verified；唯一 top next action 前进到 `NTH-TD-035` App authority projection。
+  未运行 AppImage/native package/真实 Provider/hosted Relay/push/tag/Release；未触碰 Paseo `6767`。

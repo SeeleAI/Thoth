@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Server as HTTPServer } from "http";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type pino from "pino";
 import type { ExecutionService } from "./agent/execution-service.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
@@ -100,13 +103,14 @@ vi.mock("./push/push-service.js", () => ({
 
 import { z } from "zod";
 import { DaemonWebSocketServer } from "./websocket-server";
-import { parseServerInfoStatusPayload } from "./messages.js";
+import { parseServerInfoStatusPayload, RPC_PROTOCOL_VERSION } from "./messages.js";
 
 interface WebSocketServerInternals {
   attachSocket(ws: unknown, req: unknown): Promise<void>;
 }
 
 const TEST_DAEMON_VERSION = "1.2.3-test";
+const testHomes: string[] = [];
 
 const WireEnvelopeSchema = z.object({
   type: z.string().optional(),
@@ -212,6 +216,8 @@ function createServer(options?: { logger?: ReturnType<typeof createLogger> }) {
     onChange: vi.fn(() => () => {}),
   };
   const logger = options?.logger ?? createLogger();
+  const thothHome = mkdtempSync(join(tmpdir(), "thoth-websocket-server-test-"));
+  testHomes.push(thothHome);
   return new DaemonWebSocketServer(
     createStub<HTTPServer>({}),
     createStub<pino.Logger>(logger),
@@ -230,7 +236,7 @@ function createServer(options?: { logger?: ReturnType<typeof createLogger> }) {
     }),
     createStub<AgentStorage>({}),
     createStub<DownloadTokenStore>({}),
-    "/tmp/thoth-test",
+    thothHome,
     createStub<DaemonConfigStore>(daemonConfigStore),
     null,
     { allowedOrigins: new Set() },
@@ -268,13 +274,13 @@ function createServer(options?: { logger?: ReturnType<typeof createLogger> }) {
 
 function createHelloMessage(
   clientId: string,
-  options?: { capabilities?: Record<string, boolean> },
+  options?: { capabilities?: Record<string, boolean>; protocolVersion?: number },
 ) {
   return {
     type: "hello" as const,
     clientId,
     clientType: "cli" as const,
-    protocolVersion: 1,
+    protocolVersion: options?.protocolVersion ?? RPC_PROTOCOL_VERSION,
     ...(options?.capabilities ? { capabilities: options.capabilities } : {}),
   };
 }
@@ -351,6 +357,9 @@ describe("relay external socket reconnect behavior", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    for (const thothHome of testHomes.splice(0)) {
+      rmSync(thothHome, { recursive: true, force: true });
+    }
   });
 
   test("keeps the same session when relay reconnects within grace window", async () => {
@@ -402,6 +411,41 @@ describe("relay external socket reconnect behavior", () => {
     expect(session.args.clientCapabilities).toEqual({
       [CLIENT_CAPS.reasoningMergeEnum]: true,
     });
+
+    await server.close();
+  });
+
+  test("rejects an incompatible RPC protocol before creating a Session", async () => {
+    const logger = createLogger();
+    const server = createServer({ logger });
+    const socket = new MockSocket();
+    let closeCode: number | null = null;
+    let closeReason = "";
+    socket.on("close", (code: unknown, reason: unknown) => {
+      closeCode = typeof code === "number" ? code : null;
+      closeReason = typeof reason === "string" ? reason : "";
+    });
+
+    await asInternals<WebSocketServerInternals>(server).attachSocket(socket, createDirectRequest());
+    socket.emit(
+      "message",
+      JSON.stringify(
+        createHelloMessage("client-incompatible", {
+          protocolVersion: RPC_PROTOCOL_VERSION + 1,
+        }),
+      ),
+    );
+
+    expect(closeCode).toBe(4003);
+    expect(closeReason).toBe("Incompatible protocol version");
+    expect(sessionMock.instances).toHaveLength(0);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        receivedProtocolVersion: RPC_PROTOCOL_VERSION + 1,
+        expectedProtocolVersion: RPC_PROTOCOL_VERSION,
+      }),
+      "Rejected hello due to protocol version mismatch",
+    );
 
     await server.close();
   });

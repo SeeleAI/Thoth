@@ -332,8 +332,10 @@ function collectExports(sourceFile, exportedNames) {
 function collectDaemonClientMethods(sourceFile, target) {
   const visit = (node) => {
     if (
-      (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node)) &&
-      node.name?.text === "DaemonClient"
+      (ts.isClassDeclaration(node) ||
+        ts.isClassExpression(node) ||
+        ts.isInterfaceDeclaration(node)) &&
+      (node.name?.text === "DaemonClient" || node.name?.text === "DaemonClientRuntime")
     ) {
       for (const member of node.members) {
         if (

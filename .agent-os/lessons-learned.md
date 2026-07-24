@@ -1157,3 +1157,38 @@ Retry condition:
 When a screenshot or a11y tree intermittently misses an existing projection, inspect the request and render
 lifecycle for that exact region. Wait on its public test id or user-visible state; do not add sleeps, increase image
 thresholds, update snapshots, mock the authority response or change product UI to satisfy the verifier.
+
+## `NTH-EXP-042` RPC 收敛必须同时删除泛型层，并让测试装配跟随正式边界
+
+Observed on `2026-07-24` during `NTH-TD-034`:
+
+1. 第一版 Registry 已经删除大量 Client/Daemon switch 与 waiter boilerplate，但新增的独立
+   `rpc-registry-core.ts` 和条件泛型使 scanner tokens 达到 `1,293,756`、static imports 达到 `5,042`；
+   相对已验证 Cut 2 分别回升 `1,528` 和 `7`。只有 LOC/AST 下降不满足每刀全部复杂度指标继续下降的合同，
+   因而该形态没有切 stage、没有提交。
+2. 将 Registry core 内聚到既有 Protocol schema authority、删除额外文件与重复跨包 imports 后，所有
+   `131/139` schema 和 mapped types 仍保留，但最终 tokens/imports 降至 `1,289,741 / 5,034`。简单不是把
+   声明能力删掉，而是让声明源与已经拥有 Zod schema 的模块共址。
+3. Session/Wire 聚焦测试第一次运行时，`session.test.ts` 的 `126/126` 项都在构造前失败：Cut 2 后测试
+   helper 没有配置正式 `ToolGateway`。给 helper 装配同一个真实 ToolGateway 边界后，Session/Wire
+   `133/133` 通过；没有在 Session 中加入 nullable gateway、fallback 或 test-only production branch。
+4. WebSocket suite 的 `17/17` 项第一次都因共享 `/tmp/thoth-test/catalog.sqlite` 仍是 schema 0 而失败。
+   测试改为每项拥有独立临时 Thoth home，并由正式 storage schema 初始化/校验；最终 `17/17` 通过，避免
+   测试顺序和机器残留状态成为 authority。
+5. 第一个完整 stage 3 gate 在 `239.673s` 通过，但 Foundation lint 报告 class/interface unsafe
+   declaration merging。该 run 未用于关闭 TODO。直接改成 export alias 产生 `TS2300`，匿名 class facade
+   又产生 private-member `TS4094`；最终使用 named `DaemonClientRuntime` + typed constructor/facade，保留
+   构造和实例类型、动态方法覆盖与 runtime duplicate guard，lint 达到 `0 warnings / 0 errors`。
+6. 最终完整 gate 在 `240.108s` 通过。所有失败输出都保留，没有通过 suppress lint、降低测试、修改
+   public surface manifest、隐藏 schema-0 文件或接受 tokens/imports 回升来制造绿色结果。
+
+Conclusion:
+
+声明式 Registry 只有在删除三份同步 boilerplate 的同时不制造第四层泛型框架时才是真正收敛。测试 fixture
+也必须装配最终 production boundary；如果 fixture 依赖旧构造习惯或共享持久状态，它不能证明新主链。
+
+Retry condition:
+
+后续 Registry/Facade 重构若出现 LOC 下降但 token/import 回升，先删除泛型中间层和重复 module edge；若
+Session/transport 测试在构造期统一失败，先核对最终 composition boundary 与独立 storage home。不得把正式
+依赖改成 optional、给 Runtime 增加测试 fallback、放宽 lint，或修改 public-surface 统计集合来绕过失败。

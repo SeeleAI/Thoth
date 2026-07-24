@@ -3693,6 +3693,110 @@ test("fetches agents via RPC with filters, sort, and pagination", async () => {
   });
 });
 
+test("keeps an RPC pending until the exact requestId response arrives", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const promise = client.fetchAgents({ requestId: "fetch-agents-exact" });
+  let settled = false;
+  void promise.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  const response = (requestId: string) =>
+    wrapSessionMessage({
+      type: "fetch_agents_response",
+      payload: {
+        requestId,
+        subscriptionId: null,
+        entries: [],
+        pageInfo: { nextCursor: null, prevCursor: null, hasMore: false },
+      },
+    });
+
+  mock.triggerMessage(response("fetch-agents-other"));
+  await Promise.resolve();
+  expect(settled).toBe(false);
+
+  mock.triggerMessage(response("fetch-agents-exact"));
+  await expect(promise).resolves.toMatchObject({ requestId: "fetch-agents-exact" });
+});
+
+test("maps the common rpc_error envelope to DaemonRpcError", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const promise = client.getDaemonStatus({ requestId: "daemon-status-error" });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "rpc_error",
+      payload: {
+        requestId: "daemon-status-error",
+        requestType: "daemon.get_status.request",
+        error: "status unavailable",
+        code: "handler_error",
+      },
+    }),
+  );
+
+  await expect(promise).rejects.toMatchObject({
+    name: "DaemonRpcError",
+    code: "handler_error",
+    requestType: "daemon.get_status.request",
+    message: expect.stringContaining("status unavailable"),
+  });
+});
+
+test("clears pending RPC waiters when the transport disconnects", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const promise = client.fetchAgents({ requestId: "fetch-agents-disconnect" });
+  const internals = client as unknown as { waiters: Set<unknown> };
+  expect(internals.waiters.size).toBe(1);
+  mock.triggerClose({ code: 1006, reason: "transport disconnected" });
+
+  await expect(promise).rejects.toThrow("transport disconnected");
+  expect(internals.waiters.size).toBe(0);
+});
+
 test("detaches an agent through the namespaced detach RPC", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();

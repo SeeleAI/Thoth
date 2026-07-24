@@ -5,6 +5,7 @@ import { basename, normalize, resolve, sep } from "path";
 import { homedir } from "node:os";
 import { CLIENT_CAPS, type ClientCapability } from "@thoth/protocol/client-capabilities";
 import {
+  rpcRegistry,
   serializeAgentStreamEvent,
   type AgentSnapshotPayload,
   type AgentAttachment,
@@ -19,6 +20,8 @@ import {
   type WorkspaceSetupSnapshot,
   type WorkspaceDescriptorPayload,
   type ThothTurnAck,
+  type ProtocolRpcOperation,
+  type ProtocolRpcRequest,
 } from "./messages.js";
 import type {
   TerminalManager,
@@ -335,6 +338,12 @@ export interface SessionRuntimeMetrics {
   peakInflightRequests: number;
 }
 
+type SessionRpcHandlers = {
+  [Operation in ProtocolRpcOperation]: (
+    message: ProtocolRpcRequest<Operation>,
+  ) => void | Promise<void>;
+};
+
 type FetchAgentsRequestMessage = Extract<SessionInboundMessage, { type: "fetch_agents_request" }>;
 type FetchAgentHistoryRequestMessage = Extract<
   SessionInboundMessage,
@@ -579,6 +588,7 @@ export class Session {
   private readonly workspaceTaskCoordinator: WorkspaceTaskCoordinator;
   private readonly workspaceScripts: WorkspaceScriptsService;
   private readonly createAgentLifecycleDispatch: CreateAgentLifecycleDispatch;
+  private readonly rpcHandlers: SessionRpcHandlers;
 
   constructor(options: SessionOptions) {
     const {
@@ -896,6 +906,7 @@ export class Session {
       isProviderVisibleToClient: (provider) => this.isProviderVisibleToClient(provider),
       buildWorkspaceDescriptor: (input) => this.buildWorkspaceDescriptor(input),
     });
+    this.rpcHandlers = this.createRpcHandlers();
 
     this.subscribeToAgentEvents();
 
@@ -1275,6 +1286,172 @@ export class Session {
     return this.buildProjectPlacementForWorkspace(workspace, project);
   }
 
+  private createRpcHandlers(): SessionRpcHandlers {
+    return {
+      fetchAgents: (msg) => this.handleFetchAgents(msg),
+      fetchAgentHistory: (msg) => this.handleFetchAgentHistory(msg),
+      fetchRecentProviderSessions: (msg) => this.handleFetchRecentProviderSessions(msg),
+      fetchWorkspaces: (msg) => this.handleFetchWorkspacesRequest(msg),
+      fetchAgent: (msg) => this.handleFetchAgent(msg.agentId, msg.requestId),
+      deleteAgent: (msg) => this.handleDeleteAgentRequest(msg.agentId, msg.requestId),
+      archiveAgent: (msg) => this.handleArchiveAgentRequest(msg.agentId, msg.requestId),
+      closeItems: (msg) => this.handleCloseItemsRequest(msg),
+      updateAgent: (msg) =>
+        this.handleUpdateAgentRequest(msg.agentId, msg.name, msg.labels, msg.requestId),
+      renameProject: (msg) =>
+        this.handleProjectRenameRequest(msg.projectId, msg.customName, msg.requestId),
+      removeProject: (msg) => this.handleProjectRemoveRequest(msg),
+      setWorkspaceTitle: (msg) =>
+        this.handleWorkspaceTitleSetRequest(msg.workspaceId, msg.title, msg.requestId),
+      sendAgentMessage: (msg) => this.handleSendAgentMessageRequest(msg),
+      waitForFinish: (msg) => this.handleWaitForFinish(msg.agentId, msg.requestId, msg.timeoutMs),
+      getDaemonStatus: (msg) => this.daemonSession.handleGetStatusRequest(msg),
+      getDaemonPairingOffer: (msg) => this.daemonSession.handleGetPairingOfferRequest(msg),
+      issueRelayDeviceToken: (msg) => this.daemonSession.handleIssueRelayDeviceTokenRequest(msg),
+      collectDiagnostics: (msg) => this.daemonSession.handleDiagnosticsRequest(msg),
+      getDaemonConfig: (msg) =>
+        this.emit({
+          type: "get_daemon_config_response",
+          payload: { requestId: msg.requestId, config: this.daemonConfigStore.get() },
+        }),
+      patchDaemonConfig: (msg) =>
+        this.emit({
+          type: "set_daemon_config_response",
+          payload: { requestId: msg.requestId, config: this.daemonConfigStore.patch(msg.config) },
+        }),
+      readProjectConfig: (msg) => this.projectConfigSession.handleReadProjectConfigRequest(msg),
+      writeProjectConfig: (msg) => this.projectConfigSession.handleWriteProjectConfigRequest(msg),
+      createAgent: (msg) => this.handleCreateAgentRequest(msg),
+      listProviderModels: (msg) => this.providerCatalogSession.handleListProviderModelsRequest(msg),
+      listProviderModes: (msg) => this.providerCatalogSession.handleListProviderModesRequest(msg),
+      listProviderFeatures: (msg) =>
+        this.providerCatalogSession.handleListProviderFeaturesRequest(msg),
+      listAvailableProviders: (msg) =>
+        this.providerCatalogSession.handleListAvailableProvidersRequest(msg),
+      getProvidersSnapshot: (msg) =>
+        this.providerCatalogSession.handleGetProvidersSnapshotRequest(msg),
+      refreshProvidersSnapshot: (msg) =>
+        this.providerCatalogSession.handleRefreshProvidersSnapshotRequest(msg),
+      getProviderDiagnostic: (msg) =>
+        this.providerCatalogSession.handleProviderDiagnosticRequest(msg),
+      listProviderUsage: (msg) => this.providerCatalogSession.handleProviderUsageListRequest(msg),
+      resumeAgent: (msg) => this.handleResumeAgentRequest(msg),
+      importAgent: (msg) => this.handleImportAgentRequest(msg),
+      refreshAgent: (msg) => this.handleRefreshAgentRequest(msg),
+      cancelAgent: (msg) => this.handleCancelAgentRequest(msg.agentId, msg.requestId),
+      shutdownServer: (msg) => this.handleShutdownServerRequest(msg.requestId),
+      restartServer: (msg) => this.handleRestartServerRequest(msg.requestId, msg.reason),
+      updateDaemon: (msg) => this.daemonSession.handleUpdateRequest(msg),
+      fetchAgentTimeline: (msg) => this.handleFetchAgentTimelineRequest(msg),
+      buildAgentForkContext: (msg) => this.handleAgentForkContextRequest(msg),
+      setAgentMode: (msg) => this.agentConfigSession.handleSetAgentModeRequest(msg),
+      getAgentProviderControl: (msg) => this.handleAgentProviderControlGetRequest(msg),
+      updateAgentProviderControl: (msg) => this.handleAgentProviderControlUpdateRequest(msg),
+      setAgentModel: (msg) => this.agentConfigSession.handleSetAgentModelRequest(msg),
+      setAgentThinkingOption: (msg) => this.agentConfigSession.handleSetAgentThinkingRequest(msg),
+      setAgentFeature: (msg) => this.agentConfigSession.handleSetAgentFeatureRequest(msg),
+      detachAgent: (msg) => this.handleDetachAgentRequest(msg.agentId, msg.requestId),
+      rewindAgent: (msg) => this.handleAgentRewindRequest(msg),
+      respondToPermission: (msg) =>
+        this.handleAgentPermissionResponse(msg.agentId, msg.requestId, msg.response),
+      getCheckoutStatus: (msg) => this.checkoutSession.handleStatusRequest(msg),
+      subscribeCheckoutDiff: (msg) => this.checkoutSession.handleSubscribeDiffRequest(msg),
+      unsubscribeCheckoutDiff: (msg) => this.checkoutSession.handleUnsubscribeDiffRequest(msg),
+      checkoutCommit: (msg) => this.checkoutSession.handleCheckoutCommitRequest(msg),
+      checkoutMerge: (msg) => this.checkoutSession.handleCheckoutMergeRequest(msg),
+      checkoutMergeFromBase: (msg) => this.checkoutSession.handleCheckoutMergeFromBaseRequest(msg),
+      checkoutPull: (msg) => this.checkoutSession.handleCheckoutPullRequest(msg),
+      checkoutPush: (msg) => this.checkoutSession.handleCheckoutPushRequest(msg),
+      checkoutRefresh: (msg) => this.checkoutSession.handleRefreshRequest(msg),
+      checkoutPrCreate: (msg) => this.checkoutSession.handleCheckoutPrCreateRequest(msg),
+      checkoutPrMerge: (msg) => this.checkoutSession.handleCheckoutPrMergeRequest(msg),
+      checkoutGithubSetAutoMerge: (msg) =>
+        this.checkoutSession.handleCheckoutGithubSetAutoMergeRequest(msg),
+      checkoutGithubGetCheckDetails: (msg) =>
+        this.checkoutSession.handleCheckoutGithubGetCheckDetailsRequest(msg),
+      checkoutPrStatus: (msg) => this.checkoutSession.handleCheckoutPrStatusRequest(msg),
+      pullRequestTimeline: (msg) => this.checkoutSession.handlePullRequestTimelineRequest(msg),
+      checkoutSwitchBranch: (msg) => this.checkoutSession.handleCheckoutSwitchBranchRequest(msg),
+      renameBranch: (msg) => this.checkoutSession.handleCheckoutRenameBranchRequest(msg),
+      stashSave: (msg) => this.checkoutSession.handleStashSaveRequest(msg),
+      stashPop: (msg) => this.checkoutSession.handleStashPopRequest(msg),
+      stashList: (msg) => this.checkoutSession.handleStashListRequest(msg),
+      validateBranch: (msg) => this.checkoutSession.handleValidateBranchRequest(msg),
+      getBranchSuggestions: (msg) => this.checkoutSession.handleBranchSuggestionsRequest(msg),
+      searchGitHub: (msg) => this.checkoutSession.handleGitHubSearchRequest(msg),
+      getDirectorySuggestions: (msg) => this.handleDirectorySuggestionsRequest(msg),
+      getThothWorktreeList: (msg) => this.handleThothWorktreeListRequest(msg),
+      archiveThothWorktree: (msg) => this.handleThothWorktreeArchiveRequest(msg),
+      createThothWorktree: (msg) => this.handleCreateThothWorktreeRequest(msg),
+      fetchWorkspaceSetupStatus: (msg) => this.handleWorkspaceSetupStatusRequest(msg),
+      listAvailableEditors: (msg) => this.handleLegacyListAvailableEditorsRequest(msg),
+      openInEditor: (msg) => this.handleLegacyOpenInEditorRequest(msg),
+      openProject: (msg) => this.handleOpenProjectRequest(msg),
+      addProject: (msg) => this.handleProjectAddRequest(msg),
+      archiveWorkspace: (msg) => this.handleArchiveWorkspaceRequest(msg),
+      createWorkspace: (msg) => this.handleWorkspaceCreateRequest(msg),
+      clearWorkspaceAttention: (msg) => this.handleWorkspaceClearAttentionRequest(msg),
+      requestFileExplorer: (msg) => this.workspaceFilesSession.handleFileExplorerRequest(msg),
+      requestProjectIcon: (msg) => this.workspaceFilesSession.handleProjectIconRequest(msg),
+      requestDownloadToken: (msg) => this.workspaceFilesSession.handleFileDownloadTokenRequest(msg),
+      uploadFile: (msg) => this.workspaceFilesSession.handleFileUploadRequest(msg),
+      clearAgentAttention: (msg) => this.handleClearAgentAttention(msg.agentId, msg.requestId),
+      clientHeartbeat: (msg) => this.handleClientHeartbeat(msg),
+      ping: (msg) => {
+        const now = Date.now();
+        this.emit({
+          type: "pong",
+          payload: {
+            requestId: msg.requestId,
+            clientSentAt: msg.clientSentAt,
+            serverReceivedAt: now,
+            serverSentAt: now,
+          },
+        });
+      },
+      listCommands: (msg) => this.handleListCommandsRequest(msg),
+      registerPushToken: (msg) => this.handleRegisterPushToken(msg.token),
+      listTerminals: (msg) => this.terminalController.dispatch(msg),
+      subscribeTerminals: (msg) => this.terminalController.dispatch(msg),
+      unsubscribeTerminals: (msg) => this.terminalController.dispatch(msg),
+      createTerminal: (msg) => this.terminalController.dispatch(msg),
+      renameTerminal: (msg) => this.terminalController.dispatch(msg),
+      startWorkspaceScript: (msg) => this.handleStartWorkspaceScriptRequest(msg),
+      subscribeTerminal: (msg) => this.terminalController.dispatch(msg),
+      unsubscribeTerminal: (msg) => this.terminalController.dispatch(msg),
+      terminalInput: (msg) => this.terminalController.dispatch(msg),
+      killTerminal: (msg) => this.terminalController.dispatch(msg),
+      captureTerminal: (msg) => this.terminalController.dispatch(msg),
+      createChatRoom: (msg) => this.chatScheduleSession.handleChatCreateRequest(msg),
+      listChatRooms: (msg) => this.chatScheduleSession.handleChatListRequest(msg),
+      inspectChatRoom: (msg) => this.chatScheduleSession.handleChatInspectRequest(msg),
+      deleteChatRoom: (msg) => this.chatScheduleSession.handleChatDeleteRequest(msg),
+      postChatMessage: (msg) => this.chatScheduleSession.handleChatPostRequest(msg),
+      readChatMessages: (msg) => this.chatScheduleSession.handleChatReadRequest(msg),
+      waitForChatMessages: (msg) => this.chatScheduleSession.handleChatWaitRequest(msg),
+      scheduleCreate: (msg) => this.chatScheduleSession.handleScheduleCreateRequest(msg),
+      scheduleList: (msg) => this.chatScheduleSession.handleScheduleListRequest(msg),
+      scheduleInspect: (msg) => this.chatScheduleSession.handleScheduleInspectRequest(msg),
+      scheduleLogs: (msg) => this.chatScheduleSession.handleScheduleLogsRequest(msg),
+      schedulePause: (msg) => this.chatScheduleSession.handleSchedulePauseRequest(msg),
+      scheduleResume: (msg) => this.chatScheduleSession.handleScheduleResumeRequest(msg),
+      scheduleDelete: (msg) => this.chatScheduleSession.handleScheduleDeleteRequest(msg),
+      scheduleRunOnce: (msg) => this.chatScheduleSession.handleScheduleRunOnceRequest(msg),
+      scheduleUpdate: (msg) => this.chatScheduleSession.handleScheduleUpdateRequest(msg),
+      getAgentThothState: (msg) => this.handleAgentThothStateRequest(msg),
+      answerAgentThothCard: (msg) => this.handleAgentThothCardAnswerRequest(msg),
+      listTasks: (msg) => this.handleTaskListRequest(msg),
+      getTask: (msg) => this.handleTaskGetRequest(msg),
+      commandTask: (msg) => this.handleTaskCommandRequest(msg),
+      searchTaskContext: (msg) => this.handleTaskContextSearchRequest(msg),
+      getTaskContext: (msg) => this.handleTaskContextGetRequest(msg),
+      answerTaskDecision: (msg) => this.handleTaskDecisionAnswerRequest(msg),
+      getExecutionTimeline: (msg) => this.handleExecutionTimelineRequest(msg),
+      resolveExecutionApproval: (msg) => this.handleExecutionApprovalResolveRequest(msg),
+      commandAgentTurnQueue: (msg) => this.handleAgentTurnQueueCommand(msg),
+    };
+  }
+
   /**
    * Main entry point for processing session messages
    */
@@ -1331,172 +1508,15 @@ export class Session {
   }
 
   private async dispatchInboundMessage(msg: SessionInboundMessage): Promise<void> {
-    const promise =
-      this.dispatchControlMessage(msg) ??
-      this.dispatchAgentRewindMessage(msg) ??
-      this.dispatchAgentRelationshipMessage(msg) ??
-      this.dispatchAgentTimelineMessage(msg) ??
-      this.dispatchAgentLifecycleMessage(msg) ??
-      this.dispatchAgentConfigMessage(msg) ??
-      this.dispatchTaskAuthorityMessage(msg) ??
-      this.dispatchCheckoutMessage(msg) ??
-      this.dispatchWorkspaceAndProjectMessage(msg) ??
-      this.dispatchProviderMessage(msg) ??
-      this.dispatchTerminalMessage(msg) ??
-      this.dispatchChatScheduleMessage(msg) ??
-      this.dispatchMiscMessage(msg);
-    if (promise) await promise;
-  }
-
-  private dispatchControlMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    switch (msg.type) {
-      case "restart_server_request":
-        return this.handleRestartServerRequest(msg.requestId, msg.reason);
-      case "shutdown_server_request":
-        return this.handleShutdownServerRequest(msg.requestId);
-      case "client_heartbeat":
-        this.handleClientHeartbeat(msg);
-        return undefined;
-      case "ping": {
-        const now = Date.now();
-        this.emit({
-          type: "pong",
-          payload: {
-            requestId: msg.requestId,
-            clientSentAt: msg.clientSentAt,
-            serverReceivedAt: now,
-            serverSentAt: now,
-          },
-        });
-        return undefined;
-      }
-      default:
-        return undefined;
+    const operation = rpcRegistry.operationForRequestType(msg.type);
+    if (!operation?.handlerKey) {
+      throw new Error(`No RPC handler is registered for ${msg.type}`);
     }
-  }
-
-  private dispatchAgentRewindMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    switch (msg.type) {
-      case "agent.rewind.request":
-        return this.handleAgentRewindRequest(msg);
-      default:
-        return undefined;
-    }
-  }
-
-  private dispatchAgentRelationshipMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    switch (msg.type) {
-      case "agent.detach.request":
-        return this.handleDetachAgentRequest(msg.agentId, msg.requestId);
-      default:
-        return undefined;
-    }
-  }
-
-  private dispatchAgentTimelineMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    switch (msg.type) {
-      case "fetch_agent_timeline_request":
-        return this.handleFetchAgentTimelineRequest(msg);
-      case "agent.fork_context.request":
-        return this.handleAgentForkContextRequest(msg);
-      default:
-        return undefined;
-    }
-  }
-
-  private dispatchAgentLifecycleMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    switch (msg.type) {
-      case "fetch_agents_request":
-        return this.handleFetchAgents(msg);
-      case "fetch_agent_history_request":
-        return this.handleFetchAgentHistory(msg);
-      case "fetch_recent_provider_sessions_request":
-        return this.handleFetchRecentProviderSessions(msg);
-      case "fetch_agent_request":
-        return this.handleFetchAgent(msg.agentId, msg.requestId);
-      case "delete_agent_request":
-        return this.handleDeleteAgentRequest(msg.agentId, msg.requestId);
-      case "archive_agent_request":
-        return this.handleArchiveAgentRequest(msg.agentId, msg.requestId);
-      case "close_items_request":
-        return this.handleCloseItemsRequest(msg);
-      case "update_agent_request":
-        return this.handleUpdateAgentRequest(msg.agentId, msg.name, msg.labels, msg.requestId);
-      case "project.rename.request":
-        return this.handleProjectRenameRequest(msg.projectId, msg.customName, msg.requestId);
-      case "send_agent_message_request":
-        return this.handleSendAgentMessageRequest(msg);
-      case "wait_for_finish_request":
-        return this.handleWaitForFinish(msg.agentId, msg.requestId, msg.timeoutMs);
-      case "create_agent_request":
-        return this.handleCreateAgentRequest(msg);
-      case "resume_agent_request":
-        return this.handleResumeAgentRequest(msg);
-      case "import_agent_request":
-        return this.handleImportAgentRequest(msg);
-      case "refresh_agent_request":
-        return this.handleRefreshAgentRequest(msg);
-      case "cancel_agent_request":
-        return this.handleCancelAgentRequest(msg.agentId, msg.requestId);
-      case "agent.thoth.state.request":
-        return this.handleAgentThothStateRequest(msg);
-      case "agent.thoth.card.answer.request":
-        return this.handleAgentThothCardAnswerRequest(msg);
-      case "agent_permission_response":
-        return this.handleAgentPermissionResponse(msg.agentId, msg.requestId, msg.response);
-      case "clear_agent_attention":
-        return this.handleClearAgentAttention(msg.agentId, msg.requestId);
-      default:
-        return undefined;
-    }
-  }
-
-  private dispatchAgentConfigMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    switch (msg.type) {
-      case "set_agent_mode_request":
-        return this.agentConfigSession.handleSetAgentModeRequest(msg);
-      case "agent.provider_control.get.request":
-        return this.handleAgentProviderControlGetRequest(msg);
-      case "agent.provider_control.update.request":
-        return this.handleAgentProviderControlUpdateRequest(msg);
-      case "set_agent_model_request":
-        return this.agentConfigSession.handleSetAgentModelRequest(msg);
-      case "set_agent_feature_request":
-        return this.agentConfigSession.handleSetAgentFeatureRequest(msg);
-      case "set_agent_thinking_request":
-        return this.agentConfigSession.handleSetAgentThinkingRequest(msg);
-      case "get_daemon_config_request":
-        this.emit({
-          type: "get_daemon_config_response",
-          payload: { requestId: msg.requestId, config: this.daemonConfigStore.get() },
-        });
-        return undefined;
-      case "daemon.get_status.request":
-        return this.daemonSession.handleGetStatusRequest(msg);
-      case "daemon.get_pairing_offer.request":
-        return this.daemonSession.handleGetPairingOfferRequest(msg);
-      case "daemon.issue_relay_device_token.request":
-        return this.daemonSession.handleIssueRelayDeviceTokenRequest(msg);
-      case "diagnostics.request":
-        return this.daemonSession.handleDiagnosticsRequest(msg);
-      case "daemon.update.request":
-        return this.daemonSession.handleUpdateRequest(msg);
-      case "set_daemon_config_request":
-        this.emit({
-          type: "set_daemon_config_response",
-          payload: {
-            requestId: msg.requestId,
-            config: this.daemonConfigStore.patch(msg.config),
-          },
-        });
-        return undefined;
-      case "read_project_config_request":
-        return this.projectConfigSession.handleReadProjectConfigRequest(msg);
-      case "write_project_config_request":
-        return this.projectConfigSession.handleWriteProjectConfigRequest(msg);
-      default:
-        return undefined;
-    }
+    const handlers = this.rpcHandlers as unknown as Record<
+      ProtocolRpcOperation,
+      (message: SessionInboundMessage) => void | Promise<void>
+    >;
+    await handlers[operation.handlerKey as ProtocolRpcOperation](msg);
   }
 
   private async handleAgentProviderControlGetRequest(
@@ -1592,31 +1612,6 @@ export class Session {
           providerControl: null,
         },
       });
-    }
-  }
-
-  private dispatchTaskAuthorityMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    switch (msg.type) {
-      case "task.list.request":
-        return this.handleTaskListRequest(msg);
-      case "task.get.request":
-        return this.handleTaskGetRequest(msg);
-      case "task.command.request":
-        return this.handleTaskCommandRequest(msg);
-      case "task.context.search.request":
-        return this.handleTaskContextSearchRequest(msg);
-      case "task.context.get.request":
-        return this.handleTaskContextGetRequest(msg);
-      case "task.decision.answer.request":
-        return this.handleTaskDecisionAnswerRequest(msg);
-      case "execution.timeline.request":
-        return this.handleExecutionTimelineRequest(msg);
-      case "execution.approval.resolve.request":
-        return this.handleExecutionApprovalResolveRequest(msg);
-      case "agent.turn_queue.command.request":
-        return this.handleAgentTurnQueueCommand(msg);
-      default:
-        return undefined;
     }
   }
 
@@ -1847,191 +1842,6 @@ export class Session {
         error: result.error,
       },
     });
-  }
-
-  // eslint-disable-next-line complexity
-  private dispatchCheckoutMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    switch (msg.type) {
-      case "checkout_status_request":
-        return this.checkoutSession.handleStatusRequest(msg);
-      case "validate_branch_request":
-        return this.checkoutSession.handleValidateBranchRequest(msg);
-      case "branch_suggestions_request":
-        return this.checkoutSession.handleBranchSuggestionsRequest(msg);
-      case "directory_suggestions_request":
-        return this.handleDirectorySuggestionsRequest(msg);
-      case "subscribe_checkout_diff_request":
-        return this.checkoutSession.handleSubscribeDiffRequest(msg);
-      case "unsubscribe_checkout_diff_request":
-        this.checkoutSession.handleUnsubscribeDiffRequest(msg);
-        return undefined;
-      case "checkout_switch_branch_request":
-        return this.checkoutSession.handleCheckoutSwitchBranchRequest(msg);
-      case "checkout.rename_branch.request":
-        return this.checkoutSession.handleCheckoutRenameBranchRequest(msg);
-      case "checkout_commit_request":
-        return this.checkoutSession.handleCheckoutCommitRequest(msg);
-      case "checkout_merge_request":
-        return this.checkoutSession.handleCheckoutMergeRequest(msg);
-      case "checkout_merge_from_base_request":
-        return this.checkoutSession.handleCheckoutMergeFromBaseRequest(msg);
-      case "checkout_pull_request":
-        return this.checkoutSession.handleCheckoutPullRequest(msg);
-      case "checkout_push_request":
-        return this.checkoutSession.handleCheckoutPushRequest(msg);
-      case "checkout.refresh.request":
-        return this.checkoutSession.handleRefreshRequest(msg);
-      case "checkout_pr_create_request":
-        return this.checkoutSession.handleCheckoutPrCreateRequest(msg);
-      case "checkout_pr_merge_request":
-        return this.checkoutSession.handleCheckoutPrMergeRequest(msg);
-      case "checkout.github.set_auto_merge.request":
-        return this.checkoutSession.handleCheckoutGithubSetAutoMergeRequest(msg);
-      case "checkout.github.get_check_details.request":
-        return this.checkoutSession.handleCheckoutGithubGetCheckDetailsRequest(msg);
-      case "checkout_pr_status_request":
-        return this.checkoutSession.handleCheckoutPrStatusRequest(msg);
-      case "pull_request_timeline_request":
-        return this.checkoutSession.handlePullRequestTimelineRequest(msg);
-      case "github_search_request":
-        return this.checkoutSession.handleGitHubSearchRequest(msg);
-      case "stash_save_request":
-        return this.checkoutSession.handleStashSaveRequest(msg);
-      case "stash_pop_request":
-        return this.checkoutSession.handleStashPopRequest(msg);
-      case "stash_list_request":
-        return this.checkoutSession.handleStashListRequest(msg);
-      default:
-        return undefined;
-    }
-  }
-
-  private dispatchWorkspaceAndProjectMessage(
-    msg: SessionInboundMessage,
-  ): Promise<void> | undefined {
-    switch (msg.type) {
-      case "fetch_workspaces_request":
-        return this.handleFetchWorkspacesRequest(msg);
-      case "thoth_worktree_list_request":
-        return this.handleThothWorktreeListRequest(msg);
-      case "thoth_worktree_archive_request":
-        return this.handleThothWorktreeArchiveRequest(msg);
-      case "create_thoth_worktree_request":
-        return this.handleCreateThothWorktreeRequest(msg);
-      case "workspace_setup_status_request":
-        return this.handleWorkspaceSetupStatusRequest(msg);
-      // COMPAT(desktopEditorBridge): added in v0.1.88, remove after 2026-12-03 once old clients no longer call daemon editor RPCs.
-      case "list_available_editors_request":
-        return this.handleLegacyListAvailableEditorsRequest(msg);
-      case "open_in_editor_request":
-        return this.handleLegacyOpenInEditorRequest(msg);
-      case "open_project_request":
-        return this.handleOpenProjectRequest(msg);
-      case "project.add.request":
-        return this.handleProjectAddRequest(msg);
-      case "archive_workspace_request":
-        return this.handleArchiveWorkspaceRequest(msg);
-      case "project.remove.request":
-        return this.handleProjectRemoveRequest(msg);
-      case "workspace.create.request":
-        return this.handleWorkspaceCreateRequest(msg);
-      case "workspace.clear_attention.request":
-        return this.handleWorkspaceClearAttentionRequest(msg);
-      case "workspace.title.set.request":
-        return this.handleWorkspaceTitleSetRequest(msg.workspaceId, msg.title, msg.requestId);
-      case "file_explorer_request":
-        return this.workspaceFilesSession.handleFileExplorerRequest(msg);
-      case "project_icon_request":
-        return this.workspaceFilesSession.handleProjectIconRequest(msg);
-      case "file_download_token_request":
-        return this.workspaceFilesSession.handleFileDownloadTokenRequest(msg);
-      case "file.upload.request":
-        this.workspaceFilesSession.handleFileUploadRequest(msg);
-        return undefined;
-      default:
-        return undefined;
-    }
-  }
-
-  private dispatchProviderMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    switch (msg.type) {
-      case "list_provider_models_request":
-        return this.providerCatalogSession.handleListProviderModelsRequest(msg);
-      case "list_provider_modes_request":
-        return this.providerCatalogSession.handleListProviderModesRequest(msg);
-      case "list_provider_features_request":
-        return this.providerCatalogSession.handleListProviderFeaturesRequest(msg);
-      case "list_available_providers_request":
-        return this.providerCatalogSession.handleListAvailableProvidersRequest(msg);
-      case "get_providers_snapshot_request":
-        return this.providerCatalogSession.handleGetProvidersSnapshotRequest(msg);
-      case "refresh_providers_snapshot_request":
-        return this.providerCatalogSession.handleRefreshProvidersSnapshotRequest(msg);
-      case "provider_diagnostic_request":
-        return this.providerCatalogSession.handleProviderDiagnosticRequest(msg);
-      case "provider.usage.list.request":
-        return this.providerCatalogSession.handleProviderUsageListRequest(msg);
-      default:
-        return undefined;
-    }
-  }
-
-  private dispatchTerminalMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    if (msg.type === "start_workspace_script_request") {
-      return this.handleStartWorkspaceScriptRequest(msg);
-    }
-    return this.terminalController.dispatch(msg);
-  }
-
-  // eslint-disable-next-line complexity
-  private dispatchChatScheduleMessage(msg: SessionInboundMessage): Promise<void> | undefined {
-    switch (msg.type) {
-      case "chat/create":
-        return this.chatScheduleSession.handleChatCreateRequest(msg);
-      case "chat/list":
-        return this.chatScheduleSession.handleChatListRequest(msg);
-      case "chat/inspect":
-        return this.chatScheduleSession.handleChatInspectRequest(msg);
-      case "chat/delete":
-        return this.chatScheduleSession.handleChatDeleteRequest(msg);
-      case "chat/post":
-        return this.chatScheduleSession.handleChatPostRequest(msg);
-      case "chat/read":
-        return this.chatScheduleSession.handleChatReadRequest(msg);
-      case "chat/wait":
-        return this.chatScheduleSession.handleChatWaitRequest(msg);
-      case "schedule/create":
-        return this.chatScheduleSession.handleScheduleCreateRequest(msg);
-      case "schedule/list":
-        return this.chatScheduleSession.handleScheduleListRequest(msg);
-      case "schedule/inspect":
-        return this.chatScheduleSession.handleScheduleInspectRequest(msg);
-      case "schedule/logs":
-        return this.chatScheduleSession.handleScheduleLogsRequest(msg);
-      case "schedule/pause":
-        return this.chatScheduleSession.handleSchedulePauseRequest(msg);
-      case "schedule/resume":
-        return this.chatScheduleSession.handleScheduleResumeRequest(msg);
-      case "schedule/delete":
-        return this.chatScheduleSession.handleScheduleDeleteRequest(msg);
-      case "schedule/run-once":
-        return this.chatScheduleSession.handleScheduleRunOnceRequest(msg);
-      case "schedule/update":
-        return this.chatScheduleSession.handleScheduleUpdateRequest(msg);
-      default:
-        return undefined;
-    }
-  }
-
-  private async dispatchMiscMessage(msg: SessionInboundMessage): Promise<void> {
-    switch (msg.type) {
-      case "list_commands_request":
-        await this.handleListCommandsRequest(msg);
-        return;
-      case "register_push_token":
-        this.handleRegisterPushToken(msg.token);
-        return;
-    }
   }
 
   public resetPeakInflight(): void {

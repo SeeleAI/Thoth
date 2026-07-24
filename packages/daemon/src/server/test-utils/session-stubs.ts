@@ -15,6 +15,7 @@ import type {
 } from "../agent/provider-snapshot-manager.js";
 import { ProviderSnapshotManager } from "../agent/provider-snapshot-manager.js";
 import { Session, type SessionOptions } from "../session.js";
+import { ToolGateway, type ToolResultSink } from "../workspace-authority/tool-gateway.js";
 import type { SessionOutboundMessage } from "@thoth/protocol/messages";
 import { asInternals, createStub } from "./class-mocks.js";
 
@@ -103,16 +104,30 @@ export function asWorkspaceScriptRuntimeStore(stub: {
   return createStub<SessionOptions["scriptRuntimeStore"]>(stub);
 }
 
+export function createTestToolGateway(): ToolGateway {
+  return new ToolGateway(
+    createStub<ToolResultSink>({
+      submitPlanExec: () => false,
+      submitReviewAssessment: () => null,
+      submitReviewVerdict: () => false,
+      reportBlocked: () => false,
+    }),
+  );
+}
+
 export function createSessionAuthorityStubs(): Pick<
   SessionOptions,
   "workspaceAuthorityManager" | "workspaceTaskCoordinator"
 > {
+  const toolGateway = createTestToolGateway();
   return {
     workspaceAuthorityManager: createStub<SessionOptions["workspaceAuthorityManager"]>({
       subscribeForeground: () => () => {},
       subscribe: () => () => {},
     }),
-    workspaceTaskCoordinator: createStub<SessionOptions["workspaceTaskCoordinator"]>({}),
+    workspaceTaskCoordinator: createStub<SessionOptions["workspaceTaskCoordinator"]>({
+      toolGateway,
+    }),
   };
 }
 

@@ -103,7 +103,88 @@ if (stage.stage >= 2) {
   requireOnlyToolGatewayConstruction();
 }
 
-if (stage.stage >= 3) requirePath("packages/protocol/src/rpc-registry.ts");
+if (stage.stage >= 3) {
+  requirePath("packages/protocol/src/rpc-registry.ts");
+  requirePath("packages/protocol/src/rpc-registry.test.ts");
+  forbidPath("packages/protocol/src/rpc-registry-core.ts");
+  requireText(
+    "packages/protocol/src/messages.ts",
+    /export const rpcRegistry = defineRpcRegistry/,
+    "Protocol RPC Registry declaration",
+  );
+  requireText(
+    "packages/protocol/src/messages.ts",
+    /SessionInboundMessageSchema = createRpcMessageUnion/,
+    "Registry-derived inbound union",
+  );
+  requireText(
+    "packages/protocol/src/messages.ts",
+    /SessionOutboundMessageSchema = createRpcMessageUnion/,
+    "Registry-derived outbound union",
+  );
+  forbidText(
+    "packages/protocol/src/messages.ts",
+    /Session(Inbound|Outbound)MessageSchema\s*=\s*z\.discriminatedUnion/,
+    "hand-written Session message union",
+  );
+  requireText(
+    "packages/client/src/daemon-client.ts",
+    /const clientRpcBindings =/,
+    "derived Client RPC bindings",
+  );
+  requireText(
+    "packages/client/src/daemon-client.ts",
+    /const RPC_INVOKE = Symbol\("rpc\.invoke"\)/,
+    "single Client RPC broker",
+  );
+  forbidText(
+    "packages/client/src/daemon-client.ts",
+    /\b(sendCorrelatedRequest|sendCorrelatedSessionRequest|sendNamespacedCorrelatedSessionRequest)\b/,
+    "legacy Client correlated-request helper",
+  );
+  forbidText(
+    "packages/client/src/daemon-client.ts",
+    /responseType:\s*["']/,
+    "hand-written Client response type",
+  );
+  requireText(
+    "packages/daemon/src/server/session.ts",
+    /private createRpcHandlers\(\): SessionRpcHandlers/,
+    "typed Daemon RPC handler table",
+  );
+  requireText(
+    "packages/daemon/src/server/session.ts",
+    /rpcRegistry\.operationForRequestType\(msg\.type\)/,
+    "Registry-driven Daemon dispatch",
+  );
+  forbidText(
+    "packages/daemon/src/server/session.ts",
+    /switch\s*\(\s*msg\.type\s*\)/,
+    "hand-written Daemon request switch",
+  );
+  forbidText(
+    "packages/daemon/src/server/session.ts",
+    /\bdispatch(Control|AgentRewind|AgentRelationship|AgentTimeline|AgentLifecycle|AgentConfig|TaskAuthority|Checkout|WorkspaceAndProject|Provider|Terminal|ChatSchedule|Misc)Message\b/,
+    "legacy grouped Daemon dispatch",
+  );
+  requireText(
+    "packages/protocol/src/rpc-registry.test.ts",
+    /toHaveLength\(131\)/,
+    "131 inbound RPC coverage assertion",
+  );
+  requireText(
+    "packages/protocol/src/rpc-registry.test.ts",
+    /toHaveLength\(139\)/,
+    "139 outbound RPC/event coverage assertion",
+  );
+  for (const binaryType of ["file_begin", "file_chunk", "file_end", "terminal_frame"]) {
+    requireText(
+      "packages/protocol/src/rpc-registry.test.ts",
+      new RegExp(`"${binaryType}"`),
+      `${binaryType} binary-codec isolation assertion`,
+    );
+  }
+}
 
 if (stage.stage >= 4) {
   requirePath("packages/app/src/stores/authority-projection-store.ts");
@@ -140,6 +221,13 @@ function requirePath(path) {
 
 function forbidPath(path) {
   if (existsSync(resolve(repoRoot, path))) failures.push(`Legacy path still exists: ${path}`);
+}
+
+function requireText(path, pattern, label) {
+  const absolutePath = resolve(repoRoot, path);
+  if (!existsSync(absolutePath) || !pattern.test(readFileSync(absolutePath, "utf8"))) {
+    failures.push(`Missing ${label} in ${path}`);
+  }
 }
 
 function forbidText(root, pattern, label) {
@@ -197,6 +285,8 @@ function requireOnlyToolGatewayConstruction() {
         "!*.test.ts",
         "--glob",
         "!*.e2e.test.ts",
+        "--glob",
+        "!**/test-utils/**",
         "new ToolGateway",
         "packages/daemon/src/server",
       ],

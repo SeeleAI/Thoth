@@ -487,8 +487,8 @@ Atomic sequence:
 1. `NTH-TD-031` `[verified]`: freeze source, behavior, visual, storage and performance baselines plus the shared 300-second gate.
 2. `NTH-TD-032` `[verified]`: pure Core, Repository/UoW and lossless SQLite authority cutover.
 3. `NTH-TD-033` `[verified]`: direct capability HarnessAdapter, ExecutionService and ToolGateway cutover.
-4. `NTH-TD-034` `[doing]`: single Protocol RPC Registry and derived Client/Daemon dispatch.
-5. `NTH-TD-035`: App authority projection, query state and UI preference separation.
+4. `NTH-TD-034` `[verified]`: single Protocol RPC Registry and derived Client/Daemon dispatch.
+5. `NTH-TD-035` `[doing]`: App authority projection, query state and UI preference separation.
 6. `NTH-TD-036`: shared Timeline/View Registry, responsive composition and real lazy UI boundaries.
 7. `NTH-TD-037`: VcsRepository, VcsApplicationService and VcsActionRegistry convergence.
 8. `NTH-TD-038`: lazy composition root, ServiceSupervisor and on-demand shard/process lifecycle.

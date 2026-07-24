@@ -38,6 +38,7 @@ import {
   asWorkspaceGitService,
   asDaemonConfigStore,
   createProviderSnapshotManagerStub,
+  createTestToolGateway,
   createSessionWithAuthority,
 } from "./test-utils/session-stubs.js";
 import { isPlatform } from "../test-utils/platform.js";
@@ -367,6 +368,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
   const workspaceTaskCoordinator =
     options.workspaceTaskCoordinator ??
     new WorkspaceTaskCoordinator(workspaceAuthorityManager, logger);
+  workspaceTaskCoordinator.setToolGateway(createTestToolGateway());
   sessionAuthorityManagers.push(workspaceAuthorityManager);
   const github = options.github ?? {
     invalidate: vi.fn(),

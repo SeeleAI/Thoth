@@ -5,7 +5,6 @@ import { AGENT_LIFECYCLE_STATUSES } from "./agent-lifecycle.js";
 import { MAX_EXPLICIT_AGENT_TITLE_CHARS } from "@thoth/protocol/agent-title-limits";
 import { AgentProviderSchema } from "@thoth/protocol/provider-manifest";
 import { normalizeAgentModelDefinition, TOOL_CALL_ICON_NAMES } from "./agent-types.js";
-import { TaskContextReferenceSchema, TaskProjectionSchema } from "./task-authority.js";
 import {
   AgentProviderControlSchema,
   ProviderPlanCapabilitySchema,
@@ -35,6 +34,8 @@ import {
   TaskGetResponseSchema,
   TaskListRequestSchema,
   TaskListResponseSchema,
+  TaskContextReferenceSchema,
+  TaskProjectionSchema,
   WorkspaceAuthorityUpdateSchema,
 } from "./task-authority.js";
 import {
@@ -42,11 +43,6 @@ import {
   ThothRuntimeLoopStrengthSchema,
   ThothRuntimeModeSchema,
 } from "./thoth-runtime-contract.js";
-import {
-  ThothClarifyCardModelSchema,
-  ThothApprovalGoalCardModelSchema,
-  ThothTaskCardModelSchema,
-} from "./thoth/rpc-schemas.js";
 import {
   ChatCreateRequestSchema,
   ChatListRequestSchema,
@@ -89,6 +85,9 @@ import {
   AgentThothStateResponseSchema,
   AgentThothCardAnswerResponseSchema,
   AgentThothStateUpdateSchema,
+  ThothClarifyCardModelSchema,
+  ThothApprovalGoalCardModelSchema,
+  ThothTaskCardModelSchema,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import {
   ThothConfigRawSchema,
@@ -2128,142 +2127,6 @@ export const CaptureTerminalRequestSchema = z.object({
   requestId: z.string(),
 });
 
-export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
-  FetchAgentsRequestMessageSchema,
-  FetchAgentHistoryRequestMessageSchema,
-  FetchRecentProviderSessionsRequestMessageSchema,
-  FetchWorkspacesRequestMessageSchema,
-  FetchAgentRequestMessageSchema,
-  DeleteAgentRequestMessageSchema,
-  ArchiveAgentRequestMessageSchema,
-  CloseItemsRequestMessageSchema,
-  UpdateAgentRequestMessageSchema,
-  ProjectRenameRequestSchema,
-  ProjectRemoveRequestSchema,
-  WorkspaceTitleSetRequestSchema,
-  SendAgentMessageRequestSchema,
-  WaitForFinishRequestSchema,
-  DaemonGetStatusRequestSchema,
-  DaemonGetPairingOfferRequestSchema,
-  DaemonIssueRelayDeviceTokenRequestSchema,
-  DiagnosticsRequestSchema,
-  GetDaemonConfigRequestMessageSchema,
-  SetDaemonConfigRequestMessageSchema,
-  ReadProjectConfigRequestMessageSchema,
-  WriteProjectConfigRequestMessageSchema,
-  CreateAgentRequestMessageSchema,
-  ListProviderModelsRequestMessageSchema,
-  ListProviderModesRequestMessageSchema,
-  ListProviderFeaturesRequestMessageSchema,
-  ListAvailableProvidersRequestMessageSchema,
-  GetProvidersSnapshotRequestMessageSchema,
-  RefreshProvidersSnapshotRequestMessageSchema,
-  ProviderDiagnosticRequestMessageSchema,
-  ProviderUsageListRequestMessageSchema,
-  ResumeAgentRequestMessageSchema,
-  ImportAgentRequestMessageSchema,
-  RefreshAgentRequestMessageSchema,
-  CancelAgentRequestMessageSchema,
-  ShutdownServerRequestMessageSchema,
-  RestartServerRequestMessageSchema,
-  DaemonUpdateRequestMessageSchema,
-  FetchAgentTimelineRequestMessageSchema,
-  AgentForkContextRequestMessageSchema,
-  SetAgentModeRequestMessageSchema,
-  AgentProviderControlGetRequestMessageSchema,
-  AgentProviderControlUpdateRequestMessageSchema,
-  SetAgentModelRequestMessageSchema,
-  SetAgentThinkingRequestMessageSchema,
-  SetAgentFeatureRequestMessageSchema,
-  AgentDetachRequestMessageSchema,
-  AgentRewindRequestMessageSchema,
-  AgentPermissionResponseMessageSchema,
-  CheckoutStatusRequestSchema,
-  SubscribeCheckoutDiffRequestSchema,
-  UnsubscribeCheckoutDiffRequestSchema,
-  CheckoutCommitRequestSchema,
-  CheckoutMergeRequestSchema,
-  CheckoutMergeFromBaseRequestSchema,
-  CheckoutPullRequestSchema,
-  CheckoutPushRequestSchema,
-  CheckoutRefreshRequestSchema,
-  CheckoutPrCreateRequestSchema,
-  CheckoutPrMergeRequestSchema,
-  CheckoutGithubSetAutoMergeRequestSchema,
-  CheckoutGithubGetCheckDetailsRequestSchema,
-  CheckoutPrStatusRequestSchema,
-  PullRequestTimelineRequestSchema,
-  CheckoutSwitchBranchRequestSchema,
-  CheckoutRenameBranchRequestSchema,
-  StashSaveRequestSchema,
-  StashPopRequestSchema,
-  StashListRequestSchema,
-  ValidateBranchRequestSchema,
-  BranchSuggestionsRequestSchema,
-  GitHubSearchRequestSchema,
-  DirectorySuggestionsRequestSchema,
-  ThothWorktreeListRequestSchema,
-  ThothWorktreeArchiveRequestSchema,
-  CreateThothWorktreeRequestSchema,
-  WorkspaceSetupStatusRequestSchema,
-  LegacyListAvailableEditorsRequestSchema,
-  LegacyOpenInEditorRequestSchema,
-  OpenProjectRequestSchema,
-  ProjectAddRequestSchema,
-  ArchiveWorkspaceRequestSchema,
-  WorkspaceCreateRequestSchema,
-  WorkspaceClearAttentionRequestSchema,
-  FileExplorerRequestSchema,
-  ProjectIconRequestSchema,
-  FileDownloadTokenRequestSchema,
-  FileUploadRequestSchema,
-  ClearAgentAttentionMessageSchema,
-  ClientHeartbeatMessageSchema,
-  PingMessageSchema,
-  ListCommandsRequestSchema,
-  RegisterPushTokenMessageSchema,
-  ListTerminalsRequestSchema,
-  SubscribeTerminalsRequestSchema,
-  UnsubscribeTerminalsRequestSchema,
-  CreateTerminalRequestSchema,
-  RenameTerminalRequestSchema,
-  StartWorkspaceScriptRequestSchema,
-  SubscribeTerminalRequestSchema,
-  UnsubscribeTerminalRequestSchema,
-  TerminalInputSchema,
-  KillTerminalRequestSchema,
-  CaptureTerminalRequestSchema,
-  ChatCreateRequestSchema,
-  ChatListRequestSchema,
-  ChatInspectRequestSchema,
-  ChatDeleteRequestSchema,
-  ChatPostRequestSchema,
-  ChatReadRequestSchema,
-  ChatWaitRequestSchema,
-  ScheduleCreateRequestSchema,
-  ScheduleListRequestSchema,
-  ScheduleInspectRequestSchema,
-  ScheduleLogsRequestSchema,
-  SchedulePauseRequestSchema,
-  ScheduleResumeRequestSchema,
-  ScheduleDeleteRequestSchema,
-  ScheduleRunOnceRequestSchema,
-  ScheduleUpdateRequestSchema,
-  AgentThothStateRequestSchema,
-  AgentThothCardAnswerRequestSchema,
-  TaskListRequestSchema,
-  TaskGetRequestSchema,
-  TaskCommandRequestSchema,
-  TaskContextSearchRequestSchema,
-  TaskContextGetRequestSchema,
-  TaskDecisionAnswerRequestSchema,
-  ExecutionTimelineRequestSchema,
-  ExecutionApprovalResolveRequestSchema,
-  AgentTurnQueueCommandRequestSchema,
-]);
-
-export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
-
 // ============================================================================
 // Session Outbound Messages (Session emits these)
 // ============================================================================
@@ -4190,149 +4053,6 @@ export const DaemonUpdateProgressMessageSchema = z.object({
 
 export type DaemonUpdateProgressMessage = z.infer<typeof DaemonUpdateProgressMessageSchema>;
 
-export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
-  ActivityLogMessageSchema,
-  AssistantChunkMessageSchema,
-  StatusMessageSchema,
-  PongMessageSchema,
-  RpcErrorMessageSchema,
-  ArtifactMessageSchema,
-  AgentUpdateMessageSchema,
-  WorkspaceUpdateMessageSchema,
-  ScriptStatusUpdateMessageSchema,
-  WorkspaceSetupProgressMessageSchema,
-  WorkspaceSetupStatusResponseMessageSchema,
-  AgentStreamMessageSchema,
-  AgentStatusMessageSchema,
-  FetchAgentsResponseMessageSchema,
-  FetchAgentHistoryResponseMessageSchema,
-  FetchRecentProviderSessionsResponseMessageSchema,
-  FetchWorkspacesResponseMessageSchema,
-  ProjectAddResponseSchema,
-  OpenProjectResponseMessageSchema,
-  StartWorkspaceScriptResponseMessageSchema,
-  LegacyListAvailableEditorsResponseMessageSchema,
-  LegacyOpenInEditorResponseMessageSchema,
-  ArchiveWorkspaceResponseMessageSchema,
-  FetchAgentResponseMessageSchema,
-  FetchAgentTimelineResponseMessageSchema,
-  AgentForkContextResponseMessageSchema,
-  CancelAgentResponseMessageSchema,
-  ClearAgentAttentionResponseMessageSchema,
-  WorkspaceCreateResponseSchema,
-  WorkspaceClearAttentionResponseSchema,
-  SendAgentMessageResponseMessageSchema,
-  DaemonGetStatusResponseSchema,
-  DaemonGetPairingOfferResponseSchema,
-  DaemonIssueRelayDeviceTokenResponseSchema,
-  DiagnosticsResponseSchema,
-  GetDaemonConfigResponseMessageSchema,
-  SetDaemonConfigResponseMessageSchema,
-  ReadProjectConfigResponseMessageSchema,
-  WriteProjectConfigResponseMessageSchema,
-  SetAgentModeResponseMessageSchema,
-  AgentProviderControlGetResponseMessageSchema,
-  AgentProviderControlUpdateResponseMessageSchema,
-  SetAgentModelResponseMessageSchema,
-  SetAgentThinkingResponseMessageSchema,
-  SetAgentFeatureResponseMessageSchema,
-  AgentDetachResponseMessageSchema,
-  AgentRewindResponseMessageSchema,
-  UpdateAgentResponseMessageSchema,
-  ProjectRenameResponseSchema,
-  ProjectRemoveResponseSchema,
-  WorkspaceTitleSetResponseSchema,
-  WaitForFinishResponseMessageSchema,
-  AgentPermissionRequestMessageSchema,
-  AgentPermissionResolvedMessageSchema,
-  AgentDeletedMessageSchema,
-  AgentArchivedMessageSchema,
-  CloseItemsResponseSchema,
-  CheckoutStatusResponseSchema,
-  CheckoutStatusUpdateSchema,
-  SubscribeCheckoutDiffResponseSchema,
-  CheckoutDiffUpdateSchema,
-  CheckoutCommitResponseSchema,
-  CheckoutMergeResponseSchema,
-  CheckoutMergeFromBaseResponseSchema,
-  CheckoutPullResponseSchema,
-  CheckoutPushResponseSchema,
-  CheckoutRefreshResponseSchema,
-  CheckoutPrCreateResponseSchema,
-  CheckoutPrMergeResponseSchema,
-  CheckoutGithubSetAutoMergeResponseSchema,
-  CheckoutGithubGetCheckDetailsResponseSchema,
-  CheckoutPrStatusResponseSchema,
-  PullRequestTimelineResponseSchema,
-  CheckoutSwitchBranchResponseSchema,
-  CheckoutRenameBranchResponseSchema,
-  StashSaveResponseSchema,
-  StashPopResponseSchema,
-  StashListResponseSchema,
-  ValidateBranchResponseSchema,
-  BranchSuggestionsResponseSchema,
-  GitHubSearchResponseSchema,
-  DirectorySuggestionsResponseSchema,
-  ThothWorktreeListResponseSchema,
-  ThothWorktreeArchiveResponseSchema,
-  CreateThothWorktreeResponseSchema,
-  FileExplorerResponseSchema,
-  ProjectIconResponseSchema,
-  FileDownloadTokenResponseSchema,
-  FileUploadResponseSchema,
-  ListProviderModelsResponseMessageSchema,
-  ListProviderModesResponseMessageSchema,
-  ListProviderFeaturesResponseMessageSchema,
-  ListAvailableProvidersResponseSchema,
-  GetProvidersSnapshotResponseMessageSchema,
-  ProvidersSnapshotUpdateMessageSchema,
-  RefreshProvidersSnapshotResponseMessageSchema,
-  ProviderDiagnosticResponseMessageSchema,
-  ProviderUsageListResponseMessageSchema,
-  ListCommandsResponseSchema,
-  ListTerminalsResponseSchema,
-  TerminalsChangedSchema,
-  CreateTerminalResponseSchema,
-  RenameTerminalResponseSchema,
-  SubscribeTerminalResponseSchema,
-  KillTerminalResponseSchema,
-  CaptureTerminalResponseSchema,
-  TerminalStreamExitSchema,
-  TerminalAttentionRequiredSchema,
-  ChatCreateResponseSchema,
-  ChatListResponseSchema,
-  ChatInspectResponseSchema,
-  ChatDeleteResponseSchema,
-  ChatPostResponseSchema,
-  ChatReadResponseSchema,
-  ChatWaitResponseSchema,
-  ScheduleCreateResponseSchema,
-  ScheduleListResponseSchema,
-  ScheduleInspectResponseSchema,
-  ScheduleLogsResponseSchema,
-  SchedulePauseResponseSchema,
-  ScheduleResumeResponseSchema,
-  ScheduleDeleteResponseSchema,
-  ScheduleRunOnceResponseSchema,
-  ScheduleUpdateResponseSchema,
-  AgentThothStateResponseSchema,
-  AgentThothCardAnswerResponseSchema,
-  AgentThothStateUpdateSchema,
-  TaskListResponseSchema,
-  TaskGetResponseSchema,
-  TaskCommandResponseSchema,
-  TaskContextSearchResponseSchema,
-  TaskContextGetResponseSchema,
-  TaskDecisionAnswerResponseSchema,
-  ExecutionTimelineResponseSchema,
-  ExecutionApprovalResolveResponseSchema,
-  AgentTurnQueueCommandResponseSchema,
-  WorkspaceAuthorityUpdateSchema,
-  DaemonUpdateProgressMessageSchema,
-  DaemonUpdateResponseSchema,
-]);
-
-export type SessionOutboundMessage = z.infer<typeof SessionOutboundMessageSchema>;
 export type ThothTurnSnapshot = z.infer<typeof ThothTurnSnapshotSchema>;
 export type ThothTurnAck = z.infer<typeof ThothTurnAckSchema>;
 
@@ -4655,6 +4375,441 @@ export type KillTerminalResponse = z.infer<typeof KillTerminalResponseSchema>;
 export type CaptureTerminalRequest = z.infer<typeof CaptureTerminalRequestSchema>;
 export type CaptureTerminalResponse = z.infer<typeof CaptureTerminalResponseSchema>;
 export type TerminalStreamExit = z.infer<typeof TerminalStreamExitSchema>;
+
+type RpcSchema = z.ZodType;
+type RpcOperationDescriptor<
+  Input extends RpcSchema = RpcSchema,
+  Output extends RpcSchema | null = RpcSchema | null,
+> = Readonly<{
+  kind: "unary" | "subscription";
+  input: Input;
+  output: Output;
+}>;
+type RpcServerEventDescriptor<Output extends RpcSchema = RpcSchema> = Readonly<{
+  kind: "serverEvent";
+  output: Output;
+}>;
+type RpcDescriptor = RpcOperationDescriptor | RpcServerEventDescriptor;
+type RpcMetadata = Readonly<{
+  operation: string;
+  handlerKey: string | null;
+  requestType: string | null;
+  responseType: string | null;
+  error: RpcSchema;
+  version: number;
+  permission: "session";
+}>;
+type RpcEntry<Descriptor extends RpcDescriptor = RpcDescriptor> = Descriptor & RpcMetadata;
+type RpcOperationName<Entries extends Record<string, RpcDescriptor>> = Extract<
+  {
+    [Name in keyof Entries]: Entries[Name] extends RpcOperationDescriptor ? Name : never;
+  }[keyof Entries],
+  string
+>;
+type RpcOutput<Descriptor> = Descriptor extends { output: infer Output extends RpcSchema }
+  ? z.output<Output>
+  : never;
+
+function unary<const Input extends RpcSchema, const Output extends RpcSchema | null>(
+  input: Input,
+  output: Output,
+): RpcOperationDescriptor<Input, Output> {
+  return { kind: "unary", input, output };
+}
+
+function subscription<const Input extends RpcSchema, const Output extends RpcSchema | null>(
+  input: Input,
+  output: Output,
+): RpcOperationDescriptor<Input, Output> {
+  return { kind: "subscription", input, output };
+}
+
+function serverEvent<const Output extends RpcSchema>(
+  output: Output,
+): RpcServerEventDescriptor<Output> {
+  return { kind: "serverEvent", output };
+}
+
+function defineRpcRegistry<
+  const Entries extends Record<string, RpcDescriptor>,
+  const ErrorSchema extends RpcSchema,
+>(options: { version: number; error: ErrorSchema; entries: Entries }) {
+  const byRequestType = new Map<string, RpcEntry<RpcOperationDescriptor>>();
+  const inputSchemas: RpcSchema[] = [];
+  const outputSchemas = new Map<string, RpcSchema>();
+  const entries: Record<string, RpcEntry> = {};
+
+  for (const [operation, descriptor] of Object.entries(options.entries)) {
+    const input = descriptor.kind === "serverEvent" ? null : descriptor.input;
+    const output = descriptor.output;
+    const requestType = input ? rpcMessageType(input) : null;
+    const responseType = output ? rpcMessageType(output) : null;
+    const entry = Object.freeze({
+      ...descriptor,
+      operation,
+      handlerKey: input ? operation : null,
+      requestType,
+      responseType,
+      error: options.error,
+      version: options.version,
+      permission: "session" as const,
+    }) as RpcEntry;
+
+    entries[operation] = entry;
+    if (input && requestType) {
+      if (byRequestType.has(requestType)) {
+        throw new Error(`Duplicate RPC request type: ${requestType}`);
+      }
+      byRequestType.set(requestType, entry as RpcEntry<RpcOperationDescriptor>);
+      inputSchemas.push(input);
+    }
+    if (output && responseType) outputSchemas.set(responseType, output);
+  }
+
+  outputSchemas.set(rpcMessageType(options.error), options.error);
+  return Object.freeze({
+    version: options.version,
+    error: options.error,
+    entries: Object.freeze(entries) as {
+      readonly [Name in keyof Entries]: RpcEntry<Entries[Name]>;
+    },
+    inputSchemas: Object.freeze(inputSchemas),
+    outputSchemas: Object.freeze([...outputSchemas.values()]),
+    operationForRequestType: (requestType: string) => byRequestType.get(requestType),
+  });
+}
+
+function createRpcMessageUnion<Output>(schemas: readonly RpcSchema[]): z.ZodType<Output> {
+  if (schemas.length < 2 || schemas.some((schema) => !(schema instanceof z.ZodObject))) {
+    throw new Error("RPC message unions require at least two object schemas");
+  }
+  return z.discriminatedUnion(
+    "type",
+    schemas as [z.ZodObject, z.ZodObject, ...z.ZodObject[]],
+  ) as unknown as z.ZodType<Output>;
+}
+
+function rpcMessageType(schema: RpcSchema): string {
+  if (!(schema instanceof z.ZodObject)) {
+    throw new Error("RPC message schemas must be Zod objects");
+  }
+  const type = schema.shape.type;
+  if (!(type instanceof z.ZodLiteral) || type.values.size !== 1) {
+    throw new Error("RPC message schemas must have one literal type");
+  }
+  const [value] = type.values;
+  if (typeof value !== "string") throw new Error("RPC message type must be a string");
+  return value;
+}
+
+export const RPC_PROTOCOL_VERSION = 1;
+
+export const rpcRegistry = defineRpcRegistry({
+  version: RPC_PROTOCOL_VERSION,
+  error: RpcErrorMessageSchema,
+  entries: {
+    fetchAgents: subscription(FetchAgentsRequestMessageSchema, FetchAgentsResponseMessageSchema),
+    fetchAgentHistory: unary(
+      FetchAgentHistoryRequestMessageSchema,
+      FetchAgentHistoryResponseMessageSchema,
+    ),
+    fetchRecentProviderSessions: unary(
+      FetchRecentProviderSessionsRequestMessageSchema,
+      FetchRecentProviderSessionsResponseMessageSchema,
+    ),
+    fetchWorkspaces: subscription(
+      FetchWorkspacesRequestMessageSchema,
+      FetchWorkspacesResponseMessageSchema,
+    ),
+    fetchAgent: unary(FetchAgentRequestMessageSchema, FetchAgentResponseMessageSchema),
+    deleteAgent: unary(DeleteAgentRequestMessageSchema, AgentDeletedMessageSchema),
+    archiveAgent: unary(ArchiveAgentRequestMessageSchema, AgentArchivedMessageSchema),
+    closeItems: unary(CloseItemsRequestMessageSchema, CloseItemsResponseSchema),
+    updateAgent: unary(UpdateAgentRequestMessageSchema, UpdateAgentResponseMessageSchema),
+    renameProject: unary(ProjectRenameRequestSchema, ProjectRenameResponseSchema),
+    removeProject: unary(ProjectRemoveRequestSchema, ProjectRemoveResponseSchema),
+    setWorkspaceTitle: unary(WorkspaceTitleSetRequestSchema, WorkspaceTitleSetResponseSchema),
+    sendAgentMessage: unary(SendAgentMessageRequestSchema, SendAgentMessageResponseMessageSchema),
+    waitForFinish: unary(WaitForFinishRequestSchema, WaitForFinishResponseMessageSchema),
+    getDaemonStatus: unary(DaemonGetStatusRequestSchema, DaemonGetStatusResponseSchema),
+    getDaemonPairingOffer: unary(
+      DaemonGetPairingOfferRequestSchema,
+      DaemonGetPairingOfferResponseSchema,
+    ),
+    issueRelayDeviceToken: unary(
+      DaemonIssueRelayDeviceTokenRequestSchema,
+      DaemonIssueRelayDeviceTokenResponseSchema,
+    ),
+    collectDiagnostics: unary(DiagnosticsRequestSchema, DiagnosticsResponseSchema),
+    getDaemonConfig: unary(
+      GetDaemonConfigRequestMessageSchema,
+      GetDaemonConfigResponseMessageSchema,
+    ),
+    patchDaemonConfig: unary(
+      SetDaemonConfigRequestMessageSchema,
+      SetDaemonConfigResponseMessageSchema,
+    ),
+    readProjectConfig: unary(
+      ReadProjectConfigRequestMessageSchema,
+      ReadProjectConfigResponseMessageSchema,
+    ),
+    writeProjectConfig: unary(
+      WriteProjectConfigRequestMessageSchema,
+      WriteProjectConfigResponseMessageSchema,
+    ),
+    createAgent: unary(CreateAgentRequestMessageSchema, StatusMessageSchema),
+    listProviderModels: unary(
+      ListProviderModelsRequestMessageSchema,
+      ListProviderModelsResponseMessageSchema,
+    ),
+    listProviderModes: unary(
+      ListProviderModesRequestMessageSchema,
+      ListProviderModesResponseMessageSchema,
+    ),
+    listProviderFeatures: unary(
+      ListProviderFeaturesRequestMessageSchema,
+      ListProviderFeaturesResponseMessageSchema,
+    ),
+    listAvailableProviders: unary(
+      ListAvailableProvidersRequestMessageSchema,
+      ListAvailableProvidersResponseSchema,
+    ),
+    getProvidersSnapshot: unary(
+      GetProvidersSnapshotRequestMessageSchema,
+      GetProvidersSnapshotResponseMessageSchema,
+    ),
+    refreshProvidersSnapshot: unary(
+      RefreshProvidersSnapshotRequestMessageSchema,
+      RefreshProvidersSnapshotResponseMessageSchema,
+    ),
+    getProviderDiagnostic: unary(
+      ProviderDiagnosticRequestMessageSchema,
+      ProviderDiagnosticResponseMessageSchema,
+    ),
+    listProviderUsage: unary(
+      ProviderUsageListRequestMessageSchema,
+      ProviderUsageListResponseMessageSchema,
+    ),
+    resumeAgent: unary(ResumeAgentRequestMessageSchema, StatusMessageSchema),
+    importAgent: unary(ImportAgentRequestMessageSchema, StatusMessageSchema),
+    refreshAgent: unary(RefreshAgentRequestMessageSchema, StatusMessageSchema),
+    cancelAgent: unary(CancelAgentRequestMessageSchema, CancelAgentResponseMessageSchema),
+    shutdownServer: unary(ShutdownServerRequestMessageSchema, StatusMessageSchema),
+    restartServer: unary(RestartServerRequestMessageSchema, StatusMessageSchema),
+    updateDaemon: unary(DaemonUpdateRequestMessageSchema, DaemonUpdateResponseSchema),
+    fetchAgentTimeline: unary(
+      FetchAgentTimelineRequestMessageSchema,
+      FetchAgentTimelineResponseMessageSchema,
+    ),
+    buildAgentForkContext: unary(
+      AgentForkContextRequestMessageSchema,
+      AgentForkContextResponseMessageSchema,
+    ),
+    setAgentMode: unary(SetAgentModeRequestMessageSchema, SetAgentModeResponseMessageSchema),
+    getAgentProviderControl: unary(
+      AgentProviderControlGetRequestMessageSchema,
+      AgentProviderControlGetResponseMessageSchema,
+    ),
+    updateAgentProviderControl: unary(
+      AgentProviderControlUpdateRequestMessageSchema,
+      AgentProviderControlUpdateResponseMessageSchema,
+    ),
+    setAgentModel: unary(SetAgentModelRequestMessageSchema, SetAgentModelResponseMessageSchema),
+    setAgentThinkingOption: unary(
+      SetAgentThinkingRequestMessageSchema,
+      SetAgentThinkingResponseMessageSchema,
+    ),
+    setAgentFeature: unary(
+      SetAgentFeatureRequestMessageSchema,
+      SetAgentFeatureResponseMessageSchema,
+    ),
+    detachAgent: unary(AgentDetachRequestMessageSchema, AgentDetachResponseMessageSchema),
+    rewindAgent: unary(AgentRewindRequestMessageSchema, AgentRewindResponseMessageSchema),
+    respondToPermission: unary(
+      AgentPermissionResponseMessageSchema,
+      AgentPermissionResolvedMessageSchema,
+    ),
+    getCheckoutStatus: unary(CheckoutStatusRequestSchema, CheckoutStatusResponseSchema),
+    subscribeCheckoutDiff: subscription(
+      SubscribeCheckoutDiffRequestSchema,
+      SubscribeCheckoutDiffResponseSchema,
+    ),
+    unsubscribeCheckoutDiff: subscription(UnsubscribeCheckoutDiffRequestSchema, null),
+    checkoutCommit: unary(CheckoutCommitRequestSchema, CheckoutCommitResponseSchema),
+    checkoutMerge: unary(CheckoutMergeRequestSchema, CheckoutMergeResponseSchema),
+    checkoutMergeFromBase: unary(
+      CheckoutMergeFromBaseRequestSchema,
+      CheckoutMergeFromBaseResponseSchema,
+    ),
+    checkoutPull: unary(CheckoutPullRequestSchema, CheckoutPullResponseSchema),
+    checkoutPush: unary(CheckoutPushRequestSchema, CheckoutPushResponseSchema),
+    checkoutRefresh: unary(CheckoutRefreshRequestSchema, CheckoutRefreshResponseSchema),
+    checkoutPrCreate: unary(CheckoutPrCreateRequestSchema, CheckoutPrCreateResponseSchema),
+    checkoutPrMerge: unary(CheckoutPrMergeRequestSchema, CheckoutPrMergeResponseSchema),
+    checkoutGithubSetAutoMerge: unary(
+      CheckoutGithubSetAutoMergeRequestSchema,
+      CheckoutGithubSetAutoMergeResponseSchema,
+    ),
+    checkoutGithubGetCheckDetails: unary(
+      CheckoutGithubGetCheckDetailsRequestSchema,
+      CheckoutGithubGetCheckDetailsResponseSchema,
+    ),
+    checkoutPrStatus: unary(CheckoutPrStatusRequestSchema, CheckoutPrStatusResponseSchema),
+    pullRequestTimeline: unary(PullRequestTimelineRequestSchema, PullRequestTimelineResponseSchema),
+    checkoutSwitchBranch: unary(
+      CheckoutSwitchBranchRequestSchema,
+      CheckoutSwitchBranchResponseSchema,
+    ),
+    renameBranch: unary(CheckoutRenameBranchRequestSchema, CheckoutRenameBranchResponseSchema),
+    stashSave: unary(StashSaveRequestSchema, StashSaveResponseSchema),
+    stashPop: unary(StashPopRequestSchema, StashPopResponseSchema),
+    stashList: unary(StashListRequestSchema, StashListResponseSchema),
+    validateBranch: unary(ValidateBranchRequestSchema, ValidateBranchResponseSchema),
+    getBranchSuggestions: unary(BranchSuggestionsRequestSchema, BranchSuggestionsResponseSchema),
+    searchGitHub: unary(GitHubSearchRequestSchema, GitHubSearchResponseSchema),
+    getDirectorySuggestions: unary(
+      DirectorySuggestionsRequestSchema,
+      DirectorySuggestionsResponseSchema,
+    ),
+    getThothWorktreeList: unary(ThothWorktreeListRequestSchema, ThothWorktreeListResponseSchema),
+    archiveThothWorktree: unary(
+      ThothWorktreeArchiveRequestSchema,
+      ThothWorktreeArchiveResponseSchema,
+    ),
+    createThothWorktree: unary(CreateThothWorktreeRequestSchema, CreateThothWorktreeResponseSchema),
+    fetchWorkspaceSetupStatus: unary(
+      WorkspaceSetupStatusRequestSchema,
+      WorkspaceSetupStatusResponseMessageSchema,
+    ),
+    listAvailableEditors: unary(
+      LegacyListAvailableEditorsRequestSchema,
+      LegacyListAvailableEditorsResponseMessageSchema,
+    ),
+    openInEditor: unary(LegacyOpenInEditorRequestSchema, LegacyOpenInEditorResponseMessageSchema),
+    openProject: unary(OpenProjectRequestSchema, OpenProjectResponseMessageSchema),
+    addProject: unary(ProjectAddRequestSchema, ProjectAddResponseSchema),
+    archiveWorkspace: unary(ArchiveWorkspaceRequestSchema, ArchiveWorkspaceResponseMessageSchema),
+    createWorkspace: unary(WorkspaceCreateRequestSchema, WorkspaceCreateResponseSchema),
+    clearWorkspaceAttention: unary(
+      WorkspaceClearAttentionRequestSchema,
+      WorkspaceClearAttentionResponseSchema,
+    ),
+    requestFileExplorer: unary(FileExplorerRequestSchema, FileExplorerResponseSchema),
+    requestProjectIcon: unary(ProjectIconRequestSchema, ProjectIconResponseSchema),
+    requestDownloadToken: unary(FileDownloadTokenRequestSchema, FileDownloadTokenResponseSchema),
+    uploadFile: unary(FileUploadRequestSchema, FileUploadResponseSchema),
+    clearAgentAttention: unary(
+      ClearAgentAttentionMessageSchema,
+      ClearAgentAttentionResponseMessageSchema,
+    ),
+    clientHeartbeat: unary(ClientHeartbeatMessageSchema, null),
+    ping: unary(PingMessageSchema, PongMessageSchema),
+    listCommands: unary(ListCommandsRequestSchema, ListCommandsResponseSchema),
+    registerPushToken: unary(RegisterPushTokenMessageSchema, null),
+    listTerminals: unary(ListTerminalsRequestSchema, ListTerminalsResponseSchema),
+    subscribeTerminals: subscription(SubscribeTerminalsRequestSchema, null),
+    unsubscribeTerminals: subscription(UnsubscribeTerminalsRequestSchema, null),
+    createTerminal: unary(CreateTerminalRequestSchema, CreateTerminalResponseSchema),
+    renameTerminal: unary(RenameTerminalRequestSchema, RenameTerminalResponseSchema),
+    startWorkspaceScript: unary(
+      StartWorkspaceScriptRequestSchema,
+      StartWorkspaceScriptResponseMessageSchema,
+    ),
+    subscribeTerminal: subscription(
+      SubscribeTerminalRequestSchema,
+      SubscribeTerminalResponseSchema,
+    ),
+    unsubscribeTerminal: subscription(UnsubscribeTerminalRequestSchema, null),
+    terminalInput: unary(TerminalInputSchema, null),
+    killTerminal: unary(KillTerminalRequestSchema, KillTerminalResponseSchema),
+    captureTerminal: unary(CaptureTerminalRequestSchema, CaptureTerminalResponseSchema),
+    createChatRoom: unary(ChatCreateRequestSchema, ChatCreateResponseSchema),
+    listChatRooms: unary(ChatListRequestSchema, ChatListResponseSchema),
+    inspectChatRoom: unary(ChatInspectRequestSchema, ChatInspectResponseSchema),
+    deleteChatRoom: unary(ChatDeleteRequestSchema, ChatDeleteResponseSchema),
+    postChatMessage: unary(ChatPostRequestSchema, ChatPostResponseSchema),
+    readChatMessages: unary(ChatReadRequestSchema, ChatReadResponseSchema),
+    waitForChatMessages: unary(ChatWaitRequestSchema, ChatWaitResponseSchema),
+    scheduleCreate: unary(ScheduleCreateRequestSchema, ScheduleCreateResponseSchema),
+    scheduleList: unary(ScheduleListRequestSchema, ScheduleListResponseSchema),
+    scheduleInspect: unary(ScheduleInspectRequestSchema, ScheduleInspectResponseSchema),
+    scheduleLogs: unary(ScheduleLogsRequestSchema, ScheduleLogsResponseSchema),
+    schedulePause: unary(SchedulePauseRequestSchema, SchedulePauseResponseSchema),
+    scheduleResume: unary(ScheduleResumeRequestSchema, ScheduleResumeResponseSchema),
+    scheduleDelete: unary(ScheduleDeleteRequestSchema, ScheduleDeleteResponseSchema),
+    scheduleRunOnce: unary(ScheduleRunOnceRequestSchema, ScheduleRunOnceResponseSchema),
+    scheduleUpdate: unary(ScheduleUpdateRequestSchema, ScheduleUpdateResponseSchema),
+    getAgentThothState: unary(AgentThothStateRequestSchema, AgentThothStateResponseSchema),
+    answerAgentThothCard: unary(
+      AgentThothCardAnswerRequestSchema,
+      AgentThothCardAnswerResponseSchema,
+    ),
+    listTasks: unary(TaskListRequestSchema, TaskListResponseSchema),
+    getTask: unary(TaskGetRequestSchema, TaskGetResponseSchema),
+    commandTask: unary(TaskCommandRequestSchema, TaskCommandResponseSchema),
+    searchTaskContext: unary(TaskContextSearchRequestSchema, TaskContextSearchResponseSchema),
+    getTaskContext: unary(TaskContextGetRequestSchema, TaskContextGetResponseSchema),
+    answerTaskDecision: unary(TaskDecisionAnswerRequestSchema, TaskDecisionAnswerResponseSchema),
+    getExecutionTimeline: unary(ExecutionTimelineRequestSchema, ExecutionTimelineResponseSchema),
+    resolveExecutionApproval: unary(
+      ExecutionApprovalResolveRequestSchema,
+      ExecutionApprovalResolveResponseSchema,
+    ),
+    commandAgentTurnQueue: unary(
+      AgentTurnQueueCommandRequestSchema,
+      AgentTurnQueueCommandResponseSchema,
+    ),
+    activityLog: serverEvent(ActivityLogMessageSchema),
+    assistantChunk: serverEvent(AssistantChunkMessageSchema),
+    serverStatus: serverEvent(StatusMessageSchema),
+    artifact: serverEvent(ArtifactMessageSchema),
+    agentUpdate: serverEvent(AgentUpdateMessageSchema),
+    workspaceUpdate: serverEvent(WorkspaceUpdateMessageSchema),
+    scriptStatusUpdate: serverEvent(ScriptStatusUpdateMessageSchema),
+    workspaceSetupProgress: serverEvent(WorkspaceSetupProgressMessageSchema),
+    agentStream: serverEvent(AgentStreamMessageSchema),
+    agentStatus: serverEvent(AgentStatusMessageSchema),
+    checkoutStatusUpdate: serverEvent(CheckoutStatusUpdateSchema),
+    checkoutDiffUpdate: serverEvent(CheckoutDiffUpdateSchema),
+    agentPermissionRequest: serverEvent(AgentPermissionRequestMessageSchema),
+    providersSnapshotUpdate: serverEvent(ProvidersSnapshotUpdateMessageSchema),
+    terminalsChanged: serverEvent(TerminalsChangedSchema),
+    terminalStreamExit: serverEvent(TerminalStreamExitSchema),
+    terminalAttentionRequired: serverEvent(TerminalAttentionRequiredSchema),
+    agentThothStateUpdate: serverEvent(AgentThothStateUpdateSchema),
+    workspaceAuthorityUpdate: serverEvent(WorkspaceAuthorityUpdateSchema),
+    daemonUpdateProgress: serverEvent(DaemonUpdateProgressMessageSchema),
+  },
+});
+
+type RpcEntries = typeof rpcRegistry.entries;
+export type ProtocolRpcOperation = RpcOperationName<RpcEntries>;
+type ProtocolRpcEntry<Operation extends ProtocolRpcOperation> = Extract<
+  RpcEntries[Operation],
+  RpcOperationDescriptor
+>;
+export type ProtocolRpcRequest<Operation extends ProtocolRpcOperation> = z.output<
+  ProtocolRpcEntry<Operation>["input"]
+>;
+export type ProtocolRpcInput<Operation extends ProtocolRpcOperation> = z.input<
+  ProtocolRpcEntry<Operation>["input"]
+>;
+export type ProtocolRpcResponse<Operation extends ProtocolRpcOperation> = RpcOutput<
+  RpcEntries[Operation]
+>;
+export type SessionInboundMessage = {
+  [Operation in ProtocolRpcOperation]: ProtocolRpcRequest<Operation>;
+}[ProtocolRpcOperation];
+export type SessionOutboundMessage =
+  | z.output<typeof RpcErrorMessageSchema>
+  | RpcOutput<RpcEntries[keyof RpcEntries]>;
+
+export const SessionInboundMessageSchema = createRpcMessageUnion<SessionInboundMessage>(
+  rpcRegistry.inputSchemas,
+);
+export const SessionOutboundMessageSchema = createRpcMessageUnion<SessionOutboundMessage>(
+  rpcRegistry.outputSchemas,
+);
 
 // ============================================================================
 // WebSocket Level Messages (wraps session messages)
