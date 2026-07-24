@@ -96,7 +96,7 @@ import {
 } from "./thoth-worktree-service.js";
 import { createThothWorktreeWorkflow } from "./worktree-session.js";
 import { DownloadTokenStore } from "./file-download/token-store.js";
-import { AgentManager } from "./agent/agent-manager.js";
+import { ExecutionService } from "./agent/execution-service.js";
 import { provisionForegroundThothSession } from "./agent/foreground-thoth-session-provisioner.js";
 import type { AgentRegistry } from "./agent/agent-storage.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
@@ -137,7 +137,7 @@ import { loadOrCreateRelayCredentials } from "./relay-credentials.js";
 import type { PushNotificationSender } from "./push/notifications.js";
 import { getOrCreateServerId } from "./server-id.js";
 import { resolveDaemonVersion } from "./daemon-version.js";
-import type { AgentClient, AgentProvider } from "@thoth/drivers/agent-runtime";
+import type { HarnessAdapter, AgentProvider } from "@thoth/drivers/agent-runtime";
 import type { TerminalProfile } from "@thoth/protocol/messages";
 import type {
   AgentProviderRuntimeSettingsMap,
@@ -162,7 +162,6 @@ import {
 } from "./auth.js";
 import { createWebUiMiddleware } from "./web-ui.js";
 import {
-  AgentManagerHarnessHost,
   RuntimeBundleStore,
   WorkspaceAuthorityManager,
   WorkspaceAgentStorage,
@@ -170,12 +169,7 @@ import {
   WorkspaceTaskCoordinator,
   WorkspaceTaskOrchestrator,
 } from "./workspace-authority/index.js";
-import {
-  HarnessAdapterRegistry,
-  HostedHarnessAdapter,
-  THOTH_RUNTIME_BUNDLE_CATALOG,
-  loadRuntimeBundle,
-} from "@thoth/drivers/harness";
+import { THOTH_RUNTIME_BUNDLE_CATALOG, loadRuntimeBundle } from "@thoth/drivers/harness";
 
 const MAX_MCP_DEBUG_BATCH_ITEMS = 10;
 const REDACTED_LOG_VALUE = "[redacted]";
@@ -339,7 +333,7 @@ export interface ThothDaemonConfig {
   staticDir: string;
   mcpDebug: boolean;
   isDev?: boolean;
-  agentClients: Partial<Record<AgentProvider, AgentClient>>;
+  harnessAdapters: Partial<Record<AgentProvider, HarnessAdapter>>;
   agentStoragePath: string;
   relayEnabled?: boolean;
   relayEndpoint?: string;
@@ -376,7 +370,7 @@ export interface ThothDaemonConfig {
 
 export interface ThothDaemon {
   config: ThothDaemonConfig;
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   terminalManager: TerminalManager;
   serviceProxy: ServiceProxySubsystem;
@@ -720,12 +714,12 @@ export async function createThothDaemon(
     workspaceGitService,
     managedProcesses,
     isDev: config.isDev === true,
-    extraClients: config.agentClients,
+    extraAdapters: config.harnessAdapters,
   });
-  const initialAgentManagerState = providerSnapshotManager.getAgentManagerProviderState();
-  const agentManager = new AgentManager({
-    clients: initialAgentManagerState.clients,
-    providerDefinitions: initialAgentManagerState.providerDefinitions,
+  const initialProviderState = providerSnapshotManager.getExecutionProviderState();
+  const executionService = new ExecutionService({
+    adapters: initialProviderState.adapters,
+    providerDefinitions: initialProviderState.providerDefinitions,
     registry: agentStorage,
     durableTimelineStore,
     thothHome: config.thothHome,
@@ -739,7 +733,7 @@ export async function createThothDaemon(
 
   const detachAgentStoragePersistence = attachAgentStoragePersistence(
     logger,
-    agentManager,
+    executionService,
     agentStorage,
   );
   await agentStorage.initialize();
@@ -760,24 +754,14 @@ export async function createThothDaemon(
     workspaceAuthorityManager,
     logger.child({ module: "workspace-task-coordinator" }),
   );
-  const harnessHost = new AgentManagerHarnessHost(agentManager);
-  const harnessAdapters = new HarnessAdapterRegistry((adapterId) => {
-    const capabilities = agentManager.getProviderHarnessCapabilities(adapterId);
-    if (!capabilities) {
-      return null;
-    }
-    return new HostedHarnessAdapter(adapterId, capabilities, harnessHost);
-  });
-  for (const adapterId of Object.keys(initialAgentManagerState.clients)) {
-    harnessAdapters.get(adapterId);
-  }
   const workspaceTaskOrchestrator = new WorkspaceTaskOrchestrator(
     workspaceAuthorityManager,
     workspaceTaskCoordinator,
-    harnessAdapters,
+    executionService,
     new RuntimeBundleStore(config.thothHome),
     logger.child({ module: "workspace-task-orchestrator" }),
   );
+  executionService.setToolGateway(workspaceTaskCoordinator.toolGateway);
   const clarifyRuntimeBundle = loadRuntimeBundle("thoth.clarify", THOTH_RUNTIME_BUNDLE_CATALOG);
   new RuntimeBundleStore(config.thothHome).persist(clarifyRuntimeBundle);
   workspaceTaskOrchestrator.initialize();
@@ -829,12 +813,12 @@ export async function createThothDaemon(
   const scheduleService = new ScheduleService({
     authority: workspaceAuthorityManager,
     logger,
-    agentManager,
+    executionService,
     agentStorage,
     providerSnapshotManager,
   });
   await scheduleService.start();
-  agentManager.setAgentArchivedCallback(async (agentId) => {
+  executionService.setAgentArchivedCallback(async (agentId) => {
     try {
       const record = await agentStorage.get(agentId);
       if (record?.workspaceId) {
@@ -915,7 +899,7 @@ export async function createThothDaemon(
     daemonConfigStore,
     workspaceGitService,
     github,
-    agentManager,
+    executionService,
     agentStorage,
     terminalManager,
     logger,
@@ -978,7 +962,7 @@ export async function createThothDaemon(
   const createAgentToolHostDependencies = (
     runtime: ThothToolRuntimeContext,
   ): ThothToolHostDependencies => ({
-    agentManager,
+    executionService,
     agentStorage,
     terminalManager,
     getDaemonTcpPort: () => (boundListenTarget?.type === "tcp" ? boundListenTarget.port : null),
@@ -999,23 +983,23 @@ export async function createThothDaemon(
     callerAgentId: runtime.callerAgentId,
     callerAgentConfig: runtime.callerAgentConfig,
     workspaceAuthorityManager,
-    taskToolGateway: workspaceTaskOrchestrator.toolGateway,
+    toolGateway: workspaceTaskCoordinator.toolGateway,
     logger,
   });
   const createAgentToolCatalog = (runtime: ThothToolRuntimeContext) =>
     createThothToolCatalog(createAgentToolHostDependencies(runtime));
-  agentManager.setThothToolCatalogFactory(createAgentToolCatalog);
-  agentManager.setForegroundThothSessionProvisioner(({ config: agentConfig }) =>
+  executionService.setThothToolCatalogFactory(createAgentToolCatalog);
+  executionService.setForegroundThothSessionProvisioner(async ({ config: agentConfig }) =>
     provisionForegroundThothSession({
       config: agentConfig,
-      capabilities: harnessAdapters.get(agentConfig.provider).capabilities(),
+      capabilities: await executionService.getHarnessCapabilities(agentConfig.provider),
       bundle: clarifyRuntimeBundle,
     }),
   );
   // Native Thoth runtime tools are provider-session tools, not MCP injection.
   // Whether a specific agent sees them is guarded by AgentSessionConfig.extra;
   // the MCP setting only controls the generic /mcp/agents URL injection below.
-  agentManager.setThothToolsEnabled(true);
+  executionService.setThothToolsEnabled(true);
 
   const mcpEnabled = config.mcpEnabled ?? true;
   let agentMcpBaseUrl: string | null = null;
@@ -1171,12 +1155,12 @@ export async function createThothDaemon(
             boundListenTarget = resolveBoundListenTarget(listenTarget, httpServer);
             const mcpBaseUrl = mcpEnabled ? createAgentMcpBaseUrl(boundListenTarget) : null;
             agentMcpBaseUrl = config.mcpInjectIntoAgents === false ? null : mcpBaseUrl;
-            agentManager.setMcpBaseUrl(agentMcpBaseUrl);
+            executionService.setMcpBaseUrl(agentMcpBaseUrl);
             daemonConfigStore.onFieldChange("mcp.injectIntoAgents", (value) => {
-              agentManager.setMcpBaseUrl(value ? mcpBaseUrl : null);
+              executionService.setMcpBaseUrl(value ? mcpBaseUrl : null);
             });
             daemonConfigStore.onFieldChange("appendSystemPrompt", (value) => {
-              agentManager.setAppendSystemPrompt(typeof value === "string" ? value : "");
+              executionService.setAppendSystemPrompt(typeof value === "string" ? value : "");
             });
             const relayEnabled = config.relayEnabled ?? true;
             const relayEndpoint = config.relayEndpoint ?? DEFAULT_RELAY_ENDPOINT;
@@ -1213,7 +1197,7 @@ export async function createThothDaemon(
               httpServer,
               logger,
               serverId,
-              agentManager,
+              executionService,
               agentStorage,
               downloadTokenStore,
               config.thothHome,
@@ -1315,8 +1299,8 @@ export async function createThothDaemon(
 
   const stop = async () => {
     scriptHealthMonitor.stop();
-    await closeAllAgents(logger, agentManager);
-    await agentManager.flush().catch(() => undefined);
+    await closeAllAgents(logger, executionService);
+    await executionService.flush().catch(() => undefined);
     detachAgentStoragePersistence();
     await agentStorage.flush().catch(() => undefined);
     durableTimelineStore.close();
@@ -1350,7 +1334,7 @@ export async function createThothDaemon(
 
   return {
     config,
-    agentManager,
+    executionService,
     agentStorage,
     terminalManager,
     serviceProxy,
@@ -1361,12 +1345,12 @@ export async function createThothDaemon(
   };
 }
 
-async function closeAllAgents(logger: Logger, agentManager: AgentManager): Promise<void> {
-  const agents = agentManager.listAgents();
+async function closeAllAgents(logger: Logger, executionService: ExecutionService): Promise<void> {
+  const agents = executionService.listAgents();
   await Promise.all(
     agents.map(async (agent) => {
       try {
-        await agentManager.closeAgent(agent.id);
+        await executionService.closeAgent(agent.id);
       } catch (err) {
         logger.error({ err, agentId: agent.id }, "Failed to close agent");
       }

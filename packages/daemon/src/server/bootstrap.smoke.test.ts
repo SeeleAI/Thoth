@@ -10,7 +10,7 @@ import { createThothDaemon, parseListenString, type ThothDaemonConfig } from "./
 import { hashDaemonPassword } from "./auth.js";
 import { generateLocalPairingOffer } from "./pairing-offer.js";
 import { createTestThothDaemon } from "./test-utils/thoth-daemon.js";
-import { createTestAgentClients } from "./test-utils/fake-agent-client.js";
+import { createTestHarnessAdapters } from "./test-utils/fake-harness-adapter.js";
 import { isPlatform } from "../test-utils/platform.js";
 import { findFreePort } from "./service-proxy.js";
 
@@ -142,7 +142,7 @@ describe("thoth daemon bootstrap", () => {
       mcpEnabled: false,
       staticDir,
       mcpDebug: false,
-      agentClients: createTestAgentClients(),
+      harnessAdapters: createTestHarnessAdapters(),
       agentStoragePath: path.join(thothHome, "agents"),
       relayEnabled: false,
       appBaseUrl: "https://app.thoth.seeles.ai",
@@ -260,7 +260,7 @@ describe("thoth daemon bootstrap", () => {
       mcpEnabled: false,
       staticDir,
       mcpDebug: false,
-      agentClients: createTestAgentClients(),
+      harnessAdapters: createTestHarnessAdapters(),
       agentStoragePath: path.join(thothHome, "agents"),
       relayEnabled: false,
       appBaseUrl: "https://app.thoth.seeles.ai",
@@ -387,7 +387,7 @@ describe("thoth daemon bootstrap", () => {
         mcpEnabled: false,
         staticDir,
         mcpDebug: false,
-        agentClients: createTestAgentClients(),
+        harnessAdapters: createTestHarnessAdapters(),
         agentStoragePath: path.join(thothHome, "agents"),
         relayEnabled: true,
         relayEndpoint: "127.0.0.1:9",
@@ -411,7 +411,7 @@ describe("thoth daemon bootstrap", () => {
         expect(pairing.url?.startsWith("https://app.thoth.seeles.ai/#offer=")).toBe(true);
       } finally {
         await daemon.stop().catch(() => undefined);
-        await daemon.agentManager.flush().catch(() => undefined);
+        await daemon.executionService.flush().catch(() => undefined);
         await rm(thothHomeRoot, { recursive: true, force: true });
         await rm(staticDir, { recursive: true, force: true });
       }

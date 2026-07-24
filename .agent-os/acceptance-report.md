@@ -2952,8 +2952,53 @@ hard end-state performance targets remain open under `NTH-TD-033` through `NTH-T
 
 ### `NTH-EV-054` Direct Capability Harness Cutover
 
-Status: not started. Reserved for `NTH-TD-033` Provider conformance, foreground/background semantic parity,
-ToolGateway fencing, legacy-chain absence, lazy SDK loading, source/performance deltas and the shared gate.
+Status: verified.
+
+Evidence on `2026-07-24`:
+
+1. Every Provider now directly implements `HarnessAdapter` / `HarnessThread` from the final capability contract.
+   `AgentClient`, `AgentSession`, `AgentManager`, `HostedHarnessAdapter`, `AgentManagerHarnessHost` and their
+   registry/bridge types have no production references or compatibility wrappers.
+2. Foreground raw/Clarify turns, background execution, native Plan/Implement continuation and Review all enter
+   one `ExecutionService`. One `ToolGateway`, constructed only by the Workspace Task Orchestrator, validates the
+   active attempt, generation, phase and tool scope; Provider-supplied Task/status ids never become authority.
+3. The Provider registry exposes lightweight manifests and dynamic loaders. Building the registry loads no SDK or
+   Adapter; execution, explicit refresh/diagnostics, recovery and native-session operations load on demand. Each
+   manifest caches one Adapter promise, and shutdown only closes Adapters that were actually loaded.
+4. Provider conformance remains complete across Codex, Claude, OpenCode, Pi/OMP, Copilot/ACP, Cursor, Generic ACP
+   and custom-derived profiles. Unknown Provider events retain bounded structured detail, while questions,
+   permissions, native handles, rewind, interrupt/recovery, controls, catalogs and same-thread continuation remain
+   represented by the single Harness event/capability surface.
+5. Final focused Daemon verification passed `337/337` tests across Provider registry/snapshot, ExecutionService,
+   Harness conformance, stream coalescing, ToolGateway, Thoth tools, Task coordination and MCP. Drivers passed
+   `256/256` focused adapter/transport tests, and the public Harness lifecycle gate passed `4/4`.
+6. `npm run accept:provider-control:fast` passed in `37.897s`. Its conformance path covers native Plan capture,
+   synthetic and id-only Implement approvals, invalid empty Plan rejection, question/permission normalization,
+   event replay/cursor, same-thread continuation and Stop/interrupt cleanup.
+7. The architecture guard requires the final Harness contract, ExecutionService, ToolGateway and lazy manifests;
+   forbids the old manager/host/fence/registry files and eager Provider APIs; rejects Daemon production imports of
+   Provider SDKs, Provider-id business branches and multiple ToolGateway construction sites.
+8. Production metrics are lower than both Cut 1 and the clean baseline: `1,233` files (`-1` from baseline),
+   `307,539` LOC (`-992`), `1,292,228` scanner tokens (`-6,336`), `1,341,884` AST nodes (`-4,775`), `5,035`
+   non-type static imports (`-22`) and `164` runtime dependency edges (`-1`). Cut 2 independently removes `330`
+   production LOC, `4,225` tokens, `1,153` AST nodes and `18` static import edges without adding a runtime edge.
+9. The first complete gate failed after `89.204s` because the Welcome a11y capture raced the asynchronous sidebar
+   authority fetch. Product UI and the frozen expected tree were unchanged; the real scorecard now waits for the
+   existing `sidebar-project-empty-state` before capture. The failure and rejection of a golden update are
+   preserved in `NTH-EXP-041`; the focused real-Web scorecard then passed `3/3`.
+10. Final `npm run accept:refactor:fast` passed in `238.109s` under one shared `300s` deadline. It covered static
+    architecture/storage/source contracts, Release migration digest, Foundation, Core/Drivers/TUI and Daemon
+    builds, real Web export, public Thoth/Provider/interaction behavior, Playwright screenshot/a11y/keyboard/focus/
+    responsive evidence, TUI frame and seven independent App/daemon/response samples.
+11. Final medians were App interactive `1622.32ms`, heap `49352128` bytes and Settings `209.41ms`; daemon ready
+    `1759.58ms`, idle RSS `408293376` bytes, idle CPU `0ms` and health p50 `0.115ms`; local response overhead was
+    `15.422ms`. The unchanged statistical guards passed without removing samples or weakening thresholds.
+
+Boundary:
+
+No AppImage, Android/iOS/native package, real Provider, hosted Relay journey, GitHub Action, push, tag, Release or
+publication ran. Thoth did not probe, stop, restart or reuse reserved Paseo `127.0.0.1:6767`. The final `50,000`
+production-LOC and hard end-state performance targets remain open under `NTH-TD-034` through `NTH-TD-039`.
 
 ### `NTH-EV-055` Single RPC Registry Cutover
 

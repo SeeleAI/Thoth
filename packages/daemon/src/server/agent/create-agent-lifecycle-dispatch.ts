@@ -18,13 +18,13 @@ import type {
   FirstAgentContext,
   SessionOutboundMessage,
 } from "../messages.js";
-import type { AgentManager } from "./agent-manager.js";
+import type { ExecutionService } from "./execution-service.js";
 import type { AgentRegistry } from "./agent-storage.js";
 
 interface CreateAgentLifecycleDispatchDependencies {
   thothHome: string;
   worktreesRoot?: string;
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   github: GitHubService;
   workspaceGitService: WorkspaceGitService;
@@ -147,7 +147,7 @@ export class CreateAgentLifecycleDispatch {
     agentId: string,
     options: { worktreePath: string | null; repoRoot: string | null },
   ): void {
-    const unsubscribe = this.dependencies.agentManager.subscribe(
+    const unsubscribe = this.dependencies.executionService.subscribe(
       (event) => {
         if (event.type !== "agent_stream") {
           return;
@@ -224,7 +224,7 @@ export class CreateAgentLifecycleDispatch {
           thothWorktreesBaseRoot: this.dependencies.worktreesRoot,
           github: this.dependencies.github,
           workspaceGitService: this.dependencies.workspaceGitService,
-          agentManager: this.dependencies.agentManager,
+          executionService: this.dependencies.executionService,
           agentStorage: this.dependencies.agentStorage,
           findWorkspaceIdForCwd: this.dependencies.findWorkspaceIdForCwd,
           listActiveWorkspaces: this.dependencies.listActiveWorkspaces,

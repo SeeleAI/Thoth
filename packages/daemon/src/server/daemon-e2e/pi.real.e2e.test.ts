@@ -6,7 +6,7 @@ import { beforeAll, beforeEach, expect, test } from "vitest";
 import pino from "pino";
 
 import type {
-  AgentClient,
+  HarnessAdapter,
   AgentPersistenceHandle,
   AgentStreamEvent,
   AgentTimelineItem,
@@ -44,14 +44,14 @@ function writePiCompactionSettings(
   writeFileSync(path.join(cwd, ".pi/settings.json"), JSON.stringify({ compaction }, null, 2));
 }
 
-function createPiClient(): AgentClient {
+function createPiClient(): HarnessAdapter {
   return createRealProviderClient("pi", pino({ level: "silent" }));
 }
 
 function createPiToolDaemon() {
   const logger = pino({ level: "silent" });
   return createTestThothDaemon({
-    agentClients: createRealProviderClients(["pi"], logger),
+    harnessAdapters: createRealProviderClients(["pi"], logger),
     logger,
   });
 }
@@ -651,7 +651,7 @@ test(
 );
 
 test(
-  "PiRpcAgentClient.fetchCatalog returns non-empty Pi model definitions",
+  "PiHarnessAdapter.fetchCatalog returns non-empty Pi model definitions",
   async () => {
     const client = createPiClient();
     const cwd = tmpCwd("pi-list-models-");

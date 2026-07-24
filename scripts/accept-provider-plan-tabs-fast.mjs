@@ -33,7 +33,7 @@ const phases = [
       "--workspace=@thoth/daemon",
       "--",
       "src/server/workspace-authority/workspace-authority-store.test.ts",
-      "src/server/agent/agent-manager.test.ts",
+      "src/server/agent/execution-service.test.ts",
     ],
   },
   {

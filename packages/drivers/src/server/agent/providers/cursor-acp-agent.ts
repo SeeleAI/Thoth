@@ -1,8 +1,8 @@
 import type { Logger } from "pino";
 
-import { GenericACPAgentClient } from "./generic-acp-agent.js";
+import { GenericACPHarnessAdapter } from "./generic-acp-agent.js";
 
-interface CursorACPAgentClientOptions {
+interface CursorACPHarnessAdapterOptions {
   logger: Logger;
   command: [string, ...string[]];
   env?: Record<string, string>;
@@ -13,8 +13,8 @@ interface CursorACPAgentClientOptions {
 
 const CURSOR_INITIAL_COMMANDS_WAIT_TIMEOUT_MS = 10_000;
 
-export class CursorACPAgentClient extends GenericACPAgentClient {
-  constructor(options: CursorACPAgentClientOptions) {
+export class CursorACPHarnessAdapter extends GenericACPHarnessAdapter {
+  constructor(options: CursorACPHarnessAdapterOptions) {
     super({
       logger: options.logger,
       command: options.command,

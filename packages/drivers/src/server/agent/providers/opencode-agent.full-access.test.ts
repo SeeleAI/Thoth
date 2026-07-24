@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
-import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
+import { OpenCodeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
 import {
   idleEvent,
   TestOpenCodeClient,
@@ -77,7 +77,7 @@ describe("OpenCode auto_accept feature", () => {
       ],
     });
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -93,7 +93,7 @@ describe("OpenCode auto_accept feature", () => {
   test("falls back to default OpenCode modes when discovery returns no modes", async () => {
     const { runtime } = mockOpenCodeClient({ agents: [] });
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -109,7 +109,7 @@ describe("OpenCode auto_accept feature", () => {
   test("lists auto accept as a provider feature", async () => {
     const { runtime } = mockOpenCodeClient();
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -138,7 +138,7 @@ describe("OpenCode auto_accept feature", () => {
   test("keeps legacy full-access as an alias for build plus auto accept", async () => {
     const { openCodeClient, runtime } = mockOpenCodeClient();
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -162,7 +162,7 @@ describe("OpenCode auto_accept feature", () => {
   });
 
   test("resolves legacy full-access for provider-driven child creation", () => {
-    const client = new OpenCodeAgentClient(createTestLogger());
+    const client = new OpenCodeHarnessAdapter(createTestLogger());
 
     expect(
       client.resolveCreateConfig({
@@ -180,7 +180,7 @@ describe("OpenCode auto_accept feature", () => {
   });
 
   test("inherits unattended callers as build plus auto accept", () => {
-    const client = new OpenCodeAgentClient(createTestLogger());
+    const client = new OpenCodeHarnessAdapter(createTestLogger());
 
     expect(
       client.resolveCreateConfig({
@@ -202,7 +202,7 @@ describe("OpenCode auto_accept feature", () => {
   });
 
   test("defaults unattended creation without a parent to build plus auto accept", () => {
-    const client = new OpenCodeAgentClient(createTestLogger());
+    const client = new OpenCodeHarnessAdapter(createTestLogger());
 
     expect(
       client.resolveCreateConfig({
@@ -220,7 +220,7 @@ describe("OpenCode auto_accept feature", () => {
   });
 
   test("preserves the selected OpenCode agent when inheriting auto accept from an OpenCode parent", () => {
-    const client = new OpenCodeAgentClient(createTestLogger());
+    const client = new OpenCodeHarnessAdapter(createTestLogger());
 
     expect(
       client.resolveCreateConfig({
@@ -243,7 +243,7 @@ describe("OpenCode auto_accept feature", () => {
   });
 
   test("inherits auto accept from an OpenCode parent when the child chooses a mode", () => {
-    const client = new OpenCodeAgentClient(createTestLogger());
+    const client = new OpenCodeHarnessAdapter(createTestLogger());
 
     expect(
       client.resolveCreateConfig({
@@ -271,7 +271,7 @@ describe("OpenCode auto_accept feature", () => {
     });
     const receivedEvents: AgentStreamEvent[] = [];
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -302,7 +302,7 @@ describe("OpenCode auto_accept feature", () => {
     });
     const receivedEvents: AgentStreamEvent[] = [];
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -348,7 +348,7 @@ describe("OpenCode auto_accept feature", () => {
     });
     const receivedEvents: AgentStreamEvent[] = [];
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });

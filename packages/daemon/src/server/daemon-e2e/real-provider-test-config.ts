@@ -4,12 +4,16 @@ import path from "node:path";
 
 import type { Logger } from "pino";
 
-import type { AgentClient, AgentProvider, AgentSessionConfig } from "@thoth/drivers/agent-runtime";
+import type {
+  HarnessAdapter,
+  AgentProvider,
+  AgentSessionConfig,
+} from "@thoth/drivers/agent-runtime";
 import type { ProviderRuntimeSettings } from "@thoth/drivers/internal/server/agent/provider-launch-config";
-import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
-import { CodexAppServerAgentClient } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
-import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
-import { PiRpcAgentClient } from "@thoth/drivers/internal/server/agent/providers/pi/agent";
+import { ClaudeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import { CodexHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
+import { OpenCodeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
+import { PiHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/pi/agent";
 import { isCommandAvailable } from "@thoth/drivers/internal/executable-resolution/executable-resolution";
 
 export const realProviders = ["claude", "codex", "opencode", "pi"] as const;
@@ -41,8 +45,8 @@ export function getNativeCodexProviderConfig(): RealProviderConfig {
   };
 }
 
-export function createNativeCodexProviderClient(logger: Logger): AgentClient {
-  return new CodexAppServerAgentClient(logger);
+export function createNativeCodexProviderClient(logger: Logger): HarnessAdapter {
+  return new CodexHarnessAdapter(logger);
 }
 
 export function canRunNativeCodexProvider(): Promise<boolean> {
@@ -134,13 +138,13 @@ export function getRealProviderRuntimeSettings(provider: RealProvider): Provider
   }
 }
 
-export function createRealProviderClient(provider: RealProvider, logger: Logger): AgentClient {
+export function createRealProviderClient(provider: RealProvider, logger: Logger): HarnessAdapter {
   const runtimeSettings = getRealProviderRuntimeSettings(provider);
   switch (provider) {
     case "claude":
-      return new ClaudeAgentClient({ logger, runtimeSettings });
+      return new ClaudeHarnessAdapter({ logger, runtimeSettings });
     case "codex":
-      return new CodexAppServerAgentClient(logger, runtimeSettings, {
+      return new CodexHarnessAdapter(logger, runtimeSettings, {
         customProvider: {
           id: "codex-openrouter",
           label: "Codex OpenRouter",
@@ -148,16 +152,16 @@ export function createRealProviderClient(provider: RealProvider, logger: Logger)
         },
       });
     case "opencode":
-      return new OpenCodeAgentClient(logger, runtimeSettings);
+      return new OpenCodeHarnessAdapter(logger, runtimeSettings);
     case "pi":
-      return new PiRpcAgentClient({ logger, runtimeSettings });
+      return new PiHarnessAdapter({ logger, runtimeSettings });
   }
 }
 
 export function createRealProviderClients(
   providers: readonly RealProvider[],
   logger: Logger,
-): Partial<Record<AgentProvider, AgentClient>> {
+): Partial<Record<AgentProvider, HarnessAdapter>> {
   return Object.fromEntries(
     providers.map((provider) => [provider, createRealProviderClient(provider, logger)]),
   );

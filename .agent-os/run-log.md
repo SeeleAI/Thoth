@@ -3741,3 +3741,29 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   HarnessAdapters, one ExecutionService and ToolGateway, followed by deletion of the AgentClient/Session/Manager
   bridge stack. No AppImage, native package, real Provider, hosted Relay, push, tag, Release or publication ran;
   reserved Paseo `127.0.0.1:6767` was not probed or modified.
+
+## 2026-07-24 [Final-architecture Cut 2 Provider Harness cutover verified]
+
+- Replaced the AgentClient/AgentSession/AgentManager and Hosted Harness bridge stack with direct
+  HarnessAdapter/HarnessThread contracts, one ExecutionService and one Workspace-owned ToolGateway. Foreground,
+  background, PlanExec and Review now share that production path without a Provider-name branch or fallback.
+- Converted Provider discovery to lightweight manifests plus cached dynamic Adapter loaders. Registry construction
+  no longer imports or instantiates Provider implementations; explicit use, refresh/diagnostics, recovery or native
+  session operations load only the requested Provider, and shutdown closes only loaded Adapters.
+- Deleted the old manager, host, task/foreground fences, eager registry APIs, fake Agent Client and duplicate SDK
+  contract. Added final-path Harness conformance for Plan capture/Implement approval, permissions/questions,
+  replay/cursor, same-thread continuation and interrupt cleanup, plus architecture guards against every old path.
+- Focused Daemon tests passed `337/337`, Drivers passed `256/256`, public Harness lifecycle passed `4/4`, and
+  `accept:provider-control:fast` passed in `37.897s`. Drivers typecheck/build and Daemon typecheck also passed.
+- Preserved the first complete-gate failure in `NTH-EXP-041`: the Welcome a11y capture ran before the existing
+  sidebar authority empty state settled. The verifier now waits for that real state; no product UI, expected tree,
+  screenshot threshold or behavior changed. The focused real-Web scorecard then passed `3/3`.
+- Final `npm run accept:refactor:fast` passed in `238.109s` under one shared `300s` deadline, including Release
+  migration, Foundation, real Web export, full public behavior, visual/keyboard/focus/a11y/responsive/TUI evidence
+  and seven-sample App/daemon/response performance.
+- Cumulative production metrics are `307,539` LOC (`-992`), `1,292,228` scanner tokens (`-6,336`), `1,341,884`
+  AST nodes (`-4,775`), `5,035` static imports (`-22`) and `164` runtime dependency edges (`-1`) versus the clean
+  baseline. Cut 2 independently reduced LOC by `330`, tokens by `4,225`, AST nodes by `1,153` and imports by `18`.
+- `NTH-TD-033` / `NTH-EV-054` are verified. The sole top next action advances to `NTH-TD-034`: one Protocol Zod
+  RPC Registry with derived Client facade and Daemon dispatch. No AppImage, native package, real Provider, hosted
+  Relay, push, tag, Release or publication ran; reserved Paseo `127.0.0.1:6767` was not probed or modified.

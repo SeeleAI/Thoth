@@ -1,16 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import {
-  HarnessAdapterRegistry,
   THOTH_RUNTIME_BUNDLE_CATALOG,
   loadRuntimeBundle,
-  type HarnessAdapter,
   type HarnessApprovalRequest,
+  type HarnessCapabilities,
   type HarnessExecutionDescriptor,
   type HarnessExecutionEvent,
   type HarnessThreadDescriptor,
   type RuntimeAttachmentReceipt,
 } from "@thoth/drivers/harness";
+import type { ExecutionService } from "../agent/execution-service.js";
 import type {
   ExecutionApprovalProjection,
   ExecutionProjection,
@@ -28,11 +28,7 @@ import { RuntimeBundleStore } from "./runtime-bundle-store.js";
 import type { WorkspaceAuthorityManager } from "./workspace-authority-manager.js";
 import type { WorkspaceAuthorityStore } from "./workspace-authority-store.js";
 import type { TaskCommandScheduler, WorkspaceTaskCoordinator } from "./task-coordinator.js";
-import {
-  TaskToolGateway,
-  type TaskSemanticResultSink,
-  type TaskToolExecutionBinding,
-} from "./task-tool-gateway.js";
+import { ToolGateway, type ToolResultSink, type ExecutionToolBinding } from "./tool-gateway.js";
 import {
   ExecutionApprovalController,
   type ApprovalClock,
@@ -49,7 +45,7 @@ interface ActivePhase {
   executionId: string;
   generation: string;
   phase: "planexec" | "review";
-  adapter: HarnessAdapter;
+  adapterId: string;
   thread: HarnessThreadDescriptor;
   descriptor: HarnessExecutionDescriptor | null;
   unsubscribeEvents: (() => void) | null;
@@ -81,8 +77,11 @@ function isTerminalEvent(payload: unknown): "completed" | "failed" | "canceled" 
   }
 }
 
-function chooseToolTransport(adapter: HarnessAdapter): "native" | "mcp" | "acp" {
-  const supported = adapter.capabilities().toolAttachment;
+function chooseToolTransport(
+  adapterId: string,
+  capabilities: HarnessCapabilities,
+): "native" | "mcp" | "acp" {
+  const supported = capabilities.toolAttachment;
   if (supported.includes("native")) {
     return "native";
   }
@@ -92,7 +91,7 @@ function chooseToolTransport(adapter: HarnessAdapter): "native" | "mcp" | "acp" 
   if (supported.includes("mcp")) {
     return "mcp";
   }
-  throw new Error(`HarnessAdapter ${adapter.id} cannot attach Thoth semantic tools`);
+  throw new Error(`HarnessAdapter ${adapterId} cannot attach Thoth semantic tools`);
 }
 
 function semanticContext(context: TaskContextEnvelope, goalId: string): string {
@@ -160,8 +159,8 @@ function reviewPrompt(context: TaskContextEnvelope, goalId: string): string {
 }
 
 /** Workspace-serial Task scheduler and provider-neutral Loop state machine. */
-export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSemanticResultSink {
-  readonly toolGateway: TaskToolGateway;
+export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResultSink {
+  readonly toolGateway: ToolGateway;
 
   private readonly loopBundle = loadRuntimeBundle("thoth.loop", THOTH_RUNTIME_BUNDLE_CATALOG);
   private readonly activeByWorkspace = new Map<string, ActivePhase>();
@@ -173,16 +172,17 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
   constructor(
     private readonly authority: WorkspaceAuthorityManager,
     private readonly coordinator: WorkspaceTaskCoordinator,
-    private readonly adapters: HarnessAdapterRegistry,
+    private readonly executionService: ExecutionService,
     private readonly bundleStore: RuntimeBundleStore,
     private readonly logger: Logger,
     providerControl: { approvalTimeoutMs?: number; approvalClock?: ApprovalClock } = {},
   ) {
-    this.toolGateway = new TaskToolGateway(this);
+    this.toolGateway = new ToolGateway(this);
     this.bundleStore.persist(this.loopBundle);
     this.approvalTimeoutMs = providerControl.approvalTimeoutMs ?? BACKGROUND_APPROVAL_TIMEOUT_MS;
     this.approvalController = new ExecutionApprovalController(providerControl.approvalClock);
     this.coordinator.setScheduler(this);
+    this.coordinator.setToolGateway(this.toolGateway);
   }
 
   initialize(): void {
@@ -288,7 +288,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
     }
 
     try {
-      const resolution = await active.adapter.resolveApproval({
+      const resolution = await this.executionService.resolveHarnessApproval(active.adapterId, {
         thread: active.thread,
         execution: active.descriptor,
         approvalId: providerRequestId,
@@ -310,7 +310,9 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
         currentExecution.generation !== active.generation ||
         currentExecution.status !== expectedStatus
       ) {
-        await active.adapter.interruptExecution(active.descriptor).catch(() => undefined);
+        await this.executionService
+          .interruptHarnessExecution(active.adapterId, active.descriptor)
+          .catch(() => undefined);
         return;
       }
       if (resolution.runModeReceipt) {
@@ -342,7 +344,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
   }
 
   submitPlanExec(input: {
-    binding: TaskToolExecutionBinding;
+    binding: ExecutionToolBinding;
     result: ThothLoopPlanExecResultInput;
     providerTurnId?: string;
     callId: string;
@@ -366,7 +368,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
   }
 
   submitReviewAssessment(input: {
-    binding: TaskToolExecutionBinding;
+    binding: ExecutionToolBinding;
     assessment: ThothLoopReviewIndependentAssessmentInput;
     providerTurnId?: string;
   }): string | null {
@@ -383,7 +385,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
   }
 
   submitReviewVerdict(input: {
-    binding: TaskToolExecutionBinding;
+    binding: ExecutionToolBinding;
     verdict: ThothLoopReviewVerdictInput;
     providerTurnId?: string;
     callId: string;
@@ -407,7 +409,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
   }
 
   reportBlocked(input: {
-    binding: TaskToolExecutionBinding;
+    binding: ExecutionToolBinding;
     report: ThothLoopReportBlockedInput;
     providerTurnId?: string;
   }): boolean {
@@ -477,7 +479,8 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
       if (!profile?.enabled) {
         throw new Error(`Provider profile ${metadata.providerProfileId} is unavailable`);
       }
-      const adapter = this.adapters.get(profile.adapterId);
+      const adapterId = profile.adapterId;
+      const capabilities = await this.executionService.getHarnessCapabilities(adapterId);
       const workspace = this.authority.catalog.getWorkspace(task.workspaceId);
       if (!workspace) {
         throw new Error(`Workspace ${task.workspaceId} is missing from catalog`);
@@ -491,7 +494,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
       let thread: HarnessThreadDescriptor;
       let continuation = false;
       if (reusable) {
-        thread = await adapter.resumeThread({
+        thread = await this.executionService.resumeHarnessThread(adapterId, {
           descriptor: {
             id: reusable.id,
             adapterId: reusable.adapterId,
@@ -503,7 +506,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
         });
         continuation = true;
       } else {
-        thread = await adapter.createThread({
+        thread = await this.executionService.createHarnessThread(adapterId, {
           workspaceId: task.workspaceId,
           workspacePath: workspace.canonicalPath,
           profile: profile.config,
@@ -538,8 +541,8 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
           lineageParentId: lineageParent?.id ?? null,
         },
       });
-      const transport = chooseToolTransport(adapter);
-      const receipt = await adapter.attachRuntimeBundle({
+      const transport = chooseToolTransport(adapterId, capabilities);
+      const receipt = await this.executionService.attachHarnessRuntimeBundle(adapterId, {
         thread,
         bundle: this.loopBundle,
         tools: {
@@ -549,11 +552,14 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
       });
       store.recordAttachment({ executionId, receipt });
       const runMode: "default" | "plan" = phase === "planexec" ? "plan" : "default";
-      const runModeReceipt = await adapter.prepareRunMode({ thread, mode: runMode });
+      const runModeReceipt = await this.executionService.prepareHarnessRunMode(adapterId, {
+        thread,
+        mode: runMode,
+      });
       if (runModeReceipt.status !== "applied") {
         throw new Error(
           runModeReceipt.reason ??
-            `HarnessAdapter ${adapter.id} did not enter its native ${runMode} mode.`,
+            `HarnessAdapter ${adapterId} did not enter its native ${runMode} mode.`,
         );
       }
       const executionWithMode = store.recordExecutionRunModeReceipt({
@@ -588,7 +594,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
         executionId,
         generation,
         phase,
-        adapter,
+        adapterId,
         thread,
         descriptor: null,
         unsubscribeEvents: null,
@@ -623,36 +629,45 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
         runModeReceipt,
       };
       const descriptor = continuation
-        ? await adapter.continueExecution({ thread, execution: executionInput })
-        : await adapter.startExecution({ thread, execution: executionInput });
+        ? await this.executionService.continueHarnessExecution(adapterId, {
+            thread,
+            execution: executionInput,
+          })
+        : await this.executionService.startHarnessExecution(adapterId, {
+            thread,
+            execution: executionInput,
+          });
       active.descriptor = descriptor;
       active.unregisterRuntime = this.coordinator.runtimes.register({
         workspaceId: task.workspaceId,
         taskId: task.id,
         generation,
-        adapter,
-        thread,
         execution: descriptor,
+        interrupt: () => this.executionService.interruptHarnessExecution(adapterId, descriptor),
       });
       const providerSegmentRevision = active.providerSegmentRevision;
       const providerSegmentPurpose = phase === "planexec" ? "planning" : "execution";
-      active.unsubscribeEvents = adapter.subscribeEvents(descriptor, (event) => {
-        active.eventTail = active.eventTail
-          .then(() =>
-            this.handleExecutionEvent(
-              active,
-              event,
-              providerSegmentRevision,
-              providerSegmentPurpose,
-            ),
-          )
-          .catch((error: unknown) => {
-            this.logger.error(
-              { err: error, executionId: active.executionId },
-              "Failed to process Harness execution event",
-            );
-          });
-      });
+      active.unsubscribeEvents = this.executionService.subscribeHarnessEvents(
+        adapterId,
+        descriptor,
+        (event) => {
+          active.eventTail = active.eventTail
+            .then(() =>
+              this.handleExecutionEvent(
+                active,
+                event,
+                providerSegmentRevision,
+                providerSegmentPurpose,
+              ),
+            )
+            .catch((error: unknown) => {
+              this.logger.error(
+                { err: error, executionId: active.executionId },
+                "Failed to process Harness execution event",
+              );
+            });
+        },
+      );
       active.heartbeat = setInterval(() => {
         const renewed = store.renewMutationLease({
           taskId: task.id,
@@ -883,7 +898,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
   ): Promise<void> {
     active.providerSegmentRevision += 1;
     active.unsubscribeEvents?.();
-    const descriptor = await active.adapter.continueExecution({
+    const descriptor = await this.executionService.continueHarnessExecution(active.adapterId, {
       thread: active.thread,
       execution: {
         executionId: active.executionId,
@@ -900,29 +915,40 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
       workspaceId: active.workspaceId,
       taskId: active.taskId,
       generation: active.generation,
-      adapter: active.adapter,
-      thread: active.thread,
       execution: descriptor,
+      interrupt: () =>
+        this.executionService.interruptHarnessExecution(active.adapterId, descriptor),
     });
     const providerSegmentRevision = active.providerSegmentRevision;
     const providerSegmentPurpose = input.purpose;
-    active.unsubscribeEvents = active.adapter.subscribeEvents(descriptor, (event) => {
-      active.eventTail = active.eventTail
-        .then(() =>
-          this.handleExecutionEvent(active, event, providerSegmentRevision, providerSegmentPurpose),
-        )
-        .catch((error: unknown) => {
-          this.logger.error(
-            { err: error, executionId: active.executionId },
-            "Failed to process provider continuation event",
-          );
-        });
-    });
+    active.unsubscribeEvents = this.executionService.subscribeHarnessEvents(
+      active.adapterId,
+      descriptor,
+      (event) => {
+        active.eventTail = active.eventTail
+          .then(() =>
+            this.handleExecutionEvent(
+              active,
+              event,
+              providerSegmentRevision,
+              providerSegmentPurpose,
+            ),
+          )
+          .catch((error: unknown) => {
+            this.logger.error(
+              { err: error, executionId: active.executionId },
+              "Failed to process provider continuation event",
+            );
+          });
+      },
+    );
   }
 
   private async interruptForLostLease(active: ActivePhase): Promise<void> {
     if (active.descriptor) {
-      await active.adapter.interruptExecution(active.descriptor).catch(() => undefined);
+      await this.executionService
+        .interruptHarnessExecution(active.adapterId, active.descriptor)
+        .catch(() => undefined);
     }
     this.authority.forWorkspace(active.workspaceId).interruptExecution({
       executionId: active.executionId,
@@ -934,7 +960,9 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, TaskSema
 
   private async finishPhase(active: ActivePhase): Promise<void> {
     const store = this.authority.forWorkspace(active.workspaceId);
-    const persistence = await active.adapter.describePersistence(active.thread).catch(() => null);
+    const persistence = await this.executionService
+      .describeHarnessPersistence(active.adapterId, active.thread)
+      .catch(() => null);
     store.updateProviderThread({
       threadId: active.thread.id,
       nativeHandle: active.thread.nativeHandle,

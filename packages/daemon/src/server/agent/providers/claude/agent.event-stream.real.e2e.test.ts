@@ -16,7 +16,7 @@ import pino from "pino";
 
 import {
   getAgentStreamEventTurnId,
-  type AgentSession,
+  type HarnessThread,
   type AgentStreamEvent,
 } from "@thoth/drivers/agent-runtime";
 import {
@@ -62,7 +62,7 @@ function userMessagesWithText(events: AgentStreamEvent[], text: string): AgentSt
 
 async function createSession(params?: {
   cwdPrefix?: string;
-}): Promise<{ cwd: string; session: AgentSession }> {
+}): Promise<{ cwd: string; session: HarnessThread }> {
   const cwd = tmpCwd(params?.cwdPrefix ?? "event-stream-integration-");
   const session = await client.createSession({
     ...getRealProviderConfig("claude"),
@@ -73,7 +73,7 @@ async function createSession(params?: {
   return { cwd, session };
 }
 
-async function cleanupSession(handle: { cwd: string; session: AgentSession }): Promise<void> {
+async function cleanupSession(handle: { cwd: string; session: HarnessThread }): Promise<void> {
   await handle.session.close().catch(() => undefined);
   try {
     rmSync(handle.cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -86,7 +86,7 @@ async function cleanupSession(handle: { cwd: string; session: AgentSession }): P
 }
 
 async function startTurnAndCollectEvents(
-  session: AgentSession,
+  session: HarnessThread,
   prompt: string,
   options?: { extraMs?: number; timeoutMs?: number },
 ): Promise<{ turnId: string; events: AgentStreamEvent[] }> {

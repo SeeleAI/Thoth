@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Logger } from "pino";
 
 import type { AgentPermissionRequest } from "@thoth/drivers/agent-runtime";
-import type { AgentManager, ManagedAgent, WaitForAgentResult } from "./agent-manager.js";
+import type { ExecutionService, ManagedAgent, WaitForAgentResult } from "./execution-service.js";
 import { curateAgentActivity } from "@thoth/drivers/internal/server/agent/activity-curator";
 import { selectItemsByProjectedLimit } from "@thoth/drivers/internal/server/agent/timeline-projection";
 import type { AgentRegistry } from "./agent-storage.js";
@@ -87,12 +87,12 @@ export function resolveRequiredProviderModel(
 }
 
 /**
- * Wraps agentManager.waitForAgentEvent with a self-imposed timeout.
+ * Wraps executionService.waitForAgentEvent with a self-imposed timeout.
  * Returns a friendly message when timeout occurs, rather than letting
  * the SDK tool timeout trigger a generic "tool failed" error.
  */
 export async function waitForAgentWithTimeout(
-  agentManager: AgentManager,
+  executionService: ExecutionService,
   agentId: string,
   options?: {
     signal?: AbortSignal;
@@ -129,15 +129,15 @@ export async function waitForAgentWithTimeout(
   );
 
   try {
-    const result = await agentManager.waitForAgentEvent(agentId, {
+    const result = await executionService.waitForAgentEvent(agentId, {
       signal: combinedController.signal,
       waitForActive: options?.waitForActive,
     });
     return result;
   } catch (error) {
     if (error instanceof Error && error.message === "wait timeout") {
-      const snapshot = agentManager.getAgent(agentId);
-      const timeline = agentManager.getTimeline(agentId);
+      const snapshot = executionService.getAgent(agentId);
+      const timeline = executionService.getTimeline(agentId);
       const recent = selectItemsByProjectedLimit({
         items: timeline,
         direction: "tail",

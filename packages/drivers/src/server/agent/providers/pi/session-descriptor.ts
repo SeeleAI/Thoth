@@ -5,7 +5,7 @@ import path from "node:path";
 import type {
   ImportableProviderSession,
   ListImportableSessionsOptions,
-} from "../../agent-sdk-types.js";
+} from "../../harness-contract.js";
 import type { ProviderRuntimeSettings } from "../../provider-launch-config.js";
 import { createRealpathAwarePathMatcher } from "../../../../utils/path.js";
 

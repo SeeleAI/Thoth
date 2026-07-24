@@ -15,7 +15,7 @@ import {
   createProviderSnapshotManagerStub,
   createSessionWithAuthority,
 } from "./test-utils/session-stubs.js";
-import type { AgentTimelineRow } from "./agent/agent-manager.js";
+import type { AgentTimelineRow } from "./agent/execution-service.js";
 import { handleCreateThothWorktreeRequest } from "./worktree-session.js";
 
 const LegacyTimelineEntryPayloadSchema = z.object({
@@ -85,7 +85,7 @@ interface SessionInternals {
   ) => Promise<void>;
 }
 
-class InMemoryAgentManager {
+class InMemoryExecutionService {
   constructor(private readonly rows: AgentTimelineRow[]) {}
 
   getAgent() {
@@ -247,7 +247,9 @@ function createSessionForWireCompatTest(options?: {
     downloadTokenStore: {} as SessionOptions["downloadTokenStore"],
     pushTokenStore: {} as SessionOptions["pushTokenStore"],
     thothHome: "/tmp/thoth-home",
-    agentManager: new InMemoryAgentManager(rows) as unknown as SessionOptions["agentManager"],
+    executionService: new InMemoryExecutionService(
+      rows,
+    ) as unknown as SessionOptions["executionService"],
     agentStorage: new EmptyAgentStorage() as unknown as SessionOptions["agentStorage"],
     projectRegistry: new EmptyProjectRegistry() as unknown as SessionOptions["projectRegistry"],
     workspaceRegistry:

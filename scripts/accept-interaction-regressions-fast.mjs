@@ -52,7 +52,7 @@ const phases = [
       "test:unit",
       "--workspace=@thoth/daemon",
       "--",
-      "src/server/agent/agent-manager.test.ts",
+      "src/server/agent/execution-service.test.ts",
       "--testNamePattern=canonical message id",
     ],
   },

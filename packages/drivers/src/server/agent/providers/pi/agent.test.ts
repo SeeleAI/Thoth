@@ -14,25 +14,25 @@ import pino from "pino";
 import { describe, expect, test } from "vitest";
 
 import type {
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   AgentStreamEvent,
 } from "@thoth/drivers/agent-runtime";
 import {
-  PiRpcAgentClient,
-  PiRpcAgentSession,
+  PiHarnessAdapter,
+  PiHarnessThread,
   transformPiModels,
 } from "@thoth/drivers/internal/server/agent/providers/pi/agent";
 import { FakePi } from "./test-utils/fake-pi.js";
 
-function createClient(pi = new FakePi()): PiRpcAgentClient {
-  return new PiRpcAgentClient({
+function createClient(pi = new FakePi()): PiHarnessAdapter {
+  return new PiHarnessAdapter({
     logger: pino({ level: "silent" }),
     runtime: pi,
   });
 }
 
-function rewindCapabilities(capabilities: PiRpcAgentSession["capabilities"]) {
+function rewindCapabilities(capabilities: PiHarnessThread["capabilities"]) {
   return {
     supportsRewindConversation: capabilities.supportsRewindConversation,
     supportsRewindFiles: capabilities.supportsRewindFiles,
@@ -61,11 +61,11 @@ function readUtf8File(pathname: string): string {
 
 async function createSession(pi = new FakePi()): Promise<{
   pi: FakePi;
-  session: PiRpcAgentSession;
+  session: PiHarnessThread;
   events: SessionEvents;
 }> {
   const client = createClient(pi);
-  const session = (await client.createSession(createConfig())) as PiRpcAgentSession;
+  const session = (await client.createSession(createConfig())) as PiHarnessThread;
   const events = new SessionEvents(session);
   return { pi, session, events };
 }
@@ -110,7 +110,7 @@ class SessionEvents {
     resolve: (event: AgentStreamEvent) => void;
   }> = [];
 
-  constructor(session: PiRpcAgentSession) {
+  constructor(session: PiHarnessThread) {
     session.subscribe((event) => {
       this.events.push(event);
       for (let index = 0; index < this.waiters.length; index += 1) {
@@ -196,7 +196,7 @@ class SessionEvents {
   }
 }
 
-describe("PiRpcAgentSession", () => {
+describe("PiHarnessThread", () => {
   test("bridges Pi RPC select extension UI requests through question permissions", async () => {
     const { pi, session, events } = await createSession();
     const fakeSession = pi.latestSession();
@@ -695,7 +695,7 @@ describe("PiRpcAgentSession", () => {
   });
 });
 
-describe("PiRpcAgentClient", () => {
+describe("PiHarnessAdapter", () => {
   test("lists JSONL persisted sessions from configured provider params", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "thoth-pi-sessions-"));
     const cwd = path.join(root, "workspace");
@@ -739,7 +739,7 @@ describe("PiRpcAgentClient", () => {
       `${JSON.stringify({ type: "session", version: 3, id: "other", cwd: otherCwd })}\n`,
       "utf8",
     );
-    const client = new PiRpcAgentClient({
+    const client = new PiHarnessAdapter({
       logger: pino({ level: "silent" }),
       runtime: new FakePi(),
       providerParams: { sessionDir: sessionsDir },
@@ -783,7 +783,7 @@ describe("PiRpcAgentClient", () => {
       ].join("\n") + "\n",
       "utf8",
     );
-    const client = new PiRpcAgentClient({
+    const client = new PiHarnessAdapter({
       logger: pino({ level: "silent" }),
       runtime: new FakePi(),
       runtimeSettings: {
@@ -843,7 +843,7 @@ describe("PiRpcAgentClient", () => {
       "utf8",
     );
     const pi = new FakePi();
-    const client = new PiRpcAgentClient({
+    const client = new PiHarnessAdapter({
       logger: pino({ level: "silent" }),
       runtime: pi,
       providerParams: { sessionDir: sessionsDir },
@@ -998,7 +998,7 @@ describe("PiRpcAgentClient", () => {
   test("executes Pi compact through RPC instead of prompt text", async () => {
     const { pi, session } = await createSession();
     const fakeSession = pi.latestSession();
-    const handler = (session as AgentSession).tryHandleOutOfBand?.("/compact focus on tests");
+    const handler = (session as HarnessThread).tryHandleOutOfBand?.("/compact focus on tests");
     const events: AgentStreamEvent[] = [];
 
     expect(handler).not.toBeNull();
@@ -1025,7 +1025,7 @@ describe("PiRpcAgentClient", () => {
     const fakeSession = pi.latestSession();
     fakeSession.emitCompactEnd = false;
     fakeSession.compactError = new Error("summarizer failed");
-    const handler = (session as AgentSession).tryHandleOutOfBand?.("/compact");
+    const handler = (session as HarnessThread).tryHandleOutOfBand?.("/compact");
     const events: AgentStreamEvent[] = [];
 
     expect(handler).not.toBeNull();
@@ -1056,7 +1056,7 @@ describe("PiRpcAgentClient", () => {
   test("executes Pi autocompact through RPC instead of prompt text", async () => {
     const { pi, session } = await createSession();
     const fakeSession = pi.latestSession();
-    const handler = (session as AgentSession).tryHandleOutOfBand?.("/autocompact off");
+    const handler = (session as HarnessThread).tryHandleOutOfBand?.("/autocompact off");
     const events: AgentStreamEvent[] = [];
 
     expect(handler).not.toBeNull();
@@ -1076,7 +1076,7 @@ describe("PiRpcAgentClient", () => {
   test("rejects unknown Pi autocompact mode instead of toggling", async () => {
     const { pi, session } = await createSession();
     const fakeSession = pi.latestSession();
-    const handler = (session as AgentSession).tryHandleOutOfBand?.("/autocompact banana");
+    const handler = (session as HarnessThread).tryHandleOutOfBand?.("/autocompact banana");
     const events: AgentStreamEvent[] = [];
 
     expect(handler).not.toBeNull();
@@ -1099,7 +1099,7 @@ describe("PiRpcAgentClient", () => {
     const { pi, session } = await createSession();
     const fakeSession = pi.latestSession();
     fakeSession.state.autoCompactionEnabled = false;
-    const handler = (session as AgentSession).tryHandleOutOfBand?.("/autocompact");
+    const handler = (session as HarnessThread).tryHandleOutOfBand?.("/autocompact");
     const events: AgentStreamEvent[] = [];
 
     expect(handler).not.toBeNull();
@@ -1117,7 +1117,7 @@ describe("PiRpcAgentClient", () => {
     const { pi, session } = await createSession();
     const fakeSession = pi.latestSession();
     delete fakeSession.state.autoCompactionEnabled;
-    const handler = (session as AgentSession).tryHandleOutOfBand?.("/autocompact");
+    const handler = (session as HarnessThread).tryHandleOutOfBand?.("/autocompact");
     const events: AgentStreamEvent[] = [];
 
     expect(handler).not.toBeNull();

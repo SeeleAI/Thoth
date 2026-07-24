@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, test } from "vitest";
 import pino from "pino";
 
-import type { AgentStreamEvent, AgentSession } from "@thoth/drivers/agent-runtime";
+import type { AgentStreamEvent, HarnessThread } from "@thoth/drivers/agent-runtime";
 import {
   canRunRealProvider,
   createRealProviderClient,
@@ -16,7 +16,7 @@ function isTerminalEvent(event: AgentStreamEvent): boolean {
   );
 }
 
-async function collectUntilTerminal(session: AgentSession): Promise<AgentStreamEvent[]> {
+async function collectUntilTerminal(session: HarnessThread): Promise<AgentStreamEvent[]> {
   const events: AgentStreamEvent[] = [];
   for await (const event of streamSession(session, "Respond with exactly: HELLO_MAX")) {
     events.push(event);

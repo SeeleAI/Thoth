@@ -11,7 +11,7 @@ import type {
   AgentSessionConfig,
   ProviderSnapshotEntry,
 } from "@thoth/drivers/agent-runtime";
-import type { ProviderAvailability } from "../../agent/agent-manager.js";
+import type { ProviderAvailability } from "../../agent/execution-service.js";
 import type { ProviderUsageService } from "../../../services/quota-fetcher/service.js";
 import { expandTilde } from "@thoth/drivers/internal/utils/path";
 
@@ -30,7 +30,7 @@ const LEGACY_MODE_ICONS = new Set<string>([
  * agent-lifecycle shares the visibility gate: both read client state (appVersion /
  * capabilities) LIVE, mutated post-construction via updateAppVersion /
  * updateClientCapabilities. The two agent-control reads expose provider availability
- * and draft features the AgentManager owns.
+ * and draft features the ExecutionService owns.
  */
 export interface ProviderCatalogSessionHost {
   emit(msg: SessionOutboundMessage): void;

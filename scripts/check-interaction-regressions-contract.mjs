@@ -37,7 +37,7 @@ forbidText(
   "Assistant image preview must use the same transient source abstraction.",
 );
 requireText(
-  "packages/drivers/src/server/agent/agent-sdk-types.ts",
+  "packages/drivers/src/server/agent/harness-contract.ts",
   /interface ProviderMessageAnchorReceipt[\s\S]*version: 1;[\s\S]*opaqueAnchor: string;/,
   "Harness adapters must own a versioned opaque rewind receipt.",
 );

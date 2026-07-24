@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ToolCallDetail } from "../../agent-sdk-types.js";
+import type { ToolCallDetail } from "../../harness-contract.js";
 
 interface BashToolInput {
   command: string;

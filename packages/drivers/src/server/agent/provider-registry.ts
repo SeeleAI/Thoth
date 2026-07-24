@@ -1,25 +1,27 @@
 import type { Logger } from "pino";
 
 import type {
-  AgentClient,
+  HarnessAdapter,
   AgentCreateConfigUnattendedInput,
   AgentMode,
   AgentModelDefinition,
   AgentPersistenceHandle,
   AgentProvider,
   AgentRuntimeInfo,
-  AgentSession,
+  HarnessThread,
   AgentStreamEvent,
   FetchCatalogOptions,
   ProviderCatalog,
   ResolveAgentCreateConfigInput,
   ResolveAgentCreateConfigResult,
-} from "./agent-sdk-types.js";
+} from "./harness-contract.js";
 import {
   isDefaultAgentCreateConfigUnattended,
+  isOpenCodeCreateConfigUnattended,
   resolveDefaultAgentCreateConfig,
+  resolveOpenCodeCreateConfig,
 } from "./create-agent-mode.js";
-import { normalizeAgentModelDefinition } from "./agent-sdk-types.js";
+import { normalizeAgentModelDefinition } from "./harness-contract.js";
 import type { ManagedProviderProcessPort, ProviderWorkspacePort } from "../../host/ports.js";
 import type {
   AgentProviderRuntimeSettingsMap,
@@ -27,15 +29,6 @@ import type {
   ProviderProfileModel,
   ProviderRuntimeSettings,
 } from "./provider-launch-config.js";
-import { ClaudeAgentClient } from "./providers/claude/agent.js";
-import { CodexAppServerAgentClient } from "./providers/codex-app-server-agent.js";
-import { CopilotACPAgentClient } from "./providers/copilot-acp-agent.js";
-import { CursorACPAgentClient } from "./providers/cursor-acp-agent.js";
-import { GenericACPAgentClient } from "./providers/generic-acp-agent.js";
-import { OpenCodeAgentClient } from "./providers/opencode-agent.js";
-import { PiRpcAgentClient } from "./providers/pi/agent.js";
-import { MockLoadTestAgentClient } from "./providers/mock-load-test-agent.js";
-import { MockSlowProviderClient } from "./providers/mock-slow-provider.js";
 import {
   AGENT_PROVIDER_DEFINITIONS,
   BUILTIN_PROVIDER_IDS,
@@ -52,7 +45,7 @@ export type { AgentProviderDefinition };
 
 export { AGENT_PROVIDER_DEFINITIONS, getAgentProviderDefinition };
 
-export interface ProviderDefinition extends AgentProviderDefinition {
+export interface ProviderManifest extends AgentProviderDefinition {
   enabled: boolean;
   /**
    * The id of another *registered* provider this one extends (e.g. a Z.AI
@@ -60,14 +53,17 @@ export interface ProviderDefinition extends AgentProviderDefinition {
    * generic ACP providers (which only extend the literal "acp" sentinel).
    */
   derivedFromProviderId: string | null;
-  createClient: (logger: Logger) => AgentClient;
+  loadAdapter: (logger?: Logger) => Promise<HarnessAdapter>;
   resolveCreateConfig: (input: ResolveAgentCreateConfigInput) => ResolveAgentCreateConfigResult;
   isCreateConfigUnattended: (input: AgentCreateConfigUnattendedInput) => boolean;
   /**
    * Single catalog discovery call used by ProviderSnapshotManager. Should spawn
    * at most one provider runtime process and return both models and modes.
    */
-  fetchCatalog: (options: FetchCatalogOptions, client?: AgentClient) => Promise<ProviderCatalog>;
+  fetchCatalog: (
+    options: FetchCatalogOptions,
+    adapter?: HarnessAdapter,
+  ) => Promise<ProviderCatalog>;
 }
 
 export interface BuildProviderRegistryOptions {
@@ -78,7 +74,7 @@ export interface BuildProviderRegistryOptions {
   isDev?: boolean;
 }
 
-interface ProviderClientFactoryOptions extends Pick<
+interface ProviderAdapterFactoryOptions extends Pick<
   BuildProviderRegistryOptions,
   "workspaceGitService" | "managedProcesses"
 > {
@@ -90,11 +86,11 @@ interface ProviderClientFactoryOptions extends Pick<
   };
 }
 
-type ProviderClientFactory = (
+type ProviderAdapterLoader = (
   logger: Logger,
   runtimeSettings?: ProviderRuntimeSettings,
-  options?: ProviderClientFactoryOptions,
-) => AgentClient;
+  options?: ProviderAdapterFactoryOptions,
+) => Promise<HarnessAdapter>;
 
 interface ResolvedProvider {
   definition: AgentProviderDefinition;
@@ -105,60 +101,69 @@ interface ResolvedProvider {
   enabled: boolean;
   derivedFromProviderId: string | null;
   providerParams?: unknown;
-  createBaseClient: (logger: Logger) => AgentClient;
+  loadBaseAdapter: (logger: Logger) => Promise<HarnessAdapter>;
+  resolveCreateConfig: (input: ResolveAgentCreateConfigInput) => ResolveAgentCreateConfigResult;
+  isCreateConfigUnattended: (input: AgentCreateConfigUnattendedInput) => boolean;
 }
 
-const PROVIDER_CLIENT_FACTORIES: Record<string, ProviderClientFactory> = {
-  claude: (logger, runtimeSettings) =>
-    new ClaudeAgentClient({
-      logger,
-      runtimeSettings,
-    }),
-  codex: (logger, runtimeSettings, options) =>
-    new CodexAppServerAgentClient(logger, runtimeSettings, {
+const PROVIDER_ADAPTER_LOADERS: Record<string, ProviderAdapterLoader> = {
+  claude: async (logger, runtimeSettings) => {
+    const { ClaudeHarnessAdapter } = await import("./providers/claude/agent.js");
+    return new ClaudeHarnessAdapter({ logger, runtimeSettings });
+  },
+  codex: async (logger, runtimeSettings, options) => {
+    const { CodexHarnessAdapter } = await import("./providers/codex-app-server-agent.js");
+    return new CodexHarnessAdapter(logger, runtimeSettings, {
       workspaceGitService: options?.workspaceGitService,
       customProvider: options?.customProvider,
-    }),
-  copilot: (logger, runtimeSettings) =>
-    new CopilotACPAgentClient({
-      logger,
-      runtimeSettings,
-    }),
-  cursor: (logger, runtimeSettings) =>
-    new CursorACPAgentClient({
+    });
+  },
+  copilot: async (logger, runtimeSettings) => {
+    const { CopilotACPHarnessAdapter } = await import("./providers/copilot-acp-agent.js");
+    return new CopilotACPHarnessAdapter({ logger, runtimeSettings });
+  },
+  cursor: async (logger, runtimeSettings) => {
+    const { CursorACPHarnessAdapter } = await import("./providers/cursor-acp-agent.js");
+    return new CursorACPHarnessAdapter({
       logger,
       command: getCursorACPCommand(runtimeSettings),
       env: runtimeSettings?.env,
-    }),
-  opencode: (logger, runtimeSettings, options) =>
-    new OpenCodeAgentClient(logger, runtimeSettings, {
+    });
+  },
+  opencode: async (logger, runtimeSettings, options) => {
+    const { OpenCodeHarnessAdapter } = await import("./providers/opencode-agent.js");
+    return new OpenCodeHarnessAdapter(logger, runtimeSettings, {
       managedProcesses: options?.managedProcesses,
-    }),
-  pi: (logger, runtimeSettings, options) =>
-    new PiRpcAgentClient({
+    });
+  },
+  pi: async (logger, runtimeSettings, options) => {
+    const { PiHarnessAdapter } = await import("./providers/pi/agent.js");
+    return new PiHarnessAdapter({
       logger,
       runtimeSettings,
       providerParams: options?.providerParams,
-    }),
-  omp: (logger, runtimeSettings, options) =>
-    new PiRpcAgentClient({
+    });
+  },
+  omp: async (logger, runtimeSettings, options) => {
+    const { PiHarnessAdapter } = await import("./providers/pi/agent.js");
+    return new PiHarnessAdapter({
       logger,
       runtimeSettings: mergeRuntimeSettings(
-        {
-          command: {
-            mode: "replace",
-            argv: ["omp"],
-          },
-        },
+        { command: { mode: "replace", argv: ["omp"] } },
         runtimeSettings,
       ),
-      providerParams: options?.providerParams ?? {
-        sessionDir: "~/.omp/agent/sessions",
-      },
+      providerParams: options?.providerParams ?? { sessionDir: "~/.omp/agent/sessions" },
       commandsRpcType: "get_available_commands",
-    }),
-  mock: (logger) => new MockLoadTestAgentClient(logger),
-  "mock-slow": () => new MockSlowProviderClient(),
+    });
+  },
+  mock: async (logger) => {
+    const { MockHarnessAdapter } = await import("./providers/mock-load-test-agent.js");
+    return new MockHarnessAdapter(logger);
+  },
+  "mock-slow": async () => {
+    const { MockSlowHarnessAdapter } = await import("./providers/mock-slow-provider.js");
+    return new MockSlowHarnessAdapter();
+  },
 };
 
 function getCursorACPCommand(
@@ -174,12 +179,12 @@ function getCursorACPCommand(
   return ["cursor-agent", "acp"];
 }
 
-function getProviderClientFactory(provider: string): ProviderClientFactory {
-  const factory = PROVIDER_CLIENT_FACTORIES[provider];
-  if (!factory) {
-    throw new Error(`No provider client factory registered for '${provider}'`);
+function getProviderAdapterLoader(provider: string): ProviderAdapterLoader {
+  const loader = PROVIDER_ADAPTER_LOADERS[provider];
+  if (!loader) {
+    throw new Error(`No provider adapter loader registered for '${provider}'`);
   }
-  return factory;
+  return loader;
 }
 
 function toRuntimeSettings(override?: ProviderOverride): ProviderRuntimeSettings | undefined {
@@ -350,7 +355,7 @@ function mergeModelAdditions(
   );
 }
 
-export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession): AgentSession {
+export function wrapSessionProvider(provider: AgentProvider, inner: HarnessThread): HarnessThread {
   return {
     provider,
     id: inner.id,
@@ -386,13 +391,13 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
   };
 }
 
-function wrapClientProvider(
+function wrapAdapterProvider(
   provider: AgentProvider,
-  inner: AgentClient,
+  inner: HarnessAdapter,
   profileModels: ProviderProfileModel[],
   additionalModels: ProviderProfileModel[],
   profileModelsAreAdditive: boolean,
-): AgentClient {
+): HarnessAdapter {
   const listImportableSessions = inner.listImportableSessions?.bind(inner);
   const importSession = inner.importSession?.bind(inner);
   const listCommands = inner.listCommands?.bind(inner);
@@ -501,8 +506,10 @@ function createRegistryEntry(
   logger: Logger,
   provider: AgentProvider,
   resolved: ResolvedProvider,
-): ProviderDefinition {
-  const modelClient = resolved.createBaseClient(logger);
+): ProviderManifest {
+  let loaded: Promise<HarnessAdapter> | null = null;
+  const loadAdapter = (providerLogger: Logger = logger): Promise<HarnessAdapter> =>
+    (loaded ??= createResolvedProviderAdapter(providerLogger, provider, resolved));
   const hasReplacementModels =
     resolved.profileModels.length > 0 && !resolved.profileModelsAreAdditive;
   const replacementModels = hasReplacementModels
@@ -526,13 +533,11 @@ function createRegistryEntry(
     ...resolved.definition,
     enabled: resolved.enabled,
     derivedFromProviderId: resolved.derivedFromProviderId,
-    createClient: (providerLogger: Logger) =>
-      createResolvedProviderClient(providerLogger, provider, resolved),
-    resolveCreateConfig: modelClient.resolveCreateConfig ?? resolveDefaultAgentCreateConfig,
-    isCreateConfigUnattended:
-      modelClient.isCreateConfigUnattended ?? isDefaultAgentCreateConfigUnattended,
-    fetchCatalog: async (options: FetchCatalogOptions, client?: AgentClient) => {
-      const catalogClient = client ?? modelClient;
+    loadAdapter,
+    resolveCreateConfig: resolved.resolveCreateConfig,
+    isCreateConfigUnattended: resolved.isCreateConfigUnattended,
+    fetchCatalog: async (options: FetchCatalogOptions, adapter?: HarnessAdapter) => {
+      const catalogAdapter = adapter ?? (await loadAdapter());
       if (hasReplacementModels) {
         // Replacement models skip runtime model discovery, but additionalModels
         // must still be merged on top. If modes are dynamic, probe for modes via
@@ -544,11 +549,11 @@ function createRegistryEntry(
             modes: decorateModes(resolved.definition.modes),
           };
         }
-        const catalog = await catalogClient.fetchCatalog(options);
+        const catalog = await catalogAdapter.fetchCatalog(options);
         return { models, modes: decorateModes(catalog.modes) };
       }
 
-      const catalog = await catalogClient.fetchCatalog(options);
+      const catalog = await catalogAdapter.fetchCatalog(options);
       return {
         models: mergeModels(
           provider,
@@ -565,18 +570,18 @@ function createRegistryEntry(
   };
 }
 
-function createResolvedProviderClient(
+async function createResolvedProviderAdapter(
   logger: Logger,
   provider: AgentProvider,
   resolved: ResolvedProvider,
-): AgentClient {
-  const inner = resolved.createBaseClient(logger);
+): Promise<HarnessAdapter> {
+  const inner = await resolved.loadBaseAdapter(logger);
   const hasModelOverrides =
     resolved.profileModels.length > 0 || resolved.additionalModels.length > 0;
   if (inner.provider === provider && !hasModelOverrides) {
     return inner;
   }
-  return wrapClientProvider(
+  return wrapAdapterProvider(
     provider,
     inner,
     resolved.profileModels,
@@ -599,7 +604,7 @@ function buildResolvedBuiltinProviders(
 
   for (const definition of definitions) {
     const override = providerOverrides[definition.id];
-    const factory = getProviderClientFactory(definition.id);
+    const loader = getProviderAdapterLoader(definition.id);
     const mergedRuntimeSettings = mergeRuntimeSettings(
       runtimeSettings?.[definition.id],
       toRuntimeSettings(override),
@@ -614,12 +619,20 @@ function buildResolvedBuiltinProviders(
       enabled: override?.enabled ?? definition.enabledByDefault ?? true,
       derivedFromProviderId: null,
       providerParams: override?.params,
-      createBaseClient: (logger) =>
-        factory(logger, mergedRuntimeSettings, {
+      loadBaseAdapter: (logger) =>
+        loader(logger, mergedRuntimeSettings, {
           workspaceGitService: options.workspaceGitService,
           managedProcesses: options.managedProcesses,
           providerParams: override?.params,
         }),
+      resolveCreateConfig:
+        definition.id === "opencode"
+          ? resolveOpenCodeCreateConfig
+          : resolveDefaultAgentCreateConfig,
+      isCreateConfigUnattended:
+        definition.id === "opencode"
+          ? isOpenCodeCreateConfigUnattended
+          : isDefaultAgentCreateConfigUnattended,
     });
   }
 
@@ -666,24 +679,24 @@ function addDerivedProviders(
         enabled: override.enabled !== false,
         derivedFromProviderId: null,
         providerParams: override.params,
-        createBaseClient: (logger) =>
-          providerId === "cursor"
-            ? new CursorACPAgentClient({
-                logger,
-                command,
-                env: override.env,
-                providerId,
-                label: override.label ?? providerId,
-                providerParams: override.params,
-              })
-            : new GenericACPAgentClient({
-                logger,
-                command,
-                env: override.env,
-                providerId,
-                label: override.label ?? providerId,
-                providerParams: override.params,
-              }),
+        loadBaseAdapter: async (logger) => {
+          const options = {
+            logger,
+            command,
+            env: override.env,
+            providerId,
+            label: override.label ?? providerId,
+            providerParams: override.params,
+          };
+          if (providerId === "cursor") {
+            const { CursorACPHarnessAdapter } = await import("./providers/cursor-acp-agent.js");
+            return new CursorACPHarnessAdapter(options);
+          }
+          const { GenericACPHarnessAdapter } = await import("./providers/generic-acp-agent.js");
+          return new GenericACPHarnessAdapter(options);
+        },
+        resolveCreateConfig: resolveDefaultAgentCreateConfig,
+        isCreateConfigUnattended: isDefaultAgentCreateConfigUnattended,
       });
       continue;
     }
@@ -701,7 +714,7 @@ function addDerivedProviders(
       toRuntimeSettings(override),
     );
     const baseDefinition = baseProvider.definition;
-    const baseFactory = getProviderClientFactory(baseProviderId);
+    const baseLoader = getProviderAdapterLoader(baseProviderId);
     const providerParams = override.params ?? baseProvider.providerParams;
 
     resolvedProviders.set(providerId, {
@@ -713,8 +726,8 @@ function addDerivedProviders(
       enabled: override.enabled !== false,
       derivedFromProviderId: baseProviderId,
       providerParams,
-      createBaseClient: (logger) =>
-        baseFactory(logger, mergedRuntimeSettings, {
+      loadBaseAdapter: (logger) =>
+        baseLoader(logger, mergedRuntimeSettings, {
           managedProcesses: options.managedProcesses,
           providerParams,
           customProvider: {
@@ -723,6 +736,8 @@ function addDerivedProviders(
             extends: baseProviderId,
           },
         }),
+      resolveCreateConfig: baseProvider.resolveCreateConfig,
+      isCreateConfigUnattended: baseProvider.isCreateConfigUnattended,
     });
   }
 }
@@ -730,7 +745,7 @@ function addDerivedProviders(
 export function buildProviderRegistry(
   logger: Logger,
   options?: BuildProviderRegistryOptions,
-): Record<AgentProvider, ProviderDefinition> {
+): Record<AgentProvider, ProviderManifest> {
   const runtimeSettings = options?.runtimeSettings;
   const providerOverrides = options?.providerOverrides ?? {};
   const resolvedProviders = buildResolvedBuiltinProviders(
@@ -751,57 +766,24 @@ export function buildProviderRegistry(
       provider,
       createRegistryEntry(logger, provider, resolved),
     ]),
-  ) as Record<AgentProvider, ProviderDefinition>;
+  ) as Record<AgentProvider, ProviderManifest>;
 }
 
-export function getProviderIds(
-  registry: Record<AgentProvider, ProviderDefinition>,
-): AgentProvider[] {
+export function getProviderIds(registry: Record<AgentProvider, ProviderManifest>): AgentProvider[] {
   return Object.keys(registry);
 }
 
-// Deprecated: Use buildProviderRegistry instead
-export const PROVIDER_REGISTRY: Record<AgentProvider, ProviderDefinition> =
-  null as unknown as Record<AgentProvider, ProviderDefinition>;
-
-export function createAllClients(
-  logger: Logger,
-  options?: BuildProviderRegistryOptions,
-): Record<AgentProvider, AgentClient> {
-  return createClientsFromRegistry(buildProviderRegistry(logger, options), logger);
-}
-
-export function createClientsFromRegistry(
-  registry: Record<AgentProvider, ProviderDefinition>,
-  logger: Logger,
-): Record<AgentProvider, AgentClient> {
-  return Object.fromEntries(
-    Object.entries(registry).map(([provider, definition]) => [
-      provider,
-      definition.createClient(logger),
-    ]),
-  ) as Record<AgentProvider, AgentClient>;
-}
-
-export async function shutdownProviders(
-  logger: Logger,
-  options?: BuildProviderRegistryOptions,
-): Promise<void> {
-  const clients = createAllClients(logger, options);
-  await shutdownAgentClients(Object.values(clients), logger);
-}
-
-export async function shutdownAgentClients(
-  clients: Iterable<AgentClient>,
+export async function shutdownHarnessAdapters(
+  adapters: Iterable<HarnessAdapter>,
   logger: Logger,
 ): Promise<void> {
   await Promise.all(
-    Array.from(clients).map(async (client) => {
-      if (!client.shutdown) return;
+    Array.from(adapters).map(async (adapter) => {
+      if (!adapter.shutdown) return;
       try {
-        await client.shutdown();
+        await adapter.shutdown();
       } catch (error) {
-        logger.warn({ err: error, provider: client.provider }, "Provider client shutdown failed");
+        logger.warn({ err: error, provider: adapter.provider }, "Provider adapter shutdown failed");
       }
     }),
   );

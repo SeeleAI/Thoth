@@ -4,7 +4,7 @@ import path from "node:path";
 
 import type pino from "pino";
 
-import type { ManagedAgent, ProviderAvailability } from "../../agent/agent-manager.js";
+import type { ManagedAgent, ProviderAvailability } from "../../agent/execution-service.js";
 import type { WebSocketRuntimeDiagnosticSnapshot } from "../../websocket/runtime-metrics.js";
 import type { PersistedProjectRecord, PersistedWorkspaceRecord } from "../../workspace-registry.js";
 import { execCommand } from "@thoth/drivers/internal/utils/spawn";

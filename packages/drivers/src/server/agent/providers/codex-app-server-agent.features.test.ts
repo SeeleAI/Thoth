@@ -1,8 +1,8 @@
 import pino from "pino";
 import { describe, expect, test } from "vitest";
 
-import type { AgentSession, AgentSessionConfig } from "@thoth/drivers/agent-runtime";
-import { CodexAppServerAgentSession } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
+import type { HarnessThread, AgentSessionConfig } from "@thoth/drivers/agent-runtime";
+import { CodexHarnessThread } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
 import {
   createFakeCodexAppServer,
   type FakeCodexAppServer,
@@ -32,7 +32,7 @@ const TEST_COLLABORATION_MODES: CollaborationModeRecord[] = [
   },
 ];
 
-type CodexFeaturesTestSession = AgentSession;
+type CodexFeaturesTestSession = HarnessThread;
 
 interface CapturedLogEntry {
   level?: number;
@@ -74,7 +74,7 @@ function createSessionHarness(
   const appServer = createFakeCodexAppServer({
     "collaborationMode/list": () => ({ data: TEST_COLLABORATION_MODES }),
   });
-  const session = new CodexAppServerAgentSession(
+  const session = new CodexHarnessThread(
     { ...config, provider: CODEX_PROVIDER },
     null,
     options.logger ?? createTestLogger(),

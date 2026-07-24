@@ -48,9 +48,22 @@ if (stage.stage >= 1) {
 
 if (stage.stage >= 2) {
   for (const path of [
+    "packages/drivers/src/server/agent/harness-contract.ts",
+    "packages/drivers/src/server/agent/provider-registry.ts",
+    "packages/daemon/src/server/agent/execution-service.ts",
+    "packages/daemon/src/server/workspace-authority/tool-gateway.ts",
+  ]) {
+    requirePath(path);
+  }
+  for (const path of [
     "packages/daemon/src/server/agent/agent-manager.ts",
+    "packages/daemon/src/server/agent/tools/foreground-turn-fence.ts",
+    "packages/daemon/src/server/test-utils/fake-agent-client.ts",
     "packages/drivers/src/harness/hosted-adapter.ts",
+    "packages/drivers/src/harness/registry.ts",
+    "packages/drivers/src/server/agent/agent-sdk-types.ts",
     "packages/daemon/src/server/workspace-authority/agent-manager-harness-host.ts",
+    "packages/daemon/src/server/workspace-authority/task-tool-gateway.ts",
   ]) {
     forbidPath(path);
   }
@@ -59,6 +72,35 @@ if (stage.stage >= 2) {
     /\b(AgentClient|AgentSession|AgentManager|HostedHarnessAdapter|AgentManagerHarnessHost)\b/,
     "legacy AgentManager harness chain",
   );
+  forbidText(
+    "packages/drivers/src/server/agent/provider-registry.ts",
+    /^import\s.+from\s+["']\.\/providers\//,
+    "static Provider implementation import",
+  );
+  forbidText(
+    "packages/drivers/src/server/agent/provider-registry.ts",
+    /\b(PROVIDER_REGISTRY|createAllAdapters|loadAdaptersFromRegistry|shutdownProviders)\b/,
+    "eager Provider registry compatibility API",
+  );
+  forbidProductionText(
+    "packages/daemon/src",
+    /from\s+["'](?:@agentclientprotocol\/sdk|@anthropic-ai\/claude-agent-sdk|@opencode-ai\/sdk)["']/,
+    "Daemon production import of a Provider SDK",
+  );
+  for (const path of [
+    "packages/daemon/src/server/agent/execution-service.ts",
+    "packages/daemon/src/server/agent/foreground-turn-coordinator.ts",
+    "packages/daemon/src/server/workspace-authority/task-coordinator.ts",
+    "packages/daemon/src/server/workspace-authority/task-orchestrator.ts",
+    "packages/daemon/src/server/workspace-authority/tool-gateway.ts",
+  ]) {
+    forbidText(
+      path,
+      /["'`](?:codex|claude|opencode|pi|omp|copilot|cursor)["'`]/,
+      "Provider identity branch in application orchestration",
+    );
+  }
+  requireOnlyToolGatewayConstruction();
 }
 
 if (stage.stage >= 3) requirePath("packages/protocol/src/rpc-registry.ts");
@@ -112,6 +154,64 @@ function forbidText(root, pattern, label) {
     if (error.status !== 1) throw error;
   }
   if (output) failures.push(`${label} remains:\n${output.split("\n").slice(0, 8).join("\n")}`);
+}
+
+function forbidProductionText(root, pattern, label) {
+  let output = "";
+  try {
+    output = execFileSync(
+      "rg",
+      [
+        "-n",
+        "--glob",
+        "*.ts",
+        "--glob",
+        "*.tsx",
+        "--glob",
+        "!*.test.ts",
+        "--glob",
+        "!*.test.tsx",
+        "--glob",
+        "!*.e2e.test.ts",
+        pattern.source,
+        root,
+      ],
+      { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+  } catch (error) {
+    if (error.status !== 1) throw error;
+  }
+  if (output) failures.push(`${label} remains:\n${output.split("\n").slice(0, 8).join("\n")}`);
+}
+
+function requireOnlyToolGatewayConstruction() {
+  let output = "";
+  try {
+    output = execFileSync(
+      "rg",
+      [
+        "-l",
+        "--glob",
+        "*.ts",
+        "--glob",
+        "!*.test.ts",
+        "--glob",
+        "!*.e2e.test.ts",
+        "new ToolGateway",
+        "packages/daemon/src/server",
+      ],
+      { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+  } catch (error) {
+    if (error.status !== 1) throw error;
+  }
+  const paths = output ? output.split("\n") : [];
+  const expected = "packages/daemon/src/server/workspace-authority/task-orchestrator.ts";
+  if (paths.length !== 1 || paths[0] !== expected) {
+    failures.push(
+      `ToolGateway must have one production construction site at ${expected}; found ${paths.join(", ") || "none"}`,
+    );
+  }
 }
 
 function forbidCoreRuntimeLeaks() {

@@ -7,7 +7,7 @@ import type { Logger } from "pino";
 import { expandTilde } from "@thoth/drivers/internal/utils/path";
 import { withTimeout } from "@thoth/drivers/internal/utils/promise-timeout";
 import type {
-  AgentClient,
+  HarnessAdapter,
   AgentCreateConfigParent,
   AgentMode,
   AgentModelDefinition,
@@ -16,7 +16,7 @@ import type {
   ProviderCatalog,
   ProviderSnapshotEntry,
 } from "@thoth/drivers/agent-runtime";
-import type { ManagedAgent } from "./agent-manager.js";
+import type { ManagedAgent } from "./execution-service.js";
 import type { WorkspaceGitService } from "../workspace-git-service.js";
 import type { ManagedProcessRegistry } from "../managed-processes/managed-processes.js";
 import type {
@@ -25,8 +25,8 @@ import type {
 } from "@thoth/drivers/internal/server/agent/provider-launch-config";
 import {
   buildProviderRegistry,
-  shutdownAgentClients,
-  type ProviderDefinition,
+  shutdownHarnessAdapters,
+  type ProviderManifest,
 } from "@thoth/drivers/internal/server/agent/provider-registry";
 import { applyMutableProviderConfigToOverrides } from "../daemon-config-store.js";
 import {
@@ -75,7 +75,7 @@ export interface ProviderSnapshotManagerOptions {
   workspaceGitService?: Pick<WorkspaceGitService, "resolveRepoRoot">;
   managedProcesses?: ManagedProcessRegistry;
   isDev?: boolean;
-  extraClients?: Partial<Record<AgentProvider, AgentClient>>;
+  extraAdapters?: Partial<Record<AgentProvider, HarnessAdapter>>;
   refreshTimeoutMs?: number;
   diagnosticTimeoutMs?: number;
 }
@@ -127,11 +127,18 @@ export interface ProviderDiagnosticResult {
   diagnostic: string;
 }
 
-export interface AgentManagerProviderState {
+export interface ExecutionProviderState {
   providerDefinitions: Partial<
-    Record<AgentProvider, { enabled: boolean; derivedFromProviderId: string | null }>
+    Record<
+      AgentProvider,
+      {
+        enabled: boolean;
+        derivedFromProviderId: string | null;
+        loadAdapter: () => Promise<HarnessAdapter>;
+      }
+    >
   >;
-  clients: Partial<Record<AgentProvider, AgentClient>>;
+  adapters: Partial<Record<AgentProvider, HarnessAdapter>>;
 }
 
 interface ProviderLoadOptions {
@@ -162,19 +169,19 @@ export class ProviderSnapshotManager {
   private readonly workspaceGitService?: Pick<WorkspaceGitService, "resolveRepoRoot">;
   private readonly managedProcesses?: ManagedProcessRegistry;
   private readonly isDev: boolean;
-  private readonly extraClients: Partial<Record<AgentProvider, AgentClient>>;
+  private readonly extraAdapters: Partial<Record<AgentProvider, HarnessAdapter>>;
   private runtimeSettings: AgentProviderRuntimeSettingsMap | undefined;
   private providerOverrides: Record<string, ProviderOverride> | undefined;
   private readonly baseProviderOverrides: Record<string, ProviderOverride> | undefined;
-  private providerRegistry: Record<AgentProvider, ProviderDefinition>;
-  private providerClients: Record<AgentProvider, AgentClient>;
+  private providerRegistry: Record<AgentProvider, ProviderManifest>;
+  private providerAdapters: Partial<Record<AgentProvider, HarnessAdapter>>;
 
   constructor(options: ProviderSnapshotManagerOptions) {
     this.logger = options.logger;
     this.workspaceGitService = options.workspaceGitService;
     this.managedProcesses = options.managedProcesses;
     this.isDev = options.isDev === true;
-    this.extraClients = options.extraClients ?? {};
+    this.extraAdapters = options.extraAdapters ?? {};
     this.runtimeSettings = options.runtimeSettings;
     this.providerOverrides = options.providerOverrides;
     this.baseProviderOverrides = options.providerOverrides;
@@ -184,7 +191,7 @@ export class ProviderSnapshotManager {
       this.refreshTimeoutMs,
     );
     this.providerRegistry = this.buildRegistry();
-    this.providerClients = { ...this.extraClients } as Record<AgentProvider, AgentClient>;
+    this.providerAdapters = { ...this.extraAdapters };
   }
 
   getSnapshot(cwd?: string): ProviderSnapshotEntry[] {
@@ -246,34 +253,29 @@ export class ProviderSnapshotManager {
     return this.providerRegistry[provider]?.label ?? provider;
   }
 
-  getAgentManagerProviderState(): AgentManagerProviderState {
-    const providerDefinitions: AgentManagerProviderState["providerDefinitions"] = {};
-    const clients: AgentManagerProviderState["clients"] = {};
-    for (const [provider, definition] of Object.entries(this.providerRegistry)) {
+  getExecutionProviderState(): ExecutionProviderState {
+    const providerDefinitions: ExecutionProviderState["providerDefinitions"] = {};
+    for (const [provider, manifest] of Object.entries(this.providerRegistry)) {
       providerDefinitions[provider] = {
-        enabled: definition.enabled,
-        derivedFromProviderId: definition.derivedFromProviderId,
+        enabled: manifest.enabled,
+        derivedFromProviderId: manifest.derivedFromProviderId,
+        loadAdapter: () => this.ensureAdapter(provider, manifest),
       };
-      if (definition.enabled) {
-        clients[provider] = this.ensureClient(provider, definition);
-      }
     }
-    for (const [provider, client] of Object.entries(this.extraClients)) {
-      if (client) {
-        clients[provider] = client;
-      }
-    }
-    return { providerDefinitions, clients };
+    return { providerDefinitions, adapters: { ...this.extraAdapters } };
   }
 
-  private ensureClient(provider: AgentProvider, definition: ProviderDefinition): AgentClient {
-    const existing = this.providerClients[provider];
+  private async ensureAdapter(
+    provider: AgentProvider,
+    manifest: ProviderManifest,
+  ): Promise<HarnessAdapter> {
+    const existing = this.providerAdapters[provider];
     if (existing) {
       return existing;
     }
-    const client = definition.createClient(this.logger);
-    this.providerClients[provider] = client;
-    return client;
+    const adapter = await manifest.loadAdapter(this.logger);
+    this.providerAdapters[provider] = adapter;
+    return adapter;
   }
 
   async listProviders(input: ProviderSnapshotReadOptions = {}): Promise<ProviderSnapshotEntry[]> {
@@ -371,13 +373,13 @@ export class ProviderSnapshotManager {
 
   applyMutableProviderConfig(
     mutableProviders: MutableDaemonConfig["providers"] | undefined,
-  ): AgentManagerProviderState {
+  ): ExecutionProviderState {
     this.providerOverrides = applyMutableProviderConfigToOverrides(
       this.baseProviderOverrides,
       mutableProviders,
     );
     this.providerRegistry = this.buildRegistry();
-    this.providerClients = { ...this.extraClients } as Record<AgentProvider, AgentClient>;
+    this.providerAdapters = { ...this.extraAdapters };
 
     for (const cwd of this.snapshots.keys()) {
       this.providerLoads.delete(cwd);
@@ -385,7 +387,7 @@ export class ProviderSnapshotManager {
       this.emitChange(cwd);
     }
 
-    return this.getAgentManagerProviderState();
+    return this.getExecutionProviderState();
   }
 
   on(event: "change", listener: ProviderSnapshotChangeListener): this {
@@ -399,14 +401,10 @@ export class ProviderSnapshotManager {
   }
 
   async shutdown(): Promise<void> {
-    // Materialize a client per enabled provider so provider-owned resources
-    // (background processes, sockets, etc.) get a chance to release even when
-    // a given provider hasn't been touched yet during this daemon's lifetime.
-    const state = this.getAgentManagerProviderState();
-    const clients = Object.values(state.clients).filter(
-      (client): client is AgentClient => client !== undefined,
+    const adapters = Object.values(this.providerAdapters).filter(
+      (adapter): adapter is HarnessAdapter => adapter !== undefined,
     );
-    await shutdownAgentClients(clients, this.logger);
+    await shutdownHarnessAdapters(adapters, this.logger);
   }
 
   destroy(): void {
@@ -416,7 +414,7 @@ export class ProviderSnapshotManager {
     this.providerLoads.clear();
   }
 
-  private buildRegistry(): Record<AgentProvider, ProviderDefinition> {
+  private buildRegistry(): Record<AgentProvider, ProviderManifest> {
     const registry = buildProviderRegistry(this.logger, {
       runtimeSettings: this.runtimeSettings,
       providerOverrides: this.providerOverrides,
@@ -425,19 +423,19 @@ export class ProviderSnapshotManager {
       isDev: this.isDev,
     });
 
-    for (const [provider, client] of Object.entries(this.extraClients) as Array<
-      [AgentProvider, AgentClient]
+    for (const [provider, adapter] of Object.entries(this.extraAdapters) as Array<
+      [AgentProvider, HarnessAdapter]
     >) {
-      const definition = registry[provider];
-      if (!definition) continue;
+      const manifest = registry[provider];
+      if (!manifest) continue;
       registry[provider] = {
-        ...definition,
-        createClient: () => client,
+        ...manifest,
+        loadAdapter: async () => adapter,
         resolveCreateConfig:
-          client.resolveCreateConfig?.bind(client) ?? definition.resolveCreateConfig,
+          adapter.resolveCreateConfig?.bind(adapter) ?? manifest.resolveCreateConfig,
         isCreateConfigUnattended:
-          client.isCreateConfigUnattended?.bind(client) ?? definition.isCreateConfigUnattended,
-        fetchCatalog: client.fetchCatalog.bind(client),
+          adapter.isCreateConfigUnattended?.bind(adapter) ?? manifest.isCreateConfigUnattended,
+        fetchCatalog: adapter.fetchCatalog.bind(adapter),
       };
     }
 
@@ -482,7 +480,7 @@ export class ProviderSnapshotManager {
     throw new Error(`Provider '${entry.provider}' is not available`);
   }
 
-  private requireProvider(provider: AgentProvider): ProviderDefinition {
+  private requireProvider(provider: AgentProvider): ProviderManifest {
     const definition = this.providerRegistry[provider];
     if (!definition) {
       throw new Error(`Provider ${provider} is not configured`);
@@ -492,7 +490,7 @@ export class ProviderSnapshotManager {
 
   private async refreshDiagnosticSnapshotEntry(
     provider: AgentProvider,
-    definition: ProviderDefinition,
+    definition: ProviderManifest,
   ): Promise<ProviderSnapshotEntry> {
     try {
       const target = createGlobalSnapshotTarget();
@@ -515,14 +513,14 @@ export class ProviderSnapshotManager {
 
   private async getBaseProviderDiagnostic(
     provider: AgentProvider,
-    definition: ProviderDefinition,
+    definition: ProviderManifest,
   ): Promise<string> {
     try {
-      const client = this.ensureClient(provider, definition);
-      if (client.getDiagnostic) {
+      const adapter = await this.ensureAdapter(provider, definition);
+      if (adapter.getDiagnostic) {
         return (
           await withTimeout(
-            client.getDiagnostic(),
+            adapter.getDiagnostic(),
             this.diagnosticTimeoutMs,
             `Timed out collecting ${definition.label ?? provider} diagnostic after ${
               this.diagnosticTimeoutMs
@@ -719,7 +717,7 @@ export class ProviderSnapshotManager {
     snapshotCwd: string;
     catalogScope: ProviderCatalogScope;
     provider: AgentProvider;
-    definition: ProviderDefinition;
+    definition: ProviderManifest;
     load: ProviderLoad;
     force: boolean;
   }): Promise<void> {
@@ -746,10 +744,10 @@ export class ProviderSnapshotManager {
         return;
       }
 
-      const client = this.ensureClient(provider, definition);
+      const adapter = await this.ensureAdapter(provider, definition);
       let catalog: ProviderCatalog;
       const available = await withTimeout(
-        client.isAvailable(),
+        adapter.isAvailable(),
         this.refreshTimeoutMs,
         `Timed out checking ${definition.label} availability after ${this.refreshTimeoutMs}ms`,
       );
@@ -765,7 +763,7 @@ export class ProviderSnapshotManager {
             ...catalogOptions,
             timeoutMs: this.refreshTimeoutMs,
           },
-          client,
+          adapter,
         ),
         this.refreshTimeoutMs,
         `Timed out refreshing ${definition.label} after ${this.refreshTimeoutMs}ms`,

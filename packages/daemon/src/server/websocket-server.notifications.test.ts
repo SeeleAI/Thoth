@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Server as HTTPServer } from "http";
 import type pino from "pino";
-import type { AgentManager } from "./agent/agent-manager.js";
+import type { ExecutionService } from "./agent/execution-service.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { DaemonConfigStore } from "./daemon-config-store.js";
@@ -72,9 +72,9 @@ class RecordingPushNotificationSender implements PushNotificationSender {
   }
 }
 
-function createServer(agentManagerOverrides?: Record<string, unknown>) {
+function createServer(executionServiceOverrides?: Record<string, unknown>) {
   const pushNotifications = new RecordingPushNotificationSender();
-  const agentManager = {
+  const executionService = {
     subscribe: vi.fn(() => () => {}),
     setAgentAttentionCallback: vi.fn(),
     getAgent: vi.fn(() => null),
@@ -88,7 +88,7 @@ function createServer(agentManagerOverrides?: Record<string, unknown>) {
         maxItemsPerAgent: 0,
       },
     })),
-    ...agentManagerOverrides,
+    ...executionServiceOverrides,
   };
   const daemonConfigStore = {
     onChange: vi.fn(() => () => {}),
@@ -98,7 +98,7 @@ function createServer(agentManagerOverrides?: Record<string, unknown>) {
     createStub<HTTPServer>({}),
     createStub<pino.Logger>(createLogger()),
     "srv-test",
-    createStub<AgentManager>(agentManager),
+    createStub<ExecutionService>(executionService),
     createStub<AgentStorage>({}),
     createStub<DownloadTokenStore>({}),
     "/tmp/thoth-test",
@@ -136,7 +136,7 @@ function createServer(agentManagerOverrides?: Record<string, unknown>) {
     createProviderSnapshotManagerStub().manager,
   );
 
-  return { server, agentManager, pushNotifications };
+  return { server, executionService, pushNotifications };
 }
 
 function createOpenSocket() {

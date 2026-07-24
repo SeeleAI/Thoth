@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { ManagedAgent } from "./agent-manager.js";
+import type { ManagedAgent } from "./execution-service.js";
 import type { StoredAgentRecord } from "./agent-storage.js";
 import type { AgentProviderNotice } from "@thoth/drivers/agent-runtime";
 
@@ -37,7 +37,7 @@ export interface LifecycleAgentStorage {
 }
 
 export interface AgentLifecycleCommandDependencies {
-  agentManager: LifecycleAgentManager;
+  executionService: LifecycleAgentManager;
   agentStorage: LifecycleAgentStorage;
   logger: Logger;
 }
@@ -48,17 +48,17 @@ export interface CancelAgentRunResult {
 }
 
 export async function cancelAgentRunCommand(
-  dependencies: Pick<AgentLifecycleCommandDependencies, "agentManager" | "logger">,
+  dependencies: Pick<AgentLifecycleCommandDependencies, "executionService" | "logger">,
   agentId: string,
 ): Promise<CancelAgentRunResult> {
-  const { agentManager, logger } = dependencies;
-  const agent = agentManager.getAgent(agentId);
+  const { executionService, logger } = dependencies;
+  const agent = executionService.getAgent(agentId);
   if (!agent) {
     logger.trace({ agentId }, "cancelAgentRunCommand: agent not found");
     throw new Error(`Agent ${agentId} not found`);
   }
 
-  const hasInFlightRun = agentManager.hasInFlightRun(agentId);
+  const hasInFlightRun = executionService.hasInFlightRun(agentId);
   if (!hasInFlightRun) {
     logger.trace(
       { agentId, lifecycle: agent.lifecycle, hasInFlightRun },
@@ -72,7 +72,7 @@ export async function cancelAgentRunCommand(
     "cancelAgentRunCommand: interrupting",
   );
   const startedAt = Date.now();
-  const cancelled = await agentManager.cancelAgentRun(agentId);
+  const cancelled = await executionService.cancelAgentRun(agentId);
   logger.debug(
     { agentId, cancelled, durationMs: Date.now() - startedAt },
     "cancelAgentRunCommand: cancelAgentRun completed",
@@ -101,12 +101,12 @@ export async function archiveAgentCommand(
   dependencies: AgentLifecycleCommandDependencies,
   agentId: string,
 ): Promise<ArchiveAgentResult> {
-  const liveAgent = dependencies.agentManager.getAgent(agentId);
+  const liveAgent = dependencies.executionService.getAgent(agentId);
   let record: StoredAgentRecord | null;
   if (liveAgent) {
     await cancelAgentRunCommand(dependencies, agentId);
-    await dependencies.agentManager.clearAgentAttention(agentId).catch(() => undefined);
-    await dependencies.agentManager.archiveAgent(agentId);
+    await dependencies.executionService.clearAgentAttention(agentId).catch(() => undefined);
+    await dependencies.executionService.archiveAgent(agentId);
     record = await dependencies.agentStorage.get(agentId);
   } else {
     record = await archiveStoredAgent(dependencies, agentId);
@@ -127,10 +127,10 @@ export async function archiveAgentCommand(
 }
 
 export async function closeAgentCommand(
-  dependencies: Pick<AgentLifecycleCommandDependencies, "agentManager">,
+  dependencies: Pick<AgentLifecycleCommandDependencies, "executionService">,
   agentId: string,
 ): Promise<void> {
-  await dependencies.agentManager.closeAgent(agentId);
+  await dependencies.executionService.closeAgent(agentId);
 }
 
 export interface UpdateAgentResult {
@@ -139,7 +139,7 @@ export interface UpdateAgentResult {
 }
 
 export async function updateAgentCommand(
-  dependencies: Pick<AgentLifecycleCommandDependencies, "agentManager">,
+  dependencies: Pick<AgentLifecycleCommandDependencies, "executionService">,
   input: {
     agentId: string;
     name?: string;
@@ -156,7 +156,7 @@ export async function updateAgentCommand(
     };
   }
 
-  await dependencies.agentManager.updateAgentMetadata(input.agentId, {
+  await dependencies.executionService.updateAgentMetadata(input.agentId, {
     ...(title ? { title } : {}),
     ...(labels ? { labels } : {}),
   });
@@ -175,10 +175,10 @@ export interface DetachAgentResult {
 }
 
 export async function detachAgentCommand(
-  dependencies: Pick<AgentLifecycleCommandDependencies, "agentManager">,
+  dependencies: Pick<AgentLifecycleCommandDependencies, "executionService">,
   agentId: string,
 ): Promise<DetachAgentResult> {
-  const result = await dependencies.agentManager.detachAgent(agentId);
+  const result = await dependencies.executionService.detachAgent(agentId);
   return {
     agentId,
     ...result,
@@ -186,18 +186,18 @@ export async function detachAgentCommand(
 }
 
 export async function setAgentModeCommand(
-  dependencies: Pick<AgentLifecycleCommandDependencies, "agentManager">,
+  dependencies: Pick<AgentLifecycleCommandDependencies, "executionService">,
   input: {
     agentId: string;
     modeId: string;
   },
 ): Promise<{ modeId: string; notice: AgentProviderNotice | null }> {
-  const notice = await dependencies.agentManager.setAgentMode(input.agentId, input.modeId);
+  const notice = await dependencies.executionService.setAgentMode(input.agentId, input.modeId);
   return { modeId: input.modeId, notice };
 }
 
 async function archiveStoredAgent(
-  dependencies: Pick<AgentLifecycleCommandDependencies, "agentManager" | "agentStorage">,
+  dependencies: Pick<AgentLifecycleCommandDependencies, "executionService" | "agentStorage">,
   agentId: string,
 ): Promise<StoredAgentRecord> {
   const existing = await dependencies.agentStorage.get(agentId);
@@ -210,5 +210,5 @@ async function archiveStoredAgent(
   }
 
   const archivedAt = new Date().toISOString();
-  return dependencies.agentManager.archiveSnapshot(agentId, archivedAt);
+  return dependencies.executionService.archiveSnapshot(agentId, archivedAt);
 }

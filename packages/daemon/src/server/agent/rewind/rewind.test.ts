@@ -1,23 +1,27 @@
 import { describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
-import { AgentManager } from "../agent-manager.js";
-import type { AgentClient, AgentSession, AgentSessionConfig } from "@thoth/drivers/agent-runtime";
+import { ExecutionService } from "../execution-service.js";
+import type {
+  HarnessAdapter,
+  HarnessThread,
+  AgentSessionConfig,
+} from "@thoth/drivers/agent-runtime";
 import { NO_HARNESS_CAPABILITIES } from "@thoth/drivers/harness";
 import { FakeRewindSession, REWIND_TEST_CAPABILITIES } from "./test-rewind-session.js";
 
-class FakeRewindClient implements AgentClient {
+class FakeRewindClient implements HarnessAdapter {
   readonly provider = "claude";
   readonly capabilities = REWIND_TEST_CAPABILITIES;
   readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
 
   constructor(readonly session: FakeRewindSession) {}
 
-  async createSession(_config: AgentSessionConfig): Promise<AgentSession> {
+  async createSession(_config: AgentSessionConfig): Promise<HarnessThread> {
     return this.session;
   }
 
-  async resumeSession(): Promise<AgentSession> {
+  async resumeSession(): Promise<HarnessThread> {
     return this.session;
   }
 
@@ -53,8 +57,8 @@ class RewindHistoryGate {
 
 async function createRewindHarness(options: { historyGate?: RewindHistoryGate } = {}) {
   const session = new FakeRewindSession(options.historyGate?.wait.bind(options.historyGate));
-  const manager = new AgentManager({
-    clients: { claude: new FakeRewindClient(session) },
+  const manager = new ExecutionService({
+    adapters: { claude: new FakeRewindClient(session) },
     logger: createTestLogger(),
     idFactory: () => "00000000-0000-4000-8000-000000000901",
   });
@@ -70,7 +74,7 @@ async function createRewindHarness(options: { historyGate?: RewindHistoryGate } 
   return { manager, session, agentId: agent.id };
 }
 
-describe("AgentManager rewind", () => {
+describe("ExecutionService rewind", () => {
   test("rewinds the conversation and rehydrates the timeline", async () => {
     const { manager, session, agentId } = await createRewindHarness();
 

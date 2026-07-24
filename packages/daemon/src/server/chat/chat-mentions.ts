@@ -1,6 +1,6 @@
 import type pino from "pino";
 import type { StoredAgentRecord } from "../agent/agent-storage.js";
-import type { ManagedAgent } from "../agent/agent-manager.js";
+import type { ManagedAgent } from "../agent/execution-service.js";
 
 export const CHAT_MENTION_FANOUT_LIMIT = 25;
 

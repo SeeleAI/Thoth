@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ToolCallDetail } from "../../agent-sdk-types.js";
+import type { ToolCallDetail } from "../../harness-contract.js";
 import { nonEmptyString, truncateDiffText } from "../tool-call-mapper-utils.js";
 import {
   ToolEditInputSchema,

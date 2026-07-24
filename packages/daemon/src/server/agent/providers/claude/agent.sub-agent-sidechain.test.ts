@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
 import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
-import type { AgentTimelineRow } from "../../agent-manager.js";
+import type { AgentTimelineRow } from "../../execution-service.js";
 import { projectTimelineRows } from "@thoth/drivers/internal/server/agent/timeline-projection";
-import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import { ClaudeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import { streamSession } from "@thoth/drivers/internal/server/agent/providers/test-utils/session-stream-adapter";
 
 const queryFactory = vi.fn();
@@ -139,7 +139,7 @@ function buildTailScenarioEvents(actionCount: number): unknown[] {
   ];
 }
 
-describe("ClaudeAgentSession sub-agent sidechain updates", () => {
+describe("ClaudeHarnessThread sub-agent sidechain updates", () => {
   const logger = createTestLogger();
 
   beforeEach(() => {
@@ -259,7 +259,7 @@ describe("ClaudeAgentSession sub-agent sidechain updates", () => {
   });
 
   test("accumulates lightweight sub_agent detail and preserves callId lifecycle collapse", async () => {
-    const session = await new ClaudeAgentClient({
+    const session = await new ClaudeHarnessAdapter({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
@@ -310,7 +310,7 @@ describe("ClaudeAgentSession sub-agent sidechain updates", () => {
   });
 
   test("keeps sidechain assistant text out of the parent transcript", async () => {
-    const session = await new ClaudeAgentClient({
+    const session = await new ClaudeHarnessAdapter({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
@@ -352,7 +352,7 @@ describe("ClaudeAgentSession sub-agent sidechain updates", () => {
   test("tails sub-agent actions instead of dropping latest entries at cap", async () => {
     queryFactory.mockImplementation(() => buildQueryMock(buildTailScenarioEvents(205)));
 
-    const session = await new ClaudeAgentClient({
+    const session = await new ClaudeHarnessAdapter({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",

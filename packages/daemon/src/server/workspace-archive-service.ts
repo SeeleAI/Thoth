@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 
 import type { Logger } from "pino";
 
-import type { AgentManager } from "./agent/agent-manager.js";
+import type { ExecutionService } from "./agent/execution-service.js";
 import type { AgentStorage, StoredAgentRecord } from "./agent/agent-storage.js";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import type { GitHubService } from "../services/github-service.js";
@@ -28,7 +28,7 @@ export interface ArchiveDependencies {
   thothWorktreesBaseRoot?: string;
   github: GitHubService;
   workspaceGitService: Pick<WorkspaceGitService, "getSnapshot">;
-  agentManager: Pick<AgentManager, "listAgents" | "archiveAgent" | "archiveSnapshot">;
+  executionService: Pick<ExecutionService, "listAgents" | "archiveAgent" | "archiveSnapshot">;
   agentStorage: Pick<AgentStorage, "list">;
   // Resolves the worktree at a path to its workspaceId for archive-by-path. The
   // path uniquely identifies a worktree workspace; this is a directory lookup for
@@ -265,7 +265,7 @@ async function maybeRemoveDirectory(
 
 export type ArchiveWorkspaceContentsDependencies = Pick<
   ArchiveDependencies,
-  "agentManager" | "agentStorage" | "killTerminalsForWorkspace" | "sessionLogger"
+  "executionService" | "agentStorage" | "killTerminalsForWorkspace" | "sessionLogger"
 >;
 
 // Tears down everything OWNED by a single workspace record: its live agents,
@@ -278,7 +278,7 @@ export async function archiveWorkspaceContents(
 ): Promise<Set<string>> {
   const archivedAgents = new Set<string>();
 
-  const liveAgents = dependencies.agentManager
+  const liveAgents = dependencies.executionService
     .listAgents()
     .filter((agent) => agent.workspaceId === workspaceId);
   for (const agent of liveAgents) {
@@ -304,10 +304,10 @@ export async function archiveWorkspaceContents(
 
   const archivedAt = new Date().toISOString();
   const archiveResults = await Promise.allSettled([
-    ...liveAgents.map((agent) => dependencies.agentManager.archiveAgent(agent.id)),
+    ...liveAgents.map((agent) => dependencies.executionService.archiveAgent(agent.id)),
     ...matchingStoredRecords
       .filter((record) => !liveAgentIds.has(record.id) && !record.archivedAt)
-      .map((record) => dependencies.agentManager.archiveSnapshot(record.id, archivedAt)),
+      .map((record) => dependencies.executionService.archiveSnapshot(record.id, archivedAt)),
     dependencies.killTerminalsForWorkspace(workspaceId),
   ]);
 

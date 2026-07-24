@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
-import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import { ClaudeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import { streamSession } from "../test-utils/session-stream-adapter.js";
 import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 
@@ -255,7 +255,7 @@ test("interrupt only calls query.interrupt and leaves the query open", async () 
     return scriptedQuery;
   });
 
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger,
     queryFactory,
     resolveBinary: async () => "/test/claude/bin",
@@ -309,7 +309,7 @@ test("reuses the existing query after interrupt before starting the next prompt"
     return scriptedQuery;
   });
 
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger,
     queryFactory,
     resolveBinary: async () => "/test/claude/bin",
@@ -363,7 +363,7 @@ test("emits an assistant system notice when Claude changes session id mid-turn",
     return queryRef;
   });
 
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger,
     queryFactory,
     resolveBinary: async () => "/test/claude/bin",
@@ -461,7 +461,7 @@ test("recovers when the query pump sees a single interrupt abort before the next
     return scriptedQuery;
   });
 
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger,
     queryFactory,
     resolveBinary: async () => "/test/claude/bin",
@@ -498,7 +498,7 @@ test("stale abort result after replacement start does not poison the new foregro
     return queryRef;
   });
 
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger,
     queryFactory,
     resolveBinary: async () => "/test/claude/bin",
@@ -578,7 +578,7 @@ test("creates an autonomous live turn when assistant output arrives without a fo
     return queryRef;
   });
 
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger,
     queryFactory,
     resolveBinary: async () => "/test/claude/bin",
@@ -652,7 +652,7 @@ test("auto-completes an open autonomous turn when a foreground prompt starts", a
     return queryRef;
   });
 
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger,
     queryFactory,
     resolveBinary: async () => "/test/claude/bin",

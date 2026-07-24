@@ -9,7 +9,7 @@ import type {
   ProviderSnapshotEntry,
 } from "@thoth/drivers/agent-runtime";
 import type {
-  AgentManagerProviderState,
+  ExecutionProviderState,
   ProviderDiagnosticResult,
   ResolvedProviderCreateConfig,
 } from "../agent/provider-snapshot-manager.js";
@@ -31,9 +31,9 @@ export function asSessionLogger(stub: {
 }
 
 export function asAgentManager(stub: {
-  [K in keyof SessionOptions["agentManager"]]?: unknown;
-}): SessionOptions["agentManager"] {
-  return createStub<SessionOptions["agentManager"]>(stub);
+  [K in keyof SessionOptions["executionService"]]?: unknown;
+}): SessionOptions["executionService"] {
+  return createStub<SessionOptions["executionService"]>(stub);
 }
 
 export function asAgentStorage(stub: {
@@ -168,7 +168,7 @@ export interface ProviderSnapshotManagerSpies {
   listRegisteredProviderIds: ReturnType<typeof vi.fn<[], AgentProvider[]>>;
   hasProvider: ReturnType<typeof vi.fn<[AgentProvider], boolean>>;
   getProviderLabel: ReturnType<typeof vi.fn<[AgentProvider], string>>;
-  getAgentManagerProviderState: ReturnType<typeof vi.fn<[], AgentManagerProviderState>>;
+  getExecutionProviderState: ReturnType<typeof vi.fn<[], ExecutionProviderState>>;
   listProviders: ReturnType<typeof vi.fn<[unknown], Promise<ProviderSnapshotEntry[]>>>;
   getProvider: ReturnType<typeof vi.fn<[unknown], Promise<ProviderSnapshotEntry>>>;
   listModels: ReturnType<typeof vi.fn<[unknown], Promise<AgentModelDefinition[]>>>;
@@ -178,7 +178,7 @@ export interface ProviderSnapshotManagerSpies {
   getProviderDiagnostic: ReturnType<
     typeof vi.fn<[AgentProvider], Promise<ProviderDiagnosticResult>>
   >;
-  applyMutableProviderConfig: ReturnType<typeof vi.fn<[unknown], AgentManagerProviderState>>;
+  applyMutableProviderConfig: ReturnType<typeof vi.fn<[unknown], ExecutionProviderState>>;
   destroy: ReturnType<typeof vi.fn<[], void>>;
 }
 
@@ -198,9 +198,9 @@ export function createProviderSnapshotManagerStub(): {
       return provider;
     }
   });
-  const getAgentManagerProviderState = vi.fn<[], AgentManagerProviderState>(() => ({
+  const getExecutionProviderState = vi.fn<[], ExecutionProviderState>(() => ({
     providerDefinitions: {},
-    clients: {},
+    adapters: {},
   }));
   const listProviders = vi.fn<[unknown], Promise<ProviderSnapshotEntry[]>>(async () => []);
   const getProvider = vi.fn<[unknown], Promise<ProviderSnapshotEntry>>(async () => {
@@ -216,9 +216,9 @@ export function createProviderSnapshotManagerStub(): {
   const getProviderDiagnostic = vi.fn<[AgentProvider], Promise<ProviderDiagnosticResult>>(
     async (provider) => ({ provider, diagnostic: "No diagnostic available for this provider." }),
   );
-  const applyMutableProviderConfig = vi.fn<[unknown], AgentManagerProviderState>(() => ({
+  const applyMutableProviderConfig = vi.fn<[unknown], ExecutionProviderState>(() => ({
     providerDefinitions: {},
-    clients: {},
+    adapters: {},
   }));
   const on = vi.fn();
   const off = vi.fn();
@@ -231,7 +231,7 @@ export function createProviderSnapshotManagerStub(): {
     listRegisteredProviderIds,
     hasProvider,
     getProviderLabel,
-    getAgentManagerProviderState,
+    getExecutionProviderState,
     listProviders,
     getProvider,
     listModels,
@@ -256,7 +256,7 @@ export function createProviderSnapshotManagerStub(): {
     listRegisteredProviderIds,
     hasProvider,
     getProviderLabel,
-    getAgentManagerProviderState,
+    getExecutionProviderState,
     listProviders,
     getProvider,
     listModels,

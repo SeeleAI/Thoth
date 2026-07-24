@@ -3,7 +3,7 @@ import * as fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import type { AgentTimelineItem } from "../agent-sdk-types.js";
+import type { AgentTimelineItem } from "../harness-contract.js";
 
 export interface ProviderImageOutput {
   path?: string | null;

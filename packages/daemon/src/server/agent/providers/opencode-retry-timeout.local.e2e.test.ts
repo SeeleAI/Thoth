@@ -6,7 +6,7 @@ import path from "node:path";
 import { expect, test } from "vitest";
 
 import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
-import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
+import { OpenCodeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
 import { OpenCodeServerManager } from "@thoth/drivers/internal/server/agent/providers/opencode/server-manager";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 
@@ -113,10 +113,10 @@ test("does not fail an active OpenCode provider retry before the advertised retr
       OPENCODE_DISABLE_AUTO_UPDATE: "1",
     },
   };
-  const client = new OpenCodeAgentClient(logger, runtimeSettings);
+  const client = new OpenCodeHarnessAdapter(logger, runtimeSettings);
   const events: AgentStreamEvent[] = [];
   const eventLog: Array<{ elapsedMs: number; event: AgentStreamEvent }> = [];
-  let session: Awaited<ReturnType<OpenCodeAgentClient["createSession"]>> | undefined;
+  let session: Awaited<ReturnType<OpenCodeHarnessAdapter["createSession"]>> | undefined;
 
   try {
     session = await client.createSession({

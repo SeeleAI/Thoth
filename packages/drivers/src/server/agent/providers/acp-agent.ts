@@ -62,7 +62,7 @@ import type { Logger } from "pino";
 import {
   getAgentStreamEventTurnId,
   type AgentCapabilityFlags,
-  type AgentClient,
+  type HarnessAdapter,
   type AgentFeature,
   type AgentLaunchContext,
   type AgentMetadata,
@@ -78,7 +78,7 @@ import {
   type AgentRunOptions,
   type AgentRunResult,
   type AgentRuntimeInfo,
-  type AgentSession,
+  type HarnessThread,
   type AgentSessionConfig,
   type AgentSlashCommand,
   type AgentStreamEvent,
@@ -93,7 +93,7 @@ import {
   type ProviderCatalog,
   type ToolCallDetail,
   type ToolCallTimelineItem,
-} from "../agent-sdk-types.js";
+} from "../harness-contract.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import {
   checkProviderLaunchAvailable,
@@ -336,7 +336,7 @@ export function createLoggedNdJsonStream(
   return { readable, writable };
 }
 
-interface ACPAgentClientOptions {
+interface ACPHarnessAdapterOptions {
   provider: string;
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
@@ -363,7 +363,7 @@ interface ACPAgentClientOptions {
   terminateProcess?: ProcessTerminator;
 }
 
-interface ACPAgentSessionOptions {
+interface ACPHarnessThreadOptions {
   provider: string;
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
@@ -674,7 +674,7 @@ export function deriveFeaturesFromACP(
   });
 }
 
-export class ACPAgentClient implements AgentClient {
+export class ACPHarnessAdapter implements HarnessAdapter {
   readonly provider: string;
   readonly capabilities: AgentCapabilityFlags;
   readonly harnessCapabilities = defineHarnessCapabilities({
@@ -711,7 +711,7 @@ export class ACPAgentClient implements AgentClient {
   private readonly initialCommandsWaitTimeoutMs: number;
   protected readonly terminateProcess: ProcessTerminator;
 
-  constructor(options: ACPAgentClientOptions) {
+  constructor(options: ACPHarnessAdapterOptions) {
     this.provider = options.provider;
     this.terminateProcess = options.terminateProcess ?? terminateWithTreeKill;
     this.capabilities = options.capabilities ?? DEFAULT_ACP_CAPABILITIES;
@@ -738,9 +738,9 @@ export class ACPAgentClient implements AgentClient {
   async createSession(
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     this.assertProvider(config);
-    const session = new ACPAgentSession(
+    const session = new ACPHarnessThread(
       { ...config, provider: this.provider },
       {
         provider: this.provider,
@@ -772,7 +772,7 @@ export class ACPAgentClient implements AgentClient {
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
     launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     if (handle.provider !== this.provider) {
       throw new Error(`Cannot resume ${handle.provider} handle with ${this.provider} provider`);
     }
@@ -789,7 +789,7 @@ export class ACPAgentClient implements AgentClient {
       provider: this.provider,
       cwd,
     };
-    const session = new ACPAgentSession(mergedConfig, {
+    const session = new ACPHarnessThread(mergedConfig, {
       provider: this.provider,
       logger: this.logger,
       runtimeSettings: this.runtimeSettings,
@@ -1237,7 +1237,7 @@ export class ACPAgentClient implements AgentClient {
   }
 }
 
-export class ACPAgentSession implements AgentSession, ACPClient {
+export class ACPHarnessThread implements HarnessThread, ACPClient {
   readonly provider: string;
   readonly capabilities: AgentCapabilityFlags;
 
@@ -1308,7 +1308,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private bootstrapThreadEventPending = false;
   private readonly terminateProcess: ProcessTerminator;
 
-  constructor(config: AgentSessionConfig, options: ACPAgentSessionOptions) {
+  constructor(config: AgentSessionConfig, options: ACPHarnessThreadOptions) {
     this.provider = options.provider;
     this.terminateProcess = options.terminateProcess ?? terminateWithTreeKill;
     this.capabilities = options.capabilities;

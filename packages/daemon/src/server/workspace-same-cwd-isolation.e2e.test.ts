@@ -8,14 +8,14 @@ import { createTestThothDaemon } from "./test-utils/thoth-daemon.js";
 import { createTestLogger } from "../test-utils/test-logger.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { getAskModeConfig } from "./daemon-e2e/agent-configs.js";
-import { MockLoadTestAgentClient } from "@thoth/drivers/internal/server/agent/providers/mock-load-test-agent";
+import { MockHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/mock-load-test-agent";
 import type {
   AgentCapabilityFlags,
-  AgentClient,
+  HarnessAdapter,
   AgentMode,
   AgentModelDefinition,
   AgentPersistenceHandle,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
 } from "@thoth/drivers/agent-runtime";
 import {
@@ -40,7 +40,7 @@ const SNAPSHOT_STORM_CAPABILITIES: AgentCapabilityFlags = {
   supportsToolInvocations: false,
 };
 
-class SnapshotStormProviderClient implements AgentClient {
+class SnapshotStormProviderClient implements HarnessAdapter {
   readonly capabilities = SNAPSHOT_STORM_CAPABILITIES;
   private readonly models: AgentModelDefinition[];
 
@@ -61,11 +61,11 @@ class SnapshotStormProviderClient implements AgentClient {
     }));
   }
 
-  async createSession(_config: AgentSessionConfig): Promise<AgentSession> {
+  async createSession(_config: AgentSessionConfig): Promise<HarnessThread> {
     throw new Error(`${this.provider} is only used for provider snapshot tests`);
   }
 
-  async resumeSession(_handle: AgentPersistenceHandle): Promise<AgentSession> {
+  async resumeSession(_handle: AgentPersistenceHandle): Promise<HarnessThread> {
     throw new Error(`${this.provider} is only used for provider snapshot tests`);
   }
 
@@ -79,7 +79,7 @@ class SnapshotStormProviderClient implements AgentClient {
   }
 }
 
-class MetadataMockLoadTestAgentClient extends MockLoadTestAgentClient {
+class MetadataMockHarnessAdapter extends MockHarnessAdapter {
   override async fetchCatalog(): Promise<{ models: AgentModelDefinition[]; modes: AgentMode[] }> {
     return {
       models: [
@@ -103,12 +103,12 @@ function createSnapshotStormClients(): SnapshotStormProviderClient[] {
   );
 }
 
-async function createSnapshotStormDaemon(clients: SnapshotStormProviderClient[]) {
+async function createSnapshotStormDaemon(adapters: SnapshotStormProviderClient[]) {
   return createTestThothDaemon({
     mcpEnabled: false,
     isDev: true,
-    agentClients: {
-      mock: new MetadataMockLoadTestAgentClient(),
+    harnessAdapters: {
+      mock: new MetadataMockHarnessAdapter(),
       ...Object.fromEntries(clients.map((client) => [client.provider, client])),
     },
     providerOverrides: {
@@ -327,7 +327,7 @@ test("daemon bootstrap migrates cwd-only legacy agents before same-cwd workspace
 test("workspace.create directory source with firstAgentContext generates a daemon-visible workspace title", async () => {
   const cwd = mkdtempSync(path.join(tmpdir(), "thoth-named-local-dir-"));
   const daemon = await createTestThothDaemon({
-    agentClients: { mock: new MockLoadTestAgentClient() },
+    harnessAdapters: { mock: new MockHarnessAdapter() },
   });
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,
@@ -413,7 +413,7 @@ test("local workspace auto-title does not broadcast provider snapshot warm-up to
 test("create_agent_request with workspaceId does not retitle an existing workspace", async () => {
   const cwd = mkdtempSync(path.join(tmpdir(), "thoth-agent-submit-title-"));
   const daemon = await createTestThothDaemon({
-    agentClients: { mock: new MockLoadTestAgentClient() },
+    harnessAdapters: { mock: new MockHarnessAdapter() },
   });
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,
@@ -456,7 +456,7 @@ test("create_agent_request with workspaceId does not retitle an existing workspa
 test("creating another same-cwd local workspace keeps running status on the owning workspace only", async () => {
   const cwd = mkdtempSync(path.join(tmpdir(), "thoth-running-same-cwd-create-"));
   const daemon = await createTestThothDaemon({
-    agentClients: { mock: new MockLoadTestAgentClient() },
+    harnessAdapters: { mock: new MockHarnessAdapter() },
   });
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,

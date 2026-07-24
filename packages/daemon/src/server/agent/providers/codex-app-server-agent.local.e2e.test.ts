@@ -6,7 +6,7 @@ import { createServer } from "node:http";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { once } from "node:events";
 
-import { CodexAppServerAgentClient } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
+import { CodexHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 
@@ -227,7 +227,7 @@ describe("Codex app-server provider (local e2e)", () => {
       try {
         writeMockCodexConfig(codexHome, mockServer.url);
 
-        const client = new CodexAppServerAgentClient(createTestLogger());
+        const client = new CodexHarnessAdapter(createTestLogger());
         const session = await client.createSession(
           {
             provider: "codex",

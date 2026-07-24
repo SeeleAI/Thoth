@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { AgentPromptInput, AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 import {
-  createTestAgentClients,
+  createTestHarnessAdapters,
   type FakeAgentProbe,
-} from "../packages/daemon/src/server/test-utils/fake-agent-client.ts";
+} from "../packages/daemon/src/server/test-utils/fake-harness-adapter.ts";
 import {
   createTestThothDaemon,
   DaemonClient,
@@ -43,7 +43,7 @@ const probe: FakeAgentProbe = {
   },
 };
 
-const daemon = await createTestThothDaemon({ agentClients: createTestAgentClients(probe) });
+const daemon = await createTestThothDaemon({ harnessAdapters: createTestHarnessAdapters(probe) });
 const client = new DaemonClient({
   url: `ws://127.0.0.1:${daemon.port}/ws`,
   reconnect: { enabled: false },

@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
-import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import { ClaudeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import {
   getClaudeModels,
   normalizeClaudeRuntimeModelId,
@@ -66,7 +66,7 @@ describe("getClaudeModels", () => {
   });
 });
 
-describe("ClaudeAgentClient.fetchCatalog", () => {
+describe("ClaudeHarnessAdapter.fetchCatalog", () => {
   it("appends concrete models from Claude settings.json", async () => {
     const configDir = await createClaudeConfigDir({
       model: "us.anthropic.claude-opus-4-7[1m]",
@@ -79,7 +79,7 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
       },
     });
     vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
-    const client = new ClaudeAgentClient({ logger: createTestLogger() });
+    const client = new ClaudeHarnessAdapter({ logger: createTestLogger() });
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",
@@ -132,7 +132,7 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
     const configDir = await fs.mkdtemp(path.join(os.tmpdir(), "thoth-claude-models-"));
     createdClaudeConfigDirs.push(configDir);
     vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
-    const client = new ClaudeAgentClient({ logger: createTestLogger() });
+    const client = new ClaudeHarnessAdapter({ logger: createTestLogger() });
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",
@@ -146,7 +146,7 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
   it("falls back to hardcoded models when settings.json is malformed", async () => {
     const configDir = await createClaudeConfigDirWithRawSettings("{ nope");
     vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
-    const client = new ClaudeAgentClient({ logger: createTestLogger() });
+    const client = new ClaudeHarnessAdapter({ logger: createTestLogger() });
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",
@@ -166,7 +166,7 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
       },
     });
     vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
-    const client = new ClaudeAgentClient({ logger: createTestLogger() });
+    const client = new ClaudeHarnessAdapter({ logger: createTestLogger() });
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",
@@ -186,7 +186,7 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
       },
     });
     vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
-    const client = new ClaudeAgentClient({ logger: createTestLogger() });
+    const client = new ClaudeHarnessAdapter({ logger: createTestLogger() });
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",

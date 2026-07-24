@@ -7,7 +7,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
 import * as executableUtils from "@thoth/drivers/internal/executable-resolution/executable-resolution";
 import {
-  ClaudeAgentClient,
+  ClaudeHarnessAdapter,
   convertClaudeHistoryEntry,
   normalizeClaudeAskUserQuestionRequestInput,
   normalizeClaudeAskUserQuestionUpdatedInput,
@@ -15,7 +15,7 @@ import {
 } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import { streamSession } from "../test-utils/session-stream-adapter.js";
 import type {
-  AgentSession,
+  HarnessThread,
   AgentTimelineItem,
   AgentStreamEvent,
 } from "@thoth/drivers/agent-runtime";
@@ -399,13 +399,13 @@ describe("convertClaudeHistoryEntry", () => {
 // "interrupting message should produce coherent text without garbling from race condition"
 // in daemon.e2e.test.ts which exercises the full flow through the WebSocket API.
 
-describe("ClaudeAgentClient.fetchCatalog", () => {
+describe("ClaudeHarnessAdapter.fetchCatalog", () => {
   const logger = createTestLogger();
 
   test("returns hardcoded claude models", async () => {
     const emptyConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "thoth-claude-models-empty-"));
     try {
-      const client = new ClaudeAgentClient({
+      const client = new ClaudeHarnessAdapter({
         logger,
         resolveBinary: async () => "/test/claude/bin",
         configDir: emptyConfigDir,
@@ -444,7 +444,7 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
   test("exposes Ultracode only on Claude models that support it", async () => {
     const emptyConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "thoth-claude-models-empty-"));
     try {
-      const client = new ClaudeAgentClient({
+      const client = new ClaudeHarnessAdapter({
         logger,
         resolveBinary: async () => "/test/claude/bin",
         configDir: emptyConfigDir,
@@ -469,7 +469,7 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
   });
 });
 
-describe("ClaudeAgentClient binary resolution", () => {
+describe("ClaudeHarnessAdapter binary resolution", () => {
   const logger = createTestLogger();
 
   test("loads user, project, and local Claude settings", async () => {
@@ -480,7 +480,7 @@ describe("ClaudeAgentClient binary resolution", () => {
       return: queryReturn,
     }));
 
-    const client = new ClaudeAgentClient({
+    const client = new ClaudeHarnessAdapter({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
@@ -526,7 +526,7 @@ describe("ClaudeAgentClient binary resolution", () => {
       return: queryReturn,
     }));
 
-    const client = new ClaudeAgentClient({
+    const client = new ClaudeHarnessAdapter({
       logger,
       queryFactory,
       runtimeSettings: {
@@ -557,7 +557,7 @@ describe("ClaudeAgentClient binary resolution", () => {
   });
 });
 
-describe("ClaudeAgentSession features", () => {
+describe("ClaudeHarnessThread features", () => {
   const logger = createTestLogger();
 
   function createQueryMock() {
@@ -588,7 +588,10 @@ describe("ClaudeAgentSession features", () => {
   }
 
   test("lists fast mode only for supported Opus models", async () => {
-    const client = new ClaudeAgentClient({ logger, resolveBinary: async () => "/test/claude/bin" });
+    const client = new ClaudeHarnessAdapter({
+      logger,
+      resolveBinary: async () => "/test/claude/bin",
+    });
 
     await expect(
       client.listFeatures({
@@ -609,7 +612,7 @@ describe("ClaudeAgentSession features", () => {
 
   test("passes initial fast mode through Claude flag settings", async () => {
     const { queryFactory, queryMock } = createQueryMock();
-    const client = new ClaudeAgentClient({
+    const client = new ClaudeHarnessAdapter({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
@@ -637,7 +640,7 @@ describe("ClaudeAgentSession features", () => {
 
   test("maps Ultracode to xhigh effort and Claude ultracode settings", async () => {
     const { queryFactory } = createQueryMock();
-    const client = new ClaudeAgentClient({
+    const client = new ClaudeHarnessAdapter({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
@@ -664,7 +667,7 @@ describe("ClaudeAgentSession features", () => {
 
   test("returns a next-turn notice when changing Claude thinking during an active turn", async () => {
     const { queryFactory } = createQueryMock();
-    const client = new ClaudeAgentClient({
+    const client = new ClaudeHarnessAdapter({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
@@ -689,7 +692,7 @@ describe("ClaudeAgentSession features", () => {
 
   test("toggles fast mode on the active query without restarting it", async () => {
     const { queryFactory, queryMock } = createQueryMock();
-    const client = new ClaudeAgentClient({
+    const client = new ClaudeHarnessAdapter({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
@@ -808,7 +811,7 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
   });
 
   test("respondToPermission preserves full question input when UI returns answers-only payload", async () => {
-    const client = new ClaudeAgentClient({
+    const client = new ClaudeHarnessAdapter({
       logger: createTestLogger(),
       resolveBinary: async () => "/test/claude/bin",
     });
@@ -882,7 +885,7 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
   });
 
   test("respondToPermission maps other answer text back to Claude question keys", async () => {
-    const client = new ClaudeAgentClient({
+    const client = new ClaudeHarnessAdapter({
       logger: createTestLogger(),
       resolveBinary: async () => "/test/claude/bin",
     });
@@ -962,7 +965,7 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
   });
 });
 
-describe("ClaudeAgentClient.listImportableSessions", () => {
+describe("ClaudeHarnessAdapter.listImportableSessions", () => {
   test("shows Claude slash command prompts without transcript tags", async () => {
     const tmpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "thoth-claude-import-"));
     const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
@@ -1020,7 +1023,7 @@ describe("ClaudeAgentClient.listImportableSessions", () => {
         new Date("2026-06-12T11:00:00.000Z"),
       );
 
-      const client = new ClaudeAgentClient({
+      const client = new ClaudeHarnessAdapter({
         logger: createTestLogger(),
         resolveBinary: async () => "/test/claude/bin",
       });
@@ -1054,7 +1057,7 @@ describe("ClaudeAgentClient.listImportableSessions", () => {
   });
 });
 
-describe("ClaudeAgentSession context window usage", () => {
+describe("ClaudeHarnessThread context window usage", () => {
   const logger = createTestLogger();
 
   interface QueryFactoryForTurnsOptions {
@@ -1063,7 +1066,10 @@ describe("ClaudeAgentSession context window usage", () => {
   }
 
   async function createSessionForTest(): Promise<TestClaudeSession> {
-    const client = new ClaudeAgentClient({ logger, resolveBinary: async () => "/test/claude/bin" });
+    const client = new ClaudeHarnessAdapter({
+      logger,
+      resolveBinary: async () => "/test/claude/bin",
+    });
     const session = await client.createSession({
       provider: "claude",
       cwd: process.cwd(),
@@ -1074,8 +1080,8 @@ describe("ClaudeAgentSession context window usage", () => {
   async function createSessionForTurns(
     turns: Array<Array<Record<string, unknown>>>,
     options?: QueryFactoryForTurnsOptions,
-  ): Promise<AgentSession> {
-    const client = new ClaudeAgentClient({
+  ): Promise<HarnessThread> {
+    const client = new ClaudeHarnessAdapter({
       logger,
       queryFactory: createQueryFactoryForTurns(turns, options),
       resolveBinary: async () => "/test/claude/bin",
@@ -1087,7 +1093,7 @@ describe("ClaudeAgentSession context window usage", () => {
     });
   }
 
-  async function collectStreamEvents(session: AgentSession, prompt = "turn") {
+  async function collectStreamEvents(session: HarnessThread, prompt = "turn") {
     const events: AgentStreamEvent[] = [];
     for await (const event of streamSession(session, prompt)) {
       events.push(event);
@@ -1311,7 +1317,7 @@ describe("ClaudeAgentSession context window usage", () => {
     ];
 
     const nonPersistedQueryFactory = createQueryFactoryForTurns([createResultTurn("session-1")]);
-    const nonPersistedClient = new ClaudeAgentClient({
+    const nonPersistedClient = new ClaudeHarnessAdapter({
       logger,
       queryFactory: nonPersistedQueryFactory,
       resolveBinary: async () => "/test/claude/bin",
@@ -1330,7 +1336,7 @@ describe("ClaudeAgentSession context window usage", () => {
     expect(nonPersistedQueryFactory.mock.calls[0]?.[0].options.persistSession).toBe(false);
 
     const persistedQueryFactory = createQueryFactoryForTurns([createResultTurn("session-2")]);
-    const persistedClient = new ClaudeAgentClient({
+    const persistedClient = new ClaudeHarnessAdapter({
       logger,
       queryFactory: persistedQueryFactory,
       resolveBinary: async () => "/test/claude/bin",
@@ -1389,7 +1395,7 @@ describe("ClaudeAgentSession context window usage", () => {
         },
       };
     });
-    const client = new ClaudeAgentClient({
+    const client = new ClaudeHarnessAdapter({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
@@ -1470,7 +1476,7 @@ describe("ClaudeAgentSession context window usage", () => {
           },
         ],
       ]);
-      const client = new ClaudeAgentClient({
+      const client = new ClaudeHarnessAdapter({
         logger,
         queryFactory,
         resolveBinary: async () => "/test/claude/bin",
@@ -1536,7 +1542,7 @@ describe("ClaudeAgentSession context window usage", () => {
           },
         ],
       ]);
-      const client = new ClaudeAgentClient({
+      const client = new ClaudeHarnessAdapter({
         logger,
         queryFactory,
         resolveBinary: async () => "/test/claude/bin",
@@ -2228,7 +2234,7 @@ describe("ClaudeAgentSession context window usage", () => {
         },
       ],
     ]);
-    const client = new ClaudeAgentClient({
+    const client = new ClaudeHarnessAdapter({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",

@@ -7,11 +7,11 @@ import { promises as fs } from "node:fs";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentStorage } from "./agent-storage.js";
 import { buildConfigOverrides, buildSessionConfig } from "../persistence-hooks.js";
-import type { ManagedAgent } from "./agent-manager.js";
+import type { ManagedAgent } from "./execution-service.js";
 import type {
   AgentPermissionRequest,
   AgentProvider,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
 } from "@thoth/drivers/agent-runtime";
 
@@ -21,7 +21,7 @@ type ManagedAgentOverrides = Omit<
 > & {
   config?: Partial<AgentSessionConfig>;
   pendingPermissions?: Map<string, AgentPermissionRequest>;
-  session?: AgentSession | null;
+  session?: HarnessThread | null;
   activeForegroundTurnId?: string | null;
   runtimeInfo?: ManagedAgent["runtimeInfo"];
   attention?: ManagedAgent["attention"];
@@ -77,7 +77,7 @@ interface ManagedAgentCore {
   cwd: string;
   lifecycle: ManagedAgent["lifecycle"];
   config: AgentSessionConfig;
-  session: AgentSession | null;
+  session: HarnessThread | null;
   activeForegroundTurnId: string | null;
   now: Date;
 }
@@ -88,7 +88,7 @@ function resolveManagedAgentCore(overrides: ManagedAgentOverrides): ManagedAgent
   const cwd = overrides.cwd ?? "/tmp/project";
   const lifecycle = overrides.lifecycle ?? "idle";
   const config = buildManagedAgentConfig(provider, cwd, overrides.config ?? {});
-  const session = lifecycle === "closed" ? null : (overrides.session ?? ({} as AgentSession));
+  const session = lifecycle === "closed" ? null : (overrides.session ?? ({} as HarnessThread));
   const activeForegroundTurnId =
     overrides.activeForegroundTurnId ?? (lifecycle === "running" ? "test-turn-id" : null);
   return { provider, cwd, lifecycle, config, session, activeForegroundTurnId, now };

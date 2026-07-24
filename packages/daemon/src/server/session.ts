@@ -65,15 +65,15 @@ import {
 } from "./lifecycle-reasons.js";
 import type { RelayCredentialsManager } from "./relay-credentials.js";
 
-import { AgentManager } from "./agent/agent-manager.js";
+import { ExecutionService } from "./agent/execution-service.js";
 import { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import type {
-  AgentManagerEvent,
+  ExecutionServiceEvent,
   AgentTimelineCursor,
   AgentTimelineFetchDirection,
   AgentTimelineFetchResult,
   ManagedAgent,
-} from "./agent/agent-manager.js";
+} from "./agent/execution-service.js";
 import { createAgentCommand } from "./agent/create-agent/create.js";
 import {
   archiveAgentCommand,
@@ -412,7 +412,7 @@ export interface SessionOptions {
   pushTokenStore: PushTokenStore;
   thothHome: string;
   worktreesRoot?: string;
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   projectRegistry: ProjectRegistry;
   workspaceRegistry: WorkspaceRegistry;
@@ -526,7 +526,7 @@ export class Session {
   private readonly thothHome: string;
   private readonly worktreesRoot: string | undefined;
 
-  private agentManager: AgentManager;
+  private executionService: ExecutionService;
   private readonly agentStorage: AgentRegistry;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
@@ -594,7 +594,7 @@ export class Session {
       pushTokenStore,
       thothHome,
       worktreesRoot,
-      agentManager,
+      executionService,
       agentStorage,
       projectRegistry,
       workspaceRegistry,
@@ -651,7 +651,7 @@ export class Session {
       thothHome,
       logger: this.sessionLogger,
     });
-    this.agentManager = agentManager;
+    this.executionService = executionService;
     this.agentStorage = agentStorage;
     this.projectRegistry = projectRegistry;
     this.workspaceRegistry = workspaceRegistry;
@@ -685,7 +685,7 @@ export class Session {
       gitMetadataGenerator: createGitMetadataGenerator({
         workspaceGitService: this.workspaceGitService,
         generation: createAgentStructuredTextGeneration({
-          agentManager: this.agentManager,
+          executionService: this.executionService,
           providerSnapshotManager,
           readDaemonConfig: () => this.readStructuredGenerationDaemonConfig(),
           getFocusedSelection: (cwd) => this.getFocusedAgentSelectionForCwd(cwd),
@@ -712,7 +712,7 @@ export class Session {
         listStoredAgents: async (workspaceId) =>
           (await this.agentStorage.list()).filter((agent) => agent.workspaceId === workspaceId),
         listLiveAgents: (workspaceId) =>
-          this.agentManager.listAgents().filter((agent) => agent.workspaceId === workspaceId),
+          this.executionService.listAgents().filter((agent) => agent.workspaceId === workspaceId),
         resolveAgentIdentifier: async (workspaceId, identifier) => {
           const resolved = await this.resolveAgentIdentifier(identifier);
           if (!resolved.ok) return resolved;
@@ -723,7 +723,7 @@ export class Session {
         },
         sendAgentMessage: async (agentId, text) => {
           await sendPromptToAgent({
-            agentManager: this.agentManager,
+            executionService: this.executionService,
             agentStorage: this.agentStorage,
             agentId,
             prompt: formatSystemNotificationPrompt(text),
@@ -742,8 +742,8 @@ export class Session {
         emit: (msg) => this.emit(msg),
         isProviderVisibleToClient: (provider) => this.isProviderVisibleToClient(provider),
         supportsCustomModeIcons: () => this.supports(CLIENT_CAPS.customModeIcons),
-        listProviderAvailability: () => this.agentManager.listProviderAvailability(),
-        listDraftFeatures: (config) => this.agentManager.listDraftFeatures(config),
+        listProviderAvailability: () => this.executionService.listProviderAvailability(),
+        listDraftFeatures: (config) => this.executionService.listDraftFeatures(config),
       },
       providerSnapshotManager,
       providerUsageService,
@@ -755,12 +755,12 @@ export class Session {
       },
       operations: {
         setMode: async (agentId, modeId) =>
-          (await setAgentModeCommand({ agentManager }, { agentId, modeId })).notice,
-        setModel: (agentId, modelId) => agentManager.setAgentModel(agentId, modelId),
+          (await setAgentModeCommand({ executionService }, { agentId, modeId })).notice,
+        setModel: (agentId, modelId) => executionService.setAgentModel(agentId, modelId),
         setFeature: (agentId, featureId, value) =>
-          agentManager.setAgentFeature(agentId, featureId, value),
+          executionService.setAgentFeature(agentId, featureId, value),
         setThinking: (agentId, thinkingOptionId) =>
-          agentManager.setAgentThinkingOption(agentId, thinkingOptionId),
+          executionService.setAgentThinkingOption(agentId, thinkingOptionId),
       },
       logger: this.sessionLogger,
     });
@@ -784,8 +784,8 @@ export class Session {
       getWebSocketRuntimeMetrics,
       relayCredentials: options.relayCredentials,
       refreshRelayRegistration: options.refreshRelayRegistration,
-      listProviderAvailability: () => this.agentManager.listProviderAvailability(),
-      listAgents: () => this.agentManager.listAgents(),
+      listProviderAvailability: () => this.executionService.listProviderAvailability(),
+      listAgents: () => this.executionService.listAgents(),
       listProjects: () => this.projectRegistry.list(),
       listWorkspaces: () => this.workspaceRegistry.list(),
       logger: this.sessionLogger,
@@ -794,10 +794,11 @@ export class Session {
     const taskContextBroker = new TaskContextBroker(workspaceAuthorityManager);
     this.foregroundTurnCoordinator = new ForegroundTurnCoordinator({
       authorityStore: foregroundAuthorityStore,
-      agentManager: this.agentManager,
+      executionService: this.executionService,
       agentStorage: this.agentStorage,
       taskCoordinator: workspaceTaskCoordinator,
       taskContextBroker,
+      toolGateway: workspaceTaskCoordinator.toolGateway,
       logger: this.sessionLogger.child({ component: "foreground-turn-coordinator" }),
     });
     this.unsubscribeForegroundAuthority = foregroundAuthorityStore.subscribe((state, reason) => {
@@ -842,7 +843,7 @@ export class Session {
     this.createAgentLifecycleDispatch = new CreateAgentLifecycleDispatch({
       thothHome: this.thothHome,
       worktreesRoot: this.worktreesRoot,
-      agentManager: this.agentManager,
+      executionService: this.executionService,
       agentStorage: this.agentStorage,
       github: this.github,
       workspaceGitService: this.workspaceGitService,
@@ -972,7 +973,7 @@ export class Session {
       return undefined;
     }
 
-    const agent = this.agentManager.getAgent(focusedAgentId);
+    const agent = this.executionService.getAgent(focusedAgentId);
     if (!agent || agent.cwd !== cwd) {
       return undefined;
     }
@@ -1013,7 +1014,7 @@ export class Session {
   }
 
   /**
-   * Normalize a user prompt (with optional image metadata) for AgentManager
+   * Normalize a user prompt (with optional image metadata) for ExecutionService
    */
   private buildAgentPrompt(
     text: string,
@@ -1044,13 +1045,13 @@ export class Session {
    * Returns once the manager confirms the stream has been cancelled.
    */
   private async interruptAgentIfRunning(agentId: string): Promise<void> {
-    const snapshot = this.agentManager.getAgent(agentId);
+    const snapshot = this.executionService.getAgent(agentId);
     if (!snapshot) {
       this.sessionLogger.trace({ agentId }, "agent.session.interrupt.not_found");
       throw new Error(`Agent ${agentId} not found`);
     }
 
-    const hasInFlightRun = this.agentManager.hasInFlightRun(agentId);
+    const hasInFlightRun = this.executionService.hasInFlightRun(agentId);
     if (!hasInFlightRun) {
       this.sessionLogger.trace(
         {
@@ -1070,7 +1071,7 @@ export class Session {
     );
 
     const t0 = Date.now();
-    const cancelled = await this.agentManager.cancelAgentRun(agentId);
+    const cancelled = await this.executionService.cancelAgentRun(agentId);
     this.sessionLogger.debug(
       { agentId, cancelled, durationMs: Date.now() - t0 },
       "interruptAgentIfRunning: cancelAgentRun completed",
@@ -1098,7 +1099,7 @@ export class Session {
   }
 
   /**
-   * Subscribe to AgentManager events and forward them to the client
+   * Subscribe to ExecutionService events and forward them to the client
    */
   private subscribeToOptionalManagers(): void {
     this.terminalController.start();
@@ -1121,14 +1122,14 @@ export class Session {
       this.unsubscribeAgentEvents();
     }
 
-    this.unsubscribeAgentEvents = this.agentManager.subscribe(
-      (event) => this.forwardAgentManagerEvent(event, { allowInternalStream: false }),
+    this.unsubscribeAgentEvents = this.executionService.subscribe(
+      (event) => this.forwardExecutionServiceEvent(event, { allowInternalStream: false }),
       { replayState: false },
     );
   }
 
-  private forwardAgentManagerEvent(
-    event: AgentManagerEvent,
+  private forwardExecutionServiceEvent(
+    event: ExecutionServiceEvent,
     options: { allowInternalStream: boolean },
   ): void {
     if (event.type === "agent_state") {
@@ -1153,7 +1154,7 @@ export class Session {
       return;
     }
 
-    const agent = this.agentManager.getAgent(event.agentId);
+    const agent = this.executionService.getAgent(event.agentId);
     if (agent?.internal && !options.allowInternalStream) {
       return;
     }
@@ -1200,10 +1201,10 @@ export class Session {
   }
 
   private buildAgentStreamPayload(
-    event: Extract<AgentManagerEvent, { type: "agent_stream" }>,
+    event: Extract<ExecutionServiceEvent, { type: "agent_stream" }>,
     serializedEvent: Extract<SessionOutboundMessage, { type: "agent_stream" }>["payload"]["event"],
   ): Extract<SessionOutboundMessage, { type: "agent_stream" }>["payload"] {
-    const agent = this.agentManager.getAgent(event.agentId);
+    const agent = this.executionService.getAgent(event.agentId);
     return {
       agentId: event.agentId,
       ...(agent?.internal ? { internal: true } : {}),
@@ -1503,7 +1504,7 @@ export class Session {
   ): Promise<void> {
     try {
       const agent = await ensureAgentLoaded(msg.agentId, {
-        agentManager: this.agentManager,
+        executionService: this.executionService,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
@@ -1511,7 +1512,7 @@ export class Session {
         throw new Error(`Agent not found: ${msg.agentId}`);
       }
       if (msg.refresh) {
-        await this.agentManager.refreshAgentPlanCapability(msg.agentId);
+        await this.executionService.refreshAgentPlanCapability(msg.agentId);
       }
       this.emit({
         type: "agent.provider_control.get.response",
@@ -1520,7 +1521,7 @@ export class Session {
           agentId: msg.agentId,
           accepted: true,
           error: null,
-          providerControl: this.agentManager.getAgentProviderControl(msg.agentId),
+          providerControl: this.executionService.getAgentProviderControl(msg.agentId),
         },
       });
     } catch (error) {
@@ -1542,7 +1543,7 @@ export class Session {
   ): Promise<void> {
     try {
       const agent = await ensureAgentLoaded(msg.agentId, {
-        agentManager: this.agentManager,
+        executionService: this.executionService,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
@@ -1550,7 +1551,7 @@ export class Session {
         throw new Error(`Agent not found: ${msg.agentId}`);
       }
       if (msg.runMode === "plan") {
-        const capability = await this.agentManager.getAgentPlanCapability(msg.agentId);
+        const capability = await this.executionService.getAgentPlanCapability(msg.agentId);
         if (capability.kind !== "native") {
           throw new Error(capability.reason);
         }
@@ -1565,7 +1566,7 @@ export class Session {
         expectedRevision: msg.expectedRevision,
         commandId: msg.commandId,
       });
-      const providerControl = await this.agentManager.applyAgentProviderControl({
+      const providerControl = await this.executionService.applyAgentProviderControl({
         agentId: msg.agentId,
         runMode: updated.runMode,
         revision: updated.revision,
@@ -2109,7 +2110,7 @@ export class Session {
     this.sessionLogger.info({ agentId }, `Deleting agent ${agentId} from registry`);
 
     const knownWorkspaceId =
-      this.agentManager.getAgent(agentId)?.workspaceId ??
+      this.executionService.getAgent(agentId)?.workspaceId ??
       (await this.agentStorage.get(agentId))?.workspaceId ??
       null;
 
@@ -2117,7 +2118,7 @@ export class Session {
     beginAgentDeleteIfSupported(this.agentStorage, agentId);
 
     try {
-      await closeAgentCommand({ agentManager: this.agentManager }, agentId);
+      await closeAgentCommand({ executionService: this.executionService }, agentId);
     } catch (error) {
       this.sessionLogger.warn(
         { err: error, agentId },
@@ -2127,11 +2128,11 @@ export class Session {
 
     // Drain queued persistence from the just-closed agent before removing its
     // durable snapshot, otherwise an in-flight background write can recreate it.
-    await this.agentManager.flush();
+    await this.executionService.flush();
 
     try {
       await this.agentStorage.remove(agentId);
-      await this.agentManager.deleteCommittedTimeline(agentId);
+      await this.executionService.deleteCommittedTimeline(agentId);
     } catch (error) {
       this.sessionLogger.error({ err: error, agentId }, `Failed to fully delete agent ${agentId}`);
     }
@@ -2171,7 +2172,7 @@ export class Session {
   ): Promise<{ agentId: string; archivedAt: string }> {
     const { archivedAt, record: archivedRecord } = await archiveAgentCommand(
       {
-        agentManager: this.agentManager,
+        executionService: this.executionService,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       },
@@ -2192,7 +2193,7 @@ export class Session {
     this.sessionLogger.info({ agentId, requestId }, "Detaching agent from parent");
 
     try {
-      const result = await detachAgentCommand({ agentManager: this.agentManager }, agentId);
+      const result = await detachAgentCommand({ executionService: this.executionService }, agentId);
       const affectedWorkspaceIds = new Set<string>();
 
       if (!result.live) {
@@ -2294,7 +2295,7 @@ export class Session {
     if (!matched) {
       return;
     }
-    await unarchiveAgentState(this.agentStorage, this.agentManager, matched.id);
+    await unarchiveAgentState(this.agentStorage, this.executionService, matched.id);
   }
 
   private async handleUpdateAgentRequest(
@@ -2315,7 +2316,7 @@ export class Session {
 
     try {
       const result = await updateAgentCommand(
-        { agentManager: this.agentManager },
+        { executionService: this.executionService },
         { agentId, name, labels },
       );
 
@@ -2472,7 +2473,7 @@ export class Session {
         for (const workspaceId of activeWorkspaceIds) {
           await archiveWorkspaceContents(
             {
-              agentManager: this.agentManager,
+              executionService: this.executionService,
               agentStorage: this.agentStorage,
               killTerminalsForWorkspace: (id) =>
                 this.terminalController.killTerminalsForWorkspace(id),
@@ -2693,7 +2694,7 @@ export class Session {
 
       const { snapshot } = await createAgentCommand(
         {
-          agentManager: this.agentManager,
+          executionService: this.executionService,
           agentStorage: this.agentStorage,
           logger: this.sessionLogger,
           thothHome: this.thothHome,
@@ -2745,9 +2746,9 @@ export class Session {
           rawPrompt: initialPromptPayload,
           ...(outputSchema ? { rawRunOptions: { outputSchema } } : {}),
         });
-        await waitForAgentRunStartWithTimeout(this.agentManager, snapshot.id);
+        await waitForAgentRunStartWithTimeout(this.executionService, snapshot.id);
       }
-      const liveSnapshot = this.agentManager.getAgent(snapshot.id) ?? snapshot;
+      const liveSnapshot = this.executionService.getAgent(snapshot.id) ?? snapshot;
       await this.agentUpdates.forwardLiveAgent(liveSnapshot);
       if (createdDirectoryWorkspaceForAgent && trimmedPrompt) {
         await this.scheduleAutoNameLocalWorkspaceTitleForFirstAgent({
@@ -2843,11 +2844,11 @@ export class Session {
     );
     try {
       await this.unarchiveAgentByHandle(handle);
-      const snapshot = await this.agentManager.resumeAgentFromPersistence(handle, overrides);
-      await unarchiveAgentState(this.agentStorage, this.agentManager, snapshot.id);
-      await this.agentManager.hydrateTimelineFromProvider(snapshot.id);
+      const snapshot = await this.executionService.resumeAgentFromPersistence(handle, overrides);
+      await unarchiveAgentState(this.agentStorage, this.executionService, snapshot.id);
+      await this.executionService.hydrateTimelineFromProvider(snapshot.id);
       await this.agentUpdates.forwardLiveAgent(snapshot);
-      const timelineSize = this.agentManager.getTimeline(snapshot.id).length;
+      const timelineSize = this.executionService.getTimeline(snapshot.id).length;
       if (requestId) {
         const agentPayload = await this.buildAgentPayload(snapshot);
         this.emit({
@@ -2920,7 +2921,7 @@ export class Session {
       const { snapshot, timelineSize } = await importProviderSession({
         request: normalized,
         workspaceId: workspace.workspaceId,
-        agentManager: this.agentManager,
+        executionService: this.executionService,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
@@ -2966,13 +2967,13 @@ export class Session {
     this.sessionLogger.info({ agentId }, `Refreshing agent ${agentId} from persistence`);
 
     try {
-      await unarchiveAgentState(this.agentStorage, this.agentManager, agentId);
+      await unarchiveAgentState(this.agentStorage, this.executionService, agentId);
       await this.unarchiveOwningWorkspaceForAgent(agentId);
       let snapshot: ManagedAgent;
-      const existing = this.agentManager.getAgent(agentId);
+      const existing = this.executionService.getAgent(agentId);
       if (existing) {
         await this.interruptAgentIfRunning(agentId);
-        snapshot = await this.agentManager.reloadAgentSession(agentId, undefined, {
+        snapshot = await this.executionService.reloadAgentSession(agentId, undefined, {
           rehydrateFromDisk: true,
         });
       } else {
@@ -2988,16 +2989,16 @@ export class Session {
         if (!handle) {
           throw new Error(`Agent ${agentId} cannot be refreshed because it lacks persistence`);
         }
-        snapshot = await this.agentManager.resumeAgentFromPersistence(
+        snapshot = await this.executionService.resumeAgentFromPersistence(
           handle,
           buildConfigOverrides(record),
           agentId,
           extractTimestamps(record),
         );
       }
-      await this.agentManager.hydrateTimelineFromProvider(agentId);
+      await this.executionService.hydrateTimelineFromProvider(agentId);
       await this.agentUpdates.forwardLiveAgent(snapshot);
-      const timelineSize = this.agentManager.getTimeline(agentId).length;
+      const timelineSize = this.executionService.getTimeline(agentId).length;
       if (requestId) {
         this.emit({
           type: "status",
@@ -3041,7 +3042,7 @@ export class Session {
     try {
       await this.foregroundTurnCoordinator.cancel(agentId);
       if (requestId) {
-        const agent = this.agentManager.getAgent(agentId);
+        const agent = this.executionService.getAgent(agentId);
         const payload = agent ? await this.buildAgentPayload(agent) : null;
         this.emit({
           type: "cancel_agent_response",
@@ -3121,13 +3122,13 @@ export class Session {
   ): Promise<void> {
     try {
       await this.foregroundTurnCoordinator.prepareRewind(msg.agentId);
-      await this.agentManager.rewind(msg.agentId, msg.messageId, msg.mode);
+      await this.executionService.rewind(msg.agentId, msg.messageId, msg.mode);
       if (msg.mode !== "files") {
         this.foregroundTurnCoordinator.clearQueue(msg.agentId);
       } else {
         await this.foregroundTurnCoordinator.resumeQueue(msg.agentId);
       }
-      const timeline = this.agentManager.fetchTimeline(msg.agentId, {
+      const timeline = this.executionService.fetchTimeline(msg.agentId, {
         direction: "tail",
         limit: 0,
       });
@@ -3185,13 +3186,13 @@ export class Session {
               terminalManager: this.terminalManager,
               appendTimelineItem: ({ agentId, item }) =>
                 appendTimelineItemIfAgentKnown({
-                  agentManager: this.agentManager,
+                  executionService: this.executionService,
                   agentId,
                   item,
                 }),
               emitLiveTimelineItem: ({ agentId, item }) =>
                 emitLiveTimelineItemIfAgentKnown({
-                  agentManager: this.agentManager,
+                  executionService: this.executionService,
                   agentId,
                   item,
                 }),
@@ -3232,7 +3233,7 @@ export class Session {
       firstAgentContext: input.firstAgentContext,
       generateBranchNameFromContext: ({ cwd, firstAgentContext }) => {
         return this.generateWorkspaceName({
-          agentManager: this.agentManager,
+          executionService: this.executionService,
           cwd,
           workspaceGitService: this.workspaceGitService,
           providerSnapshotManager: this.providerSnapshotManager,
@@ -3291,7 +3292,7 @@ export class Session {
     firstAgentContext: FirstAgentContext;
   }): Promise<GeneratedWorkspaceName | null> {
     return this.generateWorkspaceName({
-      agentManager: this.agentManager,
+      executionService: this.executionService,
       cwd: input.cwd,
       workspaceGitService: this.workspaceGitService,
       providerSnapshotManager: this.providerSnapshotManager,
@@ -3363,12 +3364,12 @@ export class Session {
     const agentIds = Array.isArray(agentId) ? agentId : [agentId];
 
     try {
-      await Promise.all(agentIds.map((id) => this.agentManager.clearAgentAttention(id)));
+      await Promise.all(agentIds.map((id) => this.executionService.clearAgentAttention(id)));
       if (requestId) {
         const agents = (
           await Promise.all(
             agentIds.map(async (id) => {
-              const agent = this.agentManager.getAgent(id);
+              const agent = this.executionService.getAgent(id);
               return agent ? this.buildAgentPayload(agent) : null;
             }),
           )
@@ -3449,7 +3450,7 @@ export class Session {
     );
 
     try {
-      const agents = this.agentManager.listAgents();
+      const agents = this.executionService.listAgents();
       const agent = agents.find((a) => a.id === agentId);
 
       if (agent?.session?.listCommands) {
@@ -3477,7 +3478,7 @@ export class Session {
             : {}),
         };
 
-        const commands = await this.agentManager.listDraftCommands(sessionConfig);
+        const commands = await this.executionService.listDraftCommands(sessionConfig);
         this.emit({
           type: "list_commands_response",
           payload: {
@@ -3522,7 +3523,7 @@ export class Session {
     response: AgentPermissionResponse,
   ): Promise<void> {
     try {
-      const agent = this.agentManager.getAgent(agentId);
+      const agent = this.executionService.getAgent(agentId);
       if (!agent?.workspaceId) {
         throw new Error(`Agent ${agentId} has no Workspace authority for a permission decision`);
       }
@@ -3549,7 +3550,7 @@ export class Session {
         return;
       }
       await respondToAgentPermission({
-        agentManager: this.agentManager,
+        executionService: this.executionService,
         agentId,
         requestId,
         response,
@@ -3641,7 +3642,7 @@ export class Session {
         thothWorktreesBaseRoot: this.worktreesRoot,
         github: this.github,
         workspaceGitService: this.workspaceGitService,
-        agentManager: this.agentManager,
+        executionService: this.executionService,
         agentStorage: this.agentStorage,
         findWorkspaceIdForCwd: (cwd) => this.findWorkspaceIdForCwd(cwd),
         listActiveWorkspaces: () => this.listActiveWorkspaceRefs(),
@@ -3696,7 +3697,7 @@ export class Session {
     const labelEntries = filter?.labels ? Object.entries(filter.labels) : [];
 
     // Get live agents with session modes
-    const agentSnapshots = this.agentManager.listAgents();
+    const agentSnapshots = this.executionService.listAgents();
     const liveAgents = await Promise.all(
       agentSnapshots.map((agent) => this.buildAgentPayload(agent)),
     );
@@ -3751,7 +3752,7 @@ export class Session {
     for (const record of storedRecords) {
       knownIds.add(record.id);
     }
-    for (const agent of this.agentManager.listAgents()) {
+    for (const agent of this.executionService.listAgents()) {
       knownIds.add(agent.id);
     }
 
@@ -3795,7 +3796,7 @@ export class Session {
   }
 
   private async getAgentPayloadById(agentId: string): Promise<AgentSnapshotPayload | null> {
-    const live = this.agentManager.getAgent(agentId);
+    const live = this.executionService.getAgent(agentId);
     if (live) {
       const payload = await this.buildAgentPayload(live);
       return this.isProviderVisibleToClient(payload.provider) ? payload : null;
@@ -3819,7 +3820,7 @@ export class Session {
       }
       seen.add(currentAgentId);
 
-      const live = this.agentManager.getAgent(currentAgentId);
+      const live = this.executionService.getAgent(currentAgentId);
       const source = live ?? (await this.agentStorage.get(currentAgentId));
       if (!source) {
         return null;
@@ -4545,9 +4546,9 @@ export class Session {
       records
         .filter((record) => record.workspaceId === input.fromWorkspaceId)
         .map(async (record) => {
-          if (this.agentManager.hasInFlightRun(record.id)) {
+          if (this.executionService.hasInFlightRun(record.id)) {
             await cancelAgentRunCommand(
-              { agentManager: this.agentManager, logger: this.sessionLogger },
+              { executionService: this.executionService, logger: this.sessionLogger },
               record.id,
             );
           }
@@ -4774,7 +4775,7 @@ export class Session {
     try {
       const result = await listImportableProviderSessions({
         request,
-        agentManager: this.agentManager,
+        executionService: this.executionService,
         agentStorage: this.agentStorage,
         providerSnapshotManager: this.providerSnapshotManager,
       });
@@ -5389,7 +5390,7 @@ export class Session {
           thothWorktreesBaseRoot: this.worktreesRoot,
           github: this.github,
           workspaceGitService: this.workspaceGitService,
-          agentManager: this.agentManager,
+          executionService: this.executionService,
           agentStorage: this.agentStorage,
           findWorkspaceIdForCwd: (cwd) => this.findWorkspaceIdForCwd(cwd),
           listActiveWorkspaces: () => this.listActiveWorkspaceRefs(),
@@ -5496,9 +5497,9 @@ export class Session {
           .map((agent) => agent.id);
 
         for (const agentId of clearableAgentIds) {
-          const liveAgent = this.agentManager.getAgent(agentId);
+          const liveAgent = this.executionService.getAgent(agentId);
           if (liveAgent) {
-            await this.agentManager.clearAgentAttention(agentId);
+            await this.executionService.clearAgentAttention(agentId);
             clearedAgentIds.push(agentId);
             continue;
           }
@@ -5660,7 +5661,7 @@ export class Session {
     const timeline = this.shouldUseFullTimelineForProjectedPage({
       timeline: input.controlTimeline,
     })
-      ? this.agentManager.fetchTimeline(input.agentId, { direction: "tail", limit: 0 })
+      ? this.executionService.fetchTimeline(input.agentId, { direction: "tail", limit: 0 })
       : input.controlTimeline;
     const page = selectProjectedTimelinePage({
       rows: timeline.rows,
@@ -5711,7 +5712,7 @@ export class Session {
 
     try {
       const snapshot = await ensureAgentLoaded(msg.agentId, {
-        agentManager: this.agentManager,
+        executionService: this.executionService,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
@@ -5720,7 +5721,7 @@ export class Session {
       }
       const agentPayload = await this.buildAgentPayload(snapshot);
 
-      const controlTimeline = this.agentManager.fetchTimeline(msg.agentId, {
+      const controlTimeline = this.executionService.fetchTimeline(msg.agentId, {
         direction,
         cursor,
         limit: pageLimit,
@@ -5807,12 +5808,12 @@ export class Session {
   ): Promise<void> {
     try {
       const snapshot = await ensureAgentLoaded(msg.agentId, {
-        agentManager: this.agentManager,
+        executionService: this.executionService,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
       const agentPayload = await this.buildAgentPayload(snapshot);
-      const rows = this.agentManager.fetchTimeline(msg.agentId, {
+      const rows = this.executionService.fetchTimeline(msg.agentId, {
         direction: "tail",
         limit: 0,
       }).rows;
@@ -5873,9 +5874,9 @@ export class Session {
     try {
       const agentId = resolved.agentId;
       const agent =
-        this.agentManager.getAgent(agentId) ??
+        this.executionService.getAgent(agentId) ??
         (await ensureAgentLoaded(agentId, {
-          agentManager: this.agentManager,
+          executionService: this.executionService,
           agentStorage: this.agentStorage,
           logger: this.sessionLogger,
         }));
@@ -5964,7 +5965,7 @@ export class Session {
     }
 
     const agentId = resolved.agentId;
-    const live = this.agentManager.getAgent(agentId);
+    const live = this.executionService.getAgent(agentId);
     if (!live) {
       const record = await this.agentStorage.get(agentId);
       if (!record || record.internal) {
@@ -6006,7 +6007,7 @@ export class Session {
       : null;
 
     try {
-      let result = await this.agentManager.waitForAgentEvent(agentId, {
+      let result = await this.executionService.waitForAgentEvent(agentId, {
         signal: abortController.signal,
         waitForActive: true,
       });

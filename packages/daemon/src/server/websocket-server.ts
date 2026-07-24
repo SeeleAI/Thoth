@@ -4,7 +4,7 @@ import { basename, join } from "path";
 import { hostname as getHostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import type { AgentManager, AgentMetricsSnapshot } from "./agent/agent-manager.js";
+import type { ExecutionService, AgentMetricsSnapshot } from "./agent/execution-service.js";
 import type { AgentRegistry } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
@@ -323,7 +323,7 @@ export class DaemonWebSocketServer {
         };
       }
     | undefined;
-  private readonly agentManager: AgentManager;
+  private readonly executionService: ExecutionService;
   private readonly agentStorage: AgentRegistry;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
@@ -369,7 +369,7 @@ export class DaemonWebSocketServer {
     server: HTTPServer,
     logger: pino.Logger,
     serverId: string,
-    agentManager: AgentManager,
+    executionService: ExecutionService,
     agentStorage: AgentRegistry,
     downloadTokenStore: DownloadTokenStore,
     thothHome: string,
@@ -426,7 +426,7 @@ export class DaemonWebSocketServer {
     }
     this.daemonVersion = daemonVersion.trim();
     this.daemonRuntimeConfig = daemonRuntimeConfig;
-    this.agentManager = agentManager;
+    this.executionService = executionService;
     this.agentStorage = agentStorage;
     this.projectRegistry = projectRegistry ?? createNoopProjectRegistry();
     this.workspaceRegistry = workspaceRegistry ?? createNoopWorkspaceRegistry();
@@ -470,10 +470,10 @@ export class DaemonWebSocketServer {
     }
     this.providerSnapshotManager = providerSnapshotManager;
     this.unsubscribeDaemonConfigChange = this.daemonConfigStore.onChange((config) => {
-      const nextAgentManagerState = this.providerSnapshotManager.applyMutableProviderConfig(
+      const nextExecutionProviderState = this.providerSnapshotManager.applyMutableProviderConfig(
         config.providers,
       );
-      this.agentManager.updateProviderRegistry(nextAgentManagerState);
+      this.executionService.updateProviderRegistry(nextExecutionProviderState);
       this.broadcastDaemonConfigChanged(config);
     });
 
@@ -482,7 +482,7 @@ export class DaemonWebSocketServer {
     this.pushNotificationSender =
       pushNotificationSender ?? createPushNotificationSender(pushLogger, this.pushTokenStore);
 
-    this.agentManager.setAgentAttentionCallback((params) => {
+    this.executionService.setAgentAttentionCallback((params) => {
       void this.broadcastAgentAttention(params).catch((err) => {
         this.logger.warn({ err, agentId: params.agentId }, "Failed to broadcast agent attention");
       });
@@ -893,7 +893,7 @@ export class DaemonWebSocketServer {
       pushTokenStore: this.pushTokenStore,
       thothHome: this.thothHome,
       worktreesRoot: this.worktreesRoot,
-      agentManager: this.agentManager,
+      executionService: this.executionService,
       agentStorage: this.agentStorage,
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,
@@ -1645,7 +1645,7 @@ export class DaemonWebSocketServer {
         connection.sockets.size === 0 && connection.externalDisconnectCleanupTimeout !== null,
     ).length;
     const sessionMetrics = this.collectSessionRuntimeMetrics();
-    const agentSnapshot = this.agentManager.getMetricsSnapshot();
+    const agentSnapshot = this.executionService.getMetricsSnapshot();
     const loggedMetrics = {
       windowMs: runtimeMetrics.windowMs,
       final: Boolean(options?.final),
@@ -1720,8 +1720,8 @@ export class DaemonWebSocketServer {
 
     const allStates = clientEntries.map((e) => e.state);
     const nowMs = Date.now();
-    const agent = this.agentManager.getAgent(params.agentId);
-    const assistantMessage = await this.agentManager.getLastAssistantMessage(params.agentId);
+    const agent = this.executionService.getAgent(params.agentId);
+    const assistantMessage = await this.executionService.getLastAssistantMessage(params.agentId);
     const notification = buildAgentAttentionNotificationPayload({
       reason: params.reason,
       serverId: this.serverId,

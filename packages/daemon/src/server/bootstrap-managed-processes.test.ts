@@ -11,7 +11,7 @@ import type {
   ManagedProcessReapResult,
 } from "./managed-processes/managed-processes.js";
 import { createThothDaemon, type ThothDaemonConfig } from "./bootstrap.js";
-import { createTestAgentClients } from "./test-utils/fake-agent-client.js";
+import { createTestHarnessAdapters } from "./test-utils/fake-harness-adapter.js";
 
 let tempRoot: string | null = null;
 let staticDir: string | null = null;
@@ -40,7 +40,7 @@ describe("daemon managed process bootstrap", () => {
         mcpEnabled: false,
         staticDir,
         mcpDebug: false,
-        agentClients: createTestAgentClients(),
+        harnessAdapters: createTestHarnessAdapters(),
         agentStoragePath: path.join(thothHome, "agents"),
         relayEnabled: false,
         appBaseUrl: "https://app.thoth.seeles.ai",

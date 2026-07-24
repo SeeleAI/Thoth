@@ -3,10 +3,10 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type {
-  AgentManager,
+  ExecutionService,
   ManagedAgent,
   ManagedImportableProviderSession,
-} from "./agent-manager.js";
+} from "./execution-service.js";
 import type { AgentStorage, StoredAgentRecord } from "./agent-storage.js";
 import type { FetchRecentProviderSessionsRequestMessage } from "@thoth/protocol/messages";
 import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
@@ -168,7 +168,7 @@ test("listImportableProviderSessions filters, sorts, limits, and projects import
     }),
   ];
   const listImportableSessions = vi.fn(async () => sessions);
-  const agentManager = {
+  const executionService = {
     listAgents: () =>
       [
         {
@@ -181,7 +181,7 @@ test("listImportableProviderSessions filters, sorts, limits, and projects import
         },
       ] as ManagedAgent[],
     listImportableSessions,
-  } satisfies Pick<AgentManager, "listAgents" | "listImportableSessions">;
+  } satisfies Pick<ExecutionService, "listAgents" | "listImportableSessions">;
   const agentStorage = {
     list: async () => [
       {
@@ -202,7 +202,7 @@ test("listImportableProviderSessions filters, sorts, limits, and projects import
       since: "2026-04-30T00:00:00.000Z",
       limit: 2,
     }),
-    agentManager,
+    executionService,
     agentStorage,
     providerSnapshotManager: { getProviderLabel: () => "Codex" },
   });
@@ -263,10 +263,10 @@ test("listImportableProviderSessions filters out metadata generation sessions", 
 
   const result = await listImportableProviderSessions({
     request: makeRequest({ cwd, providers: ["codex"] }),
-    agentManager: {
+    executionService: {
       listAgents: () => [],
       listImportableSessions: async () => sessions,
-    } satisfies Pick<AgentManager, "listAgents" | "listImportableSessions">,
+    } satisfies Pick<ExecutionService, "listAgents" | "listImportableSessions">,
     agentStorage: {
       list: async () => [],
     } satisfies Pick<AgentStorage, "list">,
@@ -288,7 +288,7 @@ test("listImportableProviderSessions keeps realpath-equivalent cwd matches", asy
 
   const result = await listImportableProviderSessions({
     request: makeRequest({ cwd: linkedCwd, providers: ["pi"] }),
-    agentManager: {
+    executionService: {
       listAgents: () => [],
       listImportableSessions: async () => [
         makeImportableSession({
@@ -301,7 +301,7 @@ test("listImportableProviderSessions keeps realpath-equivalent cwd matches", asy
           firstPrompt: "remember this",
         }),
       ],
-    } satisfies Pick<AgentManager, "listAgents" | "listImportableSessions">,
+    } satisfies Pick<ExecutionService, "listAgents" | "listImportableSessions">,
     agentStorage: {
       list: async () => [],
     } satisfies Pick<AgentStorage, "list">,
@@ -315,10 +315,10 @@ test("listImportableProviderSessions rejects invalid since values", async () => 
   await expect(
     listImportableProviderSessions({
       request: makeRequest({ since: "not-a-date" }),
-      agentManager: {
+      executionService: {
         listAgents: () => [],
         listImportableSessions: async () => [],
-      } satisfies Pick<AgentManager, "listAgents" | "listImportableSessions">,
+      } satisfies Pick<ExecutionService, "listAgents" | "listImportableSessions">,
       agentStorage: {
         list: async () => [],
       } satisfies Pick<AgentStorage, "list">,
@@ -371,11 +371,11 @@ test("importProviderSession imports a selected provider session without listing"
     nativeHandle: "provider-thread-imported",
     title: null,
   });
-  const agentManager = {
+  const executionService = {
     importProviderSession: vi.fn().mockResolvedValue(snapshot),
     getTimeline: vi.fn().mockReturnValue(timeline),
     unarchiveSnapshot: vi.fn().mockResolvedValue(false),
-  } as unknown as AgentManager;
+  } as unknown as ExecutionService;
   const agentStorage = {
     list: vi.fn().mockResolvedValue([]),
     get: vi.fn().mockResolvedValue(null),
@@ -389,12 +389,12 @@ test("importProviderSession imports a selected provider session without listing"
       cwd,
     },
     workspaceId: "ws-imported",
-    agentManager,
+    executionService,
     agentStorage,
     logger: { warn: vi.fn(), error: vi.fn() } as never,
   });
 
-  expect(agentManager.importProviderSession).toHaveBeenCalledWith({
+  expect(executionService.importProviderSession).toHaveBeenCalledWith({
     provider: "custom-codex",
     providerHandleId: "provider-thread-imported",
     cwd,
@@ -412,11 +412,11 @@ test("importProviderSession passes labels through the manager import operation",
     sessionId: "thread-imported",
     nativeHandle: "thread-imported",
   });
-  const agentManager = {
+  const executionService = {
     importProviderSession: vi.fn().mockResolvedValue(snapshot),
     getTimeline: vi.fn().mockReturnValue([]),
     unarchiveSnapshot: vi.fn().mockResolvedValue(false),
-  } as unknown as AgentManager;
+  } as unknown as ExecutionService;
   const agentStorage = {
     list: vi.fn().mockResolvedValue([]),
     get: vi.fn().mockResolvedValue(null),
@@ -431,12 +431,12 @@ test("importProviderSession passes labels through the manager import operation",
       labels: { source: "import" },
     },
     workspaceId: "ws-imported",
-    agentManager,
+    executionService,
     agentStorage,
     logger: { warn: vi.fn(), error: vi.fn() } as never,
   });
 
-  expect(agentManager.importProviderSession).toHaveBeenCalledWith({
+  expect(executionService.importProviderSession).toHaveBeenCalledWith({
     provider: "codex",
     providerHandleId: "thread-imported",
     cwd,
@@ -446,7 +446,7 @@ test("importProviderSession passes labels through the manager import operation",
 });
 
 test("importProviderSession requires cwd from the selected provider row", async () => {
-  const agentManager = {} as unknown as AgentManager;
+  const executionService = {} as unknown as ExecutionService;
 
   await expect(
     importProviderSession({
@@ -456,7 +456,7 @@ test("importProviderSession requires cwd from the selected provider row", async 
         providerHandleId: "thread-imported",
       },
       workspaceId: "ws-imported",
-      agentManager,
+      executionService,
       agentStorage: { list: vi.fn() } as unknown as AgentStorage,
       logger: { warn: vi.fn(), error: vi.fn() } as never,
     }),

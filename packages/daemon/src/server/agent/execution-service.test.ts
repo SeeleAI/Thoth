@@ -7,18 +7,18 @@ import { randomUUID } from "node:crypto";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import {
-  AgentManager,
+  ExecutionService,
   commandMayHaveChangedExternalState,
-  type AgentManagerEvent,
+  type ExecutionServiceEvent,
   type ManagedAgent,
-} from "./agent-manager.js";
+} from "./execution-service.js";
 import { AgentStorage } from "./agent-storage.js";
 import { toAgentPayload } from "./agent-projections.js";
 import { PARENT_AGENT_ID_LABEL } from "@thoth/protocol/agent-labels";
 import { formatSystemNotificationPrompt } from "./agent-prompt.js";
 import type { StoredAgentRecord } from "./agent-storage.js";
 import type {
-  AgentClient,
+  HarnessAdapter,
   AgentCreateSessionOptions,
   AgentFeature,
   AgentLaunchContext,
@@ -28,7 +28,7 @@ import type {
   AgentResumeSessionOptions,
   AgentRunOptions,
   AgentRunResult,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   AgentSlashCommand,
   AgentStreamEvent,
@@ -36,7 +36,7 @@ import type {
   ImportProviderSessionInput,
 } from "@thoth/drivers/agent-runtime";
 import type { ThothToolCatalog, ThothToolRuntimeContext } from "@thoth/drivers/agent-runtime";
-import type { ProviderDefinition } from "@thoth/drivers/internal/server/agent/provider-registry";
+import type { ProviderManifest } from "@thoth/drivers/internal/server/agent/provider-registry";
 import { NO_HARNESS_CAPABILITIES, defineHarnessCapabilities } from "@thoth/drivers/harness";
 
 interface Deferred<T> {
@@ -88,7 +88,7 @@ function expectArchivedAgentRecord(
   expect(record?.attentionTimestamp).toBeNull();
 }
 
-class TestAgentClient implements AgentClient {
+class TestHarnessAdapter implements HarnessAdapter {
   readonly provider = "codex" as const;
   readonly capabilities = TEST_CAPABILITIES;
   readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
@@ -99,9 +99,9 @@ class TestAgentClient implements AgentClient {
     return true;
   }
 
-  async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+  async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
     this.createdConfigs.push(config);
-    return new TestAgentSession(config);
+    return new TestHarnessThread(config);
   }
 
   async fetchCatalog() {
@@ -132,9 +132,9 @@ class TestAgentClient implements AgentClient {
     _handle: AgentPersistenceHandle,
     config?: Partial<AgentSessionConfig>,
     _launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     this.resumeOverrides.push(config);
-    return new TestAgentSession({
+    return new TestHarnessThread({
       provider: "codex",
       cwd: config?.cwd ?? process.cwd(),
       daemonAppendSystemPrompt: config?.daemonAppendSystemPrompt,
@@ -142,7 +142,7 @@ class TestAgentClient implements AgentClient {
   }
 }
 
-class NativeArchiveRecordingClient extends TestAgentClient {
+class NativeArchiveRecordingAdapter extends TestHarnessAdapter {
   readonly archivedHandles: AgentPersistenceHandle[] = [];
   readonly unarchivedHandles: AgentPersistenceHandle[] = [];
   readArchivedAtDuringUnarchive: (() => Promise<string | null | undefined>) | null = null;
@@ -164,13 +164,13 @@ class NativeArchiveRecordingClient extends TestAgentClient {
   }
 }
 
-class EnvProbeAgentClient extends TestAgentClient {
+class EnvProbeHarnessAdapter extends TestHarnessAdapter {
   probe: Promise<{ probe: string | null; agentId: string | null }> | null = null;
 
   override async createSession(
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const script = `
       process.stdout.write(JSON.stringify({
         probe: process.env.CHUNK14_PROBE ?? null,
@@ -200,11 +200,11 @@ class EnvProbeAgentClient extends TestAgentClient {
         resolve(JSON.parse(stdout) as { probe: string | null; agentId: string | null });
       });
     });
-    return new TestAgentSession(config);
+    return new TestHarnessThread(config);
   }
 }
 
-class TestAgentSession implements AgentSession {
+class TestHarnessThread implements HarnessThread {
   readonly provider = "codex" as const;
   readonly capabilities = TEST_CAPABILITIES;
   readonly id = randomUUID();
@@ -293,7 +293,7 @@ class TestAgentSession implements AgentSession {
   async close(): Promise<void> {}
 }
 
-class StreamingAssistantSession implements AgentSession {
+class StreamingAssistantSession implements HarnessThread {
   readonly provider = "codex" as const;
   readonly capabilities = TEST_CAPABILITIES;
   readonly id = randomUUID();
@@ -383,7 +383,7 @@ class StreamingAssistantSession implements AgentSession {
   async close(): Promise<void> {}
 }
 
-class StreamingAssistantClient implements AgentClient {
+class StreamingAssistantClient implements HarnessAdapter {
   readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
   readonly provider = "codex" as const;
   readonly capabilities = TEST_CAPABILITIES;
@@ -392,14 +392,14 @@ class StreamingAssistantClient implements AgentClient {
     return true;
   }
 
-  async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+  async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
     return new StreamingAssistantSession(config);
   }
 
   async resumeSession(
     _handle: AgentPersistenceHandle,
     config?: Partial<AgentSessionConfig>,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     return new StreamingAssistantSession({
       provider: "codex",
       cwd: config?.cwd ?? process.cwd(),
@@ -412,11 +412,11 @@ interface FakeCodexEmitterArgs {
   historyItems?: AgentTimelineItem[];
 }
 
-function fakeCodexEmitting(args: FakeCodexEmitterArgs): AgentClient {
+function fakeCodexEmitting(args: FakeCodexEmitterArgs): HarnessAdapter {
   const turnItems = args.turnItems ?? [];
   const historyItems = args.historyItems ?? [];
 
-  class FakeCodexSession extends TestAgentSession {
+  class FakeCodexSession extends TestHarnessThread {
     override async startTurn(): Promise<{ turnId: string }> {
       const turnId = "turn-fake-codex";
       setTimeout(() => {
@@ -455,12 +455,12 @@ function fakeCodexEmitting(args: FakeCodexEmitterArgs): AgentClient {
 const logger = createTestLogger();
 
 test("normalizeConfig injects the provider default model when omitted", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -477,10 +477,10 @@ test("normalizeConfig injects the provider default model when omitted", async ()
 });
 
 test("createAgent forwards request env into the spawned provider process", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-env-test-"));
-  const client = new EnvProbeAgentClient();
-  const manager = new AgentManager({
-    clients: {
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-env-test-"));
+  const client = new EnvProbeHarnessAdapter();
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     logger,
@@ -511,12 +511,12 @@ test("createAgent forwards request env into the spawned provider process", async
 });
 
 test("normalizeConfig strips legacy 'default' model id", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -534,10 +534,10 @@ test("normalizeConfig strips legacy 'default' model id", async () => {
 });
 
 test("listDraftCommands returns no commands without guessing a missing model", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-draft-commands-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-draft-commands-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  class DraftCommandClient extends TestAgentClient {
+  class DraftCommandClient extends TestHarnessAdapter {
     fetchCatalogCalls = 0;
     createSessionCalls = 0;
     availabilityCalls = 0;
@@ -552,14 +552,14 @@ test("listDraftCommands returns no commands without guessing a missing model", a
       return await super.fetchCatalog();
     }
 
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       this.createSessionCalls += 1;
       return await super.createSession(config);
     }
   }
   const client = new DraftCommandClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -574,7 +574,7 @@ test("listDraftCommands returns no commands without guessing a missing model", a
 });
 
 test("listDraftCommands uses explicit model config without default model fetching", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-draft-commands-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-draft-commands-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const draftCommand: AgentSlashCommand = {
@@ -583,12 +583,12 @@ test("listDraftCommands uses explicit model config without default model fetchin
     argumentHint: "",
     kind: "command",
   };
-  class DraftCommandSession extends TestAgentSession {
+  class DraftCommandSession extends TestHarnessThread {
     override async listCommands(): Promise<AgentSlashCommand[]> {
       return [draftCommand];
     }
   }
-  class DraftCommandClient extends TestAgentClient {
+  class DraftCommandClient extends TestHarnessAdapter {
     fetchCatalogCalls = 0;
     createSessionCalls = 0;
     readonly commandConfigs: AgentSessionConfig[] = [];
@@ -604,7 +604,7 @@ test("listDraftCommands uses explicit model config without default model fetchin
       config: AgentSessionConfig,
       launchContext?: AgentLaunchContext,
       options?: AgentCreateSessionOptions,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       this.createSessionCalls += 1;
       this.commandConfigs.push(config);
       this.launchContexts.push(launchContext);
@@ -613,8 +613,8 @@ test("listDraftCommands uses explicit model config without default model fetchin
     }
   }
   const client = new DraftCommandClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -644,10 +644,10 @@ test("listDraftCommands uses explicit model config without default model fetchin
 });
 
 test("listDraftFeatures returns no features without guessing a missing model", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-draft-features-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-draft-features-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  class DraftFeatureClient extends TestAgentClient {
+  class DraftFeatureClient extends TestHarnessAdapter {
     fetchCatalogCalls = 0;
     createSessionCalls = 0;
     availabilityCalls = 0;
@@ -664,7 +664,7 @@ test("listDraftFeatures returns no features without guessing a missing model", a
       return await super.fetchCatalog();
     }
 
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       this.createSessionCalls += 1;
       return await super.createSession(config);
     }
@@ -675,8 +675,8 @@ test("listDraftFeatures returns no features without guessing a missing model", a
     }
   }
   const client = new DraftFeatureClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -692,11 +692,11 @@ test("listDraftFeatures returns no features without guessing a missing model", a
 });
 
 test("listDraftFeatures uses explicit model config without default model fetching", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-draft-features-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-draft-features-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const draftFeature = createFeature({ id: "fast_mode", label: "Fast mode", value: false });
-  class DraftFeatureClient extends TestAgentClient {
+  class DraftFeatureClient extends TestHarnessAdapter {
     fetchCatalogCalls = 0;
     createSessionCalls = 0;
     readonly featureConfigs: AgentSessionConfig[] = [];
@@ -707,7 +707,7 @@ test("listDraftFeatures uses explicit model config without default model fetchin
       return await super.fetchCatalog();
     }
 
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       this.createSessionCalls += 1;
       return await super.createSession(config);
     }
@@ -722,8 +722,8 @@ test("listDraftFeatures uses explicit model config without default model fetchin
     }
   }
   const client = new DraftFeatureClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -752,12 +752,12 @@ test("listDraftFeatures uses explicit model config without default model fetchin
 });
 
 test("createAgent injects daemon append system prompt at runtime only", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const client = new TestAgentClient();
-  const manager = new AgentManager({
-    clients: {
+  const client = new TestHarnessAdapter();
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -781,13 +781,13 @@ test("createAgent injects daemon append system prompt at runtime only", async ()
 });
 
 test("daemon append system prompt is injected into Pi configs", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const client = new TestAgentClient();
-  const manager = new AgentManager({
-    clients: {
-      pi: client as unknown as AgentClient,
+  const client = new TestHarnessAdapter();
+  const manager = new ExecutionService({
+    adapters: {
+      pi: client as unknown as HarnessAdapter,
     },
     providerDefinitions: {
       pi: { enabled: true },
@@ -808,11 +808,11 @@ test("daemon append system prompt is injected into Pi configs", async () => {
 });
 
 test("setAgentMode persists the selected mode across session reload", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class ModeAwareSession implements AgentSession {
+  class ModeAwareSession implements HarnessThread {
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
     readonly id = randomUUID();
@@ -871,7 +871,7 @@ test("setAgentMode persists the selected mode across session reload", async () =
     async close(): Promise<void> {}
   }
 
-  class ModeAwareClient implements AgentClient {
+  class ModeAwareClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -880,14 +880,14 @@ test("setAgentMode persists the selected mode across session reload", async () =
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new ModeAwareSession(config);
     }
 
     async resumeSession(
       _handle: AgentPersistenceHandle,
       config?: Partial<AgentSessionConfig>,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       return new ModeAwareSession({
         provider: "codex",
         cwd: config?.cwd ?? workdir,
@@ -904,8 +904,8 @@ test("setAgentMode persists the selected mode across session reload", async () =
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new ModeAwareClient(),
     },
     registry: storage,
@@ -931,11 +931,11 @@ test("setAgentMode persists the selected mode across session reload", async () =
 });
 
 test("reloadAgentSession completes when the previous session close hangs", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-reload-close-timeout-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-reload-close-timeout-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class HangingCloseSession extends TestAgentSession {
+  class HangingCloseSession extends TestHarnessThread {
     closeCalled = false;
 
     override async close(): Promise<void> {
@@ -944,23 +944,23 @@ test("reloadAgentSession completes when the previous session close hangs", async
     }
   }
 
-  class HangingCloseClient extends TestAgentClient {
+  class HangingCloseClient extends TestHarnessAdapter {
     readonly firstSession = new HangingCloseSession({
       provider: "codex",
       cwd: workdir,
     });
     resumeSessionCalls = 0;
 
-    override async createSession(): Promise<AgentSession> {
+    override async createSession(): Promise<HarnessThread> {
       return this.firstSession;
     }
 
     override async resumeSession(
       _handle: AgentPersistenceHandle,
       config?: Partial<AgentSessionConfig>,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       this.resumeSessionCalls += 1;
-      return new TestAgentSession({
+      return new TestHarnessThread({
         provider: "codex",
         cwd: config?.cwd ?? workdir,
       });
@@ -968,8 +968,8 @@ test("reloadAgentSession completes when the previous session close hangs", async
   }
 
   const client = new HangingCloseClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -995,11 +995,11 @@ test("reloadAgentSession completes when the previous session close hangs", async
 });
 
 test("cancelAgentRun completes when provider interrupt hangs", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-interrupt-timeout-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-interrupt-timeout-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class HangingInterruptSession extends TestAgentSession {
+  class HangingInterruptSession extends TestHarnessThread {
     interruptCalled = false;
 
     override async interrupt(): Promise<void> {
@@ -1008,20 +1008,20 @@ test("cancelAgentRun completes when provider interrupt hangs", async () => {
     }
   }
 
-  class HangingInterruptClient extends TestAgentClient {
+  class HangingInterruptClient extends TestHarnessAdapter {
     readonly session = new HangingInterruptSession({
       provider: "codex",
       cwd: workdir,
     });
 
-    override async createSession(): Promise<AgentSession> {
+    override async createSession(): Promise<HarnessThread> {
       return this.session;
     }
   }
 
   const client = new HangingInterruptClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -1065,7 +1065,7 @@ test("cancelAgentRun completes when provider interrupt hangs", async () => {
 });
 
 test("listProviderAvailability uses registered client keys, including custom providers", async () => {
-  const customClient: AgentClient = {
+  const customClient: HarnessAdapter = {
     provider: "zai",
     capabilities: TEST_CAPABILITIES,
     harnessCapabilities: NO_HARNESS_CAPABILITIES,
@@ -1080,8 +1080,8 @@ test("listProviderAvailability uses registered client keys, including custom pro
     },
   };
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       zai: customClient,
     },
     logger,
@@ -1097,27 +1097,27 @@ test("listProviderAvailability uses registered client keys, including custom pro
 });
 
 test("createAgent passes daemon launch env through the provider launch context", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class CaptureClient extends TestAgentClient {
+  class CaptureClient extends TestHarnessAdapter {
     lastConfig: AgentSessionConfig | null = null;
     lastLaunchContext: AgentLaunchContext | undefined;
 
     override async createSession(
       config: AgentSessionConfig,
       launchContext?: AgentLaunchContext,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       this.lastConfig = config;
       this.lastLaunchContext = launchContext;
-      return new TestAgentSession(config);
+      return new TestHarnessThread(config);
     }
   }
 
   const client = new CaptureClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -1145,26 +1145,26 @@ test("createAgent passes daemon launch env through the provider launch context",
 });
 
 test("createAgent passes persistSession to provider create options", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class CaptureClient extends TestAgentClient {
+  class CaptureClient extends TestHarnessAdapter {
     lastCreateOptions: AgentCreateSessionOptions | undefined;
 
     override async createSession(
       config: AgentSessionConfig,
       _launchContext?: AgentLaunchContext,
       options?: AgentCreateSessionOptions,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       this.lastCreateOptions = options;
-      return new TestAgentSession(config);
+      return new TestHarnessThread(config);
     }
   }
 
   const client = new CaptureClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -1187,12 +1187,12 @@ test("createAgent passes persistSession to provider create options", async () =>
 });
 
 test("createAgent persists workspaceId on the stored record and emits it in the snapshot", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -1220,22 +1220,22 @@ test("createAgent persists workspaceId on the stored record and emits it in the 
 });
 
 test("createAgent injects thoth MCP server only into provider launch config", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class CaptureClient extends TestAgentClient {
+  class CaptureClient extends TestHarnessAdapter {
     lastConfig: AgentSessionConfig | null = null;
 
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       this.lastConfig = config;
-      return new TestAgentSession(config);
+      return new TestHarnessThread(config);
     }
   }
 
   const client = new CaptureClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -1282,7 +1282,7 @@ test("createAgent injects thoth MCP server only into provider launch config", as
 });
 
 test("createAgent passes native Thoth tools through launch context without internal MCP", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
@@ -1294,7 +1294,7 @@ test("createAgent passes native Thoth tools through launch context without inter
     },
   };
 
-  class NativeToolsClient extends TestAgentClient {
+  class NativeToolsClient extends TestHarnessAdapter {
     override readonly capabilities = {
       ...TEST_CAPABILITIES,
       supportsMcpServers: true,
@@ -1308,17 +1308,17 @@ test("createAgent passes native Thoth tools through launch context without inter
     override async createSession(
       config: AgentSessionConfig,
       launchContext?: AgentLaunchContext,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       this.lastConfig = config;
       this.lastLaunchContext = launchContext;
-      return new TestAgentSession(config);
+      return new TestHarnessThread(config);
     }
   }
 
   let capturedToolContext: ThothToolRuntimeContext | null = null;
   const client = new NativeToolsClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -1377,7 +1377,7 @@ test("createAgent passes native Thoth tools through launch context without inter
 });
 
 test("createAgent provisions foreground Thoth tools before provider session creation", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
   const thothTools: ThothToolCatalog = {
     tools: new Map(),
@@ -1387,7 +1387,7 @@ test("createAgent provisions foreground Thoth tools before provider session crea
     },
   };
 
-  class NativeToolsClient extends TestAgentClient {
+  class NativeToolsClient extends TestHarnessAdapter {
     override readonly harnessCapabilities = defineHarnessCapabilities({
       toolAttachment: ["native"],
     });
@@ -1396,15 +1396,15 @@ test("createAgent provisions foreground Thoth tools before provider session crea
     override async createSession(
       config: AgentSessionConfig,
       launchContext?: AgentLaunchContext,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       this.lastLaunchContext = launchContext;
-      return new TestAgentSession(config);
+      return new TestHarnessThread(config);
     }
   }
 
   const client = new NativeToolsClient();
-  const manager = new AgentManager({
-    clients: { codex: client },
+  const manager = new ExecutionService({
+    adapters: { codex: client },
     registry: storage,
     logger,
     thothToolCatalogFactory: () => thothTools,
@@ -1425,22 +1425,22 @@ test("createAgent provisions foreground Thoth tools before provider session crea
 });
 
 test("createAgent injects the MCP auth token as a bearer header into the launch config", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class CaptureClient extends TestAgentClient {
+  class CaptureClient extends TestHarnessAdapter {
     lastConfig: AgentSessionConfig | null = null;
 
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       this.lastConfig = config;
-      return new TestAgentSession(config);
+      return new TestHarnessThread(config);
     }
   }
 
   const client = new CaptureClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -1466,12 +1466,12 @@ test("createAgent injects the MCP auth token as a bearer header into the launch 
 });
 
 test("resumeAgentFromPersistence replaces stored internal thoth MCP with current runtime URL", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const client = new TestAgentClient();
-  const manager = new AgentManager({
-    clients: {
+  const client = new TestHarnessAdapter();
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -1520,12 +1520,12 @@ test("resumeAgentFromPersistence replaces stored internal thoth MCP with current
 });
 
 test("resumeAgentFromPersistence drops stored internal thoth MCP when runtime injection is disabled", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const client = new TestAgentClient();
-  const manager = new AgentManager({
-    clients: {
+  const client = new TestHarnessAdapter();
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -1554,22 +1554,22 @@ test("resumeAgentFromPersistence drops stored internal thoth MCP when runtime in
 });
 
 test("createAgent preserves a user-provided thoth MCP config", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class CaptureClient extends TestAgentClient {
+  class CaptureClient extends TestHarnessAdapter {
     lastConfig: AgentSessionConfig | null = null;
 
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       this.lastConfig = config;
-      return new TestAgentSession(config);
+      return new TestHarnessThread(config);
     }
   }
 
   const client = new CaptureClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -1599,12 +1599,12 @@ test("createAgent preserves a user-provided thoth MCP config", async () => {
 });
 
 test("createAgent fails when cwd does not exist", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -1619,12 +1619,12 @@ test("createAgent fails when cwd does not exist", async () => {
 });
 
 test("createAgent reports configured providers when provider is unknown", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -1639,20 +1639,20 @@ test("createAgent reports configured providers when provider is unknown", async 
 });
 
 test("createAgent reports available providers when selected provider is unavailable", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class UnavailableCodexClient extends TestAgentClient {
+  class UnavailableCodexClient extends TestHarnessAdapter {
     override async isAvailable(): Promise<boolean> {
       return false;
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new UnavailableCodexClient(),
-      claude: new TestAgentClient(),
+      claude: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -1669,14 +1669,14 @@ test("createAgent reports available providers when selected provider is unavaila
 });
 
 test("createAgent rejects a disabled provider without creating a session", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class DisabledCodexClient extends TestAgentClient {
+  class DisabledCodexClient extends TestHarnessAdapter {
     createSessionCalls = 0;
 
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       this.createSessionCalls += 1;
       return await super.createSession(config);
     }
@@ -1687,9 +1687,9 @@ test("createAgent rejects a disabled provider without creating a session", async
     codex: {
       enabled: false,
     },
-  } satisfies Partial<Record<AgentProvider, Pick<ProviderDefinition, "enabled">>>;
-  const manager = new AgentManager({
-    clients: {
+  } satisfies Partial<Record<AgentProvider, Pick<ProviderManifest, "enabled">>>;
+  const manager = new ExecutionService({
+    adapters: {
       codex: disabledClient,
     },
     providerDefinitions,
@@ -1708,12 +1708,12 @@ test("createAgent rejects a disabled provider without creating a session", async
 });
 
 test("updateProviderRegistry re-enables a previously disabled provider", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const client = new TestAgentClient();
-  const manager = new AgentManager({
-    clients: { codex: client },
+  const client = new TestHarnessAdapter();
+  const manager = new ExecutionService({
+    adapters: { codex: client },
     providerDefinitions: {
       codex: { enabled: false },
     },
@@ -1727,7 +1727,7 @@ test("updateProviderRegistry re-enables a previously disabled provider", async (
 
   manager.updateProviderRegistry({
     providerDefinitions: { codex: { enabled: true } },
-    clients: { codex: client },
+    adapters: { codex: client },
   });
 
   const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir });
@@ -1735,12 +1735,12 @@ test("updateProviderRegistry re-enables a previously disabled provider", async (
 });
 
 test("updateProviderRegistry disables a previously enabled provider", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const client = new TestAgentClient();
-  const manager = new AgentManager({
-    clients: { codex: client },
+  const client = new TestHarnessAdapter();
+  const manager = new ExecutionService({
+    adapters: { codex: client },
     providerDefinitions: {
       codex: { enabled: true },
     },
@@ -1750,7 +1750,7 @@ test("updateProviderRegistry disables a previously enabled provider", async () =
 
   manager.updateProviderRegistry({
     providerDefinitions: { codex: { enabled: false } },
-    clients: { codex: client },
+    adapters: { codex: client },
   });
 
   await expect(manager.createAgent({ provider: "codex", cwd: workdir })).rejects.toThrow(
@@ -1759,11 +1759,11 @@ test("updateProviderRegistry disables a previously enabled provider", async () =
 });
 
 test("updateProviderRegistry registers a previously unknown provider", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {},
+  const manager = new ExecutionService({
+    adapters: {},
     providerDefinitions: {},
     registry: storage,
     logger,
@@ -1773,7 +1773,7 @@ test("updateProviderRegistry registers a previously unknown provider", async () 
 
   manager.updateProviderRegistry({
     providerDefinitions: { codex: { enabled: true } },
-    clients: { codex: new TestAgentClient() },
+    adapters: { codex: new TestHarnessAdapter() },
   });
 
   expect(manager.getRegisteredProviderIds()).toContain("codex");
@@ -1782,20 +1782,20 @@ test("updateProviderRegistry registers a previously unknown provider", async () 
 });
 
 test("createAgent passes explicit model strings through to the provider", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  class CaptureModelClient extends TestAgentClient {
+  class CaptureModelClient extends TestHarnessAdapter {
     lastConfig: AgentSessionConfig | null = null;
 
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       this.lastConfig = config;
-      return new TestAgentSession(config);
+      return new TestHarnessThread(config);
     }
   }
   const client = new CaptureModelClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -1812,11 +1812,11 @@ test("createAgent passes explicit model strings through to the provider", async 
 });
 
 test("resumeAgentFromPersistence keeps metadata config, applies overrides, and passes launch env", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-resume-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-resume-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class ResumeCaptureClient implements AgentClient {
+  class ResumeCaptureClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -1828,8 +1828,8 @@ test("resumeAgentFromPersistence keeps metadata config, applies overrides, and p
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
-      return new TestAgentSession(config);
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
+      return new TestHarnessThread(config);
     }
 
     async fetchCatalog() {
@@ -1851,7 +1851,7 @@ test("resumeAgentFromPersistence keeps metadata config, applies overrides, and p
       overrides?: Partial<AgentSessionConfig>,
       launchContext?: AgentLaunchContext,
       options?: AgentResumeSessionOptions,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       this.lastResumeOverrides = overrides;
       this.lastResumeLaunchContext = launchContext;
       this.lastResumeOptions = options;
@@ -1862,13 +1862,13 @@ test("resumeAgentFromPersistence keeps metadata config, applies overrides, and p
         provider: "codex",
         cwd: overrides?.cwd ?? metadata.cwd ?? process.cwd(),
       };
-      return new TestAgentSession(merged);
+      return new TestHarnessThread(merged);
     }
   }
 
   const client = new ResumeCaptureClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -1946,13 +1946,13 @@ test("resumeAgentFromPersistence keeps metadata config, applies overrides, and p
 });
 
 test("importProviderSession imports the selected session without listing and publishes ready state", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-import-session-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-import-session-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const session = new TestAgentSession({ provider: "codex", cwd: workdir });
-  const events: AgentManagerEvent[] = [];
+  const session = new TestHarnessThread({ provider: "codex", cwd: workdir });
+  const events: ExecutionServiceEvent[] = [];
 
-  class ImportClient extends TestAgentClient {
+  class ImportClient extends TestHarnessAdapter {
     listCalls = 0;
     importInput: unknown = null;
 
@@ -1987,8 +1987,8 @@ test("importProviderSession imports the selected session without listing and pub
   }
 
   const client = new ImportClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -2024,11 +2024,11 @@ test("importProviderSession imports the selected session without listing and pub
 });
 
 test("reloadAgentSession passes daemon launch env through the provider launch context", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-reload-context-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-reload-context-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class ReloadCaptureClient implements AgentClient {
+  class ReloadCaptureClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -2042,16 +2042,16 @@ test("reloadAgentSession passes daemon launch env through the provider launch co
     async createSession(
       config: AgentSessionConfig,
       launchContext?: AgentLaunchContext,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       this.lastCreateLaunchContext = launchContext;
-      return new TestAgentSession(config);
+      return new TestHarnessThread(config);
     }
 
     async resumeSession(
       handle: AgentPersistenceHandle,
       overrides?: Partial<AgentSessionConfig>,
       launchContext?: AgentLaunchContext,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       this.lastResumeLaunchContext = launchContext;
       const metadata = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
       const merged: AgentSessionConfig = {
@@ -2060,13 +2060,13 @@ test("reloadAgentSession passes daemon launch env through the provider launch co
         provider: "codex",
         cwd: overrides?.cwd ?? metadata.cwd ?? process.cwd(),
       };
-      return new TestAgentSession(merged);
+      return new TestHarnessThread(merged);
     }
   }
 
   const client = new ReloadCaptureClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -2099,11 +2099,11 @@ test("reloadAgentSession passes daemon launch env through the provider launch co
 });
 
 test("reloadAgentSession preserves timeline and does not force history replay", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-reload-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-reload-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class HistoryProbeSession extends TestAgentSession {
+  class HistoryProbeSession extends TestHarnessThread {
     constructor(
       config: AgentSessionConfig,
       private readonly historyText: string | null,
@@ -2123,7 +2123,7 @@ test("reloadAgentSession preserves timeline and does not force history replay", 
     }
   }
 
-  class HistoryProbeClient implements AgentClient {
+  class HistoryProbeClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -2132,14 +2132,14 @@ test("reloadAgentSession preserves timeline and does not force history replay", 
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new HistoryProbeSession(config, null);
     }
 
     async resumeSession(
       handle: AgentPersistenceHandle,
       overrides?: Partial<AgentSessionConfig>,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       const metadata = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
       const merged: AgentSessionConfig = {
         ...metadata,
@@ -2151,8 +2151,8 @@ test("reloadAgentSession preserves timeline and does not force history replay", 
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new HistoryProbeClient(),
     },
     registry: storage,
@@ -2186,12 +2186,12 @@ test("reloadAgentSession preserves timeline and does not force history replay", 
 });
 
 test("reloadAgentSession preserves current title when config title is unset", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-reload-title-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-reload-title-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2216,12 +2216,12 @@ test("reloadAgentSession preserves current title when config title is unset", as
 });
 
 test("setTitle bumps updatedAt and persists title in the same snapshot write", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-set-title-updated-at-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-set-title-updated-at-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2248,12 +2248,12 @@ test("setTitle bumps updatedAt and persists title in the same snapshot write", a
 });
 
 test("updateAgentMetadata bumps updatedAt for stored agents", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-stored-metadata-updated-at-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-stored-metadata-updated-at-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2287,12 +2287,12 @@ test("updateAgentMetadata bumps updatedAt for stored agents", async () => {
 });
 
 test("persists live mode, model, and thinking changes without an external snapshot subscriber", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-live-persist-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-live-persist-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2322,17 +2322,17 @@ test("persists live mode, model, and thinking changes without an external snapsh
 });
 
 test("session config drift events update state through the stream channel", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-session-config-events-"));
-  let capturedSession: TestAgentSession | null = null;
-  class ConfigEventClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
-      capturedSession = new TestAgentSession(config);
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-session-config-events-"));
+  let capturedSession: TestHarnessThread | null = null;
+  class ConfigEventClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
+      capturedSession = new TestHarnessThread(config);
       return capturedSession;
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new ConfigEventClient(),
     },
     logger,
@@ -2398,12 +2398,12 @@ test("session config drift events update state through the stream channel", asyn
 });
 
 test("setLabels merges and persists labels", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-set-labels-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-set-labels-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2427,12 +2427,12 @@ test("setLabels merges and persists labels", async () => {
 });
 
 test("detachAgent removes only the parent label from a live agent and emits state", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-detach-live-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-detach-live-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2480,12 +2480,12 @@ test("detachAgent removes only the parent label from a live agent and emits stat
 });
 
 test("detachAgent removes the parent label from a stored-only agent", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-detach-stored-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-detach-stored-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2521,12 +2521,12 @@ test("detachAgent removes the parent label from a stored-only agent", async () =
 });
 
 test("archiveAgent does not cascade to a detached former child", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-detach-cascade-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-detach-cascade-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2555,12 +2555,12 @@ test("archiveAgent does not cascade to a detached former child", async () => {
 });
 
 test("runAgent persists finished attention and idle status without an external snapshot subscriber", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-finished-attention-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-finished-attention-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2584,12 +2584,12 @@ test("runAgent persists finished attention and idle status without an external s
 });
 
 test("archiveSnapshot clears persisted attention and normalizes running status", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-archive-attention-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-archive-attention-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2629,11 +2629,11 @@ test("archiveSnapshot clears persisted attention and normalizes running status",
 });
 
 test("archiveSnapshot dispatches archived state for stored-only agents", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-archive-snapshot-dispatch-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-archive-snapshot-dispatch-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: { codex: new TestAgentClient() },
+  const manager = new ExecutionService({
+    adapters: { codex: new TestHarnessAdapter() },
     registry: storage,
     logger,
   });
@@ -2664,11 +2664,11 @@ test("archiveSnapshot dispatches archived state for stored-only agents", async (
 });
 
 test("reloadAgentSession cancels active run and resumes existing session once thread_started is observed", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-reload-active-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-reload-active-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class DelayedPersistenceSession extends TestAgentSession {
+  class DelayedPersistenceSession extends TestHarnessThread {
     private persistenceReady = false;
     private delayedInterrupted = false;
     private releaseGate: (() => void) | null = null;
@@ -2744,7 +2744,7 @@ test("reloadAgentSession cancels active run and resumes existing session once th
     }
   }
 
-  class DelayedPersistenceClient implements AgentClient {
+  class DelayedPersistenceClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -2756,7 +2756,7 @@ test("reloadAgentSession cancels active run and resumes existing session once th
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       const sessionId = `delayed-session-${this.nextSessionNumber++}`;
       this.createSessionCalls += 1;
       return new DelayedPersistenceSession(config, sessionId);
@@ -2765,7 +2765,7 @@ test("reloadAgentSession cancels active run and resumes existing session once th
     async resumeSession(
       handle: AgentPersistenceHandle,
       overrides?: Partial<AgentSessionConfig>,
-    ): Promise<AgentSession> {
+    ): Promise<HarnessThread> {
       this.resumeSessionCalls += 1;
       const metadata = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
       const merged: AgentSessionConfig = {
@@ -2779,8 +2779,8 @@ test("reloadAgentSession cancels active run and resumes existing session once th
   }
 
   const client = new DelayedPersistenceClient();
-  const manager = new AgentManager({
-    clients: { codex: client },
+  const manager = new ExecutionService({
+    adapters: { codex: client },
     registry: storage,
     logger,
     idFactory: () => "00000000-0000-4000-8000-000000000114",
@@ -2825,12 +2825,12 @@ test("reloadAgentSession cancels active run and resumes existing session once th
 });
 
 test("fetchTimeline returns a bounded reset window when cursor epoch is stale", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-timeline-stale-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-timeline-stale-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2894,12 +2894,12 @@ test("fetchTimeline returns a bounded reset window when cursor epoch is stale", 
 });
 
 test("getTimelineRows falls back to the in-memory timeline when no durable store is configured", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-timeline-rows-fallback-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-timeline-rows-fallback-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2941,12 +2941,12 @@ test("getTimelineRows falls back to the in-memory timeline when no durable store
 });
 
 test("getAgent does not expose committed history internals once manager owns the seam", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-timeline-boundary-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-timeline-boundary-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -2994,11 +2994,11 @@ test("getAgent does not expose committed history internals once manager owns the
 });
 
 test("coalesces assistant chunks and persists the canonical row", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-provisional-timeline-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-provisional-timeline-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new StreamingAssistantClient(),
     },
     registry: storage,
@@ -3076,12 +3076,12 @@ test("coalesces assistant chunks and persists the canonical row", async () => {
 });
 
 test("fetchTimeline supports older-history pagination with before seq", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-timeline-before-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-timeline-before-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -3130,12 +3130,12 @@ test("fetchTimeline supports older-history pagination with before seq", async ()
 });
 
 test("does not trim committed history", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-timeline-unbounded-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-timeline-unbounded-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -3170,11 +3170,11 @@ test("does not trim committed history", async () => {
 });
 
 test("hydrateTimeline preserves assistant chunk, reasoning, and tool timeline history", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-history-canonical-assistant-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-history-canonical-assistant-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class ChunkedAssistantHistorySession extends TestAgentSession {
+  class ChunkedAssistantHistorySession extends TestHarnessThread {
     async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
       yield {
         type: "timeline",
@@ -3216,7 +3216,7 @@ test("hydrateTimeline preserves assistant chunk, reasoning, and tool timeline hi
     }
   }
 
-  class ChunkedAssistantHistoryClient implements AgentClient {
+  class ChunkedAssistantHistoryClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -3225,17 +3225,17 @@ test("hydrateTimeline preserves assistant chunk, reasoning, and tool timeline hi
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new ChunkedAssistantHistorySession(config);
     }
 
-    async resumeSession(): Promise<AgentSession> {
+    async resumeSession(): Promise<HarnessThread> {
       throw new Error("Not used in this test");
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new ChunkedAssistantHistoryClient(),
     },
     registry: storage,
@@ -3272,11 +3272,11 @@ test("hydrateTimeline preserves assistant chunk, reasoning, and tool timeline hi
 });
 
 test("hydrateTimeline preserves reasoning between assistant chunks", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-history-reasoning-interleave-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-history-reasoning-interleave-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class ReasoningInterleavedHistorySession extends TestAgentSession {
+  class ReasoningInterleavedHistorySession extends TestHarnessThread {
     async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
       yield {
         type: "timeline",
@@ -3296,7 +3296,7 @@ test("hydrateTimeline preserves reasoning between assistant chunks", async () =>
     }
   }
 
-  class ReasoningInterleavedHistoryClient implements AgentClient {
+  class ReasoningInterleavedHistoryClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -3305,17 +3305,17 @@ test("hydrateTimeline preserves reasoning between assistant chunks", async () =>
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new ReasoningInterleavedHistorySession(config);
     }
 
-    async resumeSession(): Promise<AgentSession> {
+    async resumeSession(): Promise<HarnessThread> {
       throw new Error("Not used in this test");
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new ReasoningInterleavedHistoryClient(),
     },
     registry: storage,
@@ -3341,12 +3341,12 @@ test("hydrateTimeline preserves reasoning between assistant chunks", async () =>
 });
 
 test("createAgent fails when generated agent ID is not a UUID", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -3362,12 +3362,12 @@ test("createAgent fails when generated agent ID is not a UUID", async () => {
 });
 
 test("createAgent fails when explicit agent ID is not a UUID", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -3386,12 +3386,12 @@ test("createAgent fails when explicit agent ID is not a UUID", async () => {
 
 test("createAgent persists provided title before returning", async () => {
   const agentId = "00000000-0000-4000-8000-000000000102";
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -3413,12 +3413,12 @@ test("createAgent persists provided title before returning", async () => {
 });
 
 test("createAgent populates runtimeInfo after session creation", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -3438,12 +3438,12 @@ test("createAgent populates runtimeInfo after session creation", async () => {
 });
 
 test("runAgent refreshes runtimeInfo after completion", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -3464,12 +3464,12 @@ test("runAgent refreshes runtimeInfo after completion", async () => {
 });
 
 test("waitForAgentEvent does not resolve idle until foreground turn is finalized", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-wait-coherence-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-wait-coherence-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const releaseTurnCompleted = deferred<void>();
 
-  class SlowTerminalSession extends TestAgentSession {
+  class SlowTerminalSession extends TestHarnessThread {
     override async startTurn(): Promise<{ turnId: string }> {
       this.interrupted = false;
       const turnId = `turn-${++this.turnIdCounter}`;
@@ -3482,14 +3482,14 @@ test("waitForAgentEvent does not resolve idle until foreground turn is finalized
     }
   }
 
-  class SlowTerminalClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+  class SlowTerminalClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new SlowTerminalSession(config);
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new SlowTerminalClient(),
     },
     registry: storage,
@@ -3530,13 +3530,13 @@ test("waitForAgentEvent does not resolve idle until foreground turn is finalized
 });
 
 test("waitForAgentRunStart resolves while a foreground run is still only pending", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-fast-start-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-fast-start-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -3562,13 +3562,13 @@ test("waitForAgentRunStart resolves while a foreground run is still only pending
 });
 
 test("replaceAgentRun does not emit idle or resolve waiters between interrupted and replacement runs", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-replace-run-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-replace-run-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const allowFirstRunToEnd = deferred<void>();
   const allowSecondRunToEnd = deferred<void>();
 
-  class ReplaceRunSession extends TestAgentSession {
+  class ReplaceRunSession extends TestHarnessThread {
     override async startTurn(): Promise<{ turnId: string }> {
       this.interrupted = false;
       const turnId = `turn-${++this.turnIdCounter}`;
@@ -3598,14 +3598,14 @@ test("replaceAgentRun does not emit idle or resolve waiters between interrupted 
     }
   }
 
-  class ReplaceRunClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+  class ReplaceRunClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new ReplaceRunSession(config);
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new ReplaceRunClient(),
     },
     registry: storage,
@@ -3676,7 +3676,7 @@ test("replaceAgentRun does not emit idle or resolve waiters between interrupted 
 });
 
 test("replaceAgentRun stays running when a stale old terminal arrives before the replacement turn is current", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-replace-stale-terminal-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-replace-stale-terminal-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const secondStartEntered = deferred<void>();
@@ -3685,7 +3685,7 @@ test("replaceAgentRun stays running when a stale old terminal arrives before the
   const allowSecondStartToResolve = deferred<void>();
   let capturedSession: StaleReplacementSession | null = null;
 
-  class StaleReplacementSession extends TestAgentSession {
+  class StaleReplacementSession extends TestHarnessThread {
     private localTurnCounter = 0;
 
     override async startTurn(): Promise<{ turnId: string }> {
@@ -3720,15 +3720,15 @@ test("replaceAgentRun stays running when a stale old terminal arrives before the
     }
   }
 
-  class StaleReplacementClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+  class StaleReplacementClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       capturedSession = new StaleReplacementSession(config);
       return capturedSession;
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new StaleReplacementClient(),
     },
     registry: storage,
@@ -3810,20 +3810,20 @@ test("replaceAgentRun stays running when a stale old terminal arrives before the
 });
 
 test("applies live autonomous events while no foreground run is active", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-live-events-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-live-events-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  let capturedSession: TestAgentSession | null = null;
+  let capturedSession: TestHarnessThread | null = null;
 
-  class LiveEventClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
-      capturedSession = new TestAgentSession(config);
+  class LiveEventClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
+      capturedSession = new TestHarnessThread(config);
       return capturedSession;
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new LiveEventClient(),
     },
     registry: storage,
@@ -3888,11 +3888,11 @@ test("applies live autonomous events while no foreground run is active", async (
 });
 
 test("cancelAgentRun can interrupt autonomous running state without a foreground activeForegroundTurnId", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-live-cancel-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-live-cancel-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class LiveInterruptSession extends TestAgentSession {
+  class LiveInterruptSession extends TestHarnessThread {
     public interruptCount = 0;
 
     override async interrupt(): Promise<void> {
@@ -3900,10 +3900,10 @@ test("cancelAgentRun can interrupt autonomous running state without a foreground
     }
   }
 
-  class LiveInterruptClient extends TestAgentClient {
+  class LiveInterruptClient extends TestHarnessAdapter {
     lastSession: LiveInterruptSession | null = null;
 
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       const session = new LiveInterruptSession(config);
       this.lastSession = session;
       return session;
@@ -3911,8 +3911,8 @@ test("cancelAgentRun can interrupt autonomous running state without a foreground
   }
 
   const client = new LiveInterruptClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -3961,22 +3961,22 @@ test("cancelAgentRun can interrupt autonomous running state without a foreground
 });
 
 test("waitForAgentEvent waitForActive resolves for autonomous live-event run", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-live-wait-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-live-wait-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  let capturedSession: TestAgentSession | null = null;
+  let capturedSession: TestHarnessThread | null = null;
 
-  class LiveEventClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
-      const session = new TestAgentSession(config);
+  class LiveEventClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
+      const session = new TestHarnessThread(config);
       capturedSession = session;
       return session;
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new LiveEventClient(),
     },
     registry: storage,
@@ -4007,14 +4007,14 @@ test("waitForAgentEvent waitForActive resolves for autonomous live-event run", a
 });
 
 test("autonomous events arriving during foreground run are processed via subscribe", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-live-during-fg-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-live-during-fg-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const releaseForeground = deferred<void>();
 
-  let capturedSession: TestAgentSession | null = null;
+  let capturedSession: TestHarnessThread | null = null;
 
-  class ForegroundSession extends TestAgentSession {
+  class ForegroundSession extends TestHarnessThread {
     override async startTurn(): Promise<{ turnId: string }> {
       const turnId = "fg-turn-1";
       setTimeout(async () => {
@@ -4026,16 +4026,16 @@ test("autonomous events arriving during foreground run are processed via subscri
     }
   }
 
-  class ForegroundClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+  class ForegroundClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       const session = new ForegroundSession(config);
       capturedSession = session;
       return session;
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new ForegroundClient(),
     },
     registry: storage,
@@ -4115,12 +4115,12 @@ test("autonomous events arriving during foreground run are processed via subscri
 });
 
 test("appendTimelineItem emits to active foreground stream", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-append-foreground-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-append-foreground-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const releaseForeground = deferred<void>();
 
-  class ForegroundSession extends TestAgentSession {
+  class ForegroundSession extends TestHarnessThread {
     override async startTurn(): Promise<{ turnId: string }> {
       const turnId = "fg-turn-append";
       setTimeout(async () => {
@@ -4132,14 +4132,14 @@ test("appendTimelineItem emits to active foreground stream", async () => {
     }
   }
 
-  class ForegroundClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+  class ForegroundClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new ForegroundSession(config);
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new ForegroundClient(),
     },
     registry: storage,
@@ -4222,22 +4222,22 @@ test("appendTimelineItem emits to active foreground stream", async () => {
 });
 
 test("subscribe error isolation: throwing subscriber does not break event flow", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-subscribe-isolation-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-subscribe-isolation-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  let capturedSession: TestAgentSession | null = null;
+  let capturedSession: TestHarnessThread | null = null;
 
-  class IsolationClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
-      const session = new TestAgentSession(config);
+  class IsolationClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
+      const session = new TestHarnessThread(config);
       capturedSession = session;
       return session;
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new IsolationClient(),
     },
     registry: storage,
@@ -4299,12 +4299,12 @@ test("subscribe error isolation: throwing subscriber does not break event flow",
 });
 
 test("keeps updatedAt monotonic when user message and run start happen in the same millisecond", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -4341,13 +4341,13 @@ test("keeps updatedAt monotonic when user message and run start happen in the sa
 });
 
 test("runAgent assembles finalText from trailing assistant chunks", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const expectedFinalText =
     '```json\n{"message":"Reserve space for archive button in sidebar agent list"}\n```';
 
-  class ChunkedAssistantSession implements AgentSession {
+  class ChunkedAssistantSession implements HarnessThread {
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
     readonly id = randomUUID();
@@ -4437,7 +4437,7 @@ test("runAgent assembles finalText from trailing assistant chunks", async () => 
     async close(): Promise<void> {}
   }
 
-  class ChunkedAssistantClient implements AgentClient {
+  class ChunkedAssistantClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -4446,17 +4446,17 @@ test("runAgent assembles finalText from trailing assistant chunks", async () => 
       return true;
     }
 
-    async createSession(): Promise<AgentSession> {
+    async createSession(): Promise<HarnessThread> {
       return new ChunkedAssistantSession();
     }
 
-    async resumeSession(): Promise<AgentSession> {
+    async resumeSession(): Promise<HarnessThread> {
       return new ChunkedAssistantSession();
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new ChunkedAssistantClient(),
     },
     registry: storage,
@@ -4474,7 +4474,7 @@ test("runAgent assembles finalText from trailing assistant chunks", async () => 
 });
 
 test("listAgents excludes internal agents", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const generatedAgentIds = [
@@ -4482,9 +4482,9 @@ test("listAgents excludes internal agents", async () => {
     "00000000-0000-4000-8000-000000000106",
   ];
   let agentCounter = 0;
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -4513,11 +4513,11 @@ test("listAgents excludes internal agents", async () => {
 
 test("persistInternal stores a hidden internal agent for later timeline recovery", async () => {
   const internalAgentId = "00000000-0000-4000-8000-000000000205";
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-durable-internal-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-durable-internal-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: { codex: new TestAgentClient() },
+  const manager = new ExecutionService({
+    adapters: { codex: new TestHarnessAdapter() },
     registry: storage,
     logger,
     idFactory: () => internalAgentId,
@@ -4550,12 +4550,12 @@ test("persistInternal stores a hidden internal agent for later timeline recovery
 
 test("getAgent returns internal agents by ID", async () => {
   const internalAgentId = "00000000-0000-4000-8000-000000000107";
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -4575,7 +4575,7 @@ test("getAgent returns internal agents by ID", async () => {
 });
 
 test("subscribe does not emit state events for internal agents to global subscribers", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const generatedAgentIds = [
@@ -4583,9 +4583,9 @@ test("subscribe does not emit state events for internal agents to global subscri
     "00000000-0000-4000-8000-000000000109",
   ];
   let agentCounter = 0;
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -4621,12 +4621,12 @@ test("subscribe does not emit state events for internal agents to global subscri
 
 test("subscribe emits state events for internal agents when subscribed by agentId", async () => {
   const internalAgentId = "00000000-0000-4000-8000-000000000110";
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -4656,9 +4656,9 @@ test("subscribe emits state events for internal agents when subscribed by agentI
 });
 
 test("subscribe fails when filter agentId is not a UUID", () => {
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     logger,
   });
@@ -4672,13 +4672,13 @@ test("subscribe fails when filter agentId is not a UUID", () => {
 
 test("onAgentAttention is not called for internal agents", async () => {
   const internalAgentId = "00000000-0000-4000-8000-000000000111";
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const attentionCalls: string[] = [];
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -4704,13 +4704,13 @@ test("onAgentAttention is not called for internal agents", async () => {
 
 test("onAgentAttention is not called for delegated child agents", async () => {
   const childAgentId = "00000000-0000-4000-8000-000000000112";
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const attentionCalls: string[] = [];
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -4736,11 +4736,11 @@ test("onAgentAttention is not called for delegated child agents", async () => {
 });
 
 test("clearAgentAttention on errored agent stays cleared until a new error transition", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-attention-error-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-attention-error-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class FailingSession extends TestAgentSession {
+  class FailingSession extends TestHarnessThread {
     private attempt = 0;
 
     override async startTurn(): Promise<{ turnId: string }> {
@@ -4760,7 +4760,7 @@ test("clearAgentAttention on errored agent stays cleared until a new error trans
     }
   }
 
-  class FailingClient implements AgentClient {
+  class FailingClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -4769,11 +4769,11 @@ test("clearAgentAttention on errored agent stays cleared until a new error trans
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new FailingSession(config);
     }
 
-    async resumeSession(config?: Partial<AgentSessionConfig>): Promise<AgentSession> {
+    async resumeSession(config?: Partial<AgentSessionConfig>): Promise<HarnessThread> {
       return new FailingSession({
         provider: "codex",
         cwd: config?.cwd ?? process.cwd(),
@@ -4782,8 +4782,8 @@ test("clearAgentAttention on errored agent stays cleared until a new error trans
   }
 
   const attentionReasons: Array<"finished" | "error" | "permission"> = [];
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new FailingClient(),
     },
     registry: storage,
@@ -4847,11 +4847,11 @@ test("clearAgentAttention on errored agent stays cleared until a new error trans
 });
 
 test("streamAgent clears pending run when startTurn fails before a turn id exists", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-start-turn-failure-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-start-turn-failure-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class FailsOnceBeforeTurnSession extends TestAgentSession {
+  class FailsOnceBeforeTurnSession extends TestHarnessThread {
     private attempt = 0;
 
     override async startTurn(): Promise<{ turnId: string }> {
@@ -4863,7 +4863,7 @@ test("streamAgent clears pending run when startTurn fails before a turn id exist
     }
   }
 
-  class FailsOnceClient implements AgentClient {
+  class FailsOnceClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -4876,17 +4876,17 @@ test("streamAgent clears pending run when startTurn fails before a turn id exist
       return true;
     }
 
-    async createSession(): Promise<AgentSession> {
+    async createSession(): Promise<HarnessThread> {
       return this.session;
     }
 
-    async resumeSession(): Promise<AgentSession> {
+    async resumeSession(): Promise<HarnessThread> {
       return this.session;
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new FailsOnceClient(),
     },
     registry: storage,
@@ -4913,12 +4913,12 @@ test("streamAgent clears pending run when startTurn fails before a turn id exist
 });
 
 test("archiveAgent persists archivedAt and updatedAt before emitting closed state", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-archive-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-archive-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -4959,12 +4959,12 @@ test("archiveAgent persists archivedAt and updatedAt before emitting closed stat
 });
 
 test("fires onAgentArchived for archived parent and cascaded children", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-archived-hook-cascade-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-archived-hook-cascade-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const archivedIds: string[] = [];
-  const manager = new AgentManager({
-    clients: { codex: new TestAgentClient() },
+  const manager = new ExecutionService({
+    adapters: { codex: new TestHarnessAdapter() },
     registry: storage,
     logger,
   });
@@ -4988,12 +4988,12 @@ test("fires onAgentArchived for archived parent and cascaded children", async ()
 });
 
 test("fires onAgentArchived for stored-only snapshot archives", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-archived-hook-snapshot-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-archived-hook-snapshot-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const archivedIds: string[] = [];
-  const manager = new AgentManager({
-    clients: { codex: new TestAgentClient() },
+  const manager = new ExecutionService({
+    adapters: { codex: new TestHarnessAdapter() },
     registry: storage,
     logger,
   });
@@ -5013,12 +5013,12 @@ test("fires onAgentArchived for stored-only snapshot archives", async () => {
 });
 
 test("unarchiveSnapshot skips native provider unarchive for active records", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-unarchive-active-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-unarchive-active-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const client = new NativeArchiveRecordingClient();
-  const manager = new AgentManager({
-    clients: { codex: client },
+  const client = new NativeArchiveRecordingAdapter();
+  const manager = new ExecutionService({
+    adapters: { codex: client },
     registry: storage,
     logger,
   });
@@ -5036,12 +5036,12 @@ test("unarchiveSnapshot skips native provider unarchive for active records", asy
 });
 
 test("unarchiveSnapshot unarchives native provider storage before clearing archivedAt", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-native-unarchive-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-native-unarchive-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const client = new NativeArchiveRecordingClient();
-  const manager = new AgentManager({
-    clients: { codex: client },
+  const client = new NativeArchiveRecordingAdapter();
+  const manager = new ExecutionService({
+    adapters: { codex: client },
     registry: storage,
     logger,
   });
@@ -5065,12 +5065,12 @@ test("unarchiveSnapshot unarchives native provider storage before clearing archi
 });
 
 test("unarchiveSnapshotByHandle unarchives native provider storage for the matched snapshot", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-native-unarchive-handle-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-native-unarchive-handle-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const client = new NativeArchiveRecordingClient();
-  const manager = new AgentManager({
-    clients: { codex: client },
+  const client = new NativeArchiveRecordingAdapter();
+  const manager = new ExecutionService({
+    adapters: { codex: client },
     registry: storage,
     logger,
   });
@@ -5094,12 +5094,12 @@ test("unarchiveSnapshotByHandle unarchives native provider storage for the match
 });
 
 test("unarchiveSnapshot keeps the stored record archived when native unarchive fails", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-native-unarchive-failure-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-native-unarchive-failure-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const client = new NativeArchiveRecordingClient();
-  const manager = new AgentManager({
-    clients: { codex: client },
+  const client = new NativeArchiveRecordingAdapter();
+  const manager = new ExecutionService({
+    adapters: { codex: client },
     registry: storage,
     logger,
   });
@@ -5120,12 +5120,12 @@ test("unarchiveSnapshot keeps the stored record archived when native unarchive f
 });
 
 test("archiveAgent cascade archives in-memory children with the full archive contract", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-cascade-contract-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-cascade-contract-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -5163,12 +5163,12 @@ test("archiveAgent cascade archives in-memory children with the full archive con
 });
 
 test("archiveAgent cascade closes a running child runtime", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-cascade-running-child-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-cascade-running-child-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const finishRun = deferred<void>();
 
-  class RunningChildSession extends TestAgentSession {
+  class RunningChildSession extends TestHarnessThread {
     closeCalled = false;
 
     override async startTurn(): Promise<{ turnId: string }> {
@@ -5186,10 +5186,10 @@ test("archiveAgent cascade closes a running child runtime", async () => {
     }
   }
 
-  class RunningChildClient extends TestAgentClient {
+  class RunningChildClient extends TestHarnessAdapter {
     readonly sessions: RunningChildSession[] = [];
 
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       const session = new RunningChildSession(config);
       this.sessions.push(session);
       return session;
@@ -5197,8 +5197,8 @@ test("archiveAgent cascade closes a running child runtime", async () => {
   }
 
   const client = new RunningChildClient();
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: client,
     },
     registry: storage,
@@ -5248,12 +5248,12 @@ test("archiveAgent cascade closes a running child runtime", async () => {
 });
 
 test("archiveAgent cascade archives off-memory children with the full archive contract", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-cascade-off-memory-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-cascade-off-memory-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -5283,12 +5283,12 @@ test("archiveAgent cascade archives off-memory children with the full archive co
 });
 
 test("archiveAgent cascade notifies subscribers for in-memory and off-memory children", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-cascade-notifications-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-cascade-notifications-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -5346,7 +5346,7 @@ test("archiveAgent cascade notifies subscribers for in-memory and off-memory chi
 });
 
 test("archiveAgent cascade surfaces partial child archive failures", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-cascade-partial-failure-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-cascade-partial-failure-"));
   const storagePath = join(workdir, "agents");
   let failingChildId: string | null = null;
 
@@ -5360,9 +5360,9 @@ test("archiveAgent cascade surfaces partial child archive failures", async () =>
   }
 
   const storage = new FailingChildArchiveStorage(storagePath, logger);
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -5389,11 +5389,11 @@ test("archiveAgent cascade surfaces partial child archive failures", async () =>
 });
 
 test("turn_failed emits a system error assistant timeline message and keeps error lifecycle", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-turn-failed-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-turn-failed-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class TurnFailedSession extends TestAgentSession {
+  class TurnFailedSession extends TestHarnessThread {
     override async startTurn(): Promise<{ turnId: string }> {
       const turnId = "turn-failed-1";
       setTimeout(() => {
@@ -5409,7 +5409,7 @@ test("turn_failed emits a system error assistant timeline message and keeps erro
     }
   }
 
-  class TurnFailedClient implements AgentClient {
+  class TurnFailedClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -5418,11 +5418,11 @@ test("turn_failed emits a system error assistant timeline message and keeps erro
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new TurnFailedSession(config);
     }
 
-    async resumeSession(config?: Partial<AgentSessionConfig>): Promise<AgentSession> {
+    async resumeSession(config?: Partial<AgentSessionConfig>): Promise<HarnessThread> {
       return new TurnFailedSession({
         provider: "codex",
         cwd: config?.cwd ?? process.cwd(),
@@ -5430,8 +5430,8 @@ test("turn_failed emits a system error assistant timeline message and keeps erro
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new TurnFailedClient(),
     },
     registry: storage,
@@ -5462,11 +5462,11 @@ test("turn_failed emits a system error assistant timeline message and keeps erro
 });
 
 test("turn_failed surfaces provider code and diagnostic in system error message", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-turn-failed-detail-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-turn-failed-detail-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class DetailedFailureSession extends TestAgentSession {
+  class DetailedFailureSession extends TestHarnessThread {
     override async startTurn(): Promise<{ turnId: string }> {
       const turnId = "turn-detailed-fail-1";
       setTimeout(() => {
@@ -5484,7 +5484,7 @@ test("turn_failed surfaces provider code and diagnostic in system error message"
     }
   }
 
-  class DetailedFailureClient implements AgentClient {
+  class DetailedFailureClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -5493,11 +5493,11 @@ test("turn_failed surfaces provider code and diagnostic in system error message"
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new DetailedFailureSession(config);
     }
 
-    async resumeSession(config?: Partial<AgentSessionConfig>): Promise<AgentSession> {
+    async resumeSession(config?: Partial<AgentSessionConfig>): Promise<HarnessThread> {
       return new DetailedFailureSession({
         provider: "codex",
         cwd: config?.cwd ?? process.cwd(),
@@ -5505,8 +5505,8 @@ test("turn_failed surfaces provider code and diagnostic in system error message"
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new DetailedFailureClient(),
     },
     registry: storage,
@@ -5536,13 +5536,13 @@ test("turn_failed surfaces provider code and diagnostic in system error message"
 });
 
 test("permission request notifies once without forcing unread attention state", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-attention-permission-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-attention-permission-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
   const releasePermissionResolution = deferred<void>();
 
-  class PermissionSession extends TestAgentSession {
+  class PermissionSession extends TestHarnessThread {
     override async startTurn(): Promise<{ turnId: string }> {
       const turnId = "turn-perm-1";
       setTimeout(async () => {
@@ -5572,7 +5572,7 @@ test("permission request notifies once without forcing unread attention state", 
     }
   }
 
-  class PermissionClient implements AgentClient {
+  class PermissionClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -5581,11 +5581,11 @@ test("permission request notifies once without forcing unread attention state", 
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new PermissionSession(config);
     }
 
-    async resumeSession(config?: Partial<AgentSessionConfig>): Promise<AgentSession> {
+    async resumeSession(config?: Partial<AgentSessionConfig>): Promise<HarnessThread> {
       return new PermissionSession({
         provider: "codex",
         cwd: config?.cwd ?? process.cwd(),
@@ -5594,8 +5594,8 @@ test("permission request notifies once without forcing unread attention state", 
   }
 
   const attentionReasons: Array<"finished" | "error" | "permission"> = [];
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new PermissionClient(),
     },
     registry: storage,
@@ -5630,13 +5630,13 @@ test("permission request notifies once without forcing unread attention state", 
 });
 
 test("respondToPermission updates currentModeId after plan approval", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
   // Create a session that simulates plan approval mode change
   let sessionMode = "plan";
-  class PlanModeTestSession implements AgentSession {
+  class PlanModeTestSession implements HarnessThread {
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
     readonly id = randomUUID();
@@ -5706,7 +5706,7 @@ test("respondToPermission updates currentModeId after plan approval", async () =
     async close(): Promise<void> {}
   }
 
-  class PlanModeTestClient implements AgentClient {
+  class PlanModeTestClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -5715,17 +5715,17 @@ test("respondToPermission updates currentModeId after plan approval", async () =
       return true;
     }
 
-    async createSession(): Promise<AgentSession> {
+    async createSession(): Promise<HarnessThread> {
       return new PlanModeTestSession();
     }
 
-    async resumeSession(): Promise<AgentSession> {
+    async resumeSession(): Promise<HarnessThread> {
       return new PlanModeTestSession();
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new PlanModeTestClient(),
     },
     registry: storage,
@@ -5769,11 +5769,11 @@ test("respondToPermission updates currentModeId after plan approval", async () =
 });
 
 test("respondToPermission refreshes features and runtime info after provider-managed plan approval", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class RefreshingPermissionSession extends TestAgentSession {
+  class RefreshingPermissionSession extends TestHarnessThread {
     private featureState: AgentFeature[] = [
       createFeature({ id: "fast_mode", label: "Fast", value: true }),
       createFeature({ id: "plan_mode", label: "Plan", value: true }),
@@ -5821,14 +5821,14 @@ test("respondToPermission refreshes features and runtime info after provider-man
     }
   }
 
-  class RefreshingPermissionClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+  class RefreshingPermissionClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new RefreshingPermissionSession(config);
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new RefreshingPermissionClient(),
     },
     registry: storage,
@@ -5877,11 +5877,11 @@ test("respondToPermission refreshes features and runtime info after provider-man
 });
 
 test("respondToPermission emits refreshed state before permission_resolved", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-permission-order-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-permission-order-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class OrderedPermissionSession extends TestAgentSession {
+  class OrderedPermissionSession extends TestHarnessThread {
     private featureState: AgentFeature[] = [
       createFeature({ id: "fast_mode", label: "Fast", value: true }),
     ];
@@ -5930,14 +5930,14 @@ test("respondToPermission emits refreshed state before permission_resolved", asy
     }
   }
 
-  class OrderedPermissionClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+  class OrderedPermissionClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new OrderedPermissionSession(config);
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new OrderedPermissionClient(),
     },
     registry: storage,
@@ -5978,11 +5978,11 @@ test("respondToPermission emits refreshed state before permission_resolved", asy
 });
 
 test("close during in-flight stream does not clear persistence sessionId", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class CloseRaceSession implements AgentSession {
+  class CloseRaceSession implements HarnessThread {
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
     readonly id = randomUUID();
@@ -6084,7 +6084,7 @@ test("close during in-flight stream does not clear persistence sessionId", async
     }
   }
 
-  class CloseRaceClient implements AgentClient {
+  class CloseRaceClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -6093,17 +6093,17 @@ test("close during in-flight stream does not clear persistence sessionId", async
       return true;
     }
 
-    async createSession(): Promise<AgentSession> {
+    async createSession(): Promise<HarnessThread> {
       return new CloseRaceSession();
     }
 
-    async resumeSession(): Promise<AgentSession> {
+    async resumeSession(): Promise<HarnessThread> {
       return new CloseRaceSession();
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new CloseRaceClient(),
     },
     registry: storage,
@@ -6137,13 +6137,13 @@ test("close during in-flight stream does not clear persistence sessionId", async
 });
 
 test("closeAgent persists one final closed snapshot", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-close-no-persist-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-close-no-persist-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const applySnapshotSpy = vi.spyOn(storage, "applySnapshot");
-  const manager = new AgentManager({
-    clients: {
-      codex: new TestAgentClient(),
+  const manager = new ExecutionService({
+    adapters: {
+      codex: new TestHarnessAdapter(),
     },
     registry: storage,
     logger,
@@ -6172,11 +6172,11 @@ test("closeAgent persists one final closed snapshot", async () => {
 });
 
 test("hydrateTimeline keeps provider user_message items when no canonical user history exists", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-history-keep-user-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-history-keep-user-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class HistoryWithUserMessagesSession extends TestAgentSession {
+  class HistoryWithUserMessagesSession extends TestHarnessThread {
     async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
       yield {
         type: "timeline",
@@ -6201,7 +6201,7 @@ test("hydrateTimeline keeps provider user_message items when no canonical user h
     }
   }
 
-  class HistoryUserMessageClient implements AgentClient {
+  class HistoryUserMessageClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -6210,17 +6210,17 @@ test("hydrateTimeline keeps provider user_message items when no canonical user h
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new HistoryWithUserMessagesSession(config);
     }
 
-    async resumeSession(): Promise<AgentSession> {
+    async resumeSession(): Promise<HarnessThread> {
       throw new Error("Not used in this test");
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new HistoryUserMessageClient(),
     },
     registry: storage,
@@ -6243,10 +6243,10 @@ test("hydrateTimeline keeps provider user_message items when no canonical user h
 });
 
 test("visible Agents keep daemon user anchors across provider history replay", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-history-anchor-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-history-anchor-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
 
-  class ProviderHistorySession extends TestAgentSession {
+  class ProviderHistorySession extends TestHarnessThread {
     async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
       yield {
         type: "timeline",
@@ -6267,7 +6267,7 @@ test("visible Agents keep daemon user anchors across provider history replay", a
     }
   }
 
-  class ProviderHistoryClient implements AgentClient {
+  class ProviderHistoryClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "opencode" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -6276,17 +6276,17 @@ test("visible Agents keep daemon user anchors across provider history replay", a
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new ProviderHistorySession(config);
     }
 
-    async resumeSession(): Promise<AgentSession> {
+    async resumeSession(): Promise<HarnessThread> {
       throw new Error("Not used in this test");
     }
   }
 
-  const manager = new AgentManager({
-    clients: { opencode: new ProviderHistoryClient() },
+  const manager = new ExecutionService({
+    adapters: { opencode: new ProviderHistoryClient() },
     registry: storage,
     logger,
     idFactory: () => "00000000-0000-4000-8000-000000000204",
@@ -6318,11 +6318,11 @@ test("visible Agents keep daemon user anchors across provider history replay", a
 });
 
 test("hydrateTimeline preserves provider replay timestamps and marks missing ones untrusted", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-history-timestamps-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-history-timestamps-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class TimestampedHistorySession extends TestAgentSession {
+  class TimestampedHistorySession extends TestHarnessThread {
     async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
       yield {
         type: "timeline",
@@ -6338,7 +6338,7 @@ test("hydrateTimeline preserves provider replay timestamps and marks missing one
     }
   }
 
-  class TimestampedHistoryClient implements AgentClient {
+  class TimestampedHistoryClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
@@ -6347,17 +6347,17 @@ test("hydrateTimeline preserves provider replay timestamps and marks missing one
       return true;
     }
 
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new TimestampedHistorySession(config);
     }
 
-    async resumeSession(): Promise<AgentSession> {
+    async resumeSession(): Promise<HarnessThread> {
       throw new Error("Not used in this test");
     }
   }
 
-  const manager = new AgentManager({
-    clients: {
+  const manager = new ExecutionService({
+    adapters: {
       codex: new TimestampedHistoryClient(),
     },
     registry: storage,
@@ -6382,12 +6382,12 @@ test("hydrateTimeline preserves provider replay timestamps and marks missing one
 });
 
 test("provider user_message is recorded from the live stream", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-no-prior-record-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-no-prior-record-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
   // Session whose live turn yields a user_message without prior canonical recording
-  class UnexpectedUserMessageSession extends TestAgentSession {
+  class UnexpectedUserMessageSession extends TestHarnessThread {
     override async startTurn(): Promise<{ turnId: string }> {
       const turnId = "turn-unexpected-1";
       setTimeout(() => {
@@ -6411,23 +6411,23 @@ test("provider user_message is recorded from the live stream", async () => {
     }
   }
 
-  class UnexpectedUserMsgClient implements AgentClient {
+  class UnexpectedUserMsgClient implements HarnessAdapter {
     readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
     readonly provider = "codex" as const;
     readonly capabilities = TEST_CAPABILITIES;
     async isAvailable(): Promise<boolean> {
       return true;
     }
-    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new UnexpectedUserMessageSession(config);
     }
-    async resumeSession(): Promise<AgentSession> {
+    async resumeSession(): Promise<HarnessThread> {
       throw new Error("unused");
     }
   }
 
-  const manager = new AgentManager({
-    clients: { codex: new UnexpectedUserMsgClient() },
+  const manager = new ExecutionService({
+    adapters: { codex: new UnexpectedUserMsgClient() },
     registry: storage,
     logger,
     idFactory: () => "00000000-0000-4000-8000-000000000401",
@@ -6446,11 +6446,11 @@ test("provider user_message is recorded from the live stream", async () => {
 });
 
 test("authoritative timeline maps a provider-native user anchor to the canonical message id", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-submitted-prompt-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-submitted-prompt-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  class SubmittedUserMessageSession extends TestAgentSession {
+  class SubmittedUserMessageSession extends TestHarnessThread {
     override async startTurn(
       prompt: AgentPromptInput,
       _options?: AgentRunOptions,
@@ -6471,14 +6471,14 @@ test("authoritative timeline maps a provider-native user anchor to the canonical
     }
   }
 
-  class SubmittedUserMessageClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+  class SubmittedUserMessageClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new SubmittedUserMessageSession(config);
     }
   }
 
-  const manager = new AgentManager({
-    clients: { codex: new SubmittedUserMessageClient() },
+  const manager = new ExecutionService({
+    adapters: { codex: new SubmittedUserMessageClient() },
     registry: storage,
     logger,
     idFactory: () => "00000000-0000-4000-8000-000000000402",
@@ -6503,7 +6503,7 @@ test("authoritative timeline maps a provider-native user anchor to the canonical
 });
 
 test("replaceAgentRun succeeds when foreground turn terminal event is never delivered", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-stale-fg-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-stale-fg-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const allowSecondRunToEnd = deferred<void>();
@@ -6511,7 +6511,7 @@ test("replaceAgentRun succeeds when foreground turn terminal event is never deli
   // Session where the first foreground turn never emits a terminal event
   // (simulates the claude-agent pendingInterruptAbort suppression bug),
   // and interrupt() does not produce events either.
-  class StaleForegroundSession extends TestAgentSession {
+  class StaleForegroundSession extends TestHarnessThread {
     override async startTurn(): Promise<{ turnId: string }> {
       this.interrupted = false;
       const turnId = `turn-${++this.turnIdCounter}`;
@@ -6537,14 +6537,14 @@ test("replaceAgentRun succeeds when foreground turn terminal event is never deli
     }
   }
 
-  class StaleForegroundClient extends TestAgentClient {
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+  class StaleForegroundClient extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
       return new StaleForegroundSession(config);
     }
   }
 
-  const manager = new AgentManager({
-    clients: { codex: new StaleForegroundClient() },
+  const manager = new ExecutionService({
+    adapters: { codex: new StaleForegroundClient() },
     registry: storage,
     logger,
     idFactory: () => "00000000-0000-4000-8000-000000000500",
@@ -6588,7 +6588,7 @@ test("replaceAgentRun succeeds when foreground turn terminal event is never deli
   expect(manager.getAgent(snapshot.id)?.activeForegroundTurnId).toBeNull();
 }, 10_000);
 
-class RecordingPersistedAgentsClient implements AgentClient {
+class RecordingPersistedAgentsClient implements HarnessAdapter {
   readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
   readonly capabilities = TEST_CAPABILITIES;
   calls = 0;
@@ -6599,11 +6599,11 @@ class RecordingPersistedAgentsClient implements AgentClient {
     return true;
   }
 
-  async createSession(): Promise<AgentSession> {
+  async createSession(): Promise<HarnessThread> {
     throw new Error(`unexpected createSession for ${this.provider}`);
   }
 
-  async resumeSession(): Promise<AgentSession> {
+  async resumeSession(): Promise<HarnessThread> {
     throw new Error(`unexpected resumeSession for ${this.provider}`);
   }
 
@@ -6641,8 +6641,8 @@ test.each([
   async (_reason, includedProvider, skippedProvider, providerDefinitions) => {
     const includedClient = new RecordingPersistedAgentsClient(includedProvider);
     const skippedClient = new RecordingPersistedAgentsClient(skippedProvider);
-    const manager = new AgentManager({
-      clients: { [includedProvider]: includedClient, [skippedProvider]: skippedClient },
+    const manager = new ExecutionService({
+      adapters: { [includedProvider]: includedClient, [skippedProvider]: skippedClient },
       providerDefinitions,
       logger,
     });
@@ -6658,8 +6658,8 @@ test.each([
 test("listImportableSessions includes derived providers that list persisted agents", async () => {
   const claudeClient = new RecordingPersistedAgentsClient("claude");
   const ompClient = new RecordingPersistedAgentsClient("omp");
-  const manager = new AgentManager({
-    clients: { claude: claudeClient, omp: ompClient },
+  const manager = new ExecutionService({
+    adapters: { claude: claudeClient, omp: ompClient },
     providerDefinitions: {
       claude: { enabled: true, derivedFromProviderId: null },
       omp: { enabled: true, derivedFromProviderId: "pi" },
@@ -6677,8 +6677,8 @@ test("listImportableSessions includes derived providers that list persisted agen
 test("listImportableSessions narrows to the providerFilter when supplied", async () => {
   const claudeClient = new RecordingPersistedAgentsClient("claude");
   const codexClient = new RecordingPersistedAgentsClient("codex");
-  const manager = new AgentManager({
-    clients: { claude: claudeClient, codex: codexClient },
+  const manager = new ExecutionService({
+    adapters: { claude: claudeClient, codex: codexClient },
     providerDefinitions: {
       claude: { enabled: true, derivedFromProviderId: null },
       codex: { enabled: true, derivedFromProviderId: null },
@@ -6706,8 +6706,8 @@ test("listImportableSessions skips providers that lack supportsSessionListing ev
     },
   });
 
-  const manager = new AgentManager({
-    clients: { claude: listableClient, acp: nonListableClient },
+  const manager = new ExecutionService({
+    adapters: { claude: listableClient, acp: nonListableClient },
     providerDefinitions: {
       claude: { enabled: true, derivedFromProviderId: null },
       acp: { enabled: true, derivedFromProviderId: null },
@@ -6723,7 +6723,7 @@ test("listImportableSessions skips providers that lack supportsSessionListing ev
 });
 
 test("user_message events wrapping a thoth-system envelope are not added to the timeline", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-envelope-live-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-envelope-live-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
@@ -6737,8 +6737,8 @@ test("user_message events wrapping a thoth-system envelope are not added to the 
     ],
   });
 
-  const manager = new AgentManager({
-    clients: { codex },
+  const manager = new ExecutionService({
+    adapters: { codex },
     registry: storage,
     logger,
     idFactory: () => "00000000-0000-4000-8000-0000000005a1",
@@ -6756,7 +6756,7 @@ test("user_message events wrapping a thoth-system envelope are not added to the 
 });
 
 test("user_message events wrapping a thoth-system envelope are not restored during history replay", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-envelope-history-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-envelope-history-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
@@ -6776,8 +6776,8 @@ test("user_message events wrapping a thoth-system envelope are not restored duri
     ],
   });
 
-  const manager = new AgentManager({
-    clients: { codex },
+  const manager = new ExecutionService({
+    adapters: { codex },
     registry: storage,
     logger,
     idFactory: () => "00000000-0000-4000-8000-0000000005a2",
@@ -6830,7 +6830,7 @@ test("commandMayHaveChangedExternalState ignores local or read-only commands", (
 });
 
 test("onWorkspaceStateMayHaveChanged is called when a completed shell tool call may have changed external state", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-external-state-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-external-state-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const onWorkspaceStateMayHaveChanged = vi.fn();
@@ -6848,8 +6848,8 @@ test("onWorkspaceStateMayHaveChanged is called when a completed shell tool call 
     ],
   });
 
-  const manager = new AgentManager({
-    clients: { codex },
+  const manager = new ExecutionService({
+    adapters: { codex },
     registry: storage,
     logger,
     onWorkspaceStateMayHaveChanged,
@@ -6864,7 +6864,7 @@ test("onWorkspaceStateMayHaveChanged is called when a completed shell tool call 
 });
 
 test("onWorkspaceStateMayHaveChanged is not called for non-shell tool calls", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-external-state-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-external-state-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const onWorkspaceStateMayHaveChanged = vi.fn();
@@ -6882,8 +6882,8 @@ test("onWorkspaceStateMayHaveChanged is not called for non-shell tool calls", as
     ],
   });
 
-  const manager = new AgentManager({
-    clients: { codex },
+  const manager = new ExecutionService({
+    adapters: { codex },
     registry: storage,
     logger,
     onWorkspaceStateMayHaveChanged,
@@ -6897,7 +6897,7 @@ test("onWorkspaceStateMayHaveChanged is not called for non-shell tool calls", as
 });
 
 test("onWorkspaceStateMayHaveChanged is not called for running shell tool calls", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-external-state-"));
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-external-state-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
   const onWorkspaceStateMayHaveChanged = vi.fn();
@@ -6915,8 +6915,8 @@ test("onWorkspaceStateMayHaveChanged is not called for running shell tool calls"
     ],
   });
 
-  const manager = new AgentManager({
-    clients: { codex },
+  const manager = new ExecutionService({
+    adapters: { codex },
     registry: storage,
     logger,
     onWorkspaceStateMayHaveChanged,

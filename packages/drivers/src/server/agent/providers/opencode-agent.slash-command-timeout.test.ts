@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
-import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
+import { OpenCodeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
 import {
   idleEvent,
   TestOpenCodeClient,
@@ -22,13 +22,13 @@ function createDeferred<T>(): {
   return { promise, resolve, reject };
 }
 
-describe("OpenCodeAgentSession slash command timeout handling", () => {
+describe("OpenCodeHarnessThread slash command timeout handling", () => {
   test("lists only OpenCode built-in slash commands Thoth can execute", async () => {
     const runtime = new TestOpenCodeHarness();
     const openCodeClient = createOpenCodeClientWithConnectedProvider();
     runtime.enqueueClient(openCodeClient);
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -56,7 +56,7 @@ describe("OpenCodeAgentSession slash command timeout handling", () => {
     const openCodeClient = createOpenCodeClientWithConnectedProvider();
     runtime.enqueueClient(openCodeClient);
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -91,7 +91,7 @@ describe("OpenCodeAgentSession slash command timeout handling", () => {
     })();
     runtime.enqueueClient(openCodeClient);
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -118,7 +118,7 @@ describe("OpenCodeAgentSession slash command timeout handling", () => {
     };
     runtime.enqueueClient(openCodeClient);
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });

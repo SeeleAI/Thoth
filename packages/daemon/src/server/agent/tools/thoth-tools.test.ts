@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AgentManager, ManagedAgent } from "../agent-manager.js";
+import type { ExecutionService, ManagedAgent } from "../execution-service.js";
 import type { AgentStreamEvent, AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import type { AgentStorage } from "../agent-storage.js";
 import type { ProviderSnapshotManager } from "../provider-snapshot-manager.js";
@@ -11,21 +11,17 @@ import {
   rejectClarifyConvergenceAudit,
   resolveClarifyConvergenceAudit,
 } from "../clarify-audit-broker.js";
-import {
-  beginForegroundTurnFence,
-  bindForegroundProviderTurn,
-  resetForegroundTurnFencesForTest,
-} from "./foreground-turn-fence.js";
 import { createThothToolCatalog } from "./thoth-tools.js";
 import {
+  ToolGateway,
   WorkspaceAuthorityManager,
   WorkspaceForegroundAuthority,
-  type TaskToolGateway,
 } from "../../workspace-authority/index.js";
 import type { ThothCardAnswerPayload } from "@thoth/protocol/thoth/rpc-schemas";
 
 const temporaryHomes: string[] = [];
 let currentAuthorityStore: WorkspaceForegroundAuthority | null = null;
+let currentToolGateway: ToolGateway | null = null;
 const authorityManagers: WorkspaceAuthorityManager[] = [];
 let commandSequence = 0;
 
@@ -34,13 +30,18 @@ async function flushToolStart(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+function activeToolGateway(): ToolGateway {
+  if (!currentToolGateway) throw new Error("Test ToolGateway is unavailable");
+  return currentToolGateway;
+}
+
 function createCatalog(
   input: {
     auditOutcome?: "proceed" | "revise_frontier";
     auditFailure?: string;
     enableLoopRuntimeTools?: boolean;
     loopPhase?: "planexec" | "review";
-    taskToolGateway?: TaskToolGateway;
+    toolGateway?: ToolGateway;
     callerAvailableAfterCatalogCreation?: boolean;
     foregroundTurnKind?: "raw_provider" | "thoth_clarify";
   } = {},
@@ -72,13 +73,13 @@ function createCatalog(
     },
   } as ManagedAgent;
   let callerRegistered = input.callerAvailableAfterCatalogCreation !== true;
-  const agentManager = {
+  const executionService = {
     appendTimelineItem,
     getAgent: (agentId: string) =>
       agentId === "agent-1" && callerRegistered ? primaryAgent : null,
     getTimeline: (agentId: string) => (agentId === "agent-1" ? [...timeline] : []),
     cancelAgentRun: vi.fn(async () => true),
-    createAgent: vi.fn(async (config: Parameters<AgentManager["createAgent"]>[0]) => {
+    createAgent: vi.fn(async (config: Parameters<ExecutionService["createAgent"]>[0]) => {
       const auditAgent = {
         id: "clarify-audit-agent",
         provider: "codex",
@@ -109,7 +110,7 @@ function createCatalog(
       (async function* pendingAuditStream(): AsyncGenerator<AgentStreamEvent> {
         await new Promise((resolve) => setImmediate(resolve));
       })(),
-  } as unknown as AgentManager;
+  } as unknown as ExecutionService;
 
   const logger = createTestLogger();
   const thothHome = mkdtempSync(join(tmpdir(), "thoth-tools-authority-"));
@@ -128,6 +129,15 @@ function createCatalog(
   });
   const authorityStore = new WorkspaceForegroundAuthority(authorityManager);
   currentAuthorityStore = authorityStore;
+  const toolGateway =
+    input.toolGateway ??
+    new ToolGateway({
+      submitPlanExec: () => false,
+      submitReviewAssessment: () => null,
+      submitReviewVerdict: () => false,
+      reportBlocked: () => false,
+    });
+  currentToolGateway = toolGateway;
   const turnKind = input.foregroundTurnKind ?? "thoth_clarify";
   const foreground = authorityStore.startTurn({
     agentId: "agent-1",
@@ -141,7 +151,7 @@ function createCatalog(
     userText: "Test foreground turn",
   });
   const catalog = createThothToolCatalog({
-    agentManager,
+    executionService,
     agentStorage: {} as AgentStorage,
     terminalManager: null,
     providerSnapshotManager: {} as ProviderSnapshotManager,
@@ -149,16 +159,16 @@ function createCatalog(
     workspaceAuthorityManager: authorityManager,
     callerAgentId: "agent-1",
     callerAgentConfig: primaryAgent.config,
-    ...(input.taskToolGateway ? { taskToolGateway: input.taskToolGateway } : {}),
+    toolGateway,
   });
   callerRegistered = true;
-  beginForegroundTurnFence({
+  toolGateway.beginForegroundTurn({
     agentId: "agent-1",
     generation: "test-generation",
     kind: turnKind,
     foregroundTurnId: foreground.turn.id,
   });
-  bindForegroundProviderTurn({
+  toolGateway.bindForegroundProviderTurn({
     agentId: "agent-1",
     generation: "test-generation",
     providerTurnId: "turn-1",
@@ -250,13 +260,13 @@ async function submitApprovedTaskCard(
   await toolResult;
   const turn = currentAuthorityStore?.getActiveTurn("agent-1");
   if (!turn) throw new Error("Missing foreground turn after Task Card answer");
-  beginForegroundTurnFence({
+  activeToolGateway().beginForegroundTurn({
     agentId: "agent-1",
     generation: turn.generation,
     kind: "thoth_clarify",
     foregroundTurnId: turn.id,
   });
-  bindForegroundProviderTurn({
+  activeToolGateway().bindForegroundProviderTurn({
     agentId: "agent-1",
     generation: turn.generation,
     providerTurnId: "turn-1",
@@ -348,13 +358,13 @@ async function submitAnsweredClarifyCard(
   const result = await toolResult;
   const turn = currentAuthorityStore?.getActiveTurn("agent-1");
   if (!turn) throw new Error("Missing foreground turn after Clarify Card answer");
-  beginForegroundTurnFence({
+  activeToolGateway().beginForegroundTurn({
     agentId: "agent-1",
     generation: turn.generation,
     kind: "thoth_clarify",
     foregroundTurnId: turn.id,
   });
-  bindForegroundProviderTurn({
+  activeToolGateway().bindForegroundProviderTurn({
     agentId: "agent-1",
     generation: turn.generation,
     providerTurnId: "turn-1",
@@ -363,7 +373,8 @@ async function submitAnsweredClarifyCard(
 }
 
 afterEach(() => {
-  resetForegroundTurnFencesForTest();
+  currentToolGateway?.resetForTest();
+  currentToolGateway = null;
   currentAuthorityStore = null;
   for (const manager of authorityManagers.splice(0)) {
     manager.close();
@@ -418,12 +429,12 @@ describe("Thoth runtime authority tools", () => {
   });
 
   it("registers Clarify tools from launch config before the caller agent is registered", () => {
-    const agentManager = {
+    const executionService = {
       appendTimelineItem: vi.fn(async () => undefined),
       getAgent: () => null,
-    } as unknown as AgentManager;
+    } as unknown as ExecutionService;
     const catalog = createThothToolCatalog({
-      agentManager,
+      executionService,
       agentStorage: {} as AgentStorage,
       terminalManager: null,
       providerSnapshotManager: {} as ProviderSnapshotManager,
@@ -893,18 +904,24 @@ describe("Thoth runtime authority tools", () => {
     const { catalog: planExecCatalog } = createCatalog({
       enableLoopRuntimeTools: true,
       loopPhase: "planexec",
-      taskToolGateway: {
+      toolGateway: {
+        beginForegroundTurn: () => {},
+        bindForegroundProviderTurn: () => {},
+        resetForTest: () => {},
         submitPlanExec: resolvePlanExecResult,
         submitReviewVerdict: resolveReviewVerdict,
-      } as unknown as TaskToolGateway,
+      } as unknown as ToolGateway,
     });
     const { catalog: reviewCatalog } = createCatalog({
       enableLoopRuntimeTools: true,
       loopPhase: "review",
-      taskToolGateway: {
+      toolGateway: {
+        beginForegroundTurn: () => {},
+        bindForegroundProviderTurn: () => {},
+        resetForTest: () => {},
         submitPlanExec: resolvePlanExecResult,
         submitReviewVerdict: resolveReviewVerdict,
-      } as unknown as TaskToolGateway,
+      } as unknown as ToolGateway,
     });
     const context = {
       providerToolCall: {

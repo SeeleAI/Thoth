@@ -1,14 +1,14 @@
 import type {
   AgentCapabilityFlags,
-  AgentClient,
+  HarnessAdapter,
   AgentLaunchContext,
   AgentPersistenceHandle,
   AgentProvider,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   FetchCatalogOptions,
   ProviderCatalog,
-} from "../agent-sdk-types.js";
+} from "../harness-contract.js";
 import { NO_HARNESS_CAPABILITIES } from "@thoth/drivers/harness";
 
 export const MOCK_SLOW_PROVIDER_ID = "mock-slow";
@@ -29,7 +29,7 @@ function neverResolves<T>(): Promise<T> {
   return new Promise<T>(() => {});
 }
 
-export class MockSlowProviderClient implements AgentClient {
+export class MockSlowHarnessAdapter implements HarnessAdapter {
   readonly provider: AgentProvider = MOCK_SLOW_PROVIDER_ID;
   readonly capabilities = CAPABILITIES;
   readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
@@ -52,7 +52,7 @@ export class MockSlowProviderClient implements AgentClient {
   createSession(
     _config: AgentSessionConfig,
     _launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     throw new Error("Mock slow provider is dev-only; sessions are not supported.");
   }
 
@@ -60,7 +60,7 @@ export class MockSlowProviderClient implements AgentClient {
     _handle: AgentPersistenceHandle,
     _overrides?: Partial<AgentSessionConfig>,
     _launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     throw new Error("Mock slow provider is dev-only; sessions are not supported.");
   }
 }

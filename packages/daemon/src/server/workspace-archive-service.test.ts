@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { GitHubService } from "../services/github-service.js";
 import { createWorktree, type WorktreeConfig } from "../utils/worktree.js";
-import type { ManagedAgent } from "./agent/agent-manager.js";
+import type { ManagedAgent } from "./agent/execution-service.js";
 import type { AgentStorage, StoredAgentRecord } from "./agent/agent-storage.js";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import {
@@ -126,7 +126,7 @@ function createArchiveDeps(input: ArchiveDepsInput): ArchiveTestDependencies {
     workspaceGitService: {
       getSnapshot: vi.fn(async () => null),
     } as unknown as Pick<WorkspaceGitService, "getSnapshot">,
-    agentManager: {
+    executionService: {
       listAgents: () => [],
       archiveAgent: vi.fn(async (agentId: string) => {
         archivedAgentIds.push(agentId);
@@ -472,7 +472,7 @@ describe("archiveByScope", () => {
         { workspaceId: targetWorkspaceId, cwd: worktree.worktreePath, kind: "worktree" },
       ],
     });
-    deps.agentManager = {
+    deps.executionService = {
       listAgents: () => [{ id: liveAgentId, workspaceId: targetWorkspaceId }] as ManagedAgent[],
       archiveAgent: vi.fn(async (agentId: string) => {
         deps.archivedAgentIds.push(agentId);

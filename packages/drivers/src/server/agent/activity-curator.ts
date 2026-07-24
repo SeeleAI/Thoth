@@ -1,4 +1,4 @@
-import type { AgentTimelineItem } from "./agent-sdk-types.js";
+import type { AgentTimelineItem } from "./harness-contract.js";
 import type { AgentAttachment } from "@thoth/protocol/messages";
 import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
 import { isLikelyExternalToolName } from "@thoth/protocol/tool-name-normalization";

@@ -1,4 +1,4 @@
-import type { AgentFeature, AgentFeatureToggle } from "../../agent-sdk-types.js";
+import type { AgentFeature, AgentFeatureToggle } from "../../harness-contract.js";
 
 const CLAUDE_FAST_MODE_SUPPORTED_MODEL_PREFIXES = [
   "claude-opus-4-8",

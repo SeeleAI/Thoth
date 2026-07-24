@@ -1,7 +1,7 @@
 import { expect, it, test, vi } from "vitest";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
-import { AgentManager } from "./agent-manager.js";
+import { ExecutionService } from "./execution-service.js";
 import { AgentStorage } from "./agent-storage.js";
 import {
   formatSystemNotificationPrompt,
@@ -10,7 +10,7 @@ import {
   setupFinishNotification,
   unarchiveAgentState,
 } from "./agent-prompt.js";
-import type { AgentManagerEvent, ManagedAgent } from "./agent-manager.js";
+import type { ExecutionServiceEvent, ManagedAgent } from "./execution-service.js";
 
 interface FinishNotificationScenarioOptions {
   childLastAssistantMessage?: string | null;
@@ -24,7 +24,7 @@ interface FinishNotificationScenario {
 function createFinishNotificationScenario(
   options?: FinishNotificationScenarioOptions,
 ): FinishNotificationScenario {
-  let subscriber: ((event: AgentManagerEvent) => void) | null = null;
+  let subscriber: ((event: ExecutionServiceEvent) => void) | null = null;
   let resolveParentPrompt: ((prompt: string) => void) | null = null;
 
   const childAgent: ManagedAgent = Object.create(null);
@@ -37,8 +37,8 @@ function createFinishNotificationScenario(
   Reflect.set(callerAgent, "lifecycle", "idle");
   Reflect.set(callerAgent, "config", { title: "Caller Agent" });
 
-  const agentManager: AgentManager = Object.create(AgentManager.prototype);
-  Reflect.set(agentManager, "getAgent", (agentId: string) => {
+  const executionService: ExecutionService = Object.create(ExecutionService.prototype);
+  Reflect.set(executionService, "getAgent", (agentId: string) => {
     if (agentId === "child-agent") {
       return childAgent;
     }
@@ -47,18 +47,18 @@ function createFinishNotificationScenario(
     }
     return null;
   });
-  Reflect.set(agentManager, "subscribe", (callback: (event: AgentManagerEvent) => void) => {
+  Reflect.set(executionService, "subscribe", (callback: (event: ExecutionServiceEvent) => void) => {
     subscriber = callback;
     return () => {
       subscriber = null;
     };
   });
-  Reflect.set(agentManager, "getLastAssistantMessage", async () => {
+  Reflect.set(executionService, "getLastAssistantMessage", async () => {
     return options?.childLastAssistantMessage ?? null;
   });
-  Reflect.set(agentManager, "tryRunOutOfBand", () => false);
-  Reflect.set(agentManager, "hasInFlightRun", () => false);
-  Reflect.set(agentManager, "streamAgent", (_agentId: string, prompt: string) => {
+  Reflect.set(executionService, "tryRunOutOfBand", () => false);
+  Reflect.set(executionService, "hasInFlightRun", () => false);
+  Reflect.set(executionService, "streamAgent", (_agentId: string, prompt: string) => {
     resolveParentPrompt?.(prompt);
     return (async function* noop() {})();
   });
@@ -74,7 +74,7 @@ function createFinishNotificationScenario(
   return {
     startWatchingChild() {
       setupFinishNotification({
-        agentManager,
+        executionService,
         agentStorage,
         childAgentId: "child-agent",
         callerAgentId: "caller-agent",
@@ -113,12 +113,14 @@ test("unarchiveAgentState does not notify before a stored Agent is registered li
   const notifyAgentState = vi.fn(() => {
     throw new Error("Unknown agent");
   });
-  const agentManager: AgentManager = Object.create(AgentManager.prototype);
-  Reflect.set(agentManager, "unarchiveSnapshot", unarchiveSnapshot);
-  Reflect.set(agentManager, "notifyAgentState", notifyAgentState);
+  const executionService: ExecutionService = Object.create(ExecutionService.prototype);
+  Reflect.set(executionService, "unarchiveSnapshot", unarchiveSnapshot);
+  Reflect.set(executionService, "notifyAgentState", notifyAgentState);
   const agentStorage: AgentStorage = Object.create(AgentStorage.prototype);
 
-  await expect(unarchiveAgentState(agentStorage, agentManager, "stored-agent")).resolves.toBe(true);
+  await expect(unarchiveAgentState(agentStorage, executionService, "stored-agent")).resolves.toBe(
+    true,
+  );
   expect(unarchiveSnapshot).toHaveBeenCalledWith("stored-agent");
   expect(notifyAgentState).not.toHaveBeenCalled();
 });
@@ -129,15 +131,15 @@ test("sendPromptToAgent forwards the client message id as run options", async ()
   Reflect.set(agent, "provider", "codex");
 
   const streamAgentSpy = vi.fn(() => (async function* noop() {})());
-  const agentManager: AgentManager = Object.create(AgentManager.prototype);
+  const executionService: ExecutionService = Object.create(ExecutionService.prototype);
   Reflect.set(
-    agentManager,
+    executionService,
     "getAgent",
     vi.fn(() => agent),
   );
-  Reflect.set(agentManager, "tryRunOutOfBand", vi.fn().mockReturnValue(false));
-  Reflect.set(agentManager, "hasInFlightRun", vi.fn().mockReturnValue(false));
-  Reflect.set(agentManager, "streamAgent", streamAgentSpy);
+  Reflect.set(executionService, "tryRunOutOfBand", vi.fn().mockReturnValue(false));
+  Reflect.set(executionService, "hasInFlightRun", vi.fn().mockReturnValue(false));
+  Reflect.set(executionService, "streamAgent", streamAgentSpy);
 
   const agentStorage: AgentStorage = Object.create(AgentStorage.prototype);
   Reflect.set(
@@ -147,7 +149,7 @@ test("sendPromptToAgent forwards the client message id as run options", async ()
   );
 
   await sendPromptToAgent({
-    agentManager,
+    executionService,
     agentStorage,
     agentId: "agent-1",
     prompt: "hello",
@@ -178,7 +180,7 @@ test("finish notifications tell the parent the child's last assistant message", 
 });
 
 it("does not notify archived callers", async () => {
-  let subscriber: ((event: AgentManagerEvent) => void) | null = null;
+  let subscriber: ((event: ExecutionServiceEvent) => void) | null = null;
 
   const childAgent: ManagedAgent = Object.create(null);
   Reflect.set(childAgent, "id", "child-agent");
@@ -193,9 +195,9 @@ it("does not notify archived callers", async () => {
   const streamAgentSpy = vi.fn(() => (async function* noop() {})());
   const replaceAgentRunSpy = vi.fn(() => (async function* noop() {})());
 
-  const agentManager: AgentManager = Object.create(AgentManager.prototype);
+  const executionService: ExecutionService = Object.create(ExecutionService.prototype);
   Reflect.set(
-    agentManager,
+    executionService,
     "getAgent",
     vi.fn((agentId: string) => {
       if (agentId === "child-agent") {
@@ -208,18 +210,18 @@ it("does not notify archived callers", async () => {
     }),
   );
   Reflect.set(
-    agentManager,
+    executionService,
     "subscribe",
-    vi.fn((callback: (event: AgentManagerEvent) => void) => {
+    vi.fn((callback: (event: ExecutionServiceEvent) => void) => {
       subscriber = callback;
       return () => {
         subscriber = null;
       };
     }),
   );
-  Reflect.set(agentManager, "hasInFlightRun", vi.fn().mockReturnValue(false));
-  Reflect.set(agentManager, "streamAgent", streamAgentSpy);
-  Reflect.set(agentManager, "replaceAgentRun", replaceAgentRunSpy);
+  Reflect.set(executionService, "hasInFlightRun", vi.fn().mockReturnValue(false));
+  Reflect.set(executionService, "streamAgent", streamAgentSpy);
+  Reflect.set(executionService, "replaceAgentRun", replaceAgentRunSpy);
 
   const agentStorageGetSpy = vi.fn(async (agentId: string) =>
     agentId === "caller-agent" ? { archivedAt: "2024-01-01" } : null,
@@ -228,7 +230,7 @@ it("does not notify archived callers", async () => {
   Reflect.set(agentStorage, "get", agentStorageGetSpy);
 
   setupFinishNotification({
-    agentManager,
+    executionService,
     agentStorage,
     childAgentId: "child-agent",
     callerAgentId: "caller-agent",

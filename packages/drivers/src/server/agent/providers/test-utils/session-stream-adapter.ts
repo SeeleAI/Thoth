@@ -2,7 +2,7 @@ import {
   getAgentStreamEventTurnId,
   type AgentPromptInput,
   type AgentRunOptions,
-  type AgentSession,
+  type HarnessThread,
   type AgentStreamEvent,
 } from "@thoth/drivers/agent-runtime";
 
@@ -15,7 +15,7 @@ function isTerminalEvent(event: AgentStreamEvent): boolean {
 }
 
 export async function* streamSession(
-  session: Pick<AgentSession, "startTurn" | "subscribe">,
+  session: Pick<HarnessThread, "startTurn" | "subscribe">,
   prompt: AgentPromptInput,
   options?: AgentRunOptions,
 ): AsyncGenerator<AgentStreamEvent> {

@@ -10,7 +10,6 @@ import { z } from "zod";
 
 import { createThothToolCatalog, type ThothToolHostDependencies } from "./tools/thoth-tools.js";
 import type { ThothToolExecutionContext, ThothToolResult } from "@thoth/drivers/agent-runtime";
-import { getBoundForegroundProviderTurnId } from "./tools/foreground-turn-fence.js";
 
 export type AgentMcpServerOptions = ThothToolHostDependencies;
 
@@ -126,9 +125,9 @@ export async function createAgentMcpServer(options: AgentMcpServerOptions): Prom
       async (args: unknown, context?: McpToolContext) => {
         const toolContext: ThothToolExecutionContext = { signal: context?.signal };
         if (options.callerAgentId) {
-          const agent = options.agentManager.getAgent(options.callerAgentId);
+          const agent = options.executionService.getAgent(options.callerAgentId);
           const turnId =
-            getBoundForegroundProviderTurnId(options.callerAgentId) ??
+            options.toolGateway?.getBoundForegroundProviderTurnId(options.callerAgentId) ??
             agent?.activeForegroundTurnId ??
             null;
           if (agent && turnId) {

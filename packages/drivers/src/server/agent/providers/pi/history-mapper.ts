@@ -1,4 +1,8 @@
-import type { AgentStreamEvent, AgentTimelineItem, ToolCallDetail } from "../../agent-sdk-types.js";
+import type {
+  AgentStreamEvent,
+  AgentTimelineItem,
+  ToolCallDetail,
+} from "../../harness-contract.js";
 import type { PiAgentMessage, PiImageContent, PiTextContent } from "./rpc-types.js";
 import {
   extractTextFromToolResult,

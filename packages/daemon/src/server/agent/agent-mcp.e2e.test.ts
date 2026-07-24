@@ -11,12 +11,12 @@ import pino from "pino";
 import { withTimeout } from "@thoth/drivers/internal/utils/promise-timeout";
 import { hashDaemonPassword } from "../auth.js";
 import { createThothDaemon, type ThothDaemonConfig } from "../bootstrap.js";
-import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
+import { createTestHarnessAdapters } from "../test-utils/fake-harness-adapter.js";
 import type {
-  AgentClient,
+  HarnessAdapter,
   AgentPersistenceHandle,
   AgentRunResult,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   AgentStreamEvent,
 } from "@thoth/drivers/agent-runtime";
@@ -93,13 +93,13 @@ interface LaunchRecorder {
   recordedLaunches: AgentSessionConfig[];
 }
 
-class RecordingAgentClient implements AgentClient {
-  readonly provider: AgentClient["provider"];
-  readonly capabilities: AgentClient["capabilities"];
-  readonly harnessCapabilities: AgentClient["harnessCapabilities"];
+class RecordingHarnessAdapter implements HarnessAdapter {
+  readonly provider: HarnessAdapter["provider"];
+  readonly capabilities: HarnessAdapter["capabilities"];
+  readonly harnessCapabilities: HarnessAdapter["harnessCapabilities"];
 
   constructor(
-    private readonly inner: AgentClient,
+    private readonly inner: HarnessAdapter,
     private readonly recorder: LaunchRecorder,
   ) {
     this.provider = inner.provider;
@@ -111,21 +111,21 @@ class RecordingAgentClient implements AgentClient {
   }
 
   async createSession(
-    ...args: Parameters<AgentClient["createSession"]>
-  ): ReturnType<AgentClient["createSession"]> {
+    ...args: Parameters<HarnessAdapter["createSession"]>
+  ): ReturnType<HarnessAdapter["createSession"]> {
     this.recorder.recordedLaunches.push(args[0]);
     return this.inner.createSession(...args);
   }
 
   async resumeSession(
-    ...args: Parameters<AgentClient["resumeSession"]>
-  ): ReturnType<AgentClient["resumeSession"]> {
+    ...args: Parameters<HarnessAdapter["resumeSession"]>
+  ): ReturnType<HarnessAdapter["resumeSession"]> {
     return this.inner.resumeSession(...args);
   }
 
   async fetchCatalog(
-    ...args: Parameters<AgentClient["fetchCatalog"]>
-  ): ReturnType<AgentClient["fetchCatalog"]> {
+    ...args: Parameters<HarnessAdapter["fetchCatalog"]>
+  ): ReturnType<HarnessAdapter["fetchCatalog"]> {
     return this.inner.fetchCatalog(...args);
   }
 
@@ -134,8 +134,8 @@ class RecordingAgentClient implements AgentClient {
   }
 }
 
-function createMcpRecordingAgentClients(recorder: LaunchRecorder) {
-  const clients = createTestAgentClients();
+function createMcpRecordingHarnessAdapters(recorder: LaunchRecorder) {
+  const clients = createTestHarnessAdapters();
   const claude = clients.claude;
   if (!claude) {
     throw new Error("Fake Claude client is not configured");
@@ -143,7 +143,7 @@ function createMcpRecordingAgentClients(recorder: LaunchRecorder) {
 
   return {
     ...clients,
-    claude: new RecordingAgentClient(claude, recorder),
+    claude: new RecordingHarnessAdapter(claude, recorder),
   };
 }
 
@@ -183,7 +183,7 @@ describe("agent MCP end-to-end (offline)", () => {
       mcpEnabled: true,
       staticDir,
       mcpDebug: false,
-      agentClients: createTestAgentClients(),
+      harnessAdapters: createTestHarnessAdapters(),
       agentStoragePath: path.join(thothHome, "agents"),
     };
 
@@ -253,7 +253,7 @@ describe("agent MCP end-to-end (offline)", () => {
       mcpEnabled: true,
       staticDir,
       mcpDebug: false,
-      agentClients: createTestAgentClients(),
+      harnessAdapters: createTestHarnessAdapters(),
       agentStoragePath: path.join(thothHome, "agents"),
       auth: { password: hashDaemonPassword("daemon-secret") },
     };
@@ -262,7 +262,7 @@ describe("agent MCP end-to-end (offline)", () => {
     await daemon.start();
 
     const mcpUrl = `http://127.0.0.1:${port}/mcp/agents`;
-    const capabilityToken = daemon.agentManager.getMcpAuthToken();
+    const capabilityToken = daemon.executionService.getMcpAuthToken();
     expect(typeof capabilityToken).toBe("string");
 
     let agentId: string | null = null;
@@ -324,7 +324,7 @@ describe("agent MCP end-to-end (offline)", () => {
       mcpEnabled: true,
       staticDir,
       mcpDebug: false,
-      agentClients: createMcpRecordingAgentClients(recorder),
+      harnessAdapters: createMcpRecordingHarnessAdapters(recorder),
       agentStoragePath: path.join(thothHome, "agents"),
     };
 
@@ -347,7 +347,7 @@ describe("agent MCP end-to-end (offline)", () => {
       mcpInjectIntoAgents: false,
       staticDir: disabledStaticDir,
       mcpDebug: false,
-      agentClients: createMcpRecordingAgentClients(disabledRecorder),
+      harnessAdapters: createMcpRecordingHarnessAdapters(disabledRecorder),
       agentStoragePath: path.join(disabledThothHome, "agents"),
     };
     const disabledDaemon = await createThothDaemon(disabledDaemonConfig, pino({ level: "silent" }));
@@ -379,7 +379,7 @@ describe("agent MCP end-to-end (offline)", () => {
           url: `http://127.0.0.1:${port}/mcp/agents?callerAgentId=${agentId!}`,
         },
       });
-      const injectedAgent = daemon.agentManager.getAgent(agentId!);
+      const injectedAgent = daemon.executionService.getAgent(agentId!);
       expect(injectedAgent?.config.mcpServers?.thoth).toBeUndefined();
 
       const disabledResult = await disabledClient.callTool({
@@ -399,7 +399,7 @@ describe("agent MCP end-to-end (offline)", () => {
       expect(disabledAgentId).toBeTruthy();
 
       expect(disabledRecorder.recordedLaunches.at(-1)?.mcpServers?.thoth).toBeUndefined();
-      const disabledAgent = disabledDaemon.agentManager.getAgent(disabledAgentId!);
+      const disabledAgent = disabledDaemon.executionService.getAgent(disabledAgentId!);
       expect(disabledAgent?.config.mcpServers?.thoth).toBeUndefined();
     } finally {
       if (agentId) {
@@ -436,7 +436,7 @@ describe("agent MCP end-to-end (offline)", () => {
       mcpEnabled: true,
       staticDir,
       mcpDebug: false,
-      agentClients: createMcpRecordingAgentClients(recorder),
+      harnessAdapters: createMcpRecordingHarnessAdapters(recorder),
       agentStoragePath: path.join(thothHome, "agents"),
     };
 
@@ -468,7 +468,7 @@ describe("agent MCP end-to-end (offline)", () => {
           url: `http://127.0.0.1:${port}/mcp/agents?callerAgentId=${agentId!}`,
         },
       });
-      const injectedAgent = daemon.agentManager.getAgent(agentId!);
+      const injectedAgent = daemon.executionService.getAgent(agentId!);
       expect(injectedAgent?.config.mcpServers?.thoth).toBeUndefined();
     } finally {
       if (agentId) {
@@ -496,7 +496,7 @@ describe("agent MCP end-to-end (offline)", () => {
       mcpEnabled: true,
       staticDir,
       mcpDebug: false,
-      agentClients: createTestAgentClients(),
+      harnessAdapters: createTestHarnessAdapters(),
       agentStoragePath: path.join(thothHome, "agents"),
     };
 
@@ -543,7 +543,7 @@ describe("agent MCP end-to-end (offline)", () => {
   }, 30_000);
 
   test("create_agent propagates initial-turn start failure instead of returning success", async () => {
-    class StartTurnFailureSession implements AgentSession {
+    class StartTurnFailureSession implements HarnessThread {
       readonly provider = "codex" as const;
       readonly id = "mcp-start-turn-failure-session";
       readonly capabilities = {
@@ -614,7 +614,7 @@ describe("agent MCP end-to-end (offline)", () => {
       async close(): Promise<void> {}
     }
 
-    class StartTurnFailureClient implements AgentClient {
+    class StartTurnFailureClient implements HarnessAdapter {
       readonly provider = "codex" as const;
       readonly capabilities = {
         supportsStreaming: false,
@@ -649,14 +649,14 @@ describe("agent MCP end-to-end (offline)", () => {
         };
       }
 
-      async createSession(_config: AgentSessionConfig): Promise<AgentSession> {
+      async createSession(_config: AgentSessionConfig): Promise<HarnessThread> {
         return new StartTurnFailureSession();
       }
 
       async resumeSession(
         _handle: AgentPersistenceHandle,
         _config?: Partial<AgentSessionConfig>,
-      ): Promise<AgentSession> {
+      ): Promise<HarnessThread> {
         return new StartTurnFailureSession();
       }
     }
@@ -674,8 +674,8 @@ describe("agent MCP end-to-end (offline)", () => {
       mcpEnabled: true,
       staticDir,
       mcpDebug: false,
-      agentClients: {
-        ...createTestAgentClients(),
+      harnessAdapters: {
+        ...createTestHarnessAdapters(),
         codex: new StartTurnFailureClient(),
       },
       agentStoragePath: path.join(thothHome, "agents"),
@@ -741,7 +741,7 @@ describe("agent MCP end-to-end (offline)", () => {
       mcpEnabled: true,
       staticDir,
       mcpDebug: false,
-      agentClients: createTestAgentClients(),
+      harnessAdapters: createTestHarnessAdapters(),
       agentStoragePath: path.join(thothHome, "agents"),
     };
 

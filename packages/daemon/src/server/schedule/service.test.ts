@@ -2,11 +2,11 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { AgentManager } from "../agent/agent-manager.js";
+import { ExecutionService } from "../agent/execution-service.js";
 import { AgentStorage } from "../agent/agent-storage.js";
 import type {
   AgentCapabilityFlags,
-  AgentClient,
+  HarnessAdapter,
   AgentMode,
   AgentModelDefinition,
   AgentPermissionRequest,
@@ -15,11 +15,11 @@ import type {
   AgentPromptInput,
   AgentRunOptions,
   AgentRunResult,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   AgentStreamEvent,
 } from "@thoth/drivers/agent-runtime";
-import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
+import { createTestHarnessAdapters } from "../test-utils/fake-harness-adapter.js";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import type { ProviderSnapshotManager } from "../agent/provider-snapshot-manager.js";
 import { ScheduleService } from "./service.js";
@@ -106,7 +106,7 @@ describe("ScheduleService", () => {
 
   afterEach(async () => {
     // Drain pending background persists before deleting the dir to avoid
-    // ENOTEMPTY races when AgentManager flushes a snapshot mid-cleanup.
+    // ENOTEMPTY races when ExecutionService flushes a snapshot mid-cleanup.
     await agentStorage.flush();
     authority.close();
     await rm(tempDir, { recursive: true, force: true });
@@ -116,7 +116,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -155,7 +155,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -191,7 +191,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -222,16 +222,16 @@ describe("ScheduleService", () => {
     expect(inspected.nextRunAt).toBeNull();
   });
 
-  test("executes new-agent schedules through AgentManager with real fake clients", async () => {
-    const manager = new AgentManager({
+  test("executes new-agent schedules through ExecutionService with real fake clients", async () => {
+    const manager = new ExecutionService({
       logger: createTestLogger(),
-      clients: createTestAgentClients(),
+      adapters: createTestHarnessAdapters(),
       registry: agentStorage,
     });
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: manager,
+      executionService: manager,
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -263,15 +263,15 @@ describe("ScheduleService", () => {
   });
 
   test("titles scheduled new agents from the schedule prompt", async () => {
-    const manager = new AgentManager({
+    const manager = new ExecutionService({
       logger: createTestLogger(),
-      clients: createTestAgentClients(),
+      adapters: createTestHarnessAdapters(),
       registry: agentStorage,
     });
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: manager,
+      executionService: manager,
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -302,7 +302,7 @@ describe("ScheduleService", () => {
   });
 
   test("shows scheduled new-agent prompts as normal user turns", async () => {
-    class PromptEchoScheduleSession implements AgentSession {
+    class PromptEchoScheduleSession implements HarnessThread {
       readonly provider = "claude";
       readonly capabilities = SCHEDULE_TEST_CAPABILITIES;
       readonly id = "scheduled-prompt-echo-session";
@@ -399,16 +399,16 @@ describe("ScheduleService", () => {
       }
     }
 
-    class PromptEchoScheduleClient implements AgentClient {
+    class PromptEchoScheduleClient implements HarnessAdapter {
       readonly provider = "claude";
       readonly capabilities = SCHEDULE_TEST_CAPABILITIES;
       readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
 
-      async createSession(_config: AgentSessionConfig): Promise<AgentSession> {
+      async createSession(_config: AgentSessionConfig): Promise<HarnessThread> {
         return new PromptEchoScheduleSession();
       }
 
-      async resumeSession(_handle: AgentPersistenceHandle): Promise<AgentSession> {
+      async resumeSession(_handle: AgentPersistenceHandle): Promise<HarnessThread> {
         return new PromptEchoScheduleSession();
       }
 
@@ -421,15 +421,15 @@ describe("ScheduleService", () => {
       }
     }
 
-    const manager = new AgentManager({
+    const manager = new ExecutionService({
       logger: createTestLogger(),
-      clients: { claude: new PromptEchoScheduleClient() },
+      adapters: { claude: new PromptEchoScheduleClient() },
       registry: agentStorage,
     });
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: manager,
+      executionService: manager,
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -470,7 +470,7 @@ describe("ScheduleService", () => {
   });
 
   test("archives new-agent schedule sessions after the run finishes", async () => {
-    class CountingScheduleSession implements AgentSession {
+    class CountingScheduleSession implements HarnessThread {
       readonly provider = "claude";
       readonly capabilities = SCHEDULE_TEST_CAPABILITIES;
       readonly id: string;
@@ -573,19 +573,19 @@ describe("ScheduleService", () => {
       }
     }
 
-    class CountingScheduleClient implements AgentClient {
+    class CountingScheduleClient implements HarnessAdapter {
       readonly provider = "claude";
       readonly capabilities = SCHEDULE_TEST_CAPABILITIES;
       readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
       readonly sessions: CountingScheduleSession[] = [];
 
-      async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
         const session = new CountingScheduleSession(config);
         this.sessions.push(session);
         return session;
       }
 
-      async resumeSession(handle: AgentPersistenceHandle): Promise<AgentSession> {
+      async resumeSession(handle: AgentPersistenceHandle): Promise<HarnessThread> {
         const metadata = handle.metadata as Partial<AgentSessionConfig> | undefined;
         const session = new CountingScheduleSession({
           ...metadata,
@@ -606,15 +606,15 @@ describe("ScheduleService", () => {
     }
 
     const client = new CountingScheduleClient();
-    const manager = new AgentManager({
+    const manager = new ExecutionService({
       logger: createTestLogger(),
-      clients: { claude: client },
+      adapters: { claude: client },
       registry: agentStorage,
     });
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: manager,
+      executionService: manager,
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -648,15 +648,15 @@ describe("ScheduleService", () => {
   });
 
   test("defaults new-agent modeId to provider's unattended mode", async () => {
-    const manager = new AgentManager({
+    const manager = new ExecutionService({
       logger: createTestLogger(),
-      clients: createTestAgentClients(),
+      adapters: createTestHarnessAdapters(),
       registry: agentStorage,
     });
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: manager,
+      executionService: manager,
       agentStorage,
       providerSnapshotManager: {
         async resolveCreateConfig(input) {
@@ -694,7 +694,7 @@ describe("ScheduleService", () => {
 
   test("defaults OpenCode new-agent schedules to build plus auto accept", async () => {
     const createdConfigs: AgentSessionConfig[] = [];
-    const clients = createTestAgentClients();
+    const clients = createTestHarnessAdapters();
     const opencodeClient = clients.opencode;
     if (!opencodeClient) {
       throw new Error("Expected OpenCode test client");
@@ -710,8 +710,8 @@ describe("ScheduleService", () => {
       resumeSession: (...args) => opencodeClient.resumeSession(...args),
       fetchCatalog: (...args) => opencodeClient.fetchCatalog(...args),
       isAvailable: () => opencodeClient.isAvailable(),
-    } satisfies AgentClient;
-    const manager = new AgentManager({
+    } satisfies HarnessAdapter;
+    const manager = new ExecutionService({
       logger: createTestLogger(),
       clients,
       registry: agentStorage,
@@ -719,7 +719,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: manager,
+      executionService: manager,
       agentStorage,
       providerSnapshotManager: {
         async resolveCreateConfig(input) {
@@ -761,7 +761,7 @@ describe("ScheduleService", () => {
     const service1 = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -786,7 +786,7 @@ describe("ScheduleService", () => {
     const service2 = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -812,7 +812,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -857,11 +857,11 @@ describe("ScheduleService", () => {
   });
 
   test("rejects archived target agents before loading them", async () => {
-    const manager = new AgentManager({ logger: createTestLogger() });
+    const manager = new ExecutionService({ logger: createTestLogger() });
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: manager,
+      executionService: manager,
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -924,7 +924,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -947,7 +947,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -971,7 +971,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -994,7 +994,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -1018,7 +1018,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -1054,7 +1054,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -1105,7 +1105,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -1138,7 +1138,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -1170,7 +1170,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -1196,7 +1196,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -1223,7 +1223,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -1267,7 +1267,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -1298,7 +1298,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
@@ -1324,7 +1324,7 @@ describe("ScheduleService", () => {
     const service = new ScheduleService({
       authority,
       logger: createTestLogger(),
-      agentManager: new AgentManager({ logger: createTestLogger() }),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
       agentStorage,
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,

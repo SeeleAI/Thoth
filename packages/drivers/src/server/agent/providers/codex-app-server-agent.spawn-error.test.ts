@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 
-import { CodexAppServerAgentClient } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
+import { CodexHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 
-describe("CodexAppServerAgentClient spawn error handling", () => {
+describe("CodexHarnessAdapter spawn error handling", () => {
   const logger = createTestLogger();
 
   test("fetchCatalog rejects gracefully when the codex binary does not exist", async () => {
-    const client = new CodexAppServerAgentClient(logger, {
+    const client = new CodexHarnessAdapter(logger, {
       command: {
         mode: "replace",
         argv: ["/nonexistent/codex-binary-that-does-not-exist"],
@@ -33,7 +33,7 @@ describe("CodexAppServerAgentClient spawn error handling", () => {
   });
 
   test("listImportableSessions rejects gracefully when the codex binary does not exist", async () => {
-    const client = new CodexAppServerAgentClient(logger, {
+    const client = new CodexHarnessAdapter(logger, {
       command: {
         mode: "replace",
         argv: ["/nonexistent/codex-binary-that-does-not-exist"],

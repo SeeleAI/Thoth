@@ -4,19 +4,19 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
-import { AgentManager, type AgentManagerEvent } from "./agent-manager.js";
+import { ExecutionService, type ExecutionServiceEvent } from "./execution-service.js";
 import { AGENT_STREAM_COALESCE_DEFAULT_WINDOW_MS } from "./agent-stream-coalescer.js";
 import type { AgentTimelineRow } from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
 import type {
   AgentCapabilityFlags,
-  AgentClient,
+  HarnessAdapter,
   AgentLaunchContext,
   AgentPersistenceHandle,
   AgentPromptInput,
   AgentProvider,
   AgentRunOptions,
   AgentRunResult,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   AgentStreamEvent,
   AgentTimelineItem,
@@ -25,7 +25,7 @@ import type {
 import { NO_HARNESS_CAPABILITIES } from "@thoth/drivers/harness";
 
 /**
- * Contract for AgentManager pre-record stream coalescing.
+ * Contract for ExecutionService pre-record stream coalescing.
  * Assistant/reasoning chunks coalesce before recordTimeline() assigns canonical seqs.
  */
 
@@ -84,7 +84,7 @@ function toolCall(options?: {
   };
 }
 
-class TestAgentSession implements AgentSession {
+class TestHarnessThread implements HarnessThread {
   readonly capabilities = TEST_CAPABILITIES;
   readonly id: string;
   private historyEvents: AgentStreamEvent[] = [];
@@ -174,19 +174,19 @@ class TestAgentSession implements AgentSession {
   async close(): Promise<void> {}
 }
 
-class TestAgentClient implements AgentClient {
+class TestHarnessAdapter implements HarnessAdapter {
   readonly capabilities = TEST_CAPABILITIES;
   readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
   private sessionCounter = 0;
-  readonly sessions = new Map<string, TestAgentSession>();
+  readonly sessions = new Map<string, TestHarnessThread>();
 
   constructor(readonly provider: AgentProvider = "codex") {}
 
   async createSession(
     config: AgentSessionConfig,
     _launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
-    const session = new TestAgentSession(
+  ): Promise<HarnessThread> {
+    const session = new TestHarnessThread(
       config.provider,
       config,
       `${config.provider}-session-${++this.sessionCounter}`,
@@ -199,7 +199,7 @@ class TestAgentClient implements AgentClient {
     _handle: AgentPersistenceHandle,
     config?: Partial<AgentSessionConfig>,
     _launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const resolvedConfig: AgentSessionConfig = {
       provider: this.provider,
       cwd: config?.cwd ?? process.cwd(),
@@ -226,7 +226,7 @@ class TestAgentClient implements AgentClient {
     return true;
   }
 
-  getSession(cwd: string): TestAgentSession {
+  getSession(cwd: string): TestHarnessThread {
     const session = this.sessions.get(cwd);
     if (!session) {
       throw new Error(`No test session for cwd ${cwd}`);
@@ -236,22 +236,22 @@ class TestAgentClient implements AgentClient {
 }
 
 interface Harness {
-  manager: AgentManager;
-  client: TestAgentClient;
-  events: AgentManagerEvent[];
+  manager: ExecutionService;
+  client: TestHarnessAdapter;
+  events: ExecutionServiceEvent[];
   workdir: string;
   cleanup: () => void;
 }
 
 function createHarness(options?: { provider?: AgentProvider }): Harness {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-stream-coalescing-"));
-  const client = new TestAgentClient(options?.provider ?? "codex");
-  const manager = new AgentManager({
-    clients: { [client.provider]: client },
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-stream-coalescing-"));
+  const client = new TestHarnessAdapter(options?.provider ?? "codex");
+  const manager = new ExecutionService({
+    adapters: { [client.provider]: client },
     idFactory: createIdFactory(),
     logger: createTestLogger(),
   });
-  const events: AgentManagerEvent[] = [];
+  const events: ExecutionServiceEvent[] = [];
   manager.subscribe((event) => events.push(event), { replayState: false });
 
   return {
@@ -271,7 +271,7 @@ function createIdFactory(): () => string {
 async function createManagedSession(
   harness: Harness,
   options?: { agentId?: string; provider?: AgentProvider; workdir?: string },
-): Promise<{ agentId: string; session: TestAgentSession; workdir: string }> {
+): Promise<{ agentId: string; session: TestHarnessThread; workdir: string }> {
   const agentId = options?.agentId ?? AGENT_IDS[0];
   const workdir = options?.workdir ?? harness.workdir;
   await harness.manager.createAgent(
@@ -340,14 +340,17 @@ function terminalEvent(
   return { type, provider: "codex", turnId, reason: "canceled" };
 }
 
-function getStreamEvents(events: AgentManagerEvent[], agentId: string): AgentManagerEvent[] {
+function getStreamEvents(
+  events: ExecutionServiceEvent[],
+  agentId: string,
+): ExecutionServiceEvent[] {
   return events.filter((event) => event.type === "agent_stream" && event.agentId === agentId);
 }
 
 function getTimelineStreamEvents(
-  events: AgentManagerEvent[],
+  events: ExecutionServiceEvent[],
   agentId: string,
-): AgentManagerEvent[] {
+): ExecutionServiceEvent[] {
   return getStreamEvents(events, agentId).filter(
     (event) => event.type === "agent_stream" && event.event.type === "timeline",
   );
@@ -361,7 +364,7 @@ function expectContiguousRowSeqs(rows: AgentTimelineRow[], expected: number[]): 
   expect(rows.map((row) => row.seq)).toEqual(expected);
 }
 
-function expectContiguousLiveSeqs(events: AgentManagerEvent[], expected: number[]): void {
+function expectContiguousLiveSeqs(events: ExecutionServiceEvent[], expected: number[]): void {
   expect(events.map((event) => (event.type === "agent_stream" ? event.seq : undefined))).toEqual(
     expected,
   );
@@ -687,7 +690,7 @@ describe("target coalesced behavior", () => {
         agentId: AGENT_IDS[0],
         workdir: harness.workdir,
       });
-      const secondWorkdir = mkdtempSync(join(tmpdir(), "agent-manager-stream-coalescing-"));
+      const secondWorkdir = mkdtempSync(join(tmpdir(), "execution-service-stream-coalescing-"));
       const second = await createManagedSession(harness, {
         agentId: AGENT_IDS[1],
         workdir: secondWorkdir,
@@ -953,7 +956,7 @@ describe("target coalesced behavior", () => {
       await waitForSessionEventQueue();
       await reuseHarness.manager.closeAgent(first.agentId);
 
-      const nextWorkdir = mkdtempSync(join(tmpdir(), "agent-manager-stream-coalescing-"));
+      const nextWorkdir = mkdtempSync(join(tmpdir(), "execution-service-stream-coalescing-"));
       const second = await createManagedSession(reuseHarness, {
         agentId: AGENT_IDS[0],
         workdir: nextWorkdir,

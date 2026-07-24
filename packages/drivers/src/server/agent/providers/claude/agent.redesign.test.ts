@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
 import { asInternals } from "../../../../test-utils/class-mocks.js";
 import {
-  ClaudeAgentClient,
+  ClaudeHarnessAdapter,
   readEventIdentifiers,
 } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import { streamSession } from "../test-utils/session-stream-adapter.js";
@@ -68,7 +68,7 @@ function createBaseQueryMock(nextImpl: QueryMock["next"]): QueryMock {
 }
 
 async function createSession() {
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger: createTestLogger(),
     queryFactory: sdkQueryFactory,
     resolveBinary: async () => "/test/claude/bin",
@@ -80,7 +80,7 @@ async function createSession() {
 }
 
 function createSessionWithLogger(logger: Logger) {
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger,
     queryFactory: sdkQueryFactory,
     resolveBinary: async () => "/test/claude/bin",
@@ -226,7 +226,7 @@ test("allows launch env to disable inherited Bedrock transport for auto mode", a
   process.env.CLAUDE_CODE_USE_BEDROCK = "1";
   const queryMock = createBaseQueryMock(vi.fn(async () => ({ done: true, value: undefined })));
   sdkQueryFactory.mockImplementation(() => queryMock);
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger: createTestLogger(),
     queryFactory: sdkQueryFactory,
     resolveBinary: async () => "/test/claude/bin",
@@ -256,7 +256,7 @@ test("fails an auto mode turn when Claude Code uses Vertex", async () => {
   sdkQueryFactory.mockImplementation(() => {
     throw new Error("query should not start");
   });
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger: createTestLogger(),
     queryFactory: sdkQueryFactory,
     resolveBinary: async () => "/test/claude/bin",
@@ -336,7 +336,7 @@ test("logs redacted query summary and never leaks sentinel secrets", async () =>
   });
 
   const spy = createSpyLogger();
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger: spy.logger,
     queryFactory: sdkQueryFactory,
     runtimeSettings: {
@@ -922,7 +922,7 @@ test("captures Claude stderr in the turn failure diagnostic when stderr arrives 
   );
 
   const loggerSpy = createSpyLogger();
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger: loggerSpy.logger,
     queryFactory: sdkQueryFactory,
     resolveBinary: async () => "/test/claude/bin",

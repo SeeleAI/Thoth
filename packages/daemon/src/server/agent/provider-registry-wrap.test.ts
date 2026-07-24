@@ -3,19 +3,19 @@ import { describe, expect, test } from "vitest";
 import type {
   AgentCapabilityFlags,
   AgentPromptInput,
-  AgentSession,
+  HarnessThread,
   AgentStreamEvent,
   AgentRuntimeInfo,
 } from "@thoth/drivers/agent-runtime";
 import { wrapSessionProvider } from "@thoth/drivers/internal/server/agent/provider-registry";
 
 type OptionalAgentSessionMethodName = {
-  [K in keyof AgentSession]-?: undefined extends AgentSession[K]
-    ? NonNullable<AgentSession[K]> extends (...args: never[]) => unknown
+  [K in keyof HarnessThread]-?: undefined extends HarnessThread[K]
+    ? NonNullable<HarnessThread[K]> extends (...args: never[]) => unknown
       ? K
       : never
     : never;
-}[keyof AgentSession];
+}[keyof HarnessThread];
 
 const OPTIONAL_AGENT_SESSION_METHOD_NAMES = [
   "listCommands",
@@ -54,7 +54,7 @@ const RUNTIME_INFO: AgentRuntimeInfo = {
   sessionId: "session-1",
 };
 
-class FakeSession implements AgentSession {
+class FakeSession implements HarnessThread {
   readonly provider = "claude";
   readonly id = "session-1";
   readonly capabilities = CAPABILITIES;
@@ -168,7 +168,7 @@ async function* emptyHistory(): AsyncGenerator<AgentStreamEvent> {
 }
 
 describe("wrapSessionProvider", () => {
-  test("forwards every optional AgentSession method", async () => {
+  test("forwards every optional HarnessThread method", async () => {
     const session = new FakeSession();
     const wrapped = wrapSessionProvider("custom-claude", session);
 

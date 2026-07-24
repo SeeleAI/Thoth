@@ -1,4 +1,4 @@
-import type { AgentManager } from "./agent/agent-manager.js";
+import type { ExecutionService } from "./agent/execution-service.js";
 import { stripInternalThothMcpServer } from "./agent/runtime-mcp-config.js";
 import type {
   AgentPersistenceHandle,
@@ -18,7 +18,7 @@ function getLogger(logger: LoggerLike): LoggerLike {
 }
 
 type AgentStoragePersistence = Pick<AgentRegistry, "applySnapshot" | "list">;
-type AgentManagerStateSource = Pick<AgentManager, "subscribe">;
+type ExecutionStateSource = Pick<ExecutionService, "subscribe">;
 
 interface BuildSessionConfigOptions {
   validProviders?: Iterable<AgentProvider>;
@@ -38,16 +38,16 @@ function isProviderRegistered(
 }
 
 /**
- * Attach AgentStorage persistence to an AgentManager instance so every
+ * Attach AgentStorage persistence to an ExecutionService instance so every
  * agent_state snapshot is flushed to disk.
  */
 export function attachAgentStoragePersistence(
   logger: LoggerLike,
-  agentManager: AgentManagerStateSource,
+  executionService: ExecutionStateSource,
   storage: AgentStoragePersistence,
 ): () => void {
   const log = getLogger(logger);
-  const unsubscribe = agentManager.subscribe((event) => {
+  const unsubscribe = executionService.subscribe((event) => {
     if (event.type !== "agent_state") {
       return;
     }

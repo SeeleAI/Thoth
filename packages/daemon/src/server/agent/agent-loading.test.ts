@@ -4,11 +4,11 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
-import { AgentManager } from "./agent-manager.js";
+import { ExecutionService } from "./execution-service.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
 import { AgentStorage, type StoredAgentRecord } from "./agent-storage.js";
 import { SqliteAgentTimelineStore } from "./sqlite-agent-timeline-store.js";
-import type { AgentClient } from "@thoth/drivers/agent-runtime";
+import type { HarnessAdapter } from "@thoth/drivers/agent-runtime";
 
 const roots: string[] = [];
 
@@ -24,7 +24,7 @@ afterEach(() => {
   }
 });
 
-const unavailableRolloutClient: AgentClient = {
+const unavailableRolloutClient: HarnessAdapter = {
   provider: "codex",
   capabilities: {
     supportsStreaming: true,
@@ -76,15 +76,15 @@ describe("ensureAgentLoaded durable history fallback", () => {
       type: "assistant_message",
       text: "The foreground Plan+Exec output survives provider archive.",
     });
-    const manager = new AgentManager({
-      clients: { codex: unavailableRolloutClient },
+    const manager = new ExecutionService({
+      adapters: { codex: unavailableRolloutClient },
       registry: storage,
       durableTimelineStore: timeline,
       logger,
     });
 
     const restored = await ensureAgentLoaded(agentId, {
-      agentManager: manager,
+      executionService: manager,
       agentStorage: storage,
       logger,
     });

@@ -100,7 +100,7 @@ function createHarness(overrides?: {
     } as unknown as AutoArchiveArchiveOptions["daemonConfigStore"],
     workspaceGitService,
     github: {} as AutoArchiveArchiveOptions["github"],
-    agentManager: {} as AutoArchiveArchiveOptions["agentManager"],
+    executionService: {} as AutoArchiveArchiveOptions["executionService"],
     agentStorage: {} as AutoArchiveArchiveOptions["agentStorage"],
     terminalManager: {} as AutoArchiveArchiveOptions["terminalManager"],
     findWorkspaceIdForCwd: vi.fn(async () => "ws-auto-archive"),
@@ -283,13 +283,13 @@ function createRealOutcomeHarness(input: {
         }) satisfies WorkspaceGitRuntimeSnapshot,
     } as unknown as AutoArchiveArchiveOptions["workspaceGitService"],
     github: createGitHubServiceStub(),
-    agentManager: {
+    executionService: {
       listAgents: () => [],
       archiveAgent: vi.fn(async () => ({ archivedAt: new Date().toISOString() })),
       archiveSnapshot: vi.fn(async () => {
         throw new Error("not expected without stored agents");
       }),
-    } as unknown as AutoArchiveArchiveOptions["agentManager"],
+    } as unknown as AutoArchiveArchiveOptions["executionService"],
     agentStorage: {
       list: async (): Promise<StoredAgentRecord[]> => [],
     } as unknown as AutoArchiveArchiveOptions["agentStorage"],

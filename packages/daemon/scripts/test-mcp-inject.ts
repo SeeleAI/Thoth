@@ -4,8 +4,8 @@ import path from "node:path";
 
 import pino from "pino";
 
-import { ClaudeAgentClient } from "../src/server/agent/providers/claude-agent.js";
-import { CodexAppServerAgentClient } from "../src/server/agent/providers/codex-app-server-agent.js";
+import { ClaudeHarnessAdapter } from "../src/server/agent/providers/claude-agent.js";
+import { CodexHarnessAdapter } from "../src/server/agent/providers/codex-app-server-agent.js";
 import {
   getFullAccessConfig,
   isProviderAvailable,
@@ -136,9 +136,9 @@ async function main(): Promise<void> {
   const claudeCwd = path.join(rootCwd, "claude");
   const codexCwd = path.join(rootCwd, "codex");
   const daemon = await createTestThothDaemon({
-    agentClients: {
-      claude: new ClaudeAgentClient({ logger }),
-      ...(codexAvailable ? { codex: new CodexAppServerAgentClient(logger) } : {}),
+    harnessAdapters: {
+      claude: new ClaudeHarnessAdapter({ logger }),
+      ...(codexAvailable ? { codex: new CodexHarnessAdapter(logger) } : {}),
     },
     logger,
   });

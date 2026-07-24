@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Server as HTTPServer } from "http";
 import type pino from "pino";
-import type { AgentManager } from "./agent/agent-manager.js";
+import type { ExecutionService } from "./agent/execution-service.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { DaemonConfigStore } from "./daemon-config-store.js";
@@ -216,7 +216,7 @@ function createServer(options?: { logger?: ReturnType<typeof createLogger> }) {
     createStub<HTTPServer>({}),
     createStub<pino.Logger>(logger),
     "srv_test",
-    createStub<AgentManager>({
+    createStub<ExecutionService>({
       subscribe: vi.fn(() => () => {}),
       setAgentAttentionCallback: vi.fn(),
       getAgent: vi.fn(() => null),

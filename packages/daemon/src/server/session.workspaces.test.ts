@@ -19,15 +19,15 @@ import type { AgentUpdatesService } from "./session/agent-updates/agent-updates-
 import type { AgentSnapshotPayload, SessionOutboundMessage } from "@thoth/protocol/messages";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
 import { createTerminalManager } from "../terminal/terminal-manager.js";
-import { AgentManager } from "./agent/agent-manager.js";
+import { ExecutionService } from "./agent/execution-service.js";
 import { AgentStorage, type StoredAgentRecord } from "./agent/agent-storage.js";
 import type {
-  AgentClient,
+  HarnessAdapter,
   AgentCreateSessionOptions,
   AgentLaunchContext,
   AgentPersistenceHandle,
   AgentRunResult,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   AgentStreamEvent,
 } from "@thoth/drivers/agent-runtime";
@@ -95,7 +95,7 @@ interface SessionTestAccess {
     get(agentId: string): Promise<unknown>;
     upsert(record: unknown): Promise<void>;
   };
-  agentManager: {
+  executionService: {
     listAgents(): unknown[];
     getAgent(agentId: string): unknown;
     reloadAgentSession(agentId: string, overrides?: unknown, options?: unknown): Promise<unknown>;
@@ -433,7 +433,7 @@ const CREATE_AGENT_TEST_CAPABILITIES = {
   supportsToolInvocations: false,
 } as const;
 
-class CreateAgentTestSession implements AgentSession {
+class CreateAgentTestSession implements HarnessThread {
   readonly provider = "codex";
   readonly id = "create-agent-test-session";
   readonly capabilities = CREATE_AGENT_TEST_CAPABILITIES;
@@ -488,7 +488,7 @@ class CreateAgentTestSession implements AgentSession {
   async close(): Promise<void> {}
 }
 
-class CreateAgentTestClient implements AgentClient {
+class CreateAgentTestClient implements HarnessAdapter {
   readonly provider = "codex";
   readonly capabilities = CREATE_AGENT_TEST_CAPABILITIES;
   readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
@@ -497,14 +497,14 @@ class CreateAgentTestClient implements AgentClient {
     config: AgentSessionConfig,
     _launchContext?: AgentLaunchContext,
     _options?: AgentCreateSessionOptions,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     return new CreateAgentTestSession(config);
   }
 
   async resumeSession(
     _handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     return new CreateAgentTestSession({
       provider: this.provider,
       cwd: overrides?.cwd ?? process.cwd(),
@@ -560,7 +560,7 @@ function createSessionForWorkspaceTests(
       pushTokenStore: asPushTokenStore(),
       thothHome: options.thothHome ?? "/tmp/thoth-test",
       worktreesRoot: options.worktreesRoot,
-      agentManager: asAgentManager({
+      executionService: asAgentManager({
         subscribe: () => () => {},
         listAgents: () => [],
         getAgent: () => null,
@@ -717,8 +717,8 @@ test("create_agent_request resolves cwd from daemon workspace authority", async 
       error: vi.fn(),
     };
     const agentStorage = new AgentStorage(path.join(workdir, "agents"), asSessionLogger(logger));
-    const agentManager = new AgentManager({
-      clients: { codex: new CreateAgentTestClient() },
+    const executionService = new ExecutionService({
+      adapters: { codex: new CreateAgentTestClient() },
       registry: agentStorage,
       logger: asSessionLogger(logger),
       idFactory: () => "00000000-0000-4000-8000-000000000551",
@@ -781,7 +781,7 @@ test("create_agent_request resolves cwd from daemon workspace authority", async 
         downloadTokenStore: asDownloadTokenStore(),
         pushTokenStore: asPushTokenStore(),
         thothHome,
-        agentManager,
+        executionService,
         agentStorage,
         projectRegistry,
         workspaceRegistry,
@@ -825,7 +825,7 @@ test("create_agent_request resolves cwd from daemon workspace authority", async 
       attachments: [],
     });
 
-    const [createdAgent] = agentManager.listAgents();
+    const [createdAgent] = executionService.listAgents();
     expect(createdAgent?.cwd).toBe(parent);
     await expect(
       session.buildProjectPlacementForWorkspaceId(createdAgent!.workspaceId!),
@@ -860,8 +860,8 @@ test("create_agent_request does not title an existing workspace from the agent p
       error: vi.fn(),
     };
     const agentStorage = new AgentStorage(path.join(workdir, "agents"), asSessionLogger(logger));
-    const agentManager = new AgentManager({
-      clients: { codex: new CreateAgentTestClient() },
+    const executionService = new ExecutionService({
+      adapters: { codex: new CreateAgentTestClient() },
       registry: agentStorage,
       logger: asSessionLogger(logger),
       idFactory: () => "00000000-0000-4000-8000-000000000552",
@@ -914,7 +914,7 @@ test("create_agent_request does not title an existing workspace from the agent p
         downloadTokenStore: asDownloadTokenStore(),
         pushTokenStore: asPushTokenStore(),
         thothHome,
-        agentManager,
+        executionService,
         agentStorage,
         projectRegistry,
         workspaceRegistry,
@@ -964,7 +964,7 @@ test("create_agent_request does not title an existing workspace from the agent p
     });
     await vi.runAllTimersAsync();
 
-    const [createdAgent] = agentManager.listAgents();
+    const [createdAgent] = executionService.listAgents();
     expect(createdAgent?.workspaceId).toBe("ws-existing");
     expect(generateCalls).toBe(0);
     await expect(workspaceRegistry.get("ws-existing")).resolves.toMatchObject({
@@ -1237,7 +1237,7 @@ test("archive emits an authoritative agent_update upsert for subscribed clients"
       downloadTokenStore: asDownloadTokenStore(),
       pushTokenStore: asPushTokenStore(),
       thothHome: "/tmp/thoth-test",
-      agentManager: asAgentManager({
+      executionService: asAgentManager({
         subscribe: () => () => {},
         listAgents: () => [],
         getAgent: () => null,
@@ -1601,7 +1601,7 @@ test("close_items_request archives agents and kills terminals in one batch", asy
       downloadTokenStore: asDownloadTokenStore(),
       pushTokenStore: asPushTokenStore(),
       thothHome: "/tmp/thoth-test",
-      agentManager: asAgentManager({
+      executionService: asAgentManager({
         subscribe: () => () => {},
         listAgents: () => [],
         getAgent: (agentId: string) => (agentId === "agent-1" ? { id: agentId } : null),
@@ -1768,7 +1768,7 @@ test("close_items_request archives stored agents that are not currently loaded",
       downloadTokenStore: asDownloadTokenStore(),
       pushTokenStore: asPushTokenStore(),
       thothHome: "/tmp/thoth-test",
-      agentManager: asAgentManager({
+      executionService: asAgentManager({
         subscribe: () => () => {},
         listAgents: () => [],
         getAgent: (agentId: string) => (agentId === "agent-live" ? { id: agentId } : null),
@@ -1926,7 +1926,7 @@ test("close_items_request continues after an archive failure", async () => {
       downloadTokenStore: asDownloadTokenStore(),
       pushTokenStore: asPushTokenStore(),
       thothHome: "/tmp/thoth-test",
-      agentManager: asAgentManager({
+      executionService: asAgentManager({
         subscribe: () => () => {},
         listAgents: () => [],
         getAgent: (agentId: string) =>
@@ -2503,7 +2503,7 @@ test("fetch_recent_provider_sessions_request lists importable provider sessions 
   const session = createSessionForWorkspaceTests();
 
   session.emit = (message) => emitted.push(message as { type: string; payload: unknown });
-  session.agentManager.listAgents = () => [
+  session.executionService.listAgents = () => [
     {
       provider: "codex",
       persistence: {
@@ -2583,9 +2583,9 @@ test("fetch_recent_provider_sessions_request lists importable provider sessions 
       firstPrompt: "live prompt",
     }),
   ];
-  // The real AgentManager filters by providerFilter at the fan-out level
+  // The real ExecutionService filters by providerFilter at the fan-out level
   // (Phase 1). Mirror that here so the mock matches the contract.
-  session.agentManager.listImportableSessions = async (options?: unknown) => {
+  session.executionService.listImportableSessions = async (options?: unknown) => {
     const providerFilter = (options as { providerFilter?: Set<string> } | undefined)
       ?.providerFilter;
     return providerFilter
@@ -2658,9 +2658,9 @@ test("fetch_recent_provider_sessions_request forwards providerFilter to agent ma
   let capturedOptions: { providerFilter?: Set<string>; limit?: number } | undefined;
 
   session.emit = (message) => emitted.push(message as { type: string; payload: unknown });
-  session.agentManager.listAgents = () => [];
+  session.executionService.listAgents = () => [];
   session.agentStorage.list = async () => [];
-  session.agentManager.listImportableSessions = async (options?: unknown) => {
+  session.executionService.listImportableSessions = async (options?: unknown) => {
     capturedOptions = options as { providerFilter?: Set<string>; limit?: number };
     return [];
   };
@@ -2690,7 +2690,7 @@ test("fetch_recent_provider_sessions_request reports filteredAlreadyImportedCoun
   const session = createSessionForWorkspaceTests();
 
   session.emit = (message) => emitted.push(message as { type: string; payload: unknown });
-  session.agentManager.listAgents = () => [
+  session.executionService.listAgents = () => [
     {
       provider: "codex",
       persistence: {
@@ -2701,7 +2701,7 @@ test("fetch_recent_provider_sessions_request reports filteredAlreadyImportedCoun
     },
   ];
   session.agentStorage.list = async () => [];
-  session.agentManager.listImportableSessions = async () => [
+  session.executionService.listImportableSessions = async () => [
     {
       provider: "codex",
       providerHandleId: "live-handle",
@@ -2968,7 +2968,7 @@ test("workspace update stream keeps persisted workspace visible after agents sto
       downloadTokenStore: asDownloadTokenStore(),
       pushTokenStore: asPushTokenStore(),
       thothHome: "/tmp/thoth-test",
-      agentManager: asAgentManager({
+      executionService: asAgentManager({
         subscribe: () => () => {},
         listAgents: () => [],
         getAgent: () => null,
@@ -3640,10 +3640,10 @@ test("import_agent_request registers a workspace for a never-seen cwd", async ()
     lifecycle: "idle",
     updatedAt: "2026-05-21T00:00:00.000Z",
   });
-  session.agentManager.listAgents = () => [managed];
-  session.agentManager.importProviderSession = async () => managed;
-  session.agentManager.getTimeline = () => [];
-  session.agentManager.setTitle = async () => undefined;
+  session.executionService.listAgents = () => [managed];
+  session.executionService.importProviderSession = async () => managed;
+  session.executionService.getTimeline = () => [];
+  session.executionService.setTitle = async () => undefined;
   session.agentStorage.list = async () => [];
   session.agentStorage.get = async () => null;
   session.agentUpdates.forwardLiveAgent = async () => undefined;
@@ -4505,11 +4505,11 @@ test("refresh_agent_request unarchives the owning workspace when its directory e
     lifecycle: "idle",
     updatedAt: "2026-03-10T00:00:00.000Z",
   });
-  session.agentManager.getAgent = () => managed;
+  session.executionService.getAgent = () => managed;
   session.interruptAgentIfRunning = async () => undefined;
-  session.agentManager.reloadAgentSession = async () => managed;
-  session.agentManager.hydrateTimelineFromProvider = async () => undefined;
-  session.agentManager.getTimeline = () => [];
+  session.executionService.reloadAgentSession = async () => managed;
+  session.executionService.hydrateTimelineFromProvider = async () => undefined;
+  session.executionService.getTimeline = () => [];
   session.agentUpdates.forwardLiveAgent = async () => undefined;
 
   const unarchivedWorkspaceIds: string[][] = [];
@@ -4603,11 +4603,11 @@ test("refresh_agent_request leaves the owning workspace archived when its direct
     lifecycle: "idle",
     updatedAt: "2026-03-10T00:00:00.000Z",
   });
-  session.agentManager.getAgent = () => managed;
+  session.executionService.getAgent = () => managed;
   session.interruptAgentIfRunning = async () => undefined;
-  session.agentManager.reloadAgentSession = async () => managed;
-  session.agentManager.hydrateTimelineFromProvider = async () => undefined;
-  session.agentManager.getTimeline = () => [];
+  session.executionService.reloadAgentSession = async () => managed;
+  session.executionService.hydrateTimelineFromProvider = async () => undefined;
+  session.executionService.getTimeline = () => [];
   session.agentUpdates.forwardLiveAgent = async () => undefined;
 
   await session.handleMessage({
@@ -4700,11 +4700,11 @@ test("refresh_agent_request recreates a deleted worktree directory and unarchive
     lifecycle: "idle",
     updatedAt: "2026-03-10T00:00:00.000Z",
   });
-  session.agentManager.getAgent = () => managed;
+  session.executionService.getAgent = () => managed;
   session.interruptAgentIfRunning = async () => undefined;
-  session.agentManager.reloadAgentSession = async () => managed;
-  session.agentManager.hydrateTimelineFromProvider = async () => undefined;
-  session.agentManager.getTimeline = () => [];
+  session.executionService.reloadAgentSession = async () => managed;
+  session.executionService.hydrateTimelineFromProvider = async () => undefined;
+  session.executionService.getTimeline = () => [];
   session.agentUpdates.forwardLiveAgent = async () => undefined;
 
   const unarchivedWorkspaceIds: string[][] = [];
@@ -4804,11 +4804,11 @@ test("refresh_agent_request leaves the worktree archived and surfaces a typed er
     lifecycle: "idle",
     updatedAt: "2026-03-10T00:00:00.000Z",
   });
-  session.agentManager.getAgent = () => managed;
+  session.executionService.getAgent = () => managed;
   session.interruptAgentIfRunning = async () => undefined;
-  session.agentManager.reloadAgentSession = async () => managed;
-  session.agentManager.hydrateTimelineFromProvider = async () => undefined;
-  session.agentManager.getTimeline = () => [];
+  session.executionService.reloadAgentSession = async () => managed;
+  session.executionService.hydrateTimelineFromProvider = async () => undefined;
+  session.executionService.getTimeline = () => [];
   session.agentUpdates.forwardLiveAgent = async () => undefined;
 
   await session.handleMessage({
@@ -4934,11 +4934,11 @@ test("refresh_agent_request recreates a real deleted worktree against a temp git
     lifecycle: "idle",
     updatedAt: "2026-03-10T00:00:00.000Z",
   });
-  session.agentManager.getAgent = () => managed;
+  session.executionService.getAgent = () => managed;
   session.interruptAgentIfRunning = async () => undefined;
-  session.agentManager.reloadAgentSession = async () => managed;
-  session.agentManager.hydrateTimelineFromProvider = async () => undefined;
-  session.agentManager.getTimeline = () => [];
+  session.executionService.reloadAgentSession = async () => managed;
+  session.executionService.hydrateTimelineFromProvider = async () => undefined;
+  session.executionService.getTimeline = () => [];
   session.agentUpdates.forwardLiveAgent = async () => undefined;
 
   await session.handleMessage({

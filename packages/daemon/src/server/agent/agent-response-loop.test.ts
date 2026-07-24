@@ -7,7 +7,7 @@ import {
   StructuredAgentResponseError,
   type AgentCaller,
 } from "./agent-response-loop.js";
-import type { AgentManager } from "./agent-manager.js";
+import type { ExecutionService } from "./execution-service.js";
 
 function createScriptedCaller(responses: string[]) {
   const prompts: string[] = [];
@@ -135,7 +135,7 @@ describe("generateStructuredAgentResponseWithFallback", () => {
 
   function createManager(
     availability: Array<{ provider: string; available: boolean; error: string | null }>,
-  ): AgentManager & { checkedProviders: string[] } {
+  ): ExecutionService & { checkedProviders: string[] } {
     const checkedProviders: string[] = [];
     const availabilityByProvider = new Map(availability.map((entry) => [entry.provider, entry]));
     return {
@@ -150,7 +150,7 @@ describe("generateStructuredAgentResponseWithFallback", () => {
           }
         );
       },
-    } as unknown as AgentManager & { checkedProviders: string[] };
+    } as unknown as ExecutionService & { checkedProviders: string[] };
   }
 
   it("uses the first available provider in the waterfall", async () => {

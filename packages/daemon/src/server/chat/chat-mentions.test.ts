@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import type pino from "pino";
 import type { StoredAgentRecord } from "../agent/agent-storage.js";
-import type { ManagedAgent } from "../agent/agent-manager.js";
+import type { ManagedAgent } from "../agent/execution-service.js";
 import {
   buildChatMentionNotification,
   notifyChatMentions,

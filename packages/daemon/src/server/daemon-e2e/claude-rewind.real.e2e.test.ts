@@ -225,7 +225,7 @@ describe("daemon E2E (real claude) - rewind", () => {
     }
     const logger = pino({ level: "silent" });
     const daemon = await createTestThothDaemon({
-      agentClients: createRealProviderClients(["claude"], logger),
+      harnessAdapters: createRealProviderClients(["claude"], logger),
       logger,
     });
     const client = new DaemonClient({

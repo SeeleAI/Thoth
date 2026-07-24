@@ -1,22 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  assertForegroundAuthorityTurn,
-  assertForegroundContextTurn,
-  beginForegroundTurnFence,
-  bindForegroundProviderTurn,
-  endForegroundTurnFence,
-  getActiveForegroundAuthorityTurnId,
-  isParkedForegroundProviderTurn,
-  parkForegroundTurnFence,
-  releaseParkedForegroundProviderTurn,
-  resetForegroundTurnFencesForTest,
-} from "./foreground-turn-fence.js";
+import { ToolGateway } from "./tool-gateway.js";
 
-afterEach(() => resetForegroundTurnFencesForTest());
+const gateway = new ToolGateway({
+  submitPlanExec: () => false,
+  submitReviewAssessment: () => null,
+  submitReviewVerdict: () => false,
+  reportBlocked: () => false,
+});
+
+afterEach(() => gateway.resetForTest());
 
 describe("foreground turn fence", () => {
   it("binds only an active provider turn to the current Thoth generation", () => {
-    beginForegroundTurnFence({
+    gateway.beginForegroundTurn({
       agentId: "agent-1",
       generation: "generation-2",
       kind: "thoth_clarify",
@@ -24,66 +20,66 @@ describe("foreground turn fence", () => {
     });
 
     expect(() =>
-      assertForegroundAuthorityTurn({
+      gateway.assertForegroundAuthorityTurn({
         agentId: "agent-1",
         context: { providerToolCall: { turnId: "stale-turn" } },
       }),
     ).toThrow("not bound to the active foreground generation");
 
     expect(() =>
-      assertForegroundAuthorityTurn({
+      gateway.assertForegroundAuthorityTurn({
         agentId: "agent-1",
         context: {
           providerToolCall: { turnId: "provider-turn-2", isActiveProviderTurn: true },
         },
       }),
     ).not.toThrow();
-    expect(getActiveForegroundAuthorityTurnId("agent-1")).toBe("foreground-turn-2");
+    expect(gateway.getActiveForegroundAuthorityTurnId("agent-1")).toBe("foreground-turn-2");
   });
 
   it("rejects stale provider turns after an explicit binding", () => {
-    beginForegroundTurnFence({
+    gateway.beginForegroundTurn({
       agentId: "agent-1",
       generation: "generation-2",
       kind: "thoth_clarify",
       foregroundTurnId: "foreground-turn-2",
     });
-    bindForegroundProviderTurn({
+    gateway.bindForegroundProviderTurn({
       agentId: "agent-1",
       generation: "generation-2",
       providerTurnId: "provider-turn-2",
     });
 
     expect(() =>
-      assertForegroundAuthorityTurn({
+      gateway.assertForegroundAuthorityTurn({
         agentId: "agent-1",
         context: { providerToolCall: { turnId: "provider-turn-1" } },
       }),
     ).toThrow("stale provider turn");
     expect(() =>
-      assertForegroundAuthorityTurn({
+      gateway.assertForegroundAuthorityTurn({
         agentId: "agent-1",
         context: { providerToolCall: { turnId: "provider-turn-2" } },
       }),
     ).not.toThrow();
 
-    endForegroundTurnFence({ agentId: "agent-1", generation: "generation-2" });
-    expect(getActiveForegroundAuthorityTurnId("agent-1")).toBeNull();
+    gateway.endForegroundTurn({ agentId: "agent-1", generation: "generation-2" });
+    expect(gateway.getActiveForegroundAuthorityTurnId("agent-1")).toBeNull();
   });
 
   it("keeps session-scoped tools unauthorized during a raw turn", () => {
-    beginForegroundTurnFence({
+    gateway.beginForegroundTurn({
       agentId: "agent-1",
       generation: "generation-raw",
       kind: "raw_provider",
       foregroundTurnId: "foreground-turn-raw",
     });
-    expect(getActiveForegroundAuthorityTurnId("agent-1")).toBeNull();
-    expect(() => assertForegroundAuthorityTurn({ agentId: "agent-1", context: {} })).toThrow(
-      "disabled for this raw provider turn",
-    );
+    expect(gateway.getActiveForegroundAuthorityTurnId("agent-1")).toBeNull();
     expect(() =>
-      assertForegroundContextTurn({
+      gateway.assertForegroundAuthorityTurn({ agentId: "agent-1", context: {} }),
+    ).toThrow("disabled for this raw provider turn");
+    expect(() =>
+      gateway.assertForegroundContextTurn({
         agentId: "agent-1",
         context: {
           providerToolCall: { turnId: "provider-turn-raw", isActiveProviderTurn: true },
@@ -93,56 +89,56 @@ describe("foreground turn fence", () => {
   });
 
   it("keeps an old parked provider turn fenced while a continuation becomes active", () => {
-    beginForegroundTurnFence({
+    gateway.beginForegroundTurn({
       agentId: "agent-1",
       generation: "generation-1",
       kind: "thoth_clarify",
       foregroundTurnId: "foreground-turn-1",
     });
-    bindForegroundProviderTurn({
+    gateway.bindForegroundProviderTurn({
       agentId: "agent-1",
       generation: "generation-1",
       providerTurnId: "provider-turn-1",
     });
-    parkForegroundTurnFence({ agentId: "agent-1", providerTurnId: "provider-turn-1" });
+    gateway.parkForegroundTurn({ agentId: "agent-1", providerTurnId: "provider-turn-1" });
     expect(() =>
-      assertForegroundAuthorityTurn({
+      gateway.assertForegroundAuthorityTurn({
         agentId: "agent-1",
         context: { providerToolCall: { turnId: "provider-turn-1" } },
       }),
     ).toThrow("parked provider turn");
 
-    beginForegroundTurnFence({
+    gateway.beginForegroundTurn({
       agentId: "agent-1",
       generation: "generation-1",
       kind: "thoth_clarify",
       foregroundTurnId: "foreground-turn-1",
     });
-    bindForegroundProviderTurn({
+    gateway.bindForegroundProviderTurn({
       agentId: "agent-1",
       generation: "generation-1",
       providerTurnId: "provider-turn-2",
     });
 
     expect(
-      isParkedForegroundProviderTurn({
+      gateway.isParkedProviderTurn({
         agentId: "agent-1",
         providerTurnId: "provider-turn-1",
       }),
     ).toBe(true);
     expect(
-      isParkedForegroundProviderTurn({
+      gateway.isParkedProviderTurn({
         agentId: "agent-1",
         providerTurnId: "provider-turn-2",
       }),
     ).toBe(false);
 
-    releaseParkedForegroundProviderTurn({
+    gateway.releaseParkedProviderTurn({
       agentId: "agent-1",
       providerTurnId: "provider-turn-1",
     });
     expect(
-      isParkedForegroundProviderTurn({
+      gateway.isParkedProviderTurn({
         agentId: "agent-1",
         providerTurnId: "provider-turn-1",
       }),

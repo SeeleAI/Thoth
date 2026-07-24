@@ -2,10 +2,10 @@ import type { z } from "zod";
 import type { Logger } from "pino";
 import type { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
 import type {
-  AgentManager,
+  ExecutionService,
   ManagedAgent,
   ManagedImportableProviderSession,
-} from "./agent-manager.js";
+} from "./execution-service.js";
 import type { AgentRegistry, StoredAgentRecord } from "./agent-storage.js";
 import type { AgentPersistenceHandle, AgentProvider } from "@thoth/drivers/agent-runtime";
 import { unarchiveAgentState } from "./agent-prompt.js";
@@ -42,7 +42,7 @@ export class ImportSessionsRequestError extends Error {
 
 export interface ListImportableProviderSessionsInput {
   request: FetchRecentProviderSessionsRequestMessage;
-  agentManager: Pick<AgentManager, "listAgents" | "listImportableSessions">;
+  executionService: Pick<ExecutionService, "listAgents" | "listImportableSessions">;
   agentStorage: Pick<AgentRegistry, "list">;
   providerSnapshotManager: Pick<ProviderSnapshotManager, "getProviderLabel">;
 }
@@ -55,7 +55,7 @@ export interface ListImportableProviderSessionsResult {
 export interface ImportProviderSessionInput {
   request: NormalizedImportAgentRequest;
   workspaceId: string;
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   logger: Logger;
 }
@@ -90,13 +90,16 @@ export function normalizeImportAgentRequest(
 export async function listImportableProviderSessions(
   input: ListImportableProviderSessionsInput,
 ): Promise<ListImportableProviderSessionsResult> {
-  const { request, agentManager, agentStorage, providerSnapshotManager } = input;
+  const { request, executionService, agentStorage, providerSnapshotManager } = input;
   const limit = request.limit ?? 20;
   const sinceTimestamp = parseRecentProviderSessionsSince(request.since);
   const providerFilter = request.providers ? new Set(request.providers) : undefined;
-  const importedHandles = await collectImportedProviderSessionHandles(agentManager, agentStorage);
+  const importedHandles = await collectImportedProviderSessionHandles(
+    executionService,
+    agentStorage,
+  );
 
-  const sessions = await agentManager.listImportableSessions({
+  const sessions = await executionService.listImportableSessions({
     limit,
     providerFilter,
     cwd: request.cwd,
@@ -144,25 +147,25 @@ export async function importProviderSession(
   }
 
   const handle = buildImportPersistenceHandle({ provider, providerHandleId, cwd });
-  await unarchiveAgentByHandle(input.agentStorage, input.agentManager, handle);
-  const snapshot = await input.agentManager.importProviderSession({
+  await unarchiveAgentByHandle(input.agentStorage, input.executionService, handle);
+  const snapshot = await input.executionService.importProviderSession({
     provider,
     providerHandleId,
     cwd,
     workspaceId: input.workspaceId,
     labels,
   });
-  await unarchiveAgentState(input.agentStorage, input.agentManager, snapshot.id);
+  await unarchiveAgentState(input.agentStorage, input.executionService, snapshot.id);
 
   return {
     snapshot,
-    timelineSize: input.agentManager.getTimeline(snapshot.id).length,
+    timelineSize: input.executionService.getTimeline(snapshot.id).length,
   };
 }
 
 async function unarchiveAgentByHandle(
   agentStorage: AgentRegistry,
-  agentManager: AgentManager,
+  executionService: ExecutionService,
   handle: AgentPersistenceHandle,
 ): Promise<void> {
   const records = await agentStorage.list();
@@ -175,7 +178,7 @@ async function unarchiveAgentByHandle(
   if (!matched) {
     return;
   }
-  await unarchiveAgentState(agentStorage, agentManager, matched.id);
+  await unarchiveAgentState(agentStorage, executionService, matched.id);
 }
 
 function parseRecentProviderSessionsSince(since: string | undefined): number | null {
@@ -206,12 +209,12 @@ function buildImportPersistenceHandle(input: {
 }
 
 async function collectImportedProviderSessionHandles(
-  agentManager: Pick<AgentManager, "listAgents">,
+  executionService: Pick<ExecutionService, "listAgents">,
   agentStorage: Pick<AgentRegistry, "list">,
 ): Promise<Set<string>> {
   const handles = new Set<string>();
 
-  for (const agent of agentManager.listAgents()) {
+  for (const agent of executionService.listAgents()) {
     collectProviderSessionHandleKeys(handles, agent.provider, agent.persistence);
   }
 

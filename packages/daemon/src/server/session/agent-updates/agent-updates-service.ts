@@ -5,7 +5,7 @@ import type {
   SessionInboundMessage,
   SessionOutboundMessage,
 } from "../../messages.js";
-import type { ManagedAgent } from "../../agent/agent-manager.js";
+import type { ManagedAgent } from "../../agent/execution-service.js";
 import type { StoredAgentRecord } from "../../agent/agent-storage.js";
 import { resolveEffectiveThinkingOptionId } from "../../agent/agent-projections.js";
 

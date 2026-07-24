@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import pino from "pino";
 
-import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import { ClaudeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon, type TestThothDaemon } from "../test-utils/thoth-daemon.js";
 
@@ -102,8 +102,8 @@ describe("daemon E2E - refresh rehydrates timeline from on-disk session", () => 
   test("refresh picks up entries appended externally and advances the epoch", async () => {
     const logger = pino({ level: "silent" });
     daemon = await createTestThothDaemon({
-      agentClients: {
-        claude: new ClaudeAgentClient({
+      harnessAdapters: {
+        claude: new ClaudeHarnessAdapter({
           logger,
           resolveBinary: async () => "/test/claude/bin",
         }),

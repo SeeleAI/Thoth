@@ -1,4 +1,4 @@
-import type { AgentTimelineItem, ToolCallDetail } from "./agent-sdk-types.js";
+import type { AgentTimelineItem, ToolCallDetail } from "./harness-contract.js";
 import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
 
 export type TimelineProjectionMode = "canonical" | "projected";
@@ -476,7 +476,7 @@ export function selectProjectedTimelinePage(input: {
 /**
  * Apply a projected-count limit to a flat AgentTimelineItem[] without seq metadata.
  * Used by callers that only have items in hand (e.g. MCP tools reading
- * `agentManager.getTimeline`). Index position is treated as canonical seq.
+ * `executionService.getTimeline`). Index position is treated as canonical seq.
  */
 export interface ProjectedItemSelection {
   items: AgentTimelineItem[];

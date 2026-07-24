@@ -7,7 +7,7 @@ import { createTestLogger } from "../../../test-utils/test-logger.js";
 import type { Event as OpenCodeEvent } from "@opencode-ai/sdk/v2/client";
 import {
   __openCodeInternals,
-  OpenCodeAgentClient,
+  OpenCodeHarnessAdapter,
   translateOpenCodeEvent,
 } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
 import { streamSession } from "./test-utils/session-stream-adapter.js";
@@ -172,7 +172,7 @@ function manualCompactEvents({
   ];
 }
 
-describe("OpenCodeAgentClient adapter smoke tests", () => {
+describe("OpenCodeHarnessAdapter adapter smoke tests", () => {
   const logger = createTestLogger();
   const buildConfig = (cwd: string): AgentSessionConfig => ({
     provider: "opencode",
@@ -184,7 +184,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     const cwd = tmpCwd();
     const runtime = new TestOpenCodeHarness();
     runtime.enqueueClient(new TestOpenCodeClient());
-    const client = new OpenCodeAgentClient(logger, undefined, {
+    const client = new OpenCodeHarnessAdapter(logger, undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -204,7 +204,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     const openCodeClient = new TestOpenCodeClient();
     openCodeClient.sessionPromptAsyncEvents = assistantTurnEvents();
     runtime.enqueueClient(openCodeClient);
-    const client = new OpenCodeAgentClient(logger, undefined, {
+    const client = new OpenCodeHarnessAdapter(logger, undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -240,7 +240,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     const openCodeClient = new TestOpenCodeClient();
     openCodeClient.sessionSummarizeEvents = manualCompactEvents();
     runtime.enqueueClient(openCodeClient);
-    const client = new OpenCodeAgentClient(logger, undefined, {
+    const client = new OpenCodeHarnessAdapter(logger, undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -307,7 +307,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     runtime.enqueueClient(openCodeClient);
     const thothHome = tmpCwd();
     const runtimeDir = path.join(thothHome, "provider-runtime");
-    const client = new OpenCodeAgentClient(logger, undefined, {
+    const client = new OpenCodeHarnessAdapter(logger, undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
       resolveRuntimeDir: () => runtimeDir,
@@ -350,7 +350,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     const thothHome = tmpCwd();
     const runtimeDir = path.join(thothHome, "provider-runtime");
     writeFileSync(runtimeDir, "not a directory");
-    const client = new OpenCodeAgentClient(logger, undefined, {
+    const client = new OpenCodeHarnessAdapter(logger, undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
       resolveRuntimeDir: () => runtimeDir,
@@ -365,7 +365,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
 
   test("fetchCatalog releases the acquired server when the runtime directory cannot be resolved", async () => {
     const runtime = new TestOpenCodeHarness();
-    const client = new OpenCodeAgentClient(logger, undefined, {
+    const client = new OpenCodeHarnessAdapter(logger, undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
       resolveRuntimeDir: () => {
@@ -415,7 +415,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
       runtime.enqueueClient(openCodeClient);
     }
 
-    const client = new OpenCodeAgentClient(logger, undefined, {
+    const client = new OpenCodeHarnessAdapter(logger, undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -436,7 +436,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     const cwd = tmpCwd();
     const runtime = new TestOpenCodeHarness();
     runtime.enqueueClient(new TestOpenCodeClient());
-    const client = new OpenCodeAgentClient(logger, undefined, {
+    const client = new OpenCodeHarnessAdapter(logger, undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -459,7 +459,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
       text: "Inspect the implementation and verify it.",
     });
     runtime.enqueueClient(openCodeClient);
-    const client = new OpenCodeAgentClient(logger, undefined, {
+    const client = new OpenCodeHarnessAdapter(logger, undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -516,7 +516,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     };
     runtime.enqueueClient(openCodeClient);
 
-    const client = new OpenCodeAgentClient(logger, undefined, {
+    const client = new OpenCodeHarnessAdapter(logger, undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -579,7 +579,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     ];
     runtime.enqueueClient(planOpenCodeClient);
     runtime.enqueueClient(buildOpenCodeClient);
-    const client = new OpenCodeAgentClient(logger, undefined, {
+    const client = new OpenCodeHarnessAdapter(logger, undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -979,7 +979,7 @@ describe("OpenCode adapter startTurn error handling", () => {
     const openCodeClient = new TestOpenCodeClient();
     runtime.enqueueClient(openCodeClient);
     const cwd = tmpCwd();
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -1030,7 +1030,7 @@ describe("OpenCode adapter startTurn error handling", () => {
     };
     runtime.enqueueClient(openCodeClient);
     const cwd = tmpCwd();
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -1120,7 +1120,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       },
     } as never;
 
-    const session = new __openCodeInternals.OpenCodeAgentSession(
+    const session = new __openCodeInternals.OpenCodeHarnessThread(
       { provider: "opencode", cwd: "/tmp/test" },
       fakeClient,
       "ses_unit_test",
@@ -1220,7 +1220,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       },
     } as never;
 
-    const session = new __openCodeInternals.OpenCodeAgentSession(
+    const session = new __openCodeInternals.OpenCodeHarnessThread(
       { provider: "opencode", cwd: "/tmp/test" },
       fakeClient,
       "ses_unit_test",
@@ -1288,7 +1288,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       },
     } as never;
 
-    const session = new __openCodeInternals.OpenCodeAgentSession(
+    const session = new __openCodeInternals.OpenCodeHarnessThread(
       { provider: "opencode", cwd: "/tmp/test" },
       fakeClient,
       "ses_unit_test",
@@ -1327,7 +1327,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       },
     } as never;
 
-    const session = new __openCodeInternals.OpenCodeAgentSession(
+    const session = new __openCodeInternals.OpenCodeHarnessThread(
       { provider: "opencode", cwd: "/tmp/test" },
       fakeClient,
       "ses_unit_test",
@@ -1354,7 +1354,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       },
     } as never;
 
-    const session = new __openCodeInternals.OpenCodeAgentSession(
+    const session = new __openCodeInternals.OpenCodeHarnessThread(
       { provider: "opencode", cwd: "/tmp/test" },
       fakeClient,
       "ses_unit_test",
@@ -1424,7 +1424,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       },
     } as never;
 
-    const session = new __openCodeInternals.OpenCodeAgentSession(
+    const session = new __openCodeInternals.OpenCodeHarnessThread(
       { provider: "opencode", cwd: "/tmp/test" },
       fakeClient,
       "ses_unit_test",
@@ -1493,7 +1493,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       },
     } as never;
 
-    const session = new __openCodeInternals.OpenCodeAgentSession(
+    const session = new __openCodeInternals.OpenCodeHarnessThread(
       { provider: "opencode", cwd: "/tmp/test" },
       fakeClient,
       "ses_unit_test",
@@ -1602,7 +1602,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       },
     } as never;
 
-    const session = new __openCodeInternals.OpenCodeAgentSession(
+    const session = new __openCodeInternals.OpenCodeHarnessThread(
       { provider: "opencode", cwd: "/tmp/repo" },
       fakeClient,
       "ses_unit_test",
@@ -1711,7 +1711,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       },
     } as never;
 
-    const session = new __openCodeInternals.OpenCodeAgentSession(
+    const session = new __openCodeInternals.OpenCodeHarnessThread(
       { provider: "opencode", cwd: "/tmp/test" },
       fakeClient,
       "ses_unit_test",
@@ -1755,7 +1755,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       },
     } as never;
 
-    const session = new __openCodeInternals.OpenCodeAgentSession(
+    const session = new __openCodeInternals.OpenCodeHarnessThread(
       { provider: "opencode", cwd: "/tmp/test" },
       fakeClient,
       "ses_unit_test",
@@ -1783,13 +1783,13 @@ describe("OpenCode adapter startTurn error handling", () => {
   });
 });
 
-describe("OpenCodeAgentClient env", () => {
+describe("OpenCodeHarnessAdapter env", () => {
   test("passes launch-context env to env-specific server acquisition", async () => {
     const runtime = new TestOpenCodeHarness();
     const openCodeClient = new TestOpenCodeClient();
     runtime.enqueueClient(openCodeClient);
     const cwd = tmpCwd();
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -2068,7 +2068,7 @@ describe("OpenCode persisted sessions", () => {
     };
     runtime.enqueueClient(openCodeClient);
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -2130,7 +2130,7 @@ describe("OpenCode persisted sessions", () => {
     runtime.enqueueClient(metadataClient);
     runtime.enqueueClient(resumedClient);
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -2193,7 +2193,7 @@ describe("OpenCode persisted sessions", () => {
     };
     runtime.enqueueClient(openCodeClient);
 
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });

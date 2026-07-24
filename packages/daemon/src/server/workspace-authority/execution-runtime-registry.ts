@@ -1,17 +1,12 @@
-import type {
-  HarnessAdapter,
-  HarnessExecutionDescriptor,
-  HarnessThreadDescriptor,
-} from "@thoth/drivers/harness";
+import type { HarnessExecutionDescriptor } from "@thoth/drivers/harness";
 import type { ExecutionProjection } from "@thoth/protocol/task-authority";
 
 interface ActiveExecutionRuntime {
   workspaceId: string;
   taskId: string;
   generation: string;
-  adapter: HarnessAdapter;
-  thread: HarnessThreadDescriptor;
   execution: HarnessExecutionDescriptor;
+  interrupt: () => Promise<void>;
 }
 
 /**
@@ -44,7 +39,7 @@ export class ExecutionRuntimeRegistry {
       return "orphaned";
     }
     try {
-      await runtime.adapter.interruptExecution(runtime.execution);
+      await runtime.interrupt();
       this.active.delete(input.execution.id);
       return "confirmed";
     } catch {

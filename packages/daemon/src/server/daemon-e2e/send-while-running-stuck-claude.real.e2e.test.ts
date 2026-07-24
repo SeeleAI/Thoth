@@ -34,7 +34,7 @@ describe("daemon E2E (real claude) - send while running recovery", () => {
     const logger = pino({ level: "silent" });
     const cwd = tmpCwd();
     const daemon = await createTestThothDaemon({
-      agentClients: createRealProviderClients(["claude"], logger),
+      harnessAdapters: createRealProviderClients(["claude"], logger),
       logger,
     });
 

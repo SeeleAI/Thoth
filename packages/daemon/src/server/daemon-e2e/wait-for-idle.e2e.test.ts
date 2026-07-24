@@ -142,7 +142,7 @@ test("waitForFinish resolves first idle edge even if a new run starts immediatel
   let sawRunning = false;
   let spawnedSecondRun = false;
   let secondRunDrain: Promise<void> | null = null;
-  const unsubscribe = ctx.daemon.daemon.agentManager.subscribe(
+  const unsubscribe = ctx.daemon.daemon.executionService.subscribe(
     (event) => {
       if (event.type !== "agent_state" || event.agent.id !== agent.id) {
         return;

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type {
   AgentCapabilityFlags,
-  AgentClient,
+  HarnessAdapter,
   AgentFeature,
   AgentLaunchContext,
   AgentMode,
@@ -16,7 +16,7 @@ import type {
   AgentRunOptions,
   AgentRunResult,
   AgentRuntimeInfo,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   AgentStreamEvent,
   AgentTimelineItem,
@@ -27,7 +27,7 @@ import type {
   ProviderCatalog,
   ToolCallDetail,
   ToolCallTimelineItem,
-} from "../agent-sdk-types.js";
+} from "../harness-contract.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import { getAgentProviderDefinition } from "@thoth/protocol/provider-manifest";
 import { NO_HARNESS_CAPABILITIES } from "@thoth/drivers/harness";
@@ -501,7 +501,7 @@ function createToolCall(input: {
   };
 }
 
-export class MockLoadTestAgentClient implements AgentClient {
+export class MockHarnessAdapter implements HarnessAdapter {
   readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
   readonly provider: AgentProvider = MOCK_LOAD_TEST_PROVIDER_ID;
   readonly capabilities = CAPABILITIES;
@@ -511,8 +511,8 @@ export class MockLoadTestAgentClient implements AgentClient {
   async createSession(
     config: AgentSessionConfig,
     _launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
-    return new MockLoadTestAgentSession({
+  ): Promise<HarnessThread> {
+    return new MockHarnessThread({
       config,
       sessionId: randomUUID(),
       logger: this.logger,
@@ -523,9 +523,9 @@ export class MockLoadTestAgentClient implements AgentClient {
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
     _launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const metadata = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
-    return new MockLoadTestAgentSession({
+    return new MockHarnessThread({
       config: {
         cwd: metadata.cwd ?? overrides?.cwd ?? process.cwd(),
         ...metadata,
@@ -568,7 +568,7 @@ export class MockLoadTestAgentClient implements AgentClient {
   }
 }
 
-export class MockLoadTestAgentSession implements AgentSession {
+export class MockHarnessThread implements HarnessThread {
   readonly provider: AgentProvider = MOCK_LOAD_TEST_PROVIDER_ID;
   readonly capabilities = CAPABILITIES;
   readonly features: AgentFeature[] = [];

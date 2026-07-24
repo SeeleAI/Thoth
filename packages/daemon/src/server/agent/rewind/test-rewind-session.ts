@@ -5,7 +5,7 @@ import type {
   AgentPersistenceHandle,
   AgentProvider,
   AgentRunResult,
-  AgentSession,
+  HarnessThread,
   AgentStreamEvent,
   AgentTimelineItem,
 } from "@thoth/drivers/agent-runtime";
@@ -27,7 +27,7 @@ export interface RecordedRewind {
   messageId: string;
 }
 
-export class FakeRewindSession implements AgentSession {
+export class FakeRewindSession implements HarnessThread {
   readonly provider: AgentProvider = "claude";
   readonly id = "fake-rewind-session";
   readonly capabilities = REWIND_TEST_CAPABILITIES;

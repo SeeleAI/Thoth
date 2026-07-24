@@ -10,7 +10,7 @@ import { once } from "node:events";
 import pino from "pino";
 import { describe, expect, test } from "vitest";
 
-import { CodexAppServerAgentClient } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
+import { CodexHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
 import { createMessageCollector } from "../test-utils/message-collector.js";
 import { createTestThothDaemon } from "../test-utils/thoth-daemon.js";
 import { DaemonClient } from "../test-utils/daemon-client.js";
@@ -270,8 +270,8 @@ async function runScenario(modeId: "auto" | "auto-review") {
   );
   const { logger, records } = createTraceLogger();
   const daemon = await createTestThothDaemon({
-    agentClients: {
-      codex: new CodexAppServerAgentClient(logger, {
+    harnessAdapters: {
+      codex: new CodexHarnessAdapter(logger, {
         env: {
           CODEX_HOME: codexHome,
         },

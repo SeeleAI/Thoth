@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
-import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
+import { OpenCodeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
 import {
   idleEvent,
   TestOpenCodeClient,
@@ -35,7 +35,7 @@ function toolPermissionEvent(): unknown {
 describe("OpenCode permission actions", () => {
   test("allow always sends OpenCode's always reply", async () => {
     const { openCodeClient, runtime } = mockOpenCodeClient([toolPermissionEvent(), idleEvent()]);
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
@@ -66,7 +66,7 @@ describe("OpenCode permission actions", () => {
 
   test("plain allow keeps the backward-compatible once reply", async () => {
     const { openCodeClient, runtime } = mockOpenCodeClient([toolPermissionEvent(), idleEvent()]);
-    const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
       serverManager: runtime,
       createClient: runtime.createClient,
     });

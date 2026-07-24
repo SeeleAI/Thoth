@@ -11,7 +11,7 @@ import { z } from "zod";
 
 import type {
   AgentLaunchContext,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   AgentSlashCommand,
   AgentStreamEvent,
@@ -19,8 +19,8 @@ import type {
 import type { ThothToolCatalog } from "@thoth/drivers/agent-runtime";
 import {
   buildCodexAppServerEnv,
-  CodexAppServerAgentClient,
-  CodexAppServerAgentSession,
+  CodexHarnessAdapter,
+  CodexHarnessThread,
   codexAppServerTurnInputFromPrompt,
   listCodexSkills,
   mapCodexPatchNotificationToToolCall,
@@ -64,7 +64,7 @@ interface CodexClientLike {
   request: (method: string, ...rest: unknown[]) => Promise<unknown>;
 }
 
-type CodexTestSession = AgentSession & {
+type CodexTestSession = HarnessThread & {
   connected: boolean;
   currentThreadId: string | null;
   activeForegroundTurnId: string | null;
@@ -89,7 +89,7 @@ function createSession(
   configOverrides: Partial<AgentSessionConfig> = {},
   options: { goalsEnabled?: boolean; autoReviewEnabled?: boolean } = {},
 ): CodexTestSession {
-  const session = new CodexAppServerAgentSession(
+  const session = new CodexHarnessThread(
     createConfig(configOverrides),
     null,
     createTestLogger(),
@@ -272,7 +272,8 @@ process.stdin.on("data", (chunk) => {
       },
     },
   });
-  const session = await registry[providerId].createClient(createTestLogger()).createSession({
+  const adapter = await registry[providerId].loadAdapter(createTestLogger());
+  const session = await adapter.createSession({
     provider: providerId,
     cwd: "/workspace/project",
     modeId: "auto",
@@ -342,7 +343,7 @@ process.stdin.on("data", (chunk) => {
 `,
   );
 
-  const client = new CodexAppServerAgentClient(createTestLogger(), {
+  const client = new CodexHarnessAdapter(createTestLogger(), {
     command: { mode: "replace", argv: [process.execPath, fakeCodexPath] },
   });
   const session = await client.createSession(createConfig());
@@ -359,7 +360,7 @@ describe("Codex app-server provider", () => {
     const appServer = createFakeCodexAppServer({
       "model/list": () => ({ data: [{ id: "gpt-5.4", isDefault: true }] }),
     });
-    const provider = new CodexAppServerAgentClient(createTestLogger());
+    const provider = new CodexHarnessAdapter(createTestLogger());
     const launchEnvironments: Array<Record<string, string> | undefined> = [];
     castInternals<{
       spawnAppServer: (
@@ -520,7 +521,7 @@ describe("Codex app-server provider", () => {
       },
     };
 
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       createConfig({ thinkingOptionId: "medium" }),
       null,
       createTestLogger(),
@@ -551,7 +552,7 @@ describe("Codex app-server provider", () => {
       },
     };
 
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       createConfig({ thinkingOptionId: "medium" }),
       null,
       createTestLogger(),
@@ -579,7 +580,7 @@ describe("Codex app-server provider", () => {
         return null;
       },
     };
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       createConfig({ thinkingOptionId: "medium" }),
       null,
       createTestLogger(),
@@ -642,7 +643,7 @@ describe("Codex app-server provider", () => {
         return null;
       },
     };
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       createConfig({ thinkingOptionId: "medium" }),
       { sessionId: "persisted-tool-thread" },
       createTestLogger(),
@@ -678,7 +679,7 @@ describe("Codex app-server provider", () => {
         return null;
       },
     };
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       createConfig({
         thinkingOptionId: "medium",
         extra: {
@@ -724,7 +725,7 @@ describe("Codex app-server provider", () => {
         return null;
       },
     };
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       createConfig({
         thinkingOptionId: "medium",
         extra: { thothRuntimeTools: { enabled: true, scope: "clarify_audit" } },
@@ -764,7 +765,7 @@ describe("Codex app-server provider", () => {
         return null;
       },
     };
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       createConfig({
         thinkingOptionId: "medium",
         extra: { thothRuntimeTools: { enabled: true, scope: "contract_audit" } },
@@ -798,7 +799,7 @@ describe("Codex app-server provider", () => {
       text: `handled ${name} ${JSON.stringify(args)}`,
     }));
     const session = createSession() as CodexTestSession;
-    const withTools = new CodexAppServerAgentSession(
+    const withTools = new CodexHarnessThread(
       createConfig({ thinkingOptionId: "medium" }),
       null,
       createTestLogger(),
@@ -881,7 +882,7 @@ describe("Codex app-server provider", () => {
       "collaborationMode/list": () => ({ data: [] }),
       "skills/list": () => ({ data: [] }),
     });
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
@@ -939,7 +940,7 @@ describe("Codex app-server provider", () => {
       "collaborationMode/list": () => ({ data: [] }),
       "skills/list": () => ({ data: [] }),
     });
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
@@ -968,7 +969,7 @@ describe("Codex app-server provider", () => {
         return { thread: { id: "native-thread-id" } };
       },
     });
-    const provider = new CodexAppServerAgentClient(createTestLogger());
+    const provider = new CodexHarnessAdapter(createTestLogger());
     castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
       provider,
     ).spawnAppServer = async () => appServer.child;
@@ -993,7 +994,7 @@ describe("Codex app-server provider", () => {
         return { thread: { id: "persisted-thread-id" } };
       },
     });
-    const provider = new CodexAppServerAgentClient(createTestLogger());
+    const provider = new CodexHarnessAdapter(createTestLogger());
     castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
       provider,
     ).spawnAppServer = async () => appServer.child;
@@ -1025,7 +1026,7 @@ describe("Codex app-server provider", () => {
         return { thread: { id: "active-thread-id", turns: [] } };
       },
     });
-    const provider = new CodexAppServerAgentClient(createTestLogger());
+    const provider = new CodexHarnessAdapter(createTestLogger());
     castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
       provider,
     ).spawnAppServer = async () => appServer.child;
@@ -1058,7 +1059,7 @@ describe("Codex app-server provider", () => {
         return Promise.reject(new Error("thread not found"));
       },
     });
-    const provider = new CodexAppServerAgentClient(createTestLogger());
+    const provider = new CodexHarnessAdapter(createTestLogger());
     castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
       provider,
     ).spawnAppServer = async () => appServer.child;
@@ -1079,7 +1080,7 @@ describe("Codex app-server provider", () => {
 
   test("rewinds the conversation to a freshly emitted Codex user message id", async () => {
     const appServer = createFakeCodexAppServer();
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
@@ -1180,7 +1181,7 @@ describe("Codex app-server provider", () => {
         };
       },
     });
-    const provider = new CodexAppServerAgentClient(createTestLogger());
+    const provider = new CodexHarnessAdapter(createTestLogger());
     castInternals<{ goalsEnabledPromise: Promise<boolean> | null }>(provider).goalsEnabledPromise =
       Promise.resolve(false);
     castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
@@ -1258,7 +1259,7 @@ describe("Codex app-server provider", () => {
         };
       },
     });
-    const provider = new CodexAppServerAgentClient(createTestLogger());
+    const provider = new CodexHarnessAdapter(createTestLogger());
     castInternals<{ goalsEnabledPromise: Promise<boolean> | null }>(provider).goalsEnabledPromise =
       Promise.resolve(false);
     castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
@@ -3196,7 +3197,7 @@ describe("Codex app-server provider", () => {
       fast_mode: true,
     });
     // The session returns the follow-up prompt instead of calling startTurn directly.
-    // The caller (session/agent-manager) is responsible for sending it through streamAgent.
+    // The caller (session/ExecutionService) is responsible for sending it through streamAgent.
     expect(result).toBeDefined();
     expect(result!.followUpPrompt).toEqual(
       expect.stringContaining("The user approved the plan. Implement it now."),
@@ -3353,7 +3354,7 @@ describe("Codex importable sessions", () => {
       dispose: async () => {},
     };
 
-    const provider = new CodexAppServerAgentClient(createTestLogger(), undefined, {
+    const provider = new CodexHarnessAdapter(createTestLogger(), undefined, {
       _createCodexClient: () => fakeClient,
     });
     castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(

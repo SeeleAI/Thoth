@@ -16,7 +16,7 @@ import {
 import { Session } from "./session.js";
 import { DownloadTokenStore } from "./file-download/token-store.js";
 import { StructuredAgentFallbackError } from "./agent/agent-response-loop.js";
-import type { AgentManagerEvent, ManagedAgent } from "./agent/agent-manager.js";
+import type { ExecutionServiceEvent, ManagedAgent } from "./agent/execution-service.js";
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import type { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import type { SessionOptions } from "./session.js";
@@ -219,14 +219,14 @@ describe("internal Task execution visibility", () => {
     ]);
     const subscriptions: Array<{
       agentId: string | null;
-      emit: (event: AgentManagerEvent) => void;
+      emit: (event: ExecutionServiceEvent) => void;
     }> = [];
     const messages: SessionOutboundMessage[] = [];
     const session = createSessionForTest({
       messages,
-      agentManager: {
+      executionService: {
         subscribe: vi.fn(
-          (callback: (event: AgentManagerEvent) => void, options?: { agentId?: string }) => {
+          (callback: (event: ExecutionServiceEvent) => void, options?: { agentId?: string }) => {
             subscriptions.push({ agentId: options?.agentId ?? null, emit: callback });
             return vi.fn();
           },
@@ -317,7 +317,7 @@ vi.mock("./worktree-bootstrap.js", async (importOriginal) => {
 });
 
 interface SessionForTestOptions {
-  agentManager?: { [K in keyof SessionOptions["agentManager"]]?: unknown };
+  executionService?: { [K in keyof SessionOptions["executionService"]]?: unknown };
   agentStorage?: { [K in keyof SessionOptions["agentStorage"]]?: unknown };
   github?: Partial<GitHubService>;
   checkoutDiffManager?: { scheduleRefreshForCwd: ReturnType<typeof vi.fn> };
@@ -399,10 +399,10 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     downloadTokenStore: options.downloadTokenStore ?? asDownloadTokenStore(),
     pushTokenStore: asPushTokenStore(),
     thothHome,
-    agentManager: asAgentManager({
+    executionService: asAgentManager({
       listAgents: vi.fn(() => []),
       subscribe: vi.fn(() => () => {}),
-      ...options.agentManager,
+      ...options.executionService,
     }),
     agentStorage: asAgentStorage({
       list: vi.fn().mockResolvedValue([]),
@@ -818,7 +818,7 @@ describe("agent detach RPC", () => {
 
     const session = createSessionForTest({
       messages,
-      agentManager: {
+      executionService: {
         getAgent,
         detachAgent,
       },
@@ -1143,7 +1143,7 @@ describe("daemon status + pairing RPC", () => {
       serverId: "srv-test",
       daemonVersion: "9.9.9",
       daemonRuntimeConfig: { listen: "127.0.0.1:6767", relay: null },
-      agentManager: {
+      executionService: {
         listProviderAvailability: vi.fn().mockResolvedValue([
           { provider: "claude", available: true },
           { provider: "codex", available: false, error: "boom" },
@@ -1182,7 +1182,7 @@ describe("daemon status + pairing RPC", () => {
       serverId: "srv-test",
       daemonVersion: "9.9.9",
       daemonRuntimeConfig: { listen: "127.0.0.1:6767", relay: null },
-      agentManager: {
+      executionService: {
         listProviderAvailability: vi.fn().mockRejectedValue(new Error("provider listing failed")),
       },
     });
@@ -1353,7 +1353,7 @@ describe("session provider permission authority", () => {
       thothHome: root,
       workspaceAuthorityManager: authority,
       workspaceTaskCoordinator: coordinator,
-      agentManager: {
+      executionService: {
         getAgent: vi.fn(() => ({
           workspaceId,
           pendingPermissions: new Map([[requestId, displayed]]),
@@ -4467,7 +4467,7 @@ describe("agent config setters", () => {
     const notice = { type: "info", message: "Switched to plan mode" } as const;
     const session = createSessionForTest({
       messages,
-      agentManager: { setAgentMode: vi.fn().mockResolvedValue(notice) },
+      executionService: { setAgentMode: vi.fn().mockResolvedValue(notice) },
     });
 
     await session.handleMessage({
@@ -4495,7 +4495,7 @@ describe("agent config setters", () => {
     const messages: SessionOutboundMessage[] = [];
     const session = createSessionForTest({
       messages,
-      agentManager: { setAgentMode: vi.fn().mockRejectedValue(new Error("mode boom")) },
+      executionService: { setAgentMode: vi.fn().mockRejectedValue(new Error("mode boom")) },
     });
 
     await session.handleMessage({
@@ -4530,7 +4530,7 @@ describe("agent config setters", () => {
     const messages: SessionOutboundMessage[] = [];
     const session = createSessionForTest({
       messages,
-      agentManager: { setAgentModel: vi.fn().mockResolvedValue(undefined) },
+      executionService: { setAgentModel: vi.fn().mockResolvedValue(undefined) },
     });
 
     await session.handleMessage({
@@ -4552,7 +4552,7 @@ describe("agent config setters", () => {
     const messages: SessionOutboundMessage[] = [];
     const session = createSessionForTest({
       messages,
-      agentManager: { setAgentModel: vi.fn().mockRejectedValue(new Error("model boom")) },
+      executionService: { setAgentModel: vi.fn().mockRejectedValue(new Error("model boom")) },
     });
 
     await session.handleMessage({
@@ -4587,7 +4587,7 @@ describe("agent config setters", () => {
     const messages: SessionOutboundMessage[] = [];
     const session = createSessionForTest({
       messages,
-      agentManager: { setAgentFeature: vi.fn().mockResolvedValue(undefined) },
+      executionService: { setAgentFeature: vi.fn().mockResolvedValue(undefined) },
     });
 
     await session.handleMessage({
@@ -4610,7 +4610,7 @@ describe("agent config setters", () => {
     const messages: SessionOutboundMessage[] = [];
     const session = createSessionForTest({
       messages,
-      agentManager: { setAgentFeature: vi.fn().mockRejectedValue(new Error("feature boom")) },
+      executionService: { setAgentFeature: vi.fn().mockRejectedValue(new Error("feature boom")) },
     });
 
     await session.handleMessage({
@@ -4647,7 +4647,7 @@ describe("agent config setters", () => {
     const notice = { type: "warning", message: "Thinking budget reduced" } as const;
     const session = createSessionForTest({
       messages,
-      agentManager: { setAgentThinkingOption: vi.fn().mockResolvedValue(notice) },
+      executionService: { setAgentThinkingOption: vi.fn().mockResolvedValue(notice) },
     });
 
     await session.handleMessage({
@@ -4675,7 +4675,7 @@ describe("agent config setters", () => {
     const messages: SessionOutboundMessage[] = [];
     const session = createSessionForTest({
       messages,
-      agentManager: {
+      executionService: {
         setAgentThinkingOption: vi.fn().mockRejectedValue(new Error("thinking boom")),
       },
     });

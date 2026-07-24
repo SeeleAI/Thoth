@@ -32,12 +32,22 @@ const phases = [
       "test",
       "--workspace=@thoth/drivers",
       "--",
-      "src/harness/hosted-adapter.test.ts",
       "src/server/agent/providers/claude/agent.redesign.test.ts",
       "src/server/agent/providers/opencode-agent.test.ts",
       "src/server/agent/providers/acp-agent.test.ts",
       "src/server/agent/providers/pi/agent.test.ts",
       "src/server/agent/providers/codex-app-server-agent.test.ts",
+    ],
+  },
+  {
+    name: "ExecutionService Harness conformance",
+    command: npm,
+    args: [
+      "run",
+      "test:unit",
+      "--workspace=@thoth/daemon",
+      "--",
+      "src/server/agent/execution-service-harness.test.ts",
     ],
   },
   {

@@ -1,9 +1,9 @@
 import type { Logger } from "pino";
 import { z } from "zod";
 
-import type { AgentCapabilityFlags } from "../agent-sdk-types.js";
+import type { AgentCapabilityFlags } from "../harness-contract.js";
 import { checkProviderLaunchAvailable, resolveProviderLaunch } from "../provider-launch-config.js";
-import { ACPAgentClient, DEFAULT_ACP_CAPABILITIES } from "./acp-agent.js";
+import { ACPHarnessAdapter, DEFAULT_ACP_CAPABILITIES } from "./acp-agent.js";
 import {
   buildBinaryDiagnosticRows,
   formatProviderDiagnostic,
@@ -19,7 +19,7 @@ export const GenericACPProviderParamsSchema = z
 
 type GenericACPProviderParams = z.infer<typeof GenericACPProviderParamsSchema>;
 
-interface GenericACPAgentClientOptions {
+interface GenericACPHarnessAdapterOptions {
   logger: Logger;
   command: [string, ...string[]];
   env?: Record<string, string>;
@@ -31,13 +31,13 @@ interface GenericACPAgentClientOptions {
   diagnosticPhaseTimeoutMs?: number;
 }
 
-export class GenericACPAgentClient extends ACPAgentClient {
+export class GenericACPHarnessAdapter extends ACPHarnessAdapter {
   private readonly command: [string, ...string[]];
   private readonly providerId?: string;
   private readonly label?: string;
   private readonly diagnosticPhaseTimeoutMs?: number;
 
-  constructor(options: GenericACPAgentClientOptions) {
+  constructor(options: GenericACPHarnessAdapterOptions) {
     super({
       provider: "acp",
       logger: options.logger,
@@ -133,7 +133,9 @@ export class GenericACPAgentClient extends ACPAgentClient {
   }
 }
 
-function buildGenericACPCapabilities(options: GenericACPAgentClientOptions): AgentCapabilityFlags {
+function buildGenericACPCapabilities(
+  options: GenericACPHarnessAdapterOptions,
+): AgentCapabilityFlags {
   const params = parseGenericACPProviderParams(options.providerParams);
   return {
     ...DEFAULT_ACP_CAPABILITIES,

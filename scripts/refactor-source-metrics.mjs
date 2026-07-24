@@ -401,7 +401,9 @@ function collectProviderIds(files) {
           }
         }
         if (
-          /PROVIDER_(?:CLIENT_)?(?:FACTORIES|MANIFESTS)/u.test(node.name.text) &&
+          /^(?:PROVIDER_CLIENT_FACTORIES|PROVIDER_ADAPTER_LOADERS|PROVIDER_MANIFESTS)$/u.test(
+            node.name.text,
+          ) &&
           ts.isObjectLiteralExpression(initializer)
         ) {
           for (const property of initializer.properties) {

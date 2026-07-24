@@ -1,4 +1,4 @@
-import type { AgentFeature, AgentFeatureToggle } from "../agent-sdk-types.js";
+import type { AgentFeature, AgentFeatureToggle } from "../harness-contract.js";
 
 const CODEX_FAST_MODE_SUPPORTED_MODEL_PREFIXES = ["gpt-5", "gpt-4.1", "o3", "o4-mini"] as const;
 

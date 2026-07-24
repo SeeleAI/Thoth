@@ -441,7 +441,7 @@ export function loadConfig(
     isDev: resolveThothNodeEnv(env) === "development",
     agentStoragePath: path.join(thothHome, "agents"),
     staticDir: "public",
-    agentClients: {},
+    harnessAdapters: {},
     relayEnabled: relay.enabled,
     relayEndpoint: relay.endpoint,
     relayPublicEndpoint: relay.publicEndpoint,

@@ -54,7 +54,7 @@ async function createFlowRuntime(): Promise<FlowRuntime> {
   const logger = createFixtureLogger();
   const cwd = mkdtempSync(path.join(tmpdir(), "thoth-real-flow-workspace-"));
   const daemon = await createTestThothDaemon({
-    agentClients: { codex: createNativeCodexProviderClient(logger) },
+    harnessAdapters: { codex: createNativeCodexProviderClient(logger) },
     logger,
   });
   const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });

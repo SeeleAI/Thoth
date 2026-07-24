@@ -6,7 +6,7 @@ import pino from "pino";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import type {
-  AgentSession,
+  HarnessThread,
   AgentStreamEvent,
   ToolCallTimelineItem,
 } from "@thoth/drivers/agent-runtime";
@@ -94,7 +94,7 @@ async function collectUntil(
 }
 
 function collectSubscribedUntil(
-  session: AgentSession,
+  session: HarnessThread,
   predicate: (event: AgentStreamEvent, events: AgentStreamEvent[]) => boolean,
   timeoutMs = 45_000,
 ): Promise<AgentStreamEvent[]> {
@@ -143,26 +143,26 @@ function getLatestCompletedBashCall(events: AgentStreamEvent[]): ToolCallTimelin
     .find((item) => item.status === "completed" && item.name.toLowerCase() === "bash");
 }
 
-function getInternalQuery(session: AgentSession): unknown {
-  return (session as AgentSession & { query?: unknown }).query ?? null;
+function getInternalQuery(session: HarnessThread): unknown {
+  return (session as HarnessThread & { query?: unknown }).query ?? null;
 }
 
 async function createSession(params?: {
   cwdPrefix?: string;
   modeId?: string;
   title?: string;
-}): Promise<{ cwd: string; session: AgentSession }> {
+}): Promise<{ cwd: string; session: HarnessThread }> {
   const cwd = tmpCwd(params?.cwdPrefix ?? "claude-agent-integration-");
   const session = await client.createSession({
     ...getRealProviderConfig("claude"),
     cwd,
-    title: params?.title ?? "ClaudeAgentSession integration",
+    title: params?.title ?? "ClaudeHarnessThread integration",
     modeId: params?.modeId ?? "acceptEdits",
   });
   return { cwd, session };
 }
 
-async function cleanupSession(handle: { cwd: string; session: AgentSession }): Promise<void> {
+async function cleanupSession(handle: { cwd: string; session: HarnessThread }): Promise<void> {
   await handle.session.close().catch(() => undefined);
   try {
     rmSync(handle.cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -174,7 +174,7 @@ async function cleanupSession(handle: { cwd: string; session: AgentSession }): P
   }
 }
 
-describe("ClaudeAgentSession integration", () => {
+describe("ClaudeHarnessThread integration", () => {
   let canRun = false;
 
   beforeAll(async () => {

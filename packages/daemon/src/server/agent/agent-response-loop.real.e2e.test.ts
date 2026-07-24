@@ -9,10 +9,9 @@ import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { generateStructuredAgentResponse } from "./agent-response-loop.js";
-import { AgentManager } from "./agent-manager.js";
+import { ExecutionService } from "./execution-service.js";
 import { AgentStorage } from "./agent-storage.js";
 import { createAgentMcpServer } from "./mcp-server.js";
-import { shutdownProviders } from "@thoth/drivers/internal/server/agent/provider-registry";
 import {
   canRunRealProvider,
   createRealProviderClients,
@@ -37,8 +36,8 @@ async function startAgentMcpServer(logger: pino.Logger): Promise<AgentMcpServerH
   const registryDir = mkdtempSync(path.join(tmpdir(), "agent-mcp-registry-"));
   const storagePath = path.join(registryDir, "agents");
   const agentStorage = new AgentStorage(storagePath, logger);
-  const agentManager = new AgentManager({
-    clients: {},
+  const executionService = new ExecutionService({
+    adapters: {},
     registry: agentStorage,
     logger,
   });
@@ -48,7 +47,7 @@ async function startAgentMcpServer(logger: pino.Logger): Promise<AgentMcpServerH
 
   const createAgentMcpTransport = async (callerAgentId?: string) => {
     const mcpServer = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       callerAgentId,
       logger,
@@ -149,7 +148,7 @@ async function startAgentMcpServer(logger: pino.Logger): Promise<AgentMcpServerH
 }
 
 describe("getStructuredAgentResponse (e2e)", () => {
-  let manager: AgentManager;
+  let manager: ExecutionService;
   let cwd: string;
   let agentMcpServer: AgentMcpServerHandle;
   let canRunCodex = false;
@@ -171,15 +170,14 @@ describe("getStructuredAgentResponse (e2e)", () => {
 
   beforeEach(async () => {
     cwd = mkdtempSync(path.join(tmpdir(), "agent-response-loop-"));
-    manager = new AgentManager({
-      clients: createRealProviderClients(["codex", "claude"], logger),
+    manager = new ExecutionService({
+      adapters: createRealProviderClients(["codex", "claude"], logger),
       logger,
     });
   });
 
   afterEach(async () => {
     rmSync(cwd, { recursive: true, force: true });
-    await shutdownProviders(logger);
   }, 60000);
 
   test("returns schema-valid JSON from a real Codex agent", async (context) => {

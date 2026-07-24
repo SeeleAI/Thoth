@@ -18,7 +18,7 @@ vi.mock("@thoth/drivers/internal/server/agent/providers/acp-agent", () => ({
     supportsRewindFiles: false,
     supportsRewindBoth: false,
   },
-  ACPAgentClient: class ACPAgentClient {
+  ACPHarnessAdapter: class ACPHarnessAdapter {
     readonly provider: string;
 
     constructor(options: unknown) {
@@ -28,11 +28,11 @@ vi.mock("@thoth/drivers/internal/server/agent/providers/acp-agent", () => ({
   },
 }));
 
-import { GenericACPAgentClient } from "@thoth/drivers/internal/server/agent/providers/generic-acp-agent";
+import { GenericACPHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/generic-acp-agent";
 
-describe("GenericACPAgentClient", () => {
+describe("GenericACPHarnessAdapter", () => {
   test("passes the custom command only as defaultCommand", () => {
-    const _client = new GenericACPAgentClient({
+    const _client = new GenericACPHarnessAdapter({
       logger: createTestLogger(),
       command: ["hermes", "acp"],
       env: {
@@ -67,7 +67,7 @@ describe("GenericACPAgentClient", () => {
   });
 
   test("uses provider params to report MCP support", () => {
-    const _client = new GenericACPAgentClient({
+    const _client = new GenericACPHarnessAdapter({
       logger: createTestLogger(),
       command: ["no-mcp-acp", "serve"],
       providerParams: {

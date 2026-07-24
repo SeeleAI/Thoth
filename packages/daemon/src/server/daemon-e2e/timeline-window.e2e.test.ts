@@ -13,7 +13,7 @@ async function appendToolLifecycleAcrossCursor(
   ctx: DaemonTestContext,
   agentId: string,
 ): Promise<void> {
-  await ctx.daemon.daemon.agentManager.appendTimelineItem(agentId, {
+  await ctx.daemon.daemon.executionService.appendTimelineItem(agentId, {
     type: "tool_call",
     callId: "call_1",
     name: "shell",
@@ -26,12 +26,12 @@ async function appendToolLifecycleAcrossCursor(
     },
   });
   for (let seq = 2; seq <= 249; seq += 1) {
-    await ctx.daemon.daemon.agentManager.appendTimelineItem(agentId, {
+    await ctx.daemon.daemon.executionService.appendTimelineItem(agentId, {
       type: "assistant_message",
       text: `background ${seq}`,
     });
   }
-  await ctx.daemon.daemon.agentManager.appendTimelineItem(agentId, {
+  await ctx.daemon.daemon.executionService.appendTimelineItem(agentId, {
     type: "tool_call",
     callId: "call_1",
     name: "shell",
@@ -103,7 +103,7 @@ describe("daemon E2E - timeline window", () => {
       expect((await ctx.client.waitForFinish(agent.id, 5_000)).status).toBe("idle");
 
       const expected = "SECOND";
-      await ctx.daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+      await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
         type: "user_message",
         text: "next",
       });
@@ -138,12 +138,12 @@ describe("daemon E2E - timeline window", () => {
         modeId: "full-access",
       });
 
-      await ctx.daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+      await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
         type: "user_message",
         text: "run the tool",
       });
       for (let index = 0; index < 120; index += 1) {
-        await ctx.daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+        await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
           type: "tool_call",
           callId: "call_1",
           name: "shell",
@@ -264,7 +264,7 @@ describe("daemon E2E - timeline window", () => {
       });
 
       for (let seq = 1; seq <= 600; seq += 1) {
-        await ctx.daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+        await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
           type: "user_message",
           text: `row ${seq}`,
         });
@@ -295,13 +295,13 @@ describe("daemon E2E - timeline window", () => {
         modeId: "full-access",
       });
       for (let seq = 1; seq <= 600; seq += 1) {
-        await ctx.daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+        await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
           type: "user_message",
           text: `row ${seq}`,
         });
       }
 
-      const fetchSpy = vi.spyOn(ctx.daemon.daemon.agentManager, "fetchTimeline");
+      const fetchSpy = vi.spyOn(ctx.daemon.daemon.executionService, "fetchTimeline");
       const timeline = await ctx.client.fetchAgentTimeline(agent.id, {
         direction: "tail",
         limit: 100,
@@ -331,17 +331,17 @@ describe("daemon E2E - timeline window", () => {
         modeId: "full-access",
       });
       for (let seq = 1; seq <= 600; seq += 1) {
-        await ctx.daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+        await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
           type: "user_message",
           text: `row ${seq}`,
         });
       }
-      const epoch = ctx.daemon.daemon.agentManager.fetchTimeline(agent.id, {
+      const epoch = ctx.daemon.daemon.executionService.fetchTimeline(agent.id, {
         direction: "tail",
         limit: 1,
       }).epoch;
 
-      const fetchSpy = vi.spyOn(ctx.daemon.daemon.agentManager, "fetchTimeline");
+      const fetchSpy = vi.spyOn(ctx.daemon.daemon.executionService, "fetchTimeline");
       const timeline = await ctx.client.fetchAgentTimeline(agent.id, {
         direction: "after",
         cursor: { epoch, seq: 300 },
@@ -372,7 +372,7 @@ describe("daemon E2E - timeline window", () => {
         modeId: "full-access",
       });
       for (let seq = 1; seq <= 160; seq += 1) {
-        await ctx.daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+        await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
           type: "user_message",
           text: `row ${seq}`,
         });
@@ -411,17 +411,17 @@ describe("daemon E2E - timeline window", () => {
         modeId: "full-access",
       });
       for (let seq = 1; seq <= 600; seq += 1) {
-        await ctx.daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+        await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
           type: "user_message",
           text: `row ${seq}`,
         });
       }
-      const epoch = ctx.daemon.daemon.agentManager.fetchTimeline(agent.id, {
+      const epoch = ctx.daemon.daemon.executionService.fetchTimeline(agent.id, {
         direction: "tail",
         limit: 1,
       }).epoch;
 
-      const fetchSpy = vi.spyOn(ctx.daemon.daemon.agentManager, "fetchTimeline");
+      const fetchSpy = vi.spyOn(ctx.daemon.daemon.executionService, "fetchTimeline");
       const timeline = await ctx.client.fetchAgentTimeline(agent.id, {
         direction: "before",
         cursor: { epoch, seq: 501 },

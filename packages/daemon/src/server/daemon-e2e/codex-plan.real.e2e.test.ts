@@ -41,7 +41,7 @@ describe("daemon E2E (real codex) - native Plan", () => {
     if (!canRun) return;
     const logger = pino({ level: "silent" });
     daemon = await createTestThothDaemon({
-      agentClients: { codex: createNativeCodexProviderClient(logger) },
+      harnessAdapters: { codex: createNativeCodexProviderClient(logger) },
       logger,
     });
     client = new DaemonClient({

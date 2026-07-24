@@ -9,7 +9,7 @@ import {
   type DaemonSessionHost,
 } from "./daemon-session.js";
 import type { DaemonWebSocketRuntimeDiagnosticSnapshot } from "./diagnostics.js";
-import type { ProviderAvailability } from "../../agent/agent-manager.js";
+import type { ProviderAvailability } from "../../agent/execution-service.js";
 import type { SessionOutboundMessage } from "../../messages.js";
 
 const tempDirs: string[] = [];

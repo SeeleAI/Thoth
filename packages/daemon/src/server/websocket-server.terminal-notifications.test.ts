@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Server as HTTPServer } from "http";
 import type pino from "pino";
-import type { AgentManager } from "./agent/agent-manager.js";
+import type { ExecutionService } from "./agent/execution-service.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { DaemonConfigStore } from "./daemon-config-store.js";
@@ -108,7 +108,7 @@ function createWorkspaceRegistry(records: PersistedWorkspaceRecord[]): Workspace
 
 function createServer(terminalManager: TerminalManager, workspaceRegistry?: WorkspaceRegistry) {
   const pushNotifications = new RecordingPushNotificationSender();
-  const agentManager = {
+  const executionService = {
     setAgentAttentionCallback: vi.fn(),
     subscribe: vi.fn(() => () => {}),
     getAgent: vi.fn(() => null),
@@ -131,7 +131,7 @@ function createServer(terminalManager: TerminalManager, workspaceRegistry?: Work
     createStub<HTTPServer>({}),
     createStub<pino.Logger>(createLogger()),
     "srv-test",
-    createStub<AgentManager>(agentManager),
+    createStub<ExecutionService>(executionService),
     createStub<AgentStorage>({}),
     createStub<DownloadTokenStore>({}),
     "/tmp/thoth-test",

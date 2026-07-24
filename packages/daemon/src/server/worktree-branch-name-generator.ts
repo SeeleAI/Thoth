@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { FirstAgentContext } from "@thoth/protocol/messages";
-import type { AgentManager } from "./agent/agent-manager.js";
+import type { ExecutionService } from "./agent/execution-service.js";
 import {
   StructuredAgentFallbackError,
   StructuredAgentResponseError,
@@ -22,7 +22,7 @@ interface BranchNameGeneratorLogger {
 }
 
 export interface GenerateBranchNameFromFirstAgentContextOptions {
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   cwd: string;
   workspaceGitService?: Pick<WorkspaceGitService, "resolveRepoRoot">;
   providerSnapshotManager?: Pick<ProviderSnapshotManager, "listProviders">;
@@ -112,7 +112,7 @@ export async function generateBranchNameFromFirstAgentContext(
         })
       : [];
     const result = await generator({
-      manager: options.agentManager,
+      manager: options.executionService,
       cwd: options.cwd,
       prompt: await buildPrompt(seed, {
         cwd: options.cwd,

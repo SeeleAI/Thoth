@@ -19,7 +19,7 @@
  *     interfaces (ProjectRegistry, WorkspaceRegistry) or external library types
  *     (pino.Logger, http.Server); Object.create returns `any` so a cast is
  *     still needed in the generic path.
- *   - class FakeT implements T: verbose for large classes (AgentManager has
+ *   - class FakeT implements T: verbose for large classes (ExecutionService has
  *     30+ public methods); must be kept in sync whenever the class grows.
  */
 

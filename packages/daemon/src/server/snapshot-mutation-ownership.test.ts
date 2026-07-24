@@ -51,12 +51,12 @@ describe("snapshot mutation ownership boundary", () => {
         model: "gpt-5.2-codex",
         title: "Snapshot authority test",
       });
-      await daemonHandle.daemon.agentManager.flush();
+      await daemonHandle.daemon.executionService.flush();
 
       const applySnapshotSpy = vi.spyOn(daemonHandle.daemon.agentStorage, "applySnapshot");
 
-      await daemonHandle.daemon.agentManager.setAgentModel(snapshot.id, "gpt-5.4");
-      await daemonHandle.daemon.agentManager.flush();
+      await daemonHandle.daemon.executionService.setAgentModel(snapshot.id, "gpt-5.4");
+      await daemonHandle.daemon.executionService.flush();
 
       expect(applySnapshotSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
 
@@ -118,7 +118,7 @@ describe("snapshot mutation ownership boundary", () => {
         downloadTokenStore: createStub<SessionOptions["downloadTokenStore"]>({}),
         pushTokenStore: createStub<SessionOptions["pushTokenStore"]>({}),
         thothHome: "/tmp/thoth-test",
-        agentManager: createStub<SessionOptions["agentManager"]>({
+        executionService: createStub<SessionOptions["executionService"]>({
           subscribe: () => () => {},
           listAgents: () => [],
           getAgent: () => null,

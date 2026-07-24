@@ -940,7 +940,7 @@ function reduceTimelineEvent(
 }
 
 /**
- * Reduce a single AgentManager stream event into the UI timeline
+ * Reduce a single ExecutionService stream event into the UI timeline
  */
 export function reduceStreamUpdate(
   state: StreamItem[],
@@ -967,7 +967,7 @@ export function reduceStreamUpdate(
 }
 
 /**
- * Hydrate stream state from a batch of AgentManager stream events
+ * Hydrate stream state from a batch of ExecutionService stream events
  */
 export function hydrateStreamState(
   events: Array<{

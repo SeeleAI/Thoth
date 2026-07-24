@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ToolCallTimelineItem } from "../../agent-sdk-types.js";
+import type { ToolCallTimelineItem } from "../../harness-contract.js";
 import { normalizeToolCallStatus } from "../tool-call-mapper-utils.js";
 import { deriveOpencodeToolDetail } from "./tool-call-detail-parser.js";
 

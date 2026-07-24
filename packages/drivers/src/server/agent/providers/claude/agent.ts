@@ -57,7 +57,7 @@ import {
   getAgentStreamEventTurnId,
   type AgentPermissionAction,
   type AgentCapabilityFlags,
-  type AgentClient,
+  type HarnessAdapter,
   type AgentCreateSessionOptions,
   type AgentFeature,
   type AgentLaunchContext,
@@ -72,7 +72,7 @@ import {
   type AgentPromptInput,
   type AgentRunOptions,
   type AgentRunResult,
-  type AgentSession,
+  type HarnessThread,
   type AgentSessionConfig,
   type AgentSlashCommand,
   type AgentStreamEvent,
@@ -87,7 +87,7 @@ import {
   type McpServerConfig,
   type ProviderCatalog,
   type ProviderMessageAnchorReceipt,
-} from "../../agent-sdk-types.js";
+} from "../../harness-contract.js";
 import { importSessionFromPersistence } from "../../provider-session-import.js";
 import {
   checkProviderLaunchAvailable,
@@ -349,7 +349,7 @@ export interface ClaudeContentChunk {
   [key: string]: unknown;
 }
 
-interface ClaudeAgentClientOptions {
+interface ClaudeHarnessAdapterOptions {
   defaults?: { agents?: Record<string, AgentDefinition> };
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
@@ -358,7 +358,7 @@ interface ClaudeAgentClientOptions {
   configDir?: string;
 }
 
-interface ClaudeAgentSessionOptions {
+interface ClaudeHarnessThreadOptions {
   defaults?: { agents?: Record<string, AgentDefinition> };
   runtimeSettings?: ProviderRuntimeSettings;
   handle?: AgentPersistenceHandle;
@@ -1400,7 +1400,7 @@ export function readEventIdentifiers(message: SDKMessage): EventIdentifiers {
   };
 }
 
-export class ClaudeAgentClient implements AgentClient {
+export class ClaudeHarnessAdapter implements HarnessAdapter {
   readonly provider = "claude" as const;
   readonly capabilities = CLAUDE_CAPABILITIES;
   readonly harnessCapabilities = defineHarnessCapabilities({
@@ -1415,7 +1415,7 @@ export class ClaudeAgentClient implements AgentClient {
   private readonly resolveBinary: () => Promise<string>;
   private readonly configDir?: string;
 
-  constructor(options: ClaudeAgentClientOptions) {
+  constructor(options: ClaudeHarnessAdapterOptions) {
     this.defaults = options.defaults;
     this.logger = options.logger.child({ module: "agent", provider: "claude" });
     this.runtimeSettings = options.runtimeSettings;
@@ -1428,9 +1428,9 @@ export class ClaudeAgentClient implements AgentClient {
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
     options?: AgentCreateSessionOptions,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const claudeConfig = this.assertConfig(config);
-    return new ClaudeAgentSession(claudeConfig, {
+    return new ClaudeHarnessThread(claudeConfig, {
       defaults: this.defaults,
       runtimeSettings: this.runtimeSettings,
       agentId: launchContext?.agentId,
@@ -1446,7 +1446,7 @@ export class ClaudeAgentClient implements AgentClient {
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
     launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const metadata = coerceSessionMetadata(handle.metadata);
     const merged: Partial<AgentSessionConfig> = { ...metadata, ...overrides };
     if (!merged.cwd) {
@@ -1458,7 +1458,7 @@ export class ClaudeAgentClient implements AgentClient {
       cwd: merged.cwd,
     };
     const claudeConfig = this.assertConfig(mergedConfig);
-    return new ClaudeAgentSession(claudeConfig, {
+    return new ClaudeHarnessThread(claudeConfig, {
       defaults: this.defaults,
       runtimeSettings: this.runtimeSettings,
       handle,
@@ -1549,7 +1549,7 @@ export class ClaudeAgentClient implements AgentClient {
 
   private assertConfig(config: AgentSessionConfig): ClaudeAgentConfig {
     if (config.provider !== "claude") {
-      throw new Error(`ClaudeAgentClient received config for provider '${config.provider}'`);
+      throw new Error(`ClaudeHarnessAdapter received config for provider '${config.provider}'`);
     }
     return { ...config, provider: "claude" } as ClaudeAgentConfig;
   }
@@ -1882,7 +1882,7 @@ class ClaudeContextUsageState {
   }
 }
 
-class ClaudeAgentSession implements AgentSession {
+class ClaudeHarnessThread implements HarnessThread {
   readonly provider = "claude" as const;
   readonly capabilities = CLAUDE_CAPABILITIES;
 
@@ -1936,7 +1936,7 @@ class ClaudeAgentSession implements AgentSession {
   private recentStderr = "";
   private closed = false;
 
-  constructor(config: ClaudeAgentConfig, options: ClaudeAgentSessionOptions) {
+  constructor(config: ClaudeAgentConfig, options: ClaudeHarnessThreadOptions) {
     this.config = config;
     this.launchEnv = options.launchEnv;
     this.agentId = options.agentId;
@@ -4618,7 +4618,7 @@ class ClaudeAgentSession implements AgentSession {
     }
 
     if (
-      ClaudeAgentSession.isFileWriteTool(normalizedTool) &&
+      ClaudeHarnessThread.isFileWriteTool(normalizedTool) &&
       input &&
       typeof input.file_path === "string"
     ) {
@@ -4631,7 +4631,7 @@ class ClaudeAgentSession implements AgentSession {
     }
 
     if (
-      ClaudeAgentSession.isFileEditTool(normalizedTool) &&
+      ClaudeHarnessThread.isFileEditTool(normalizedTool) &&
       input &&
       typeof input.file_path === "string"
     ) {
@@ -4649,7 +4649,7 @@ class ClaudeAgentSession implements AgentSession {
     }
 
     if (
-      ClaudeAgentSession.isFileReadTool(normalizedTool) &&
+      ClaudeHarnessThread.isFileReadTool(normalizedTool) &&
       input &&
       typeof input.file_path === "string"
     ) {

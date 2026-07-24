@@ -6,7 +6,7 @@ import type {
   ProjectPlacementPayload,
   SessionOutboundMessage,
 } from "../../messages.js";
-import type { ManagedAgent } from "../../agent/agent-manager.js";
+import type { ManagedAgent } from "../../agent/execution-service.js";
 import type { StoredAgentRecord } from "../../agent/agent-storage.js";
 
 // No mocks — every dependency is an injected in-memory fake. The agent payloads

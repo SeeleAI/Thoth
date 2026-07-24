@@ -1,4 +1,4 @@
-import type { AgentSession, ProviderMessageAnchorReceipt } from "@thoth/drivers/agent-runtime";
+import type { HarnessThread, ProviderMessageAnchorReceipt } from "@thoth/drivers/agent-runtime";
 
 export type RewindMode = "conversation" | "files" | "both";
 
@@ -10,7 +10,7 @@ export class RewindCapabilityError extends Error {
 }
 
 export async function invokeRewindCapability(
-  session: AgentSession,
+  session: HarnessThread,
   input: { anchor: ProviderMessageAnchorReceipt; mode: RewindMode },
 ): Promise<void> {
   switch (input.mode) {

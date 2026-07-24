@@ -251,7 +251,7 @@ async function createHarness(): Promise<{
 }> {
   const logger = pino({ level: "silent" });
   const daemon = await createTestThothDaemon({
-    agentClients: createRealProviderClients(["opencode"], logger),
+    harnessAdapters: createRealProviderClients(["opencode"], logger),
     logger,
   });
   const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });

@@ -5,7 +5,7 @@ import path from "node:path";
 import pino from "pino";
 import { beforeAll, beforeEach, describe, expect, test } from "vitest";
 
-import type { AgentClient, ImportableProviderSession } from "@thoth/drivers/agent-runtime";
+import type { HarnessAdapter, ImportableProviderSession } from "@thoth/drivers/agent-runtime";
 import { OpenCodeServerManager } from "@thoth/drivers/internal/server/agent/providers/opencode/server-manager";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon } from "../test-utils/thoth-daemon.js";
@@ -17,12 +17,12 @@ function tmpCwd(): string {
 }
 
 async function withConnectedOpenCodeDaemon(
-  provider: AgentClient,
+  provider: HarnessAdapter,
   run: (context: { client: DaemonClient }) => Promise<void>,
 ): Promise<void> {
   const logger = pino({ level: "silent" });
   const daemon = await createTestThothDaemon({
-    agentClients: { opencode: provider },
+    harnessAdapters: { opencode: provider },
     logger,
   });
   const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
@@ -40,7 +40,7 @@ async function withConnectedOpenCodeDaemon(
 }
 
 async function deletePersistedSessions(
-  provider: AgentClient,
+  provider: HarnessAdapter,
   sessions: ReadonlyArray<ImportableProviderSession>,
 ): Promise<void> {
   await Promise.all(

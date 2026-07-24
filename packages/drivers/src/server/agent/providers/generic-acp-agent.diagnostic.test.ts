@@ -7,12 +7,12 @@ import { describe, expect, test } from "vitest";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import {
   buildVersionProbeCommand,
-  GenericACPAgentClient,
+  GenericACPHarnessAdapter,
 } from "@thoth/drivers/internal/server/agent/providers/generic-acp-agent";
 
 const TEST_ACP_TIMEOUT_MS = 1_000;
 
-describe("GenericACPAgentClient diagnostics", () => {
+describe("GenericACPHarnessAdapter diagnostics", () => {
   test("probes npx-backed agent packages instead of npx itself", () => {
     expect(buildVersionProbeCommand(["npx", "-y", "@google/gemini-cli@0.41.1", "--acp"])).toEqual({
       command: "npx",
@@ -27,7 +27,7 @@ describe("GenericACPAgentClient diagnostics", () => {
 
   test("reports command, binary, version command, and ACP phase rows", async () => {
     await withFakeACPAgent("success", async (scriptPath, mode) => {
-      const client = new GenericACPAgentClient({
+      const client = new GenericACPHarnessAdapter({
         logger: createTestLogger(),
         command: [process.execPath, scriptPath, mode],
         providerId: "cursor",
@@ -54,7 +54,7 @@ describe("GenericACPAgentClient diagnostics", () => {
 
   test("reports a hung ACP session/new phase without failing the diagnostic", async () => {
     await withFakeACPAgent("hang-session", async (scriptPath, mode) => {
-      const client = new GenericACPAgentClient({
+      const client = new GenericACPHarnessAdapter({
         logger: createTestLogger(),
         command: [process.execPath, scriptPath, mode],
         providerId: "grok",
@@ -79,7 +79,7 @@ describe("GenericACPAgentClient diagnostics", () => {
   test("terminates an ACP catalog probe when session/new times out", async () => {
     await withFakeACPAgent("hang-session", async (scriptPath, mode, testDir) => {
       const pidPath = path.join(testDir, "agent.pid");
-      const client = new GenericACPAgentClient({
+      const client = new GenericACPHarnessAdapter({
         logger: createTestLogger(),
         command: [process.execPath, scriptPath, mode, pidPath],
         providerId: "grok",
@@ -98,7 +98,7 @@ describe("GenericACPAgentClient diagnostics", () => {
   test("reports a missing launcher without dropping the rest of the diagnostic", async () => {
     await withTempDir("thoth-missing-acp-agent-", async (testDir) => {
       const missingCommand = path.join(testDir, "missing-acp-agent");
-      const client = new GenericACPAgentClient({
+      const client = new GenericACPHarnessAdapter({
         logger: createTestLogger(),
         command: [missingCommand, "--acp"],
         providerId: "grok",

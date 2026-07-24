@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 
 import pino from "pino";
 import { createThothDaemon, type ThothDaemonConfig } from "../bootstrap.js";
-import type { AgentClient, AgentProvider } from "@thoth/drivers/agent-runtime";
-import { createTestAgentClients } from "./fake-agent-client.js";
+import type { HarnessAdapter, AgentProvider } from "@thoth/drivers/agent-runtime";
+import { createTestHarnessAdapters } from "./fake-harness-adapter.js";
 import type { PushNotificationSender } from "../push/notifications.js";
 
 interface TestThothDaemonOptions {
@@ -18,7 +18,7 @@ interface TestThothDaemonOptions {
   isDev?: boolean;
   relayEnabled?: boolean;
   relayEndpoint?: string;
-  agentClients?: Partial<Record<AgentProvider, AgentClient>>;
+  harnessAdapters?: Partial<Record<AgentProvider, HarnessAdapter>>;
   providerOverrides?: ThothDaemonConfig["providerOverrides"];
   thothHomeRoot?: string;
   staticDir?: string;
@@ -87,7 +87,7 @@ export async function createTestThothDaemon(
 
       const close = async (): Promise<void> => {
         await daemon.stop().catch(() => undefined);
-        await daemon.agentManager.flush().catch(() => undefined);
+        await daemon.executionService.flush().catch(() => undefined);
         if (options.cleanup ?? true) {
           await new Promise((r) => setTimeout(r, 50));
           await Promise.all([
@@ -150,7 +150,7 @@ async function prepareTestDaemonConfig(
     staticDir,
     mcpDebug: options.mcpDebug ?? false,
     isDev: options.isDev,
-    agentClients: options.agentClients ?? createTestAgentClients(),
+    harnessAdapters: options.harnessAdapters ?? createTestHarnessAdapters(),
     providerOverrides: options.providerOverrides,
     agentStoragePath: path.join(thothHome, "agents"),
     relayEnabled: options.relayEnabled ?? false,

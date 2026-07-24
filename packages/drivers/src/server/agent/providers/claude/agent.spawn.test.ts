@@ -9,7 +9,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
 import * as spawnUtils from "@thoth/drivers/internal/utils/spawn";
-import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import { ClaudeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import type { ClaudeQueryInput } from "@thoth/drivers/internal/server/agent/providers/claude/query";
 
 function createQueryMock(events: unknown[]): Query {
@@ -74,7 +74,7 @@ describe("Claude spawn override", () => {
       ]);
     });
     const spawnSpy = vi.spyOn(spawnUtils, "spawnProcess").mockReturnValue(createChildProcessStub());
-    const client = new ClaudeAgentClient({
+    const client = new ClaudeHarnessAdapter({
       logger: createTestLogger(),
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",

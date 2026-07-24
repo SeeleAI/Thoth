@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Logger } from "pino";
 
-import type { AgentModelDefinition } from "../../agent-sdk-types.js";
+import type { AgentModelDefinition } from "../../harness-contract.js";
 
 const CLAUDE_THINKING_OPTIONS = [
   { id: "low", label: "Low" },

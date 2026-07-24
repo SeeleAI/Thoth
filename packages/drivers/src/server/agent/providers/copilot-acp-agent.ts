@@ -1,14 +1,14 @@
 import type { Logger } from "pino";
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 
-import type { AgentCapabilityFlags, AgentMode } from "../agent-sdk-types.js";
+import type { AgentCapabilityFlags, AgentMode } from "../harness-contract.js";
 import {
   checkProviderLaunchAvailable,
   resolveProviderLaunch,
   type ProviderRuntimeSettings,
 } from "../provider-launch-config.js";
 import {
-  ACPAgentClient,
+  ACPHarnessAdapter,
   type ACPConfigFeatureOption,
   type ACPBeforeModeWriteResult,
   type ACPProviderModeWriteResult,
@@ -73,13 +73,13 @@ export const COPILOT_MODES: AgentMode[] = [
   },
 ];
 
-interface CopilotACPAgentClientOptions {
+interface CopilotACPHarnessAdapterOptions {
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
 }
 
-export class CopilotACPAgentClient extends ACPAgentClient {
-  constructor(options: CopilotACPAgentClientOptions) {
+export class CopilotACPHarnessAdapter extends ACPHarnessAdapter {
+  constructor(options: CopilotACPHarnessAdapterOptions) {
     super({
       provider: "copilot",
       logger: options.logger,

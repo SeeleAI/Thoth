@@ -9,9 +9,9 @@ import { z } from "zod";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { createAgentMcpServer } from "./mcp-server.js";
-import { AgentManager, type ManagedAgent } from "./agent-manager.js";
+import { ExecutionService, type ManagedAgent } from "./execution-service.js";
 import { AgentStorage, type StoredAgentRecord } from "./agent-storage.js";
-import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
+import { createTestHarnessAdapters } from "../test-utils/fake-harness-adapter.js";
 import type { AgentMode, AgentProvider, ProviderSnapshotEntry } from "@thoth/drivers/agent-runtime";
 import { createProviderSnapshotManagerStub } from "../test-utils/session-stubs.js";
 import {
@@ -47,7 +47,7 @@ async function createWorkspaceScopedAgentMcpServer(
   options: Parameters<typeof createAgentMcpServer>[0],
 ): ReturnType<typeof createAgentMcpServer> {
   const callerAgentId = options.callerAgentId ?? SCHEDULE_CALLER_AGENT_ID;
-  const getAgent = vi.mocked(options.agentManager.getAgent);
+  const getAgent = vi.mocked(options.executionService.getAgent);
   const previousImplementation = getAgent.getMockImplementation();
   getAgent.mockImplementation((agentId: string) => {
     const existing = previousImplementation?.(agentId);
@@ -197,10 +197,10 @@ type AgentManagerSpies = ReturnType<typeof buildAgentManagerSpies>;
 type AgentStorageSpies = ReturnType<typeof buildAgentStorageSpies>;
 
 interface TestDeps {
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentStorage;
   spies: {
-    agentManager: AgentManagerSpies;
+    executionService: AgentManagerSpies;
     agentStorage: AgentStorageSpies;
   };
 }
@@ -254,14 +254,14 @@ function buildAgentStorageSpies() {
 }
 
 function createTestDeps(): TestDeps {
-  const agentManagerSpies = buildAgentManagerSpies();
+  const executionServiceSpies = buildAgentManagerSpies();
   const agentStorageSpies = buildAgentStorageSpies();
 
   return {
-    agentManager: agentManagerSpies as unknown as AgentManager,
+    executionService: executionServiceSpies as unknown as ExecutionService,
     agentStorage: agentStorageSpies as unknown as AgentStorage,
     spies: {
-      agentManager: agentManagerSpies,
+      executionService: executionServiceSpies,
       agentStorage: agentStorageSpies,
     },
   };
@@ -648,7 +648,7 @@ describe("terminal MCP tools", () => {
   const logger = createTestLogger();
 
   it("captures terminal output through the terminal manager authority", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const captureTerminal = vi.fn().mockResolvedValue({
       lines: ["from worker scrollback"],
       totalLines: 42,
@@ -663,7 +663,7 @@ describe("terminal MCP tools", () => {
       captureTerminal,
     });
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       terminalManager,
@@ -724,9 +724,9 @@ describe("create_agent MCP tool", () => {
   const ensureWorkspaceForCreate = async () => "workspace-created";
 
   it("requires a concise title no longer than 60 characters", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       ensureWorkspaceForCreate,
@@ -765,9 +765,9 @@ describe("create_agent MCP tool", () => {
   });
 
   it("requires initialPrompt", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       ensureWorkspaceForCreate,
@@ -789,9 +789,9 @@ describe("create_agent MCP tool", () => {
   });
 
   it("rejects partial explicit workspace shape", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       ensureWorkspaceForCreate,
@@ -813,9 +813,9 @@ describe("create_agent MCP tool", () => {
   });
 
   it("rejects caller-only relationship and workspace intents without a caller agent", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -842,15 +842,15 @@ describe("create_agent MCP tool", () => {
   });
 
   it("requires a caller workspace for current workspace intent", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.getAgent.mockReturnValue({
       id: "parent-agent",
       cwd: existingCwd,
       provider: "codex",
       currentModeId: "full-access",
     } as ManagedAgent);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       callerAgentId: "parent-agent",
@@ -869,8 +869,8 @@ describe("create_agent MCP tool", () => {
   });
 
   it("attaches create_agent to an existing workspace id", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.createAgent.mockResolvedValue({
       id: "existing-workspace-agent",
       cwd: existingCwd,
       workspaceId: "wks_existing",
@@ -880,7 +880,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "Existing workspace" },
     } as ManagedAgent);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       listActiveWorkspaces: async () => [
@@ -899,7 +899,7 @@ describe("create_agent MCP tool", () => {
     });
 
     expect(response.structuredContent.workspaceId).toBe("wks_existing");
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: existingCwd,
       }),
@@ -909,8 +909,8 @@ describe("create_agent MCP tool", () => {
   });
 
   it("accepts provider features and passes them through createAgent", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.createAgent.mockResolvedValue({
       id: "feature-agent",
       cwd: REPO_CWD,
       lifecycle: "idle",
@@ -920,7 +920,7 @@ describe("create_agent MCP tool", () => {
     } as ManagedAgent);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       ensureWorkspaceForCreate,
@@ -941,7 +941,7 @@ describe("create_agent MCP tool", () => {
 
     await tool.handler(input);
 
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "codex",
         model: "gpt-5.4",
@@ -953,8 +953,8 @@ describe("create_agent MCP tool", () => {
   });
 
   it("advertises create_agent output schema that accepts full provider modes", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.createAgent.mockResolvedValue({
       id: "mode-agent",
       provider: "codex",
       cwd: REPO_CWD,
@@ -973,7 +973,7 @@ describe("create_agent MCP tool", () => {
     } as ManagedAgent);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       ensureWorkspaceForCreate,
@@ -992,9 +992,9 @@ describe("create_agent MCP tool", () => {
   });
 
   it("requires provider as provider/model and rejects the old model field", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       ensureWorkspaceForCreate,
@@ -1055,9 +1055,9 @@ describe("create_agent MCP tool", () => {
   });
 
   it("accepts worktree workspace intent in create_agent input validation", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -1078,9 +1078,9 @@ describe("create_agent MCP tool", () => {
   });
 
   it("accepts each create_worktree target kind", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -1099,9 +1099,9 @@ describe("create_agent MCP tool", () => {
   });
 
   it("rejects create_worktree without a target", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -1113,12 +1113,12 @@ describe("create_agent MCP tool", () => {
   });
 
   it("surfaces createAgent validation failures", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockRejectedValue(
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.createAgent.mockRejectedValue(
       new Error("Working directory does not exist: /path/that/does/not/exist"),
     );
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       ensureWorkspaceForCreate,
@@ -1137,8 +1137,8 @@ describe("create_agent MCP tool", () => {
   });
 
   it("passes caller-provided titles directly into createAgent", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.createAgent.mockResolvedValue({
       id: "agent-123",
       cwd: REPO_CWD,
       lifecycle: "idle",
@@ -1148,7 +1148,7 @@ describe("create_agent MCP tool", () => {
     } as ManagedAgent);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       ensureWorkspaceForCreate,
@@ -1162,7 +1162,7 @@ describe("create_agent MCP tool", () => {
       initialPrompt: "Do work",
     });
 
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: existingCwd,
         title: "Fix auth bug",
@@ -1173,8 +1173,8 @@ describe("create_agent MCP tool", () => {
   });
 
   it("trims caller-provided titles before createAgent", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.createAgent.mockResolvedValue({
       id: "agent-456",
       cwd: REPO_CWD,
       lifecycle: "idle",
@@ -1184,7 +1184,7 @@ describe("create_agent MCP tool", () => {
     } as ManagedAgent);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       ensureWorkspaceForCreate,
@@ -1198,7 +1198,7 @@ describe("create_agent MCP tool", () => {
       initialPrompt: "Do work",
     });
 
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Fix auth",
       }),
@@ -1208,8 +1208,8 @@ describe("create_agent MCP tool", () => {
   });
 
   it("requires provider/model and passes thinking and labels through createAgent", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.createAgent.mockResolvedValue({
       id: "agent-789",
       cwd: REPO_CWD,
       lifecycle: "idle",
@@ -1219,7 +1219,7 @@ describe("create_agent MCP tool", () => {
     } as ManagedAgent);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       ensureWorkspaceForCreate,
@@ -1235,7 +1235,7 @@ describe("create_agent MCP tool", () => {
       labels: { source: "mcp" },
     });
 
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: existingCwd,
         title: "Config test",
@@ -1249,7 +1249,7 @@ describe("create_agent MCP tool", () => {
   });
 
   it("registers and broadcasts a workspace when create_agent creates a worktree", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const tempDir = await mkdtemp(join(tmpdir(), "thoth-mcp-worktree-"));
     const repoDir = join(tempDir, "repo");
     const thothHome = join(tempDir, ".thoth");
@@ -1274,7 +1274,7 @@ describe("create_agent MCP tool", () => {
       execFileSync("git", ["commit", "-m", "init"], { cwd: repoDir, stdio: "pipe" });
       execFileSync("git", ["branch", "-M", "main"], { cwd: repoDir, stdio: "pipe" });
 
-      spies.agentManager.createAgent.mockImplementation(async (config: { cwd: string }) => ({
+      spies.executionService.createAgent.mockImplementation(async (config: { cwd: string }) => ({
         id: "agent-with-worktree",
         cwd: config.cwd,
         lifecycle: "idle",
@@ -1284,7 +1284,7 @@ describe("create_agent MCP tool", () => {
       }));
 
       const server = await createAgentMcpServer({
-        agentManager,
+        executionService,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
         thothHome,
@@ -1316,7 +1316,7 @@ describe("create_agent MCP tool", () => {
       expect(broadcasts[0]).toBe(createdWorkspaceIds[0]);
       expect(setupContinuations).toEqual(["agent"]);
       expect(startedAgentSetupIds).toEqual(["agent-with-worktree"]);
-      const agentCwd = z.string().parse(spies.agentManager.createAgent.mock.calls[0]?.[0].cwd);
+      const agentCwd = z.string().parse(spies.executionService.createAgent.mock.calls[0]?.[0].cwd);
       const branchName = execFileSync("git", ["branch", "--show-current"], {
         cwd: agentCwd,
         stdio: "pipe",
@@ -1326,7 +1326,7 @@ describe("create_agent MCP tool", () => {
       expect(branchName).toBe("feature/agent-worktree");
       // The agent is stamped with the freshly created worktree's workspaceId so
       // workspaceId-scoped archive can find and tear it down later.
-      expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+      expect(spies.executionService.createAgent).toHaveBeenCalledWith(
         expect.objectContaining({
           cwd: expect.stringContaining("agent-worktree"),
         }),
@@ -1339,7 +1339,7 @@ describe("create_agent MCP tool", () => {
   });
 
   it("creates a create_agent branch-off worktree without invoking the legacy metadata branch rename", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const tempDir = await mkdtemp(join(tmpdir(), "thoth-mcp-agent-worktree-name-context-"));
     const repoDir = join(tempDir, "repo");
     const thothHome = join(tempDir, ".thoth");
@@ -1366,7 +1366,7 @@ describe("create_agent MCP tool", () => {
       execFileSync("git", ["commit", "-m", "init"], { cwd: repoDir, stdio: "pipe" });
       execFileSync("git", ["branch", "-M", "main"], { cwd: repoDir, stdio: "pipe" });
 
-      spies.agentManager.createAgent.mockImplementation(async (config: { cwd: string }) => ({
+      spies.executionService.createAgent.mockImplementation(async (config: { cwd: string }) => ({
         id: "agent-auto-named-worktree",
         cwd: config.cwd,
         lifecycle: "idle",
@@ -1376,7 +1376,7 @@ describe("create_agent MCP tool", () => {
       }));
 
       const server = await createAgentMcpServer({
-        agentManager,
+        executionService,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
         thothHome,
@@ -1399,7 +1399,7 @@ describe("create_agent MCP tool", () => {
         background: true,
       });
 
-      const agentCwd = z.string().parse(spies.agentManager.createAgent.mock.calls[0]?.[0].cwd);
+      const agentCwd = z.string().parse(spies.executionService.createAgent.mock.calls[0]?.[0].cwd);
       const initialBranch = execFileSync("git", ["branch", "--show-current"], {
         cwd: agentCwd,
         stdio: "pipe",
@@ -1417,7 +1417,7 @@ describe("create_agent MCP tool", () => {
   });
 
   it("does not auto-rename a create_agent checkout worktree from the initial prompt", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const tempDir = await mkdtemp(join(tmpdir(), "thoth-mcp-agent-checkout-name-context-"));
     const repoDir = join(tempDir, "repo");
     const thothHome = join(tempDir, ".thoth");
@@ -1452,7 +1452,7 @@ describe("create_agent MCP tool", () => {
       execFileSync("git", ["commit", "-m", "feature"], { cwd: repoDir, stdio: "pipe" });
       execFileSync("git", ["checkout", "main"], { cwd: repoDir, stdio: "pipe" });
 
-      spies.agentManager.createAgent.mockImplementation(async (config: { cwd: string }) => ({
+      spies.executionService.createAgent.mockImplementation(async (config: { cwd: string }) => ({
         id: "agent-checkout-worktree",
         cwd: config.cwd,
         lifecycle: "idle",
@@ -1462,7 +1462,7 @@ describe("create_agent MCP tool", () => {
       }));
 
       const server = await createAgentMcpServer({
-        agentManager,
+        executionService,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
         thothHome,
@@ -1485,7 +1485,7 @@ describe("create_agent MCP tool", () => {
         background: true,
       });
 
-      const agentCwd = z.string().parse(spies.agentManager.createAgent.mock.calls[0]?.[0].cwd);
+      const agentCwd = z.string().parse(spies.executionService.createAgent.mock.calls[0]?.[0].cwd);
       expect(
         execFileSync("git", ["branch", "--show-current"], { cwd: agentCwd, stdio: "pipe" })
           .toString()
@@ -1500,7 +1500,7 @@ describe("create_agent MCP tool", () => {
   });
 
   it("passes create_agent GitHub PR worktrees through workspace creation without metadata branch rename", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const startedAgentSetupIds: string[] = [];
     const createThothWorktree = vi.fn(
       async (
@@ -1546,7 +1546,7 @@ describe("create_agent MCP tool", () => {
         throw new Error("agent metadata branch rename should not run");
       }),
     };
-    spies.agentManager.createAgent.mockImplementation(async (config: { cwd: string }) => ({
+    spies.executionService.createAgent.mockImplementation(async (config: { cwd: string }) => ({
       id: "agent-pr-worktree",
       cwd: config.cwd,
       lifecycle: "idle",
@@ -1556,7 +1556,7 @@ describe("create_agent MCP tool", () => {
     }));
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       createThothWorktree,
@@ -1588,7 +1588,7 @@ describe("create_agent MCP tool", () => {
       }),
     );
     expect(startedAgentSetupIds).toEqual(["agent-pr-worktree"]);
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({ cwd: "/tmp/worktrees/pr-123" }),
       undefined,
       { workspaceId: "ws-pr-123" },
@@ -1598,7 +1598,7 @@ describe("create_agent MCP tool", () => {
   });
 
   it("registers and broadcasts a workspace when create_worktree creates a worktree", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const tempDir = await mkdtemp(join(tmpdir(), "thoth-mcp-create-worktree-"));
     const repoDir = join(tempDir, "repo");
     const thothHome = join(tempDir, ".thoth");
@@ -1627,7 +1627,7 @@ describe("create_agent MCP tool", () => {
       };
 
       const server = await createAgentMcpServer({
-        agentManager,
+        executionService,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
         thothHome,
@@ -1670,7 +1670,7 @@ describe("create_agent MCP tool", () => {
   });
 
   it("forces a workspace git snapshot refresh when archive_worktree deletes a worktree", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const tempDir = realpathSync.native(
       await mkdtemp(join(tmpdir(), "thoth-mcp-archive-worktree-")),
     );
@@ -1704,7 +1704,7 @@ describe("create_agent MCP tool", () => {
       const clearWorkspaceArchiving = vi.fn();
       const listActiveWorkspaces = vi.fn(async () => []);
       const server = await createAgentMcpServer({
-        agentManager,
+        executionService,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
         thothHome,
@@ -1766,7 +1766,7 @@ describe("create_agent MCP tool", () => {
   });
 
   it("archives every workspace on a directory and removes the directory", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const tempDir = realpathSync.native(
       await mkdtemp(join(tmpdir(), "thoth-mcp-archive-worktree-multi-")),
     );
@@ -1806,7 +1806,7 @@ describe("create_agent MCP tool", () => {
         archivedWorkspaceIds,
       );
       const server = await createAgentMcpServer({
-        agentManager,
+        executionService,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
         thothHome,
@@ -1853,7 +1853,7 @@ describe("create_agent MCP tool", () => {
   });
 
   it("archives a worktree by slug", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const tempDir = realpathSync.native(
       await mkdtemp(join(tmpdir(), "thoth-mcp-archive-worktree-slug-")),
     );
@@ -1882,7 +1882,7 @@ describe("create_agent MCP tool", () => {
         resolveRepoRoot: vi.fn(async () => repoDir),
       };
       const server = await createAgentMcpServer({
-        agentManager,
+        executionService,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
         thothHome,
@@ -1931,7 +1931,7 @@ describe("create_agent MCP tool", () => {
   });
 
   it("routes list_worktrees through WorkspaceGitService", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const workspaceGitService = {
       getSnapshot: vi.fn(async () => null),
       listWorktrees: vi.fn(async () => [
@@ -1943,7 +1943,7 @@ describe("create_agent MCP tool", () => {
       ]),
     };
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       workspaceGitService: workspaceGitService as unknown as Pick<
@@ -1969,9 +1969,9 @@ describe("create_agent MCP tool", () => {
   });
 
   it("accepts custom provider IDs in create_agent input validation", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -1990,8 +1990,8 @@ describe("create_agent MCP tool", () => {
   });
 
   it("rejects background from caller agents and defaults notify-on-finish on", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.getAgent.mockReturnValue({
       id: "parent-agent",
       cwd: existingCwd,
       workspaceId: "wks_parent",
@@ -2000,7 +2000,7 @@ describe("create_agent MCP tool", () => {
     } as ManagedAgent);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       callerAgentId: "parent-agent",
@@ -2036,7 +2036,7 @@ describe("create_agent MCP tool", () => {
   });
 
   it("returns notify-on-finish guidance for caller-created agents", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const parentAgent = {
       id: "parent-agent",
       cwd: existingCwd,
@@ -2052,15 +2052,15 @@ describe("create_agent MCP tool", () => {
       availableModes: [],
       config: { title: "Child" },
     } as ManagedAgent;
-    spies.agentManager.getAgent.mockImplementation((agentId: string) => {
+    spies.executionService.getAgent.mockImplementation((agentId: string) => {
       if (agentId === "parent-agent") return parentAgent;
       if (agentId === "child-agent") return childAgent;
       return null;
     });
-    spies.agentManager.createAgent.mockResolvedValue(childAgent);
+    spies.executionService.createAgent.mockResolvedValue(childAgent);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       callerAgentId: "parent-agent",
@@ -2081,15 +2081,15 @@ describe("create_agent MCP tool", () => {
   });
 
   it("creates detached caller agents without a parent label", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.getAgent.mockReturnValue({
       id: "parent-agent",
       cwd: existingCwd,
       workspaceId: "wks_parent",
       provider: "codex",
       currentModeId: "full-access",
     } as ManagedAgent);
-    spies.agentManager.createAgent.mockResolvedValue({
+    spies.executionService.createAgent.mockResolvedValue({
       id: "detached-agent",
       cwd: existingCwd,
       lifecycle: "idle",
@@ -2099,7 +2099,7 @@ describe("create_agent MCP tool", () => {
     } as ManagedAgent);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       callerAgentId: "parent-agent",
@@ -2118,7 +2118,7 @@ describe("create_agent MCP tool", () => {
       },
     });
 
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: existingCwd,
       }),
@@ -2133,15 +2133,15 @@ describe("create_agent MCP tool", () => {
   });
 
   it("accepts provider features from caller agents and passes them through createAgent", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.getAgent.mockReturnValue({
       id: "parent-agent",
       cwd: existingCwd,
       workspaceId: "wks_parent",
       provider: "claude",
       currentModeId: "bypassPermissions",
     } as ManagedAgent);
-    spies.agentManager.createAgent.mockResolvedValue({
+    spies.executionService.createAgent.mockResolvedValue({
       id: "child-agent",
       cwd: existingCwd,
       lifecycle: "idle",
@@ -2156,7 +2156,7 @@ describe("create_agent MCP tool", () => {
     });
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       callerAgentId: "parent-agent",
       providerSnapshotManager: providerSnapshot.manager,
@@ -2176,7 +2176,7 @@ describe("create_agent MCP tool", () => {
 
     await tool.handler(input);
 
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "codex",
         model: "gpt-5.4",
@@ -2195,21 +2195,21 @@ describe("create_agent MCP tool", () => {
   it("inherits the parent's workspaceId when an MCP child is created in the parent's working tree", async () => {
     const workdir = await mkdtemp(join(tmpdir(), "mcp-workspace-inherit-"));
     const storage = new AgentStorage(join(workdir, "agents"), logger);
-    const agentManager = new AgentManager({
-      clients: createTestAgentClients(),
+    const executionService = new ExecutionService({
+      adapters: createTestHarnessAdapters(),
       registry: storage,
       logger,
     });
 
     try {
-      const parent = await agentManager.createAgent(
+      const parent = await executionService.createAgent(
         { provider: "codex", cwd: existingCwd },
         undefined,
         { workspaceId: "wks_parent" },
       );
 
       const server = await createAgentMcpServer({
-        agentManager,
+        executionService,
         agentStorage: storage,
         callerAgentId: parent.id,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -2232,9 +2232,9 @@ describe("create_agent MCP tool", () => {
     }
   });
 
-  it("delegates MCP injection to AgentManager and passes through an undefined agent ID", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
+  it("delegates MCP injection to ExecutionService and passes through an undefined agent ID", async () => {
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.createAgent.mockResolvedValue({
       id: "agent-injected-123",
       cwd: REPO_CWD,
       lifecycle: "idle",
@@ -2244,7 +2244,7 @@ describe("create_agent MCP tool", () => {
     } as ManagedAgent);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       ensureWorkspaceForCreate,
@@ -2259,7 +2259,7 @@ describe("create_agent MCP tool", () => {
       initialPrompt: "Do work",
     });
 
-    const [configArg, agentIdArg, optionsArg] = spies.agentManager.createAgent.mock.calls[0];
+    const [configArg, agentIdArg, optionsArg] = spies.executionService.createAgent.mock.calls[0];
     expect(configArg).toMatchObject({
       cwd: existingCwd,
       title: "Injected config test",
@@ -2270,13 +2270,13 @@ describe("create_agent MCP tool", () => {
   });
 
   it("rejects an explicit mode that is not valid for the target provider", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const providerSnapshot = createOpenCodeManager();
     providerSnapshot.stub.resolveCreateConfig.mockImplementation(async () => {
       throw new Error("resolver rejected mode");
     });
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: providerSnapshot.manager,
       ensureWorkspaceForCreate,
@@ -2293,12 +2293,12 @@ describe("create_agent MCP tool", () => {
         initialPrompt: "Do work",
       }),
     ).rejects.toThrow("resolver rejected mode");
-    expect(spies.agentManager.createAgent).not.toHaveBeenCalled();
+    expect(spies.executionService.createAgent).not.toHaveBeenCalled();
   });
 
   it("validates create_agent modes against the shared provider snapshot", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.createAgent.mockResolvedValue({
       id: "child-agent",
       cwd: existingCwd,
       lifecycle: "idle",
@@ -2324,7 +2324,7 @@ describe("create_agent MCP tool", () => {
       return { modeId: "dynamic", featureValues: undefined };
     });
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: provStub.manager,
       ensureWorkspaceForCreate,
@@ -2340,7 +2340,7 @@ describe("create_agent MCP tool", () => {
       initialPrompt: "Do work",
     });
 
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({ modeId: "dynamic" }),
       undefined,
       { workspaceId: "workspace-created" },
@@ -2348,8 +2348,8 @@ describe("create_agent MCP tool", () => {
   });
 
   it("passes resolver-returned mode and features into createAgent", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.createAgent.mockResolvedValue({
       id: "child-agent",
       cwd: existingCwd,
       lifecycle: "idle",
@@ -2363,7 +2363,7 @@ describe("create_agent MCP tool", () => {
       featureValues: { auto_accept: true },
     });
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: providerSnapshot.manager,
       ensureWorkspaceForCreate,
@@ -2379,7 +2379,7 @@ describe("create_agent MCP tool", () => {
       initialPrompt: "Do work",
     });
 
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({ modeId: "build", featureValues: { auto_accept: true } }),
       undefined,
       { workspaceId: "workspace-created" },
@@ -2387,7 +2387,7 @@ describe("create_agent MCP tool", () => {
   });
 
   it("passes the real parent agent and explicit unattended intent to the resolver", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const parentAgent = {
       id: "parent-agent",
       cwd: existingCwd,
@@ -2395,8 +2395,8 @@ describe("create_agent MCP tool", () => {
       provider: "claude",
       currentModeId: "bypassPermissions",
     } as ManagedAgent;
-    spies.agentManager.getAgent.mockReturnValue(parentAgent);
-    spies.agentManager.createAgent.mockResolvedValue({
+    spies.executionService.getAgent.mockReturnValue(parentAgent);
+    spies.executionService.createAgent.mockResolvedValue({
       id: "child-agent",
       cwd: existingCwd,
       lifecycle: "idle",
@@ -2411,7 +2411,7 @@ describe("create_agent MCP tool", () => {
     });
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       callerAgentId: "parent-agent",
       providerSnapshotManager: providerSnapshot.manager,
@@ -2428,7 +2428,7 @@ describe("create_agent MCP tool", () => {
     expect(providerSnapshot.stub.resolveCreateConfig).toHaveBeenCalledWith(
       expect.objectContaining({ parent: parentAgent, unattended: false }),
     );
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         modeId: "resolver-mode",
         featureValues: { resolver_feature: true },
@@ -2439,15 +2439,15 @@ describe("create_agent MCP tool", () => {
   });
 
   it("accepts an explicit valid mode across providers", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.getAgent.mockReturnValue({
       id: "parent-agent",
       cwd: existingCwd,
       workspaceId: "wks_parent",
       provider: "claude",
       currentModeId: "bypassPermissions",
     } as ManagedAgent);
-    spies.agentManager.createAgent.mockResolvedValue({
+    spies.executionService.createAgent.mockResolvedValue({
       id: "child-agent",
       cwd: existingCwd,
       lifecycle: "idle",
@@ -2457,7 +2457,7 @@ describe("create_agent MCP tool", () => {
     } as ManagedAgent);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       callerAgentId: "parent-agent",
@@ -2472,7 +2472,7 @@ describe("create_agent MCP tool", () => {
       initialPrompt: "Do work",
     });
 
-    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+    expect(spies.executionService.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({ modeId: "build" }),
       undefined,
       expect.any(Object),
@@ -2485,7 +2485,7 @@ describe("send_agent_prompt MCP tool", () => {
   const existingCwd = process.cwd();
 
   it("defaults agent-scoped prompts to background finish notifications", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const parentAgent = {
       id: "parent-agent",
       cwd: existingCwd,
@@ -2501,14 +2501,14 @@ describe("send_agent_prompt MCP tool", () => {
       availableModes: [],
       config: { title: "Child" },
     } as ManagedAgent;
-    spies.agentManager.getAgent.mockImplementation((agentId: string) => {
+    spies.executionService.getAgent.mockImplementation((agentId: string) => {
       if (agentId === "parent-agent") return parentAgent;
       if (agentId === "child-agent") return childAgent;
       return null;
     });
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       callerAgentId: "parent-agent",
@@ -2531,16 +2531,16 @@ describe("send_agent_prompt MCP tool", () => {
 
     const response = await tool.handler(parsed.data as Record<string, unknown>);
 
-    expect(spies.agentManager.subscribe).toHaveBeenCalledTimes(1);
-    expect(spies.agentManager.waitForAgentEvent).not.toHaveBeenCalled();
+    expect(spies.executionService.subscribe).toHaveBeenCalledTimes(1);
+    expect(spies.executionService.waitForAgentEvent).not.toHaveBeenCalled();
     expect(response.structuredContent.guidance).toBe(
       "You will get notified when the prompted agent finishes, errors, or needs permission. Do not call wait_for_agent or poll for status; continue with other work until the notification arrives.",
     );
   });
 
   it("keeps top-level prompts blocking by default", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.getAgent.mockReturnValue({
       id: "child-agent",
       cwd: existingCwd,
       lifecycle: "idle",
@@ -2550,7 +2550,7 @@ describe("send_agent_prompt MCP tool", () => {
     } as ManagedAgent);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -2572,15 +2572,15 @@ describe("send_agent_prompt MCP tool", () => {
 
     await tool.handler(parsed.data as Record<string, unknown>);
 
-    expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
-    expect(spies.agentManager.waitForAgentEvent).toHaveBeenCalledWith(
+    expect(spies.executionService.subscribe).not.toHaveBeenCalled();
+    expect(spies.executionService.waitForAgentEvent).toHaveBeenCalledWith(
       "child-agent",
       expect.objectContaining({ waitForActive: true }),
     );
   });
 
   it("does not arm a finish notification for blocking agent-scoped prompts", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const parentAgent = {
       id: "parent-agent",
       cwd: existingCwd,
@@ -2596,14 +2596,14 @@ describe("send_agent_prompt MCP tool", () => {
       availableModes: [],
       config: { title: "Child" },
     } as ManagedAgent;
-    spies.agentManager.getAgent.mockImplementation((agentId: string) => {
+    spies.executionService.getAgent.mockImplementation((agentId: string) => {
       if (agentId === "parent-agent") return parentAgent;
       if (agentId === "child-agent") return childAgent;
       return null;
     });
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       callerAgentId: "parent-agent",
@@ -2617,8 +2617,8 @@ describe("send_agent_prompt MCP tool", () => {
       background: false,
     });
 
-    expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
-    expect(spies.agentManager.waitForAgentEvent).toHaveBeenCalledWith(
+    expect(spies.executionService.subscribe).not.toHaveBeenCalled();
+    expect(spies.executionService.waitForAgentEvent).toHaveBeenCalledWith(
       "child-agent",
       expect.objectContaining({ waitForActive: true }),
     );
@@ -2629,9 +2629,9 @@ describe("update_agent MCP tool", () => {
   const logger = createTestLogger();
 
   it("does not register the replaced feature-specific MCP tool", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -2641,9 +2641,9 @@ describe("update_agent MCP tool", () => {
   });
 
   it("updates runtime settings before metadata", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -2666,11 +2666,15 @@ describe("update_agent MCP tool", () => {
 
     const response = await tool.handler(input);
 
-    expect(spies.agentManager.setAgentMode).toHaveBeenCalledWith("agent-1", "full-access");
-    expect(spies.agentManager.setAgentModel).toHaveBeenCalledWith("agent-1", "gpt-5.4");
-    expect(spies.agentManager.setAgentThinkingOption).toHaveBeenCalledWith("agent-1", "high");
-    expect(spies.agentManager.setAgentFeature).toHaveBeenCalledWith("agent-1", "fast_mode", true);
-    expect(spies.agentManager.updateAgentMetadata).toHaveBeenCalledWith("agent-1", {
+    expect(spies.executionService.setAgentMode).toHaveBeenCalledWith("agent-1", "full-access");
+    expect(spies.executionService.setAgentModel).toHaveBeenCalledWith("agent-1", "gpt-5.4");
+    expect(spies.executionService.setAgentThinkingOption).toHaveBeenCalledWith("agent-1", "high");
+    expect(spies.executionService.setAgentFeature).toHaveBeenCalledWith(
+      "agent-1",
+      "fast_mode",
+      true,
+    );
+    expect(spies.executionService.updateAgentMetadata).toHaveBeenCalledWith("agent-1", {
       title: "Updated agent",
       labels: { role: "worker" },
     });
@@ -2678,9 +2682,9 @@ describe("update_agent MCP tool", () => {
   });
 
   it("reports success for a no-op update with neither metadata nor settings", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -2690,18 +2694,18 @@ describe("update_agent MCP tool", () => {
     const response = await tool.handler({ agentId: "agent-1" });
 
     expect(response.structuredContent).toEqual({ success: true });
-    expect(spies.agentManager.updateAgentMetadata).not.toHaveBeenCalled();
-    expect(spies.agentManager.setAgentMode).not.toHaveBeenCalled();
-    expect(spies.agentManager.setAgentModel).not.toHaveBeenCalled();
-    expect(spies.agentManager.setAgentThinkingOption).not.toHaveBeenCalled();
-    expect(spies.agentManager.setAgentFeature).not.toHaveBeenCalled();
+    expect(spies.executionService.updateAgentMetadata).not.toHaveBeenCalled();
+    expect(spies.executionService.setAgentMode).not.toHaveBeenCalled();
+    expect(spies.executionService.setAgentModel).not.toHaveBeenCalled();
+    expect(spies.executionService.setAgentThinkingOption).not.toHaveBeenCalled();
+    expect(spies.executionService.setAgentFeature).not.toHaveBeenCalled();
   });
 
   it("does not update metadata when runtime settings fail", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.setAgentFeature.mockRejectedValue(new Error("unsupported feature"));
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.setAgentFeature.mockRejectedValue(new Error("unsupported feature"));
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -2718,7 +2722,7 @@ describe("update_agent MCP tool", () => {
     ).rejects.toThrow("unsupported feature");
 
     expect(spies.agentStorage.get).not.toHaveBeenCalled();
-    expect(spies.agentManager.updateAgentMetadata).not.toHaveBeenCalled();
+    expect(spies.executionService.updateAgentMetadata).not.toHaveBeenCalled();
   });
 });
 
@@ -2727,10 +2731,10 @@ describe("create_schedule MCP tool", () => {
   const createAgentMcpServer = createWorkspaceScopedAgentMcpServer;
 
   it("requires provider for schedules", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const create = vi.fn(async (input: CreateScheduleInput) => createStoredSchedule(input));
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ create }),
@@ -2749,10 +2753,10 @@ describe("create_schedule MCP tool", () => {
   });
 
   it("keeps create_schedule provider overrides compatible with provider and provider/model forms", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const create = vi.fn(async (input: CreateScheduleInput) => createStoredSchedule(input));
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ create }),
@@ -2797,8 +2801,8 @@ describe("create_schedule MCP tool", () => {
   });
 
   it("advertises create_schedule output schema that accepts inherited feature values", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.getAgent.mockReturnValue({
       id: "parent-agent",
       provider: "opencode",
       cwd: REPO_CWD,
@@ -2813,7 +2817,7 @@ describe("create_schedule MCP tool", () => {
     } as ManagedAgent);
     const create = vi.fn(async (input: CreateScheduleInput) => createStoredSchedule(input));
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ create }),
@@ -2836,12 +2840,12 @@ describe("create_schedule MCP tool", () => {
   });
 
   it("passes timezone through cron create_schedule input", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const create = vi.fn(async (scheduleInput: CreateScheduleInput) =>
       createStoredSchedule(scheduleInput),
     );
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ create }),
@@ -2868,10 +2872,10 @@ describe("create_schedule MCP tool", () => {
   });
 
   it("rejects removed create_schedule every input", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const create = vi.fn();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ create }),
@@ -2890,10 +2894,10 @@ describe("create_schedule MCP tool", () => {
   });
 
   it("rejects create_schedule without cron", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const create = vi.fn();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ create }),
@@ -2912,10 +2916,10 @@ describe("create_schedule MCP tool", () => {
   });
 
   it.each(["", "   "])("rejects create_schedule blank timezone %#", async (timezone) => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const create = vi.fn();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ create }),
@@ -2941,8 +2945,8 @@ describe("create_heartbeat MCP tool", () => {
   const createAgentMcpServer = createWorkspaceScopedAgentMcpServer;
 
   it("creates a self-targeted cron heartbeat", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.getAgent.mockReturnValue({
       id: "parent-agent",
       provider: "codex",
       cwd: REPO_CWD,
@@ -2953,7 +2957,7 @@ describe("create_heartbeat MCP tool", () => {
     } as ManagedAgent);
     const create = vi.fn(async (input: CreateScheduleInput) => createStoredSchedule(input));
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ create }),
@@ -2984,10 +2988,10 @@ describe("create_heartbeat MCP tool", () => {
   });
 
   it("requires an agent-scoped session", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const create = vi.fn();
     const server = await createUnscopedAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ create }),
@@ -3030,7 +3034,7 @@ describe("update_schedule MCP tool", () => {
   }
 
   it("calls scheduleService.update with correct input", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => ({
       ...stored,
@@ -3039,7 +3043,7 @@ describe("update_schedule MCP tool", () => {
       updatedAt: "2026-04-11T01:00:00.000Z",
     }));
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ update }),
@@ -3061,11 +3065,11 @@ describe("update_schedule MCP tool", () => {
   });
 
   it("converts every to cadence", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ update }),
@@ -3085,11 +3089,11 @@ describe("update_schedule MCP tool", () => {
   });
 
   it("passes timezone through cron update_schedule input", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ update }),
@@ -3114,11 +3118,11 @@ describe("update_schedule MCP tool", () => {
   });
 
   it("accepts a blank cron field when updating every cadence", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ update }),
@@ -3155,11 +3159,11 @@ describe("update_schedule MCP tool", () => {
       cadence: { type: "cron", expression: "*/10 * * * *" },
     },
   ])("normalizes update_schedule blank cadence input for $label", async ({ input, cadence }) => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ update }),
@@ -3176,10 +3180,10 @@ describe("update_schedule MCP tool", () => {
   });
 
   it("rejects both every and cron", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const update = vi.fn();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ update }),
@@ -3198,10 +3202,10 @@ describe("update_schedule MCP tool", () => {
   });
 
   it("rejects update_schedule timezone without cron", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const update = vi.fn();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ update }),
@@ -3221,10 +3225,10 @@ describe("update_schedule MCP tool", () => {
   });
 
   it.each(["", "   "])("rejects update_schedule blank timezone %#", async (timezone) => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const update = vi.fn();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ update }),
@@ -3244,11 +3248,11 @@ describe("update_schedule MCP tool", () => {
   });
 
   it("passes new-agent provider config and expiry updates", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ update }),
@@ -3276,11 +3280,11 @@ describe("update_schedule MCP tool", () => {
   });
 
   it("clears model, mode, max runs, and expiry", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ update }),
@@ -3308,10 +3312,10 @@ describe("update_schedule MCP tool", () => {
   });
 
   it("rejects conflicting model and expiry inputs", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const update = vi.fn();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ update }),
@@ -3355,11 +3359,11 @@ describe("schedule_logs MCP tool", () => {
   }
 
   it("returns runs for a schedule", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const runs = [makeRun({ id: "run-1" }), makeRun({ id: "run-2", status: "failed" })];
     const logs = vi.fn(async (_id: string) => runs);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       scheduleService: workspaceScheduleService({ logs }),
@@ -3374,9 +3378,9 @@ describe("schedule_logs MCP tool", () => {
   });
 
   it("throws when schedule service is not configured", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -3393,7 +3397,7 @@ describe("provider listing MCP tool", () => {
   const logger = createTestLogger();
 
   it("returns providers from the registry, including custom providers", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const provStub = createProviderSnapshotManagerStub();
     provStub.listRegisteredProviderIds.mockReturnValue(["claude", "zai"]);
     provStub.listProviders.mockResolvedValue([
@@ -3413,7 +3417,7 @@ describe("provider listing MCP tool", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: provStub.manager,
       logger,
@@ -3448,7 +3452,7 @@ describe("provider listing MCP tool", () => {
   });
 
   it("returns provider modes from the shared snapshot catalog", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const provStub = createProviderSnapshotManagerStub();
     provStub.listRegisteredProviderIds.mockReturnValue(["codex"]);
     provStub.listProviders.mockResolvedValue([
@@ -3459,7 +3463,7 @@ describe("provider listing MCP tool", () => {
       }),
     ]);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: provStub.manager,
       logger,
@@ -3477,7 +3481,7 @@ describe("provider listing MCP tool", () => {
   });
 
   it("returns disabled providers with metadata without checking availability", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const provStub = createProviderSnapshotManagerStub();
     provStub.listRegisteredProviderIds.mockReturnValue(["codex"]);
     provStub.listProviders.mockResolvedValue([
@@ -3490,7 +3494,7 @@ describe("provider listing MCP tool", () => {
       }),
     ]);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: provStub.manager,
       logger,
@@ -3517,9 +3521,9 @@ describe("provider MCP tools", () => {
   const logger = createTestLogger();
 
   it("does not register the replaced feature-specific provider discovery MCP tool", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -3529,8 +3533,8 @@ describe("provider MCP tools", () => {
   });
 
   it("inspects provider features for a draft agent configuration", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.listDraftFeatures.mockResolvedValue([
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.listDraftFeatures.mockResolvedValue([
       {
         type: "toggle",
         id: "fast_mode",
@@ -3549,7 +3553,7 @@ describe("provider MCP tools", () => {
     provStub.listProviders.mockResolvedValue([codexEntry]);
     provStub.getProvider.mockResolvedValue(codexEntry);
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: provStub.manager,
       logger,
@@ -3570,7 +3574,7 @@ describe("provider MCP tools", () => {
 
     const response = await tool.handler(input);
 
-    expect(spies.agentManager.listDraftFeatures).toHaveBeenCalledWith({
+    expect(spies.executionService.listDraftFeatures).toHaveBeenCalledWith({
       provider: "codex",
       cwd: expect.stringContaining("repo"),
       modeId: "full-access",
@@ -3598,12 +3602,12 @@ describe("provider MCP tools", () => {
   });
 
   it("rejects disabled providers without fetching models", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const provStub = createProviderSnapshotManagerStub();
     provStub.listRegisteredProviderIds.mockReturnValue(["codex"]);
     provStub.listModels.mockRejectedValue(new Error("Provider 'codex' is disabled"));
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: provStub.manager,
       logger,
@@ -3616,14 +3620,14 @@ describe("provider MCP tools", () => {
   });
 
   it("inspect_provider rejects disabled providers without fetching models", async () => {
-    const { agentManager, agentStorage } = createTestDeps();
+    const { executionService, agentStorage } = createTestDeps();
     const provStub = createProviderSnapshotManagerStub();
     provStub.listRegisteredProviderIds.mockReturnValue(["codex"]);
     provStub.getProvider.mockResolvedValue(
       buildSnapshotEntry({ provider: "codex", label: "Codex", enabled: false }),
     );
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: provStub.manager,
       logger,
@@ -3640,8 +3644,8 @@ describe("agent snapshot MCP serialization", () => {
   const logger = createTestLogger();
 
   it("returns compact list items from list_agents", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.listAgents = vi.fn().mockReturnValue([
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.listAgents = vi.fn().mockReturnValue([
       createManagedAgent({
         id: "agent-compact",
         provider: "codex",
@@ -3653,7 +3657,7 @@ describe("agent snapshot MCP serialization", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -3696,16 +3700,16 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("returns archived agent snapshots from storage for get_agent_status", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const record = createStoredRecord({
       id: "archived-agent",
       archivedAt: "2026-04-12T00:00:00.000Z",
     });
-    spies.agentManager.getAgent.mockReturnValue(null);
+    spies.executionService.getAgent.mockReturnValue(null);
     spies.agentStorage.get.mockResolvedValue(record);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       logger,
       providerSnapshotManager: createClaudeOnlyManager(),
@@ -3726,9 +3730,9 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("returns full-detail snapshots from get_agent_status", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     spies.agentStorage.get.mockResolvedValue({ title: "Full detail agent" });
-    spies.agentManager.getAgent.mockReturnValue(
+    spies.executionService.getAgent.mockReturnValue(
       createManagedAgent({
         id: "full-detail-agent",
         provider: "codex",
@@ -3776,7 +3780,7 @@ describe("agent snapshot MCP serialization", () => {
     );
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -3840,8 +3844,8 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("does not expose internal stored agents from get_agent_status", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue(null);
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.getAgent.mockReturnValue(null);
     spies.agentStorage.get.mockResolvedValue(
       createStoredRecord({
         id: "internal-agent",
@@ -3850,7 +3854,7 @@ describe("agent snapshot MCP serialization", () => {
     );
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       logger,
       providerSnapshotManager: createClaudeOnlyManager(),
@@ -3863,12 +3867,12 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("defaults list_agents to caller cwd and excludes archived agents", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const now = new Date().toISOString();
-    spies.agentManager.getAgent.mockReturnValue(
+    spies.executionService.getAgent.mockReturnValue(
       createManagedAgent({ id: "caller-agent", cwd: "/tmp/workspace" }),
     );
-    spies.agentManager.listAgents.mockReturnValue([
+    spies.executionService.listAgents.mockReturnValue([
       createManagedAgent({ id: "in-cwd", cwd: "/tmp/workspace" }),
       createManagedAgent({ id: "in-child-cwd", cwd: "/tmp/workspace/packages/server" }),
       createManagedAgent({ id: "other-cwd", cwd: "/tmp/other" }),
@@ -3892,7 +3896,7 @@ describe("agent snapshot MCP serialization", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       logger,
       providerSnapshotManager: createClaudeOnlyManager(),
@@ -3907,11 +3911,11 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("allows explicit cwd, status, archive, time, and limit filters for list_agents", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const now = Date.now();
     const recent = new Date(now - 60 * 60 * 1000).toISOString();
     const old = new Date(now - 72 * 60 * 60 * 1000).toISOString();
-    spies.agentManager.listAgents.mockReturnValue([
+    spies.executionService.listAgents.mockReturnValue([
       createManagedAgent({
         id: "running-target",
         cwd: TARGET_CWD,
@@ -3943,7 +3947,7 @@ describe("agent snapshot MCP serialization", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       logger,
       providerSnapshotManager: createClaudeOnlyManager(),
@@ -3965,7 +3969,7 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("bounds includeArchived by default time window and limit", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const now = Date.now();
     const recentArchivedRecords = Array.from({ length: 55 }, (_, index) =>
       createStoredRecord({
@@ -3982,7 +3986,7 @@ describe("agent snapshot MCP serialization", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       logger,
       providerSnapshotManager: createClaudeOnlyManager(),
@@ -4002,7 +4006,7 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("returns compact list items for stored archived agents", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const now = new Date().toISOString();
     spies.agentStorage.list.mockResolvedValue([
       createStoredRecord({
@@ -4023,7 +4027,7 @@ describe("agent snapshot MCP serialization", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       logger,
       providerSnapshotManager: createClaudeOnlyManager(),
@@ -4060,9 +4064,9 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("sorts list_agents by attention, status priority, then activity", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const now = Date.now();
-    spies.agentManager.listAgents.mockReturnValue([
+    spies.executionService.listAgents.mockReturnValue([
       createManagedAgent({
         id: "idle-recent",
         lifecycle: "idle",
@@ -4101,7 +4105,7 @@ describe("agent snapshot MCP serialization", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       logger,
@@ -4120,9 +4124,9 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("emits list_agents payloads that satisfy the declared output schema", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const now = new Date().toISOString();
-    spies.agentManager.listAgents.mockReturnValue([createManagedAgent()]);
+    spies.executionService.listAgents.mockReturnValue([createManagedAgent()]);
     spies.agentStorage.list.mockResolvedValue([
       createStoredRecord({
         id: "stored-non-archived",
@@ -4134,7 +4138,7 @@ describe("agent snapshot MCP serialization", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       logger,
       providerSnapshotManager: createClaudeOnlyManager(),
@@ -4151,8 +4155,8 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("emits list_pending_permissions payloads that satisfy the declared output schema", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.listAgents.mockReturnValue([
+    const { executionService, agentStorage, spies } = createTestDeps();
+    spies.executionService.listAgents.mockReturnValue([
       createManagedAgent({
         id: "agent-with-permission",
         provider: "codex",
@@ -4175,7 +4179,7 @@ describe("agent snapshot MCP serialization", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       logger,
       providerSnapshotManager: createClaudeOnlyManager(),
@@ -4211,19 +4215,19 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("loads archived agents before reading get_agent_activity", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const record = createStoredRecord({ id: "archived-activity-agent" });
     const snapshot = {
       id: "archived-activity-agent",
       currentModeId: "default",
     } as ManagedAgent;
-    spies.agentManager.getAgent
+    spies.executionService.getAgent
       .mockReturnValueOnce(null)
       .mockReturnValue(snapshot)
       .mockReturnValue(snapshot);
     spies.agentStorage.get.mockResolvedValue(record);
-    spies.agentManager.resumeAgentFromPersistence.mockResolvedValue(snapshot);
-    spies.agentManager.getTimeline.mockReturnValue([
+    spies.executionService.resumeAgentFromPersistence.mockResolvedValue(snapshot);
+    spies.executionService.getTimeline.mockReturnValue([
       {
         kind: "status",
         timestamp: "2026-04-11T00:00:00.000Z",
@@ -4232,7 +4236,7 @@ describe("agent snapshot MCP serialization", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       logger,
       providerSnapshotManager: createClaudeOnlyManager(),
@@ -4247,17 +4251,17 @@ describe("agent snapshot MCP serialization", () => {
         currentModeId: "default",
       }),
     );
-    expect(spies.agentManager.resumeAgentFromPersistence).toHaveBeenCalled();
-    expect(spies.agentManager.hydrateTimelineFromProvider).toHaveBeenCalledWith(
+    expect(spies.executionService.resumeAgentFromPersistence).toHaveBeenCalled();
+    expect(spies.executionService.hydrateTimelineFromProvider).toHaveBeenCalledWith(
       "archived-activity-agent",
     );
   });
 
   it("get_agent_activity limit counts projected messages, not raw deltas", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const snapshot = createManagedAgent({ id: "live-activity-agent", currentModeId: "default" });
-    spies.agentManager.getAgent.mockReturnValue(snapshot);
-    spies.agentManager.getTimeline.mockReturnValue([
+    spies.executionService.getAgent.mockReturnValue(snapshot);
+    spies.executionService.getTimeline.mockReturnValue([
       { type: "user_message", text: "Say hi" },
       { type: "assistant_message", text: "Hello " },
       { type: "assistant_message", text: "world" },
@@ -4268,7 +4272,7 @@ describe("agent snapshot MCP serialization", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       logger: createTestLogger(),
       providerSnapshotManager: createClaudeOnlyManager(),
@@ -4281,10 +4285,10 @@ describe("agent snapshot MCP serialization", () => {
   });
 
   it("get_agent_activity limit=2 returns the last two projected entries whole", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
+    const { executionService, agentStorage, spies } = createTestDeps();
     const snapshot = createManagedAgent({ id: "live-activity-agent-2", currentModeId: "default" });
-    spies.agentManager.getAgent.mockReturnValue(snapshot);
-    spies.agentManager.getTimeline.mockReturnValue([
+    spies.executionService.getAgent.mockReturnValue(snapshot);
+    spies.executionService.getTimeline.mockReturnValue([
       { type: "user_message", text: "u1" },
       { type: "assistant_message", text: "first " },
       { type: "assistant_message", text: "answer" },
@@ -4297,7 +4301,7 @@ describe("agent snapshot MCP serialization", () => {
     ]);
 
     const server = await createAgentMcpServer({
-      agentManager,
+      executionService,
       agentStorage,
       logger: createTestLogger(),
       providerSnapshotManager: createClaudeOnlyManager(),

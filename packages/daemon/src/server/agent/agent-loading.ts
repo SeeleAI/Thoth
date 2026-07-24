@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
 import type { AgentProvider } from "@thoth/drivers/agent-runtime";
-import type { AgentManager, ManagedAgent } from "./agent-manager.js";
+import type { ExecutionService, ManagedAgent } from "./execution-service.js";
 import type { AgentRegistry } from "./agent-storage.js";
 import {
   buildConfigOverrides,
@@ -14,7 +14,7 @@ import {
 const pendingAgentInitializations = new Map<string, Promise<ManagedAgent>>();
 
 export interface EnsureAgentLoadedDeps {
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   validProviders?: Iterable<AgentProvider>;
   logger: Logger;
@@ -24,7 +24,7 @@ export async function ensureAgentLoaded(
   agentId: string,
   deps: EnsureAgentLoadedDeps,
 ): Promise<ManagedAgent> {
-  const existing = deps.agentManager.getAgent(agentId);
+  const existing = deps.executionService.getAgent(agentId);
   if (existing) {
     return existing;
   }
@@ -40,7 +40,7 @@ export async function ensureAgentLoaded(
       throw new Error(`Agent not found: ${agentId}`);
     }
 
-    const validProviders = deps.validProviders ?? deps.agentManager.getRegisteredProviderIds();
+    const validProviders = deps.validProviders ?? deps.executionService.getRegisteredProviderIds();
     const providerAvailable = isStoredAgentProviderAvailable(record, validProviders);
     const handle = providerAvailable
       ? toAgentPersistenceHandle(validProviders, record.persistence)
@@ -49,7 +49,7 @@ export async function ensureAgentLoaded(
     try {
       let snapshot: ManagedAgent;
       if (handle) {
-        snapshot = await deps.agentManager.resumeAgentFromPersistence(
+        snapshot = await deps.executionService.resumeAgentFromPersistence(
           handle,
           buildConfigOverrides(record),
           agentId,
@@ -75,7 +75,7 @@ export async function ensureAgentLoaded(
         if (!config) {
           throw new Error(`Agent ${agentId} references unavailable provider '${record.provider}'`);
         }
-        snapshot = await deps.agentManager.createAgent(config, agentId, {
+        snapshot = await deps.executionService.createAgent(config, agentId, {
           labels: record.labels,
           workspaceId: record.workspaceId,
         });
@@ -85,10 +85,10 @@ export async function ensureAgentLoaded(
         );
       }
 
-      await deps.agentManager.hydrateTimelineFromProvider(agentId);
-      return deps.agentManager.getAgent(agentId) ?? snapshot;
+      await deps.executionService.hydrateTimelineFromProvider(agentId);
+      return deps.executionService.getAgent(agentId) ?? snapshot;
     } catch (error) {
-      const history = await deps.agentManager.restoreHistoryOnlyAgent(record);
+      const history = await deps.executionService.restoreHistoryOnlyAgent(record);
       if (history) {
         deps.logger.warn(
           {

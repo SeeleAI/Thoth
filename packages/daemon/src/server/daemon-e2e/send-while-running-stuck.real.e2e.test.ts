@@ -34,7 +34,7 @@ describe("daemon E2E (real codex) - send while running recovery", () => {
     const logger = pino({ level: "silent" });
     const cwd = tmpCwd();
     const daemon = await createTestThothDaemon({
-      agentClients: createRealProviderClients(["codex"], logger),
+      harnessAdapters: createRealProviderClients(["codex"], logger),
       logger,
     });
 

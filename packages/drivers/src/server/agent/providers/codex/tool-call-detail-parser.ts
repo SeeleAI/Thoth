@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ToolCallDetail } from "../../agent-sdk-types.js";
+import type { ToolCallDetail } from "../../harness-contract.js";
 import { stripCwdPrefix } from "@thoth/protocol/path-utils";
 import {
   ToolEditInputSchema,

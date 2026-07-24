@@ -15,7 +15,7 @@ import type {
   ThothTaskCardModel,
   ThothTurnControlSnapshot,
 } from "@thoth/protocol/thoth/rpc-schemas";
-import type { AgentManager } from "./agent-manager.js";
+import type { ExecutionService } from "./execution-service.js";
 import type { AgentRegistry } from "./agent-storage.js";
 import type {
   AgentPromptInput,
@@ -31,11 +31,7 @@ import {
   type ForegroundTurnAuthorityRecord,
   type WorkspaceForegroundAuthority,
 } from "../workspace-authority/foreground-authority.js";
-import {
-  beginForegroundTurnFence,
-  bindForegroundProviderTurn,
-  endForegroundTurnFence,
-} from "./tools/foreground-turn-fence.js";
+import type { ToolGateway } from "../workspace-authority/tool-gateway.js";
 import type { WorkspaceTaskCoordinator } from "../workspace-authority/task-coordinator.js";
 import type { TaskContextBroker } from "../workspace-authority/task-context-broker.js";
 
@@ -60,10 +56,11 @@ interface StartForegroundTurnInput {
 
 interface ForegroundTurnCoordinatorOptions {
   authorityStore: WorkspaceForegroundAuthority;
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   taskCoordinator: WorkspaceTaskCoordinator;
   taskContextBroker: TaskContextBroker;
+  toolGateway: ToolGateway;
   logger: Logger;
 }
 
@@ -375,7 +372,7 @@ export class ForegroundTurnCoordinator {
 
   async startTurn(input: StartForegroundTurnInput): Promise<ThothTurnAck> {
     const agent = await ensureAgentLoaded(input.agentId, {
-      agentManager: this.options.agentManager,
+      executionService: this.options.executionService,
       agentStorage: this.options.agentStorage,
       logger: this.options.logger,
     });
@@ -401,7 +398,7 @@ export class ForegroundTurnCoordinator {
     }
     const foregroundState = this.options.authorityStore.getState(agent.id);
     if (
-      this.options.agentManager.hasInFlightRun(agent.id) ||
+      this.options.executionService.hasInFlightRun(agent.id) ||
       occupiesForegroundExecutionSlot(foregroundState.lifecycle)
     ) {
       const queued = this.options.authorityStore.enqueueTurn({
@@ -493,7 +490,7 @@ export class ForegroundTurnCoordinator {
         );
       }
       if (input.messageId) {
-        await this.options.agentManager.appendTimelineItem(agent.id, {
+        await this.options.executionService.appendTimelineItem(agent.id, {
           type: "user_message",
           text: input.text,
           messageId: input.messageId,
@@ -573,7 +570,7 @@ export class ForegroundTurnCoordinator {
     this.queueDrains.add(agentId);
     try {
       if (
-        this.options.agentManager.hasInFlightRun(agentId) ||
+        this.options.executionService.hasInFlightRun(agentId) ||
         occupiesForegroundExecutionSlot(this.options.authorityStore.getState(agentId).lifecycle)
       ) {
         return;
@@ -589,7 +586,7 @@ export class ForegroundTurnCoordinator {
     } finally {
       this.queueDrains.delete(agentId);
       if (
-        !this.options.agentManager.hasInFlightRun(agentId) &&
+        !this.options.executionService.hasInFlightRun(agentId) &&
         !occupiesForegroundExecutionSlot(this.options.authorityStore.getState(agentId).lifecycle) &&
         this.options.authorityStore.peekQueue(agentId)
       ) {
@@ -604,19 +601,19 @@ export class ForegroundTurnCoordinator {
     response: import("@thoth/drivers/agent-runtime").AgentPermissionResponse,
   ): Promise<boolean> {
     const turn = this.options.authorityStore.getActiveTurn(agentId);
-    const agent = this.options.agentManager.getAgent(agentId);
+    const agent = this.options.executionService.getAgent(agentId);
     const request = agent?.pendingPermissions.get(requestId);
     if (!turn || !request) {
       return false;
     }
-    const result = await this.options.agentManager.respondToPermission(
+    const result = await this.options.executionService.respondToPermission(
       agentId,
       requestId,
       response,
     );
     if (request.kind === "plan") {
       if (response.behavior === "deny") {
-        endForegroundTurnFence({ agentId, generation: turn.generation });
+        this.options.toolGateway.endForegroundTurn({ agentId, generation: turn.generation });
         this.options.authorityStore.markLifecycle({
           agentId,
           turnId: turn.id,
@@ -627,7 +624,7 @@ export class ForegroundTurnCoordinator {
         });
         return true;
       }
-      await this.options.agentManager.prepareAgentRunMode(agentId, "default");
+      await this.options.executionService.prepareAgentRunMode(agentId, "default");
       this.options.authorityStore.markLifecycle({
         agentId,
         turnId: turn.id,
@@ -690,7 +687,9 @@ export class ForegroundTurnCoordinator {
       };
     }
     if (record.kind === "goal_card" && request.answer.intent === "accept_loop") {
-      const capability = await this.options.agentManager.getAgentPlanCapability(request.agentId);
+      const capability = await this.options.executionService.getAgentPlanCapability(
+        request.agentId,
+      );
       if (capability.kind !== "native") {
         return {
           requestId: request.requestId,
@@ -740,7 +739,7 @@ export class ForegroundTurnCoordinator {
 
     if (cancelRequested) {
       await this.appendSubmittedCard(request.agentId, result.card);
-      await this.options.agentManager.cancelAgentRun(request.agentId).catch(() => false);
+      await this.options.executionService.cancelAgentRun(request.agentId).catch(() => false);
     } else if (record.kind === "goal_card" && request.answer.intent === "accept_loop") {
       await this.registerLoop(turn, request.answer);
     } else {
@@ -764,7 +763,7 @@ export class ForegroundTurnCoordinator {
 
   async cancel(agentId: string, options: { drainQueue?: boolean } = {}): Promise<AgentThothState> {
     await ensureAgentLoaded(agentId, {
-      agentManager: this.options.agentManager,
+      executionService: this.options.executionService,
       agentStorage: this.options.agentStorage,
       logger: this.options.logger,
     });
@@ -780,11 +779,11 @@ export class ForegroundTurnCoordinator {
       });
     }
     if (turn) {
-      endForegroundTurnFence({ agentId, generation: turn.generation });
+      this.options.toolGateway.endForegroundTurn({ agentId, generation: turn.generation });
     }
     this.activeRunTokens.delete(agentId);
     this.deferredRunTokens.delete(agentId);
-    await this.options.agentManager.cancelAgentRun(agentId).catch(() => false);
+    await this.options.executionService.cancelAgentRun(agentId).catch(() => false);
     if (options.drainQueue !== false) {
       void this.drainQueue(agentId);
     }
@@ -798,16 +797,16 @@ export class ForegroundTurnCoordinator {
   ): void {
     const token = randomUUID();
     this.activeRunTokens.set(turn.agentId, token);
-    beginForegroundTurnFence({
+    this.options.toolGateway.beginForegroundTurn({
       agentId: turn.agentId,
       generation: turn.generation,
       kind: input.structured ? "thoth_clarify" : "raw_provider",
       foregroundTurnId: turn.id,
     });
     const events =
-      input.replace && this.options.agentManager.hasInFlightRun(turn.agentId)
-        ? this.options.agentManager.replaceAgentRun(turn.agentId, prompt, input.runOptions)
-        : this.options.agentManager.streamAgent(turn.agentId, prompt, input.runOptions);
+      input.replace && this.options.executionService.hasInFlightRun(turn.agentId)
+        ? this.options.executionService.replaceAgentRun(turn.agentId, prompt, input.runOptions)
+        : this.options.executionService.streamAgent(turn.agentId, prompt, input.runOptions);
     void this.consumeProviderRun({ turn, token, events, structured: input.structured });
   }
 
@@ -825,7 +824,7 @@ export class ForegroundTurnCoordinator {
         if (event.type === "turn_started") {
           const providerTurnId = event.providerTurnId ?? event.turnId;
           if (providerTurnId) {
-            bindForegroundProviderTurn({
+            this.options.toolGateway.bindForegroundProviderTurn({
               agentId: input.turn.agentId,
               generation: input.turn.generation,
               providerTurnId,
@@ -857,7 +856,7 @@ export class ForegroundTurnCoordinator {
           continue;
         }
         this.activeRunTokens.delete(input.turn.agentId);
-        endForegroundTurnFence({
+        this.options.toolGateway.endForegroundTurn({
           agentId: input.turn.agentId,
           generation: input.turn.generation,
         });
@@ -907,7 +906,7 @@ export class ForegroundTurnCoordinator {
         return;
       }
       this.activeRunTokens.delete(input.turn.agentId);
-      endForegroundTurnFence({
+      this.options.toolGateway.endForegroundTurn({
         agentId: input.turn.agentId,
         generation: input.turn.generation,
       });
@@ -931,7 +930,7 @@ export class ForegroundTurnCoordinator {
     }
     const agent = await this.ensureRunnableAgent(turn);
     if (!agent) return;
-    if (this.options.agentManager.hasInFlightRun(agent.id)) {
+    if (this.options.executionService.hasInFlightRun(agent.id)) {
       this.deferUntilProviderIdle(turn, () => this.launchAuthorityContinuation(turn));
       return;
     }
@@ -978,7 +977,7 @@ export class ForegroundTurnCoordinator {
     resume: boolean,
   ): Promise<void> {
     if (!(await this.ensureRunnableAgent(turn))) return;
-    if (this.options.agentManager.hasInFlightRun(turn.agentId)) {
+    if (this.options.executionService.hasInFlightRun(turn.agentId)) {
       this.deferUntilProviderIdle(turn, () => this.launchQuickExecution(turn, resume));
       return;
     }
@@ -1019,7 +1018,7 @@ export class ForegroundTurnCoordinator {
         this.deferredRunTokens.delete(turn.agentId);
         return;
       }
-      if (this.options.agentManager.hasInFlightRun(turn.agentId)) {
+      if (this.options.executionService.hasInFlightRun(turn.agentId)) {
         setTimeout(poll, 25).unref();
         return;
       }
@@ -1055,14 +1054,17 @@ export class ForegroundTurnCoordinator {
       });
       const goalCard = this.options.authorityStore.getCard((answer as { card_id: string }).card_id);
       await this.appendSubmittedCard(turn.agentId, goalCard);
-      await this.options.agentManager.appendTimelineItem(turn.agentId, {
+      await this.options.executionService.appendTimelineItem(turn.agentId, {
         type: "assistant_message",
         text: BACKGROUND_HANDOFF_SUMMARY,
       });
       this.activeRunTokens.delete(turn.agentId);
       this.deferredRunTokens.delete(turn.agentId);
-      endForegroundTurnFence({ agentId: turn.agentId, generation: turn.generation });
-      await this.options.agentManager.cancelAgentRun(turn.agentId).catch(() => false);
+      this.options.toolGateway.endForegroundTurn({
+        agentId: turn.agentId,
+        generation: turn.generation,
+      });
+      await this.options.executionService.cancelAgentRun(turn.agentId).catch(() => false);
       void this.drainQueue(turn.agentId);
     } catch (error) {
       this.options.authorityStore.markLifecycle({
@@ -1073,7 +1075,7 @@ export class ForegroundTurnCoordinator {
         reason: "turn_interrupted",
         error: error instanceof Error ? error.message : String(error),
       });
-      await this.options.agentManager.cancelAgentRun(turn.agentId).catch(() => false);
+      await this.options.executionService.cancelAgentRun(turn.agentId).catch(() => false);
       void this.drainQueue(turn.agentId);
     }
   }
@@ -1090,7 +1092,7 @@ export class ForegroundTurnCoordinator {
       throw new Error("Task registration requires approved Task and linear Goals cards.");
     }
     const agent = await ensureAgentLoaded(turn.agentId, {
-      agentManager: this.options.agentManager,
+      executionService: this.options.executionService,
       agentStorage: this.options.agentStorage,
       logger: this.options.logger,
     });
@@ -1117,7 +1119,7 @@ export class ForegroundTurnCoordinator {
       },
     });
     if (registration.created) {
-      await this.options.agentManager.appendTimelineItem(turn.agentId, {
+      await this.options.executionService.appendTimelineItem(turn.agentId, {
         type: "registered_task",
         task: registration.task,
       });
@@ -1135,7 +1137,7 @@ export class ForegroundTurnCoordinator {
     if (state.lifecycle === "awaiting_card" || state.lifecycle === "background_handoff") {
       return;
     }
-    if (this.options.agentManager.hasInFlightRun(agentId)) {
+    if (this.options.executionService.hasInFlightRun(agentId)) {
       return;
     }
     const cards = this.options.authorityStore.listCardsForTurn(turn.id);
@@ -1167,7 +1169,7 @@ export class ForegroundTurnCoordinator {
     }
     try {
       await ensureAgentLoaded(agentId, {
-        agentManager: this.options.agentManager,
+        executionService: this.options.executionService,
         agentStorage: this.options.agentStorage,
         logger: this.options.logger,
       });
@@ -1178,7 +1180,7 @@ export class ForegroundTurnCoordinator {
       );
       return;
     }
-    if (!this.options.agentManager.hasRunnableSession(agentId)) {
+    if (!this.options.executionService.hasRunnableSession(agentId)) {
       this.options.logger.warn(
         { agentId, cardId: record.id },
         "Card decision committed while the provider thread is unavailable",
@@ -1186,17 +1188,17 @@ export class ForegroundTurnCoordinator {
       return;
     }
     if (record.kind === "clarify_card") {
-      await this.options.agentManager.appendTimelineItem(agentId, {
+      await this.options.executionService.appendTimelineItem(agentId, {
         type: "clarify_card",
         card: record.card as ThothClarifyCardModel,
       });
     } else if (record.kind === "task_card") {
-      await this.options.agentManager.appendTimelineItem(agentId, {
+      await this.options.executionService.appendTimelineItem(agentId, {
         type: "task_card",
         card: record.card as ThothTaskCardModel,
       });
     } else {
-      await this.options.agentManager.appendTimelineItem(agentId, {
+      await this.options.executionService.appendTimelineItem(agentId, {
         type: "goal_card",
         card: record.card as ThothApprovalGoalCardModel,
       });
@@ -1208,11 +1210,11 @@ export class ForegroundTurnCoordinator {
   ): Promise<Awaited<ReturnType<typeof ensureAgentLoaded>> | null> {
     try {
       const agent = await ensureAgentLoaded(turn.agentId, {
-        agentManager: this.options.agentManager,
+        executionService: this.options.executionService,
         agentStorage: this.options.agentStorage,
         logger: this.options.logger,
       });
-      if (this.options.agentManager.hasRunnableSession(turn.agentId)) {
+      if (this.options.executionService.hasRunnableSession(turn.agentId)) {
         return agent;
       }
       this.options.authorityStore.markLifecycle({
@@ -1243,7 +1245,7 @@ export class ForegroundTurnCoordinator {
     if (turn.providerRunModeReceipt) {
       return turn;
     }
-    const result = await this.options.agentManager.prepareAgentRunMode(
+    const result = await this.options.executionService.prepareAgentRunMode(
       turn.agentId,
       turn.providerRunMode,
     );

@@ -1,17 +1,17 @@
 import pino from "pino";
 import { describe, expect, it } from "vitest";
-import type { AgentClient } from "../agent-runtime.js";
-import { CodexAppServerAgentClient } from "../server/agent/providers/codex-app-server-agent.js";
-import { ClaudeAgentClient } from "../server/agent/providers/claude/agent.js";
-import { OpenCodeAgentClient } from "../server/agent/providers/opencode-agent.js";
-import { PiRpcAgentClient } from "../server/agent/providers/pi/agent.js";
-import { GenericACPAgentClient } from "../server/agent/providers/generic-acp-agent.js";
+import type { HarnessAdapter } from "../agent-runtime.js";
+import { CodexHarnessAdapter } from "../server/agent/providers/codex-app-server-agent.js";
+import { ClaudeHarnessAdapter } from "../server/agent/providers/claude/agent.js";
+import { OpenCodeHarnessAdapter } from "../server/agent/providers/opencode-agent.js";
+import { PiHarnessAdapter } from "../server/agent/providers/pi/agent.js";
+import { GenericACPHarnessAdapter } from "../server/agent/providers/generic-acp-agent.js";
 import type { HarnessToolAttachment } from "./types.js";
 import type { ProviderPlanCapability } from "@thoth/protocol/provider-control";
 
 interface ProviderTransportContractCase {
   id: string;
-  client: AgentClient;
+  client: HarnessAdapter;
   toolAttachment: HarnessToolAttachment;
   eventReplay: "cursor" | "live_only";
   plan: ProviderPlanCapability;
@@ -23,14 +23,14 @@ function createCases(): ProviderTransportContractCase[] {
   return [
     {
       id: "codex-app-server",
-      client: new CodexAppServerAgentClient(logger),
+      client: new CodexHarnessAdapter(logger),
       toolAttachment: "native",
       eventReplay: "cursor",
       plan: { kind: "native" },
     },
     {
       id: "claude-sdk",
-      client: new ClaudeAgentClient({
+      client: new ClaudeHarnessAdapter({
         logger,
         resolveBinary: async () => "/fixture/claude",
       }),
@@ -40,21 +40,21 @@ function createCases(): ProviderTransportContractCase[] {
     },
     {
       id: "opencode-server",
-      client: new OpenCodeAgentClient(logger),
+      client: new OpenCodeHarnessAdapter(logger),
       toolAttachment: "mcp",
       eventReplay: "live_only",
       plan: { kind: "native" },
     },
     {
       id: "pi-rpc",
-      client: new PiRpcAgentClient({ logger }),
+      client: new PiHarnessAdapter({ logger }),
       toolAttachment: "mcp",
       eventReplay: "live_only",
       plan: { kind: "unsupported", reason: "Pi does not expose a native Plan mode." },
     },
     {
       id: "generic-acp-process",
-      client: new GenericACPAgentClient({
+      client: new GenericACPHarnessAdapter({
         logger,
         command: ["fixture-acp"],
         providerId: "fixture-acp",

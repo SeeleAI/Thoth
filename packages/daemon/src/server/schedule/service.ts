@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
-import { AgentManager } from "../agent/agent-manager.js";
+import { ExecutionService } from "../agent/execution-service.js";
 import type { AgentRegistry } from "../agent/agent-storage.js";
 import type { AgentSessionConfig } from "@thoth/drivers/agent-runtime";
 import { curateAgentActivity } from "@thoth/drivers/internal/server/agent/activity-curator";
@@ -137,7 +137,7 @@ type CreateConfigResolver = Pick<ProviderSnapshotManager, "resolveCreateConfig">
 export interface ScheduleServiceOptions {
   authority: WorkspaceAuthorityManager;
   logger: Logger;
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   providerSnapshotManager: CreateConfigResolver;
   now?: () => Date;
@@ -151,7 +151,7 @@ export interface ScheduleServiceOptions {
 export class ScheduleService {
   private readonly authority: WorkspaceAuthorityManager;
   private readonly logger: Logger;
-  private readonly agentManager: AgentManager;
+  private readonly executionService: ExecutionService;
   private readonly agentStorage: AgentRegistry;
   private readonly createConfigResolver: CreateConfigResolver;
   private readonly now: () => Date;
@@ -166,7 +166,7 @@ export class ScheduleService {
   constructor(options: ScheduleServiceOptions) {
     this.authority = options.authority;
     this.logger = options.logger.child({ module: "schedule-service" });
-    this.agentManager = options.agentManager;
+    this.executionService = options.executionService;
     this.agentStorage = options.agentStorage;
     this.createConfigResolver = options.providerSnapshotManager;
     this.now = options.now ?? (() => new Date());
@@ -559,14 +559,14 @@ export class ScheduleService {
       }
 
       const agent = await ensureAgentLoaded(schedule.target.agentId, {
-        agentManager: this.agentManager,
+        executionService: this.executionService,
         agentStorage: this.agentStorage,
         logger: this.logger,
       });
-      if (this.agentManager.hasInFlightRun(agent.id)) {
+      if (this.executionService.hasInFlightRun(agent.id)) {
         throw new Error(`Agent ${agent.id} already has an active run`);
       }
-      const result = await this.agentManager.runAgent(agent.id, wrappedPrompt);
+      const result = await this.executionService.runAgent(agent.id, wrappedPrompt);
       const timelineText = curateAgentActivity(result.timeline);
       return {
         agentId: agent.id,
@@ -617,7 +617,7 @@ export class ScheduleService {
       "thoth.schedule-id": schedule.id,
       "thoth.schedule-run": runId,
     };
-    const agent = await this.agentManager.createAgent(config, undefined, {
+    const agent = await this.executionService.createAgent(config, undefined, {
       labels,
       initialPrompt: schedule.prompt,
       initialTitle: provisionalTitle,
@@ -625,10 +625,10 @@ export class ScheduleService {
     });
     let result;
     try {
-      result = await this.agentManager.runAgent(agent.id, schedule.prompt);
+      result = await this.executionService.runAgent(agent.id, schedule.prompt);
     } catch (error) {
       try {
-        await this.agentManager.archiveAgent(agent.id);
+        await this.executionService.archiveAgent(agent.id);
       } catch (archiveError) {
         this.logger.warn(
           { err: archiveError, agentId: agent.id, scheduleId: schedule.id, runId },
@@ -638,7 +638,7 @@ export class ScheduleService {
       throw error;
     }
 
-    await this.agentManager.archiveAgent(agent.id);
+    await this.executionService.archiveAgent(agent.id);
     const timelineText = curateAgentActivity(result.timeline);
     return {
       agentId: agent.id,

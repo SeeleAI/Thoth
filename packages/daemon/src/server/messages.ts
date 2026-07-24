@@ -1,4 +1,4 @@
-import type { ManagedAgent } from "./agent/agent-manager.js";
+import type { ManagedAgent } from "./agent/execution-service.js";
 import { toAgentPayload } from "./agent/agent-projections.js";
 import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 import type { AgentSnapshotPayload, AgentStreamEventPayload } from "@thoth/protocol/messages";

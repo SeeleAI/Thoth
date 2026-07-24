@@ -187,7 +187,7 @@ describe("daemon E2E (real claude) - send message during tool call", () => {
     const logger = pino({ level: "silent" });
     const cwd = tmpCwd();
     const daemon = await createTestThothDaemon({
-      agentClients: createRealProviderClients(["claude"], logger),
+      harnessAdapters: createRealProviderClients(["claude"], logger),
       logger,
     });
 

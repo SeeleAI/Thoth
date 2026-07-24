@@ -21,7 +21,7 @@ import { z } from "zod";
 import {
   getAgentStreamEventTurnId,
   type AgentCapabilityFlags,
-  type AgentClient,
+  type HarnessAdapter,
   type AgentCreateSessionOptions,
   type AgentFeature,
   type AgentLaunchContext,
@@ -36,7 +36,7 @@ import {
   type AgentRunOptions,
   type AgentRunResult,
   type AgentRuntimeInfo,
-  type AgentSession,
+  type HarnessThread,
   type AgentSessionConfig,
   type AgentSlashCommand,
   type AgentStreamEvent,
@@ -48,17 +48,18 @@ import {
   type ImportProviderSessionContext,
   type ImportProviderSessionInput,
   type ListImportableSessionsOptions,
-  type ResolveAgentCreateConfigInput,
-  type ResolveAgentCreateConfigResult,
   type McpServerConfig,
   type ProviderCatalog,
   type ToolCallDetail,
   type ToolCallTimelineItem,
-} from "../agent-sdk-types.js";
+} from "../harness-contract.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import {
-  isDefaultAgentCreateConfigUnattended,
-  resolveDefaultAgentCreateConfig,
+  isOpenCodeCreateConfigUnattended,
+  OPENCODE_AUTO_ACCEPT_FEATURE_ID,
+  OPENCODE_BUILD_MODE_ID,
+  OPENCODE_LEGACY_FULL_ACCESS_MODE_ID,
+  resolveOpenCodeCreateConfig,
 } from "../create-agent-mode.js";
 import {
   checkProviderLaunchAvailable,
@@ -103,9 +104,6 @@ const OPENCODE_CAPABILITIES: AgentCapabilityFlags = {
   supportsRewindBoth: true,
 };
 
-const OPENCODE_BUILD_MODE_ID = "build";
-const OPENCODE_LEGACY_FULL_ACCESS_MODE_ID = "full-access";
-const OPENCODE_AUTO_ACCEPT_FEATURE_ID = "auto_accept";
 const OPENCODE_PERSISTED_SESSION_LIMIT = 200;
 const OPENCODE_PENDING_ABORT_START_TIMEOUT_MS = 10_000;
 const OPENCODE_PERMISSION_ACTION_ALLOW_ONCE = "allow_once";
@@ -126,62 +124,6 @@ const DEFAULT_MODES: AgentMode[] = [
 
 function isOpenCodeAutoAcceptEnabled(config: AgentSessionConfig): boolean {
   return config.featureValues?.[OPENCODE_AUTO_ACCEPT_FEATURE_ID] === true;
-}
-
-function withOpenCodeAutoAcceptFeature(
-  featureValues: Record<string, unknown> | undefined,
-  enabled: boolean,
-): Record<string, unknown> {
-  return {
-    ...featureValues,
-    [OPENCODE_AUTO_ACCEPT_FEATURE_ID]: enabled,
-  };
-}
-
-function resolveOpenCodeCreateConfig(
-  input: ResolveAgentCreateConfigInput,
-): ResolveAgentCreateConfigResult {
-  const legacyFullAccess = input.requestedMode === OPENCODE_LEGACY_FULL_ACCESS_MODE_ID;
-  const parent = input.parent;
-  const isUnattendedCreate = input.unattended || parent?.isUnattended === true;
-  const inheritsUnattended = input.requestedMode === undefined && isUnattendedCreate;
-  const inheritedOpenCodeMode =
-    inheritsUnattended && parent?.provider === input.provider
-      ? (parent.modeId ?? undefined)
-      : undefined;
-  const requestedMode = legacyFullAccess
-    ? OPENCODE_BUILD_MODE_ID
-    : (input.requestedMode ?? inheritedOpenCodeMode);
-  const featureValues =
-    legacyFullAccess ||
-    (isUnattendedCreate && input.featureValues?.[OPENCODE_AUTO_ACCEPT_FEATURE_ID] === undefined)
-      ? withOpenCodeAutoAcceptFeature(input.featureValues, true)
-      : input.featureValues;
-
-  if (inheritsUnattended && requestedMode === undefined) {
-    return { modeId: OPENCODE_BUILD_MODE_ID, featureValues };
-  }
-
-  const resolved = resolveDefaultAgentCreateConfig({
-    ...input,
-    requestedMode,
-    featureValues,
-  });
-  return { ...resolved, featureValues };
-}
-
-function isOpenCodeCreateConfigUnattended(
-  input: Parameters<typeof isDefaultAgentCreateConfigUnattended>[0],
-): boolean {
-  return (
-    isDefaultAgentCreateConfigUnattended(input) ||
-    input.config.featureValues?.[OPENCODE_AUTO_ACCEPT_FEATURE_ID] === true ||
-    input.features?.some(
-      (feature) =>
-        feature.id === OPENCODE_AUTO_ACCEPT_FEATURE_ID &&
-        (feature.value === true || feature.value === "true"),
-    ) === true
-  );
 }
 
 function buildOpenCodeAutoAcceptFeature(config: AgentSessionConfig): AgentFeature {
@@ -1213,12 +1155,12 @@ export const __openCodeInternals = {
   isSelectableOpenCodeAgent,
   mapOpenCodeAgentToMode,
   resolveOpenCodeRuntimeDir,
-  get OpenCodeAgentSession() {
-    return OpenCodeAgentSession;
+  get OpenCodeHarnessThread() {
+    return OpenCodeHarnessThread;
   },
 };
 
-interface OpenCodeAgentClientDeps {
+interface OpenCodeHarnessAdapterDeps {
   serverManager?: OpenCodeServerManagerLike;
   createClient?: OpenCodeClientFactory;
   resolveRuntimeDir?: () => string;
@@ -1231,7 +1173,7 @@ function createSdkOpenCodeClient(options: { baseUrl: string; directory: string }
   return createOpencodeClient(options satisfies OpencodeClientConfig & { directory: string });
 }
 
-export class OpenCodeAgentClient implements AgentClient {
+export class OpenCodeHarnessAdapter implements HarnessAdapter {
   readonly provider = "opencode" as const;
   readonly capabilities = OPENCODE_CAPABILITIES;
   readonly harnessCapabilities = defineHarnessCapabilities({
@@ -1251,7 +1193,7 @@ export class OpenCodeAgentClient implements AgentClient {
   constructor(
     logger: Logger,
     runtimeSettings?: ProviderRuntimeSettings,
-    deps: OpenCodeAgentClientDeps = {},
+    deps: OpenCodeHarnessAdapterDeps = {},
   ) {
     this.logger = logger.child({ module: "agent", provider: "opencode" });
     this.runtimeSettings = runtimeSettings;
@@ -1269,7 +1211,7 @@ export class OpenCodeAgentClient implements AgentClient {
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
     options?: AgentCreateSessionOptions,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const openCodeConfig = this.assertConfig(config);
     const acquisition = launchContext?.env
       ? await this.serverManager.acquireDedicated(launchContext.env)
@@ -1298,7 +1240,7 @@ export class OpenCodeAgentClient implements AgentClient {
 
       await this.populateModelContextWindowCache(client, openCodeConfig.cwd);
 
-      return new OpenCodeAgentSession(
+      return new OpenCodeHarnessThread(
         openCodeConfig,
         client,
         session.id,
@@ -1318,7 +1260,7 @@ export class OpenCodeAgentClient implements AgentClient {
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
     launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const metadata = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
     const cwd = overrides?.cwd ?? metadata.cwd;
     if (!cwd) {
@@ -1342,7 +1284,7 @@ export class OpenCodeAgentClient implements AgentClient {
     try {
       await this.populateModelContextWindowCache(client, openCodeConfig.cwd);
 
-      return new OpenCodeAgentSession(
+      return new OpenCodeHarnessThread(
         openCodeConfig,
         client,
         handle.sessionId,
@@ -1604,7 +1546,7 @@ export class OpenCodeAgentClient implements AgentClient {
   }
   private assertConfig(config: AgentSessionConfig): OpenCodeAgentConfig {
     if (config.provider !== "opencode") {
-      throw new Error(`OpenCodeAgentClient received config for provider '${config.provider}'`);
+      throw new Error(`OpenCodeHarnessAdapter received config for provider '${config.provider}'`);
     }
     return normalizeOpenCodeConfig({ ...config, provider: "opencode" });
   }
@@ -2760,7 +2702,7 @@ function isOpenCodeTerminalEvent(event: OpenCodeEvent, sessionId: string): boole
   );
 }
 
-class OpenCodeAgentSession implements AgentSession {
+class OpenCodeHarnessThread implements HarnessThread {
   readonly provider = "opencode" as const;
   readonly capabilities = OPENCODE_CAPABILITIES;
 

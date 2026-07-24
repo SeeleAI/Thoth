@@ -4,7 +4,7 @@ import {
   StructuredAgentResponseError,
   generateStructuredAgentResponseWithFallback,
 } from "../../agent/agent-response-loop.js";
-import type { AgentManager } from "../../agent/agent-manager.js";
+import type { ExecutionService } from "../../agent/execution-service.js";
 import type { ProviderSnapshotManager } from "../../agent/provider-snapshot-manager.js";
 import {
   resolveStructuredGenerationProviders,
@@ -174,7 +174,7 @@ export function createGitMetadataGenerator(deps: {
  * non-persisted session.
  */
 export function createAgentStructuredTextGeneration(deps: {
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   providerSnapshotManager: Pick<ProviderSnapshotManager, "listProviders">;
   readDaemonConfig: () => StructuredGenerationDaemonConfig;
   getFocusedSelection: (
@@ -190,7 +190,7 @@ export function createAgentStructuredTextGeneration(deps: {
         currentSelection: deps.getFocusedSelection(cwd),
       });
       return generateStructuredAgentResponseWithFallback({
-        manager: deps.agentManager,
+        manager: deps.executionService,
         cwd,
         prompt,
         schema,

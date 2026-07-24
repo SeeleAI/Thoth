@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
-import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
+import { OpenCodeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
 import {
   revertOpenCodeConversationAndFiles,
   type OpenCodeRewindClient,
 } from "@thoth/drivers/internal/server/agent/providers/opencode/rewind";
 
-function rewindCapabilities(capabilities: OpenCodeAgentClient["capabilities"]) {
+function rewindCapabilities(capabilities: OpenCodeHarnessAdapter["capabilities"]) {
   return {
     supportsRewindConversation: capabilities.supportsRewindConversation,
     supportsRewindFiles: capabilities.supportsRewindFiles,
@@ -61,7 +61,7 @@ describe("OpenCode rewind", () => {
   });
 
   test("declares only combined rewind capability", () => {
-    const client = new OpenCodeAgentClient(createTestLogger());
+    const client = new OpenCodeHarnessAdapter(createTestLogger());
 
     expect(rewindCapabilities(client.capabilities)).toEqual({
       supportsRewindConversation: false,

@@ -10,7 +10,7 @@ import {
 } from "../../test-fixtures/thoth-real-provider-flow-script.js";
 import type {
   AgentCapabilityFlags,
-  AgentClient,
+  HarnessAdapter,
   AgentLaunchContext,
   AgentMode,
   AgentModelDefinition,
@@ -22,7 +22,7 @@ import type {
   AgentRunOptions,
   AgentRunResult,
   AgentRuntimeInfo,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   AgentStreamEvent,
 } from "@thoth/drivers/agent-runtime";
@@ -71,7 +71,7 @@ async function createScriptedMcpClient(config: AgentSessionConfig): Promise<Scri
   };
 }
 
-class ScriptedThothSession implements AgentSession {
+class ScriptedThothSession implements HarnessThread {
   readonly provider: string;
   readonly capabilities = capabilities;
   readonly id: string;
@@ -411,7 +411,7 @@ class ScriptedThothSession implements AgentSession {
   }
 }
 
-class ScriptedThothClient implements AgentClient {
+class ScriptedThothClient implements HarnessAdapter {
   readonly provider: string;
   readonly capabilities: AgentCapabilityFlags;
   readonly harnessCapabilities;
@@ -493,7 +493,7 @@ class ScriptedThothClient implements AgentClient {
   async createSession(
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const session = new ScriptedThothSession(
       `scripted-${this.provider}-session-${++this.nextSession}`,
       this.provider,
@@ -510,7 +510,7 @@ class ScriptedThothClient implements AgentClient {
     handle: AgentPersistenceHandle,
     config?: Partial<AgentSessionConfig>,
     launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     return await this.createSession(
       { provider: this.provider, cwd: config?.cwd ?? process.cwd(), ...config },
       launchContext,
@@ -784,7 +784,7 @@ describe("public foreground Thoth router", () => {
   it("UT-01 runs a raw direct turn through Create Agent without opening Thoth authority", async () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickDirect;
     const provider = new ScriptedThothClient(script);
-    daemon = await createTestThothDaemon({ agentClients: { codex: provider } });
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
     client = new DaemonClient({
       url: `ws://127.0.0.1:${daemon.port}/ws`,
       reconnect: { enabled: false },
@@ -818,7 +818,7 @@ describe("public foreground Thoth router", () => {
   it("UT-02 hot-switches raw -> Quick Clarify -> raw on one visible provider session", async () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyForeground;
     const provider = new ScriptedThothClient(script);
-    daemon = await createTestThothDaemon({ agentClients: { codex: provider } });
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
     client = new DaemonClient({
       url: `ws://127.0.0.1:${daemon.port}/ws`,
       reconnect: { enabled: false },
@@ -865,7 +865,7 @@ describe("public foreground Thoth router", () => {
 
   it("UT-02c durably queues suspended-card input and serializes Interrupt before later turns", async () => {
     const provider = new ScriptedThothClient(THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyRecovery);
-    daemon = await createTestThothDaemon({ agentClients: { codex: provider } });
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
     client = new DaemonClient({
       url: `ws://127.0.0.1:${daemon.port}/ws`,
       reconnect: { enabled: false },
@@ -961,7 +961,7 @@ describe("public foreground Thoth router", () => {
   it("UT-02b hot-switches default -> native Plan -> default on one provider thread", async () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickDirect;
     const provider = new ScriptedThothClient(script);
-    daemon = await createTestThothDaemon({ agentClients: { codex: provider } });
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
     client = new DaemonClient({
       url: `ws://127.0.0.1:${daemon.port}/ws`,
       reconnect: { enabled: false },
@@ -1030,7 +1030,7 @@ describe("public foreground Thoth router", () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyRecovery;
     const provider = new ScriptedThothClient(script);
     daemon = await createTestThothDaemon({
-      agentClients: { codex: provider },
+      harnessAdapters: { codex: provider },
       cleanup: false,
     });
     const thothHomeRoot = dirname(daemon.thothHome);
@@ -1072,7 +1072,7 @@ describe("public foreground Thoth router", () => {
     daemon = null;
     rmSync(firstStaticDir, { recursive: true, force: true });
     daemon = await createTestThothDaemon({
-      agentClients: { codex: provider },
+      harnessAdapters: { codex: provider },
       thothHomeRoot,
     });
     client = new DaemonClient({
@@ -1122,7 +1122,7 @@ describe("public foreground Thoth router", () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyRecovery;
     const provider = new ScriptedThothClient(script);
     daemon = await createTestThothDaemon({
-      agentClients: { codex: provider },
+      harnessAdapters: { codex: provider },
       cleanup: false,
     });
     const thothHomeRoot = dirname(daemon.thothHome);
@@ -1158,7 +1158,7 @@ describe("public foreground Thoth router", () => {
     daemon = null;
     rmSync(firstStaticDir, { recursive: true, force: true });
     daemon = await createTestThothDaemon({
-      agentClients: { codex: provider },
+      harnessAdapters: { codex: provider },
       thothHomeRoot,
     });
     client = new DaemonClient({
@@ -1185,7 +1185,7 @@ describe("public foreground Thoth router", () => {
   it("UT-04 registers Loop Single and completes two linear goals after independent Reviews", async () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopLinearPass;
     const provider = new ScriptedThothClient(script);
-    daemon = await createTestThothDaemon({ agentClients: { codex: provider } });
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
     client = new DaemonClient({
       url: `ws://127.0.0.1:${daemon.port}/ws`,
       reconnect: { enabled: false },
@@ -1235,7 +1235,7 @@ describe("public foreground Thoth router", () => {
       rmSync(fixtureHomeRoot, { recursive: true, force: true });
     }
     daemon = await createTestThothDaemon({
-      agentClients: { codex: provider },
+      harnessAdapters: { codex: provider },
       ...(fixtureHomeRoot ? { thothHomeRoot: fixtureHomeRoot, cleanup: false } : undefined),
     });
     client = new DaemonClient({
@@ -1294,7 +1294,7 @@ describe("public foreground Thoth router", () => {
     async ({ providerId, transport }) => {
       const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopRetryAndBudget;
       const provider = new ScriptedThothClient(script, { provider: providerId, transport });
-      daemon = await createTestThothDaemon({ agentClients: { [providerId]: provider } });
+      daemon = await createTestThothDaemon({ harnessAdapters: { [providerId]: provider } });
       client = new DaemonClient({
         url: `ws://127.0.0.1:${daemon.port}/ws`,
         reconnect: { enabled: false },

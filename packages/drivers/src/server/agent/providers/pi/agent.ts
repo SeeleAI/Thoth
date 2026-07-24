@@ -8,7 +8,7 @@ import { defineHarnessCapabilities } from "@thoth/drivers/harness";
 
 import {
   type AgentCapabilityFlags,
-  type AgentClient,
+  type HarnessAdapter,
   type AgentFeature,
   type AgentLaunchContext,
   type AgentMetadata,
@@ -22,7 +22,7 @@ import {
   type AgentRunOptions,
   type AgentRunResult,
   type AgentRuntimeInfo,
-  type AgentSession,
+  type HarnessThread,
   type AgentSessionConfig,
   type AgentSlashCommand,
   type AgentSlashCommandKind,
@@ -35,7 +35,7 @@ import {
   type ImportProviderSessionInput,
   type ListImportableSessionsOptions,
   type ProviderCatalog,
-} from "../../agent-sdk-types.js";
+} from "../../harness-contract.js";
 import { importSessionFromPersistence } from "../../provider-session-import.js";
 import { runProviderTurn } from "../provider-runner.js";
 import {
@@ -155,7 +155,7 @@ const PI_THINKING_OPTIONS: ReadonlyArray<{
   { id: "xhigh", label: "XHigh", description: "Maximum reasoning" },
 ] as const;
 
-interface PiRpcAgentClientOptions {
+interface PiHarnessAdapterOptions {
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
   providerParams?: unknown;
@@ -184,7 +184,7 @@ interface StartTurnResult {
   turnId: string;
 }
 
-interface PiRpcAgentSessionOptions {
+interface PiHarnessThreadOptions {
   runtimeSession: PiRuntimeSession;
   config: AgentSessionConfig;
   initialState: PiSessionState;
@@ -982,7 +982,7 @@ function createRuntime(
   return new PiCliRuntime({ logger, runtimeSettings, commandsRpcType });
 }
 
-export class PiRpcAgentSession implements AgentSession {
+export class PiHarnessThread implements HarnessThread {
   readonly provider = PI_PROVIDER;
   readonly capabilities: AgentCapabilityFlags;
 
@@ -1005,7 +1005,7 @@ export class PiRpcAgentSession implements AgentSession {
   private state: PiSessionState;
   private closed = false;
 
-  constructor(options: PiRpcAgentSessionOptions) {
+  constructor(options: PiHarnessThreadOptions) {
     this.runtimeSession = options.runtimeSession;
     this.config = options.config;
     this.state = options.initialState;
@@ -1889,7 +1889,7 @@ export class PiRpcAgentSession implements AgentSession {
   }
 }
 
-export class PiRpcAgentClient implements AgentClient {
+export class PiHarnessAdapter implements HarnessAdapter {
   readonly provider = PI_PROVIDER;
   readonly capabilities = PI_CAPABILITIES;
   readonly harnessCapabilities = defineHarnessCapabilities({
@@ -1902,7 +1902,7 @@ export class PiRpcAgentClient implements AgentClient {
   private readonly providerParams: PiProviderParams;
   private readonly runtime: PiRuntime;
 
-  constructor(options: PiRpcAgentClientOptions) {
+  constructor(options: PiHarnessAdapterOptions) {
     this.logger = options.logger;
     this.runtimeSettings = options.runtimeSettings;
     this.providerParams = PiProviderParamsSchema.parse(options.providerParams ?? {});
@@ -1914,7 +1914,7 @@ export class PiRpcAgentClient implements AgentClient {
   async createSession(
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const mcpConfig = await this.prepareMcpConfig(config.cwd, config.mcpServers);
     const thothExtension = createPiThothExtensionFile();
     let runtimeSession: PiRuntimeSession;
@@ -1938,7 +1938,7 @@ export class PiRpcAgentClient implements AgentClient {
       throw error;
     }
     try {
-      return new PiRpcAgentSession({
+      return new PiHarnessThread({
         runtimeSession,
         config,
         initialState: await runtimeSession.getState(),
@@ -1958,7 +1958,7 @@ export class PiRpcAgentClient implements AgentClient {
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
     _launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const sessionFile = handle.nativeHandle;
     if (!sessionFile) {
       throw new Error("Pi resume requires a native session file handle");
@@ -1989,7 +1989,7 @@ export class PiRpcAgentClient implements AgentClient {
       throw error;
     }
     try {
-      return new PiRpcAgentSession({
+      return new PiHarnessThread({
         runtimeSession,
         config: resumeConfig.config,
         initialState: await runtimeSession.getState(),

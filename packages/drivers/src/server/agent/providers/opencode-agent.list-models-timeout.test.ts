@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
-import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
+import { OpenCodeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
 import {
   TestOpenCodeClient,
   TestOpenCodeHarness,
@@ -40,7 +40,7 @@ test("allows a slow provider.list call to succeed instead of failing after 10 se
     });
   runtime.enqueueClient(openCodeClient);
 
-  const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+  const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
     serverManager: runtime,
     createClient: runtime.createClient,
   });
@@ -75,7 +75,7 @@ test("uses a new server for explicit catalog refresh", async () => {
   };
   runtime.enqueueClient(openCodeClient);
 
-  const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+  const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
     serverManager: runtime,
     createClient: runtime.createClient,
   });
@@ -110,7 +110,7 @@ test("includes models from api-source providers not in connected", async () => {
   };
   runtime.enqueueClient(openCodeClient);
 
-  const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+  const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
     serverManager: runtime,
     createClient: runtime.createClient,
   });
@@ -149,7 +149,7 @@ test("throws when no providers are accessible (neither connected nor api-source)
   };
   runtime.enqueueClient(openCodeClient);
 
-  const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+  const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
     serverManager: runtime,
     createClient: runtime.createClient,
   });
@@ -179,7 +179,7 @@ test("does not throw when only api-source providers are present with no connecte
   };
   runtime.enqueueClient(openCodeClient);
 
-  const client = new OpenCodeAgentClient(createTestLogger(), undefined, {
+  const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
     serverManager: runtime,
     createClient: runtime.createClient,
   });

@@ -6,7 +6,7 @@ import { performance } from "node:perf_hooks";
 import path from "node:path";
 import type {
   AgentCapabilityFlags,
-  AgentClient,
+  HarnessAdapter,
   AgentFeature,
   AgentLaunchContext,
   AgentMode,
@@ -15,7 +15,7 @@ import type {
   AgentPromptInput,
   AgentRunOptions,
   AgentRunResult,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   AgentStreamEvent,
   AgentSlashCommand,
@@ -309,7 +309,7 @@ function buildLargeTimelineItem(input: {
   };
 }
 
-class FakeAgentSession implements AgentSession {
+class FakeHarnessThread implements HarnessThread {
   readonly capabilities = TEST_CAPABILITIES;
   readonly id: string;
   private readonly providerName: string;
@@ -1171,7 +1171,7 @@ class FakeAgentSession implements AgentSession {
   }
 }
 
-class FakeAgentClient implements AgentClient {
+class FakeHarnessAdapter implements HarnessAdapter {
   readonly capabilities = TEST_CAPABILITIES;
   readonly harnessCapabilities = NO_HARNESS_CAPABILITIES;
   constructor(
@@ -1182,15 +1182,15 @@ class FakeAgentClient implements AgentClient {
   async createSession(
     config: AgentSessionConfig,
     _launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
-    return new FakeAgentSession(this.provider, { ...config }, undefined, undefined, this.probe);
+  ): Promise<HarnessThread> {
+    return new FakeHarnessThread(this.provider, { ...config }, undefined, undefined, this.probe);
   }
 
   async resumeSession(
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
     _launchContext?: AgentLaunchContext,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const cfg: AgentSessionConfig = {
       provider: this.provider,
       cwd: overrides?.cwd ?? process.cwd(),
@@ -1200,7 +1200,7 @@ class FakeAgentClient implements AgentClient {
       (handle.metadata as Record<string, unknown> | undefined)?.marker ??
       (handle.metadata as Record<string, unknown> | undefined)?.conversationId ??
       null;
-    return new FakeAgentSession(
+    return new FakeHarnessThread(
       this.provider,
       cfg,
       handle.sessionId,
@@ -1245,10 +1245,10 @@ class FakeAgentClient implements AgentClient {
   }
 }
 
-export function createTestAgentClients(probe?: FakeAgentProbe): Record<string, AgentClient> {
+export function createTestHarnessAdapters(probe?: FakeAgentProbe): Record<string, HarnessAdapter> {
   return {
-    claude: new FakeAgentClient("claude", probe),
-    codex: new FakeAgentClient("codex", probe),
-    opencode: new FakeAgentClient("opencode", probe),
+    claude: new FakeHarnessAdapter("claude", probe),
+    codex: new FakeHarnessAdapter("codex", probe),
+    opencode: new FakeHarnessAdapter("opencode", probe),
   };
 }

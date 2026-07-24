@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
-import type { AgentTimelineItem } from "../../agent-sdk-types.js";
+import type { AgentTimelineItem } from "../../harness-contract.js";
 
 const TASK_NOTIFICATION_MARKER = "<task-notification>";
 const TAG_NAME_PATTERN = /[.*+?^${}()|[\]\\]/g;

@@ -9,8 +9,12 @@ import { z } from "zod";
 
 import { AGENT_WAIT_TIMEOUT_MS } from "./mcp-shared.js";
 import { createTestThothDaemon, type TestThothDaemon } from "../test-utils/thoth-daemon.js";
-import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
-import type { AgentClient, AgentProvider, AgentSessionConfig } from "@thoth/drivers/agent-runtime";
+import { createTestHarnessAdapters } from "../test-utils/fake-harness-adapter.js";
+import type {
+  HarnessAdapter,
+  AgentProvider,
+  AgentSessionConfig,
+} from "@thoth/drivers/agent-runtime";
 import { PARENT_AGENT_ID_LABEL } from "@thoth/protocol/agent-labels";
 
 interface StructuredContent {
@@ -146,15 +150,15 @@ let parentAgentCwd: string;
 let worktreeRepoCwd: string;
 let launchConfigsByProvider: Record<AgentProvider, AgentSessionConfig[]>;
 
-function createRecordingAgentClients(): Record<AgentProvider, AgentClient> {
-  const baseClients = createTestAgentClients();
+function createRecordingHarnessAdapters(): Record<AgentProvider, HarnessAdapter> {
+  const baseClients = createTestHarnessAdapters();
   launchConfigsByProvider = {};
-  const wrappedClients: Record<AgentProvider, AgentClient> = {};
+  const wrappedClients: Record<AgentProvider, HarnessAdapter> = {};
 
   for (const [provider, client] of Object.entries(baseClients)) {
     const launchConfigs: AgentSessionConfig[] = [];
     launchConfigsByProvider[provider] = launchConfigs;
-    const wrappedClient: AgentClient = {
+    const wrappedClient: HarnessAdapter = {
       provider: client.provider,
       capabilities: client.capabilities,
       createSession: async (config, launchContext, options) => {
@@ -285,7 +289,7 @@ beforeAll(async () => {
   parentAgentCwd = await makeCwd("parent-agent-cwd");
   worktreeRepoCwd = await makeCwd("worktree-repo");
 
-  daemonHandle = await createTestThothDaemon({ agentClients: createRecordingAgentClients() });
+  daemonHandle = await createTestThothDaemon({ harnessAdapters: createRecordingHarnessAdapters() });
   topLevelClient = await createMcpClient(`http://127.0.0.1:${daemonHandle.port}/mcp/agents`);
 
   const parentPayload = await callToolStructured(topLevelClient, "create_agent", {
@@ -331,7 +335,7 @@ describe("Suite A: Core Fixes", () => {
     let agentId: string | null = null;
     try {
       agentId = await createChildAgent();
-      const snapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      const snapshot = daemonHandle.daemon.executionService.getAgent(agentId);
       expect(snapshot?.labels).toMatchObject({
         [PARENT_AGENT_ID_LABEL]: parentAgentId,
       });
@@ -344,21 +348,21 @@ describe("Suite A: Core Fixes", () => {
     let agentId: string | null = null;
     try {
       agentId = await createChildAgent({ relationship: { kind: "detached" } });
-      const snapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      const snapshot = daemonHandle.daemon.executionService.getAgent(agentId);
       expect(snapshot?.labels?.[PARENT_AGENT_ID_LABEL]).toBeUndefined();
     } finally {
       await archiveAgentIfPresent(agentId);
     }
   });
 
-  test("agentManager.createAgent injects thoth MCP using the daemon listen target", async () => {
+  test("executionService.createAgent injects thoth MCP using the daemon listen target", async () => {
     let agentId: string | null = null;
     try {
       const listenTarget = daemonHandle.daemon.getListenTarget();
       expect(listenTarget?.type).toBe("tcp");
       const cwd = await makeCwd("manager-direct-agent-cwd");
 
-      const snapshot = await daemonHandle.daemon.agentManager.createAgent({
+      const snapshot = await daemonHandle.daemon.executionService.createAgent({
         provider: "claude",
         cwd,
         title: "Manager direct parity agent",
@@ -383,7 +387,7 @@ describe("Suite A: Core Fixes", () => {
       });
       expect(snapshot.config.mcpServers?.thoth).toBeUndefined();
 
-      const liveAgent = daemonHandle.daemon.agentManager.getAgent(agentId);
+      const liveAgent = daemonHandle.daemon.executionService.getAgent(agentId);
       expect(liveAgent?.config.mcpServers?.thoth).toBeUndefined();
     } finally {
       await archiveAgentIfPresent(agentId);
@@ -394,7 +398,7 @@ describe("Suite A: Core Fixes", () => {
     let agentId: string | null = null;
     try {
       agentId = await createTopLevelAgent({ provider: "claude/claude-test-model" });
-      const snapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      const snapshot = daemonHandle.daemon.executionService.getAgent(agentId);
       expect(snapshot?.config.model).toBe("claude-test-model");
     } finally {
       await archiveAgentIfPresent(agentId);
@@ -405,7 +409,7 @@ describe("Suite A: Core Fixes", () => {
     let agentId: string | null = null;
     try {
       agentId = await createTopLevelAgent({ settings: { features: { test_feature: true } } });
-      const internalSnapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      const internalSnapshot = daemonHandle.daemon.executionService.getAgent(agentId);
       expect(internalSnapshot?.config.featureValues).toEqual({ test_feature: true });
 
       const status = await callToolStructured(topLevelClient, "get_agent_status", { agentId });
@@ -423,7 +427,7 @@ describe("Suite A: Core Fixes", () => {
         provider: "claude/claude-test-model",
         settings: { features: { test_feature: true } },
       });
-      const internalSnapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      const internalSnapshot = daemonHandle.daemon.executionService.getAgent(agentId);
       expect(internalSnapshot?.config.featureValues).toEqual({ test_feature: true });
 
       const status = await callToolStructured(topLevelClient, "get_agent_status", { agentId });
@@ -443,7 +447,7 @@ describe("Suite A: Core Fixes", () => {
         settings: { features: { test_feature: true } },
       });
       expect(updated.success).toBe(true);
-      const internalSnapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      const internalSnapshot = daemonHandle.daemon.executionService.getAgent(agentId);
       expect(internalSnapshot?.config.featureValues).toEqual({ test_feature: true });
 
       const status = await callToolStructured(topLevelClient, "get_agent_status", { agentId });
@@ -481,7 +485,7 @@ describe("Suite A: Core Fixes", () => {
     let agentId: string | null = null;
     try {
       agentId = await createTopLevelAgent({ labels: { team: "infra" } });
-      const snapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      const snapshot = daemonHandle.daemon.executionService.getAgent(agentId);
       expect(snapshot?.labels).toMatchObject({ team: "infra" });
     } finally {
       await archiveAgentIfPresent(agentId);
@@ -496,7 +500,7 @@ describe("Suite A: Core Fixes", () => {
       await callToolStructured(topLevelClient, "archive_agent", { agentId });
       agentId = null;
 
-      const agents = daemonHandle.daemon.agentManager.listAgents();
+      const agents = daemonHandle.daemon.executionService.listAgents();
       expect(agents.some((agent) => agent.id === archivedAgentId)).toBe(false);
     } finally {
       await archiveAgentIfPresent(agentId);
@@ -514,7 +518,7 @@ describe("Suite A: Core Fixes", () => {
       });
 
       const stored = await daemonHandle.daemon.agentStorage.get(agentId);
-      const snapshot = daemonHandle.daemon.agentManager.getAgent(agentId);
+      const snapshot = daemonHandle.daemon.executionService.getAgent(agentId);
       expect(stored?.title).toBe("Renamed parity agent");
       expect(snapshot?.labels).toMatchObject({
         team: "infra",

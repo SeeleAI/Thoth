@@ -1711,7 +1711,7 @@ describe("handleThothWorktreeArchiveRequest worktree scope", () => {
           getSnapshot: vi.fn(async () => null),
           listWorktrees: vi.fn(async () => []),
         },
-        agentManager: {
+        executionService: {
           listAgents: () => [],
           archiveAgent: vi.fn(async () => ({ archivedAt: new Date().toISOString() })),
           archiveSnapshot: vi.fn(async () => {
@@ -1782,7 +1782,7 @@ describe("handleThothWorktreeArchiveRequest worktree scope", () => {
           getSnapshot: vi.fn(async () => null),
           listWorktrees: vi.fn(async () => []),
         },
-        agentManager: {
+        executionService: {
           listAgents: () => [],
           archiveAgent: vi.fn(async () => ({ archivedAt: new Date().toISOString() })),
           archiveSnapshot: vi.fn(async () => {
@@ -1858,7 +1858,7 @@ describe("handleThothWorktreeArchiveRequest worktree scope", () => {
           getSnapshot: vi.fn(async () => null),
           listWorktrees: vi.fn(async () => []),
         },
-        agentManager: {
+        executionService: {
           listAgents: () => [],
           archiveAgent: vi.fn(async () => ({ archivedAt: new Date().toISOString() })),
           archiveSnapshot: vi.fn(async () => {
@@ -1934,7 +1934,7 @@ describe("handleThothWorktreeArchiveRequest worktree scope", () => {
         getSnapshot: vi.fn(async () => null),
         listWorktrees: vi.fn(async () => []),
       },
-      agentManager: {
+      executionService: {
         listAgents: () => [],
         archiveAgent: vi.fn(async () => ({ archivedAt: new Date().toISOString() })),
         archiveSnapshot: vi.fn(async () => {

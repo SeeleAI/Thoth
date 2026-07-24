@@ -64,7 +64,7 @@ describe("daemon E2E (real claude) - thinking effort memory", () => {
     const logger = pino({ level: "silent" });
     const cwd = tmpCwd();
     const daemon = await createTestThothDaemon({
-      agentClients: createRealProviderClients(["claude"], logger),
+      harnessAdapters: createRealProviderClients(["claude"], logger),
       logger,
     });
     const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });

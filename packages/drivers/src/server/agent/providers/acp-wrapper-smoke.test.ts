@@ -13,7 +13,7 @@ import type {
   AgentStreamEvent,
   AgentTimelineItem,
 } from "@thoth/drivers/agent-runtime";
-import { ACPAgentSession } from "@thoth/drivers/internal/server/agent/providers/acp-agent";
+import { ACPHarnessThread } from "@thoth/drivers/internal/server/agent/providers/acp-agent";
 import { asInternals } from "../../../test-utils/class-mocks.js";
 
 const smokeSelection = new Set(
@@ -324,8 +324,8 @@ function installWireCapture(trace: SmokeTrace): void {
     }
   });
 
-  const originalSessionUpdate = ACPAgentSession.prototype.sessionUpdate;
-  vi.spyOn(ACPAgentSession.prototype, "sessionUpdate").mockImplementation(async function (
+  const originalSessionUpdate = ACPHarnessThread.prototype.sessionUpdate;
+  vi.spyOn(ACPHarnessThread.prototype, "sessionUpdate").mockImplementation(async function (
     params: SessionNotification,
   ) {
     trace.notifications.push({
@@ -336,8 +336,8 @@ function installWireCapture(trace: SmokeTrace): void {
   });
 }
 
-function createSession(config: WrapperSmokeConfig, logger: Logger): ACPAgentSession {
-  return new ACPAgentSession(
+function createSession(config: WrapperSmokeConfig, logger: Logger): ACPHarnessThread {
+  return new ACPHarnessThread(
     {
       provider: config.id,
       cwd: process.cwd(),
@@ -356,7 +356,7 @@ function createSession(config: WrapperSmokeConfig, logger: Logger): ACPAgentSess
 async function bootSession(
   config: WrapperSmokeConfig,
   trace: SmokeTrace,
-): Promise<ACPAgentSession> {
+): Promise<ACPHarnessThread> {
   const logger = createSmokeLogger();
   const session = createSession(config, logger);
   session.subscribe((event) => trace.events.push(event));
@@ -365,7 +365,7 @@ async function bootSession(
   return session;
 }
 
-async function captureFinalState(session: ACPAgentSession, trace: SmokeTrace): Promise<void> {
+async function captureFinalState(session: ACPHarnessThread, trace: SmokeTrace): Promise<void> {
   const internals = asInternals<SessionInternals>(session);
   trace.finalState = {
     runtime: await session.getRuntimeInfo(),
@@ -376,13 +376,13 @@ async function captureFinalState(session: ACPAgentSession, trace: SmokeTrace): P
   };
 }
 
-function getModelIds(session: ACPAgentSession): string[] {
+function getModelIds(session: ACPHarnessThread): string[] {
   const internals = asInternals<SessionInternals>(session);
   return internals.availableModels?.map((model) => model.modelId) ?? [];
 }
 
 function getSelectOption(
-  session: ACPAgentSession,
+  session: ACPHarnessThread,
   category: string,
 ): Extract<SessionConfigOption, { type: "select" }> | null {
   const internals = asInternals<SessionInternals>(session);
@@ -429,7 +429,7 @@ function emitEvidence(label: string, trace: SmokeTrace): void {
 }
 
 async function runToolPrompt(
-  session: ACPAgentSession,
+  session: ACPHarnessThread,
   trace: SmokeTrace,
 ): Promise<{ permissionCount: number; resultText: string }> {
   const permissionRequests: string[] = [];
@@ -465,7 +465,7 @@ for (const config of wrappers) {
     test("(a) session/new exposes modes/models and applySessionState derives runtime state", async () => {
       const trace = createTrace(config);
       installWireCapture(trace);
-      let session: ACPAgentSession | null = null;
+      let session: ACPHarnessThread | null = null;
 
       try {
         session = await bootSession(config, trace);
@@ -491,7 +491,7 @@ for (const config of wrappers) {
     test("(b) valid setMode round-trip applies via RPC success and stays unchanged on RPC error", async () => {
       const trace = createTrace(config);
       installWireCapture(trace);
-      let session: ACPAgentSession | null = null;
+      let session: ACPHarnessThread | null = null;
       let originalSessionId: string | null = null;
 
       try {
@@ -535,7 +535,7 @@ for (const config of wrappers) {
     test("(c) valid setModel round-trip applies", async () => {
       const trace = createTrace(config);
       installWireCapture(trace);
-      let session: ACPAgentSession | null = null;
+      let session: ACPHarnessThread | null = null;
 
       try {
         session = await bootSession(config, trace);
@@ -569,7 +569,7 @@ for (const config of wrappers) {
     test("(d) thinking-mode setSessionConfigOption round-trip updates thinkingOptionId when supported", async () => {
       const trace = createTrace(config);
       installWireCapture(trace);
-      let session: ACPAgentSession | null = null;
+      let session: ACPHarnessThread | null = null;
 
       try {
         session = await bootSession(config, trace);
@@ -609,7 +609,7 @@ for (const config of wrappers) {
     test("(e) real assistant tool call becomes a Thoth tool snapshot and observes permission flow when emitted", async () => {
       const trace = createTrace(config);
       installWireCapture(trace);
-      let session: ACPAgentSession | null = null;
+      let session: ACPHarnessThread | null = null;
 
       try {
         session = await bootSession(config, trace);
@@ -663,13 +663,13 @@ for (const config of wrappers) {
   });
 }
 
-function firstSelectValue(session: ACPAgentSession, category: string): string | null {
+function firstSelectValue(session: ACPHarnessThread, category: string): string | null {
   const option = getSelectOption(session, category);
   return option ? (flattenSelectValues(option)[0] ?? null) : null;
 }
 
 async function captureFinalStateIfOpen(
-  session: ACPAgentSession | null,
+  session: ACPHarnessThread | null,
   trace: SmokeTrace,
 ): Promise<void> {
   if (!session?.id) {

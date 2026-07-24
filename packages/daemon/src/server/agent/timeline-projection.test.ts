@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type { AgentTimelineRow } from "./agent-manager.js";
+import type { AgentTimelineRow } from "./execution-service.js";
 import {
   projectTimelineRows,
   selectProjectedTimelinePage,

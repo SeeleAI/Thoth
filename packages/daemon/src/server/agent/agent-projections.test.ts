@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { AGENT_LIFECYCLE_STATUSES } from "./agent-manager.js";
+import { AGENT_LIFECYCLE_STATUSES } from "./execution-service.js";
 import {
   toAgentPayload,
   toRecentProviderSessionDescriptorPayload,
   toStoredAgentRecord,
   type ManagedAgent,
 } from "./agent-projections.js";
-import type { AgentSession } from "@thoth/drivers/agent-runtime";
+import type { HarnessThread } from "@thoth/drivers/agent-runtime";
 import type {
   AgentFeature,
   ImportableProviderSession,
@@ -48,7 +48,7 @@ function createManagedAgent(overrides: ManagedAgentOverrides = {}): ManagedAgent
   } = overrides;
 
   const sessionValue =
-    lifecycle === "closed" ? null : (restOverrides.session ?? ({} as AgentSession));
+    lifecycle === "closed" ? null : (restOverrides.session ?? ({} as HarnessThread));
   const activeForegroundTurnIdValue =
     restOverrides.activeForegroundTurnId ?? (lifecycle === "running" ? "test-turn-id" : null);
   const lastErrorValue =

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import type {
-  AgentClient,
+  HarnessAdapter,
   AgentModelDefinition,
   AgentMode,
   ProviderCatalog,
@@ -55,7 +55,7 @@ vi.mock("@thoth/drivers/internal/executable-resolution/executable-resolution", (
 }));
 
 vi.mock("@thoth/drivers/internal/server/agent/providers/claude/agent", () => ({
-  ClaudeAgentClient: class ClaudeAgentClient {
+  ClaudeHarnessAdapter: class ClaudeHarnessAdapter {
     readonly capabilities = {
       supportsStreaming: true,
       supportsSessionPersistence: true,
@@ -105,7 +105,7 @@ vi.mock("@thoth/drivers/internal/server/agent/providers/claude/agent", () => ({
 }));
 
 vi.mock("@thoth/drivers/internal/server/agent/providers/codex-app-server-agent", () => ({
-  CodexAppServerAgentClient: class CodexAppServerAgentClient {
+  CodexHarnessAdapter: class CodexHarnessAdapter {
     readonly capabilities = {
       supportsStreaming: true,
       supportsSessionPersistence: true,
@@ -153,7 +153,7 @@ vi.mock("@thoth/drivers/internal/server/agent/providers/codex-app-server-agent",
 }));
 
 vi.mock("@thoth/drivers/internal/server/agent/providers/copilot-acp-agent", () => ({
-  CopilotACPAgentClient: class CopilotACPAgentClient {
+  CopilotACPHarnessAdapter: class CopilotACPHarnessAdapter {
     readonly capabilities = {
       supportsStreaming: true,
       supportsSessionPersistence: true,
@@ -203,7 +203,7 @@ vi.mock("@thoth/drivers/internal/server/agent/providers/copilot-acp-agent", () =
 }));
 
 vi.mock("@thoth/drivers/internal/server/agent/providers/pi/agent", () => ({
-  PiRpcAgentClient: class PiRpcAgentClient {
+  PiHarnessAdapter: class PiHarnessAdapter {
     readonly capabilities = {
       supportsStreaming: true,
       supportsSessionPersistence: true,
@@ -253,7 +253,7 @@ vi.mock("@thoth/drivers/internal/server/agent/providers/pi/agent", () => ({
 }));
 
 vi.mock("@thoth/drivers/internal/server/agent/providers/generic-acp-agent", () => ({
-  GenericACPAgentClient: class GenericACPAgentClient {
+  GenericACPHarnessAdapter: class GenericACPHarnessAdapter {
     capabilities = {
       supportsStreaming: true,
       supportsSessionPersistence: true,
@@ -323,7 +323,7 @@ vi.mock("@thoth/drivers/internal/server/agent/providers/generic-acp-agent", () =
 }));
 
 vi.mock("@thoth/drivers/internal/server/agent/providers/cursor-acp-agent", () => ({
-  CursorACPAgentClient: class CursorACPAgentClient {
+  CursorACPHarnessAdapter: class CursorACPHarnessAdapter {
     readonly capabilities = {
       supportsStreaming: true,
       supportsSessionPersistence: true,
@@ -378,7 +378,6 @@ vi.mock("@thoth/drivers/internal/server/agent/providers/cursor-acp-agent", () =>
 import {
   AGENT_PROVIDER_DEFINITIONS,
   buildProviderRegistry,
-  createAllClients,
 } from "@thoth/drivers/internal/server/agent/provider-registry";
 
 const logger = createTestLogger();
@@ -406,14 +405,17 @@ test("includes mock provider only for development builds", () => {
   });
 });
 
-test("built-in override applies command", () => {
-  buildProviderRegistry(logger, {
+test("built-in override applies command when the adapter is loaded", async () => {
+  const registry = buildProviderRegistry(logger, {
     providerOverrides: {
       claude: {
         command: ["/opt/custom-claude", "--verbose"],
       },
     },
   });
+
+  expect(mockState.constructorArgs.claude).toEqual([]);
+  await registry.claude.loadAdapter(logger);
 
   expect(mockState.constructorArgs.claude[0]).toEqual({
     runtimeSettings: {
@@ -426,8 +428,8 @@ test("built-in override applies command", () => {
   });
 });
 
-test("built-in override applies env", () => {
-  buildProviderRegistry(logger, {
+test("built-in override applies env when the adapter is loaded", async () => {
+  const registry = buildProviderRegistry(logger, {
     providerOverrides: {
       claude: {
         env: {
@@ -436,6 +438,9 @@ test("built-in override applies env", () => {
       },
     },
   });
+
+  expect(mockState.constructorArgs.claude).toEqual([]);
+  await registry.claude.loadAdapter(logger);
 
   expect(mockState.constructorArgs.claude[0]).toEqual({
     runtimeSettings: {
@@ -447,7 +452,7 @@ test("built-in override applies env", () => {
   });
 });
 
-test("OMP is a disabled built-in backed by the Pi adapter", () => {
+test("OMP is a disabled built-in backed by the Pi adapter", async () => {
   const registry = buildProviderRegistry(logger);
 
   expect(registry.omp).toMatchObject({
@@ -456,7 +461,8 @@ test("OMP is a disabled built-in backed by the Pi adapter", () => {
     enabled: false,
     derivedFromProviderId: null,
   });
-  expect(registry.omp.createClient(logger).provider).toBe("omp");
+  expect(mockState.constructorArgs.pi).toEqual([]);
+  expect((await registry.omp.loadAdapter(logger)).provider).toBe("omp");
   expect(mockState.constructorArgs.pi.at(-1)).toEqual({
     runtimeSettings: {
       command: {
@@ -481,7 +487,7 @@ test("OMP can be enabled without custom provider boilerplate", () => {
   expect(registry.omp.enabled).toBe(true);
 });
 
-test("new provider extending claude appears in registry", () => {
+test("new provider extending claude appears in registry", async () => {
   const registry = buildProviderRegistry(logger, {
     providerOverrides: {
       zai: {
@@ -495,10 +501,11 @@ test("new provider extending claude appears in registry", () => {
   expect(registry.zai).toBeDefined();
   expect(registry.zai.label).toBe("ZAI");
   expect(registry.zai.description).toBe("Claude with ZAI defaults");
-  expect(registry.zai.createClient(logger).provider).toBe("zai");
+  expect(mockState.constructorArgs.claude).toEqual([]);
+  expect((await registry.zai.loadAdapter(logger)).provider).toBe("zai");
 });
 
-test("built-in OMP override passes params to the Pi adapter constructor", () => {
+test("built-in OMP override passes params to the Pi adapter constructor", async () => {
   const registry = buildProviderRegistry(logger, {
     providerOverrides: {
       omp: {
@@ -511,7 +518,7 @@ test("built-in OMP override passes params to the Pi adapter constructor", () => 
     },
   });
 
-  expect(registry.omp.createClient(logger).provider).toBe("omp");
+  expect((await registry.omp.loadAdapter(logger)).provider).toBe("omp");
   expect(mockState.constructorArgs.pi.at(-1)).toEqual({
     runtimeSettings: {
       command: {
@@ -528,7 +535,7 @@ test("built-in OMP override passes params to the Pi adapter constructor", () => 
   });
 });
 
-test("new provider extending acp uses GenericACPAgentClient", () => {
+test("new provider extending acp uses GenericACPHarnessAdapter", async () => {
   const registry = buildProviderRegistry(logger, {
     providerOverrides: {
       "my-agent": {
@@ -542,17 +549,9 @@ test("new provider extending acp uses GenericACPAgentClient", () => {
     },
   });
 
-  expect(registry["my-agent"].createClient(logger).provider).toBe("my-agent");
+  expect(mockState.constructorArgs.genericAcp).toEqual([]);
+  expect((await registry["my-agent"].loadAdapter(logger)).provider).toBe("my-agent");
   expect(mockState.constructorArgs.genericAcp).toEqual([
-    {
-      command: ["my-agent", "--acp"],
-      env: {
-        ACP_TOKEN: "secret",
-      },
-      providerId: "my-agent",
-      label: "My Agent",
-      providerParams: undefined,
-    },
     {
       command: ["my-agent", "--acp"],
       env: {
@@ -565,7 +564,7 @@ test("new provider extending acp uses GenericACPAgentClient", () => {
   ]);
 });
 
-test("ACP provider params can disable MCP support", () => {
+test("ACP provider params can disable MCP support", async () => {
   const registry = buildProviderRegistry(logger, {
     providerOverrides: {
       "no-mcp-acp": {
@@ -579,19 +578,10 @@ test("ACP provider params can disable MCP support", () => {
     },
   });
 
-  const client = registry["no-mcp-acp"].createClient(logger);
+  const adapter = await registry["no-mcp-acp"].loadAdapter(logger);
 
-  expect(client.capabilities.supportsMcpServers).toBe(false);
+  expect(adapter.capabilities.supportsMcpServers).toBe(false);
   expect(mockState.constructorArgs.genericAcp).toEqual([
-    {
-      command: ["no-mcp-acp", "serve"],
-      env: undefined,
-      providerId: "no-mcp-acp",
-      label: "No MCP ACP",
-      providerParams: {
-        supportsMcpServers: false,
-      },
-    },
     {
       command: ["no-mcp-acp", "serve"],
       env: undefined,
@@ -604,7 +594,7 @@ test("ACP provider params can disable MCP support", () => {
   ]);
 });
 
-test("cursor provider extending acp uses CursorACPAgentClient", () => {
+test("cursor provider extending acp uses CursorACPHarnessAdapter", async () => {
   const registry = buildProviderRegistry(logger, {
     providerOverrides: {
       cursor: {
@@ -618,15 +608,9 @@ test("cursor provider extending acp uses CursorACPAgentClient", () => {
     },
   });
 
-  expect(registry.cursor.createClient(logger).provider).toBe("cursor");
+  expect(mockState.constructorArgs.cursor).toEqual([]);
+  expect((await registry.cursor.loadAdapter(logger)).provider).toBe("cursor");
   expect(mockState.constructorArgs.cursor).toEqual([
-    {
-      command: ["cursor-agent", "acp"],
-      env: {
-        CURSOR_AGENT_LOG: "debug",
-      },
-      providerParams: undefined,
-    },
     {
       command: ["cursor-agent", "acp"],
       env: {
@@ -685,8 +669,8 @@ test("enabled: false keeps provider metadata in registry", () => {
   expect(registry.codex.enabled).toBe(true);
 });
 
-test("enabled: false still produces a client (enabled gate is enforced elsewhere)", () => {
-  const clients = createAllClients(logger, {
+test("enabled: false remains lazy and explicitly loadable", async () => {
+  const registry = buildProviderRegistry(logger, {
     providerOverrides: {
       claude: {
         enabled: false,
@@ -694,9 +678,12 @@ test("enabled: false still produces a client (enabled gate is enforced elsewhere
     },
   });
 
-  expect(clients.claude).toBeDefined();
-  expect(mockState.constructorArgs.claude.length).toBeGreaterThan(0);
-  expect(clients.codex).toBeDefined();
+  expect(mockState.constructorArgs.claude).toEqual([]);
+  await expect(registry.claude.loadAdapter(logger)).resolves.toMatchObject({
+    provider: "claude",
+  });
+  expect(mockState.constructorArgs.claude).toHaveLength(1);
+  expect(mockState.constructorArgs.codex).toEqual([]);
 });
 
 test("provider override command can be PATH-resolved and still report available", async () => {
@@ -710,18 +697,21 @@ test("provider override command can be PATH-resolved and still report available"
     },
   });
 
-  await expect(registry.claude.createClient(logger).isAvailable()).resolves.toBe(true);
+  const adapter = await registry.claude.loadAdapter(logger);
+  await expect(adapter.isAvailable()).resolves.toBe(true);
   expect(mockState.isCommandAvailable).toHaveBeenCalledWith("claude");
 });
 
-test("disallowedTools flows through to runtime settings", () => {
-  buildProviderRegistry(logger, {
+test("disallowedTools flows through to runtime settings", async () => {
+  const registry = buildProviderRegistry(logger, {
     providerOverrides: {
       claude: {
         disallowedTools: ["WebSearch", "WebFetch"],
       },
     },
   });
+
+  await registry.claude.loadAdapter(logger);
 
   expect(mockState.constructorArgs.claude[0]).toEqual({
     runtimeSettings: {
@@ -732,8 +722,8 @@ test("disallowedTools flows through to runtime settings", () => {
   });
 });
 
-test("derived provider inherits and merges disallowedTools from base", () => {
-  buildProviderRegistry(logger, {
+test("derived provider inherits and merges disallowedTools from base", async () => {
+  const registry = buildProviderRegistry(logger, {
     providerOverrides: {
       claude: {
         disallowedTools: ["WebSearch"],
@@ -745,6 +735,8 @@ test("derived provider inherits and merges disallowedTools from base", () => {
       },
     },
   });
+
+  await registry.zai.loadAdapter(logger);
 
   const zaiArgs = mockState.constructorArgs.claude.find((entry) => {
     const disallowedTools: string[] | undefined =
@@ -761,8 +753,8 @@ test("derived provider inherits and merges disallowedTools from base", () => {
   expect(zaiDisallowedTools).toEqual(["WebSearch", "ComputerUse"]);
 });
 
-test("extension inherits base override — override claude command, zai extends claude gets overridden command", () => {
-  buildProviderRegistry(logger, {
+test("extension inherits base override — override claude command, zai extends claude gets overridden command", async () => {
+  const registry = buildProviderRegistry(logger, {
     providerOverrides: {
       claude: {
         command: ["/opt/custom-claude"],
@@ -773,6 +765,10 @@ test("extension inherits base override — override claude command, zai extends 
       },
     },
   });
+
+  expect(mockState.constructorArgs.claude).toEqual([]);
+  await registry.claude.loadAdapter(logger);
+  await registry.zai.loadAdapter(logger);
 
   expect(mockState.constructorArgs.claude).toHaveLength(2);
   expect(
@@ -1209,7 +1205,7 @@ describe("model merging", () => {
     ]);
   });
 
-  test("built-in createClient().fetchCatalog() honors profile model replacement (issue #579)", async () => {
+  test("loaded built-in adapter honors profile model replacement (issue #579)", async () => {
     mockState.runtimeModels.set("codex", [
       {
         provider: "codex",
@@ -1233,8 +1229,8 @@ describe("model merging", () => {
       },
     });
 
-    const client = registry.codex.createClient(logger);
-    const catalog = await client.fetchCatalog({
+    const adapter = await registry.codex.loadAdapter(logger);
+    const catalog = await adapter.fetchCatalog({
       scope: "workspace",
       cwd: "/tmp/registry-models",
       force: false,
@@ -1244,7 +1240,7 @@ describe("model merging", () => {
     expect(catalog.models.find((model) => model.isDefault)?.id).toBe("profile-fast");
   });
 
-  test("built-in createClient().fetchCatalog() honors additionalModels default (issue #579)", async () => {
+  test("loaded built-in adapter honors additionalModels default (issue #579)", async () => {
     mockState.runtimeModels.set("claude", [
       {
         provider: "claude",
@@ -1268,8 +1264,8 @@ describe("model merging", () => {
       },
     });
 
-    const client = registry.claude.createClient(logger);
-    const catalog = await client.fetchCatalog({
+    const adapter = await registry.claude.loadAdapter(logger);
+    const catalog = await adapter.fetchCatalog({
       scope: "workspace",
       cwd: "/tmp/registry-models",
       force: false,
@@ -1384,7 +1380,7 @@ describe("fetchCatalog", () => {
       capabilities: {},
       fetchCatalog: vi.fn(async () => ({ models: injectedModels, modes: injectedModes })),
       isAvailable: vi.fn(async () => true),
-    } satisfies Partial<AgentClient> as AgentClient;
+    } satisfies Partial<HarnessAdapter> as HarnessAdapter;
 
     const registry = buildProviderRegistry(logger);
     const catalog = await registry.codex.fetchCatalog(
@@ -1406,7 +1402,7 @@ describe("fetchCatalog", () => {
         modes: [{ id: "ask", label: "Ask" }],
       })),
       isAvailable: vi.fn(async () => true),
-    } satisfies Partial<AgentClient> as AgentClient;
+    } satisfies Partial<HarnessAdapter> as HarnessAdapter;
 
     const registry = buildProviderRegistry(logger);
     const catalog = await registry.codex.fetchCatalog(

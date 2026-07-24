@@ -72,7 +72,7 @@ describe("bootstrap provider availability", () => {
       mcpEnabled: false,
       staticDir,
       mcpDebug: false,
-      agentClients: {},
+      harnessAdapters: {},
       agentStoragePath,
       relayEnabled: false,
       appBaseUrl: "https://app.thoth.seeles.ai",
@@ -91,14 +91,14 @@ describe("bootstrap provider availability", () => {
     const daemon = await createThothDaemon(config, pino({ level: "silent" }));
     try {
       await expect(daemon.agentStorage.list()).resolves.toHaveLength(1);
-      await expect(daemon.agentManager.listProviderAvailability()).resolves.toContainEqual({
+      await expect(daemon.executionService.listProviderAvailability()).resolves.toContainEqual({
         provider: "codex",
         available: false,
         error: null,
       });
       await expect(
         ensureAgentLoaded(agentId, {
-          agentManager: daemon.agentManager,
+          executionService: daemon.executionService,
           agentStorage: daemon.agentStorage,
           logger: pino({ level: "silent" }),
         }),
@@ -109,7 +109,7 @@ describe("bootstrap provider availability", () => {
       process.off("unhandledRejection", onUnhandledRejection);
       process.off("uncaughtException", onUncaughtException);
       await daemon.stop().catch(() => undefined);
-      await daemon.agentManager.flush().catch(() => undefined);
+      await daemon.executionService.flush().catch(() => undefined);
     }
   });
 });

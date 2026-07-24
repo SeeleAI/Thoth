@@ -1,4 +1,4 @@
-import type { ManagedAgent } from "../agent/agent-manager.js";
+import type { ManagedAgent } from "../agent/execution-service.js";
 import { type AgentRegistry, type StoredAgentRecord } from "../agent/agent-storage.js";
 import { toStoredAgentRecord } from "../agent/agent-projections.js";
 import type { WorkspaceAuthorityManager } from "./workspace-authority-manager.js";

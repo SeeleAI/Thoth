@@ -109,7 +109,7 @@ describe("daemon E2E (real codex) - /goal command", () => {
     const logger = pino({ level: "silent" });
     const cwd = tmpCwd();
     const daemon = await createTestThothDaemon({
-      agentClients: createRealProviderClients(["codex"], logger),
+      harnessAdapters: createRealProviderClients(["codex"], logger),
       logger,
     });
     const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
@@ -163,7 +163,7 @@ describe("daemon E2E (real codex) - /goal command", () => {
     const logger = pino({ level: "silent" });
     const cwd = tmpCwd();
     const daemon = await createTestThothDaemon({
-      agentClients: createRealProviderClients(["codex"], logger),
+      harnessAdapters: createRealProviderClients(["codex"], logger),
       logger,
     });
     const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
@@ -240,7 +240,7 @@ describe("daemon E2E (real codex) - /goal command", () => {
     const logger = pino({ level: "silent" });
     const cwd = tmpCwd();
     const daemon = await createTestThothDaemon({
-      agentClients: createRealProviderClients(["codex"], logger),
+      harnessAdapters: createRealProviderClients(["codex"], logger),
       logger,
     });
     const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });

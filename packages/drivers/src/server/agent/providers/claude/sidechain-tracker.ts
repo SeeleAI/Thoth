@@ -3,7 +3,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { mapClaudeRunningToolCall } from "./tool-call-mapper.js";
 import { buildToolCallDisplayModel } from "@thoth/protocol/tool-call-display";
 
-import type { AgentMetadata, AgentStreamEvent, AgentTimelineItem } from "../../agent-sdk-types.js";
+import type { AgentMetadata, AgentStreamEvent, AgentTimelineItem } from "../../harness-contract.js";
 
 interface ClaudeContentChunk {
   type: string;

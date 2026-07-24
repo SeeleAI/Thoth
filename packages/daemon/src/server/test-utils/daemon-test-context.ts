@@ -1,6 +1,6 @@
 import { createTestThothDaemon, type TestThothDaemon } from "./thoth-daemon.js";
 import { DaemonClient } from "./daemon-client.js";
-import { createTestAgentClients } from "./fake-agent-client.js";
+import { createTestHarnessAdapters } from "./fake-harness-adapter.js";
 
 export interface DaemonTestContext {
   daemon: TestThothDaemon;
@@ -36,7 +36,7 @@ export async function createDaemonTestContext(
   options?: Parameters<typeof createTestThothDaemon>[0],
 ): Promise<DaemonTestContext> {
   const daemon = await createTestThothDaemon({
-    agentClients: createTestAgentClients(),
+    harnessAdapters: createTestHarnessAdapters(),
     ...options,
   });
   const client = new DaemonClient({

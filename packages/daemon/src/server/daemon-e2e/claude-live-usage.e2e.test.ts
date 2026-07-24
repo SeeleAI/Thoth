@@ -4,7 +4,7 @@ import path from "node:path";
 import pino from "pino";
 import { describe, expect, test, vi } from "vitest";
 
-import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import { ClaudeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestThothDaemon } from "../test-utils/thoth-daemon.js";
 
@@ -137,8 +137,8 @@ describe("daemon E2E (claude live usage)", () => {
     const cwd = mkdtempSync(path.join(tmpdir(), "thoth-claude-live-usage-"));
     const resultGate = deferred();
     const daemon = await createTestThothDaemon({
-      agentClients: {
-        claude: new ClaudeAgentClient({
+      harnessAdapters: {
+        claude: new ClaudeHarnessAdapter({
           logger,
           queryFactory: createControlledClaudeQueryFactory(resultGate.promise),
           resolveBinary: async () => "/test/claude/bin",

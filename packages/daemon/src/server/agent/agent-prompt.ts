@@ -1,12 +1,12 @@
 import type { Logger } from "pino";
 
 import type { AgentPromptInput, AgentRunOptions } from "@thoth/drivers/agent-runtime";
-import type { AgentManager, ManagedAgent } from "./agent-manager.js";
+import type { ExecutionService, ManagedAgent } from "./execution-service.js";
 import type { AgentRegistry } from "./agent-storage.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
 
 export type AgentRunController = Pick<
-  AgentManager,
+  ExecutionService,
   "getAgent" | "tryRunOutOfBand" | "hasInFlightRun" | "replaceAgentRun" | "streamAgent"
 >;
 
@@ -16,13 +16,13 @@ export interface StartAgentRunOptions {
 }
 
 export function startAgentRun(
-  agentManager: AgentRunController,
+  executionService: AgentRunController,
   agentId: string,
   prompt: AgentPromptInput,
   logger: Logger,
   options?: StartAgentRunOptions,
 ): { outOfBand: boolean } {
-  const snapshot = agentManager.getAgent(agentId);
+  const snapshot = executionService.getAgent(agentId);
   logger.trace(
     {
       agentId,
@@ -38,14 +38,16 @@ export function startAgentRun(
   // Out-of-band commands (e.g. /goal pause) must run WITHOUT canceling an
   // in-flight turn — replaceAgentRun would interrupt the running turn. The
   // intercept lives at this layer so it covers every prompt entrypoint.
-  if (agentManager.tryRunOutOfBand(agentId, prompt)) {
+  if (executionService.tryRunOutOfBand(agentId, prompt)) {
     return { outOfBand: true };
   }
-  const shouldReplace = Boolean(options?.replaceRunning && agentManager.hasInFlightRun(agentId));
+  const shouldReplace = Boolean(
+    options?.replaceRunning && executionService.hasInFlightRun(agentId),
+  );
   const runOptions = options?.runOptions;
   const iterator = shouldReplace
-    ? agentManager.replaceAgentRun(agentId, prompt, runOptions)
-    : agentManager.streamAgent(agentId, prompt, runOptions);
+    ? executionService.replaceAgentRun(agentId, prompt, runOptions)
+    : executionService.streamAgent(agentId, prompt, runOptions);
   logger.trace(
     {
       agentId,
@@ -58,7 +60,7 @@ export function startAgentRun(
   void (async () => {
     try {
       for await (const _ of iterator) {
-        // Events are broadcast via AgentManager subscribers.
+        // Events are broadcast via ExecutionService subscribers.
       }
       logger.trace(
         {
@@ -91,10 +93,10 @@ export function startAgentRun(
  */
 export async function unarchiveAgentState(
   _agentStorage: AgentRegistry,
-  agentManager: AgentManager,
+  executionService: ExecutionService,
   agentId: string,
 ): Promise<boolean> {
-  const unarchived = await agentManager.unarchiveSnapshot(agentId);
+  const unarchived = await executionService.unarchiveSnapshot(agentId);
   return unarchived;
 }
 
@@ -114,7 +116,7 @@ export function isSystemInjectedEnvelope(text: string): boolean {
 }
 
 export interface SendPromptToAgentParams {
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   agentId: string;
   /** Prompt to dispatch to the provider (may include image blocks or wrapped text). */
@@ -133,7 +135,7 @@ export interface SendPromptToAgentParams {
 }
 
 export interface StartCreatedAgentInitialPromptParams {
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentId: string;
   snapshot?: ManagedAgent;
   prompt: AgentPromptInput | null;
@@ -144,14 +146,14 @@ export interface StartCreatedAgentInitialPromptParams {
 const AGENT_RUN_START_TIMEOUT_MS = 15_000;
 
 export async function waitForAgentRunStartWithTimeout(
-  agentManager: AgentManager,
+  executionService: ExecutionService,
   agentId: string,
 ): Promise<void> {
   const startAbort = new AbortController();
   const startTimeout = setTimeout(() => startAbort.abort("timeout"), AGENT_RUN_START_TIMEOUT_MS);
 
   try {
-    await agentManager.waitForAgentRunStart(agentId, { signal: startAbort.signal });
+    await executionService.waitForAgentRunStart(agentId, { signal: startAbort.signal });
   } finally {
     clearTimeout(startTimeout);
   }
@@ -178,24 +180,24 @@ export async function sendPromptToAgent(
     if (!unarchive) {
       return { outOfBand: false };
     }
-    await unarchiveAgentState(params.agentStorage, params.agentManager, params.agentId);
+    await unarchiveAgentState(params.agentStorage, params.executionService, params.agentId);
   }
 
   await ensureAgentLoaded(params.agentId, {
-    agentManager: params.agentManager,
+    executionService: params.executionService,
     agentStorage: params.agentStorage,
     logger: params.logger,
   });
 
   if (params.sessionMode) {
-    await params.agentManager.setAgentMode(params.agentId, params.sessionMode);
+    await params.executionService.setAgentMode(params.agentId, params.sessionMode);
   }
 
   const runOptions = params.messageId
     ? { ...params.runOptions, messageId: params.messageId }
     : params.runOptions;
 
-  return startAgentRun(params.agentManager, params.agentId, params.prompt, params.logger, {
+  return startAgentRun(params.executionService, params.agentId, params.prompt, params.logger, {
     replaceRunning: true,
     runOptions,
   });
@@ -204,7 +206,8 @@ export async function sendPromptToAgent(
 export async function startCreatedAgentInitialPrompt(
   params: StartCreatedAgentInitialPromptParams,
 ): Promise<ManagedAgent> {
-  const currentSnapshot = params.agentManager.getAgent(params.agentId) ?? params.snapshot ?? null;
+  const currentSnapshot =
+    params.executionService.getAgent(params.agentId) ?? params.snapshot ?? null;
   if (!currentSnapshot) {
     throw new Error(`Agent ${params.agentId} not found`);
   }
@@ -214,7 +217,7 @@ export async function startCreatedAgentInitialPrompt(
   }
 
   const dispatchResult = startAgentRun(
-    params.agentManager,
+    params.executionService,
     params.agentId,
     params.prompt,
     params.logger,
@@ -224,10 +227,11 @@ export async function startCreatedAgentInitialPrompt(
   );
 
   if (!dispatchResult.outOfBand) {
-    await waitForAgentRunStartWithTimeout(params.agentManager, params.agentId);
+    await waitForAgentRunStartWithTimeout(params.executionService, params.agentId);
   }
 
-  const refreshedSnapshot = params.agentManager.getAgent(params.agentId) ?? params.snapshot ?? null;
+  const refreshedSnapshot =
+    params.executionService.getAgent(params.agentId) ?? params.snapshot ?? null;
   if (!refreshedSnapshot) {
     throw new Error(`Agent ${params.agentId} not found`);
   }
@@ -235,7 +239,7 @@ export async function startCreatedAgentInitialPrompt(
 }
 
 export interface SetupFinishNotificationParams {
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   childAgentId: string;
   callerAgentId: string;
@@ -259,7 +263,7 @@ function formatFinishNotificationBody(params: FinishNotificationBodyInput): stri
 }
 
 export function setupFinishNotification(params: SetupFinishNotificationParams): void {
-  const { agentManager, agentStorage, childAgentId, callerAgentId, logger } = params;
+  const { executionService, agentStorage, childAgentId, callerAgentId, logger } = params;
   let hasSeenRunning = false;
   let fired = false;
   let unsubscribe: (() => void) | null = null;
@@ -278,7 +282,7 @@ export function setupFinishNotification(params: SetupFinishNotificationParams): 
 
     const record = await agentStorage.get(childAgentId);
     const title = record?.title ?? childAgentId;
-    const lastAssistantMessage = await agentManager.getLastAssistantMessage(childAgentId);
+    const lastAssistantMessage = await executionService.getLastAssistantMessage(childAgentId);
     const body = formatFinishNotificationBody({
       childAgentId,
       title,
@@ -287,7 +291,7 @@ export function setupFinishNotification(params: SetupFinishNotificationParams): 
     });
 
     await sendPromptToAgent({
-      agentManager,
+      executionService,
       agentStorage,
       agentId: callerAgentId,
       prompt: formatSystemNotificationPrompt(body),
@@ -296,7 +300,7 @@ export function setupFinishNotification(params: SetupFinishNotificationParams): 
     });
   }
 
-  unsubscribe = agentManager.subscribe(
+  unsubscribe = executionService.subscribe(
     (event) => {
       if (fired) {
         return;
@@ -335,7 +339,7 @@ export function setupFinishNotification(params: SetupFinishNotificationParams): 
   // Do NOT treat an immediate "idle" as "finished" — the agent may
   // not have started yet (streamAgent sets a pending run before
   // transitioning to "running").
-  const childSnapshot = agentManager.getAgent(childAgentId);
+  const childSnapshot = executionService.getAgent(childAgentId);
   if (!childSnapshot || childSnapshot.lifecycle === "closed") {
     unsubscribe();
     return;

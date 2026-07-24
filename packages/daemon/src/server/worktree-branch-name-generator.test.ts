@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import type { AgentManager } from "./agent/agent-manager.js";
+import type { ExecutionService } from "./agent/execution-service.js";
 import type { StructuredAgentGenerationWithFallbackOptions } from "./agent/agent-response-loop.js";
 import {
   attemptFirstAgentBranchAutoName,
@@ -75,7 +75,7 @@ describe("generateBranchNameFromFirstAgentContext", () => {
     });
 
     const result = await generateBranchNameFromFirstAgentContext({
-      agentManager: {} as AgentManager,
+      executionService: {} as ExecutionService,
       cwd: "/tmp/repo",
       firstAgentContext: { prompt: "Add a payments flow with Stripe checkout" },
       logger: createLogger(),
@@ -97,7 +97,7 @@ describe("generateBranchNameFromFirstAgentContext", () => {
     });
 
     const result = await generateBranchNameFromFirstAgentContext({
-      agentManager: {} as AgentManager,
+      executionService: {} as ExecutionService,
       cwd: "/tmp/repo",
       firstAgentContext: { prompt: "Fix the login flow" },
       logger: createLogger(),
@@ -131,7 +131,7 @@ describe("generateBranchNameFromFirstAgentContext", () => {
     });
 
     await generateBranchNameFromFirstAgentContext({
-      agentManager: {} as AgentManager,
+      executionService: {} as ExecutionService,
       cwd: "/tmp/repo",
       firstAgentContext: { prompt: "/refactor-one-thing" },
       logger: createLogger(),
@@ -158,7 +158,7 @@ describe("generateBranchNameFromFirstAgentContext", () => {
     });
 
     const result = await generateBranchNameFromFirstAgentContext({
-      agentManager: {} as AgentManager,
+      executionService: {} as ExecutionService,
       cwd: "/tmp/repo",
       firstAgentContext: {
         attachments: [
@@ -190,7 +190,7 @@ describe("generateBranchNameFromFirstAgentContext", () => {
     });
 
     const result = await generateBranchNameFromFirstAgentContext({
-      agentManager: {} as AgentManager,
+      executionService: {} as ExecutionService,
       cwd: "/tmp/repo",
       providerSnapshotManager: {
         listProviders: vi.fn(async () => [
@@ -321,7 +321,7 @@ describe("generateBranchNameFromFirstAgentContext", () => {
       firstAgentContext: { prompt: "Fix the login flow" },
       generateBranchNameFromContext: ({ cwd, firstAgentContext }) =>
         generateBranchNameFromFirstAgentContext({
-          agentManager: {} as AgentManager,
+          executionService: {} as ExecutionService,
           cwd,
           workspaceGitService: createNoopWorkspaceGitService({
             resolveRepoRoot: async () => repoRoot,
@@ -353,7 +353,7 @@ async function generateBranchPromptWithConfig(config: unknown): Promise<{ prompt
   });
 
   await generateBranchNameFromFirstAgentContext({
-    agentManager: {} as AgentManager,
+    executionService: {} as ExecutionService,
     cwd: path.join(repoRoot, "nested"),
     workspaceGitService: createNoopWorkspaceGitService({
       resolveRepoRoot: async () => repoRoot,

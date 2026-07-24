@@ -62,7 +62,7 @@ describe("opencode custom command Big Pickle E2E (real)", () => {
 
       ctx = await createDaemonTestContext({
         logger,
-        agentClients: createRealProviderClients(["opencode"], logger),
+        harnessAdapters: createRealProviderClients(["opencode"], logger),
       });
 
       const agent = await ctx.client.createAgent({

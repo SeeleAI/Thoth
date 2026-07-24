@@ -70,7 +70,7 @@ test("reconnect catches up committed rows without replaying a provisional seed",
     });
 
     for (let seq = 1; seq <= 120; seq += 1) {
-      await ctx.daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+      await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
         type: "assistant_message",
         text: `committed row ${seq}`,
       });
@@ -85,7 +85,7 @@ test("reconnect catches up committed rows without replaying a provisional seed",
     expect(baseline.endCursor?.epoch).toBe(epoch);
 
     primaryCollector.clear();
-    await ctx.daemon.daemon.agentManager.emitLiveTimelineItem(agent.id, {
+    await ctx.daemon.daemon.executionService.emitLiveTimelineItem(agent.id, {
       type: "assistant_message",
       text: "partial before disconnect",
     });
@@ -97,7 +97,7 @@ test("reconnect catches up committed rows without replaying a provisional seed",
 
     await ctx.client.close();
 
-    await ctx.daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+    await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
       type: "assistant_message",
       text: "finalized while disconnected",
     });
@@ -162,7 +162,7 @@ test("reconnect with no new committed rows resumes from future live provisional 
     });
 
     for (let seq = 1; seq <= 120; seq += 1) {
-      await ctx.daemon.daemon.agentManager.appendTimelineItem(agent.id, {
+      await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
         type: "assistant_message",
         text: `committed row ${seq}`,
       });
@@ -177,7 +177,7 @@ test("reconnect with no new committed rows resumes from future live provisional 
     expect(baseline.endCursor?.epoch).toBe(epoch);
 
     primaryCollector.clear();
-    await ctx.daemon.daemon.agentManager.emitLiveTimelineItem(agent.id, {
+    await ctx.daemon.daemon.executionService.emitLiveTimelineItem(agent.id, {
       type: "assistant_message",
       text: "partial before disconnect",
     });
@@ -222,7 +222,7 @@ test("reconnect with no new committed rows resumes from future live provisional 
       expect(catchUp.endCursor).toBeNull();
 
       reconnectCollector.clear();
-      await ctx.daemon.daemon.agentManager.emitLiveTimelineItem(agent.id, {
+      await ctx.daemon.daemon.executionService.emitLiveTimelineItem(agent.id, {
         type: "assistant_message",
         text: "fresh live after reconnect",
       });

@@ -2,7 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 
-import type { AgentSession, AgentStreamEvent } from "@thoth/drivers/agent-runtime";
+import type { HarnessThread, AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 
 type JsonObject = Record<string, unknown>;
 type FakeCodexAppServerHandler = (params: unknown) => unknown;
@@ -259,7 +259,7 @@ function toJsonObject(value: unknown): JsonObject {
 }
 
 export function waitForNextPermission(
-  session: AgentSession,
+  session: HarnessThread,
 ): Promise<Extract<AgentStreamEvent, { type: "permission_requested" }>> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {

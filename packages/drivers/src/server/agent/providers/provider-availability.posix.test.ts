@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { isPlatform } from "../../../test-utils/platform.js";
-import { CodexAppServerAgentClient } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
-import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
+import { CodexHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
+import { OpenCodeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
 
 const originalEnv = {
   PATH: process.env.PATH,
@@ -55,7 +55,7 @@ describe.skipIf(isPlatform("win32"))("provider-availability POSIX-only", () => {
     const binDir = makeTempDir("provider-availability-codex-");
     isolatePathTo(binDir);
     writeProviderShim(binDir, "codex");
-    const client = new CodexAppServerAgentClient(createTestLogger());
+    const client = new CodexHarnessAdapter(createTestLogger());
 
     await expect(client.isAvailable()).resolves.toBe(true);
   });
@@ -64,7 +64,7 @@ describe.skipIf(isPlatform("win32"))("provider-availability POSIX-only", () => {
     const binDir = makeTempDir("provider-availability-opencode-");
     isolatePathTo(binDir);
     writeProviderShim(binDir, "opencode");
-    const client = new OpenCodeAgentClient(createTestLogger());
+    const client = new OpenCodeHarnessAdapter(createTestLogger());
 
     await expect(client.isAvailable()).resolves.toBe(true);
   });

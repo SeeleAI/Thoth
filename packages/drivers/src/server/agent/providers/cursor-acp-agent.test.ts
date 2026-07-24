@@ -4,11 +4,11 @@ import type {
   SpawnedACPProcess,
   SessionStateResponse,
 } from "@thoth/drivers/internal/server/agent/providers/acp-agent";
-import { CursorACPAgentClient } from "@thoth/drivers/internal/server/agent/providers/cursor-acp-agent";
+import { CursorACPHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/cursor-acp-agent";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 
-describe("CursorACPAgentClient model discovery", () => {
-  class TestCursorACPAgentClient extends CursorACPAgentClient {
+describe("CursorACPHarnessAdapter model discovery", () => {
+  class TestCursorACPHarnessAdapter extends CursorACPHarnessAdapter {
     constructor(response: SessionStateResponse) {
       super({
         logger: createTestLogger(),
@@ -33,7 +33,7 @@ describe("CursorACPAgentClient model discovery", () => {
   }
 
   test("returns only ACP model ids because Cursor CLI ids cannot select ACP models", async () => {
-    const client = new TestCursorACPAgentClient({
+    const client = new TestCursorACPHarnessAdapter({
       sessionId: "session-1",
       models: {
         currentModelId: "gpt-5.4[context=272k,reasoning=medium,fast=false]",
@@ -71,7 +71,7 @@ describe("CursorACPAgentClient model discovery", () => {
   });
 
   test("does not fall back to cursor-agent models when ACP reports zero models", async () => {
-    const client = new TestCursorACPAgentClient({
+    const client = new TestCursorACPHarnessAdapter({
       sessionId: "session-1",
       models: null,
       configOptions: [],

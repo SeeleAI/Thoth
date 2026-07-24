@@ -1131,3 +1131,29 @@ sample and time the exact synchronous operations before the adapter or projectio
 catalog writes, serialization or routing work while keeping commit-before-publish ordering. Do not tighten sample
 spacing, rerun for a lucky distribution, replace an outlier, move persistence after notification or omit a newly
 introduced module's direct tests from the shared gate.
+
+## `NTH-EXP-041` Visual Evidence Must Wait For The Authority State It Claims To Capture
+
+Observed on `2026-07-24` during `NTH-TD-033`:
+
+1. The first complete Cut 2 gate failed after `89.204s` because the Welcome a11y tree lacked `No projects yet`,
+   `Add a project to get started` and the sidebar Add-project button.
+2. The same browser frame already showed all three main Welcome entry tiles. The missing nodes belonged to the
+   existing sidebar empty state, whose Workspace authority request was still in flight when the scorecard captured
+   the tree immediately after the main entry became visible.
+3. Updating the frozen a11y snapshot or relaxing its expected nodes would have hidden a timing error in the
+   verifier. Product rendering did not change. The scorecard instead waits for the existing
+   `sidebar-project-empty-state`, after which the focused real-Web scorecard passed `3/3` and the complete gate
+   passed in `238.109s`.
+
+Conclusion:
+
+An asynchronous UI receipt is valid only after the specific authority-backed state represented by that receipt is
+observable. Waiting for an unrelated nearby control is not proof that every projection in the capture has settled.
+Acceptance should synchronize on the real product state, never rewrite the golden output to match an early frame.
+
+Retry condition:
+
+When a screenshot or a11y tree intermittently misses an existing projection, inspect the request and render
+lifecycle for that exact region. Wait on its public test id or user-visible state; do not add sleeps, increase image
+thresholds, update snapshots, mock the authority response or change product UI to satisfy the verifier.

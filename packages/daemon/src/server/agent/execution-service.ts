@@ -13,18 +13,32 @@ import {
 import type { Logger } from "pino";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
-import type { HarnessCapabilities } from "@thoth/drivers/harness";
+import type {
+  HarnessApprovalRequest,
+  HarnessApprovalResolution,
+  HarnessCapabilities,
+  HarnessExecutionDescriptor,
+  HarnessExecutionEvent,
+  HarnessExecutionInput,
+  HarnessRuntimeToolBinding,
+  HarnessThreadDescriptor,
+  HarnessThreadInput,
+  LegacyHarnessThreadInspection,
+  RuntimeAttachmentReceipt,
+  RuntimeBundle,
+} from "@thoth/drivers/harness";
 import type {
   AgentProviderControl,
   ProviderPlanCapability,
   ProviderRunMode,
+  ProviderRunModeReceipt,
 } from "@thoth/protocol/provider-control";
 
 import {
   getAgentStreamEventTurnId,
   getAgentStreamEventProviderTurnId,
   type AgentCapabilityFlags,
-  type AgentClient,
+  type HarnessAdapter,
   type AgentCreateSessionOptions,
   type AgentFeature,
   type AgentLaunchContext,
@@ -41,7 +55,7 @@ import {
   type ProviderRewindScope,
   type AgentRunOptions,
   type AgentRunResult,
-  type AgentSession,
+  type HarnessThread,
   type AgentSessionConfig,
   type AgentStreamEvent,
   type AgentTimelineItem,
@@ -73,16 +87,24 @@ import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
 import { isSystemInjectedEnvelope } from "./agent-prompt.js";
 import { stripInternalThothMcpServer, withRuntimeThothMcpServer } from "./runtime-mcp-config.js";
 import { resolveCreateAgentTitles } from "./create-agent-title.js";
-import { readThothRuntimeToolsConfig } from "./thoth-runtime-tools-config.js";
+import {
+  readThothRuntimeToolsConfig,
+  withThothRuntimeTools,
+  type ThothRuntimeToolScope,
+} from "./thoth-runtime-tools-config.js";
 import type { ThothToolCatalogFactory } from "@thoth/drivers/agent-runtime";
 import type { ForegroundThothSessionProvisioner } from "./foreground-thoth-session-provisioner.js";
-import {
-  isParkedForegroundProviderTurn,
-  releaseParkedForegroundProviderTurn,
-} from "./tools/foreground-turn-fence.js";
+import type { ToolGateway } from "../workspace-authority/tool-gateway.js";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
+const HARNESS_TOOL_SCOPES = new Set<ThothRuntimeToolScope>([
+  "clarify",
+  "clarify_audit",
+  "contract_audit",
+  "loop_planexec",
+  "loop_review",
+]);
 const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: false,
   supportsSessionPersistence: true,
@@ -110,6 +132,123 @@ interface TimeoutOptions {
   operation: Promise<void>;
   timeoutMs: number;
   onLateError?: (error: unknown) => void;
+}
+
+interface ManagedHarnessThread {
+  descriptor: HarnessThreadDescriptor;
+  input: HarnessThreadInput;
+  agentId: string;
+  bundle: RuntimeBundle | null;
+  tools: HarnessRuntimeToolBinding | null;
+  receipt: RuntimeAttachmentReceipt | null;
+}
+
+interface ManagedHarnessExecution {
+  descriptor: HarnessExecutionDescriptor;
+  threadId: string;
+  events: HarnessExecutionEvent[];
+  subscribers: Set<(event: HarnessExecutionEvent) => void>;
+  running: boolean;
+  settled: Promise<void>;
+  resolveSettled: () => void;
+  mode: ProviderRunMode;
+  planParts: string[];
+  planReady: boolean;
+}
+
+interface ManagedHarnessApproval {
+  threadId: string;
+  executionId: string;
+  request: HarnessApprovalRequest;
+  synthetic: boolean;
+  plan: string | null;
+}
+
+function readHarnessToolScope(binding: HarnessRuntimeToolBinding): ThothRuntimeToolScope {
+  const catalog = asHarnessRecord(binding.catalog);
+  const scope = readHarnessString(catalog?.scope);
+  if (!scope || !HARNESS_TOOL_SCOPES.has(scope as ThothRuntimeToolScope)) {
+    throw new Error(`Unsupported RuntimeBundle phase scope: ${String(catalog?.scope)}`);
+  }
+  return scope as ThothRuntimeToolScope;
+}
+
+function toHarnessPrompt(input: unknown): AgentPromptInput {
+  if (typeof input === "string" || Array.isArray(input)) return input as AgentPromptInput;
+  throw new Error("Harness execution prompt must be provider-neutral text or content blocks");
+}
+
+function asHarnessRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function readHarnessString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readHarnessPlan(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  const record = asHarnessRecord(value);
+  if (!record) return "";
+  if (record.type === "assistant_message") return readHarnessString(record.text) ?? "";
+  const detail = asHarnessRecord(record.detail);
+  if (detail?.type === "plan") return readHarnessString(detail.text) ?? "";
+  const input = asHarnessRecord(record.input);
+  const metadata = asHarnessRecord(record.metadata);
+  return (
+    readHarnessString(record.plan) ??
+    readHarnessString(input?.plan) ??
+    readHarnessString(metadata?.planText) ??
+    readHarnessString(record.text) ??
+    ""
+  );
+}
+
+function toHarnessApproval(request: Record<string, unknown> | null): HarnessApprovalRequest {
+  const id = readHarnessString(request?.id);
+  if (!id) throw new Error("Provider approval request is missing its identity");
+  const providerKind = readHarnessString(request?.kind);
+  const kind: HarnessApprovalRequest["kind"] =
+    providerKind === "plan"
+      ? "implement"
+      : providerKind === "command" ||
+          providerKind === "file" ||
+          providerKind === "tool" ||
+          providerKind === "mode"
+        ? providerKind
+        : providerKind === "question"
+          ? "question"
+          : "permission";
+  return {
+    id,
+    kind,
+    title:
+      readHarnessString(request?.title) ?? readHarnessString(request?.name) ?? "Provider approval",
+    description: readHarnessString(request?.description),
+    displayed: request ?? {},
+    autoApproveEligible: kind !== "question",
+  };
+}
+
+function syntheticHarnessPlanApproval(executionId: string, plan: string): HarnessApprovalRequest {
+  return {
+    id: `harness-plan-${executionId}`,
+    kind: "implement",
+    title: "Implement plan",
+    description: "The provider completed its native Plan and is ready to implement it.",
+    displayed: { plan },
+    autoApproveEligible: true,
+  };
+}
+
+function buildHarnessImplementationPrompt(plan: string): string {
+  return [
+    "Implement the approved native plan now in this same provider thread.",
+    "Preserve the approved task contract, inspect current workspace reality, and verify the result.",
+    plan ? `Approved plan:\n${plan}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function formatProviderList(providers: readonly string[]): string {
@@ -150,7 +289,7 @@ export type {
   AgentTimelineWindow,
 } from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
 
-export type AgentManagerEvent =
+export type ExecutionServiceEvent =
   | { type: "agent_state"; agent: ManagedAgent }
   | {
       type: "agent_stream";
@@ -161,7 +300,7 @@ export type AgentManagerEvent =
       timestamp?: string;
     };
 
-export type AgentSubscriber = (event: AgentManagerEvent) => void;
+export type AgentSubscriber = (event: ExecutionServiceEvent) => void;
 
 export interface SubscribeOptions {
   agentId?: string;
@@ -199,7 +338,7 @@ export interface ProviderAvailability {
   error: string | null;
 }
 
-interface AgentManagerRescueTimeouts {
+interface ExecutionRescueTimeouts {
   reloadSessionCloseMs?: number;
   interruptSessionMs?: number;
 }
@@ -207,12 +346,13 @@ interface AgentManagerRescueTimeouts {
 interface ProviderEnabledFlag {
   enabled: boolean;
   derivedFromProviderId?: string | null;
+  loadAdapter?: () => Promise<HarnessAdapter>;
 }
 type ProviderEnabledMap = Partial<Record<AgentProvider, ProviderEnabledFlag>>;
-type ProviderClientMap = Partial<Record<AgentProvider, AgentClient>>;
+type ProviderAdapterMap = Partial<Record<AgentProvider, HarnessAdapter>>;
 
-export interface AgentManagerOptions {
-  clients?: ProviderClientMap;
+export interface ExecutionServiceOptions {
+  adapters?: ProviderAdapterMap;
   providerDefinitions?: ProviderEnabledMap;
   idFactory?: () => string;
   registry?: AgentRegistry;
@@ -228,7 +368,7 @@ export interface AgentManagerOptions {
   foregroundThothSessionProvisioner?: ForegroundThothSessionProvisioner;
   appendSystemPrompt?: string;
   agentStreamCoalesceWindowMs?: number;
-  rescueTimeouts?: AgentManagerRescueTimeouts;
+  rescueTimeouts?: ExecutionRescueTimeouts;
   logger: Logger;
 }
 
@@ -323,7 +463,7 @@ interface ManagedAgentBase {
 }
 
 type ManagedAgentWithSession = ManagedAgentBase & {
-  session: AgentSession;
+  session: HarnessThread;
 };
 
 type ManagedAgentInitializing = ManagedAgentWithSession & {
@@ -543,9 +683,13 @@ function getFirstUserMessageTextFromRows(rows: readonly AgentTimelineRow[]): str
   return null;
 }
 
-export class AgentManager {
-  private readonly clients = new Map<AgentProvider, AgentClient>();
-  private readonly providerEnabled = new Map<AgentProvider, boolean>();
+export class ExecutionService {
+  private readonly adapters = new Map<AgentProvider, HarnessAdapter>();
+  private readonly adapterLoads = new Map<AgentProvider, Promise<HarnessAdapter>>();
+  private readonly providerDefinitions = new Map<AgentProvider, ProviderEnabledFlag>();
+  private readonly harnessThreads = new Map<string, ManagedHarnessThread>();
+  private readonly harnessExecutions = new Map<string, ManagedHarnessExecution>();
+  private readonly harnessApprovals = new Map<string, ManagedHarnessApproval>();
   private readonly agents = new Map<string, LiveManagedAgent>();
   /**
    * Provider sessions can be pruned or archived independently of Thoth. Keep a
@@ -573,14 +717,15 @@ export class AgentManager {
   private thothToolsEnabled = true;
   private thothToolCatalogFactory: ThothToolCatalogFactory | null = null;
   private foregroundThothSessionProvisioner: ForegroundThothSessionProvisioner | null = null;
+  private toolGateway: ToolGateway | null = null;
   private appendSystemPrompt: string;
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
   private onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
   private logger: Logger;
-  private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
+  private readonly rescueTimeouts: Required<ExecutionRescueTimeouts>;
 
-  constructor(options: AgentManagerOptions) {
+  constructor(options: ExecutionServiceOptions) {
     this.idFactory = options?.idFactory ?? (() => randomUUID());
     this.registry = options?.registry;
     this.durableTimelineStore = options?.durableTimelineStore;
@@ -590,7 +735,7 @@ export class AgentManager {
     this.mcpAuthToken = options?.mcpAuthToken ?? null;
     this.configureThothTools(options);
     this.appendSystemPrompt = options.appendSystemPrompt ?? "";
-    this.logger = options.logger.child({ module: "agent", component: "agent-manager" });
+    this.logger = options.logger.child({ module: "agent", component: "execution-service" });
     this.rescueTimeouts = {
       reloadSessionCloseMs:
         options.rescueTimeouts?.reloadSessionCloseMs ?? RELOAD_SESSION_CLOSE_TIMEOUT_MS,
@@ -607,38 +752,567 @@ export class AgentManager {
     });
     this.updateProviderRegistry({
       providerDefinitions: options.providerDefinitions ?? {},
-      clients: options.clients ?? {},
+      adapters: options.adapters ?? {},
     });
   }
 
-  private configureThothTools(options: AgentManagerOptions): void {
+  private configureThothTools(options: ExecutionServiceOptions): void {
     this.thothToolsEnabled = options.thothToolsEnabled ?? true;
     this.thothToolCatalogFactory = options.thothToolCatalogFactory ?? null;
     this.foregroundThothSessionProvisioner = options.foregroundThothSessionProvisioner ?? null;
   }
 
-  registerClient(provider: AgentProvider, client: AgentClient): void {
-    this.clients.set(provider, client);
+  registerAdapter(provider: AgentProvider, adapter: HarnessAdapter): void {
+    this.adapters.set(provider, adapter);
   }
 
   updateProviderRegistry(input: {
     providerDefinitions: ProviderEnabledMap;
-    clients: ProviderClientMap;
+    adapters: ProviderAdapterMap;
   }): void {
+    this.providerDefinitions.clear();
+    this.adapterLoads.clear();
     for (const [provider, definition] of Object.entries(input.providerDefinitions)) {
       if (definition) {
-        this.providerEnabled.set(provider, definition.enabled);
+        this.providerDefinitions.set(provider, definition);
       }
     }
-    for (const [provider, client] of Object.entries(input.clients)) {
-      if (client) {
-        this.clients.set(provider, client);
+    this.adapters.clear();
+    for (const [provider, adapter] of Object.entries(input.adapters)) {
+      if (adapter) {
+        this.adapters.set(provider, adapter);
+        if (!this.providerDefinitions.has(provider)) {
+          this.providerDefinitions.set(provider, {
+            enabled: true,
+            derivedFromProviderId: null,
+            loadAdapter: async () => adapter,
+          });
+        }
       }
     }
   }
 
   getRegisteredProviderIds(): AgentProvider[] {
-    return Array.from(this.clients.keys());
+    return Array.from(this.providerDefinitions.keys());
+  }
+
+  async getHarnessCapabilities(adapterId: AgentProvider): Promise<HarnessCapabilities> {
+    return (await this.loadAdapter(adapterId)).harnessCapabilities;
+  }
+
+  async createHarnessThread(
+    adapterId: AgentProvider,
+    input: HarnessThreadInput,
+  ): Promise<HarnessThreadDescriptor> {
+    const descriptor: HarnessThreadDescriptor = {
+      id: `provider-thread-${randomUUID()}`,
+      nativeHandle: null,
+      adapterId,
+      persistence: { agentId: randomUUID() },
+    };
+    this.harnessThreads.set(descriptor.id, {
+      descriptor,
+      input,
+      agentId: descriptor.persistence!.agentId as string,
+      bundle: null,
+      tools: null,
+      receipt: null,
+    });
+    return descriptor;
+  }
+
+  async resumeHarnessThread(
+    adapterId: AgentProvider,
+    input: {
+      descriptor: HarnessThreadDescriptor;
+      workspaceId: string;
+      workspacePath: string;
+    },
+  ): Promise<HarnessThreadDescriptor> {
+    if (input.descriptor.adapterId !== adapterId) {
+      throw new Error("Provider thread belongs to a different HarnessAdapter");
+    }
+    const current = this.harnessThreads.get(input.descriptor.id);
+    if (current) return current.descriptor;
+    const persistence = input.descriptor.persistence ?? {};
+    const agentId = typeof persistence.agentId === "string" ? persistence.agentId : null;
+    const profile = asHarnessRecord(persistence.profile);
+    if (!agentId || !profile) throw new Error("Provider thread persistence is incomplete");
+    this.harnessThreads.set(input.descriptor.id, {
+      descriptor: input.descriptor,
+      input: {
+        workspaceId: input.workspaceId,
+        workspacePath: input.workspacePath,
+        profile,
+        internal: true,
+      },
+      agentId,
+      bundle: null,
+      tools: null,
+      receipt: null,
+    });
+    return input.descriptor;
+  }
+
+  async attachHarnessRuntimeBundle(
+    adapterId: AgentProvider,
+    input: {
+      thread: HarnessThreadDescriptor;
+      bundle: RuntimeBundle;
+      tools: HarnessRuntimeToolBinding;
+    },
+  ): Promise<RuntimeAttachmentReceipt> {
+    const thread = this.requireHarnessThread(adapterId, input.thread.id);
+    const scope = readHarnessToolScope(input.tools);
+    const receipt: RuntimeAttachmentReceipt = {
+      id: `runtime-attachment-${randomUUID()}`,
+      adapterId,
+      threadId: thread.descriptor.id,
+      bundleId: input.bundle.id,
+      bundleDigest: input.bundle.digest,
+      instructionAttachment: "system",
+      toolAttachment: input.tools.transport,
+      attachedAt: new Date().toISOString(),
+    };
+    thread.bundle = input.bundle;
+    thread.tools = input.tools;
+    thread.receipt = receipt;
+    thread.descriptor.persistence = {
+      ...thread.descriptor.persistence,
+      agentId: thread.agentId,
+      profile: thread.input.profile,
+      workspaceId: thread.input.workspaceId,
+      workspacePath: thread.input.workspacePath,
+      bundleId: input.bundle.id,
+      bundleDigest: input.bundle.digest,
+      toolScope: scope,
+    };
+    return receipt;
+  }
+
+  async prepareHarnessRunMode(
+    adapterId: AgentProvider,
+    input: { thread: HarnessThreadDescriptor; mode: ProviderRunMode },
+  ): Promise<ProviderRunModeReceipt> {
+    const thread = this.requireHarnessThread(adapterId, input.thread.id);
+    await this.ensureHarnessAgent(thread);
+    const result = await this.prepareAgentRunMode(thread.agentId, input.mode);
+    const failure =
+      input.mode === "plan" && result.capability.kind !== "native" ? result.capability : null;
+    return {
+      id: `provider-mode-${randomUUID()}`,
+      requestedMode: input.mode,
+      status: failure ? failure.kind : "applied",
+      nativeModeId: result.nativeModeId,
+      reason: failure?.reason ?? null,
+      appliedAt: new Date().toISOString(),
+    };
+  }
+
+  async startHarnessExecution(
+    adapterId: AgentProvider,
+    input: { thread: HarnessThreadDescriptor; execution: HarnessExecutionInput },
+  ): Promise<HarnessExecutionDescriptor> {
+    const thread = this.requireHarnessThread(adapterId, input.thread.id);
+    await this.ensureHarnessAgent(thread);
+    return this.startHarnessRun(thread, input.execution);
+  }
+
+  async continueHarnessExecution(
+    adapterId: AgentProvider,
+    input: { thread: HarnessThreadDescriptor; execution: HarnessExecutionInput },
+  ): Promise<HarnessExecutionDescriptor> {
+    const thread = this.requireHarnessThread(adapterId, input.thread.id);
+    await this.ensureHarnessAgent(thread);
+    const previous = this.harnessExecutions.get(input.execution.executionId);
+    if (previous) {
+      if (previous.threadId !== thread.descriptor.id) {
+        throw new Error(
+          `Execution ${input.execution.executionId} belongs to a different provider thread`,
+        );
+      }
+      await previous.settled;
+    }
+    return this.startHarnessRun(thread, input.execution);
+  }
+
+  async resolveHarnessApproval(
+    adapterId: AgentProvider,
+    input: {
+      thread: HarnessThreadDescriptor;
+      execution: HarnessExecutionDescriptor;
+      approvalId: string;
+      decision: "allow" | "deny" | "implement";
+    },
+  ): Promise<HarnessApprovalResolution> {
+    const thread = this.requireHarnessThread(adapterId, input.thread.id);
+    const execution = this.harnessExecutions.get(input.execution.id);
+    const approval = this.harnessApprovals.get(input.approvalId);
+    if (
+      !execution ||
+      execution.threadId !== thread.descriptor.id ||
+      !approval ||
+      approval.threadId !== thread.descriptor.id ||
+      approval.executionId !== input.execution.id
+    ) {
+      throw new Error(`Harness approval ${input.approvalId} is not pending for this execution`);
+    }
+
+    let followUpPrompt: unknown | null = null;
+    if (approval.synthetic) {
+      if (input.decision !== "deny") {
+        followUpPrompt = buildHarnessImplementationPrompt(approval.plan ?? "");
+      }
+    } else {
+      const result = await this.respondToPermission(thread.agentId, input.approvalId, {
+        behavior: input.decision === "deny" ? "deny" : "allow",
+        ...(input.decision === "implement" ? { selectedActionId: "implement" } : {}),
+      });
+      followUpPrompt = result?.followUpPrompt ?? null;
+    }
+
+    let runModeReceipt: ProviderRunModeReceipt | null = null;
+    if (approval.request.kind === "implement" && input.decision !== "deny") {
+      runModeReceipt = await this.prepareHarnessRunMode(adapterId, {
+        thread: input.thread,
+        mode: "default",
+      });
+      if (followUpPrompt === null && approval.plan) {
+        followUpPrompt = buildHarnessImplementationPrompt(approval.plan);
+      }
+    }
+    this.harnessApprovals.delete(input.approvalId);
+    return {
+      approvalId: input.approvalId,
+      decision: input.decision,
+      followUpPrompt,
+      runModeReceipt,
+    };
+  }
+
+  async interruptHarnessExecution(
+    adapterId: AgentProvider,
+    execution: HarnessExecutionDescriptor,
+  ): Promise<void> {
+    const state = this.harnessExecutions.get(execution.id);
+    if (!state) throw new Error(`Execution ${execution.id} is not active`);
+    const thread = this.requireHarnessThread(adapterId, state.threadId);
+    try {
+      const interrupted = await this.cancelAgentRun(thread.agentId);
+      if (!interrupted && state.running) {
+        throw new Error(`Provider did not confirm interruption for ${execution.id}`);
+      }
+    } finally {
+      for (const [approvalId, approval] of this.harnessApprovals) {
+        if (approval.executionId === execution.id) this.harnessApprovals.delete(approvalId);
+      }
+    }
+  }
+
+  subscribeHarnessEvents(
+    adapterId: AgentProvider,
+    execution: HarnessExecutionDescriptor,
+    callback: (event: HarnessExecutionEvent) => void,
+    cursor?: string,
+  ): () => void {
+    const state = this.harnessExecutions.get(execution.id);
+    if (!state) throw new Error(`Execution ${execution.id} is not registered`);
+    this.requireHarnessThread(adapterId, state.threadId);
+    const cursorIndex = cursor ? Number.parseInt(cursor, 10) : 0;
+    for (const event of state.events.slice(Number.isFinite(cursorIndex) ? cursorIndex : 0)) {
+      callback(event);
+    }
+    state.subscribers.add(callback);
+    return () => state.subscribers.delete(callback);
+  }
+
+  async describeHarnessPersistence(
+    adapterId: AgentProvider,
+    descriptor: HarnessThreadDescriptor,
+  ): Promise<Record<string, unknown> | null> {
+    const thread = this.requireHarnessThread(adapterId, descriptor.id);
+    const agent = this.getAgent(thread.agentId);
+    return {
+      ...thread.descriptor.persistence,
+      ...(agent?.persistence ? { providerHandle: agent.persistence } : {}),
+    };
+  }
+
+  async archiveHarnessThread(
+    adapterId: AgentProvider,
+    descriptor: HarnessThreadDescriptor,
+  ): Promise<void> {
+    const thread = this.requireHarnessThread(adapterId, descriptor.id);
+    if (this.getAgent(thread.agentId)) await this.archiveAgent(thread.agentId);
+  }
+
+  async deleteHarnessThread(
+    adapterId: AgentProvider,
+    descriptor: HarnessThreadDescriptor,
+  ): Promise<void> {
+    const thread = this.requireHarnessThread(adapterId, descriptor.id);
+    if (this.getAgent(thread.agentId)) await this.closeAgent(thread.agentId);
+    this.harnessThreads.delete(descriptor.id);
+  }
+
+  inspectLegacyHarnessThread(input: {
+    legacyRoot: string;
+    metadata: Record<string, unknown>;
+  }): LegacyHarnessThreadInspection {
+    const nativeHandle = readHarnessString(input.metadata.nativeHandle);
+    return { resumable: nativeHandle !== null, nativeHandle, metadata: input.metadata };
+  }
+
+  async adoptNativeHarnessThread(
+    adapterId: AgentProvider,
+    input: {
+      inspection: LegacyHarnessThreadInspection;
+      workspaceId: string;
+      workspacePath: string;
+    },
+  ): Promise<HarnessThreadDescriptor | null> {
+    const handle = input.inspection.metadata.providerHandle as AgentPersistenceHandle | undefined;
+    if (!input.inspection.resumable || !handle) return null;
+    const agentId = randomUUID();
+    const agent = await this.resumeAgentFromPersistence(handle, undefined, agentId, {
+      workspaceId: input.workspaceId,
+      labels: { surface: "background-task" },
+    });
+    const descriptor: HarnessThreadDescriptor = {
+      id: `provider-thread-${randomUUID()}`,
+      adapterId,
+      nativeHandle: agent.persistence?.nativeHandle ?? agent.persistence?.sessionId ?? null,
+      persistence: {
+        agentId,
+        providerHandle: agent.persistence,
+        profile: input.inspection.metadata.profile ?? {},
+        workspaceId: input.workspaceId,
+        workspacePath: input.workspacePath,
+      },
+    };
+    this.harnessThreads.set(descriptor.id, {
+      descriptor,
+      input: {
+        workspaceId: input.workspaceId,
+        workspacePath: input.workspacePath,
+        profile: asHarnessRecord(input.inspection.metadata.profile) ?? {},
+        internal: true,
+      },
+      agentId,
+      bundle: null,
+      tools: null,
+      receipt: null,
+    });
+    return descriptor;
+  }
+
+  verifyHarnessResume(descriptor: HarnessThreadDescriptor): boolean {
+    const thread = this.harnessThreads.get(descriptor.id);
+    return thread ? Boolean(this.getAgent(thread.agentId)) : false;
+  }
+
+  private requireHarnessThread(adapterId: string, threadId: string): ManagedHarnessThread {
+    const thread = this.harnessThreads.get(threadId);
+    if (!thread || thread.descriptor.adapterId !== adapterId) {
+      throw new Error(`Provider thread ${threadId} is not owned by adapter ${adapterId}`);
+    }
+    return thread;
+  }
+
+  private async ensureHarnessAgent(thread: ManagedHarnessThread): Promise<void> {
+    if (this.getAgent(thread.agentId)) return;
+    if (!thread.bundle || !thread.tools || !thread.receipt) {
+      throw new Error(`Provider thread ${thread.descriptor.id} has no RuntimeBundle receipt`);
+    }
+    const profile = thread.input.profile as Partial<AgentSessionConfig>;
+    const config = withThothRuntimeTools(
+      {
+        ...profile,
+        provider: thread.descriptor.adapterId,
+        cwd: thread.input.workspacePath,
+        internal: true,
+        systemPrompt: [profile.systemPrompt, thread.bundle.instructions]
+          .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+          .join("\n\n"),
+      } as AgentSessionConfig,
+      { enabled: true, scope: readHarnessToolScope(thread.tools) },
+    );
+    const providerHandle = thread.descriptor.persistence?.providerHandle as
+      | AgentPersistenceHandle
+      | null
+      | undefined;
+    const labels = { surface: "background-task", providerThreadId: thread.descriptor.id };
+    const agent = providerHandle
+      ? await this.resumeAgentFromPersistence(providerHandle, config, thread.agentId, {
+          workspaceId: thread.input.workspaceId,
+          labels,
+        })
+      : await this.createAgent(config, thread.agentId, {
+          labels,
+          workspaceId: thread.input.workspaceId,
+          persistSession: true,
+          persistInternal: true,
+        });
+    thread.descriptor.nativeHandle =
+      agent.persistence?.nativeHandle ?? agent.persistence?.sessionId ?? null;
+    thread.descriptor.persistence = {
+      ...thread.descriptor.persistence,
+      providerHandle: agent.persistence,
+    };
+  }
+
+  private startHarnessRun(
+    thread: ManagedHarnessThread,
+    execution: HarnessExecutionInput,
+  ): HarnessExecutionDescriptor {
+    const descriptor: HarnessExecutionDescriptor = {
+      id: execution.executionId,
+      threadId: thread.descriptor.id,
+      nativeTurnId: null,
+    };
+    let resolveSettled!: () => void;
+    const settled = new Promise<void>((resolvePromise) => {
+      resolveSettled = resolvePromise;
+    });
+    const state: ManagedHarnessExecution = {
+      descriptor,
+      threadId: thread.descriptor.id,
+      events: [],
+      subscribers: new Set(),
+      running: true,
+      settled,
+      resolveSettled,
+      mode: execution.runMode,
+      planParts: [],
+      planReady: false,
+    };
+    this.harnessExecutions.set(descriptor.id, state);
+    void this.consumeHarnessEvents(
+      state,
+      this.streamAgent(thread.agentId, toHarnessPrompt(execution.prompt)),
+    );
+    return descriptor;
+  }
+
+  private async consumeHarnessEvents(
+    state: ManagedHarnessExecution,
+    events: AsyncGenerator<AgentStreamEvent>,
+  ): Promise<void> {
+    try {
+      for await (const payload of events) {
+        if (payload.type === "turn_started") {
+          state.descriptor.nativeTurnId = payload.providerTurnId ?? payload.turnId ?? null;
+        }
+        this.publishHarnessEvent(state, payload);
+      }
+    } catch (error) {
+      this.publishHarnessEvent(state, {
+        type: "turn_failed",
+        provider: "harness",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      state.running = false;
+      state.resolveSettled();
+    }
+  }
+
+  private publishHarnessEvent(state: ManagedHarnessExecution, payload: AgentStreamEvent): void {
+    const event: HarnessExecutionEvent = {
+      id: `execution-event-${randomUUID()}`,
+      executionId: state.descriptor.id,
+      nativeCursor: String(state.events.length + 1),
+      occurredAt: new Date().toISOString(),
+      payload,
+    };
+    for (const normalized of this.normalizeHarnessEvent(state, event)) {
+      state.events.push(normalized);
+      for (const subscriber of state.subscribers) subscriber(normalized);
+    }
+  }
+
+  private normalizeHarnessEvent(
+    state: ManagedHarnessExecution,
+    event: HarnessExecutionEvent,
+  ): HarnessExecutionEvent[] {
+    const payload = asHarnessRecord(event.payload);
+    const type = readHarnessString(payload?.type);
+    if (type === "timeline") {
+      const plan = readHarnessPlan(payload?.item);
+      if (plan) state.planParts.push(plan);
+    }
+    if (type === "permission_requested") {
+      const request = asHarnessRecord(payload?.request);
+      if (readHarnessString(request?.kind) === "question") {
+        return [{ ...event, control: { type: "provider_question", request: payload?.request } }];
+      }
+      const approval = toHarnessApproval(request);
+      const plan =
+        approval.kind === "implement"
+          ? readHarnessPlan(approval.displayed) || state.planParts.join("\n\n")
+          : null;
+      this.harnessApprovals.set(approval.id, {
+        threadId: state.threadId,
+        executionId: state.descriptor.id,
+        request: approval,
+        synthetic: false,
+        plan,
+      });
+      if (approval.kind === "implement") {
+        state.planReady = Boolean(plan);
+        if (!plan) this.harnessApprovals.delete(approval.id);
+        return [
+          {
+            ...event,
+            control: plan
+              ? { type: "plan_ready", plan, approval }
+              : {
+                  type: "plan_invalid",
+                  reason: "Native Plan completed without usable plan content.",
+                },
+          },
+        ];
+      }
+      return [{ ...event, control: { type: "approval_requested", approval } }];
+    }
+    if (type === "turn_completed" && state.mode === "plan" && !state.planReady) {
+      const plan = state.planParts
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .join("\n\n");
+      if (!plan) {
+        return [
+          {
+            ...event,
+            control: {
+              type: "plan_invalid",
+              reason: "Native Plan completed without usable plan content.",
+            },
+          },
+        ];
+      }
+      const approval = syntheticHarnessPlanApproval(state.descriptor.id, plan);
+      state.planReady = true;
+      this.harnessApprovals.set(approval.id, {
+        threadId: state.threadId,
+        executionId: state.descriptor.id,
+        request: approval,
+        synthetic: true,
+        plan,
+      });
+      return [
+        {
+          id: `${event.id}:plan-ready`,
+          executionId: event.executionId,
+          nativeCursor: event.nativeCursor,
+          occurredAt: event.occurredAt,
+          payload: { type: "harness_plan_ready" },
+          control: { type: "plan_ready", plan, approval },
+        },
+        event,
+      ];
+    }
+    return [event];
   }
 
   setAgentAttentionCallback(callback: AgentAttentionCallback): void {
@@ -665,6 +1339,10 @@ export class AgentManager {
     provisioner: ForegroundThothSessionProvisioner | null,
   ): void {
     this.foregroundThothSessionProvisioner = provisioner;
+  }
+
+  setToolGateway(gateway: ToolGateway): void {
+    this.toolGateway = gateway;
   }
 
   /**
@@ -827,11 +1505,19 @@ export class AgentManager {
   async listImportableSessions(
     options?: ImportablePersistedAgentQueryOptions,
   ): Promise<ManagedImportableProviderSession[]> {
-    const providerEntries = Array.from(this.clients.entries()).filter(
-      ([provider, client]) =>
-        client.capabilities.supportsSessionListing &&
-        !!client.listImportableSessions &&
-        this.isProviderImportable(provider, options?.providerFilter),
+    const providerEntries = (
+      await Promise.all(
+        this.getConfiguredProviderIds().map(async (provider) =>
+          this.isProviderImportable(provider, options?.providerFilter)
+            ? ([provider, await this.loadAdapter(provider)] as const)
+            : null,
+        ),
+      )
+    ).filter(
+      (entry): entry is readonly [AgentProvider, HarnessAdapter] =>
+        entry !== null &&
+        entry[1].capabilities.supportsSessionListing === true &&
+        Boolean(entry[1].listImportableSessions),
     );
     const sessionLists = await Promise.all(
       providerEntries.map(async ([provider, client]) => {
@@ -863,7 +1549,7 @@ export class AgentManager {
     provider: AgentProvider,
     providerFilter: Set<string> | undefined,
   ): boolean {
-    if (this.providerEnabled.get(provider) === false) {
+    if (this.providerDefinitions.get(provider)?.enabled === false) {
       return false;
     }
     if (providerFilter && !providerFilter.has(provider)) {
@@ -874,30 +1560,29 @@ export class AgentManager {
 
   async listProviderAvailability(): Promise<ProviderAvailability[]> {
     return Promise.all(
-      Array.from(this.clients.keys()).map((provider) => this.getProviderAvailability(provider)),
+      this.getConfiguredProviderIds().map((provider) => this.getProviderAvailability(provider)),
     );
   }
 
   getProviderCapabilities(provider: AgentProvider): AgentCapabilityFlags | null {
-    return this.clients.get(provider)?.capabilities ?? null;
+    return this.adapters.get(provider)?.capabilities ?? null;
   }
 
   getProviderHarnessCapabilities(provider: AgentProvider): HarnessCapabilities | null {
-    return this.clients.get(provider)?.harnessCapabilities ?? null;
+    return this.adapters.get(provider)?.harnessCapabilities ?? null;
   }
 
   async getProviderAvailability(provider: AgentProvider): Promise<ProviderAvailability> {
-    const client = this.clients.get(provider);
-    if (!client) {
+    if (!this.providerDefinitions.has(provider)) {
       return {
         provider,
         available: false,
-        error: `No client registered for provider '${provider}'`,
+        error: `No adapter registered for provider '${provider}'`,
       };
     }
 
     try {
-      const available = await client.isAvailable();
+      const available = await (await this.loadAdapter(provider)).isAvailable();
       return {
         provider,
         available,
@@ -916,7 +1601,7 @@ export class AgentManager {
 
   async listDraftCommands(config: AgentSessionConfig): Promise<AgentSlashCommand[]> {
     const normalizedConfig = await this.normalizeConfig(config, { resolveDefaultModel: false });
-    const client = this.requireClient(normalizedConfig.provider);
+    const client = await this.loadAdapter(normalizedConfig.provider);
     if (!normalizedConfig.model) {
       return [];
     }
@@ -960,7 +1645,7 @@ export class AgentManager {
 
   async listDraftFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
     const normalizedConfig = await this.normalizeConfig(config, { resolveDefaultModel: false });
-    const client = this.requireClient(normalizedConfig.provider);
+    const client = await this.loadAdapter(normalizedConfig.provider);
     if (!normalizedConfig.model) {
       return [];
     }
@@ -1121,7 +1806,7 @@ export class AgentManager {
     const resolvedAgentId = validateAgentId(agentId ?? this.idFactory(), "createAgent");
     const { storedConfig, launchConfig } = await this.prepareSessionConfig(config, resolvedAgentId);
     this.requireEnabledProvider(storedConfig.provider);
-    const client = await this.requireAvailableClient({
+    const client = await this.requireAvailableAdapter({
       provider: storedConfig.provider,
     });
     const launchContext = await this.buildLaunchContext(
@@ -1189,7 +1874,7 @@ export class AgentManager {
       resolvedAgentId,
     );
 
-    const client = this.requireClient(handle.provider);
+    const client = await this.loadAdapter(handle.provider);
     const available = await client.isAvailable();
     if (!available) {
       throw new Error(
@@ -1214,7 +1899,7 @@ export class AgentManager {
     const resolvedAgentId = validateAgentId(this.idFactory(), "importProviderSession");
     this.requireEnabledProvider(input.provider);
 
-    const client = await this.requireAvailableClient({ provider: input.provider });
+    const client = await this.requireAvailableAdapter({ provider: input.provider });
     if (!client.importSession) {
       throw new Error(`Provider '${input.provider}' does not support importing sessions`);
     }
@@ -1289,7 +1974,7 @@ export class AgentManager {
     const preservedAttention = existing.attention;
     const handle = existing.persistence;
     const provider = handle?.provider ?? existing.provider;
-    const client = this.requireClient(provider);
+    const client = await this.loadAdapter(provider);
     const refreshConfig = {
       ...existing.config,
       ...overrides,
@@ -1337,7 +2022,7 @@ export class AgentManager {
     });
   }
 
-  private async closeReloadedSession(session: AgentSession, agentId: string): Promise<void> {
+  private async closeReloadedSession(session: HarnessThread, agentId: string): Promise<void> {
     try {
       const result = await this.waitWithTimeout({
         operation: session.close(),
@@ -1403,7 +2088,7 @@ export class AgentManager {
         activeForegroundTurnId: agent.activeForegroundTurnId,
         pendingPermissions: agent.pendingPermissions.size,
       },
-      "agent.manager.close.start",
+      "execution.service.close.start",
     );
     const closedAgent = this.prepareAgentForClosure(agent, "agent closed");
     await agent.session.close();
@@ -1416,7 +2101,7 @@ export class AgentManager {
         provider: closedAgent.provider,
         sessionId: closedAgent.persistence?.sessionId ?? undefined,
       },
-      "agent.manager.close.complete",
+      "execution.service.close.complete",
     );
   }
 
@@ -1574,7 +2259,7 @@ export class AgentManager {
     try {
       capability = agent.session.getProviderRunModeCapability
         ? await agent.session.getProviderRunModeCapability()
-        : (this.clients.get(agent.provider)?.harnessCapabilities.plan ?? {
+        : (this.adapters.get(agent.provider)?.harnessCapabilities.plan ?? {
             kind: "unsupported" as const,
             reason: "Provider session does not expose native Plan.",
           });
@@ -2051,7 +2736,7 @@ export class AgentManager {
         promptType: typeof prompt === "string" ? "string" : "structured",
         hasRunOptions: Boolean(options),
       },
-      "agent.manager.stream.request",
+      "execution.service.stream.request",
     );
     if (existingAgent.activeForegroundTurnId || this.foregroundRuns.hasPendingRun(agentId)) {
       this.logger.trace(
@@ -2063,7 +2748,7 @@ export class AgentManager {
           lifecycle: existingAgent.lifecycle,
           hasPendingForegroundRun: this.foregroundRuns.hasPendingRun(agentId),
         },
-        "agent.manager.stream.reject",
+        "execution.service.stream.reject",
       );
       throw new Error(`Agent ${agentId} already has an active run`);
     }
@@ -2074,7 +2759,7 @@ export class AgentManager {
 
     const pendingRun = this.foregroundRuns.createPendingRun(agentId);
 
-    const streamForwarder = async function* streamForwarder(this: AgentManager) {
+    const streamForwarder = async function* streamForwarder(this: ExecutionService) {
       let turnId: string;
       let turnStream: ReturnType<ForegroundRunState["createTurnStream"]> | null = null;
       try {
@@ -2112,7 +2797,7 @@ export class AgentManager {
           lifecycle: agent.lifecycle,
           activeForegroundTurnId: agent.activeForegroundTurnId,
         },
-        "agent.manager.stream.start",
+        "execution.service.stream.start",
       );
 
       turnStream = this.foregroundRuns.createTurnStream(turnId);
@@ -2171,7 +2856,7 @@ export class AgentManager {
         terminalError,
         pendingReplacement: mutableAgent.pendingReplacement,
       },
-      "agent.manager.finalize",
+      "execution.service.finalize",
     );
     if (!shouldHoldBusyForReplacement) {
       this.touchUpdatedAt(mutableAgent);
@@ -2199,7 +2884,7 @@ export class AgentManager {
     this.touchUpdatedAt(agent);
     this.emitState(agent);
 
-    return async function* replaceRunForwarder(this: AgentManager) {
+    return async function* replaceRunForwarder(this: ExecutionService) {
       try {
         await this.cancelAgentRun(agentId);
         const nextRun = this.streamAgent(agentId, prompt, options);
@@ -2462,7 +3147,7 @@ export class AgentManager {
     return true;
   }
 
-  private async interruptSession(session: AgentSession, agentId: string): Promise<void> {
+  private async interruptSession(session: HarnessThread, agentId: string): Promise<void> {
     try {
       const result = await this.waitWithTimeout({
         operation: session.interrupt(),
@@ -2881,7 +3566,7 @@ export class AgentManager {
   }
 
   private async registerSession(
-    session: AgentSession,
+    session: HarnessThread,
     config: AgentSessionConfig,
     agentId: string,
     options?: {
@@ -2991,7 +3676,7 @@ export class AgentManager {
 
   private buildManagedAgentForRegister(params: {
     resolvedAgentId: string;
-    session: AgentSession;
+    session: HarnessThread;
     config: AgentSessionConfig;
     now: Date;
     durableTimelineHasRows: boolean;
@@ -3120,7 +3805,7 @@ export class AgentManager {
         turnId: getAgentStreamEventTurnId(event),
         event,
       },
-      "agent.manager.enqueue",
+      "execution.service.enqueue",
     );
     const previous = this.sessionEventTails.get(agentId) ?? Promise.resolve();
     const next = previous
@@ -3141,7 +3826,7 @@ export class AgentManager {
             turnId: getAgentStreamEventTurnId(event),
             event,
           },
-          "agent.manager.dequeue",
+          "execution.service.dequeue",
         );
         await this.dispatchSessionEvent(current, event);
         return;
@@ -3177,7 +3862,7 @@ export class AgentManager {
         matchingWaiterCount: matchingWaiters.length,
         event,
       },
-      "agent.manager.dispatch_session_event",
+      "execution.service.dispatch_session_event",
     );
 
     const shouldNotifyWaiters = await this.handleStreamEvent(agent, event);
@@ -3199,7 +3884,7 @@ export class AgentManager {
         terminal: isTurnTerminalEvent(event),
         event,
       },
-      "agent.manager.notify_waiters",
+      "execution.service.notify_waiters",
     );
   }
 
@@ -3414,7 +4099,7 @@ export class AgentManager {
         turnId,
         event,
       },
-      "agent.manager.notify_waiters.coalesced",
+      "execution.service.notify_waiters.coalesced",
     );
   }
 
@@ -3427,7 +4112,7 @@ export class AgentManager {
     const eventTurnId = getAgentStreamEventTurnId(event);
     if (
       event.type === "timeline" &&
-      isParkedForegroundProviderTurn({
+      this.toolGateway?.isParkedProviderTurn({
         agentId: agent.id,
         providerTurnId: getAgentStreamEventProviderTurnId(event) ?? eventTurnId,
       })
@@ -3494,7 +4179,7 @@ export class AgentManager {
         await this.captureOrderedProviderAnchor(agent, eventTurnId);
         this.canonicalMessageByProviderTurn.delete(eventTurnId);
       }
-      releaseParkedForegroundProviderTurn({
+      this.toolGateway?.releaseParkedProviderTurn({
         agentId: agent.id,
         providerTurnId: getAgentStreamEventProviderTurnId(event) ?? eventTurnId,
       });
@@ -3592,7 +4277,7 @@ export class AgentManager {
         isForegroundEvent,
         event,
       },
-      "agent.manager.handle_stream_event.start",
+      "execution.service.handle_stream_event.start",
     );
   }
 
@@ -3609,7 +4294,7 @@ export class AgentManager {
         turnId,
         event,
       },
-      "agent.manager.coalescer.buffer",
+      "execution.service.coalescer.buffer",
     );
   }
 
@@ -3631,7 +4316,7 @@ export class AgentManager {
         shouldNotifyWaiters: flags.shouldNotifyWaiters,
         event,
       },
-      "agent.manager.handle_stream_event.end",
+      "execution.service.handle_stream_event.end",
     );
   }
 
@@ -3776,7 +4461,7 @@ export class AgentManager {
         lifecycle: agent.lifecycle,
         activeForegroundTurnId: agent.activeForegroundTurnId,
       },
-      "agent.manager.turn.completed",
+      "execution.service.turn.completed",
     );
     agent.lastUsage = event.usage;
     agent.lastError = undefined;
@@ -3848,7 +4533,7 @@ export class AgentManager {
         activeForegroundTurnId: agent.activeForegroundTurnId,
         eventTurnId,
       },
-      "agent.manager.turn.canceled",
+      "execution.service.turn.canceled",
     );
     if (!isForegroundEvent && !agent.pendingReplacement) {
       agent.lifecycle = "idle";
@@ -3875,7 +4560,7 @@ export class AgentManager {
         lifecycle: agent.lifecycle,
         activeForegroundTurnId: agent.activeForegroundTurnId,
       },
-      "agent.manager.turn.started",
+      "execution.service.turn.started",
     );
     if (!isForegroundEvent) {
       agent.lifecycle = "running";
@@ -4048,7 +4733,7 @@ export class AgentManager {
         pendingPermissions: agent.pendingPermissions.size,
         persist: options?.persist !== false,
       },
-      "agent.manager.emit_state",
+      "execution.service.emit_state",
     );
 
     this.dispatch({
@@ -4192,12 +4877,12 @@ export class AgentManager {
         metadata,
         event,
       },
-      "agent.manager.dispatch_stream",
+      "execution.service.dispatch_stream",
     );
     this.dispatch({ type: "agent_stream", agentId, event, ...metadata });
   }
 
-  private dispatch(event: AgentManagerEvent): void {
+  private dispatch(event: ExecutionServiceEvent): void {
     for (const subscriber of this.subscribers) {
       if (
         subscriber.agentId &&
@@ -4284,11 +4969,12 @@ export class AgentManager {
   }
 
   private async resolveDefaultModelId(config: AgentSessionConfig): Promise<string | undefined> {
-    const client = this.clients.get(config.provider);
-    if (!client) {
+    const definition = this.providerDefinitions.get(config.provider);
+    if (!definition) {
       return undefined;
     }
     try {
+      const client = await this.loadAdapter(config.provider);
       const catalog = await client.fetchCatalog({
         scope: "workspace",
         cwd: config.cwd,
@@ -4335,7 +5021,7 @@ export class AgentManager {
 
   private async buildLaunchContext(
     agentId: string,
-    client: AgentClient,
+    client: HarnessAdapter,
     launchConfig: AgentSessionConfig,
     env?: Record<string, string>,
   ): Promise<AgentLaunchContext> {
@@ -4371,9 +5057,10 @@ export class AgentManager {
     return launchContext.thothTools ? stripInternalThothMcpServer(launchConfig) : launchConfig;
   }
 
-  private async requireAvailableClient(options: { provider: AgentProvider }): Promise<AgentClient> {
-    const client = this.clients.get(options.provider);
-    if (!client) {
+  private async requireAvailableAdapter(options: {
+    provider: AgentProvider;
+  }): Promise<HarnessAdapter> {
+    if (!this.providerDefinitions.has(options.provider)) {
       const configuredProviders = this.getConfiguredProviderIds();
       throw new Error(
         `Unknown provider '${options.provider}'. Configured providers: ${formatProviderList(
@@ -4382,6 +5069,7 @@ export class AgentManager {
       );
     }
 
+    const client = await this.loadAdapter(options.provider);
     let unavailableReason: string | null = null;
     try {
       const available = await client.isAvailable();
@@ -4403,21 +5091,32 @@ export class AgentManager {
   }
 
   private requireEnabledProvider(provider: AgentProvider): void {
-    if (this.providerEnabled.get(provider) === false) {
+    if (this.providerDefinitions.get(provider)?.enabled === false) {
       throw new Error(`Provider '${provider}' is disabled`);
     }
   }
 
   private getConfiguredProviderIds(): AgentProvider[] {
-    return Array.from(new Set([...this.providerEnabled.keys(), ...this.clients.keys()]));
+    return Array.from(this.providerDefinitions.keys());
   }
 
-  private requireClient(provider: AgentProvider): AgentClient {
-    const client = this.clients.get(provider);
-    if (!client) {
-      throw new Error(`No client registered for provider '${provider}'`);
+  private async loadAdapter(provider: AgentProvider): Promise<HarnessAdapter> {
+    const current = this.adapters.get(provider);
+    if (current) return current;
+    const definition = this.providerDefinitions.get(provider);
+    if (!definition) throw new Error(`No adapter registered for provider '${provider}'`);
+    if (!definition.loadAdapter) {
+      throw new Error(`Provider '${provider}' has no adapter loader`);
     }
-    return client;
+    const pending = this.adapterLoads.get(provider) ?? definition.loadAdapter();
+    this.adapterLoads.set(provider, pending);
+    try {
+      const adapter = await pending;
+      this.adapters.set(provider, adapter);
+      return adapter;
+    } finally {
+      if (this.adapterLoads.get(provider) === pending) this.adapterLoads.delete(provider);
+    }
   }
 
   async archiveNativeSessionBestEffort(
@@ -4425,7 +5124,7 @@ export class AgentManager {
     persistence: AgentPersistenceHandle | null | undefined,
   ): Promise<void> {
     if (!persistence) return;
-    const client = this.clients.get(provider);
+    const client = await this.loadAdapter(provider).catch(() => null);
     if (!client?.archiveNativeSession) return;
     try {
       await client.archiveNativeSession(
@@ -4445,8 +5144,8 @@ export class AgentManager {
     persistence: AgentPersistenceHandle | null | undefined,
   ): Promise<void> {
     if (!persistence) return;
-    const client = this.clients.get(provider);
-    if (!client?.unarchiveNativeSession) return;
+    const client = await this.loadAdapter(provider);
+    if (!client.unarchiveNativeSession) return;
     await client.unarchiveNativeSession(
       persistence,
       this.buildPersistenceControlLaunchContext(provider, persistence),

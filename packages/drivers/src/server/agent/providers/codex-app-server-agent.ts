@@ -2,7 +2,7 @@ import {
   getAgentStreamEventTurnId,
   type AgentPermissionAction,
   type AgentCapabilityFlags,
-  type AgentClient,
+  type HarnessAdapter,
   type AgentCreateSessionOptions,
   type AgentFeature,
   type AgentLaunchContext,
@@ -20,7 +20,7 @@ import {
   type AgentRunResult,
   type AgentResumeSessionOptions,
   type AgentRuntimeInfo,
-  type AgentSession,
+  type HarnessThread,
   type AgentSessionConfig,
   type AgentSlashCommand,
   type AgentStreamEvent,
@@ -35,7 +35,7 @@ import {
   type ProviderCatalog,
   type ProviderControlLaunchContext,
   type ProviderMessageAnchorReceipt,
-} from "../agent-sdk-types.js";
+} from "../harness-contract.js";
 import { THOTH_RUNTIME_TOOL_NAMES } from "@thoth/protocol/thoth-runtime-contract";
 import type { ThothToolCatalog, ThothToolDefinition, ThothToolResult } from "../tools/types.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
@@ -2933,7 +2933,7 @@ interface CodexSubAgentCallState {
   childItems: Map<string, AgentTimelineItem>;
 }
 
-export class CodexAppServerAgentSession implements AgentSession {
+export class CodexHarnessThread implements HarnessThread {
   readonly provider = CODEX_PROVIDER;
   readonly capabilities = CODEX_APP_SERVER_CAPABILITIES;
 
@@ -5532,7 +5532,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 }
 
-export class CodexAppServerAgentClient implements AgentClient {
+export class CodexHarnessAdapter implements HarnessAdapter {
   readonly provider = CODEX_PROVIDER;
   readonly capabilities = CODEX_APP_SERVER_CAPABILITIES;
   readonly harnessCapabilities = defineHarnessCapabilities({
@@ -5643,7 +5643,7 @@ export class CodexAppServerAgentClient implements AgentClient {
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
     options?: AgentCreateSessionOptions,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     if (options?.persistSession === false) {
       this.logger.debug(
         "Codex app-server does not expose an ephemeral-session option; persistSession=false is currently a no-op",
@@ -5654,7 +5654,7 @@ export class CodexAppServerAgentClient implements AgentClient {
     const sessionConfig: AgentSessionConfig = { ...config, provider: CODEX_PROVIDER };
     const goalsEnabled = await this.resolveGoalsEnabled();
     const autoReviewEnabled = await this.resolveAutoReviewEnabled();
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       sessionConfig,
       null,
       this.logger,
@@ -5676,7 +5676,7 @@ export class CodexAppServerAgentClient implements AgentClient {
     overrides?: Partial<AgentSessionConfig>,
     launchContext?: AgentLaunchContext,
     options?: AgentResumeSessionOptions,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     const storedConfig = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
     const merged: AgentSessionConfig = {
       ...storedConfig,
@@ -5686,7 +5686,7 @@ export class CodexAppServerAgentClient implements AgentClient {
     };
     const goalsEnabled = await this.resolveGoalsEnabled();
     const autoReviewEnabled = await this.resolveAutoReviewEnabled();
-    const session = new CodexAppServerAgentSession(
+    const session = new CodexHarnessThread(
       merged,
       handle,
       this.logger,

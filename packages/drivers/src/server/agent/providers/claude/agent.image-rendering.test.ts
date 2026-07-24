@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
 import type { AgentStreamEvent, AgentTimelineItem } from "@thoth/drivers/agent-runtime";
-import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import { ClaudeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 
 const ONE_BY_ONE_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X1r0AAAAASUVORK5CYII=";
@@ -16,7 +16,7 @@ interface ClaudeImageTestSession {
 }
 
 async function createSession(): Promise<ClaudeImageTestSession> {
-  const client = new ClaudeAgentClient({
+  const client = new ClaudeHarnessAdapter({
     logger: createTestLogger(),
     resolveBinary: async () => "/test/claude/bin",
   });

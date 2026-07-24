@@ -225,7 +225,7 @@ describe("daemon E2E (real opencode) - rewind", () => {
     }
     const logger = pino({ level: "silent" });
     const daemon = await createTestThothDaemon({
-      agentClients: createRealProviderClients(["opencode"], logger),
+      harnessAdapters: createRealProviderClients(["opencode"], logger),
       logger,
     });
     const client = new DaemonClient({

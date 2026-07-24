@@ -1,5 +1,5 @@
 import type {
-  AgentClient,
+  HarnessAdapter,
   AgentPersistenceHandle,
   AgentProvider,
   AgentSessionConfig,
@@ -8,13 +8,13 @@ import type {
   ImportedTimelineEntry,
   ImportProviderSessionContext,
   ImportProviderSessionInput,
-} from "./agent-sdk-types.js";
+} from "./harness-contract.js";
 
 export async function importSessionFromPersistence(input: {
   provider: AgentProvider;
   request: ImportProviderSessionInput;
   context: ImportProviderSessionContext;
-  resumeSession: AgentClient["resumeSession"];
+  resumeSession: HarnessAdapter["resumeSession"];
   config?: Partial<AgentSessionConfig>;
   persistence?: AgentPersistenceHandle;
 }): Promise<ImportedProviderSession> {

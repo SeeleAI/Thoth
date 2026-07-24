@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
-import { AgentManager } from "../agent-manager.js";
+import { ExecutionService } from "../execution-service.js";
 import type { AgentStreamEvent, AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import {
   MOCK_LOAD_TEST_DEFAULT_MODEL_ID,
-  MockLoadTestAgentClient,
+  MockHarnessAdapter,
 } from "@thoth/drivers/internal/server/agent/providers/mock-load-test-agent";
 
 type PermissionRequestedEvent = Extract<AgentStreamEvent, { type: "permission_requested" }>;
@@ -25,13 +25,13 @@ function expectSinglePermissionRequest(events: AgentStreamEvent[]): PermissionRe
   return permission;
 }
 
-describe("MockLoadTestAgentClient", () => {
+describe("MockHarnessAdapter", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
   test("default model is a five minute foreground stream with token-rate intervals", async () => {
-    const client = new MockLoadTestAgentClient();
+    const client = new MockHarnessAdapter();
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",
@@ -51,7 +51,7 @@ describe("MockLoadTestAgentClient", () => {
 
   test("returns schema-shaped JSON for structured branch-name generation", async () => {
     vi.useFakeTimers();
-    const client = new MockLoadTestAgentClient();
+    const client = new MockHarnessAdapter();
     const session = await client.createSession({
       provider: "mock",
       cwd: process.cwd(),
@@ -81,7 +81,7 @@ describe("MockLoadTestAgentClient", () => {
 
   test("emits sub-word tokens, reasoning, and sequential tool calls during a foreground turn", async () => {
     vi.useFakeTimers();
-    const client = new MockLoadTestAgentClient();
+    const client = new MockHarnessAdapter();
     const session = await client.createSession({
       provider: "mock",
       cwd: process.cwd(),
@@ -154,7 +154,7 @@ describe("MockLoadTestAgentClient", () => {
 
   test("interrupt cancels the active foreground turn and stops future chunks", async () => {
     vi.useFakeTimers();
-    const client = new MockLoadTestAgentClient();
+    const client = new MockHarnessAdapter();
     const session = await client.createSession({
       provider: "mock",
       cwd: process.cwd(),
@@ -181,7 +181,7 @@ describe("MockLoadTestAgentClient", () => {
 
   test("emits the free-write question scenario selected by prompt", async () => {
     vi.useFakeTimers();
-    const client = new MockLoadTestAgentClient();
+    const client = new MockHarnessAdapter();
     const session = await client.createSession({
       provider: "mock",
       cwd: process.cwd(),
@@ -237,9 +237,9 @@ describe("MockLoadTestAgentClient", () => {
     vi.useFakeTimers();
     const workdir = mkdtempSync(join(tmpdir(), "thoth-mock-load-test-"));
     try {
-      const client = new MockLoadTestAgentClient();
-      const manager = new AgentManager({
-        clients: { mock: client },
+      const client = new MockHarnessAdapter();
+      const manager = new ExecutionService({
+        adapters: { mock: client },
         idFactory: () => "00000000-0000-4000-8000-000000000001",
         logger: createTestLogger(),
       });

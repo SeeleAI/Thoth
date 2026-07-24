@@ -189,7 +189,7 @@ function createSessionForWorkspaceGitWatchTests(options?: {
     downloadTokenStore: createStub<SessionOptions["downloadTokenStore"]>({}),
     pushTokenStore: createStub<SessionOptions["pushTokenStore"]>({}),
     thothHome: "/tmp/thoth-test",
-    agentManager: createStub<SessionOptions["agentManager"]>({
+    executionService: createStub<SessionOptions["executionService"]>({
       subscribe: () => () => {},
       listAgents: () => [],
       getAgent: () => null,

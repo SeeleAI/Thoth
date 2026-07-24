@@ -13,10 +13,10 @@ import {
 import { createTestThothDaemon } from "./test-utils/thoth-daemon.js";
 import { getFullAccessConfig, getAskModeConfig } from "./daemon-e2e/agent-configs.js";
 import type {
-  AgentClient,
+  HarnessAdapter,
   AgentPersistenceHandle,
   AgentRunResult,
-  AgentSession,
+  HarnessThread,
   AgentSessionConfig,
   AgentStreamEvent,
 } from "@thoth/drivers/agent-runtime";
@@ -171,7 +171,7 @@ test("createAgent with background initialPrompt returns a running snapshot befor
 });
 
 test("createAgent fails when the initial turn cannot start", async () => {
-  class StartTurnFailureSession implements AgentSession {
+  class StartTurnFailureSession implements HarnessThread {
     readonly provider = "codex" as const;
     readonly id = "start-turn-failure-session";
     readonly capabilities = {
@@ -240,7 +240,7 @@ test("createAgent fails when the initial turn cannot start", async () => {
     async close(): Promise<void> {}
   }
 
-  class StartTurnFailureClient implements AgentClient {
+  class StartTurnFailureClient implements HarnessAdapter {
     readonly provider = "codex" as const;
     readonly capabilities = {
       supportsStreaming: false,
@@ -258,17 +258,17 @@ test("createAgent fails when the initial turn cannot start", async () => {
       return true;
     }
 
-    async createSession(_config: AgentSessionConfig): Promise<AgentSession> {
+    async createSession(_config: AgentSessionConfig): Promise<HarnessThread> {
       return new StartTurnFailureSession();
     }
 
-    async resumeSession(): Promise<AgentSession> {
+    async resumeSession(): Promise<HarnessThread> {
       return new StartTurnFailureSession();
     }
   }
 
   const daemon = await createTestThothDaemon({
-    agentClients: { codex: new StartTurnFailureClient() },
+    harnessAdapters: { codex: new StartTurnFailureClient() },
   });
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,
@@ -323,7 +323,7 @@ function waitForSignal<T>(
   });
 }
 
-class NonPersistentReloadSession implements AgentSession {
+class NonPersistentReloadSession implements HarnessThread {
   readonly provider = "claude" as const;
   readonly id: string | null;
   readonly capabilities = {
@@ -398,7 +398,7 @@ class NonPersistentReloadSession implements AgentSession {
   }
 }
 
-class NonPersistentReloadClient implements AgentClient {
+class NonPersistentReloadClient implements HarnessAdapter {
   readonly provider = "claude" as const;
   readonly capabilities = {
     supportsStreaming: false,
@@ -416,7 +416,7 @@ class NonPersistentReloadClient implements AgentClient {
     return true;
   }
 
-  async createSession(_config: AgentSessionConfig): Promise<AgentSession> {
+  async createSession(_config: AgentSessionConfig): Promise<HarnessThread> {
     this.createSessionCalls += 1;
     return new NonPersistentReloadSession(() => {
       this.closeCalls += 1;
@@ -426,7 +426,7 @@ class NonPersistentReloadClient implements AgentClient {
   async resumeSession(
     _handle: AgentPersistenceHandle,
     _overrides?: Partial<AgentSessionConfig>,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     this.resumeSessionCalls += 1;
     return new NonPersistentReloadSession(() => {
       this.closeCalls += 1;
@@ -453,7 +453,7 @@ class FailingResumeSession extends NonPersistentReloadSession {
 }
 
 class FailingResumeClient extends NonPersistentReloadClient {
-  async createSession(_config: AgentSessionConfig): Promise<AgentSession> {
+  async createSession(_config: AgentSessionConfig): Promise<HarnessThread> {
     this.createSessionCalls += 1;
     return new FailingResumeSession(() => {
       this.closeCalls += 1;
@@ -463,7 +463,7 @@ class FailingResumeClient extends NonPersistentReloadClient {
   async resumeSession(
     _handle: AgentPersistenceHandle,
     _overrides?: Partial<AgentSessionConfig>,
-  ): Promise<AgentSession> {
+  ): Promise<HarnessThread> {
     this.resumeSessionCalls += 1;
     throw new Error("resume exploded");
   }
@@ -613,7 +613,7 @@ test("refresh_agent rebuilds a live agent even when it has no persistence handle
   const cwd = tmpCwd();
   const client = new NonPersistentReloadClient();
   const localCtx = await createDaemonTestContext({
-    agentClients: {
+    harnessAdapters: {
       claude: client,
     },
   });
@@ -645,7 +645,7 @@ test("refresh_agent rejects when persisted session resume fails", async () => {
   const cwd = tmpCwd();
   const client = new FailingResumeClient();
   const localCtx = await createDaemonTestContext({
-    agentClients: {
+    harnessAdapters: {
       claude: client,
     },
   });

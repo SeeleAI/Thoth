@@ -16,8 +16,8 @@ import {
 } from "@agentclientprotocol/sdk";
 
 import {
-  ACPAgentClient,
-  ACPAgentSession,
+  ACPHarnessAdapter,
+  ACPHarnessThread,
   type SpawnedACPProcess,
   type SessionStateResponse,
   createLoggedNdJsonStream,
@@ -33,14 +33,14 @@ import {
   COPILOT_AGENT_FEATURE_OPTION,
   COPILOT_ALLOW_ALL_MODE_ID,
   COPILOT_MODES,
-  CopilotACPAgentClient,
+  CopilotACPHarnessAdapter,
   beforeCopilotModeWriter,
   transformCopilotConfigOptions,
   transformCopilotModeId,
   transformCopilotSessionResponse,
   writeCopilotProviderMode,
 } from "@thoth/drivers/internal/server/agent/providers/copilot-acp-agent";
-import { GenericACPAgentClient } from "@thoth/drivers/internal/server/agent/providers/generic-acp-agent";
+import { GenericACPHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/generic-acp-agent";
 import { transformPiModels } from "@thoth/drivers/internal/server/agent/providers/pi/agent";
 import type { AgentStreamEvent } from "@thoth/drivers/agent-runtime";
 import type { AgentCapabilityFlags, AgentPersistenceHandle } from "@thoth/drivers/agent-runtime";
@@ -88,8 +88,8 @@ interface ACPConfiguredOverrideInternals {
   applyConfiguredOverrides(): Promise<void>;
 }
 
-function createSession(terminateProcess?: ProcessTerminator): ACPAgentSession {
-  return new ACPAgentSession(
+function createSession(terminateProcess?: ProcessTerminator): ACPHarnessThread {
+  return new ACPHarnessThread(
     {
       provider: "claude-acp",
       cwd: "/tmp/thoth-acp-test",
@@ -140,8 +140,8 @@ class FakeTerminator {
 function createSessionWithConfig(
   config: { provider?: string; modeId?: string | null; model?: string | null } = {},
   logger: ReturnType<typeof createTestLogger> = createTestLogger(),
-): ACPAgentSession {
-  return new ACPAgentSession(
+): ACPHarnessThread {
+  return new ACPHarnessThread(
     {
       provider: config.provider ?? "claude-acp",
       cwd: "/tmp/thoth-acp-test",
@@ -210,8 +210,8 @@ function selectConfigOption(
 function createCopilotSessionWithConfig(
   modeId?: string | null,
   featureValues?: Record<string, unknown>,
-): ACPAgentSession {
-  return new ACPAgentSession(
+): ACPHarnessThread {
+  return new ACPHarnessThread(
     {
       provider: "copilot",
       cwd: "/tmp/thoth-acp-test",
@@ -311,7 +311,7 @@ function selectConfigOptionName(category: "mode" | "model" | "thought_level"): s
 }
 
 function prepareConfiguredOverrideSession(
-  session: ACPAgentSession,
+  session: ACPHarnessThread,
   options: {
     currentMode?: string | null;
     availableModes?: Array<{ id: string; label: string; description?: string }>;
@@ -501,7 +501,7 @@ describe("createLoggedNdJsonStream", () => {
   });
 });
 
-describe("ACPAgentSession terminal tools", () => {
+describe("ACPHarnessThread terminal tools", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -723,7 +723,7 @@ describe("ACP selection validity helpers", () => {
   });
 });
 
-describe("ACPAgentSession Zed parity", () => {
+describe("ACPHarnessThread Zed parity", () => {
   test("provider run mode writes the advertised native ACP Plan mode and restores the prior mode", async () => {
     const session = createSessionWithConfig();
     const fixture = prepareConfiguredOverrideSession(session, {
@@ -1393,9 +1393,9 @@ describe("deriveModelDefinitionsFromACP", () => {
   });
 });
 
-describe("ACPAgentClient modelTransformer", () => {
+describe("ACPHarnessAdapter modelTransformer", () => {
   test("applies modelTransformer after deriving ACP models", async () => {
-    class TestACPAgentClient extends ACPAgentClient {
+    class TestACPHarnessAdapter extends ACPHarnessAdapter {
       protected override async spawnProcess(): Promise<SpawnedACPProcess> {
         return {
           child: { kill: vi.fn(), exitCode: 0, signalCode: null, once: vi.fn() },
@@ -1421,7 +1421,7 @@ describe("ACPAgentClient modelTransformer", () => {
       protected override async closeProbe(): Promise<void> {}
     }
 
-    const client = new TestACPAgentClient({
+    const client = new TestACPHarnessAdapter({
       provider: "pi",
       logger: createTestLogger(),
       defaultCommand: ["test-acp"],
@@ -1451,9 +1451,9 @@ describe("ACPAgentClient modelTransformer", () => {
   });
 });
 
-describe("ACPAgentClient config features", () => {
+describe("ACPHarnessAdapter config features", () => {
   test("derives features from configured ACP select options", async () => {
-    class TestACPAgentClient extends ACPAgentClient {
+    class TestACPHarnessAdapter extends ACPHarnessAdapter {
       protected override async spawnProcess(): Promise<SpawnedACPProcess> {
         return {
           child: { kill: vi.fn(), exitCode: 0, signalCode: null, once: vi.fn() },
@@ -1470,7 +1470,7 @@ describe("ACPAgentClient config features", () => {
       protected override async closeProbe(): Promise<void> {}
     }
 
-    const client = new TestACPAgentClient({
+    const client = new TestACPHarnessAdapter({
       provider: "copilot",
       logger: createTestLogger(),
       defaultCommand: ["copilot", "--acp"],
@@ -1496,8 +1496,8 @@ describe("ACPAgentClient config features", () => {
   });
 });
 
-describe("ACPAgentClient sessionResponseTransformer", () => {
-  class TestACPAgentClient extends ACPAgentClient {
+describe("ACPHarnessAdapter sessionResponseTransformer", () => {
+  class TestACPHarnessAdapter extends ACPHarnessAdapter {
     protected override async spawnProcess(): Promise<SpawnedACPProcess> {
       const response: SessionStateResponse = {
         sessionId: "session-1",
@@ -1522,7 +1522,7 @@ describe("ACPAgentClient sessionResponseTransformer", () => {
   }
 
   test("applies sessionResponseTransformer before deriving catalog modes", async () => {
-    const client = new TestACPAgentClient({
+    const client = new TestACPHarnessAdapter({
       provider: "claude-acp",
       logger: createTestLogger(),
       defaultCommand: ["claude", "--acp"],
@@ -1555,11 +1555,11 @@ describe("ACPAgentClient sessionResponseTransformer", () => {
   });
 });
 
-describe("ACPAgentClient fetchCatalog", () => {
+describe("ACPHarnessAdapter fetchCatalog", () => {
   test("passes the requested cwd to the catalog probe", async () => {
     const newSession = vi.fn().mockResolvedValue({ modes: null, models: null, configOptions: [] });
 
-    class TestACPAgentClient extends ACPAgentClient {
+    class TestACPHarnessAdapter extends ACPHarnessAdapter {
       protected override async spawnProcess(): Promise<SpawnedACPProcess> {
         return {
           child: { kill: vi.fn(), exitCode: 0, signalCode: null, once: vi.fn() },
@@ -1571,7 +1571,7 @@ describe("ACPAgentClient fetchCatalog", () => {
       protected override async closeProbe(): Promise<void> {}
     }
 
-    const client = new TestACPAgentClient({
+    const client = new TestACPHarnessAdapter({
       provider: "pi",
       logger: createTestLogger(),
       defaultCommand: ["test-acp"],
@@ -1587,7 +1587,7 @@ describe("ACPAgentClient fetchCatalog", () => {
   });
 
   test("returns an empty modes array when no ACP modes are reported and fallback modes are empty", async () => {
-    class TestACPAgentClient extends ACPAgentClient {
+    class TestACPHarnessAdapter extends ACPHarnessAdapter {
       protected override async spawnProcess(): Promise<SpawnedACPProcess> {
         return {
           child: { kill: vi.fn(), exitCode: 0, signalCode: null, once: vi.fn() },
@@ -1617,7 +1617,7 @@ describe("ACPAgentClient fetchCatalog", () => {
       protected override async closeProbe(): Promise<void> {}
     }
 
-    const client = new TestACPAgentClient({
+    const client = new TestACPHarnessAdapter({
       provider: "pi",
       logger: createTestLogger(),
       defaultCommand: ["test-acp"],
@@ -1637,9 +1637,9 @@ describe("ACPAgentClient fetchCatalog", () => {
   });
 });
 
-describe("ACPAgentClient listImportableSessions", () => {
+describe("ACPHarnessAdapter listImportableSessions", () => {
   function makeClient(args: { listSessions: ReturnType<typeof vi.fn>; supportsList?: boolean }) {
-    class TestACPAgentClient extends ACPAgentClient {
+    class TestACPHarnessAdapter extends ACPHarnessAdapter {
       protected override async spawnProcess(): Promise<SpawnedACPProcess> {
         return {
           child: { kill: vi.fn(), exitCode: 0, signalCode: null, once: vi.fn() },
@@ -1654,7 +1654,7 @@ describe("ACPAgentClient listImportableSessions", () => {
       protected override async closeProbe(): Promise<void> {}
     }
 
-    return new TestACPAgentClient({
+    return new TestACPHarnessAdapter({
       provider: "kimi",
       logger: createTestLogger(),
       defaultCommand: ["kimi", "acp"],
@@ -1724,12 +1724,12 @@ describe("ACPAgentClient listImportableSessions", () => {
 });
 
 describe("ACP providers advertise session listing", () => {
-  // The daemon's agent-manager only queries providers whose
+  // The daemon's ExecutionService only queries providers whose
   // capabilities.supportsSessionListing is true. Without it, ACP providers
   // (Kimi and other custom ACP agents, Copilot) are skipped and import shows
   // nothing even though listImportableSessions is implemented.
   test("generic ACP clients (e.g. Kimi) report supportsSessionListing", () => {
-    const client = new GenericACPAgentClient({
+    const client = new GenericACPHarnessAdapter({
       logger: createTestLogger(),
       command: ["kimi", "acp"],
     });
@@ -1737,7 +1737,7 @@ describe("ACP providers advertise session listing", () => {
   });
 
   test("Copilot ACP client reports supportsSessionListing", () => {
-    const client = new CopilotACPAgentClient({ logger: createTestLogger() });
+    const client = new CopilotACPHarnessAdapter({ logger: createTestLogger() });
     expect(client.capabilities.supportsSessionListing).toBe(true);
   });
 });
@@ -1796,9 +1796,9 @@ describe("transformPiModels", () => {
   });
 });
 
-describe("ACPAgentSession slash commands", () => {
+describe("ACPHarnessThread slash commands", () => {
   test("returns immediately for ACP sessions that do not wait for async command discovery", async () => {
-    const session = new ACPAgentSession(
+    const session = new ACPHarnessThread(
       {
         provider: "claude-acp",
         cwd: "/tmp/thoth-acp-test",
@@ -1824,7 +1824,7 @@ describe("ACPAgentSession slash commands", () => {
   });
 
   test("waits for async available_commands_update when enabled", async () => {
-    const session = new ACPAgentSession(
+    const session = new ACPHarnessThread(
       {
         provider: "claude-acp",
         cwd: "/tmp/thoth-acp-test",
@@ -1895,9 +1895,9 @@ describe("ACPAgentSession slash commands", () => {
   });
 });
 
-describe("ACPAgentSession", () => {
+describe("ACPHarnessThread", () => {
   test("drops MCP servers from ACP requests when the provider does not support MCP", () => {
-    const session = new ACPAgentSession(
+    const session = new ACPHarnessThread(
       {
         provider: "no-mcp-acp",
         cwd: "/tmp/thoth-acp-test",
@@ -2379,7 +2379,7 @@ interface ACPCloseInternals {
 }
 
 async function startTerminal(
-  session: ACPAgentSession,
+  session: ACPHarnessThread,
   child: ChildProcess,
   command = "sleep",
 ): Promise<string> {
@@ -2393,7 +2393,7 @@ async function startTerminal(
   return terminal.terminalId;
 }
 
-describe("ACPAgentSession close() tree-kill", () => {
+describe("ACPHarnessThread close() tree-kill", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -2477,7 +2477,7 @@ describe("ACPAgentSession close() tree-kill", () => {
   });
 });
 
-describe("ACPAgentClient probe cleanup", () => {
+describe("ACPHarnessAdapter probe cleanup", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -2486,7 +2486,7 @@ describe("ACPAgentClient probe cleanup", () => {
     const terminator = new FakeTerminator();
     const child = createProbeChildStub();
 
-    class TestACPAgentClient extends ACPAgentClient {
+    class TestACPHarnessAdapter extends ACPHarnessAdapter {
       protected override async spawnProcess(): Promise<SpawnedACPProcess> {
         return {
           child,
@@ -2502,7 +2502,7 @@ describe("ACPAgentClient probe cleanup", () => {
       }
     }
 
-    const client = new TestACPAgentClient({
+    const client = new TestACPHarnessAdapter({
       provider: "claude-acp",
       logger: createTestLogger(),
       defaultCommand: ["claude", "--acp"],
@@ -2521,7 +2521,7 @@ describe("ACPAgentClient probe cleanup", () => {
 
 describe("ACP session/load invariant — cwd and mcpServers always passed", () => {
   /**
-   * Shared factory: creates an ACPAgentSession subclass whose spawnProcess
+   * Shared factory: creates an ACPHarnessThread subclass whose spawnProcess
    * returns stubbed ACP internals so tests can inspect connection method calls
    * without spawning real processes. Each call produces fresh vi.fn() stubs.
    */
@@ -2548,7 +2548,7 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
         configOptions: [],
       });
 
-    class TestSession extends ACPAgentSession {
+    class TestSession extends ACPHarnessThread {
       protected override async spawnProcess(): Promise<SpawnedACPProcess> {
         return {
           child: createProbeChildStub(),

@@ -4,19 +4,19 @@ import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
-import { createTestAgentClients } from "../../test-utils/fake-agent-client.js";
+import { createTestHarnessAdapters } from "../../test-utils/fake-harness-adapter.js";
 import { createProviderSnapshotManagerStub } from "../../test-utils/session-stubs.js";
-import { AgentManager } from "../agent-manager.js";
+import { ExecutionService } from "../execution-service.js";
 import { AgentStorage } from "../agent-storage.js";
 import type { CreateThothWorktreeWorkflowResult } from "../../worktree-session.js";
 import { createAgentCommand } from "./create.js";
-import type { ManagedAgent } from "../agent-manager.js";
+import type { ManagedAgent } from "../execution-service.js";
 
 const logger = createTestLogger();
 
-function createRealAgentManager(storage: AgentStorage): AgentManager {
-  return new AgentManager({
-    clients: createTestAgentClients(),
+function createRealAgentManager(storage: AgentStorage): ExecutionService {
+  return new ExecutionService({
+    adapters: createTestHarnessAdapters(),
     registry: storage,
     logger,
   });
@@ -48,14 +48,14 @@ test("session create forwards clientMessageId to the initial prompt run options"
   } as ManagedAgent;
   const streamAgent = vi.fn(() => (async function* noop() {})());
   const dependencies: Parameters<typeof createAgentCommand>[0] = {
-    agentManager: {
+    executionService: {
       createAgent: vi.fn(async () => snapshot),
       getAgent: vi.fn(() => snapshot),
       tryRunOutOfBand: vi.fn(() => false),
       hasInFlightRun: vi.fn(() => false),
       streamAgent,
       waitForAgentRunStart: vi.fn(async () => undefined),
-    } as unknown as Parameters<typeof createAgentCommand>[0]["agentManager"],
+    } as unknown as Parameters<typeof createAgentCommand>[0]["executionService"],
     agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
     logger: createTestLogger(),
     providerSnapshotManager: {} as Parameters<
@@ -82,12 +82,12 @@ test("session create forwards clientMessageId to the initial prompt run options"
 test("session create stamps the requested workspaceId when no worktree setup runs", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "create-agent-test-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
-  const agentManager = createRealAgentManager(storage);
+  const executionService = createRealAgentManager(storage);
 
   try {
     const { snapshot } = await createAgentCommand(
       {
-        agentManager,
+        executionService,
         agentStorage: storage,
         logger,
         providerSnapshotManager: createProviderSnapshotManagerStub().manager,
@@ -113,12 +113,12 @@ test("session create stamps the requested workspaceId when no worktree setup run
 test("session create stamps the new worktree's workspaceId when a setup continuation runs", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "create-agent-test-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
-  const agentManager = createRealAgentManager(storage);
+  const executionService = createRealAgentManager(storage);
 
   try {
     const { snapshot } = await createAgentCommand(
       {
-        agentManager,
+        executionService,
         agentStorage: storage,
         logger,
         providerSnapshotManager: createProviderSnapshotManagerStub().manager,
@@ -148,12 +148,12 @@ test("session create stamps the new worktree's workspaceId when a setup continua
 test("mcp create stamps the new worktree's workspaceId, not the parent's", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "create-agent-test-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
-  const agentManager = createRealAgentManager(storage);
+  const executionService = createRealAgentManager(storage);
   const providerSnapshotManager = createProviderSnapshotManagerStub().manager;
 
   try {
     const { snapshot: parent } = await createAgentCommand(
-      { agentManager, agentStorage: storage, logger, providerSnapshotManager },
+      { executionService, agentStorage: storage, logger, providerSnapshotManager },
       {
         kind: "session",
         config: { provider: "codex", cwd: workdir },
@@ -167,7 +167,7 @@ test("mcp create stamps the new worktree's workspaceId, not the parent's", async
 
     const { snapshot: child } = await createAgentCommand(
       {
-        agentManager,
+        executionService,
         agentStorage: storage,
         logger,
         providerSnapshotManager,
@@ -198,13 +198,13 @@ test("mcp create stamps the new worktree's workspaceId, not the parent's", async
 test("session create keeps the prompt title after the initial prompt settles", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "create-agent-title-test-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
-  const agentManager = createRealAgentManager(storage);
+  const executionService = createRealAgentManager(storage);
   const title = "Implement auth retries with backoff";
 
   try {
     const { snapshot } = await createAgentCommand(
       {
-        agentManager,
+        executionService,
         agentStorage: storage,
         logger,
         providerSnapshotManager: createProviderSnapshotManagerStub().manager,
@@ -223,7 +223,7 @@ test("session create keeps the prompt title after the initial prompt settles", a
     const created = await storage.get(snapshot.id);
     expect(created?.title).toBe(title);
 
-    await agentManager.waitForAgentEvent(snapshot.id, { waitForActive: true });
+    await executionService.waitForAgentEvent(snapshot.id, { waitForActive: true });
 
     const settled = await storage.get(snapshot.id);
     expect(settled?.title).toBe(title);
@@ -235,13 +235,13 @@ test("session create keeps the prompt title after the initial prompt settles", a
 test("session create keeps an explicit title after the initial prompt settles", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "create-agent-explicit-title-test-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
-  const agentManager = createRealAgentManager(storage);
+  const executionService = createRealAgentManager(storage);
   const title = "Explicit override";
 
   try {
     const { snapshot } = await createAgentCommand(
       {
-        agentManager,
+        executionService,
         agentStorage: storage,
         logger,
         providerSnapshotManager: createProviderSnapshotManagerStub().manager,
@@ -260,7 +260,7 @@ test("session create keeps an explicit title after the initial prompt settles", 
     const created = await storage.get(snapshot.id);
     expect(created?.title).toBe(title);
 
-    await agentManager.waitForAgentEvent(snapshot.id, { waitForActive: true });
+    await executionService.waitForAgentEvent(snapshot.id, { waitForActive: true });
 
     const settled = await storage.get(snapshot.id);
     expect(settled?.title).toBe(title);

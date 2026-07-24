@@ -19,7 +19,7 @@ export interface AgentConfigSessionHost {
 
 /**
  * The per-agent config mutations this subsystem drives. The shell adapts these
- * onto the live AgentManager (mode still routes through setAgentModeCommand);
+ * onto the live ExecutionService (mode still routes through setAgentModeCommand);
  * tests wire an in-memory fake. Mode and thinking yield a provider notice; model
  * and feature do not.
  */

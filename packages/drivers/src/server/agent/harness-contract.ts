@@ -568,7 +568,7 @@ export interface ImportedTimelineEntry {
 }
 
 export interface ImportedProviderSession {
-  session: AgentSession;
+  session: HarnessThread;
   config: AgentSessionConfig;
   persistence: AgentPersistenceHandle;
   timeline: ImportedTimelineEntry[];
@@ -639,46 +639,62 @@ export interface AgentProviderRunModeResult {
   nativeModeId: string | null;
 }
 
-export interface AgentSession {
-  readonly provider: AgentProvider;
-  readonly id: string | null;
-  readonly capabilities: AgentCapabilityFlags;
-  readonly features?: AgentFeature[];
+export interface HarnessExecutionCapability {
   run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult>;
   startTurn(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<{ turnId: string }>;
   subscribe(callback: (event: AgentStreamEvent) => void): () => void;
   streamHistory(): AsyncGenerator<AgentStreamEvent>;
+}
+
+export interface HarnessThreadCatalogCapability {
   getRuntimeInfo(): Promise<AgentRuntimeInfo>;
   getAvailableModes(): Promise<AgentMode[]>;
   getCurrentMode(): Promise<string | null>;
+  listCommands?(): Promise<AgentSlashCommand[]>;
+}
+
+export interface HarnessProviderControlCapability {
   setMode(modeId: string): Promise<void | AgentProviderNotice>;
   getProviderRunModeCapability?(): Promise<ProviderPlanCapability>;
   applyProviderRunMode?(mode: ProviderRunMode): Promise<AgentProviderRunModeResult>;
+  setModel?(modelId: string | null): Promise<void>;
+  setThinkingOption?(thinkingOptionId: string | null): Promise<void | AgentProviderNotice>;
+  setFeature?(featureId: string, value: unknown): Promise<void>;
+}
+
+export interface HarnessPermissionCapability {
   getPendingPermissions(): AgentPermissionRequest[];
   respondToPermission(
     requestId: string,
     response: AgentPermissionResponse,
   ): Promise<AgentPermissionResult | void>;
+}
+
+export interface HarnessThreadLifecycleCapability {
   describePersistence(): AgentPersistenceHandle | null;
   interrupt(): Promise<void>;
   close(): Promise<void>;
-  listCommands?(): Promise<AgentSlashCommand[]>;
-  setModel?(modelId: string | null): Promise<void>;
-  setThinkingOption?(thinkingOptionId: string | null): Promise<void | AgentProviderNotice>;
-  setFeature?(featureId: string, value: unknown): Promise<void>;
+}
+
+export interface HarnessRewindCapability {
   revertConversation?(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void>;
   revertFiles?(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void>;
   revertBoth?(input: { anchor: ProviderMessageAnchorReceipt }): Promise<void>;
-  /** Ordered provider-native user anchors for canonical rewind binding. */
   listRewindAnchors?(): Promise<ProviderMessageAnchorReceipt[]>;
-  /**
-   * Out-of-band prompt handler. When non-null, the manager runs the returned
-   * handler instead of allocating a turn. The handler emits stream events
-   * directly via the provided `emit` callback, which routes through the
-   * manager's persistence + broadcast pipeline. The active foreground turn
-   * (if any) is left untouched, so this is how mid-turn side-effect commands
-   * (e.g. /goal pause) reach the provider without canceling the running turn.
-   */
+}
+
+export interface HarnessThread
+  extends
+    HarnessExecutionCapability,
+    HarnessThreadCatalogCapability,
+    HarnessProviderControlCapability,
+    HarnessPermissionCapability,
+    HarnessThreadLifecycleCapability,
+    HarnessRewindCapability {
+  readonly provider: AgentProvider;
+  readonly id: string | null;
+  readonly capabilities: AgentCapabilityFlags;
+  readonly features?: AgentFeature[];
   tryHandleOutOfBand?(prompt: AgentPromptInput): {
     run(ctx: { emit: (event: AgentStreamEvent) => void }): Promise<void>;
   } | null;
@@ -717,27 +733,12 @@ export interface AgentResumeSessionOptions {
   historyOnly?: boolean;
 }
 
-export interface AgentClient {
-  readonly provider: AgentProvider;
-  readonly harnessCapabilities: HarnessCapabilities;
-  readonly capabilities: AgentCapabilityFlags;
-  createSession(
-    config: AgentSessionConfig,
-    launchContext?: AgentLaunchContext,
-    options?: AgentCreateSessionOptions,
-  ): Promise<AgentSession>;
-  resumeSession(
-    handle: AgentPersistenceHandle,
-    overrides?: Partial<AgentSessionConfig>,
-    launchContext?: AgentLaunchContext,
-    options?: AgentResumeSessionOptions,
-  ): Promise<AgentSession>;
-  /**
-   * Discover models and modes together. Implementations may use one upstream
-   * process, separate upstream calls, static modes, or private helpers; callers
-   * outside the provider do not get separate runtime model/mode probes.
-   * The registry is responsible for merging configured model overrides.
-   */
+export interface HarnessAvailabilityCapability {
+  isAvailable(): Promise<boolean>;
+  getDiagnostic?(): Promise<{ diagnostic: string }>;
+}
+
+export interface HarnessCatalogCapability {
   fetchCatalog(options: FetchCatalogOptions): Promise<ProviderCatalog>;
   resolveCreateConfig?(input: ResolveAgentCreateConfigInput): ResolveAgentCreateConfigResult;
   isCreateConfigUnattended?(input: AgentCreateConfigUnattendedInput): boolean;
@@ -749,6 +750,9 @@ export interface AgentClient {
     config: AgentSessionConfig,
     launchContext?: ProviderControlLaunchContext,
   ): Promise<AgentFeature[]>;
+}
+
+export interface HarnessNativeSessionCapability {
   listImportableSessions?(
     options?: ListImportableSessionsOptions,
   ): Promise<ImportableProviderSession[]>;
@@ -756,32 +760,38 @@ export interface AgentClient {
     input: ImportProviderSessionInput,
     context: ImportProviderSessionContext,
   ): Promise<ImportedProviderSession>;
-  /**
-   * Check if this provider is available (CLI binary is installed).
-   * Returns true if available, false otherwise.
-   */
-  isAvailable(): Promise<boolean>;
-  getDiagnostic?(): Promise<{ diagnostic: string }>;
-  /**
-   * Archive a persisted session in the native provider (best-effort).
-   * Called when Thoth archives an agent so the provider's own UI reflects the same state.
-   */
   archiveNativeSession?(
     handle: AgentPersistenceHandle,
     launchContext?: ProviderControlLaunchContext,
   ): Promise<void>;
-  /**
-   * Unarchive a persisted session in the native provider.
-   * Called before Thoth clears its archived flag so provider resume can succeed.
-   */
   unarchiveNativeSession?(
     handle: AgentPersistenceHandle,
     launchContext?: ProviderControlLaunchContext,
   ): Promise<void>;
-  /**
-   * Release any provider-owned resources held by this client (background
-   * processes, sockets, cached subprocesses, etc.). Called when the daemon
-   * shuts down. Must be idempotent.
-   */
+}
+
+export interface HarnessThreadFactoryCapability {
+  createSession(
+    config: AgentSessionConfig,
+    launchContext?: AgentLaunchContext,
+    options?: AgentCreateSessionOptions,
+  ): Promise<HarnessThread>;
+  resumeSession(
+    handle: AgentPersistenceHandle,
+    overrides?: Partial<AgentSessionConfig>,
+    launchContext?: AgentLaunchContext,
+    options?: AgentResumeSessionOptions,
+  ): Promise<HarnessThread>;
+}
+
+export interface HarnessAdapter
+  extends
+    HarnessAvailabilityCapability,
+    HarnessCatalogCapability,
+    HarnessNativeSessionCapability,
+    HarnessThreadFactoryCapability {
+  readonly provider: AgentProvider;
+  readonly harnessCapabilities: HarnessCapabilities;
+  readonly capabilities: AgentCapabilityFlags;
   shutdown?(): Promise<void>;
 }

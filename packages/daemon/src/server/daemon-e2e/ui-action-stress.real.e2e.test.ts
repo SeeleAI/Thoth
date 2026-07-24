@@ -458,7 +458,7 @@ describe.each(realProviders)("daemon E2E (real %s) - UI action stress", (provide
     const logger = pino({ level: "silent" });
     const cwd = tmpCwd();
     const daemon = await createTestThothDaemon({
-      agentClients: createRealProviderClients([provider], logger),
+      harnessAdapters: createRealProviderClients([provider], logger),
       logger,
     });
     const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
@@ -492,7 +492,7 @@ describe.each(realProviders)("daemon E2E (real %s) - UI action stress", (provide
     const logger = pino({ level: "silent" });
     const cwd = tmpCwd();
     const daemon = await createTestThothDaemon({
-      agentClients: createRealProviderClients([provider], logger),
+      harnessAdapters: createRealProviderClients([provider], logger),
       logger,
     });
     const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });

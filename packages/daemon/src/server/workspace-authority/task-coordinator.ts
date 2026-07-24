@@ -19,6 +19,7 @@ import {
   type WorkspaceAuthorityStore,
 } from "./workspace-authority-store.js";
 import type { WorkspaceAuthorityManager } from "./workspace-authority-manager.js";
+import type { ToolGateway } from "./tool-gateway.js";
 
 export interface TaskCommandScheduler {
   scheduleTask(input: { workspaceId: string; taskId: string }): Promise<void>;
@@ -69,6 +70,7 @@ export interface ExecutionApprovalResult {
 /** Public task authority facade. Session and UI code never manipulate SQLite. */
 export class WorkspaceTaskCoordinator {
   readonly runtimes: ExecutionRuntimeRegistry;
+  private gateway: ToolGateway | null = null;
 
   constructor(
     private readonly authority: WorkspaceAuthorityManager,
@@ -81,6 +83,15 @@ export class WorkspaceTaskCoordinator {
 
   setScheduler(scheduler: TaskCommandScheduler): void {
     this.scheduler = scheduler;
+  }
+
+  setToolGateway(gateway: ToolGateway): void {
+    this.gateway = gateway;
+  }
+
+  get toolGateway(): ToolGateway {
+    if (!this.gateway) throw new Error("ToolGateway is not configured");
+    return this.gateway;
   }
 
   register(input: {

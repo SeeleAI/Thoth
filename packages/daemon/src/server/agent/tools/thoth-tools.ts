@@ -4,7 +4,7 @@ import { ensureValidJson } from "../../json-utils.js";
 import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider, AgentTimelineItem } from "@thoth/drivers/agent-runtime";
-import type { AgentManager, WaitForAgentResult } from "../agent-manager.js";
+import type { ExecutionService, WaitForAgentResult } from "../execution-service.js";
 import {
   AgentFeatureSchema,
   AgentPermissionRequestPayloadSchema,
@@ -101,14 +101,8 @@ import {
 } from "../thoth-runtime-tools-config.js";
 import { createRuntimeAuthorityDecision } from "../runtime-tool-decisions.js";
 import {
-  assertForegroundAuthorityTurn,
-  assertForegroundContextTurn,
-  getActiveForegroundAuthorityTurnId,
-  parkForegroundTurnFence,
-} from "./foreground-turn-fence.js";
-import {
   WorkspaceForegroundAuthority,
-  type TaskToolGateway,
+  type ToolGateway,
   type WorkspaceAuthorityManager,
 } from "../../workspace-authority/index.js";
 import {
@@ -138,7 +132,7 @@ import type {
 } from "@thoth/drivers/agent-runtime";
 
 export interface ThothToolHostDependencies {
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   terminalManager?: TerminalManager | null;
   getDaemonTcpPort?: () => number | null;
@@ -172,7 +166,7 @@ export interface ThothToolHostDependencies {
   callerAgentConfig?: ThothToolRuntimeCallerConfig;
   logger: Logger;
   workspaceAuthorityManager?: WorkspaceAuthorityManager;
-  taskToolGateway?: TaskToolGateway;
+  toolGateway?: ToolGateway;
 }
 
 function parseTimestamp(value: string | null | undefined): number {
@@ -641,7 +635,7 @@ function resolveTerminalKeyToken(key: string, literal: boolean): string {
 
 export function createThothToolCatalog(options: ThothToolHostDependencies): ThothToolCatalog {
   const {
-    agentManager,
+    executionService,
     agentStorage,
     terminalManager,
     scheduleService,
@@ -654,11 +648,11 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     ? new WorkspaceForegroundAuthority(options.workspaceAuthorityManager)
     : null;
   const waitTracker = new WaitForAgentTracker(logger);
-  // AgentManager builds the native dynamic-tool catalog before it registers the
+  // ExecutionService builds the native dynamic-tool catalog before it registers the
   // provider session. Read the caller lazily for handlers that need a live
   // session, otherwise a valid Clarify -> Task transition falsely loses its
   // independent audit capability.
-  const initialToolCallerAgent = callerAgentId ? agentManager.getAgent(callerAgentId) : null;
+  const initialToolCallerAgent = callerAgentId ? executionService.getAgent(callerAgentId) : null;
   const toolCallerConfig = initialToolCallerAgent?.config ?? options.callerAgentConfig;
   const runtimeTools = toolCallerConfig ? readThothRuntimeToolsConfig(toolCallerConfig) : null;
   const enableClarifyRuntimeTools = runtimeTools?.scope === "clarify";
@@ -702,6 +696,11 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       handler: handler as ThothToolDefinition["handler"],
     });
   };
+  const requireToolGateway = (): ToolGateway => {
+    if (!options.toolGateway)
+      throw new Error("ToolGateway is unavailable for this provider session");
+    return options.toolGateway;
+  };
   const toCatalog = (): ThothToolCatalog => ({
     tools,
     getTool(name: string): ThothToolDefinition | undefined {
@@ -718,9 +717,9 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       }
       if (runtimeTools?.scope === "clarify" && callerAgentId) {
         if (name === "thoth_get_bound_task_progress") {
-          assertForegroundContextTurn({ agentId: callerAgentId, context });
+          requireToolGateway().assertForegroundContextTurn({ agentId: callerAgentId, context });
         } else {
-          assertForegroundAuthorityTurn({ agentId: callerAgentId, context });
+          requireToolGateway().assertForegroundAuthorityTurn({ agentId: callerAgentId, context });
         }
       }
       return tool.handler(await parseToolInput(tool, input), context);
@@ -733,7 +732,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     clarifyCount: number;
     clarifyTranscript: string;
   }): Promise<ClarifyConvergenceAudit> => {
-    const toolCallerAgent = callerAgentId ? agentManager.getAgent(callerAgentId) : null;
+    const toolCallerAgent = callerAgentId ? executionService.getAgent(callerAgentId) : null;
     if (
       !toolCallerAgent ||
       readThothRuntimeToolsConfig(toolCallerAgent.config)?.scope !== "clarify"
@@ -742,7 +741,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         "Clarify convergence audit requires an active provider runtime-tools session.",
       );
     }
-    const auditAgent = await agentManager.createAgent(
+    const auditAgent = await executionService.createAgent(
       withThothRuntimeTools(
         {
           provider: toolCallerAgent.provider,
@@ -781,7 +780,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     ].join("\n\n");
     void (async () => {
       try {
-        for await (const event of agentManager.streamAgent(auditAgent.id, prompt)) {
+        for await (const event of executionService.streamAgent(auditAgent.id, prompt)) {
           if (event.type === "turn_failed") {
             rejectClarifyConvergenceAudit(auditAgent.id, event.error);
             return;
@@ -871,7 +870,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     if (!callerAgentId) {
       return null;
     }
-    const parentAgent = agentManager.getAgent(callerAgentId);
+    const parentAgent = executionService.getAgent(callerAgentId);
     if (!parentAgent) {
       throw new Error(`Parent agent ${callerAgentId} not found`);
     }
@@ -901,7 +900,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
   async function resolveTerminalWorkspaceId(resolvedCwd: string): Promise<string> {
     // An agent-spawned terminal belongs to the caller agent's workspace. Only if
     // the caller has no workspace do we mint one for the cwd.
-    const callerAgent = callerAgentId ? agentManager.getAgent(callerAgentId) : null;
+    const callerAgent = callerAgentId ? executionService.getAgent(callerAgentId) : null;
     if (callerAgent?.workspaceId) {
       return callerAgent.workspaceId;
     }
@@ -1023,7 +1022,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       },
       ...(input.metadata ? { metadata: input.metadata } : {}),
     } as AgentTimelineItem;
-    await agentManager.appendTimelineItem(callerAgentId, item);
+    await executionService.appendTimelineItem(callerAgentId, item);
   };
 
   const waitForRuntimeAuthorityAnswer = async (input: {
@@ -1050,7 +1049,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       throw new Error("Thoth foreground authority is unavailable for this provider session");
     }
     const call = resolveRuntimeToolCallContext(input.context);
-    const foregroundTurnId = getActiveForegroundAuthorityTurnId(callerAgentId);
+    const foregroundTurnId = requireToolGateway().getActiveForegroundAuthorityTurnId(callerAgentId);
     if (!foregroundTurnId) {
       throw new Error("No active Agent-scoped Thoth turn owns this authority card");
     }
@@ -1091,7 +1090,10 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       },
     });
     await input.appendOpenCard();
-    parkForegroundTurnFence({ agentId: callerAgentId, providerTurnId: call.turnId });
+    requireToolGateway().parkForegroundTurn({
+      agentId: callerAgentId,
+      providerTurnId: call.turnId,
+    });
     await appendRuntimeAuthorityToolCall({
       callId: call.callId,
       safeName: input.safeName,
@@ -1108,7 +1110,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         ...(input.metadata ?? {}),
       },
     });
-    void agentManager.cancelAgentRun(callerAgentId).catch((error) => {
+    void executionService.cancelAgentRun(callerAgentId).catch((error) => {
       logger.warn(
         { err: error, agentId: callerAgentId },
         "Failed to park provider turn after authority card",
@@ -1187,7 +1189,10 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         if (!callerAgentId || !options.workspaceAuthorityManager) {
           throw new Error("Bound Task progress requires foreground Workspace authority");
         }
-        const turnId = assertForegroundContextTurn({ agentId: callerAgentId, context });
+        const turnId = requireToolGateway().assertForegroundContextTurn({
+          agentId: callerAgentId,
+          context,
+        });
         const store = options.workspaceAuthorityManager.forTurn(turnId);
         if (!store) {
           throw new Error(`Foreground turn ${turnId} has no Workspace authority`);
@@ -1281,7 +1286,10 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           card: { kind: "clarify_card", card },
           appendOpenCard: async () => {
             if (callerAgentId) {
-              await agentManager.appendTimelineItem(callerAgentId, { type: "clarify_card", card });
+              await executionService.appendTimelineItem(callerAgentId, {
+                type: "clarify_card",
+                card,
+              });
             }
           },
         });
@@ -1402,7 +1410,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           card: { kind: "task_card", card },
           appendOpenCard: async () => {
             if (callerAgentId) {
-              await agentManager.appendTimelineItem(callerAgentId, { type: "task_card", card });
+              await executionService.appendTimelineItem(callerAgentId, { type: "task_card", card });
             }
           },
         });
@@ -1450,7 +1458,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           card: { kind: "goals_card", card },
           appendOpenCard: async () => {
             if (callerAgentId) {
-              await agentManager.appendTimelineItem(callerAgentId, { type: "goal_card", card });
+              await executionService.appendTimelineItem(callerAgentId, { type: "goal_card", card });
             }
           },
         });
@@ -1479,7 +1487,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           status: "failed",
           error: { message: input.reason },
         });
-        await agentManager.appendTimelineItem(callerAgentId, {
+        await executionService.appendTimelineItem(callerAgentId, {
           type: "error",
           message: input.reason,
         });
@@ -1508,7 +1516,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         }
         const runtimeToolContext = resolveRuntimeToolCallContext(context);
         if (
-          !options.taskToolGateway?.submitPlanExec(
+          !options.toolGateway?.submitPlanExec(
             callerAgentId,
             input,
             runtimeToolContext.turnId,
@@ -1552,7 +1560,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
             "thoth_loop_submit_review_independent_assessment requires an agent-scoped caller",
           );
         }
-        const planExecBrief = options.taskToolGateway?.submitReviewAssessment(
+        const planExecBrief = options.toolGateway?.submitReviewAssessment(
           callerAgentId,
           input,
           resolveRuntimeToolCallContext(context).turnId,
@@ -1581,7 +1589,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         }
         const runtimeToolContext = resolveRuntimeToolCallContext(context);
         if (
-          !options.taskToolGateway?.submitReviewVerdict(
+          !options.toolGateway?.submitReviewVerdict(
             callerAgentId,
             input,
             runtimeToolContext.turnId,
@@ -1618,7 +1626,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           throw new Error("thoth_loop_report_blocked requires an agent-scoped caller");
         }
         if (
-          !options.taskToolGateway?.reportBlocked(
+          !options.toolGateway?.reportBlocked(
             callerAgentId,
             input,
             resolveRuntimeToolCallContext(context).turnId,
@@ -2000,7 +2008,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         initialPromptStarted,
       } = await createAgentCommand(
         {
-          agentManager,
+          executionService,
           agentStorage,
           logger: childLogger,
           thothHome: options.thothHome,
@@ -2033,11 +2041,11 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
 
       try {
         if (!createdInBackground && initialPromptStarted) {
-          const result = await waitForAgentWithTimeout(agentManager, snapshot.id, {
+          const result = await waitForAgentWithTimeout(executionService, snapshot.id, {
             waitForActive: true,
           });
 
-          const liveSnapshot = agentManager.getAgent(snapshot.id) ?? snapshot;
+          const liveSnapshot = executionService.getAgent(snapshot.id) ?? snapshot;
           const responseData = {
             agentId: snapshot.id,
             type: snapshot.provider,
@@ -2063,7 +2071,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       }
 
       // Return immediately for async creation.
-      const currentSnapshot = agentManager.getAgent(snapshot.id) ?? snapshot;
+      const currentSnapshot = executionService.getAgent(snapshot.id) ?? snapshot;
       const guidance =
         callerAgentId && notifyOnFinish && initialPromptStarted
           ? "You will get notified when the created agent finishes, errors, or needs permission. Do not call wait_for_agent or poll for status; continue with other work until the notification arrives."
@@ -2376,9 +2384,13 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       cleanupFns.push(unregister);
 
       try {
-        const result: WaitForAgentResult = await waitForAgentWithTimeout(agentManager, agentId, {
-          signal: abortController.signal,
-        });
+        const result: WaitForAgentResult = await waitForAgentWithTimeout(
+          executionService,
+          agentId,
+          {
+            signal: abortController.signal,
+          },
+        );
 
         const validJson = ensureValidJson({
           agentId,
@@ -2420,13 +2432,13 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       background = Boolean(callerAgentId),
       notifyOnFinish = Boolean(callerAgentId),
     }) => {
-      if (agentManager.hasInFlightRun(agentId)) {
+      if (executionService.hasInFlightRun(agentId)) {
         waitTracker.cancel(agentId, "Agent run interrupted by new prompt");
       }
       const shouldNotifyOnFinish = Boolean(callerAgentId && notifyOnFinish && background);
 
       await sendPromptToAgent({
-        agentManager,
+        executionService,
         agentStorage,
         agentId,
         prompt,
@@ -2436,7 +2448,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
 
       if (shouldNotifyOnFinish && callerAgentId) {
         setupFinishNotification({
-          agentManager,
+          executionService,
           agentStorage,
           childAgentId: agentId,
           callerAgentId,
@@ -2446,7 +2458,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
 
       // If not running in background, wait for completion
       if (!background) {
-        const result = await waitForAgentWithTimeout(agentManager, agentId, {
+        const result = await waitForAgentWithTimeout(executionService, agentId, {
           waitForActive: true,
         });
 
@@ -2467,7 +2479,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
 
       // Return immediately if background=true
       // Re-fetch snapshot since the state may have changed
-      const currentSnapshot = agentManager.getAgent(agentId);
+      const currentSnapshot = executionService.getAgent(agentId);
 
       const responseData = {
         success: true,
@@ -2506,7 +2518,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       },
     },
     async ({ agentId }) => {
-      const snapshot = agentManager.getAgent(agentId);
+      const snapshot = executionService.getAgent(agentId);
       if (snapshot) {
         const structuredSnapshot = await serializeSnapshotWithMetadata(
           agentStorage,
@@ -2567,7 +2579,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       const requestedCwd = cwd?.trim() ? expandUserPath(cwd) : callerCwd;
       const statusFilter = statuses && statuses.length > 0 ? new Set(statuses) : null;
       const sinceMs = Date.now() - sinceHours * 60 * 60 * 1000;
-      const liveSnapshots = agentManager.listAgents();
+      const liveSnapshots = executionService.listAgents();
       const liveAgents = await Promise.all(
         liveSnapshots.map((snapshot) =>
           serializeSnapshotWithMetadata(agentStorage, snapshot, childLogger),
@@ -2613,7 +2625,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     },
     async ({ agentId }) => {
       const { cancelled } = await cancelAgentRunCommand(
-        { agentManager, logger: childLogger },
+        { executionService, logger: childLogger },
         agentId,
       );
       if (cancelled) {
@@ -2642,7 +2654,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     async ({ agentId }) => {
       await archiveAgentCommand(
         {
-          agentManager,
+          executionService,
           agentStorage,
           logger: childLogger,
         },
@@ -2669,7 +2681,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       },
     },
     async ({ agentId }) => {
-      await closeAgentCommand({ agentManager }, agentId);
+      await closeAgentCommand({ executionService }, agentId);
       waitTracker.cancel(agentId, "Agent terminated");
       return {
         content: [],
@@ -2697,21 +2709,21 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     },
     async ({ agentId, name, labels, settings }) => {
       if (settings?.modeId !== undefined) {
-        await agentManager.setAgentMode(agentId, settings.modeId);
+        await executionService.setAgentMode(agentId, settings.modeId);
       }
       if (settings?.model !== undefined) {
-        await agentManager.setAgentModel(agentId, settings.model);
+        await executionService.setAgentModel(agentId, settings.model);
       }
       if (settings?.thinkingOptionId !== undefined) {
-        await agentManager.setAgentThinkingOption(agentId, settings.thinkingOptionId);
+        await executionService.setAgentThinkingOption(agentId, settings.thinkingOptionId);
       }
       if (settings?.features) {
         for (const [featureId, value] of Object.entries(settings.features)) {
-          await agentManager.setAgentFeature(agentId, featureId, value);
+          await executionService.setAgentFeature(agentId, featureId, value);
         }
       }
 
-      await updateAgentCommand({ agentManager }, { agentId, name, labels });
+      await updateAgentCommand({ executionService }, { agentId, name, labels });
 
       return {
         content: [],
@@ -3323,7 +3335,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         throw new Error(entry.error ?? `Provider '${providerId}' is unavailable`);
       }
       const selectedModel = settings?.model ?? resolvedProviderModel.model;
-      const features = await agentManager.listDraftFeatures({
+      const features = await executionService.listDraftFeatures({
         provider: providerId,
         cwd: resolvedCwd,
         ...(settings?.modeId ? { modeId: settings.modeId } : {}),
@@ -3457,7 +3469,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
 
       const result = await archiveCommand(
         archiveWorktreeDependencies(options, {
-          agentManager,
+          executionService,
           agentStorage,
           terminalManager: terminalManager ?? null,
           logger: childLogger,
@@ -3508,12 +3520,12 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     },
     async ({ agentId, limit }) => {
       await ensureAgentLoaded(agentId, {
-        agentManager,
+        executionService,
         agentStorage,
         logger: childLogger,
       });
-      const timeline = agentManager.getTimeline(agentId);
-      const snapshot = agentManager.getAgent(agentId);
+      const timeline = executionService.getTimeline(agentId);
+      const snapshot = executionService.getAgent(agentId);
 
       const selection = selectItemsByProjectedLimit({
         items: timeline,
@@ -3559,7 +3571,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       },
     },
     async ({ agentId, modeId }) => {
-      const result = await setAgentModeCommand({ agentManager }, { agentId, modeId });
+      const result = await setAgentModeCommand({ executionService }, { agentId, modeId });
       return {
         content: [],
         structuredContent: ensureValidJson({ success: true, newMode: result.modeId }),
@@ -3585,7 +3597,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       },
     },
     async () => {
-      const permissions = agentManager.listAgents().flatMap((agent) => {
+      const permissions = executionService.listAgents().flatMap((agent) => {
         const payload = toAgentPayload(agent);
         return payload.pendingPermissions.map((request) => ({
           agentId: agent.id,
@@ -3606,7 +3618,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     {
       title: "Respond to permission",
       description:
-        "Approve or deny a pending permission request with an AgentManager-compatible response payload.",
+        "Approve or deny a pending permission request with an ExecutionService-compatible response payload.",
       inputSchema: {
         agentId: z.string(),
         requestId: z.string(),
@@ -3618,7 +3630,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     },
     async ({ agentId, requestId, response }) => {
       await respondToAgentPermission({
-        agentManager,
+        executionService,
         agentId,
         requestId,
         response,
@@ -3640,7 +3652,7 @@ type McpCreateWorktreeTarget =
   | { kind: "checkout-pr"; githubPrNumber: number };
 
 interface ArchiveWorktreeCommandContext {
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   terminalManager: TerminalManager | null;
   logger: Logger;
@@ -3679,7 +3691,7 @@ function archiveWorktreeDependencies(
     thothWorktreesBaseRoot: options.worktreesRoot,
     github: options.github,
     workspaceGitService: options.workspaceGitService,
-    agentManager: context.agentManager,
+    executionService: context.executionService,
     agentStorage: context.agentStorage,
     findWorkspaceIdForCwd: options.findWorkspaceIdForCwd,
     listActiveWorkspaces: options.listActiveWorkspaces,

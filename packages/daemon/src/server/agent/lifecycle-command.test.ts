@@ -159,7 +159,7 @@ describe("agent lifecycle commands", () => {
     manager.liveAgents.set("agent-1", managedAgent("agent-1", "running"));
     manager.inFlightAgentIds.add("agent-1");
 
-    const result = await cancelAgentRunCommand({ agentManager: manager, logger }, "agent-1");
+    const result = await cancelAgentRunCommand({ executionService: manager, logger }, "agent-1");
 
     expect(result).toEqual({
       agent: manager.liveAgents.get("agent-1"),
@@ -176,7 +176,7 @@ describe("agent lifecycle commands", () => {
     storage.records.set("agent-1", storedAgent("agent-1"));
 
     const result = await archiveAgentCommand(
-      { agentManager: manager, agentStorage: storage, logger },
+      { executionService: manager, agentStorage: storage, logger },
       "agent-1",
     );
 
@@ -199,7 +199,7 @@ describe("agent lifecycle commands", () => {
     storage.records.set("agent-1", storedAgent("agent-1"));
 
     const result = await archiveAgentCommand(
-      { agentManager: manager, agentStorage: storage, logger },
+      { executionService: manager, agentStorage: storage, logger },
       "agent-1",
     );
 
@@ -216,7 +216,7 @@ describe("agent lifecycle commands", () => {
 
     await expect(
       updateAgentCommand(
-        { agentManager: manager },
+        { executionService: manager },
         {
           agentId: "agent-1",
           name: "  Renamed agent  ",
@@ -225,7 +225,7 @@ describe("agent lifecycle commands", () => {
       ),
     ).resolves.toEqual({ accepted: true, error: null });
     await expect(
-      updateAgentCommand({ agentManager: manager }, { agentId: "agent-1", name: "   " }),
+      updateAgentCommand({ executionService: manager }, { agentId: "agent-1", name: "   " }),
     ).resolves.toEqual({
       accepted: false,
       error: "Nothing to update (provide name and/or labels)",
@@ -254,7 +254,7 @@ describe("agent lifecycle commands", () => {
     });
     const manager = new FakeLifecycleAgentManager(storage);
 
-    await expect(detachAgentCommand({ agentManager: manager }, "agent-1")).resolves.toEqual({
+    await expect(detachAgentCommand({ executionService: manager }, "agent-1")).resolves.toEqual({
       agentId: "agent-1",
       live: false,
       previousParentAgentId: "parent-agent",
@@ -273,7 +273,7 @@ describe("agent lifecycle commands", () => {
     storage.records.set("agent-1", storedAgent("agent-1"));
     const manager = new FakeLifecycleAgentManager(storage);
 
-    await expect(detachAgentCommand({ agentManager: manager }, "agent-1")).resolves.toEqual({
+    await expect(detachAgentCommand({ executionService: manager }, "agent-1")).resolves.toEqual({
       agentId: "agent-1",
       live: false,
       previousParentAgentId: null,
@@ -286,7 +286,7 @@ describe("agent lifecycle commands", () => {
     const manager = new FakeLifecycleAgentManager(storage);
 
     await expect(
-      setAgentModeCommand({ agentManager: manager }, { agentId: "agent-1", modeId: "plan" }),
+      setAgentModeCommand({ executionService: manager }, { agentId: "agent-1", modeId: "plan" }),
     ).resolves.toEqual({ modeId: "plan", notice: null });
 
     expect(manager.modeUpdates).toEqual([{ agentId: "agent-1", modeId: "plan" }]);

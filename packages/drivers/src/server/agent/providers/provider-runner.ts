@@ -5,7 +5,7 @@ import {
   type AgentRunResult,
   type AgentStreamEvent,
   type AgentTimelineItem,
-} from "../agent-sdk-types.js";
+} from "../harness-contract.js";
 
 export type ProviderFinalTextReducer = (params: {
   current: string;

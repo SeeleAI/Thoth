@@ -97,7 +97,7 @@ function createHarness(input: {
     downloadTokenStore: createStub<SessionOptions["downloadTokenStore"]>({}),
     pushTokenStore: createStub<SessionOptions["pushTokenStore"]>({}),
     thothHome: mkdtempSync(path.join(tmpdir(), "thoth-invariant-test-")),
-    agentManager: createStub<SessionOptions["agentManager"]>({
+    executionService: createStub<SessionOptions["executionService"]>({
       subscribe: () => () => {},
       listAgents: () => [],
       getAgent: () => null,

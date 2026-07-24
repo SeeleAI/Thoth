@@ -74,6 +74,7 @@ test.describe("Loop-2 restored Paseo surface scorecard", () => {
     await expect(page.getByTestId("open-project-import-session")).toBeVisible();
     await expect(page.getByTestId("open-project-setup-providers")).toBeVisible();
     await expect(page.getByText("Add a project", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("sidebar-project-empty-state")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Task control plane", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Preview surface", { exact: true })).toHaveCount(0);
     await expectNoToyShell(page);

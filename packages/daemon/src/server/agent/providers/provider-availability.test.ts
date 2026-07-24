@@ -5,15 +5,15 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import type { AgentProvider } from "@thoth/drivers/agent-runtime";
-import { AgentManager } from "../agent-manager.js";
+import { ExecutionService } from "../execution-service.js";
 import { AgentStorage } from "../agent-storage.js";
 
-import { ClaudeAgentClient } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
+import { ClaudeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import {
-  CodexAppServerAgentClient,
+  CodexHarnessAdapter,
   findDefaultCodexBinary,
 } from "@thoth/drivers/internal/server/agent/providers/codex-app-server-agent";
-import { OpenCodeAgentClient } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
+import { OpenCodeHarnessAdapter } from "@thoth/drivers/internal/server/agent/providers/opencode-agent";
 
 const originalEnv = {
   LOCALAPPDATA: process.env.LOCALAPPDATA,
@@ -59,7 +59,7 @@ describe("default provider availability", () => {
   test("Codex reports unavailable when the default command cannot be resolved", async () => {
     const binDir = makeTempDir("provider-availability-codex-");
     isolateCodexDefaultDiscoveryTo(binDir);
-    const client = new CodexAppServerAgentClient(createTestLogger());
+    const client = new CodexHarnessAdapter(createTestLogger());
 
     await expect(client.isAvailable()).resolves.toBe(false);
   });
@@ -89,7 +89,7 @@ describe("default provider availability", () => {
     process.env.PATHEXT = ".EXE";
 
     try {
-      const client = new CodexAppServerAgentClient(createTestLogger());
+      const client = new CodexHarnessAdapter(createTestLogger());
 
       await expect(findDefaultCodexBinary()).resolves.toBe(codexExe);
       await expect(client.isAvailable()).resolves.toBe(true);
@@ -106,7 +106,7 @@ describe("default provider availability", () => {
   test("Claude reports unavailable when the default command cannot be resolved", async () => {
     const binDir = makeTempDir("provider-availability-claude-");
     isolatePathTo(binDir);
-    const client = new ClaudeAgentClient({ logger: createTestLogger() });
+    const client = new ClaudeHarnessAdapter({ logger: createTestLogger() });
 
     await expect(client.isAvailable()).resolves.toBe(false);
   });
@@ -114,19 +114,19 @@ describe("default provider availability", () => {
   test("OpenCode reports unavailable when the default command cannot be resolved", async () => {
     const binDir = makeTempDir("provider-availability-opencode-");
     isolatePathTo(binDir);
-    const client = new OpenCodeAgentClient(createTestLogger());
+    const client = new OpenCodeHarnessAdapter(createTestLogger());
 
     await expect(client.isAvailable()).resolves.toBe(false);
   });
 
-  test("AgentManager reports Codex unavailable without throwing", async () => {
+  test("ExecutionService reports Codex unavailable without throwing", async () => {
     const binDir = makeTempDir("provider-availability-manager-bin-");
     isolateCodexDefaultDiscoveryTo(binDir);
     const workdir = makeTempDir("provider-availability-manager-work-");
     const storage = new AgentStorage(join(workdir, "agents"), createTestLogger());
-    const manager = new AgentManager({
-      clients: {
-        codex: new CodexAppServerAgentClient(createTestLogger()),
+    const manager = new ExecutionService({
+      adapters: {
+        codex: new CodexHarnessAdapter(createTestLogger()),
       },
       registry: storage,
       logger: createTestLogger(),
@@ -146,9 +146,9 @@ describe("default provider availability", () => {
     isolateCodexDefaultDiscoveryTo(binDir);
     const workdir = makeTempDir("provider-availability-resume-work-");
     const storage = new AgentStorage(join(workdir, "agents"), createTestLogger());
-    const manager = new AgentManager({
-      clients: {
-        codex: new CodexAppServerAgentClient(createTestLogger()),
+    const manager = new ExecutionService({
+      adapters: {
+        codex: new CodexHarnessAdapter(createTestLogger()),
       },
       registry: storage,
       logger: createTestLogger(),

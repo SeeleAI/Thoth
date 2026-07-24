@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { AgentManager } from "../agent/agent-manager.js";
+import type { ExecutionService } from "../agent/execution-service.js";
 import type { AgentRegistry } from "../agent/agent-storage.js";
 import type { DaemonConfigStore } from "../daemon-config-store.js";
 import {
@@ -23,7 +23,7 @@ export interface AutoArchiveArchiveOptions {
   daemonConfigStore: DaemonConfigStore;
   workspaceGitService: WorkspaceGitServiceImpl;
   github: GitHubService;
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   terminalManager: TerminalManager;
   findWorkspaceIdForCwd: (cwd: string) => Promise<string | null>;
@@ -118,7 +118,7 @@ export async function archiveIfSafe(input: {
           thothWorktreesBaseRoot: options.thothWorktreesBaseRoot,
           github: options.github,
           workspaceGitService: options.workspaceGitService,
-          agentManager: options.agentManager,
+          executionService: options.executionService,
           agentStorage: options.agentStorage,
           findWorkspaceIdForCwd: options.findWorkspaceIdForCwd,
           listActiveWorkspaces: options.listActiveWorkspaces,

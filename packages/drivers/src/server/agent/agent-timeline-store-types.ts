@@ -2,7 +2,7 @@ import type {
   AgentTimelineItem,
   ProviderMessageAnchorReceipt,
   ProviderRewindScope,
-} from "./agent-sdk-types.js";
+} from "./harness-contract.js";
 
 export interface AgentTimelineRow {
   seq: number;

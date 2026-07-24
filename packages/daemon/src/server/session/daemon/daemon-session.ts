@@ -1,5 +1,5 @@
 import type pino from "pino";
-import type { ProviderAvailability } from "../../agent/agent-manager.js";
+import type { ProviderAvailability } from "../../agent/execution-service.js";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../../messages.js";
 import { getPidLockInfo } from "../../pid-lock.js";
 import { generateLocalPairingOffer } from "../../pairing-offer.js";
@@ -8,7 +8,7 @@ import {
   type DaemonWebSocketRuntimeDiagnosticSnapshot,
 } from "./diagnostics.js";
 import { DaemonSelfUpdateSessionController } from "./daemon-self-update-session-controller.js";
-import type { ManagedAgent } from "../../agent/agent-manager.js";
+import type { ManagedAgent } from "../../agent/execution-service.js";
 import type { PersistedProjectRecord, PersistedWorkspaceRecord } from "../../workspace-registry.js";
 import type { RelayCredentialsManager } from "../../relay-credentials.js";
 

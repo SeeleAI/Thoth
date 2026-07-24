@@ -13,7 +13,7 @@ import type {
   CreateThothWorktreeWorkflowResult,
 } from "../../worktree-session.js";
 import type { AgentAttachment, FirstAgentContext, GitSetupOptions } from "../../messages.js";
-import type { AgentManager, ManagedAgent } from "../agent-manager.js";
+import type { ExecutionService, ManagedAgent } from "../execution-service.js";
 import type {
   AgentPromptContentBlock,
   AgentPromptInput,
@@ -39,7 +39,7 @@ export interface CreateAgentSessionWorktreeResult {
 }
 
 interface CreateAgentCommandDependencies {
-  agentManager: AgentManager;
+  executionService: ExecutionService;
   agentStorage: AgentRegistry;
   logger: Logger;
   thothHome?: string;
@@ -139,7 +139,7 @@ export async function createAgentCommand(
       ? await resolveSessionCreateAgent(dependencies, input)
       : await resolveMcpCreateAgent(dependencies, input);
 
-  const snapshot = await dependencies.agentManager.createAgent(
+  const snapshot = await dependencies.executionService.createAgent(
     resolved.config,
     undefined,
     resolved.createOptions,
@@ -159,7 +159,7 @@ export async function createAgentCommand(
 
   if (input.kind === "mcp" && input.notifyOnFinish && input.callerAgentId && initialPromptStarted) {
     setupFinishNotification({
-      agentManager: dependencies.agentManager,
+      executionService: dependencies.executionService,
       agentStorage: dependencies.agentStorage,
       childAgentId: snapshot.id,
       callerAgentId: input.callerAgentId,
@@ -228,7 +228,7 @@ async function resolveMcpCreateAgent(
   const resolvedProviderModel = resolveRequiredProviderModel(input.provider);
   const provider = resolvedProviderModel.provider;
   const parentAgent = input.callerAgentId
-    ? requireParentAgent(dependencies.agentManager, input.callerAgentId)
+    ? requireParentAgent(dependencies.executionService, input.callerAgentId)
     : null;
   const cwd = parentAgent
     ? resolveChildAgentCwd({
@@ -315,7 +315,7 @@ async function sendInitialPrompt(
       return { started: false, liveSnapshot: snapshot };
     }
     const liveSnapshot = await startCreatedAgentInitialPrompt({
-      agentManager: dependencies.agentManager,
+      executionService: dependencies.executionService,
       agentId: snapshot.id,
       snapshot,
       prompt,
@@ -356,8 +356,11 @@ function buildAgentPrompt(
   return blocks;
 }
 
-function requireParentAgent(agentManager: AgentManager, parentAgentId: string): ManagedAgent {
-  const parentAgent = agentManager.getAgent(parentAgentId);
+function requireParentAgent(
+  executionService: ExecutionService,
+  parentAgentId: string,
+): ManagedAgent {
+  const parentAgent = executionService.getAgent(parentAgentId);
   if (!parentAgent) {
     throw new Error(`Parent agent ${parentAgentId} not found`);
   }
@@ -423,13 +426,13 @@ async function resolveMcpCwd(params: {
       terminalManager: dependencies.terminalManager ?? null,
       appendTimelineItem: ({ agentId, item }) =>
         appendTimelineItemIfAgentKnown({
-          agentManager: dependencies.agentManager,
+          executionService: dependencies.executionService,
           agentId,
           item,
         }),
       emitLiveTimelineItem: ({ agentId, item }) =>
         emitLiveTimelineItemIfAgentKnown({
-          agentManager: dependencies.agentManager,
+          executionService: dependencies.executionService,
           agentId,
           item,
         }),

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import Ajv, { type ErrorObject, type Options as AjvOptions } from "ajv";
 import type { AgentProvider, AgentSessionConfig } from "@thoth/drivers/agent-runtime";
-import type { AgentManager } from "./agent-manager.js";
+import type { ExecutionService } from "./execution-service.js";
 
 export interface StructuredGenerationLogger {
   info: (obj: object, msg?: string) => void;
@@ -70,7 +70,7 @@ export interface StructuredAgentResponseOptions<T> {
 }
 
 export interface StructuredAgentGenerationOptions<T> {
-  manager: AgentManager;
+  manager: ExecutionService;
   agentConfig: AgentSessionConfig;
   agentId?: string;
   persistSession?: boolean;
@@ -81,7 +81,7 @@ export interface StructuredAgentGenerationOptions<T> {
 }
 
 export interface StructuredAgentGenerationWithFallbackOptions<T> {
-  manager: AgentManager;
+  manager: ExecutionService;
   cwd: string;
   prompt: string;
   schema: z.ZodType<T> | JsonSchema;

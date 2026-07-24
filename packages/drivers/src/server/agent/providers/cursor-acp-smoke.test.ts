@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { AgentCapabilityFlags, AgentStreamEvent } from "@thoth/drivers/agent-runtime";
-import { ACPAgentSession } from "@thoth/drivers/internal/server/agent/providers/acp-agent";
+import { ACPHarnessThread } from "@thoth/drivers/internal/server/agent/providers/acp-agent";
 
 const runCursorACPSmoke = process.env.CURSOR_ACP_SMOKE === "1" ? describe : describe.skip;
 const cursorClaudeModel = "claude-opus-4-7[thinking=true,thinking_budget=20000]";
@@ -70,8 +70,8 @@ function createCursorSessionWithPersistedClaudeValues({
 }: {
   logger: Logger;
   model: string;
-}): ACPAgentSession {
-  return new ACPAgentSession(
+}): ACPHarnessThread {
+  return new ACPHarnessThread(
     {
       provider,
       cwd: process.cwd(),
@@ -100,11 +100,11 @@ runCursorACPSmoke("real cursor-acp@0.1.0 smoke", () => {
   test("reconnect skips invalid persisted values again on a fresh session", async () => {
     const setModeSpy = vi.spyOn(ClientSideConnection.prototype, "setSessionMode");
     const setModelSpy = vi.spyOn(ClientSideConnection.prototype, "unstable_setSessionModel");
-    const requestPermissionSpy = vi.spyOn(ACPAgentSession.prototype, "requestPermission");
+    const requestPermissionSpy = vi.spyOn(ACPHarnessThread.prototype, "requestPermission");
     const logger = createSmokeLogger();
     const reconnectLogger = createSmokeLogger();
-    let session: ACPAgentSession | null = null;
-    let reconnectedSession: ACPAgentSession | null = null;
+    let session: ACPHarnessThread | null = null;
+    let reconnectedSession: ACPHarnessThread | null = null;
     const evidence: SmokeEvidence = {
       availableModes: null,
       warnings: [],
@@ -186,7 +186,7 @@ runCursorACPSmoke("real cursor-acp@0.1.0 smoke", () => {
       finalVerdict: "FAIL",
       failure: null,
     };
-    let session: ACPAgentSession | null = null;
+    let session: ACPHarnessThread | null = null;
 
     const originalSetMode = ClientSideConnection.prototype.setSessionMode;
     vi.spyOn(ClientSideConnection.prototype, "setSessionMode").mockImplementation(

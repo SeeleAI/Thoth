@@ -95,7 +95,7 @@ describe.each(CONTRACT_CASES)("daemon E2E (real $provider) - user_message contra
     cwd = tmpCwd(entry.provider);
     const logger = pino({ level: "silent" });
     daemon = await createTestThothDaemon({
-      agentClients: { [entry.provider]: createRealProviderClient(entry.provider, logger) },
+      harnessAdapters: { [entry.provider]: createRealProviderClient(entry.provider, logger) },
       logger,
     });
     client = new DaemonClient({
