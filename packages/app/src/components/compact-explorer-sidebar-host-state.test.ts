@@ -3,7 +3,7 @@ import {
   resolveCompactExplorerSidebarHostModel,
   type CompactExplorerSidebarHostModel,
 } from "@/components/compact-explorer-sidebar-host-state";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 
 function createWorkspace(
   input: Partial<WorkspaceDescriptor> & Pick<WorkspaceDescriptor, "id">,

@@ -5,7 +5,7 @@ import { useSidebarCallouts } from "@/contexts/sidebar-callout-context";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
-import { useWorkspaceFields } from "@/stores/session-store-hooks";
+import { useWorkspaceFields } from "@/projection/hooks";
 import {
   buildWorktreeSetupCalloutPolicy,
   selectActiveGitWorkspaceProject,

@@ -3,11 +3,11 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-035`
+2. Top next action: `NTH-TD-036`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
 4. Active blockers: None.
 5. Current branch: `agent/refactor/final-architecture-50k` in ignored worktree `.dev/worktrees/final-architecture-50k`, based on clean commit `743e8d29` from `agent/dev/mvp`.
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-CD-066` governs atomic convergence of that path; `NTH-CD-067` locks feature-zero-loss compositional OOP and at least `50,000` production LOC removed before deferred performance work. `NTH-TD-031` froze the clean baseline and shared-`300s` gate; `NTH-TD-032` verified Core/Repository, `NTH-TD-033` direct Provider Harness and `NTH-TD-034` the single RPC Registry. `NTH-TD-035` is the active App authority/canonical AgentTimeline projection cut; `NTH-TD-038` and performance sampling are deferred to `NTH-MS-019`.
+6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-CD-066` governs atomic convergence of that path; `NTH-CD-067` locks feature-zero-loss compositional OOP and at least `50,000` production LOC removed before deferred performance work. `NTH-TD-031` froze the clean baseline and shared-`300s` gate; `NTH-TD-032` verified Core/Repository, `NTH-TD-033` direct Provider Harness, `NTH-TD-034` the single RPC Registry and `NTH-TD-035` the Stage 4 App authority/canonical AgentTimeline projection cut. `NTH-EV-056` is verified; `NTH-TD-036` is the active shared Timeline/ViewModel/responsive UI convergence cut. `NTH-TD-038` and performance sampling remain deferred to `NTH-MS-019`.
 
 ## Objective Summary
 
@@ -24,7 +24,7 @@
 
 ## Top Next Action
 
-`NTH-TD-035` `[doing]`: Atomically replace App Session authority Context/reducers with one non-React normalized projection service, QueryClient server state and versioned UI preferences while preserving exact UX.
+`NTH-TD-036` `[ready]`: Converge AgentTimeline rendering and responsive desktop/compact/mobile composition through the final View Registry and shared primitives without any visual or interaction change.
 
 ## Active Blockers
 
@@ -114,6 +114,7 @@ None.
 80. `NTH-EV-054`: Cut 2 is verified. Every Provider now implements the direct Harness contract behind a lazy manifest; foreground/background/PlanExec/Review share one ExecutionService and one ToolGateway. The manager/session/host bridge, duplicate fences and eager registry APIs are absent. Focused Daemon `337/337`, Drivers `256/256`, public Harness lifecycle `4/4`, Provider Control and the full shared gate passed; `npm run accept:refactor:fast` completed in `238.109s`. Cumulative production source is `992` LOC, `6,336` scanner tokens, `4,775` AST nodes, `22` static imports and `1` runtime dependency edge below baseline.
 81. `NTH-EV-055`: Cut 3 is verified. Protocol now has one 131-operation Registry and 139 derived outbound schemas; 112 Client methods share one typed broker, Daemon requests share one 131-handler table, and binary frames remain independent. Protocol `351/351`, Client `119/119`, Session/Wire `133/133`, WebSocket lifecycle `17/17` and public foreground `12/12` passed. The final no-warning shared gate passed in `240.108s`; cumulative source is `2,476` LOC, `8,823` scanner tokens, `7,814` AST nodes, `23` static imports and `1` runtime dependency edge below baseline.
 82. `NTH-EV-064`: The feature-zero-loss 50k gate rebaseline is verified. `NTH-CD-067` moves performance sampling intact to deferred `NTH-MS-019`; the sole functional gate still covers architecture/source/storage, Foundation, builds, public behavior, real Web visual/interaction and TUI, and passed in `140.770s`. Production metrics remain unchanged at `306,055` LOC and `NTH-TD-035` remains the sole top next action.
+83. `NTH-EV-056`: Cut 4 is verified. App authority now has one normalized `AuthorityProjectionStore` written only by `DaemonProjectionService`; HostRuntime owns Client/ServerInfo, QueryClient owns server query and pending overlay state, and UiPreferences owns local focus. Session Store/Context, duplicate Timeline reducers and the third Timeline model are absent. App `331/331` files and `2,582/2,582` tests, Foundation, real Web, Provider Control, interaction regressions and the complete Stage 4 gate passed; `npm run accept:refactor:fast` completed in `144.145s`. Cumulative production source is `7,600` LOC, `19,596` scanner tokens, `27,364` AST nodes, `25` static imports and `1` runtime dependency edge below baseline. The sole top next action advances to `NTH-TD-036`.
 
 ## Read Next
 

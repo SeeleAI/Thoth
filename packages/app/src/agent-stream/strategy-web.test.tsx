@@ -5,7 +5,7 @@ import React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import type { StreamSegmentRenderers, StreamViewportHandle } from "./strategy";
 import { createWebStreamStrategy } from "./strategy-web";
 
@@ -27,7 +27,7 @@ vi.hoisted(() => {
 
 vi.mock("@/components/use-web-scrollbar", () => ({ useWebElementScrollbar: () => null }));
 
-function userMessage(index: number): StreamItem {
+function userMessage(index: number): TimelineViewModel {
   return {
     kind: "user_message",
     id: `message-${index}`,

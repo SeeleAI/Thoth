@@ -8,7 +8,8 @@ import {
   persistAttachmentFromFileUri,
 } from "@/attachments/service";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
-import { useSessionStore, type SessionState } from "@/stores/session-store";
+import { queryClient } from "@/query/query-client";
+import type { PendingAgentMessage } from "@/projection/pending-agent-messages";
 import {
   applyClearDraftRecord,
   collectReferencedAttachmentIdsFromState,
@@ -134,30 +135,18 @@ async function runAttachmentGc(): Promise<void> {
     }
   }
 
-  const sessions = useSessionStore.getState().sessions;
-  for (const session of Object.values(sessions)) {
-    collectStreamUserImageIds(session.agentStreamTail, referencedIds);
-    collectStreamUserImageIds(session.agentStreamHead, referencedIds);
+  for (const query of queryClient.getQueryCache().findAll({
+    queryKey: ["agent-message-pending"],
+  })) {
+    for (const message of (query.state.data as readonly PendingAgentMessage[] | undefined) ?? []) {
+      for (const image of message.images) referencedIds.add(image.id);
+    }
   }
 
   try {
     await garbageCollectAttachments({ referencedIds });
   } catch (error) {
     console.warn("[DraftStore] Attachment garbage collection failed", error);
-  }
-}
-
-function collectStreamUserImageIds(
-  streams: SessionState["agentStreamTail"],
-  referencedIds: Set<string>,
-): void {
-  for (const stream of streams.values()) {
-    for (const item of stream) {
-      if (item.kind !== "user_message") continue;
-      for (const image of item.images ?? []) {
-        referencedIds.add(image.id);
-      }
-    }
   }
 }
 

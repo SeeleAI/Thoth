@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
 import { deriveStreamTurnTiming } from "./turn-time";
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 
-function user(id: string, timestamp: Date): StreamItem {
+function user(id: string, timestamp: Date): TimelineViewModel {
   return {
     kind: "user_message",
     id,
@@ -12,7 +12,7 @@ function user(id: string, timestamp: Date): StreamItem {
   };
 }
 
-function assistant(id: string, timestamp: Date): StreamItem {
+function assistant(id: string, timestamp: Date): TimelineViewModel {
   return {
     kind: "assistant_message",
     id,

@@ -1,4 +1,4 @@
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 
 function trimNonEmpty(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
@@ -32,7 +32,7 @@ export function resolveWorkspaceRouteId(input: {
 }
 
 export function resolveWorkspaceMapKeyByIdentity(input: {
-  workspaces: Map<string, WorkspaceDescriptor> | null | undefined;
+  workspaces: ReadonlyMap<string, WorkspaceDescriptor> | null | undefined;
   workspaceId: string | null | undefined;
 }): string | null {
   const normalizedWorkspaceId = normalizeWorkspaceOpaqueId(input.workspaceId);

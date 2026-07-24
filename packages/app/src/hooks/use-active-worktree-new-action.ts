@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import type { KeyboardActionId } from "@/keyboard/keyboard-action-dispatcher";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
-import { useWorkspace } from "@/stores/session-store-hooks";
+import { useWorkspace } from "@/projection/hooks";
 import { buildNewWorkspaceRoute } from "@/utils/host-routes";
 
 const WORKTREE_NEW_ACTIONS: readonly KeyboardActionId[] = ["worktree.new"];

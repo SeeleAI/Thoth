@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorkspaceScriptPayload } from "@thoth/protocol/messages";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 import { patchWorkspaceScripts } from "./session-workspace-scripts";
 
 function workspace(input: {

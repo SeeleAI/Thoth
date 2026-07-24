@@ -1,295 +1,18 @@
 import { useCallback, useMemo } from "react";
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { useSessionStore } from "@/stores/session-store";
+import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { agentHistoryQueryKey, allAgentHistoryQueryRootKey } from "./agent-history-query-key";
-
-export const ARCHIVE_AGENT_PENDING_QUERY_KEY = ["archive-agent-pending"] as const;
-const EMPTY_PENDING_ARCHIVE_AGENT_IDS = new Set<string>();
-
-export interface ArchiveAgentInput {
-  serverId: string;
-  agentId: string;
-}
-
-export type ArchiveAgentPendingState = Record<string, true>;
-
-interface SetAgentArchivingInput extends ArchiveAgentInput {
-  queryClient: QueryClient;
-  isArchiving: boolean;
-}
-
-interface IsAgentArchivingInput extends ArchiveAgentInput {
-  queryClient: QueryClient;
-}
-
-export interface AgentsListQueryData {
-  entries?: Array<{ agent?: { id?: string | null } | null } | null>;
-}
-
-export interface AgentHistoryQueryAgent {
-  id?: string | null;
-  serverId?: string | null;
-  archivedAt?: Date | null;
-}
-
-export interface AgentHistoryQueryPage {
-  agents?: AgentHistoryQueryAgent[];
-}
-
-export interface AgentHistoryQueryData {
-  pages?: AgentHistoryQueryPage[];
-}
-
-export function toArchiveKey(input: ArchiveAgentInput): string {
-  const serverId = input.serverId.trim();
-  const agentId = input.agentId.trim();
-  if (!serverId || !agentId) {
-    return "";
-  }
-  return `${serverId}:${agentId}`;
-}
-
-export function readPendingState(queryClient: QueryClient): ArchiveAgentPendingState {
-  return queryClient.getQueryData<ArchiveAgentPendingState>(ARCHIVE_AGENT_PENDING_QUERY_KEY) ?? {};
-}
-
-export function selectPendingArchiveAgentIds(
-  pendingState: ArchiveAgentPendingState,
-  serverId: string,
-): ReadonlySet<string> {
-  const normalizedServerId = serverId.trim();
-  if (!normalizedServerId) {
-    return EMPTY_PENDING_ARCHIVE_AGENT_IDS;
-  }
-
-  const prefix = `${normalizedServerId}:`;
-  let agentIds: string[] | null = null;
-  for (const key of Object.keys(pendingState)) {
-    if (!key.startsWith(prefix)) {
-      continue;
-    }
-    const agentId = key.slice(prefix.length);
-    if (!agentId) {
-      continue;
-    }
-    agentIds ??= [];
-    agentIds.push(agentId);
-  }
-
-  if (!agentIds || agentIds.length === 0) {
-    return EMPTY_PENDING_ARCHIVE_AGENT_IDS;
-  }
-  return new Set(agentIds);
-}
-
-export function setAgentArchiving(input: SetAgentArchivingInput): void {
-  const key = toArchiveKey(input);
-  if (!key) {
-    return;
-  }
-
-  input.queryClient.setQueryData<ArchiveAgentPendingState>(
-    ARCHIVE_AGENT_PENDING_QUERY_KEY,
-    (current) => {
-      const state = current ?? {};
-      if (input.isArchiving) {
-        if (state[key]) {
-          return state;
-        }
-        return { ...state, [key]: true };
-      }
-
-      if (!state[key]) {
-        return state;
-      }
-
-      const next = { ...state };
-      delete next[key];
-      return next;
-    },
-  );
-}
-
-export function isAgentArchiving(input: IsAgentArchivingInput): boolean {
-  const key = toArchiveKey(input);
-  if (!key) {
-    return false;
-  }
-  return readPendingState(input.queryClient)[key] ?? false;
-}
-
-export function removeAgentFromListPayload<T extends AgentsListQueryData | undefined>(
-  payload: T,
-  agentId: string,
-): T {
-  if (!payload || !Array.isArray(payload.entries) || !agentId) {
-    return payload;
-  }
-  const filtered = payload.entries.filter((entry) => entry?.agent?.id !== agentId);
-  if (filtered.length === payload.entries.length) {
-    return payload;
-  }
-  return {
-    ...payload,
-    entries: filtered,
-  } as T;
-}
-
-export function removeAgentFromCachedLists(
-  queryClient: QueryClient,
-  input: ArchiveAgentInput,
-): void {
-  const agentId = input.agentId.trim();
-  if (!agentId) {
-    return;
-  }
-
-  queryClient.setQueryData<AgentsListQueryData | undefined>(
-    ["sidebarAgentsList", input.serverId],
-    (current) => removeAgentFromListPayload(current, agentId),
-  );
-  queryClient.setQueryData<AgentsListQueryData | undefined>(
-    ["allAgents", input.serverId],
-    (current) => removeAgentFromListPayload(current, agentId),
-  );
-}
-
-export function markAgentArchivedInHistoryPayload<T extends AgentHistoryQueryData | undefined>(
-  payload: T,
-  input: ArchiveAgentInput & { archivedAt: string },
-): T {
-  if (!payload || !Array.isArray(payload.pages) || !input.agentId) {
-    return payload;
-  }
-
-  const archivedAt = new Date(input.archivedAt);
-  if (Number.isNaN(archivedAt.getTime())) {
-    return payload;
-  }
-
-  let changed = false;
-  const pages = payload.pages.map((page) => {
-    if (!Array.isArray(page.agents)) {
-      return page;
-    }
-
-    let pageChanged = false;
-    const agents = page.agents.map((agent) => {
-      if (
-        agent.id !== input.agentId ||
-        (agent.serverId != null && agent.serverId !== input.serverId)
-      ) {
-        return agent;
-      }
-      pageChanged = true;
-      changed = true;
-      return {
-        ...agent,
-        archivedAt,
-      };
-    });
-
-    return pageChanged ? { ...page, agents } : page;
-  });
-
-  return changed ? ({ ...payload, pages } as T) : payload;
-}
-
-export function markAgentArchivedInHistoryCache(
-  queryClient: QueryClient,
-  input: ArchiveAgentInput & { archivedAt: string },
-): void {
-  queryClient.setQueryData<AgentHistoryQueryData | undefined>(
-    agentHistoryQueryKey(input.serverId),
-    (current) => markAgentArchivedInHistoryPayload(current, input),
-  );
-  queryClient.setQueriesData<AgentHistoryQueryData | undefined>(
-    { queryKey: allAgentHistoryQueryRootKey() },
-    (current) => markAgentArchivedInHistoryPayload(current, input),
-  );
-}
-
-export function clearArchiveAgentPending(input: IsAgentArchivingInput): void {
-  setAgentArchiving({
-    ...input,
-    isArchiving: false,
-  });
-}
-
-export interface ArchivedAgentCloseResult {
-  agentId: string;
-  archivedAt: string;
-}
-
-function markAgentArchivedInStore(input: ArchiveAgentInput & { archivedAt: string }): void {
-  const archivedAt = new Date(input.archivedAt);
-  if (Number.isNaN(archivedAt.getTime())) {
-    return;
-  }
-
-  const setAgents = useSessionStore.getState().setAgents;
-  setAgents(input.serverId, (prev) => {
-    const existing = prev.get(input.agentId);
-    if (!existing) {
-      return prev;
-    }
-    if (existing.archivedAt && existing.archivedAt.getTime() === archivedAt.getTime()) {
-      return prev;
-    }
-    const next = new Map(prev);
-    next.set(input.agentId, {
-      ...existing,
-      archivedAt,
-    });
-    return next;
-  });
-}
-
-interface ApplyArchivedAgentCloseResultsInput {
-  queryClient: QueryClient;
-  serverId: string;
-  results: ArchivedAgentCloseResult[];
-  invalidateQueries?: boolean;
-}
-
-export function applyArchivedAgentCloseResults(input: ApplyArchivedAgentCloseResultsInput): void {
-  if (input.results.length === 0) {
-    return;
-  }
-
-  for (const result of input.results) {
-    markAgentArchivedInStore({
-      serverId: input.serverId,
-      agentId: result.agentId,
-      archivedAt: result.archivedAt,
-    });
-    removeAgentFromCachedLists(input.queryClient, {
-      serverId: input.serverId,
-      agentId: result.agentId,
-    });
-    markAgentArchivedInHistoryCache(input.queryClient, {
-      serverId: input.serverId,
-      agentId: result.agentId,
-      archivedAt: result.archivedAt,
-    });
-  }
-
-  if (input.invalidateQueries ?? true) {
-    void input.queryClient.invalidateQueries({
-      queryKey: ["sidebarAgentsList", input.serverId],
-    });
-    void input.queryClient.invalidateQueries({
-      queryKey: ["allAgents", input.serverId],
-    });
-    void input.queryClient.invalidateQueries({
-      queryKey: agentHistoryQueryKey(input.serverId),
-    });
-    void input.queryClient.invalidateQueries({
-      queryKey: allAgentHistoryQueryRootKey(),
-    });
-  }
-}
+import {
+  ARCHIVE_AGENT_PENDING_QUERY_KEY,
+  applyArchivedAgentCloseResults,
+  clearArchiveAgentPending,
+  selectPendingArchiveAgentIds,
+  setAgentArchiving,
+  toArchiveKey,
+  type ArchiveAgentInput,
+  type ArchiveAgentPendingState,
+} from "@/query/agent-archive-state";
 
 function useArchiveAgentPendingQuery() {
   return useQuery({
@@ -317,7 +40,7 @@ export function useArchiveAgent() {
 
   const archiveMutation = useMutation({
     mutationFn: async (input: ArchiveAgentInput): Promise<{ archivedAt: string }> => {
-      const client = useSessionStore.getState().sessions[input.serverId]?.client ?? null;
+      const client = getHostRuntimeStore().getClient(input.serverId);
       if (!client) {
         throw new Error(t("common.errors.daemonClientUnavailable"));
       }
@@ -332,10 +55,11 @@ export function useArchiveAgent() {
       });
     },
     onSuccess: (result, input) => {
-      markAgentArchivedInStore({
+      applyArchivedAgentCloseResults({
+        queryClient,
         serverId: input.serverId,
-        agentId: input.agentId,
-        archivedAt: result.archivedAt,
+        results: [{ agentId: input.agentId, archivedAt: result.archivedAt }],
+        invalidateQueries: false,
       });
     },
     onSettled: (_result, _error, input) => {

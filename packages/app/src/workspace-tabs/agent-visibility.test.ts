@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
 import {
   buildWorkspaceTabSnapshot,
   deriveWorkspaceAgentVisibility,
   shouldPruneWorkspaceAgentTab,
   workspaceAgentVisibilityEqual,
 } from "@/workspace-tabs/agent-visibility";
+import { deriveProjectPlacementFromCwd } from "@/utils/project-placement";
 
 function makeAgent(input: {
   id: string;
@@ -54,6 +55,7 @@ function makeAgent(input: {
     attentionReason: null,
     attentionTimestamp: null,
     archivedAt: input.archivedAt ?? null,
+    projectPlacement: input.workspaceId ? deriveProjectPlacementFromCwd(input.cwd) : null,
   };
 }
 
@@ -74,7 +76,7 @@ describe("workspace agent visibility", () => {
     });
 
     const result = deriveWorkspaceAgentVisibility({
-      sessionAgents: new Map<string, Agent>([
+      agents: new Map<string, Agent>([
         [parent.id, parent],
         [child.id, child],
       ]),
@@ -96,7 +98,7 @@ describe("workspace agent visibility", () => {
     });
 
     const result = deriveWorkspaceAgentVisibility({
-      sessionAgents: new Map<string, Agent>([[archivedChild.id, archivedChild]]),
+      agents: new Map<string, Agent>([[archivedChild.id, archivedChild]]),
       workspaceId: WORKSPACE_ID,
     });
 
@@ -120,7 +122,7 @@ describe("workspace agent visibility", () => {
     });
 
     const result = deriveWorkspaceAgentVisibility({
-      sessionAgents: new Map<string, Agent>([
+      agents: new Map<string, Agent>([
         [child.id, child],
         [parent.id, parent],
       ]),
@@ -152,14 +154,14 @@ describe("workspace agent visibility", () => {
       workspaceId: "ws-other",
     });
 
-    const sessionAgents = new Map<string, Agent>([
+    const agents = new Map<string, Agent>([
       [visible.id, visible],
       [archived.id, archived],
       [otherWorkspace.id, otherWorkspace],
     ]);
 
     const result = deriveWorkspaceAgentVisibility({
-      sessionAgents,
+      agents,
       workspaceId: WORKSPACE_ID,
     });
 
@@ -185,8 +187,10 @@ describe("workspace agent visibility", () => {
     });
 
     const result = deriveWorkspaceAgentVisibility({
-      sessionAgents: new Map([[active.id, active]]),
-      agentDetails: new Map([[historicalDetail.id, historicalDetail]]),
+      agents: new Map([
+        [active.id, active],
+        [historicalDetail.id, historicalDetail],
+      ]),
       workspaceId: WORKSPACE_ID,
     });
 
@@ -205,8 +209,7 @@ describe("workspace agent visibility", () => {
     });
 
     const result = deriveWorkspaceAgentVisibility({
-      sessionAgents: new Map([[archived.id, archived]]),
-      agentDetails: new Map([[archived.id, archived]]),
+      agents: new Map([[archived.id, archived]]),
       workspaceId: WORKSPACE_ID,
     });
 
@@ -272,7 +275,7 @@ describe("workspace agent visibility", () => {
   });
 
   it("matches agents by workspaceId regardless of cwd", () => {
-    const sessionAgents = new Map<string, Agent>([
+    const agents = new Map<string, Agent>([
       [
         "stamped-agent",
         makeAgent({
@@ -284,7 +287,7 @@ describe("workspace agent visibility", () => {
     ]);
 
     const result = deriveWorkspaceAgentVisibility({
-      sessionAgents,
+      agents,
       workspaceId: "ws-1",
     });
 
@@ -293,7 +296,7 @@ describe("workspace agent visibility", () => {
   });
 
   it("excludes a stamped agent whose workspaceId belongs to another workspace sharing the cwd", () => {
-    const sessionAgents = new Map<string, Agent>([
+    const agents = new Map<string, Agent>([
       [
         "other-ws-agent",
         makeAgent({
@@ -305,7 +308,7 @@ describe("workspace agent visibility", () => {
     ]);
 
     const result = deriveWorkspaceAgentVisibility({
-      sessionAgents,
+      agents,
       workspaceId: "ws-1",
     });
 
@@ -314,12 +317,12 @@ describe("workspace agent visibility", () => {
   });
 
   it("excludes agents without a workspaceId", () => {
-    const sessionAgents = new Map<string, Agent>([
+    const agents = new Map<string, Agent>([
       ["ownerless-agent", makeAgent({ id: "ownerless-agent", cwd: "/repo/worktree" })],
     ]);
 
     const result = deriveWorkspaceAgentVisibility({
-      sessionAgents,
+      agents,
       workspaceId: "ws-1",
     });
 

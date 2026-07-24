@@ -1,9 +1,9 @@
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import { SPACING } from "@/styles/theme";
 
 export function isSameAssistantBlockGroup(params: {
-  item: StreamItem | null | undefined;
-  other: StreamItem | null | undefined;
+  item: TimelineViewModel | null | undefined;
+  other: TimelineViewModel | null | undefined;
 }): boolean {
   return (
     params.item?.kind === "assistant_message" &&
@@ -14,9 +14,9 @@ export function isSameAssistantBlockGroup(params: {
 }
 
 export function getAssistantBlockSpacing(params: {
-  item: StreamItem;
-  aboveItem: StreamItem | null | undefined;
-  belowItem: StreamItem | null | undefined;
+  item: TimelineViewModel;
+  aboveItem: TimelineViewModel | null | undefined;
+  belowItem: TimelineViewModel | null | undefined;
 }): "default" | "compactTop" | "compactBottom" | "compactBoth" {
   if (params.item.kind !== "assistant_message") {
     return "default";
@@ -29,13 +29,13 @@ export function getAssistantBlockSpacing(params: {
   return "default";
 }
 
-const isUserMessageItem = (item?: StreamItem | null) => item?.kind === "user_message";
-const isToolSequenceItem = (item?: StreamItem | null) =>
+const isUserMessageItem = (item?: TimelineViewModel | null) => item?.kind === "user_message";
+const isToolSequenceItem = (item?: TimelineViewModel | null) =>
   item?.kind === "tool_call" || item?.kind === "thought" || item?.kind === "todo_list";
 
 export function getGapBetweenStreamItems(
-  item: StreamItem | null,
-  belowItem: StreamItem | null,
+  item: TimelineViewModel | null,
+  belowItem: TimelineViewModel | null,
 ): number {
   if (!item || !belowItem) {
     return 0;

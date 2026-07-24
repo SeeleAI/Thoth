@@ -53,8 +53,11 @@ import {
   type ServiceUrlBehavior,
   type Settings as EffectiveSettings,
 } from "@/hooks/use-settings";
-import { useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
-import { useSessionStore } from "@/stores/session-store";
+import {
+  useHostRuntimeIsConnected,
+  useHostRuntimeServerInfo,
+  useHosts,
+} from "@/runtime/host-runtime";
 import { orderHostsLocalFirst, type HostProfile } from "@/types/host-connection";
 import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
 import { useWindowControlsPadding } from "@/utils/desktop-window";
@@ -537,9 +540,7 @@ function HostVersionRow({
 }) {
   const { t } = useTranslation();
   const isConnected = useHostRuntimeIsConnected(host.serverId);
-  const daemonVersion = useSessionStore(
-    (state) => state.sessions[host.serverId]?.serverInfo?.version ?? null,
-  );
+  const daemonVersion = useHostRuntimeServerInfo(host.serverId)?.version ?? null;
 
   const rowStyle = useMemo(
     () => [settingsStyles.row, showBorder && settingsStyles.rowBorder],

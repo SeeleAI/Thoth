@@ -7,7 +7,10 @@ import type {
 } from "@thoth/client/internal/daemon-client";
 import type { ConnectionOffer } from "@thoth/protocol/connection-offer";
 import type { HostConnection, HostProfile } from "@/types/host-connection";
-import { useSessionStore, type Agent } from "@/stores/session-store";
+import {
+  AuthorityProjectionStore,
+  DaemonProjectionService,
+} from "@/projection/authority-projection";
 import {
   HostRuntimeController,
   HostRuntimeStore,
@@ -19,10 +22,12 @@ import {
 class FakeDaemonClient {
   private state: ConnectionState = { status: "idle" };
   private listeners = new Set<(status: ConnectionState) => void>();
+  private eventListeners = new Map<string, Set<(message: { payload: unknown }) => void>>();
   private error: string | null = null;
   private heartbeatRttMs: number | null = null;
   private latencyMeasurementFailure: Error | null = null;
   private latencyMeasurementsRequested: Array<{ timeoutMs?: number }> = [];
+  private serverInfo: ReturnType<DaemonClient["getLastServerInfoMessage"]> = null;
   public connectCalls = 0;
   public fetchAgentsCalls: FetchAgentsOptions[] = [];
   public fetchAgentsResponses: Awaited<ReturnType<DaemonClient["fetchAgents"]>>[] = [];
@@ -44,6 +49,30 @@ class FakeDaemonClient {
 
   getConnectionState(): ConnectionState {
     return this.state;
+  }
+
+  getLastServerInfoMessage(): ReturnType<DaemonClient["getLastServerInfoMessage"]> {
+    return this.serverInfo;
+  }
+
+  setServerInfo(serverInfo: ReturnType<DaemonClient["getLastServerInfoMessage"]>): void {
+    this.serverInfo = serverInfo;
+  }
+
+  subscribeAgentThothStateUpdates(): () => void {
+    return () => {};
+  }
+
+  on(type: string, listener: (message: { payload: never }) => void): () => void {
+    const listeners = this.eventListeners.get(type) ?? new Set();
+    listeners.add(listener as (message: { payload: unknown }) => void);
+    this.eventListeners.set(type, listeners);
+    return () => listeners.delete(listener as (message: { payload: unknown }) => void);
+  }
+
+  emitStatus(payload: ReturnType<DaemonClient["getLastServerInfoMessage"]>): void {
+    if (!payload) return;
+    for (const listener of this.eventListeners.get("status") ?? []) listener({ payload });
   }
 
   subscribeConnectionStatus(listener: (status: ConnectionState) => void): () => void {
@@ -430,7 +459,7 @@ describe("HostRuntimeController", () => {
 
     expect(controller.getSnapshot().activeConnectionId).toBe("direct:lan:6767");
     expect(controller.getSnapshot().connectionStatus).toBe("connecting");
-    expect(controller.getSnapshot().agentDirectoryStatus).toBe("initial_loading");
+    expect(controller.getSnapshot()).not.toHaveProperty("agentDirectoryStatus");
   });
 
   it("passes resolved client id into created active clients", async () => {
@@ -463,6 +492,107 @@ describe("HostRuntimeController", () => {
 
     expect(seenClientIds).toEqual(["cid_runtime_stable"]);
     expect(controller.getSnapshot().connectionStatus).toBe("online");
+  });
+
+  it("owns the active client's initial server info snapshot", async () => {
+    const host = makeHost({
+      connections: [{ id: "direct:lan:6767", type: "directTcp", endpoint: "lan:6767" }],
+    });
+    const client = new FakeDaemonClient();
+    client.setServerInfo({
+      status: "server_info",
+      serverId: host.serverId,
+      hostname: "runtime-host",
+      version: "0.2.0",
+      capabilities: {},
+      features: { projectAdd: true },
+    });
+    const controller = new HostRuntimeController({
+      host,
+      deps: {
+        createClient: () => client as unknown as DaemonClient,
+        connectToDaemon: async () => {
+          throw new Error("probe unavailable");
+        },
+        getClientId: async () => "cid_server_info",
+      },
+    });
+
+    await controller.activateConnection({ connectionId: "direct:lan:6767" });
+
+    expect(controller.getSnapshot().serverInfo).toEqual({
+      serverId: host.serverId,
+      hostname: "runtime-host",
+      version: "0.2.0",
+      capabilities: {},
+      features: { projectAdd: true },
+    });
+  });
+
+  it("updates server info only from the active client's status event", async () => {
+    const host = makeHost({
+      connections: [{ id: "direct:lan:6767", type: "directTcp", endpoint: "lan:6767" }],
+    });
+    const client = new FakeDaemonClient();
+    const controller = new HostRuntimeController({
+      host,
+      deps: {
+        createClient: () => client as unknown as DaemonClient,
+        connectToDaemon: async () => {
+          throw new Error("probe unavailable");
+        },
+        getClientId: async () => "cid_server_info_event",
+      },
+    });
+    await controller.activateConnection({ connectionId: "direct:lan:6767" });
+
+    client.emitStatus({
+      status: "server_info",
+      serverId: host.serverId,
+      hostname: "updated-host",
+      version: "0.2.1",
+      capabilities: {},
+      features: { projectAdd: false },
+    });
+
+    expect(controller.getSnapshot().serverInfo).toEqual(
+      expect.objectContaining({
+        serverId: host.serverId,
+        hostname: "updated-host",
+        version: "0.2.1",
+        features: { projectAdd: false },
+      }),
+    );
+  });
+
+  it("reconciles the HostRuntime server id without duplicating server info", () => {
+    const host = makeHost();
+    const controller = new HostRuntimeController({
+      host,
+      deps: makeDeps({}, []),
+    });
+    (
+      controller as unknown as {
+        updateSnapshot: (patch: {
+          serverInfo: ReturnType<typeof controller.getSnapshot>["serverInfo"];
+        }) => void;
+      }
+    ).updateSnapshot({
+      serverInfo: {
+        serverId: host.serverId,
+        hostname: "runtime-host",
+        version: "0.2.0",
+        capabilities: {},
+        features: {},
+      },
+    });
+
+    controller.adoptReconciledServerId("srv_reconciled");
+
+    expect(controller.getSnapshot().serverId).toBe("srv_reconciled");
+    expect(controller.getSnapshot().serverInfo).toEqual(
+      expect.objectContaining({ serverId: "srv_reconciled", hostname: "runtime-host" }),
+    );
   });
 
   it("adopts the first successful probe on startup", async () => {
@@ -930,75 +1060,59 @@ describe("HostRuntimeController", () => {
     }
   });
 
-  it("marks directory loading on first connection before any directory sync succeeds", async () => {
-    const host = makeHost();
-    const clients: FakeDaemonClient[] = [];
-    const latencies: Record<string, number | Error> = {
-      "direct:lan:6767": 12,
-      "relay:relay.thoth.seeles.ai:443": 65,
-    };
-    const controller = new HostRuntimeController({
-      host,
-      deps: makeDeps(latencies, clients),
-    });
+  it("marks Agent hydration loading while the first Projection refresh is pending", async () => {
+    const client = new FakeDaemonClient();
+    const response = createDeferred<Awaited<ReturnType<DaemonClient["fetchAgents"]>>>();
+    client.fetchAgents = vi.fn(async () => response.promise);
+    const store = new AuthorityProjectionStore();
+    const service = new DaemonProjectionService(store);
+    service.start(client as unknown as DaemonClient, "srv_projection_loading");
 
-    await controller.start({ autoProbe: false });
-
-    const snapshot = controller.getSnapshot();
-    expect(snapshot.connectionStatus).toBe("online");
-    expect(snapshot.hasEverLoadedAgentDirectory).toBe(false);
-    expect(snapshot.agentDirectoryStatus).toBe("initial_loading");
+    const refresh = service.refreshAgents();
+    expect(store.getSnapshot("srv_projection_loading").hydration.agents).toBe("loading");
+    response.resolve(makeFetchAgentsPayload({ entries: [] }));
+    await refresh;
+    expect(store.getSnapshot("srv_projection_loading").hydration.agents).toBe("ready");
   });
 
-  it("keeps directory ready through reconnects after the first successful directory load", async () => {
-    const host = makeHost();
-    const clients: FakeDaemonClient[] = [];
-    const latencies: Record<string, number | Error> = {
-      "direct:lan:6767": 12,
-      "relay:relay.thoth.seeles.ai:443": 65,
-    };
-    const controller = new HostRuntimeController({
-      host,
-      deps: makeDeps(latencies, clients),
-    });
+  it("keeps Agent projection ready across repeated successful refreshes", async () => {
+    const client = new FakeDaemonClient();
+    const store = new AuthorityProjectionStore();
+    const service = new DaemonProjectionService(store);
+    service.start(client as unknown as DaemonClient, "srv_projection_ready");
 
-    await controller.start({ autoProbe: false });
-    controller.markAgentDirectorySyncReady();
-    expect(controller.getSnapshot().agentDirectoryStatus).toBe("ready");
-    expect(controller.getSnapshot().hasEverLoadedAgentDirectory).toBe(true);
+    await service.refreshAgents();
+    await service.refreshAgents();
 
-    clients[0]?.setConnectionState({
-      status: "disconnected",
-      reason: "client_closed",
-    });
-    expect(controller.getSnapshot().connectionStatus).toBe("offline");
-    expect(controller.getSnapshot().agentDirectoryStatus).toBe("ready");
-
-    clients[0]?.setConnectionState({ status: "connected" });
-    expect(controller.getSnapshot().connectionStatus).toBe("online");
-    expect(controller.getSnapshot().agentDirectoryStatus).toBe("ready");
+    expect(store.getSnapshot("srv_projection_ready").hydration.agents).toBe("ready");
+    expect(client.fetchAgentsCalls).toHaveLength(2);
   });
 
-  it("stores directory sync errors as non-blocking after a successful directory load", async () => {
-    const host = makeHost();
-    const clients: FakeDaemonClient[] = [];
-    const latencies: Record<string, number | Error> = {
-      "direct:lan:6767": 12,
-      "relay:relay.thoth.seeles.ai:443": 65,
-    };
-    const controller = new HostRuntimeController({
-      host,
-      deps: makeDeps(latencies, clients),
+  it("records a refresh error without deleting the last ready Agent snapshot", async () => {
+    const client = new FakeDaemonClient();
+    const store = new AuthorityProjectionStore();
+    const service = new DaemonProjectionService(store);
+    service.start(client as unknown as DaemonClient, "srv_projection_error");
+    client.fetchAgentsResponses.push(
+      makeFetchAgentsPayload({
+        entries: [
+          makeFetchAgentsEntry({
+            id: "agent-ready",
+            cwd: "/repo",
+            updatedAt: "2026-07-24T00:00:00.000Z",
+          }),
+        ],
+      }),
+    );
+    await service.refreshAgents();
+    client.fetchAgents = vi.fn(async () => {
+      throw new Error("bootstrap failed");
     });
 
-    await controller.start({ autoProbe: false });
-    controller.markAgentDirectorySyncReady();
-    controller.markAgentDirectorySyncError("bootstrap failed");
-
-    const snapshot = controller.getSnapshot();
-    expect(snapshot.agentDirectoryStatus).toBe("error_after_ready");
-    expect(snapshot.agentDirectoryError).toBe("bootstrap failed");
-    expect(snapshot.hasEverLoadedAgentDirectory).toBe(true);
+    await expect(service.refreshAgents()).rejects.toThrow("bootstrap failed");
+    const snapshot = store.getSnapshot("srv_projection_error");
+    expect(snapshot.hydration.agents).toBe("error");
+    expect(snapshot.agents.has("agent-ready")).toBe(true);
   });
 
   it("keeps online snapshots coupled to a live client reference", async () => {
@@ -1256,113 +1370,59 @@ describe("HostRuntimeStore", () => {
     }
   });
 
-  it("bootstraps agent directory subscription when host transitions online", async () => {
-    const host = makeHost({
-      connections: [
-        {
-          id: "direct:lan:6767",
-          type: "directTcp",
-          endpoint: "lan:6767",
-        },
-      ],
-    });
-    const fakeClient = new FakeDaemonClient();
-    fakeClient.setConnectionState({ status: "connected" });
-    const store = new HostRuntimeStore({
-      deps: {
-        createClient: () => fakeClient as unknown as DaemonClient,
-        connectToDaemon: async ({ host: hostProfile }) => ({
-          client: fakeClient as unknown as DaemonClient,
-          serverId: hostProfile.serverId,
-          hostname: hostProfile.label ?? null,
-        }),
-        getClientId: async () => "cid_test_runtime",
+  it("subscribes the Agent projection on the first refresh page", async () => {
+    const client = new FakeDaemonClient();
+    const store = new AuthorityProjectionStore();
+    const service = new DaemonProjectionService(store);
+    service.start(client as unknown as DaemonClient, "srv_projection_subscription");
+
+    await service.refreshAgents();
+
+    expect(client.fetchAgentsCalls).toEqual([
+      {
+        scope: "active",
+        sort: [{ key: "updated_at", direction: "desc" }],
+        subscribe: { subscriptionId: "app:srv_projection_subscription" },
+        page: { limit: 200 },
       },
-    });
-
-    useSessionStore
-      .getState()
-      .initializeSession(host.serverId, fakeClient as unknown as DaemonClient);
-    store.syncHosts([host]);
-
-    const timeoutAt = Date.now() + 200;
-    while (fakeClient.fetchAgentsCalls.length === 0 && Date.now() < timeoutAt) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    expect(fakeClient.fetchAgentsCalls).toHaveLength(1);
-    expect(fakeClient.fetchAgentsCalls[0]).toEqual({
-      scope: "active",
-      sort: [{ key: "updated_at", direction: "desc" }],
-      subscribe: { subscriptionId: "app:srv_test" },
-      page: { limit: 200 },
-    });
-
-    const snapshot = store.getSnapshot(host.serverId);
-    expect(snapshot?.agentDirectoryStatus).toBe("ready");
-    expect(snapshot?.hasEverLoadedAgentDirectory).toBe(true);
-
-    store.syncHosts([]);
-    useSessionStore.getState().clearSession(host.serverId);
+    ]);
   });
 
-  it("bootstraps agent directory immediately when connection goes online (no session required)", async () => {
-    const host = makeHost({
-      serverId: "srv_no_session",
-      connections: [
-        {
-          id: "direct:lan:6767",
-          type: "directTcp",
-          endpoint: "lan:6767",
-        },
-      ],
-    });
-    const fakeClient = new FakeDaemonClient();
-    fakeClient.setConnectionState({ status: "connected" });
-    const store = new HostRuntimeStore({
-      deps: {
-        createClient: () => fakeClient as unknown as DaemonClient,
-        connectToDaemon: async ({ host: hostProfile }) => ({
-          client: fakeClient as unknown as DaemonClient,
-          serverId: hostProfile.serverId,
-          hostname: hostProfile.label ?? null,
-        }),
-        getClientId: async () => "cid_test_runtime",
-      },
-    });
+  it("hydrates Agent projection without any prior App authority snapshot", async () => {
+    const client = new FakeDaemonClient();
+    client.fetchAgentsResponses.push(
+      makeFetchAgentsPayload({
+        entries: [
+          makeFetchAgentsEntry({
+            id: "agent-first",
+            cwd: "/repo",
+            updatedAt: "2026-07-24T00:00:00.000Z",
+          }),
+        ],
+      }),
+    );
+    const store = new AuthorityProjectionStore();
+    const service = new DaemonProjectionService(store);
+    service.start(client as unknown as DaemonClient, "srv_projection_empty");
 
-    store.syncHosts([host]);
+    await service.refreshAgents();
 
-    const timeoutAt = Date.now() + 200;
-    while (fakeClient.fetchAgentsCalls.length === 0 && Date.now() < timeoutAt) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    expect(fakeClient.fetchAgentsCalls).toHaveLength(1);
-    expect(fakeClient.fetchAgentsCalls[0]).toEqual({
-      scope: "active",
-      sort: [{ key: "updated_at", direction: "desc" }],
-      subscribe: { subscriptionId: "app:srv_no_session" },
-      page: { limit: 200 },
-    });
-
-    store.syncHosts([]);
+    expect(store.getSnapshot("srv_projection_empty").agents.has("agent-first")).toBe(true);
+    expect(store.getSnapshot("srv_projection_empty").hydration.agents).toBe("ready");
   });
 
-  it("bootstraps legacy daemons from unscoped agents and creates path-backed workspaces", async () => {
-    const host = makeHost({
-      serverId: "srv_legacy_workspace_daemon",
-      connections: [
-        {
-          id: "direct:lan:6767",
-          type: "directTcp",
-          endpoint: "lan:6767",
-        },
-      ],
+  it("hydrates legacy daemons into path-backed Agent and Workspace projections", async () => {
+    const serverId = "srv_legacy_workspace_daemon";
+    const client = new FakeDaemonClient();
+    client.setServerInfo({
+      status: "server_info",
+      serverId,
+      hostname: null,
+      version: "0.1.96",
+      capabilities: {},
+      features: {},
     });
-    const fakeClient = new FakeDaemonClient();
-    fakeClient.setConnectionState({ status: "connected" });
-    fakeClient.fetchAgentsResponses.push(
+    client.fetchAgentsResponses.push(
       makeFetchAgentsPayload({
         entries: [
           makeFetchAgentsEntry({
@@ -1372,74 +1432,30 @@ describe("HostRuntimeStore", () => {
             title: "Legacy daemon agent",
           }),
         ],
-        subscriptionId: "app:srv_legacy_workspace_daemon",
       }),
     );
-    const store = new HostRuntimeStore({
-      deps: {
-        createClient: () => fakeClient as unknown as DaemonClient,
-        connectToDaemon: async ({ host: hostProfile }) => ({
-          client: fakeClient as unknown as DaemonClient,
-          serverId: hostProfile.serverId,
-          hostname: hostProfile.label ?? null,
-        }),
-        getClientId: async () => "cid_test_runtime",
-      },
-    });
+    const store = new AuthorityProjectionStore();
+    const service = new DaemonProjectionService(store);
+    service.start(client as unknown as DaemonClient, serverId);
 
-    const sessionStore = useSessionStore.getState();
-    sessionStore.initializeSession(host.serverId, fakeClient as unknown as DaemonClient);
-    sessionStore.updateSessionServerInfo(host.serverId, {
-      serverId: host.serverId,
-      hostname: null,
-      version: "0.1.96",
-    });
-    store.syncHosts([host]);
+    await service.refreshAgents();
 
-    const timeoutAt = Date.now() + 300;
-    while (
-      (fakeClient.fetchAgentsCalls.length === 0 ||
-        !useSessionStore.getState().sessions[host.serverId]?.workspaces.has("/repo/legacy-app")) &&
-      Date.now() < timeoutAt
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    expect(fakeClient.fetchAgentsCalls).toEqual([
-      {
-        sort: [{ key: "updated_at", direction: "desc" }],
-        subscribe: { subscriptionId: "app:srv_legacy_workspace_daemon" },
-        page: { limit: 200 },
-      },
-    ]);
-    const session = useSessionStore.getState().sessions[host.serverId];
-    expect(session?.agents.get("agent-legacy")?.workspaceId).toBe("/repo/legacy-app");
-    expect(Array.from(session?.workspaces.values() ?? [])).toEqual([
+    const projection = store.getSnapshot(serverId);
+    expect(projection.agents.get("agent-legacy")?.workspaceId).toBe("/repo/legacy-app");
+    expect(Array.from(projection.workspaces.values())).toEqual([
       expect.objectContaining({
         id: "/repo/legacy-app",
         workspaceDirectory: "/repo/legacy-app",
         name: "legacy-app",
       }),
     ]);
-
-    store.syncHosts([]);
-    useSessionStore.getState().clearSession(host.serverId);
+    expect(projection.hydration.workspaces).toBe("ready");
   });
 
-  it("fetches all pages during bootstrap within the active agent scope", async () => {
-    const host = makeHost({
-      serverId: "srv_paged",
-      connections: [
-        {
-          id: "direct:lan:6767",
-          type: "directTcp",
-          endpoint: "lan:6767",
-        },
-      ],
-    });
-    const fakeClient = new FakeDaemonClient();
-    fakeClient.setConnectionState({ status: "connected" });
-    fakeClient.fetchAgentsResponses.push(
+  it("fetches every active Agent page before publishing the replacement projection", async () => {
+    const serverId = "srv_paged";
+    const client = new FakeDaemonClient();
+    client.fetchAgentsResponses.push(
       makeFetchAgentsPayload({
         entries: [
           makeFetchAgentsEntry({
@@ -1451,7 +1467,6 @@ describe("HostRuntimeStore", () => {
         ],
         hasMore: true,
         nextCursor: "cursor-page-2",
-        subscriptionId: "app:srv_paged",
       }),
       makeFetchAgentsPayload({
         entries: [
@@ -1467,109 +1482,43 @@ describe("HostRuntimeStore", () => {
         hasMore: false,
       }),
     );
-    const store = new HostRuntimeStore({
-      deps: {
-        createClient: () => fakeClient as unknown as DaemonClient,
-        connectToDaemon: async ({ host: hostProfile }) => ({
-          client: fakeClient as unknown as DaemonClient,
-          serverId: hostProfile.serverId,
-          hostname: hostProfile.label ?? null,
-        }),
-        getClientId: async () => "cid_test_runtime",
-      },
-    });
+    const store = new AuthorityProjectionStore();
+    const service = new DaemonProjectionService(store);
+    service.start(client as unknown as DaemonClient, serverId);
 
-    useSessionStore
-      .getState()
-      .initializeSession(host.serverId, fakeClient as unknown as DaemonClient);
-    store.syncHosts([host]);
+    await service.refreshAgents();
 
-    const timeoutAt = Date.now() + 300;
-    while (fakeClient.fetchAgentsCalls.length < 2 && Date.now() < timeoutAt) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    expect(fakeClient.fetchAgentsCalls).toHaveLength(2);
-    expect(fakeClient.fetchAgentsCalls[0]).toEqual({
+    expect(client.fetchAgentsCalls).toHaveLength(2);
+    expect(client.fetchAgentsCalls[0]).toEqual({
       scope: "active",
       sort: [{ key: "updated_at", direction: "desc" }],
       subscribe: { subscriptionId: "app:srv_paged" },
       page: { limit: 200 },
     });
-    expect(fakeClient.fetchAgentsCalls[1]).toEqual({
+    expect(client.fetchAgentsCalls[1]).toEqual({
       scope: "active",
       sort: [{ key: "updated_at", direction: "desc" }],
       page: { limit: 200, cursor: "cursor-page-2" },
     });
 
-    let staleAgent =
-      useSessionStore.getState().sessions[host.serverId]?.agents?.get("agent-stale-attention") ??
-      null;
-    const staleTimeoutAt = Date.now() + 300;
-    while (!staleAgent && Date.now() < staleTimeoutAt) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      staleAgent =
-        useSessionStore.getState().sessions[host.serverId]?.agents?.get("agent-stale-attention") ??
-        null;
-    }
+    const staleAgent = store.getSnapshot(serverId).agents.get("agent-stale-attention");
     expect(staleAgent?.requiresAttention).toBe(true);
     expect(staleAgent?.attentionReason).toBe("error");
-
-    const snapshot = store.getSnapshot(host.serverId);
-    expect(snapshot?.agentDirectoryStatus).toBe("ready");
-    expect(snapshot?.hasEverLoadedAgentDirectory).toBe(true);
-
-    store.syncHosts([]);
-    useSessionStore.getState().clearSession(host.serverId);
+    expect(store.getSnapshot(serverId).hydration.agents).toBe("ready");
   });
 
-  it("re-subscribes agent directory updates after reconnect", async () => {
-    const host = makeHost({
-      serverId: "srv_resubscribe",
-      connections: [
-        {
-          id: "direct:lan:6767",
-          type: "directTcp",
-          endpoint: "lan:6767",
-        },
-      ],
-    });
-    const fakeClient = new FakeDaemonClient();
-    fakeClient.setConnectionState({ status: "connected" });
-    const store = new HostRuntimeStore({
-      deps: {
-        createClient: () => fakeClient as unknown as DaemonClient,
-        connectToDaemon: async ({ host: hostProfile }) => ({
-          client: fakeClient as unknown as DaemonClient,
-          serverId: hostProfile.serverId,
-          hostname: hostProfile.label ?? null,
-        }),
-        getClientId: async () => "cid_test_runtime",
-      },
-    });
+  it("re-subscribes Agent projection after the service reconnects", async () => {
+    const serverId = "srv_resubscribe";
+    const client = new FakeDaemonClient();
+    const store = new AuthorityProjectionStore();
+    const service = new DaemonProjectionService(store);
+    service.start(client as unknown as DaemonClient, serverId);
+    await service.refreshAgents();
+    service.stop();
+    service.start(client as unknown as DaemonClient, serverId);
+    await service.refreshAgents();
 
-    useSessionStore
-      .getState()
-      .initializeSession(host.serverId, fakeClient as unknown as DaemonClient);
-    store.syncHosts([host]);
-
-    const initialTimeoutAt = Date.now() + 200;
-    while (fakeClient.fetchAgentsCalls.length < 1 && Date.now() < initialTimeoutAt) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    fakeClient.setConnectionState({
-      status: "disconnected",
-      reason: "client_closed",
-    });
-    fakeClient.setConnectionState({ status: "connected" });
-
-    const reconnectTimeoutAt = Date.now() + 200;
-    while (fakeClient.fetchAgentsCalls.length < 2 && Date.now() < reconnectTimeoutAt) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    expect(fakeClient.fetchAgentsCalls).toEqual([
+    expect(client.fetchAgentsCalls).toEqual([
       {
         scope: "active",
         sort: [{ key: "updated_at", direction: "desc" }],
@@ -1583,83 +1532,32 @@ describe("HostRuntimeStore", () => {
         page: { limit: 200 },
       },
     ]);
-
-    store.syncHosts([]);
-    useSessionStore.getState().clearSession(host.serverId);
   });
 
-  it("replaces stale active session state when active bootstrap omits an agent", async () => {
-    const host = makeHost({
-      serverId: "srv_archived_rehydrate",
-      connections: [
-        {
-          id: "direct:lan:6767",
-          type: "directTcp",
-          endpoint: "lan:6767",
-        },
-      ],
-    });
-    const fakeClient = new FakeDaemonClient();
-    fakeClient.setConnectionState({ status: "connected" });
-    fakeClient.fetchAgentsResponses.push(
+  it("replaces stale active Agent projection when refresh omits the Agent", async () => {
+    const serverId = "srv_archived_rehydrate";
+    const client = new FakeDaemonClient();
+    const store = new AuthorityProjectionStore();
+    const service = new DaemonProjectionService(store);
+    service.start(client as unknown as DaemonClient, serverId);
+    client.fetchAgentsResponses.push(
       makeFetchAgentsPayload({
-        entries: [],
-        subscriptionId: "app:srv_archived_rehydrate",
+        entries: [
+          makeFetchAgentsEntry({
+            id: "agent-archived",
+            cwd: "/Users/moboudra/dev/thoth",
+            updatedAt: "2026-03-30T15:29:00.000Z",
+            title: "Stale active copy",
+          }),
+        ],
       }),
-    );
-    const store = new HostRuntimeStore({
-      deps: {
-        createClient: () => fakeClient as unknown as DaemonClient,
-        connectToDaemon: async ({ host: hostProfile }) => ({
-          client: fakeClient as unknown as DaemonClient,
-          serverId: hostProfile.serverId,
-          hostname: hostProfile.label ?? null,
-        }),
-        getClientId: async () => "cid_test_runtime",
-      },
-    });
-
-    useSessionStore
-      .getState()
-      .initializeSession(host.serverId, fakeClient as unknown as DaemonClient);
-    useSessionStore.getState().setAgents(host.serverId, () => {
-      const stale = makeFetchAgentsEntry({
-        id: "agent-archived",
-        cwd: "/Users/moboudra/dev/thoth",
-        updatedAt: "2026-03-30T15:29:00.000Z",
-        archivedAt: null,
-        title: "Stale active copy",
-      }).agent;
-      const staleAgent: Agent = {
-        ...stale,
-        serverId: host.serverId,
-        createdAt: new Date(stale.createdAt),
-        updatedAt: new Date(stale.updatedAt),
-        lastUserMessageAt: null,
-        lastActivityAt: new Date(stale.updatedAt),
-        archivedAt: stale.archivedAt ? new Date(stale.archivedAt) : null,
-        attentionTimestamp: stale.attentionTimestamp ? new Date(stale.attentionTimestamp) : null,
-        parentAgentId: null,
-      };
-      return new Map([[stale.id, staleAgent]]);
-    });
-
-    store.syncHosts([host]);
-
-    const timeoutAt = Date.now() + 300;
-    while (
-      useSessionStore.getState().sessions[host.serverId]?.agents.has("agent-archived") &&
-      Date.now() < timeoutAt
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    expect(useSessionStore.getState().sessions[host.serverId]?.agents.has("agent-archived")).toBe(
-      false,
+      makeFetchAgentsPayload({ entries: [] }),
     );
 
-    store.syncHosts([]);
-    useSessionStore.getState().clearSession(host.serverId);
+    await service.refreshAgents();
+    expect(store.getSnapshot(serverId).agents.has("agent-archived")).toBe(true);
+    await service.refreshAgents();
+    expect(store.getSnapshot(serverId).agents.has("agent-archived")).toBe(false);
   });
 
   it("records unavailable startup probes when no connection can be established", async () => {
@@ -1936,6 +1834,7 @@ describe("HostRuntimeStore", () => {
         relay: {
           endpoint: "relay.example.com:443",
           useTls: true,
+          protocolVersion: 3,
         },
       }),
       "tls relay",

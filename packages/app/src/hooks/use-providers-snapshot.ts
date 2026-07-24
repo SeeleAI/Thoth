@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { AgentProvider, ProviderSnapshotEntry } from "@thoth/protocol/agent-types";
 import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
-import { useSessionStore } from "@/stores/session-store";
+import { useHostFeature } from "@/runtime/host-features";
 import { queryClient as singletonQueryClient } from "@/query/query-client";
 import { agentCommandsQueryRoot } from "@/hooks/agent-commands-query";
 import {
@@ -128,9 +128,7 @@ export function useProvidersSnapshot(
   const isConnected = useHostRuntimeIsConnected(serverId ?? "");
   const enabled = options.enabled ?? true;
   const cwd = normalizeProvidersSnapshotCwd(options.cwd);
-  const supportsSnapshot = useSessionStore(
-    (state) => state.sessions[serverId ?? ""]?.serverInfo?.features?.providersSnapshot === true,
-  );
+  const supportsSnapshot = useHostFeature(serverId, "providersSnapshot");
 
   const queryKey = useMemo(() => providersSnapshotQueryKey(serverId, cwd), [cwd, serverId]);
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 import type { WorkspaceStructureProject } from "@/projects/workspace-structure";
 import {
   buildHostProjectList,

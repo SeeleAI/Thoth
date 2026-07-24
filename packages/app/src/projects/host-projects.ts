@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useWorkspaceStructure } from "@/stores/session-store-hooks";
+import { useWorkspaceStructure } from "@/projection/hooks";
 import { buildHostProjectList, type HostProjectListItem } from "@/projects/host-project-model";
 
 export {

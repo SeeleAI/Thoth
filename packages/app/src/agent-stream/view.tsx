@@ -40,7 +40,8 @@ import {
   type InlinePathTarget,
 } from "@/components/message";
 import { PlanCard } from "@/components/plan-card";
-import { generateMessageId, type StreamItem } from "@/types/stream";
+import { generateMessageId } from "@/utils/message-id";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import type { PendingPermission } from "@/types/shared";
 import type {
   AgentCapabilityFlags,
@@ -48,7 +49,8 @@ import type {
   AgentPermissionResponse,
 } from "@thoth/protocol/agent-types";
 import type { AgentScreenAgent } from "@/hooks/use-agent-screen-state-machine";
-import { useSessionStore } from "@/stores/session-store";
+import { useAuthorityProjection, useProjectionRuntime } from "@/projection/projection-context";
+import { useHostFeature } from "@/runtime/host-features";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
 import { useLoadOlderAgentHistory } from "@/hooks/use-load-older-agent-history";
 import type { ToastApi } from "@/components/toast-host";
@@ -100,7 +102,7 @@ import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/stores/workspace-tabs-store";
 import { toErrorMessage } from "@/utils/error-messages";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
-import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
+import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import {
   resolveForegroundAgentStatus,
   shouldShowForegroundTurnSpinner,
@@ -205,7 +207,7 @@ function renderListEmptyComponent(input: {
 }
 
 function renderHistoryStreamItem(input: {
-  item: StreamItem;
+  item: TimelineViewModel;
   layoutItemById: Map<string, StreamLayoutItem>;
   renderStreamItem: (layoutItem: StreamLayoutItem) => ReactNode;
 }): ReactNode {
@@ -217,7 +219,7 @@ function renderHistoryStreamItem(input: {
 }
 
 function renderLiveHeadStreamItem(input: {
-  item: StreamItem;
+  item: TimelineViewModel;
   layoutItemById: Map<string, StreamLayoutItem>;
   renderStreamItem: (layoutItem: StreamLayoutItem) => ReactNode;
 }): ReactNode {
@@ -237,7 +239,7 @@ export interface AgentStreamViewProps {
   agentId: string;
   serverId?: string;
   agent: AgentScreenAgent;
-  streamItems: StreamItem[];
+  streamItems: TimelineViewModel[];
   pendingPermissions: Map<string, PendingPermission>;
   routeBottomAnchorRequest?: BottomAnchorRouteRequest | null;
   isAuthoritativeHistoryReady?: boolean;
@@ -259,7 +261,7 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
   "supportsRewindBoth",
 ];
 
-const EMPTY_STREAM_HEAD: StreamItem[] = [];
+const EMPTY_STREAM_HEAD: TimelineViewModel[] = [];
 
 function buildChatHistoryAttachment(input: {
   draftId: string;
@@ -350,45 +352,24 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     // Get serverId (fallback to agent's serverId if not provided)
     const resolvedServerId = serverId ?? agent.serverId ?? "";
 
-    const client = useSessionStore((state) => state.sessions[resolvedServerId]?.client ?? null);
-    const agentThothState = useSessionStore(
-      (state) => state.sessions[resolvedServerId]?.agentThothStates.get(agentId) ?? null,
+    const client = useHostRuntimeClient(resolvedServerId);
+    const projectionRuntime = useProjectionRuntime();
+    const agentThothState = useAuthorityProjection(
+      resolvedServerId,
+      (projection) => projection.agentThothStates.get(agentId) ?? null,
     );
-    const setAgentThothStates = useSessionStore((state) => state.setAgentThothStates);
     const isHostConnected = useHostRuntimeIsConnected(resolvedServerId);
-    const streamHead = useSessionStore((state) =>
-      state.sessions[resolvedServerId]?.agentStreamHead?.get(agentId),
-    );
-    const supportsAgentForkContext = useSessionStore(
-      (state) => state.sessions[resolvedServerId]?.serverInfo?.features?.agentForkContext === true,
-    );
+    const supportsAgentForkContext = useHostFeature(resolvedServerId, "agentForkContext");
 
     useEffect(() => {
       if (!client || !isHostConnected || !agentId) {
         return;
       }
-      let canceled = false;
-      void client
-        .getAgentThothState(agentId)
-        .then((payload) => {
-          if (canceled || payload.error) {
-            return;
-          }
-          setAgentThothStates(resolvedServerId, (previous) => {
-            const current = previous.get(agentId);
-            if (current && current.revision >= payload.state.revision) {
-              return previous;
-            }
-            const next = new Map(previous);
-            next.set(agentId, payload.state);
-            return next;
-          });
-        })
+      void projectionRuntime
+        .service(resolvedServerId)
+        ?.refreshAgentThothState(agentId)
         .catch(() => undefined);
-      return () => {
-        canceled = true;
-      };
-    }, [agentId, client, isHostConnected, resolvedServerId, setAgentThothStates]);
+    }, [agentId, client, isHostConnected, projectionRuntime, resolvedServerId]);
 
     const workspaceRoot = agent.cwd?.trim() || "";
     const { requestDirectoryListing } = useFileExplorerActions({
@@ -586,24 +567,22 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     // the component reads the current (fresh) streamItems/streamHead from props.
     const isActive = useContext(MountedTabActiveContext);
     const frozenStreamItemsRef = useRef(streamItems);
-    const frozenStreamHeadRef = useRef(streamHead);
     if (isActive) {
       frozenStreamItemsRef.current = streamItems;
-      frozenStreamHeadRef.current = streamHead;
     }
     const effectiveStreamItems = isActive ? streamItems : frozenStreamItemsRef.current;
-    const effectiveStreamHead = isActive ? streamHead : frozenStreamHeadRef.current;
-    const effectiveAgentStatus = resolveForegroundAgentStatus(agent.status, agentThothState);
+    const effectiveAgentStatus =
+      resolveForegroundAgentStatus(agent.status, agentThothState) ?? "idle";
 
     const baseRenderModel = useMemo(() => {
       return buildAgentStreamRenderModel({
         agentStatus: effectiveAgentStatus,
         tail: effectiveStreamItems,
-        head: effectiveStreamHead ?? EMPTY_STREAM_HEAD,
+        head: EMPTY_STREAM_HEAD,
         platform: isWeb ? "web" : "native",
         isMobileBreakpoint: isMobile,
       });
-    }, [effectiveAgentStatus, isMobile, effectiveStreamHead, effectiveStreamItems]);
+    }, [effectiveAgentStatus, isMobile, effectiveStreamItems]);
     const streamLayout = useMemo(
       () =>
         layoutStream({
@@ -657,7 +636,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const renderUserMessageItem = useCallback(
-      (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "user_message" }>) => {
+      (
+        layoutItem: StreamLayoutItem,
+        item: Extract<TimelineViewModel, { kind: "user_message" }>,
+      ) => {
         return (
           <UserMessage
             serverId={resolvedServerId}
@@ -678,7 +660,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const renderAssistantMessageItem = useCallback(
-      (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "assistant_message" }>) => {
+      (
+        layoutItem: StreamLayoutItem,
+        item: Extract<TimelineViewModel, { kind: "assistant_message" }>,
+      ) => {
         return (
           <AssistantFileLinkResolverProvider
             client={client}
@@ -702,7 +687,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const renderThoughtItem = useCallback(
-      (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "thought" }>) => {
+      (layoutItem: StreamLayoutItem, item: Extract<TimelineViewModel, { kind: "thought" }>) => {
         return (
           <ToolCallSlot
             itemId={item.id}
@@ -718,7 +703,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const renderToolCallItem = useCallback(
-      (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "tool_call" }>) => {
+      (layoutItem: StreamLayoutItem, item: Extract<TimelineViewModel, { kind: "tool_call" }>) => {
         const { payload } = item;
 
         if (payload.source === "agent") {
@@ -928,7 +913,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     }, [streamLayout.liveHead]);
 
     const renderHistoryRow = useCallback(
-      (item: StreamItem) =>
+      (item: TimelineViewModel) =>
         renderHistoryStreamItem({
           item,
           layoutItemById: layoutHistoryItemById,
@@ -949,7 +934,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     // so the live-head render always uses the latest layout without causing renderers
     // to be a new object on every text-chunk flush.
     const renderLiveHeadRow: StreamSegmentRenderers["renderLiveHeadRow"] = useStableEvent(
-      (item: StreamItem) =>
+      (item: TimelineViewModel) =>
         renderLiveHeadStreamItem({
           item,
           layoutItemById: layoutLiveHeadItemById,

@@ -65,20 +65,8 @@ vi.mock("@/constants/platform", () => ({
 }));
 
 vi.mock("@/runtime/host-runtime", () => ({
+  useHostRuntimeClient: () => ({ startWorkspaceScript: startWorkspaceScriptMock }),
   useHostRuntimeSnapshot: () => ({ activeConnection: null }),
-}));
-
-vi.mock("@/stores/session-store", () => ({
-  useSessionStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      sessions: {
-        "test-server": {
-          client: {
-            startWorkspaceScript: startWorkspaceScriptMock,
-          },
-        },
-      },
-    }),
 }));
 
 vi.mock("@/contexts/toast-context", () => ({

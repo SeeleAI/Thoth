@@ -5,7 +5,7 @@ import invariant from "tiny-invariant";
 import { useTranslation } from "react-i18next";
 import { usePaneContext } from "@/panels/pane-context";
 import type { PanelRegistration } from "@/panels/panel-registry";
-import { useWorkspaceDirectory } from "@/stores/session-store-hooks";
+import { useWorkspaceDirectory } from "@/projection/hooks";
 
 const CENTERED_PADDED_STYLE = {
   flex: 1,

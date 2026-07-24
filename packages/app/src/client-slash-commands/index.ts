@@ -1,4 +1,4 @@
-import type { Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
 import type { WorkspaceDraftTabSetup } from "@/stores/workspace-tabs-store";
 
 export type ClientSlashCommandKind = "archive-agent" | "replace-agent-with-draft";

@@ -43,7 +43,7 @@ import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { getDefaultMarkdownClipboardEnvironment } from "@/utils/rich-clipboard-default-environment";
 import { writeMarkdownToRichClipboard } from "@/utils/rich-clipboard";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
-import { useSessionStore } from "@/stores/session-store";
+import { useHostFeature } from "@/runtime/host-features";
 import { useWorkspaceAttachmentsStore } from "@/attachments/workspace-attachments-store";
 import { useToast } from "@/contexts/toast-context";
 import { useCheckoutGitActionsStore } from "@/git/actions-store";
@@ -203,9 +203,7 @@ export function PullRequestPane({
   const { t } = useTranslation();
   const toast = useToast();
   const daemonClient = useHostRuntimeClient(serverId);
-  const canFetchGitHubCheckDetails = useSessionStore(
-    (state) => state.sessions[serverId]?.serverInfo?.features?.githubCheckDetails === true,
-  );
+  const canFetchGitHubCheckDetails = useHostFeature(serverId, "githubCheckDetails");
   const addWorkspaceAttachment = useWorkspaceAttachmentsStore(
     (state) => state.addWorkspaceAttachment,
   );
@@ -218,9 +216,7 @@ export function PullRequestPane({
     void openExternalUrl(data.url);
   }, [data.url]);
 
-  const refreshSupported = useSessionStore(
-    (state) => state.sessions[serverId]?.serverInfo?.features?.checkoutRefresh === true,
-  );
+  const refreshSupported = useHostFeature(serverId, "checkoutRefresh");
   const runRefresh = useCheckoutGitActionsStore((state) => state.refresh);
   const isRefreshing =
     useCheckoutGitActionsStore((state) =>

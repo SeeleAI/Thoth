@@ -1,7 +1,8 @@
 import { useCallback } from "react";
 import { useToast } from "@/contexts/toast-context";
 import { i18n } from "@/i18n/i18next";
-import { useSessionStore } from "@/stores/session-store";
+import { appProjectionRuntime } from "@/projection/projection-context";
+import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
@@ -28,10 +29,10 @@ export function useDetachSubagent(input: UseDetachSubagentInput): (subagentId: s
         { serverId, subagentId },
         {
           getSubagent: (id): ResolveDetachSubagentDialogInput | undefined =>
-            useSessionStore.getState().sessions[serverId]?.agents?.get(id),
+            appProjectionRuntime.store.getSnapshot(serverId).agents.get(id),
           confirm: confirmDialog,
           detachAgent: async ({ serverId: targetServerId, agentId }) => {
-            const client = useSessionStore.getState().sessions[targetServerId]?.client;
+            const client = getHostRuntimeStore().getClient(targetServerId);
             if (!client) {
               throw new Error(i18n.t("workspaceSetup.errors.hostDisconnected"));
             }

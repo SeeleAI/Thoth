@@ -4,7 +4,7 @@ import {
   selectStatusModeSessions,
   type StatusModeSession,
 } from "./use-status-mode-workspaces";
-import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
+import type { Agent, WorkspaceDescriptor } from "@/projection/authority-model";
 
 function workspaceMap(): Map<string, WorkspaceDescriptor> {
   return new Map();

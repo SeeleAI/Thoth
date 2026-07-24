@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,11 +16,9 @@ function forbidText(pathname, pattern, message) {
   if (pattern.test(source(pathname))) throw new Error(message);
 }
 
-forbidText(
-  "packages/app/src/stores/session-store.ts",
-  /queuedMessages|setQueuedMessages/,
-  "App session store must not own a second foreground message queue.",
-);
+if (existsSync(resolve(root, "packages/app/src/stores/session-store.ts"))) {
+  throw new Error("Removed App Session Store must not be restored as a second message queue.");
+}
 forbidText(
   "packages/app/src/composer/actions.ts",
   /QueueWriter|queueComposerMessage|sendQueuedComposerMessageNow|appendOptimisticUserMessageToStream/,

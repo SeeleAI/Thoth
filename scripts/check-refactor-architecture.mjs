@@ -187,8 +187,111 @@ if (stage.stage >= 3) {
 }
 
 if (stage.stage >= 4) {
-  requirePath("packages/app/src/stores/authority-projection-store.ts");
-  forbidPath("packages/app/src/stores/session-store.ts");
+  for (const path of [
+    "packages/app/src/projection/authority-projection.ts",
+    "packages/app/src/projection/projection-context.tsx",
+    "packages/app/src/projection/daemon-projection-host.tsx",
+    "packages/app/src/projection/timeline-view-model.ts",
+    "packages/app/src/query/agent-archive-state.ts",
+    "packages/app/src/query/workspace-archive-state.ts",
+    "packages/app/src/query/workspace-restore-state.ts",
+    "packages/app/src/stores/ui-preferences-store.ts",
+  ]) {
+    requirePath(path);
+  }
+  for (const path of [
+    "packages/app/src/stores/session-store.ts",
+    "packages/app/src/stores/session-store-hooks",
+    "packages/app/src/contexts/session-context.tsx",
+    "packages/app/src/contexts/session-workspace-upserts.ts",
+    "packages/app/src/timeline/session-stream-reducers.ts",
+    "packages/app/src/types/stream.ts",
+  ]) {
+    forbidPath(path);
+  }
+  forbidText(
+    "packages/app/src",
+    /\b(useSessionStore|SessionState|StreamItem)\b/,
+    "legacy App Session or Timeline model",
+  );
+  forbidProductionText(
+    "packages/app/src",
+    /\b(setAgents|setWorkspaces|setPendingPermissions|setAgentDetails|mergeWorkspaces)\b/,
+    "direct App authority setter",
+  );
+  forbidText(
+    "packages/app/src/runtime/host-runtime.ts",
+    /\b(agentDirectoryStatus|agentDirectoryError|hasEverLoadedAgentDirectory|refreshAgentDirectory)\b/,
+    "Agent authority duplicated in HostRuntime",
+  );
+  for (const field of [
+    "agents",
+    "workspaces",
+    "emptyProjects",
+    "agentThothStates",
+    "timelines",
+    "hydration",
+  ]) {
+    requireText(
+      "packages/app/src/projection/authority-projection.ts",
+      new RegExp(`\\b${field}:`),
+      `AuthorityProjection.${field}`,
+    );
+  }
+  requireText(
+    "packages/app/src/projection/authority-projection.ts",
+    /export class DaemonProjectionService/,
+    "single DaemonProjectionService writer",
+  );
+  requireText(
+    "packages/app/src/projection/timeline-view-model.ts",
+    /satisfies TimelineViewRegistry/,
+    "exhaustive AgentTimeline View Registry",
+  );
+  for (const type of [
+    "user_message",
+    "assistant_message",
+    "reasoning",
+    "clarify_card",
+    "task_card",
+    "goal_card",
+    "registered_task",
+    "tool_call",
+    "todo",
+    "error",
+    "compaction",
+  ]) {
+    requireText(
+      "packages/app/src/projection/timeline-view-model.ts",
+      new RegExp(`\\b${type}:`),
+      `${type} Timeline View strategy`,
+    );
+  }
+  requireText(
+    "packages/app/src/utils/tool-call-icon-name.ts",
+    /Record<ToolCallDetail\["type"\], ToolCallIcon>/,
+    "exhaustive Tool detail registry",
+  );
+  for (const type of [
+    "shell",
+    "read",
+    "edit",
+    "write",
+    "search",
+    "fetch",
+    "worktree_setup",
+    "sub_agent",
+    "plain_text",
+    "plan",
+    "unknown",
+  ]) {
+    requireText(
+      "packages/app/src/utils/tool-call-icon-name.ts",
+      new RegExp(`\\b${type}:`),
+      `${type} Tool detail strategy`,
+    );
+  }
+  requireAppProjectionWriteOwnership();
 }
 
 if (stage.stage >= 5) requirePath("packages/app/src/agent-stream/timeline-view-registry.tsx");
@@ -300,6 +403,40 @@ function requireOnlyToolGatewayConstruction() {
   if (paths.length !== 1 || paths[0] !== expected) {
     failures.push(
       `ToolGateway must have one production construction site at ${expected}; found ${paths.join(", ") || "none"}`,
+    );
+  }
+}
+
+function requireAppProjectionWriteOwnership() {
+  let output = "";
+  try {
+    output = execFileSync(
+      "rg",
+      [
+        "-l",
+        "--glob",
+        "*.ts",
+        "--glob",
+        "*.tsx",
+        "--glob",
+        "!*.test.ts",
+        "--glob",
+        "!*.test.tsx",
+        "--glob",
+        "!**/test-utils/**",
+        "\\b(applyProjectionDelta|replaceSnapshot|resetEpoch)\\b",
+        "packages/app/src",
+      ],
+      { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+  } catch (error) {
+    if (error.status !== 1) throw error;
+  }
+  const paths = output ? output.split("\n") : [];
+  const expected = "packages/app/src/projection/authority-projection.ts";
+  if (paths.length !== 1 || paths[0] !== expected) {
+    failures.push(
+      `App authority writes must exist only in ${expected}; found ${paths.join(", ") || "none"}`,
     );
   }
 }

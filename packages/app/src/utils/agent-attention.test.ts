@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
 import { pickAttentionAgent, shouldClearAgentAttention } from "@/utils/agent-attention";
 
 function createAgent(input: Partial<Agent> & Pick<Agent, "id">): Agent {

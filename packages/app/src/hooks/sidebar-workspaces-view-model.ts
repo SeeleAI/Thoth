@@ -2,7 +2,7 @@ import type { PrHint } from "@/git/pr-hint";
 import { selectPrHintFromStatus } from "@/git/pr-hint";
 import { type HostProjectListItem } from "@/projects/host-project-model";
 import type { PendingCreateAttempt } from "@/stores/create-flow-store";
-import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
+import type { Agent, WorkspaceDescriptor } from "@/projection/authority-model";
 import type {
   WorkspaceStructureHostPlacement,
   WorkspaceStructureProject,
@@ -65,8 +65,8 @@ export interface SidebarWorkspacePlacementModel {
 
 export interface SidebarStatusWorkspaceSession {
   serverId: string;
-  workspaces: Map<string, WorkspaceDescriptor>;
-  agents?: Map<string, Agent>;
+  workspaces: ReadonlyMap<string, WorkspaceDescriptor>;
+  agents?: ReadonlyMap<string, Agent>;
 }
 
 interface EffectiveWorkspaceStatus {
@@ -96,7 +96,7 @@ export function createSidebarWorkspaceEntry(input: {
   serverId: string;
   workspace: WorkspaceDescriptor;
   pendingCreateAttempts?: Record<string, PendingCreateAttempt>;
-  agents?: Map<string, Agent>;
+  agents?: ReadonlyMap<string, Agent>;
 }): SidebarWorkspaceEntry {
   const projectKey = input.workspace.project?.projectKey ?? input.workspace.projectId;
   const effectiveStatus = deriveEffectiveWorkspaceStatus(input);
@@ -129,7 +129,7 @@ function deriveEffectiveWorkspaceStatus(input: {
   serverId: string;
   workspace: WorkspaceDescriptor;
   pendingCreateAttempts?: Record<string, PendingCreateAttempt>;
-  agents?: Map<string, Agent>;
+  agents?: ReadonlyMap<string, Agent>;
 }): EffectiveWorkspaceStatus {
   if (input.workspace.status !== "done") {
     return { status: input.workspace.status, enteredAt: input.workspace.statusEnteredAt };
@@ -175,7 +175,7 @@ function getPendingInitialAgentCreateStartedAt(input: {
 
 function getRootAgentWorkspaceActivity(input: {
   workspace: WorkspaceDescriptor;
-  agents?: Map<string, Agent>;
+  agents?: ReadonlyMap<string, Agent>;
 }): WorkspaceAgentActivity | null {
   let latest: WorkspaceAgentActivity | null = null;
   for (const agent of input.agents?.values() ?? []) {

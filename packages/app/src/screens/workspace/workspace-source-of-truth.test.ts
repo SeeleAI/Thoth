@@ -10,7 +10,7 @@ import {
   shouldRenderMissingWorkspaceDescriptor,
 } from "./workspace-header-source";
 import { createSidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 
 function createWorkspaceDescriptor(input: Partial<WorkspaceDescriptor> = {}): WorkspaceDescriptor {
   return {

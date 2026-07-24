@@ -22,8 +22,8 @@ import { buildThothTurnSnapshot } from "@/composer/agent-controls/thoth-mode";
 import { buildDraftStoreKey } from "@/stores/draft-keys";
 import { usePanelStore } from "@/stores/panel-store";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
-import type { Agent } from "@/stores/session-store";
-import { useWorkspaceFields } from "@/stores/session-store-hooks";
+import type { Agent } from "@/projection/authority-model";
+import { useWorkspaceFields } from "@/projection/hooks";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import { encodeImages } from "@/utils/encode-images";
 import type { WorkspaceFileOpenRequest } from "@/workspace/file-open";
@@ -42,7 +42,7 @@ import {
   useWorkspaceAttachmentScopeKey,
   useWorkspaceAttachmentsStore,
 } from "@/attachments/workspace-attachments-store";
-import type { UserMessageImageAttachment } from "@/types/stream";
+import type { UserMessageImageAttachment } from "@/projection/timeline-view-model";
 import {
   COMPACT_FORM_FACTOR_WIDTH,
   MAX_CONTENT_WIDTH,

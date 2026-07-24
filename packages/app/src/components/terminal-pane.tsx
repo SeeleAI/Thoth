@@ -27,7 +27,8 @@ import {
 } from "@/terminal/runtime/terminal-stream-controller";
 import { resolveTerminalRestoreOptions } from "@/terminal/runtime/terminal-restore-options";
 import { usePanelStore } from "@/stores/panel-store";
-import { useSessionStore } from "@/stores/session-store";
+import { useHostFeature } from "@/runtime/host-features";
+import { useUiPreferencesStore } from "@/stores/ui-preferences-store";
 import { toXtermTheme } from "@/utils/to-xterm-theme";
 import TerminalEmulator, { type TerminalEmulatorHandle } from "./terminal-emulator";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -190,10 +191,8 @@ export function TerminalPane({
 
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
-  const supportsTerminalRestoreModes = useSessionStore(
-    (state) => state.sessions[serverId]?.serverInfo?.features?.["terminal-restore-modes"] === true,
-  );
-  const setFocusedTerminalId = useSessionStore((state) => state.setFocusedTerminalId);
+  const supportsTerminalRestoreModes = useHostFeature(serverId, "terminal-restore-modes");
+  const setFocusedTerminalId = useUiPreferencesStore((state) => state.focusTerminal);
 
   const scopeKey = useMemo(() => terminalScopeKey({ serverId, cwd }), [serverId, cwd]);
   const terminalStreamKey = useMemo(() => `${scopeKey}:${terminalId}`, [scopeKey, terminalId]);

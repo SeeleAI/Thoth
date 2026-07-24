@@ -1,4 +1,4 @@
-import type { ExplorerEntry } from "@/stores/session-store";
+import type { ExplorerEntry } from "@/query/file-explorer-model";
 
 export function isHiddenExplorerPath(path: string): boolean {
   return path

@@ -1,4 +1,5 @@
 import type { GitHubSearchItem, ThothTurnSnapshot } from "@thoth/protocol/messages";
+import type { QueryClient } from "@tanstack/react-query";
 import type { ProviderRunMode } from "@thoth/protocol/provider-control";
 import type { AgentMessageDeliveryMode } from "@thoth/protocol/agent-turn-queue";
 import type {
@@ -11,8 +12,12 @@ import {
   userAttachmentsOnly,
 } from "@/attachments/workspace-attachment-utils";
 import { splitComposerAttachmentsForSubmit } from "@/composer/attachments/submit";
-import { generateMessageId } from "@/types/stream";
+import { generateMessageId } from "@/utils/message-id";
 import type { PickedImageAttachmentInput } from "@/hooks/image-attachment-picker";
+import {
+  addPendingAgentMessage,
+  removePendingAgentMessage,
+} from "@/projection/pending-agent-messages";
 
 export interface AttachmentPersister {
   persistFromBlob: (input: {
@@ -132,6 +137,8 @@ export function cancelComposerAgent(input: CancelComposerAgentInput): boolean {
 
 export interface DispatchComposerAgentMessageInput {
   client: ComposerSendClient;
+  queryClient: QueryClient;
+  serverId: string;
   agentId: string;
   text: string;
   attachments: ComposerAttachment[];
@@ -149,15 +156,27 @@ export async function dispatchComposerAgentMessage(
   const wirePayload = splitComposerAttachmentsForSubmit(input.attachments);
   const messageId = generateMessageId();
   const imagesData = await input.encodeImages(wirePayload.images);
-  await input.client.sendAgentMessage(input.agentId, input.text, {
+  addPendingAgentMessage(input.queryClient, input.serverId, input.agentId, {
     messageId,
-    images: imagesData ?? [],
+    text: input.text,
+    timestamp: new Date(),
+    images: wirePayload.images,
     attachments: wirePayload.attachments,
-    contextRefs: wirePayload.contextRefs,
-    ...(input.thoth ? { thoth: input.thoth } : {}),
-    ...(input.providerRunMode ? { providerRunMode: input.providerRunMode } : {}),
-    deliveryMode: input.deliveryMode ?? "queue",
   });
+  try {
+    await input.client.sendAgentMessage(input.agentId, input.text, {
+      messageId,
+      images: imagesData ?? [],
+      attachments: wirePayload.attachments,
+      contextRefs: wirePayload.contextRefs,
+      ...(input.thoth ? { thoth: input.thoth } : {}),
+      ...(input.providerRunMode ? { providerRunMode: input.providerRunMode } : {}),
+      deliveryMode: input.deliveryMode ?? "queue",
+    });
+  } catch (error) {
+    removePendingAgentMessage(input.queryClient, input.serverId, input.agentId, messageId);
+    throw error;
+  }
 }
 
 export interface OpenComposerAttachmentInput {

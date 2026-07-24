@@ -12,10 +12,9 @@ import { useAgentInputDraft } from "@/composer/draft/input-draft";
 import { useProjectIconQuery } from "@/hooks/use-project-icon-query";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
-import { normalizeWorkspaceDescriptor, useSessionStore } from "@/stores/session-store";
+import { normalizeWorkspaceDescriptor } from "@/projection/authority-model";
+import { useProjectionRuntime } from "@/projection/projection-context";
 import { useWorkspaceSetupStore } from "@/stores/workspace-setup-store";
-import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
-import { applyLegacyDaemonWorkspaceOwnership } from "@/workspace/legacy-daemon-workspaces";
 import { encodeImages } from "@/utils/encode-images";
 import { toErrorMessage } from "@/utils/error-messages";
 import { splitComposerAttachmentsForSubmit } from "@/composer/attachments/submit";
@@ -145,11 +144,9 @@ function buildCreateAgentOptions({
 export function WorkspaceSetupDialog() {
   const { t } = useTranslation();
   const toast = useToast();
+  const projectionRuntime = useProjectionRuntime();
   const pendingWorkspaceSetup = useWorkspaceSetupStore((state) => state.pendingWorkspaceSetup);
   const clearWorkspaceSetup = useWorkspaceSetupStore((state) => state.clearWorkspaceSetup);
-  const mergeWorkspaces = useSessionStore((state) => state.mergeWorkspaces);
-  const setHasHydratedWorkspaces = useSessionStore((state) => state.setHasHydratedWorkspaces);
-  const setAgents = useSessionStore((state) => state.setAgents);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [createdWorkspace, setCreatedWorkspace] = useState<ReturnType<
     typeof normalizeWorkspaceDescriptor
@@ -250,22 +247,13 @@ export function WorkspaceSetupDialog() {
         );
       }
 
-      const normalizedWorkspace = normalizeWorkspaceDescriptor(payload.workspace);
-      mergeWorkspaces(pendingWorkspaceSetup.serverId, [normalizedWorkspace]);
-      if (pendingWorkspaceSetup.creationMethod === "open_project") {
-        setHasHydratedWorkspaces(pendingWorkspaceSetup.serverId, true);
-      }
+      const service = projectionRuntime.service(pendingWorkspaceSetup.serverId);
+      if (!service) throw new Error(t("workspaceSetup.errors.hostDisconnected"));
+      const normalizedWorkspace = service.acceptWorkspaceSnapshot(payload.workspace);
       setCreatedWorkspace(normalizedWorkspace);
       return normalizedWorkspace;
     },
-    [
-      createdWorkspace,
-      mergeWorkspaces,
-      pendingWorkspaceSetup,
-      setHasHydratedWorkspaces,
-      t,
-      withConnectedClient,
-    ],
+    [createdWorkspace, pendingWorkspaceSetup, projectionRuntime, t, withConnectedClient],
   );
 
   const getIsStillActive = useCallback(() => {
@@ -312,17 +300,9 @@ export function WorkspaceSetupDialog() {
           return;
         }
 
-        setAgents(serverId, (previous) => {
-          const next = new Map(previous);
-          next.set(
-            agent.id,
-            applyLegacyDaemonWorkspaceOwnership({
-              serverId,
-              agent: normalizeAgentSnapshot(agent, serverId),
-            }),
-          );
-          return next;
-        });
+        const service = projectionRuntime.service(serverId);
+        if (!service) throw new Error(t("workspaceSetup.errors.hostDisconnected"));
+        service.acceptAgentSnapshot(agent);
         navigateAfterCreation(ensuredWorkspace.id, { kind: "agent", agentId: agent.id });
       } catch (error) {
         const message = toErrorMessage(error);
@@ -338,8 +318,8 @@ export function WorkspaceSetupDialog() {
       composerState,
       getIsStillActive,
       navigateAfterCreation,
+      projectionRuntime,
       serverId,
-      setAgents,
       ensureWorkspace,
       t,
       toast,

@@ -40,6 +40,7 @@ import {
   useHostMutations,
   useHostRuntimeClient,
   useHostRuntimeIsConnected,
+  useHostRuntimeServerInfo,
   useHostRuntimeSnapshot,
   useHosts,
 } from "@/runtime/host-runtime";
@@ -47,7 +48,7 @@ import { ProvidersSection } from "@/screens/settings/providers-section";
 import { ProviderUsageSettingsSection } from "@/provider-usage/settings-section";
 import { useProviderUsage } from "@/provider-usage/use-provider-usage";
 import { SettingsSection } from "@/screens/settings/settings-section";
-import { useSessionStore } from "@/stores/session-store";
+import { useHostFeature } from "@/runtime/host-features";
 import { settingsStyles } from "@/styles/settings";
 import type { HostConnection, HostProfile } from "@/types/host-connection";
 import { getRelayCredentialStatus } from "@/types/host-connection";
@@ -149,9 +150,7 @@ function HostStatusBadges({ serverId }: { serverId: string }) {
   const { t } = useTranslation();
   const { theme } = useUnistyles();
   const snapshot = useHostRuntimeSnapshot(serverId);
-  const daemonVersion = useSessionStore(
-    (state) => state.sessions[serverId]?.serverInfo?.version ?? null,
-  );
+  const daemonVersion = useHostRuntimeServerInfo(serverId)?.version ?? null;
 
   const connectionStatus = snapshot?.connectionStatus ?? "connecting";
   const activeConnection = snapshot?.activeConnection ?? null;
@@ -731,12 +730,8 @@ function UpdateDaemonCard({ host }: { host: HostProfile }) {
   const isMountedRef = useRef(true);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  const daemonVersion = useSessionStore(
-    (state) => state.sessions[host.serverId]?.serverInfo?.version ?? null,
-  );
-  const supportsSelfUpdate = useSessionStore(
-    (state) => state.sessions[host.serverId]?.serverInfo?.features?.daemonSelfUpdate === true,
-  );
+  const daemonVersion = useHostRuntimeServerInfo(host.serverId)?.version ?? null;
+  const supportsSelfUpdate = useHostFeature(host.serverId, "daemonSelfUpdate");
 
   const appVersion = resolveAppVersion();
   const hasVersionMismatch = isVersionMismatch(appVersion, daemonVersion);

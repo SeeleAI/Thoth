@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
 import { reconcilePreviousAgentStatuses } from "./session-status-tracking";
 
 function createAgent(status: Agent["status"]): Agent {

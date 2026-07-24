@@ -11,9 +11,10 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { useShallow } from "zustand/shallow";
+import { shallow } from "zustand/shallow";
 import {
   ArrowUp,
   Square,
@@ -35,7 +36,9 @@ import {
 } from "@/composer/agent-controls";
 import { ContextWindowMeter } from "@/components/context-window-meter";
 import { useImageAttachmentPicker } from "@/hooks/use-image-attachment-picker";
-import { useSessionStore, type Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
+import { useAuthorityProjection } from "@/projection/projection-context";
+import type { AuthorityProjection } from "@/projection/authority-projection";
 import { useFilePicker } from "@/hooks/use-file-picker";
 import { useFileDrop } from "@/components/file-drop/use-file-drop";
 import type { DroppedItem } from "@/components/file-drop/types";
@@ -166,12 +169,12 @@ function buildCancelButtonStyle(isConnected: boolean, isCancellingAgent: boolean
   return [styles.cancelButton, disabled].filter((value): value is object => Boolean(value));
 }
 
-function buildAgentStateSelector(serverId: string, agentId: string) {
-  return (state: ReturnType<typeof useSessionStore.getState>) => {
-    const agent = state.sessions[serverId]?.agents?.get(agentId) ?? null;
+function buildAgentStateSelector(agentId: string) {
+  return (projection: AuthorityProjection) => {
+    const agent = projection.agents.get(agentId) ?? null;
     return {
       status: agent?.status ?? null,
-      thothState: state.sessions[serverId]?.agentThothStates.get(agentId) ?? null,
+      thothState: projection.agentThothStates.get(agentId) ?? null,
       contextWindowMaxTokens: agent?.lastUsage?.contextWindowMaxTokens ?? null,
       contextWindowUsedTokens: agent?.lastUsage?.contextWindowUsedTokens ?? null,
       totalCostUsd: agent?.lastUsage?.totalCostUsd ?? null,
@@ -860,6 +863,7 @@ export function Composer({
   isCompactLayout: isCompactLayoutOverride,
 }: ComposerProps) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const buttonIconSize = resolveComposerButtonIconSize();
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
@@ -874,7 +878,7 @@ export function Composer({
     () => buildThothTurnSnapshot(daemonConfig?.thoth),
     [daemonConfig?.thoth],
   );
-  const agentState = useSessionStore(useShallow(buildAgentStateSelector(serverId, agentId)));
+  const agentState = useAuthorityProjection(serverId, buildAgentStateSelector(agentId), shallow);
   const providerRunMode = agentState.providerRunMode;
   const queuedMessages = useMemo(
     () =>
@@ -1091,6 +1095,8 @@ export function Composer({
       }
       await dispatchComposerAgentMessage({
         client,
+        queryClient,
+        serverId,
         agentId: targetAgentId,
         text,
         attachments: sendAttachments,
@@ -1101,7 +1107,7 @@ export function Composer({
       });
       onAttentionPromptSend?.();
     };
-  }, [client, cwd, onAttentionPromptSend, t, thothTurnSnapshot, providerRunMode, workspaceId]);
+  }, [client, onAttentionPromptSend, providerRunMode, queryClient, serverId, t, thothTurnSnapshot]);
 
   useEffect(() => {
     onSubmitMessageRef.current = onSubmitMessage;

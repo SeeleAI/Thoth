@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { DaemonClient, FetchAgentsEntry } from "@thoth/client/internal/daemon-client";
+import type { FetchAgentsEntry } from "@thoth/client/internal/daemon-client";
 import type { AgentSnapshotPayload } from "@thoth/protocol/messages";
 import { PARENT_AGENT_ID_LABEL } from "@thoth/protocol/agent-labels";
-import { useSessionStore } from "@/stores/session-store";
-import { replaceFetchedAgentDirectory } from "./agent-directory-sync";
+import { buildAgentDirectoryState } from "./agent-directory-sync";
 
 function createAgentPayload(
   input: Partial<Omit<AgentSnapshotPayload, "labels">> & {
@@ -59,10 +58,7 @@ function createEntry(agent: AgentSnapshotPayload): FetchAgentsEntry {
 describe("replaceFetchedAgentDirectory", () => {
   it("re-derives parentAgentId every time an agent snapshot is ingested", () => {
     const serverId = "server-1";
-    const store = useSessionStore.getState();
-    store.initializeSession(serverId, null as unknown as DaemonClient);
-
-    replaceFetchedAgentDirectory({
+    buildAgentDirectoryState({
       serverId,
       entries: [
         createEntry(
@@ -74,7 +70,7 @@ describe("replaceFetchedAgentDirectory", () => {
       ],
     });
 
-    replaceFetchedAgentDirectory({
+    const state = buildAgentDirectoryState({
       serverId,
       entries: [
         createEntry(
@@ -86,10 +82,6 @@ describe("replaceFetchedAgentDirectory", () => {
       ],
     });
 
-    expect(
-      useSessionStore.getState().sessions[serverId]?.agents.get("child-1")?.parentAgentId,
-    ).toBe("parent-b");
-
-    store.clearSession(serverId);
+    expect(state.agents.get("child-1")?.parentAgentId).toBe("parent-b");
   });
 });

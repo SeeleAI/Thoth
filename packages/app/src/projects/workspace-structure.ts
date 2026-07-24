@@ -1,4 +1,4 @@
-import type { EmptyProjectDescriptor, WorkspaceDescriptor } from "@/stores/session-store";
+import type { EmptyProjectDescriptor, WorkspaceDescriptor } from "@/projection/authority-model";
 import { projectDisplayNameFromProjectId } from "@/utils/project-display-name";
 
 export interface WorkspaceStructureHostPlacement {

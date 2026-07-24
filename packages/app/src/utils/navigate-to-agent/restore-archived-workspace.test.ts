@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import type { HostRuntimeSnapshot } from "@/runtime/host-runtime";
+import type { HostServerInfo } from "@/runtime/host-runtime";
 
 const refreshAgent = vi.fn<(agentId: string) => Promise<unknown>>();
 let connected = true;
+let serverInfo: HostServerInfo;
 
 vi.mock("expo-router", () => ({
   router: { navigate: vi.fn() },
@@ -15,12 +16,20 @@ vi.mock("@/utils/workspace-navigation", () => ({
 
 vi.mock("@/runtime/host-runtime", () => ({
   getHostRuntimeStore: () => ({
-    getSnapshot: () => ({ client: { refreshAgent } }) as unknown as HostRuntimeSnapshot,
+    getSnapshot: () => ({ client: { refreshAgent }, serverInfo }) as unknown as HostRuntimeSnapshot,
   }),
   isHostRuntimeConnected: () => connected,
 }));
 
-import { useSessionStore, type Agent } from "@/stores/session-store";
+import type { Agent, WorkspaceDescriptor } from "@/projection/authority-model";
+import { appProjectionRuntime } from "@/projection/projection-context";
+import { queryClient } from "@/query/query-client";
+import { readWorkspaceRestoreStatus } from "@/query/workspace-restore-state";
+import {
+  clearTestProjections,
+  patchTestProjection,
+  setTestProjection,
+} from "@/test-utils/authority-projection";
 import { navigateToAgent } from "./index";
 
 const SERVER_ID = "server-1";
@@ -28,28 +37,27 @@ const AGENT_ID = "agent-1";
 const WORKSPACE_ID = "workspace-1";
 
 function status(): "restoring" | "failed" | "needs-host-upgrade" | null {
-  return (
-    useSessionStore.getState().sessions[SERVER_ID]?.restoringWorkspaces.get(WORKSPACE_ID) ?? null
-  );
+  return readWorkspaceRestoreStatus(queryClient, SERVER_ID, WORKSPACE_ID);
 }
 
 function seedArchivedAgent(options?: { worktreeRestore?: boolean }): void {
-  const store = useSessionStore.getState();
-  store.initializeSession(SERVER_ID, null as unknown as DaemonClient);
-  store.updateSessionServerInfo(SERVER_ID, {
+  serverInfo = {
     serverId: SERVER_ID,
     hostname: "host",
     version: "0.1.98",
     features: { worktreeRestore: options?.worktreeRestore ?? true },
-  } as unknown as Parameters<typeof store.updateSessionServerInfo>[1]);
-  store.setAgents(SERVER_ID, (prev) => {
-    const next = new Map(prev);
-    next.set(AGENT_ID, {
-      id: AGENT_ID,
-      workspaceId: WORKSPACE_ID,
-      archivedAt: new Date(),
-    } as unknown as Agent);
-    return next;
+  } as HostServerInfo;
+  setTestProjection(SERVER_ID, {
+    agents: new Map([
+      [
+        AGENT_ID,
+        {
+          id: AGENT_ID,
+          workspaceId: WORKSPACE_ID,
+          archivedAt: new Date(),
+        } as Agent,
+      ],
+    ]),
   });
 }
 
@@ -58,13 +66,15 @@ describe("restoreArchivedWorkspace via navigateToAgent", () => {
     vi.useFakeTimers();
     refreshAgent.mockReset();
     connected = true;
+    queryClient.clear();
     seedArchivedAgent();
   });
 
   afterEach(() => {
     vi.clearAllTimers();
     vi.useRealTimers();
-    useSessionStore.getState().clearSession(SERVER_ID);
+    clearTestProjections();
+    queryClient.clear();
   });
 
   function trigger(): void {
@@ -92,15 +102,17 @@ describe("restoreArchivedWorkspace via navigateToAgent", () => {
   });
 
   it("does not fire for a non-archived agent", () => {
-    const store = useSessionStore.getState();
-    store.setAgents(SERVER_ID, (prev) => {
-      const next = new Map(prev);
-      next.set(AGENT_ID, {
-        id: AGENT_ID,
-        workspaceId: WORKSPACE_ID,
-        archivedAt: undefined,
-      } as unknown as Agent);
-      return next;
+    patchTestProjection(SERVER_ID, {
+      agents: new Map([
+        [
+          AGENT_ID,
+          {
+            id: AGENT_ID,
+            workspaceId: WORKSPACE_ID,
+            archivedAt: undefined,
+          } as Agent,
+        ],
+      ]),
     });
     refreshAgent.mockImplementation(() => new Promise(() => {}));
 
@@ -144,7 +156,6 @@ describe("restoreArchivedWorkspace via navigateToAgent", () => {
   });
 
   it("marks the workspace needs-host-upgrade without refreshing when the daemon lacks worktreeRestore", () => {
-    useSessionStore.getState().clearSession(SERVER_ID);
     seedArchivedAgent({ worktreeRestore: false });
     refreshAgent.mockImplementation(() => new Promise(() => {}));
 
@@ -156,23 +167,28 @@ describe("restoreArchivedWorkspace via navigateToAgent", () => {
 
   it("is a no-op when the workspace descriptor is already present", () => {
     refreshAgent.mockImplementation(() => new Promise(() => {}));
-    useSessionStore.getState().mergeWorkspaces(SERVER_ID, [
-      {
-        id: WORKSPACE_ID,
-        projectId: "project-1",
-        projectDisplayName: "Project 1",
-        projectRootPath: "/repo",
-        workspaceDirectory: "/repo",
-        projectKind: "git",
-        workspaceKind: "local_checkout",
-        name: "main",
-        status: "done",
-        statusEnteredAt: null,
-        archivingAt: null,
-        diffStat: null,
-        scripts: [],
-      },
-    ]);
+    patchTestProjection(SERVER_ID, {
+      workspaces: new Map<string, WorkspaceDescriptor>([
+        [
+          WORKSPACE_ID,
+          {
+            id: WORKSPACE_ID,
+            projectId: "project-1",
+            projectDisplayName: "Project 1",
+            projectRootPath: "/repo",
+            workspaceDirectory: "/repo",
+            projectKind: "git",
+            workspaceKind: "local_checkout",
+            name: "main",
+            status: "done",
+            statusEnteredAt: null,
+            archivingAt: null,
+            diffStat: null,
+            scripts: [],
+          },
+        ],
+      ]),
+    });
 
     trigger();
 

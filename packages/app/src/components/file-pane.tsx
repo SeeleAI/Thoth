@@ -12,7 +12,8 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { useSessionStore, type ExplorerFile } from "@/stores/session-store";
+import type { ExplorerFile } from "@/query/file-explorer-model";
+import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { useWebScrollViewScrollbar } from "@/components/use-web-scrollbar";
 import { useWebScrollbarStyle } from "@/hooks/use-web-scrollbar-style";
 import { highlightCode, type HighlightToken } from "@thoth/highlight";
@@ -377,7 +378,7 @@ export function FilePane({
   const isMobile = useIsCompactFormFactor();
   const showDesktopWebScrollbar = isWeb && !isMobile;
 
-  const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
+  const client = useHostRuntimeClient(serverId);
   const normalizedWorkspaceRoot = useMemo(() => workspaceRoot.trim(), [workspaceRoot]);
   const normalizedFilePath = useMemo(() => trimNonEmpty(location.path), [location.path]);
   const readTarget = useMemo(

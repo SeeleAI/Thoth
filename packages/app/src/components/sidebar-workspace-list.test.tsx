@@ -2,7 +2,6 @@
  * @vitest-environment jsdom
  */
 import { act } from "@testing-library/react";
-import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import type { WorkspaceScriptPayload } from "@thoth/protocol/messages";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
@@ -37,9 +36,11 @@ import {
   type HostRuntimeSnapshot,
 } from "@/runtime/host-runtime";
 import type { HostProfile } from "@/types/host-connection";
-import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
+import { appProjectionRuntime, ProjectionProvider } from "@/projection/projection-context";
+import { clearTestProjections, setTestProjection } from "@/test-utils/authority-projection";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
-import { useWorkspaceFields } from "@/stores/session-store-hooks";
+import { useWorkspaceFields } from "@/projection/hooks";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 
 vi.mock("@react-native-async-storage/async-storage", () => ({
@@ -163,11 +164,10 @@ function setHostProfiles(hosts: HostProfile[]): void {
 function initializeSidebarState(workspaces: WorkspaceDescriptor[]): void {
   act(() => {
     setHostProfiles([makeHost()]);
-    useSessionStore.getState().initializeSession(SERVER_ID, null as unknown as DaemonClient);
-    useSessionStore
-      .getState()
-      .setWorkspaces(SERVER_ID, new Map(workspaces.map((entry) => [entry.id, entry])));
-    useSessionStore.getState().setHasHydratedWorkspaces(SERVER_ID, true);
+    setTestProjection(SERVER_ID, {
+      workspaces: new Map(workspaces.map((entry) => [entry.id, entry])),
+      hydration: { agents: "idle", workspaces: "ready" },
+    });
     useSidebarOrderStore.setState({
       projectOrder: ["project-a", "project-b"],
       workspaceOrderByProject: {
@@ -321,7 +321,11 @@ async function renderProbe(counts: RenderCounts): Promise<{ root: Root; containe
 }
 
 function renderSidebarFrame(root: Root, counts: RenderCounts) {
-  root.render(<SidebarFrameProbe counts={counts} />);
+  root.render(
+    <ProjectionProvider>
+      <SidebarFrameProbe counts={counts} />
+    </ProjectionProvider>,
+  );
 }
 
 describe("sidebar workspace render isolation", () => {
@@ -344,7 +348,7 @@ describe("sidebar workspace render isolation", () => {
     act(() => {
       pathnameState.value = "/";
       setHostProfiles([]);
-      useSessionStore.getState().clearSession(SERVER_ID);
+      clearTestProjections();
       useSidebarOrderStore.setState({
         projectOrder: [],
         workspaceOrderByProject: {},
@@ -363,12 +367,10 @@ describe("sidebar workspace render isolation", () => {
     ({ root, container } = await renderProbe(counts));
 
     act(() => {
-      useSessionStore.getState().mergeWorkspaces(SERVER_ID, [
-        {
-          ...createWorkspaces()[1],
-          status: "running",
-        },
-      ]);
+      appProjectionRuntime.store.applyProjectionDelta(SERVER_ID, {
+        type: "workspace_upsert",
+        workspace: { ...createWorkspaces()[1], status: "running" },
+      });
     });
 
     expect(counts.frame).toBe(0);
@@ -419,7 +421,12 @@ describe("sidebar workspace render isolation", () => {
       });
 
     act(() => {
-      useSessionStore.getState().setWorkspaces(SERVER_ID, applyRunningScript);
+      appProjectionRuntime.store.applyProjectionDelta(SERVER_ID, {
+        type: "workspaces_replace",
+        workspaces: applyRunningScript(
+          new Map(appProjectionRuntime.store.getSnapshot(SERVER_ID).workspaces),
+        ),
+      });
     });
 
     expect(counts).toEqual({

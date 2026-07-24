@@ -1,33 +1,17 @@
-import { useMemo } from "react";
-import { useShallow } from "zustand/shallow";
-import type { DaemonServerInfo } from "@/stores/session-store";
-import { useSessionStore } from "@/stores/session-store";
+import { useMemo, useSyncExternalStore } from "react";
+import {
+  getHostRuntimeStore,
+  type HostServerInfo,
+  useHostRuntimeServerInfo,
+} from "@/runtime/host-runtime";
 
-export type HostFeatureName = keyof NonNullable<DaemonServerInfo["features"]>;
-
-export interface HostFeatureSessionState {
-  sessions: Record<
-    string,
-    | {
-        serverInfo: DaemonServerInfo | null;
-      }
-    | undefined
-  >;
-}
+export type HostFeatureName = keyof NonNullable<HostServerInfo["features"]>;
 
 export function hostSupportsFeature(
-  serverInfo: DaemonServerInfo | null | undefined,
+  serverInfo: HostServerInfo | null | undefined,
   feature: HostFeatureName,
 ): boolean {
   return serverInfo?.features?.[feature] === true;
-}
-
-export function selectHostFeature(
-  state: HostFeatureSessionState,
-  serverId: string,
-  feature: HostFeatureName,
-): boolean {
-  return hostSupportsFeature(state.sessions[serverId]?.serverInfo, feature);
 }
 
 export function useHostFeature(
@@ -35,19 +19,30 @@ export function useHostFeature(
   feature: HostFeatureName,
 ): boolean {
   const normalizedServerId = serverId?.trim() ?? "";
-  return useSessionStore((state) => selectHostFeature(state, normalizedServerId, feature));
+  return hostSupportsFeature(useHostRuntimeServerInfo(normalizedServerId), feature);
 }
 
 export function useHostFeatureMap(
   serverIds: readonly string[],
   feature: HostFeatureName,
 ): ReadonlyMap<string, boolean> {
-  const flags = useSessionStore(
-    useShallow((state) => serverIds.map((serverId) => selectHostFeature(state, serverId, feature))),
+  const store = getHostRuntimeStore();
+  const version = useSyncExternalStore(
+    (onStoreChange) => store.subscribeAll(onStoreChange),
+    () => store.getVersion(),
+    () => store.getVersion(),
   );
 
-  return useMemo(
-    () => new Map(serverIds.map((serverId, index) => [serverId, flags[index] === true] as const)),
-    [flags, serverIds],
-  );
+  return useMemo(() => {
+    void version;
+    return new Map(
+      serverIds.map(
+        (serverId) =>
+          [
+            serverId,
+            hostSupportsFeature(store.getSnapshot(serverId)?.serverInfo, feature),
+          ] as const,
+      ),
+    );
+  }, [feature, serverIds, store, version]);
 }

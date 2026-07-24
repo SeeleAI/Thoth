@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 import { View } from "react-native";
 import { GestureDetector } from "react-native-gesture-handler";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
-import { useWorkspace } from "@/stores/session-store-hooks";
+import { useWorkspace } from "@/projection/hooks";
 import { LazyCompactExplorerSidebar } from "@/components/lazy-explorer-sidebar";
 import { useExplorerOpenGesture } from "@/hooks/use-explorer-open-gesture";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";

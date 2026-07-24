@@ -8,7 +8,6 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useIsFocused } from "@react-navigation/native";
 import { ActivityIndicator, BackHandler, Keyboard, Pressable, Text, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
@@ -71,11 +70,8 @@ import { useToast } from "@/contexts/toast-context";
 import { toErrorMessage } from "@/utils/error-messages";
 import { selectIsFileExplorerOpen, usePanelStore } from "@/stores/panel-store";
 import { type ExplorerCheckoutContext } from "@/stores/explorer-checkout-context";
-import {
-  useSessionStore,
-  useWorkspaceRestoreStatus,
-  type WorkspaceDescriptor,
-} from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
+import { useWorkspaceRestoreStatus } from "@/query/workspace-restore-state";
 import {
   buildWorkspaceTabPersistenceKey,
   collectAllTabs,
@@ -88,6 +84,8 @@ import type { WorkspaceTab, WorkspaceTabTarget } from "@/stores/workspace-tabs-s
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
+import { useAuthorityProjection, useProjectionRuntime } from "@/projection/projection-context";
+import { useUiPreferencesStore } from "@/stores/ui-preferences-store";
 import {
   buildDeterministicWorkspaceTabId,
   normalizeWorkspaceTabTarget,
@@ -103,7 +101,7 @@ import {
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { shouldShowWorkspaceSetup, useWorkspaceSetupStore } from "@/stores/workspace-setup-store";
 import { restoreWorkspaceAgentTabFromHistory } from "@/stores/navigation-active-workspace-store/workspace-agent-restore";
-import { useWorkspace } from "@/stores/session-store-hooks";
+import { useHasHydratedAgents, useHasHydratedWorkspaces, useWorkspace } from "@/projection/hooks";
 import { useWorkspaceTerminalSessionRetention } from "@/terminal/hooks/use-workspace-terminal-session-retention";
 import type { CheckoutStatusPayload } from "@/git/use-status-query";
 import { confirmDialog } from "@/utils/confirm-dialog";
@@ -1665,6 +1663,7 @@ function WorkspaceScreenContent({
   const isFocusModeEnabled = usePanelStore((state) => state.desktop.focusModeEnabled);
 
   const normalizedServerId = useMemo(() => trimNonEmpty(decodeSegment(serverId)) ?? "", [serverId]);
+  const projectionRuntime = useProjectionRuntime();
 
   const normalizedWorkspaceId = useMemo(
     () => resolveWorkspaceRouteId({ routeWorkspaceId: workspaceId }) ?? "",
@@ -1793,16 +1792,13 @@ function WorkspaceScreenContent({
     (state) => state.openChildTabFocused,
   );
   const focusWorkspacePane = useWorkspaceLayoutStore((state) => state.focusPane);
-  const hasHydratedWorkspaces = useSessionStore(
-    (state) => state.sessions[normalizedServerId]?.hasHydratedWorkspaces ?? false,
-  );
+  const hasHydratedWorkspaces = useHasHydratedWorkspaces(normalizedServerId);
 
-  const workspaceAgentVisibility = useStoreWithEqualityFn(
-    useSessionStore,
-    (state) =>
+  const workspaceAgentVisibility = useAuthorityProjection(
+    normalizedServerId,
+    (projection) =>
       deriveWorkspaceAgentVisibility({
-        sessionAgents: state.sessions[normalizedServerId]?.agents,
-        agentDetails: state.sessions[normalizedServerId]?.agentDetails,
+        agents: projection.agents,
         workspaceId: normalizedWorkspaceId,
       }),
     workspaceAgentVisibilityEqual,
@@ -1866,9 +1862,7 @@ function WorkspaceScreenContent({
     normalizedWorkspaceId,
     workspaceDirectory,
   });
-  const hasHydratedAgents = useSessionStore(
-    (state) => state.sessions[normalizedServerId]?.hasHydratedAgents ?? false,
-  );
+  const hasHydratedAgents = useHasHydratedAgents(normalizedServerId);
   const workspaceRouteState = useResolvedWorkspaceRouteState({
     serverId: normalizedServerId,
     workspaceId: normalizedWorkspaceId,
@@ -2092,8 +2086,8 @@ function WorkspaceScreenContent({
       }),
     [uiTabs, workspaceLayout],
   );
-  const setFocusedAgentId = useSessionStore((state) => state.setFocusedAgentId);
-  const setFocusedTerminalId = useSessionStore((state) => state.setFocusedTerminalId);
+  const setFocusedAgentId = useUiPreferencesStore((state) => state.focusAgent);
+  const setFocusedTerminalId = useUiPreferencesStore((state) => state.focusTerminal);
   const focusedPaneAgentId = useMemo(() => {
     const target = focusedPaneTabState.activeTab?.descriptor.target;
     if (target?.kind !== "agent") {
@@ -2706,7 +2700,7 @@ function WorkspaceScreenContent({
         }
 
         const agent =
-          useSessionStore.getState().sessions[normalizedServerId]?.agents?.get(agentId) ?? null;
+          projectionRuntime.store.getSnapshot(normalizedServerId).agents.get(agentId) ?? null;
         const closePolicy = resolveCloseAgentTabPolicy(agent);
         const isRunning = agent?.status === "running";
 
@@ -2756,6 +2750,7 @@ function WorkspaceScreenContent({
       closeWorkspaceTabWithCleanup,
       normalizedServerId,
       persistenceKey,
+      projectionRuntime,
       t,
       toast,
     ],
@@ -2823,7 +2818,7 @@ function WorkspaceScreenContent({
     async (agentId: string) => {
       if (!agentId) return;
       const agent =
-        useSessionStore.getState().sessions[normalizedServerId]?.agents?.get(agentId) ?? null;
+        projectionRuntime.store.getSnapshot(normalizedServerId).agents.get(agentId) ?? null;
       const providerSessionId =
         agent?.runtimeInfo?.sessionId ?? agent?.persistence?.sessionId ?? null;
       if (!agent || !providerSessionId) {
@@ -2848,7 +2843,7 @@ function WorkspaceScreenContent({
         toast.error(t("workspace.tabs.toasts.copyFailed"));
       }
     },
-    [normalizedServerId, toast, t],
+    [normalizedServerId, projectionRuntime, toast, t],
   );
 
   const handleReloadAgent = useCallback(
@@ -2865,14 +2860,13 @@ function WorkspaceScreenContent({
         // returns reset:true. Without a cursor, the server returns reset:false
         // and the client takes the incremental path, where new-epoch rows are
         // dropped against the stale cursor.
-        const sessionState = useSessionStore.getState().sessions[normalizedServerId];
-        const currentCursor = sessionState?.agentTimelineCursor.get(agentId);
+        const currentCursor = projectionRuntime.store
+          .getSnapshot(normalizedServerId)
+          .timelines.get(agentId)?.endCursor;
         await client.fetchAgentTimeline(agentId, {
           direction: "tail",
           projection: "projected",
-          ...(currentCursor
-            ? { cursor: { epoch: currentCursor.epoch, seq: currentCursor.endSeq } }
-            : {}),
+          ...(currentCursor ? { cursor: currentCursor } : {}),
         });
         toast.show(t("workspace.tabs.toasts.reloadedAgent"), { variant: "success" });
       } catch (error) {
@@ -2881,7 +2875,7 @@ function WorkspaceScreenContent({
         );
       }
     },
-    [client, isConnected, normalizedServerId, toast, t],
+    [client, isConnected, normalizedServerId, projectionRuntime, toast, t],
   );
 
   const handleCopyWorkspacePath = useCallback(async () => {
@@ -4260,11 +4254,19 @@ const styles = StyleSheet.create((theme) => ({
     position: "relative",
   },
   mobileMountedTabSlotVisible: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     opacity: 1,
   },
   mobileMountedTabSlotHidden: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     opacity: 0,
   },
   contentPlaceholder: {

@@ -7,7 +7,7 @@ import {
   resolveWorkspaceSelectionStatus,
 } from "@/navigation/host-runtime-bootstrap";
 import { useHostRegistryStatus, useHosts } from "@/runtime/host-runtime";
-import { useHasHydratedWorkspaces, useWorkspaceExists } from "@/stores/session-store-hooks";
+import { useHasHydratedWorkspaces, useWorkspaceExists } from "@/projection/hooks";
 import {
   useIsLastWorkspaceSelectionHydrated,
   useLastWorkspaceSelection,

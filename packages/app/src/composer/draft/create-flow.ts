@@ -3,17 +3,36 @@ import { useTranslation } from "react-i18next";
 import type { ComposerAttachment } from "@/attachments/types";
 import { splitComposerAttachmentsForSubmit } from "@/composer/attachments/submit";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
-import { useSessionStore } from "@/stores/session-store";
+import { addPendingAgentMessage } from "@/projection/pending-agent-messages";
+import { queryClient } from "@/query/query-client";
 import {
-  buildOptimisticUserMessage,
-  generateMessageId,
-  type StreamItem,
+  type TimelineViewModel,
   type UserMessageImageAttachment,
-} from "@/types/stream";
+  type UserMessageViewModel,
+} from "@/projection/timeline-view-model";
+import { generateMessageId } from "@/utils/message-id";
 import type { AgentAttachment } from "@thoth/protocol/messages";
 import type { TaskContextReference } from "@thoth/protocol/task-authority";
 
-const EMPTY_STREAM_ITEMS: StreamItem[] = [];
+const EMPTY_STREAM_ITEMS: TimelineViewModel[] = [];
+
+function buildOptimisticUserMessage(input: {
+  id: string;
+  text: string;
+  timestamp: Date;
+  images?: UserMessageImageAttachment[];
+  attachments?: AgentAttachment[];
+}): UserMessageViewModel {
+  return {
+    kind: "user_message",
+    id: input.id,
+    text: input.text,
+    timestamp: input.timestamp,
+    optimistic: true,
+    ...(input.images?.length ? { images: input.images } : {}),
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+  };
+}
 
 interface CreateAttempt {
   clientMessageId: string;
@@ -126,14 +145,11 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
   const updatePendingAgentId = useCreateFlowStore((state) => state.updateAgentId);
   const markPendingCreateLifecycle = useCreateFlowStore((state) => state.markLifecycle);
   const clearPendingCreateAttempt = useCreateFlowStore((state) => state.clear);
-  const appendOptimisticUserMessageToAgentStream = useSessionStore(
-    (state) => state.appendOptimisticUserMessageToAgentStream,
-  );
 
   const formErrorMessage = machine.tag === "draft" ? machine.errorMessage : "";
   const isSubmitting = machine.tag === "creating";
 
-  const optimisticStreamItems = useMemo<StreamItem[]>(() => {
+  const optimisticStreamItems = useMemo<TimelineViewModel[]>(() => {
     if (machine.tag !== "creating") {
       return EMPTY_STREAM_ITEMS;
     }
@@ -194,18 +210,13 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
 
         if (createResult.agentId) {
           updatePendingAgentId({ draftId, agentId: createResult.agentId });
-          appendOptimisticUserMessageToAgentStream(
-            pendingServerId,
-            createResult.agentId,
-            buildOptimisticUserMessage({
-              id: attempt.clientMessageId,
-              text: attempt.text,
-              timestamp: attempt.timestamp,
-              images: attempt.images,
-              attachments: attempt.attachments,
-            }),
-            { placement: "tail", skipIfUserMessageExists: true },
-          );
+          addPendingAgentMessage(queryClient, pendingServerId, createResult.agentId, {
+            messageId: attempt.clientMessageId,
+            text: attempt.text,
+            timestamp: attempt.timestamp,
+            images: attempt.images ?? [],
+            attachments: attempt.attachments ?? [],
+          });
           markPendingCreateLifecycle({ draftId, lifecycle: "sent" });
         }
 
@@ -221,7 +232,6 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
       }
     },
     [
-      appendOptimisticUserMessageToAgentStream,
       clearPendingCreateAttempt,
       createRequest,
       draftId,
@@ -230,6 +240,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
       onBeforeSubmit,
       onCreateError,
       onCreateSuccess,
+      queryClient,
       t,
       updatePendingAgentId,
     ],

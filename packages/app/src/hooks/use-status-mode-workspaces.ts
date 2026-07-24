@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
-import { useSessionStore, type SessionState } from "@/stores/session-store";
+import { useAuthorityProjections } from "@/projection/projection-context";
+import type { Agent, WorkspaceDescriptor } from "@/projection/authority-model";
 import {
   buildSidebarStatusWorkspacePlacements,
   type SidebarStatusWorkspacePlacement,
@@ -15,14 +15,14 @@ const EMPTY_PENDING_CREATE_ATTEMPTS: ReturnType<
 >["pendingByDraftId"] = {};
 
 interface StatusModeSessionSource {
-  workspaces: SessionState["workspaces"];
-  agents: SessionState["agents"];
+  workspaces: ReadonlyMap<string, WorkspaceDescriptor>;
+  agents: ReadonlyMap<string, Agent>;
 }
 
 export interface StatusModeSession {
   serverId: string;
-  workspaces: SessionState["workspaces"];
-  agents: SessionState["agents"];
+  workspaces: ReadonlyMap<string, WorkspaceDescriptor>;
+  agents: ReadonlyMap<string, Agent>;
 }
 
 export function selectStatusModeSessions(
@@ -76,10 +76,11 @@ export function useStatusModeWorkspacePlacements(input: {
     () => Array.from(new Set(input.placements.map((placement) => placement.serverId))),
     [input.placements],
   );
-  const statusSessions = useStoreWithEqualityFn(
-    useSessionStore,
-    (state) =>
-      isEnabled ? selectStatusModeSessions(state.sessions, serverIds) : EMPTY_STATUS_SESSIONS,
+  const statusSessions = useAuthorityProjections(
+    (store) =>
+      isEnabled
+        ? serverIds.map((serverId) => ({ serverId, ...store.getSnapshot(serverId) }))
+        : EMPTY_STATUS_SESSIONS,
     areStatusModeSessionsEqual,
   );
   const pendingCreateAttempts = useCreateFlowStore((state) =>

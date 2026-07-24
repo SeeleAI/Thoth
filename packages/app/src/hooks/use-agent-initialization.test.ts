@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useSessionStore } from "@/stores/session-store";
 import { TIMELINE_FETCH_PAGE_SIZE } from "@/timeline/timeline-fetch-policy";
 import { getInitDeferred, getInitKey, resolveInitDeferred } from "@/utils/agent-initialization";
 import {
@@ -11,6 +10,7 @@ import {
 
 const serverId = "server-1";
 const agentId = "agent-1";
+const loading = new Map<string, boolean>();
 
 interface FakeDaemonClient {
   fetchAgentTimeline: ReturnType<typeof vi.fn>;
@@ -25,32 +25,35 @@ function makeClient(): FakeDaemonClient {
 }
 
 function bindSetAgentInitializing() {
-  return createSetAgentInitializing(serverId, useSessionStore.getState().setInitializingAgents);
+  return createSetAgentInitializing(() => ({
+    setAgentTimelineLoading: (id: string, value: boolean) => loading.set(id, value),
+  }));
 }
 
 afterEach(() => {
   resolveInitDeferred(getInitKey(serverId, agentId));
-  useSessionStore.setState({ sessions: {}, agentLastActivity: new Map() });
+  loading.clear();
   vi.restoreAllMocks();
 });
 
 describe("ensureAgentIsInitialized", () => {
   it("requests bounded projected catch-up after the current cursor when authoritative history is loaded", () => {
     const client = makeClient();
-    useSessionStore.getState().initializeSession(serverId, client as never);
-    useSessionStore
-      .getState()
-      .setAgentTimelineCursor(
-        serverId,
-        new Map([[agentId, { epoch: "epoch-1", startSeq: 1, endSeq: 42 }]]),
-      );
-    useSessionStore.getState().setAgentAuthoritativeHistoryApplied(serverId, agentId, true);
-
     void ensureAgentIsInitialized({
       serverId,
       agentId,
       client: client as never,
       setAgentInitializing: bindSetAgentInitializing(),
+      timeline: {
+        epoch: "epoch-1",
+        entries: [],
+        startCursor: { epoch: "epoch-1", seq: 1 },
+        endCursor: { epoch: "epoch-1", seq: 42 },
+        hasOlder: false,
+        hasNewer: false,
+        loadingTail: false,
+        loadingOlder: false,
+      },
     });
 
     expect(client.fetchAgentTimeline).toHaveBeenCalledWith(agentId, {
@@ -64,7 +67,6 @@ describe("ensureAgentIsInitialized", () => {
 
   it("requests a bounded projected tail when no authoritative cursor is available", () => {
     const client = makeClient();
-    useSessionStore.getState().initializeSession(serverId, client as never);
 
     void ensureAgentIsInitialized({
       serverId,
@@ -84,7 +86,6 @@ describe("ensureAgentIsInitialized", () => {
   it("times out initialization after 65 seconds", async () => {
     vi.useFakeTimers();
     const client = makeClient();
-    useSessionStore.getState().initializeSession(serverId, client as never);
 
     const promise = ensureAgentIsInitialized({
       serverId,
@@ -100,16 +101,13 @@ describe("ensureAgentIsInitialized", () => {
 
     await expect(promise).rejects.toThrow("History sync timed out after 65s");
     expect(getInitDeferred(getInitKey(serverId, agentId))).toBeUndefined();
-    expect(useSessionStore.getState().sessions[serverId]?.initializingAgents.get(agentId)).toBe(
-      false,
-    );
+    expect(loading.get(agentId)).toBe(false);
     vi.useRealTimers();
   });
 
   it("refreshes the initialization timeout after paged catch-up progress", async () => {
     vi.useFakeTimers();
     const client = makeClient();
-    useSessionStore.getState().initializeSession(serverId, client as never);
     const setAgentInitializing = bindSetAgentInitializing();
     const key = getInitKey(serverId, agentId);
 
@@ -142,7 +140,6 @@ describe("ensureAgentIsInitialized", () => {
 describe("refreshAgent", () => {
   it("fetches a bounded projected tail after refreshing the agent", async () => {
     const client = makeClient();
-    useSessionStore.getState().initializeSession(serverId, client as never);
 
     await refreshAgent({
       agentId,

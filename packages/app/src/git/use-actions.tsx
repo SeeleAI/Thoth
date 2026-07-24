@@ -14,7 +14,8 @@ import {
 import type { CheckoutPrMergeMethod } from "@thoth/protocol/messages";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { useToast } from "@/contexts/toast-context";
-import { useSessionStore } from "@/stores/session-store";
+import { useAuthorityProjection } from "@/projection/projection-context";
+import { useHostFeature } from "@/runtime/host-features";
 import {
   useActiveWorkspaceSelection,
   type ActiveWorkspaceSelection,
@@ -181,7 +182,7 @@ function useWorkspaceScreenArchiveController({
   gitStatus,
   t,
 }: UseWorkspaceScreenArchiveControllerInput) {
-  const sessionWorkspaces = useSessionStore((state) => state.sessions[serverId]?.workspaces);
+  const sessionWorkspaces = useAuthorityProjection(serverId, (projection) => projection.workspaces);
   const archiveWorkspaceRecord = useMemo(() => {
     if (!workspaceDirectory) {
       return null;
@@ -356,9 +357,7 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
   const runDisablePrAutoMerge = useCheckoutGitActionsStore((s) => s.disablePrAutoMerge);
   const runMergeBranch = useCheckoutGitActionsStore((s) => s.mergeBranch);
   const runMergeFromBase = useCheckoutGitActionsStore((s) => s.mergeFromBase);
-  const githubAutoMergeActionsEnabled = useSessionStore(
-    (s) => s.sessions[serverId]?.serverInfo?.features?.checkoutGithubSetAutoMerge === true,
-  );
+  const githubAutoMergeActionsEnabled = useHostFeature(serverId, "checkoutGithubSetAutoMerge");
 
   const toastActionError = useCallback(
     (error: unknown, fallback: string) => {

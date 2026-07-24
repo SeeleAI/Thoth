@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 import { resolveWorkspaceMapKeyByIdentity, resolveWorkspaceRouteId } from "./workspace-identity";
 
 function createWorkspace(

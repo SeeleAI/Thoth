@@ -20,7 +20,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { useShallow } from "zustand/shallow";
+import { shallow } from "zustand/shallow";
 import { Brain, ListTodo, RefreshCw, Settings2, ShieldCheck, Zap } from "lucide-react-native";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
@@ -31,7 +31,9 @@ import {
   buildSelectableProviderSelectorProviders,
   type ProviderSelectorProvider,
 } from "@/provider-selection/provider-selection";
-import { useSessionStore } from "@/stores/session-store";
+import { useAuthorityProjection } from "@/projection/projection-context";
+import type { AuthorityProjection } from "@/projection/authority-projection";
+import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { resolveProviderDefinition } from "@/utils/provider-definitions";
 import {
@@ -316,11 +318,10 @@ type AgentControlsSlice = {
 } | null;
 
 function selectAgentControlsSlice(
-  state: ReturnType<typeof useSessionStore.getState>,
-  serverId: string,
+  projection: AuthorityProjection,
   agentId: string,
 ): AgentControlsSlice {
-  const currentAgent = state.sessions[serverId]?.agents?.get(agentId) ?? null;
+  const currentAgent = projection.agents.get(agentId) ?? null;
   if (!currentAgent) {
     return null;
   }
@@ -1754,10 +1755,12 @@ export const AgentControls = memo(function AgentControls({
   controlExtras,
 }: AgentControlsProps) {
   const { preferences, updatePreferences } = useFormPreferences();
-  const agent = useSessionStore(
-    useShallow((state) => selectAgentControlsSlice(state, serverId, agentId)),
+  const agent = useAuthorityProjection(
+    serverId,
+    (projection) => selectAgentControlsSlice(projection, agentId),
+    shallow,
   );
-  const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
+  const client = useHostRuntimeClient(serverId);
   const toast = useToast();
   const [providerControlBusy, setProviderControlBusy] = useState(false);
 

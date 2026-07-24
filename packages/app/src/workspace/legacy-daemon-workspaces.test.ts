@@ -1,11 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
-import type { DaemonClient, FetchAgentsEntry } from "@thoth/client/internal/daemon-client";
-import { useSessionStore, type Agent } from "@/stores/session-store";
+import { describe, expect, it } from "vitest";
+import type { FetchAgentsEntry } from "@thoth/client/internal/daemon-client";
+import type { Agent } from "@/projection/authority-model";
 import { deriveWorkspaceAgentVisibility } from "@/workspace-tabs/agent-visibility";
 import {
-  applyLegacyDaemonWorkspaceOwnership,
-  backfillLegacyDaemonWorkspaceDirectoryIfEmpty,
   buildLegacyDaemonWorkspaceSnapshot,
+  shouldUseLegacyDaemonWorkspaceDirectory,
 } from "./legacy-daemon-workspaces";
 
 const SERVER_ID = "srv_legacy";
@@ -67,10 +66,6 @@ function getSnapshotAgent(snapshot: { agents: Map<string, Agent> }, agentId: str
   return agent;
 }
 
-afterEach(() => {
-  useSessionStore.getState().clearSession(SERVER_ID);
-});
-
 describe("buildLegacyDaemonWorkspaceSnapshot", () => {
   it("creates path-backed workspace rows and stamps legacy agents with their workspace id", () => {
     const snapshot = buildLegacyDaemonWorkspaceSnapshot({
@@ -119,81 +114,48 @@ describe("buildLegacyDaemonWorkspaceSnapshot", () => {
   });
 
   it("keeps old-daemon agent updates attached to the path-backed workspace", () => {
-    const snapshot = buildLegacyDaemonWorkspaceSnapshot({
+    const initial = buildLegacyDaemonWorkspaceSnapshot({
       serverId: SERVER_ID,
       entries: [legacyAgent({ id: "agent-running", cwd: "/repo/app", status: "running" })],
     });
-    const store = useSessionStore.getState();
-    store.initializeSession(SERVER_ID, null as unknown as DaemonClient);
-    store.updateSessionServerInfo(SERVER_ID, {
+    const updated = buildLegacyDaemonWorkspaceSnapshot({
       serverId: SERVER_ID,
-      hostname: null,
-      version: "0.1.96",
+      entries: [
+        legacyAgent({
+          id: "agent-running",
+          cwd: "/repo/app",
+          status: "idle",
+          updatedAt: "2026-06-18T10:01:00.000Z",
+        }),
+      ],
     });
-    store.setWorkspaces(SERVER_ID, snapshot.workspaces);
-    store.setAgents(SERVER_ID, snapshot.agents);
-
-    const existingAgent = getSnapshotAgent(snapshot, "agent-running");
-    const oldDaemonUpdate: Agent = {
-      ...existingAgent,
-      workspaceId: undefined,
-      updatedAt: new Date("2026-06-18T10:01:00.000Z"),
-      lastActivityAt: new Date("2026-06-18T10:01:00.000Z"),
-    };
-
-    const stampedUpdate = applyLegacyDaemonWorkspaceOwnership({
-      serverId: SERVER_ID,
-      agent: oldDaemonUpdate,
-    });
+    const stampedUpdate = getSnapshotAgent(updated, "agent-running");
     const visibility = deriveWorkspaceAgentVisibility({
-      sessionAgents: new Map([[stampedUpdate.id, stampedUpdate]]),
+      agents: updated.agents,
       workspaceId: "/repo/app",
     });
 
+    expect(getSnapshotAgent(initial, "agent-running").workspaceId).toBe("/repo/app");
     expect(stampedUpdate.workspaceId).toBe("/repo/app");
     expect(visibility.activeAgentIds).toEqual(new Set(["agent-running"]));
   });
 
-  it("does not backfill path-backed workspaces after hydration is cancelled", async () => {
-    const store = useSessionStore.getState();
-    store.initializeSession(SERVER_ID, null as unknown as DaemonClient);
-    store.updateSessionServerInfo(SERVER_ID, {
-      serverId: SERVER_ID,
-      hostname: null,
-      version: "0.1.96",
-    });
-    let cancelled = false;
-    let didFetchAgents = false;
-    const client: Pick<DaemonClient, "fetchAgents"> = {
-      fetchAgents: async () => {
-        didFetchAgents = true;
-        cancelled = true;
-        return {
-          requestId: "req_cancelled_backfill",
-          subscriptionId: null,
-          entries: [legacyAgent({ id: "agent-cancelled", cwd: "/repo/app" })],
-          pageInfo: {
-            nextCursor: null,
-            prevCursor: null,
-            hasMore: false,
-          },
-        };
-      },
-    };
-
-    const didBackfill = await backfillLegacyDaemonWorkspaceDirectoryIfEmpty({
-      client,
-      serverId: SERVER_ID,
-      workspaces: new Map(),
-      emptyProjects: new Map(),
-      isCancelled: () => cancelled,
-    });
-
-    const session = useSessionStore.getState().sessions[SERVER_ID];
-    expect(didFetchAgents).toBe(true);
-    expect(didBackfill).toBe(true);
-    expect(session?.agents.size).toBe(0);
-    expect(session?.workspaces.size).toBe(0);
-    expect(session?.hasHydratedWorkspaces).toBe(false);
+  it("uses path-backed synthesis only when workspace multiplicity is unavailable", () => {
+    expect(
+      shouldUseLegacyDaemonWorkspaceDirectory({
+        serverId: SERVER_ID,
+        hostname: null,
+        version: "0.1.96",
+        features: {},
+      }),
+    ).toBe(true);
+    expect(
+      shouldUseLegacyDaemonWorkspaceDirectory({
+        serverId: SERVER_ID,
+        hostname: null,
+        version: "0.2.0",
+        features: { workspaceMultiplicity: true },
+      }),
+    ).toBe(false);
   });
 });

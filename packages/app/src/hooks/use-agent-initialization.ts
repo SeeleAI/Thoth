@@ -1,7 +1,11 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { DaemonClient } from "@thoth/client/internal/daemon-client";
-import { useSessionStore } from "@/stores/session-store";
+import { useAuthorityProjection, useProjectionRuntime } from "@/projection/projection-context";
+import type {
+  DaemonProjectionService,
+  TimelineProjection,
+} from "@/projection/authority-projection";
 import {
   createInitDeferred,
   getInitDeferred,
@@ -23,6 +27,7 @@ export function refreshAgentInitializationTimeout(input: {
   key: string;
   agentId: string;
   setAgentInitializing: SetAgentInitializing;
+  timeline?: TimelineProjection;
 }): void {
   refreshInitTimeout({
     key: input.key,
@@ -38,6 +43,7 @@ export interface EnsureAgentIsInitializedInput {
   agentId: string;
   client: Pick<DaemonClient, "fetchAgentTimeline"> | null;
   setAgentInitializing: SetAgentInitializing;
+  timeline?: TimelineProjection;
   hostDisconnectedMessage?: string;
 }
 
@@ -49,9 +55,15 @@ export function ensureAgentIsInitialized(input: EnsureAgentIsInitializedInput): 
     return existing.promise;
   }
 
-  const session = useSessionStore.getState().sessions[serverId];
-  const cursor = session?.agentTimelineCursor.get(agentId);
-  const hasAuthoritativeHistory = session?.agentAuthoritativeHistoryApplied.get(agentId) === true;
+  const cursor =
+    input.timeline?.epoch && input.timeline.startCursor && input.timeline.endCursor
+      ? {
+          epoch: input.timeline.epoch,
+          startSeq: input.timeline.startCursor.seq,
+          endSeq: input.timeline.endCursor.seq,
+        }
+      : undefined;
+  const hasAuthoritativeHistory = input.timeline?.epoch !== null && input.timeline !== undefined;
   const timelineRequest = planInitialAgentTimelineSync({ cursor, hasAuthoritativeHistory });
 
   const deferred = createInitDeferred(key, timelineRequest.direction);
@@ -100,19 +112,9 @@ export async function refreshAgent(input: RefreshAgentInput): Promise<void> {
 }
 
 export function createSetAgentInitializing(
-  serverId: string,
-  setInitializingAgents: ReturnType<typeof useSessionStore.getState>["setInitializingAgents"],
+  getService: () => Pick<DaemonProjectionService, "setAgentTimelineLoading"> | null,
 ): SetAgentInitializing {
-  return (agentId, initializing) => {
-    setInitializingAgents(serverId, (prev) => {
-      if (prev.get(agentId) === initializing) {
-        return prev;
-      }
-      const next = new Map(prev);
-      next.set(agentId, initializing);
-      return next;
-    });
-  };
+  return (agentId, initializing) => getService()?.setAgentTimelineLoading(agentId, initializing);
 }
 
 export function useAgentInitialization({
@@ -123,10 +125,11 @@ export function useAgentInitialization({
   client: DaemonClient | null;
 }) {
   const { t } = useTranslation();
-  const setInitializingAgents = useSessionStore((state) => state.setInitializingAgents);
+  const projectionRuntime = useProjectionRuntime();
+  const timelines = useAuthorityProjection(serverId, (projection) => projection.timelines);
   const setAgentInitializing = useMemo(
-    () => createSetAgentInitializing(serverId, setInitializingAgents),
-    [serverId, setInitializingAgents],
+    () => createSetAgentInitializing(() => projectionRuntime.service(serverId)),
+    [projectionRuntime, serverId],
   );
 
   const ensureAgentIsInitializedCallback = useCallback(
@@ -135,10 +138,11 @@ export function useAgentInitialization({
         serverId,
         agentId,
         client,
+        timeline: timelines.get(agentId),
         setAgentInitializing,
         hostDisconnectedMessage: t("workspace.terminal.hostDisconnected"),
       }),
-    [client, serverId, setAgentInitializing, t],
+    [client, serverId, setAgentInitializing, t, timelines],
   );
 
   const refreshAgentCallback = useCallback(

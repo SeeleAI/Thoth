@@ -6,13 +6,14 @@ import {
   buildWorkspaceTabPersistenceKey,
   useWorkspaceLayoutStore,
 } from "@/stores/workspace-layout-store";
-import { useSessionStore } from "@/stores/session-store";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
+import { appProjectionRuntime } from "@/projection/projection-context";
+import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useWorkspaceTabsStore } from "@/stores/workspace-tabs-store";
 import {
   clearWorkspaceArchivePending,
   markWorkspaceArchivePending,
-} from "@/contexts/session-workspace-upserts";
+} from "@/query/workspace-archive-state";
 import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
 import { invalidateCheckoutGitQueriesForClient } from "@/git/query-keys";
 import { i18n } from "@/i18n/i18next";
@@ -47,8 +48,7 @@ function checkoutKey(serverId: string, cwd: string): CheckoutKey {
 }
 
 function resolveClient(serverId: string) {
-  const session = useSessionStore.getState().sessions[serverId];
-  const client = session?.client ?? null;
+  const client = getHostRuntimeStore().getClient(serverId);
   if (!client) {
     throw new Error(i18n.t("common.errors.daemonClientUnavailable"));
   }
@@ -56,8 +56,10 @@ function resolveClient(serverId: string) {
 }
 
 function assertGitHubAutoMergeActionsSupported(serverId: string) {
-  const session = useSessionStore.getState().sessions[serverId];
-  if (session?.serverInfo?.features?.checkoutGithubSetAutoMerge !== true) {
+  if (
+    getHostRuntimeStore().getSnapshot(serverId)?.serverInfo?.features
+      ?.checkoutGithubSetAutoMerge !== true
+  ) {
     throw new Error("Update the host to use GitHub auto-merge actions.");
   }
 }
@@ -154,7 +156,7 @@ function snapshotWorktreeArchiveState(input: {
   serverId: string;
   workspaceId: string | undefined;
 }): WorktreeArchiveSnapshot {
-  const workspaces = useSessionStore.getState().sessions[input.serverId]?.workspaces;
+  const workspaces = appProjectionRuntime.store.getSnapshot(input.serverId).workspaces;
   const workspaceKey = input.workspaceId
     ? resolveWorkspaceMapKeyByIdentity({ workspaces, workspaceId: input.workspaceId })
     : null;
@@ -167,23 +169,10 @@ function snapshotWorktreeArchiveState(input: {
   };
 }
 
-function removeWorktreeFromSessionStore(input: { serverId: string; workspaceId: string }): void {
-  const serverId = input.serverId.trim();
-  const workspaceId = input.workspaceId.trim();
-  if (!serverId || !workspaceId) {
-    return;
-  }
-  useSessionStore.getState().removeWorkspace(serverId, workspaceId);
-}
-
 function restoreWorktreeArchiveState(input: {
   serverId: string;
   snapshot: WorktreeArchiveSnapshot;
 }): void {
-  if (input.snapshot.workspace) {
-    useSessionStore.getState().mergeWorkspaces(input.serverId, [input.snapshot.workspace]);
-  }
-
   for (const [queryKey, data] of input.snapshot.worktreeLists) {
     appQueryClient.setQueryData(queryKey, data);
   }
@@ -506,10 +495,10 @@ export const useCheckoutGitActionsStore = create<CheckoutGitActionsStoreState>()
         const workspace = snapshot.workspace;
         if (workspace) {
           markWorkspaceArchivePending({
+            queryClient: appQueryClient,
             serverId,
             workspaceId: workspace.id,
           });
-          removeWorktreeFromSessionStore({ serverId, workspaceId: workspace.id });
         }
         removeWorktreeFromCachedLists({ serverId, worktreePath });
         try {
@@ -522,7 +511,11 @@ export const useCheckoutGitActionsStore = create<CheckoutGitActionsStoreState>()
           }
         } catch (error) {
           if (workspace) {
-            clearWorkspaceArchivePending({ serverId, workspaceId: workspace.id });
+            clearWorkspaceArchivePending({
+              queryClient: appQueryClient,
+              serverId,
+              workspaceId: workspace.id,
+            });
           }
           restoreWorktreeArchiveState({ serverId, snapshot });
           throw error;

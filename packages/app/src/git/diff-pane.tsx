@@ -83,7 +83,7 @@ import { BranchSwitcher } from "@/components/branch-switcher";
 import { useGitActions } from "@/git/use-actions";
 import { useCheckoutGitActionsStore } from "@/git/actions-store";
 import { useToast } from "@/contexts/toast-context";
-import { useSessionStore } from "@/stores/session-store";
+import { useHostFeature } from "@/runtime/host-features";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { usePanelStore } from "@/stores/panel-store";
@@ -1752,9 +1752,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   const refreshToggleStyle = useMemo(() => buildExpandAllButtonStyle(), []);
 
   const toast = useToast();
-  const refreshSupported = useSessionStore(
-    (s) => s.sessions[serverId]?.serverInfo?.features?.checkoutRefresh === true,
-  );
+  const refreshSupported = useHostFeature(serverId, "checkoutRefresh");
   const runRefresh = useCheckoutGitActionsStore((s) => s.refresh);
   const isRefreshing =
     useCheckoutGitActionsStore((s) => s.getStatus({ serverId, cwd, actionId: "refresh" })) ===

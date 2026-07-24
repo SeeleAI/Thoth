@@ -1,4 +1,4 @@
-import type { Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
 import type { WorkspaceTabSnapshot } from "@/stores/workspace-layout-actions";
 import { shouldAutoOpenAgentTab } from "@/subagents/policies";
 import { normalizeWorkspaceOpaqueId } from "@/utils/workspace-identity";
@@ -16,13 +16,12 @@ function agentBelongsToWorkspace(agent: Agent, workspaceId: string): boolean {
 }
 
 export function deriveWorkspaceAgentVisibility(input: {
-  sessionAgents: Map<string, Agent> | undefined;
-  agentDetails?: Map<string, Agent> | undefined;
+  agents: ReadonlyMap<string, Agent> | undefined;
   workspaceId: string | null | undefined;
 }): WorkspaceAgentVisibility {
-  const { sessionAgents, agentDetails } = input;
+  const { agents } = input;
   const workspaceId = normalizeWorkspaceOpaqueId(input.workspaceId);
-  if ((!sessionAgents && !agentDetails) || !workspaceId) {
+  if (!agents || !workspaceId) {
     return {
       activeAgentIds: new Set<string>(),
       autoOpenAgentIds: new Set<string>(),
@@ -37,8 +36,7 @@ export function deriveWorkspaceAgentVisibility(input: {
   const knownAgentIds = new Set<string>();
   const archivedAgentIds = new Set<string>();
   const restorableAgentIds = new Set<string>();
-  const sessionAgentIds = new Set(sessionAgents?.keys() ?? []);
-  for (const agent of sessionAgents?.values() ?? []) {
+  for (const agent of agents.values()) {
     if (!agentBelongsToWorkspace(agent, workspaceId)) {
       continue;
     }
@@ -46,24 +44,12 @@ export function deriveWorkspaceAgentVisibility(input: {
     if (agent.archivedAt) {
       archivedAgentIds.add(agent.id);
     }
-    if (!agent.archivedAt) {
+    if (!agent.archivedAt && agent.projectPlacement) {
       activeAgentIds.add(agent.id);
       if (shouldAutoOpenAgentTab(agent)) {
         autoOpenAgentIds.add(agent.id);
       }
-    }
-  }
-  for (const agent of agentDetails?.values() ?? []) {
-    if (!agentBelongsToWorkspace(agent, workspaceId)) {
-      continue;
-    }
-    knownAgentIds.add(agent.id);
-    if (agent.archivedAt) {
-      archivedAgentIds.add(agent.id);
-    }
-    // An archived record can exist only in the detail cache after the active directory has already
-    // removed it. It is history, never a restorable foreground tab.
-    if (!agent.archivedAt && !sessionAgentIds.has(agent.id)) {
+    } else if (!agent.archivedAt) {
       restorableAgentIds.add(agent.id);
     }
   }

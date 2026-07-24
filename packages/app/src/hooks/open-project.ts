@@ -1,9 +1,5 @@
 import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import type { ProjectAddResponse } from "@thoth/protocol/messages";
-import {
-  normalizeEmptyProjectDescriptor as normalizeProjectWithoutWorkspacesDescriptor,
-  type EmptyProjectDescriptor as ProjectWithoutWorkspacesDescriptor,
-} from "@/stores/session-store";
 
 type OpenProjectPayload = ProjectAddResponse["payload"];
 type OpenProjectErrorCode = NonNullable<OpenProjectPayload["errorCode"]>;
@@ -41,8 +37,7 @@ export interface OpenProjectDirectlyInput {
   isConnected: boolean;
   canAddProject: boolean;
   client: Pick<DaemonClient, "addProject"> | null;
-  addEmptyProject: (serverId: string, project: ProjectWithoutWorkspacesDescriptor) => void;
-  setHasHydratedWorkspaces: (serverId: string, hydrated: boolean) => void;
+  revalidate: () => Promise<void>;
 }
 
 export async function openProjectDirectly(
@@ -71,10 +66,6 @@ export async function openProjectDirectly(
     };
   }
 
-  input.addEmptyProject(
-    normalizedServerId,
-    normalizeProjectWithoutWorkspacesDescriptor(payload.project),
-  );
-  input.setHasHydratedWorkspaces(normalizedServerId, true);
+  await input.revalidate();
   return { ok: true };
 }

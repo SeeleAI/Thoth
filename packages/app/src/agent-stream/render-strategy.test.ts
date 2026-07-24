@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import {
   collectAssistantTurnContentForStreamRenderStrategy,
   getBottomOffsetForStreamRenderStrategy,
@@ -20,7 +20,7 @@ function createTimestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:0${seed}.000Z`);
 }
 
-function userMessage(id: string, text: string, seed: number): StreamItem {
+function userMessage(id: string, text: string, seed: number): TimelineViewModel {
   return {
     kind: "user_message",
     id,
@@ -29,7 +29,7 @@ function userMessage(id: string, text: string, seed: number): StreamItem {
   };
 }
 
-function assistantMessage(id: string, text: string, seed: number): StreamItem {
+function assistantMessage(id: string, text: string, seed: number): TimelineViewModel {
   return {
     kind: "assistant_message",
     id,
@@ -107,7 +107,7 @@ describe("resolveStreamRenderStrategy", () => {
 });
 
 describe("stream ordering", () => {
-  const streamItems: StreamItem[] = [
+  const streamItems: TimelineViewModel[] = [
     userMessage("u1", "user-1", 1),
     assistantMessage("a1", "assistant-1", 2),
     assistantMessage("a2", "assistant-2", 3),
@@ -158,7 +158,7 @@ describe("neighbor and traversal semantics", () => {
   });
 
   it("collects assistant turn content with strategy traversal direction", () => {
-    const chronological: StreamItem[] = [
+    const chronological: TimelineViewModel[] = [
       userMessage("u1", "user-1", 1),
       assistantMessage("a1", "assistant-1", 2),
       assistantMessage("a2", "assistant-2", 3),
@@ -201,7 +201,7 @@ describe("neighbor and traversal semantics", () => {
       platform: "web",
       isMobileBreakpoint: false,
     });
-    const items: StreamItem[] = [userMessage("u1", "user-1", 1)];
+    const items: TimelineViewModel[] = [userMessage("u1", "user-1", 1)];
 
     expect(
       getStreamNeighborItem({
@@ -333,7 +333,7 @@ describe("edge slot semantics", () => {
 });
 
 describe("layout strategy edges", () => {
-  const streamItems: StreamItem[] = [
+  const streamItems: TimelineViewModel[] = [
     userMessage("u1", "user-1", 1),
     assistantMessage("a1", "assistant-1", 2),
   ];

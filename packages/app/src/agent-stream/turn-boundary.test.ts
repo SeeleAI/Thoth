@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import { resolveAssistantTurnBoundaryMessageId } from "./turn-boundary";
 
 function timestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
 }
 
-function userMessage(id: string, seed: number): Extract<StreamItem, { kind: "user_message" }> {
+function userMessage(
+  id: string,
+  seed: number,
+): Extract<TimelineViewModel, { kind: "user_message" }> {
   return {
     kind: "user_message",
     id,
@@ -19,7 +22,7 @@ function assistantMessage(
   id: string,
   seed: number,
   messageId?: string,
-): Extract<StreamItem, { kind: "assistant_message" }> {
+): Extract<TimelineViewModel, { kind: "assistant_message" }> {
   return {
     kind: "assistant_message",
     id,

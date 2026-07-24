@@ -8,51 +8,48 @@
    - Related: `NTH-MS-004`, `NTH-REQ-005`
 3. `NTH-TD-006` `[backlog]`: Design E2EE relay deployment path for Cloudflare prototype and seeles.ai hosted/self-hosted service.
    - Related: `NTH-MS-005`, `NTH-REQ-006`
-4. `NTH-TD-036` `[backlog]`: Converge AgentTimeline rendering and responsive desktop/compact/mobile composition through the final View Registry and shared primitives without any visual or interaction change.
-   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-057`
-5. `NTH-TD-037` `[backlog]`: Converge Git, Worktree and GitHub through VcsRepository, VcsApplicationService and one VcsActionRegistry; delete duplicate RPC/actions/results/polling while preserving every current capability.
+4. `NTH-TD-037` `[backlog]`: Converge Git, Worktree and GitHub through VcsRepository, VcsApplicationService and one VcsActionRegistry; delete duplicate RPC/actions/results/polling while preserving every current capability.
    - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-058`
-6. `NTH-TD-038` `[backlog]`: Install one lazy composition root and ServiceSupervisor, open Workspace shards and Provider/GitHub/MCP/Terminal/Relay resources on demand, and delete eager heavy imports, duplicate controllers and idle polling.
+5. `NTH-TD-038` `[backlog]`: Install one lazy composition root and ServiceSupervisor, open Workspace shards and Provider/GitHub/MCP/Terminal/Relay resources on demand, and delete eager heavy imports, duplicate controllers and idle polling.
    - Related: `NTH-MS-019`, `NTH-CD-067`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-059`
-7. `NTH-TD-039` `[backlog]`: Close the final feature-zero-loss 50k production reduction, public capability, Release migration, visual/interaction, source Relay and 300-second functional gate; remove every architecture-guarded dual path.
+6. `NTH-TD-039` `[backlog]`: Close the final feature-zero-loss 50k production reduction, public capability, Release migration, visual/interaction, source Relay and 300-second functional gate; remove every architecture-guarded dual path.
    - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-060`
-8. `NTH-TD-040` `[backlog]`: Converge duplicated Provider permission/question, tool lifecycle, usage, interrupt and unknown-event mechanics through capability-composed objects while preserving every adapter capability.
+7. `NTH-TD-040` `[backlog]`: Converge duplicated Provider permission/question, tool lifecycle, usage, interrupt and unknown-event mechanics through capability-composed objects while preserving every adapter capability.
    - Related: `NTH-MS-018`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-061`
-9. `NTH-TD-041` `[backlog]`: Converge CLI command registration, Desktop daemon controllers and Terminal JSON/binary subscription lifecycle without changing any public shell capability.
+8. `NTH-TD-041` `[backlog]`: Converge CLI command registration, Desktop daemon controllers and Terminal JSON/binary subscription lifecycle without changing any public shell capability.
    - Related: `NTH-MS-018`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-062`
-10. `NTH-TD-042` `[backlog]`: Apply the fixed residual order for App controllers, file/attachment queries, Direct/Relay framing and Desktop feature glue until the final 50k target is met without deleting public behavior.
+9. `NTH-TD-042` `[backlog]`: Apply the fixed residual order for App controllers, file/attachment queries, Direct/Relay framing and Desktop feature glue until the final 50k target is met without deleting public behavior.
 
 - Related: `NTH-MS-018`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-063`
 
 ## Ready
 
-1. `NTH-TD-021` `[doing]`: Harden Loop background into Loop Engineering authority.
+1. `NTH-TD-036` `[ready]`: Converge AgentTimeline rendering and responsive desktop/compact/mobile composition through the final View Registry and shared primitives without any visual or interaction change.
+   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-057`
+2. `NTH-TD-021` `[doing]`: Harden Loop background into Loop Engineering authority.
    - Goal: Promote the verified Codex Loop path into a replayable SQLite authority/event ledger with Task Memory, sealed evidence, independent audits and budget envelopes, then close the remaining restart/control/browser recovery evidence.
    - Constraints: Do not reintroduce fake running/review/evidence; captures stay outside the git repo under `/mnt/cfs/5vr0p6/yzy/thoth/.dev/ui-review-captures/`; local Paseo/legacy `127.0.0.1:6767` remains untouched.
    - Progress: SQLite event/projection/CAS/lease persistence, Task Memory, baseline and phase evidence manifests, budget wait, phase isolation and scoped Codex dynamicTools are implemented. The scripted native-Codex flow suite passed all five journeys on `2026-07-11`: Quick direct, Quick Clarify foreground, cancel/recover/resume, Loop+Single all-goals pass and Loop+Light fail/retry/pass. The fixture gives literal tool payloads to each independent phase session so it does not evaluate provider creativity. On `2026-07-14`, idempotent registration, native-provider turn fencing, scheduler re-entry after PlanExec, no-terminal-timeout waiting, foreground background-handoff and full deterministic UT-01..UT-05 regression coverage were repaired. Review runs independent assessment before receiving PlanExec's semantic account; live phase tools now carry semantic task truth only, while attempt/generation/call ids and resource accounting remain daemon-only. Review workspace mutation/evidence manifests are audit and UI material under the locked Provider Trust policy, not automatic lifecycle blockers. On `2026-07-16`, `NTH-EV-035` repaired false foreground spinner after background handoff, isolated writable provider-session config, reclassified provider startup failures as resumable interruptions and live-resumed an affected task through G1 Review pass into G2 without consuming failed-Review budget. `NTH-EV-036` then added per-WebSocket scoped observation for viewed internal Loop phases and verified in a real Chromium/Codex Review that `Apply file changes` approval resolved in `242ms`, `apply_patch` completed and later reasoning streamed without refresh, while the internal agent remained absent from the foreground agent list and Review workspace receipts stayed unchanged. On `2026-07-19`, `NTH-EV-040` removed process-local Card waiters, parked each Card provider turn, fenced its late output and made answer continuation wait for actual run cleanup; the public foreground journey now advances Clarify -> Task -> Goals -> Quick without a manual `continue` prompt.
    - Acceptance: Remaining verification must still add real browser/device evidence for `budget_wait`, pause/resume/stop and daemon restart/reconnect, including Background Task detail and phase AgentTimeline restoration. Deterministic unit coverage exists for those state transitions; they are not yet claimed as full browser/provider acceptance.
    - Depends on: `NTH-TD-019`
    - Related: `NTH-CD-045`, `NTH-CD-047`, `NTH-CD-055`, `NTH-EV-030`, `NTH-EV-031`, `NTH-EV-035`, `NTH-EV-036`
-2. `NTH-TD-022` `[doing]`: Refactor Loop Agent Harness context and Review semantics around `NTH-CD-050`.
+3. `NTH-TD-022` `[doing]`: Refactor Loop Agent Harness context and Review semantics around `NTH-CD-050`.
    - Goal: Remove daemon recovery/accounting fields from Clarify, PlanExec, Review and audit cognitive context/tool obligations; replace mechanical Review verdict/checklist framing with an independent Review Direction Memo and minimal semantic lifecycle conclusion.
    - Constraints: Preserve daemon-owned durability, evidence, permission, budget and recovery behavior; do not turn daemon into an LLM or weaken user contract/provenance authority; do not fake semantic routing with local heuristics.
    - Progress: `thoth.loop`, live PlanExec/Review/blocked tool schemas, Codex dynamic-tool schemas, task-service hidden binding, deterministic five-journey contracts and Loop golden eval now remove phase/round/id/budget/checklist obligations from Agent Harness input. Review is two-stage and stale independent assessment callbacks are fenced by provider-native turn identity. Remaining: extend the independent quality judge with a non-local corrective Review holdout and gather browser/device control/recovery evidence under the new Provider Trust semantics.
    - Acceptance: update `thoth.loop` Skill, runtime tool contracts, context-pack builders, golden data and independent judges; prove Review can reject a locally plausible PlanExec path, identify a non-incremental root correction and give actionable next direction without seeing phase/round/budget/manifest/receipt mechanics.
    - Depends on: `NTH-CD-050`, `NTH-TD-021`
-3. `NTH-TD-002` `[ready]`: Umbrella MVP implementation slice for explicit task mode, provider-backed Router, Clarify, authority store and task lifecycle without reintroducing archived plugin runtime compatibility.
+4. `NTH-TD-002` `[ready]`: Umbrella MVP implementation slice for explicit task mode, provider-backed Router, Clarify, authority store and task lifecycle without reintroducing archived plugin runtime compatibility.
    - Scope: include a stable Thoth I human dogfood entry whose development build uses the same UI/UX as the releasable product UI; agents validate code through standard repository tests and gates.
    - Operational decomposition: execute `NTH-TD-015` through `NTH-TD-020` in order instead of treating this as one large loop.
    - Related: `NTH-MS-002`, `NTH-MS-003`, `NTH-REQ-001`, `NTH-REQ-002`, `NTH-REQ-017`
-4. `NTH-TD-010` `[ready]`: Run remaining dependency and compile triage on the non-foundation promoted source substrate.
+5. `NTH-TD-010` `[ready]`: Run remaining dependency and compile triage on the non-foundation promoted source substrate.
    - Scope: resolve package-lock/dependency inconsistencies, remove or quarantine remaining broad-source voice references, decide first buildable package order, and record exact compile blockers without claiming runtime readiness.
    - Related: `NTH-MS-008`, `NTH-REQ-011`, `NTH-REQ-015`
 
 ## Doing
 
-1. `NTH-TD-035` `[doing]`: Atomically migrate App authority consumers to one non-React normalized projection service, QueryClient server state and versioned UI preferences, then delete Session authority Context/reducers and the third Timeline model.
-   - Acceptance: authority only accepts daemon snapshot/delta/epoch updates; App stores protocol-owned AgentTimeline entries with exhaustive Timeline/tool view registries; server/query state and local preferences stay separate; all App consumers switch in one cut; `StreamItem`, old Session authority mutation and duplicate Timeline reducers disappear; UI/interaction remains byte/visual equivalent; `npm run accept:refactor:fast` passes inside the shared `300s` deadline with every production complexity metric lower.
-   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-056`
-2. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
+1. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
    - Goal: Keep restored Paseo surface and Codex dynamicTools path, but make Clarify behave like a pending authority decision lifecycle with intelligent timeline badges and model-submitted frontier ledger.
    - Scope: `thoth_submit_clarify_card` carries `public_badge_summary` and `frontier_ledger`; `thoth_submit_task_card` carries convergence review; `balanced` has a 5-10 card soft range and `dive` has a 10-20 card soft range; cards must not show completed/idle footer before user submission; `decision_it_changes` is legacy optional input only. Under `NTH-CD-052`, raw Provider conversation is an explicit Thoth-off state rather than an ambiguous `Quick + Direct` sub-selection; only Thoth-on exposes structured Clarify and Loop controls. Under `NTH-CD-053`, that off/on choice is strictly per turn: one Workspace Secretary topic reuses one foreground provider session, and a daemon authority fence blocks remembered runtime tools during raw turns instead of using historical `bare` / `structured` sessions.
    - Verification: Reopened under `NTH-EV-029`; unit/build/foundation gates and most real Codex web paths now pass after the frontier-ledger repair, including local/public Balanced sort, local Dive sort, local Balanced PathTracing and local Loop `registered_pending`. Under `NTH-CD-057` / `NTH-EV-038`, ordinary Agent sends now reuse the visible provider session for Thoth Clarify/Quick, remote workspace identity overrides client cwd, and packaged Clarify/Loop skills were confirmed in the public Linux `app.asar`. Do not return this TODO to verified until installed/Relay real-provider behavior is exercised from the replacement build.
@@ -182,6 +179,12 @@ None.
 - Scope: one 131-operation/139-outbound schema registry, one common error/version contract, 112 declaration-driven Client methods, one typed 131-handler Daemon table, explicit binary codec isolation and complete deletion of old correlated waiter helpers plus grouped request switches.
 - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`
 - Verification: See `NTH-EV-055`. Protocol `351/351`, Client `119/119`, Session/Wire `133/133`, WebSocket lifecycle `17/17` and public foreground `12/12` passed. The final no-warning `npm run accept:refactor:fast` passed in `240.108s`; cumulative production metrics are `2,476` LOC, `8,823` scanner tokens, `7,814` AST nodes, `23` static imports and `1` runtime dependency edge below the clean baseline.
+
+19. `NTH-TD-035` `[verified]`: Replace App Session authority state with one normalized authority projection, QueryClient server state, HostRuntime connection state and versioned UI preferences while preserving exact behavior and UX.
+
+- Scope: one `AuthorityProjectionStore` written only by `DaemonProjectionService`; protocol-owned `AgentTimelineEntry`; HostRuntime Client/ServerInfo ownership; QueryClient archive/restore/file/pending-message state; UiPreferences focus ownership; complete deletion of Session Store/Context, duplicate Timeline reducers and the third Timeline model.
+- Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`
+- Verification: See `NTH-EV-056`. App `331/331` files and `2,582/2,582` tests, Foundation, real Web, Provider Control, interaction regressions, Stage 4 architecture/source guards and the complete shared gate passed; `npm run accept:refactor:fast` completed in `144.145s`, and every production complexity metric is below Cut 3 and the clean baseline.
 
 ## Abandoned
 

@@ -1,5 +1,5 @@
 import type { FileReadResult } from "@thoth/client/internal/daemon-client";
-import type { ExplorerFile } from "@/stores/session-store";
+import type { ExplorerFile } from "@/query/file-explorer-model";
 
 export function explorerFileFromReadResult(file: FileReadResult): ExplorerFile {
   const isText = file.kind === "text";

@@ -1,188 +1,91 @@
-import { describe, expect, it } from "vitest";
-import type { ToastApi, ToastShowOptions } from "@/components/toast-host";
-import type { AgentTimelineCursorState } from "@/stores/session-store";
-import { TIMELINE_FETCH_PAGE_SIZE } from "@/timeline/timeline-fetch-policy";
+import { describe, expect, it, vi } from "vitest";
+import type { DaemonClient } from "@thoth/client";
+import type { FetchAgentTimelineResponseMessage } from "@thoth/protocol/messages";
 import {
-  loadOlderAgentHistory,
-  type LoadOlderAgentHistoryClient,
-} from "./use-load-older-agent-history";
+  AuthorityProjectionStore,
+  DaemonProjectionService,
+} from "@/projection/authority-projection";
 
-const agentId = "agent-1";
+type TimelinePage = FetchAgentTimelineResponseMessage["payload"];
 
-interface FakeClient extends LoadOlderAgentHistoryClient {
-  calls: Array<{
-    agentId: string;
-    request: Parameters<LoadOlderAgentHistoryClient["fetchAgentTimeline"]>[1];
-  }>;
-}
-
-function createClient(behavior: () => Promise<void> = async () => undefined): FakeClient {
-  const calls: FakeClient["calls"] = [];
+function page(input: Partial<TimelinePage> = {}): TimelinePage {
   return {
-    calls,
-    fetchAgentTimeline: async (id, request) => {
-      calls.push({ agentId: id, request });
-      await behavior();
-    },
+    requestId: "req",
+    agentId: "agent-1",
+    agent: null,
+    direction: "tail",
+    projection: "projected",
+    epoch: "epoch-1",
+    reset: false,
+    staleCursor: false,
+    gap: false,
+    window: { minSeq: 10, maxSeq: 20, nextSeq: 21 },
+    startCursor: { epoch: "epoch-1", seq: 10 },
+    endCursor: { epoch: "epoch-1", seq: 20 },
+    hasOlder: true,
+    hasNewer: false,
+    entries: [],
+    error: null,
+    ...input,
   };
 }
 
-interface FakeInFlight {
-  values: boolean[];
-  setInFlight(value: boolean): void;
-  get current(): boolean;
-}
-
-function createInFlight(initial = false): FakeInFlight {
-  const values: boolean[] = [initial];
+function client(fetchAgentTimeline = vi.fn(async () => page())): DaemonClient {
   return {
-    values,
-    setInFlight(value) {
-      values.push(value);
-    },
-    get current() {
-      return values[values.length - 1] ?? initial;
-    },
-  };
+    on: vi.fn(() => () => {}),
+    subscribeAgentThothStateUpdates: vi.fn(() => () => {}),
+    fetchAgentTimeline,
+  } as unknown as DaemonClient;
 }
 
-interface FakeToast extends ToastApi {
-  shown: Array<{ message: unknown; options: ToastShowOptions | undefined }>;
-}
-
-function createToast(): FakeToast {
-  const shown: FakeToast["shown"] = [];
-  return {
-    shown,
-    show: (message, options) => {
-      shown.push({ message, options });
-    },
-    copied: () => {},
-    error: () => {},
-  };
-}
-
-interface FakeLogger {
-  warnings: unknown[][];
-  warn: (...args: unknown[]) => void;
-}
-
-function createLogger(): FakeLogger {
-  const warnings: unknown[][] = [];
-  return {
-    warnings,
-    warn: (...args) => {
-      warnings.push(args);
-    },
-  };
-}
-
-const someCursor: AgentTimelineCursorState = { epoch: "epoch-1", startSeq: 10, endSeq: 20 };
-
-describe("loadOlderAgentHistory", () => {
-  it("no-ops without a cursor", async () => {
-    const client = createClient();
-    const inFlight = createInFlight();
-
-    await loadOlderAgentHistory(agentId, {
-      client,
-      cursor: undefined,
-      hasOlder: true,
-      isLoadingOlder: false,
-      setInFlight: inFlight.setInFlight,
-    });
-
-    expect(client.calls).toEqual([]);
-    expect(inFlight.values).toEqual([false]);
+describe("DaemonProjectionService.fetchOlder", () => {
+  it("no-ops without a cursor or older history", async () => {
+    const store = new AuthorityProjectionStore();
+    const fetchAgentTimeline = vi.fn(async () => page());
+    const service = new DaemonProjectionService(store);
+    service.start(client(fetchAgentTimeline), "server");
+    await service.fetchOlder("agent-1");
+    expect(fetchAgentTimeline).not.toHaveBeenCalled();
   });
 
-  it("no-ops when the daemon says no older history exists", async () => {
-    const client = createClient();
-    const inFlight = createInFlight();
-
-    await loadOlderAgentHistory(agentId, {
-      client,
-      cursor: someCursor,
-      hasOlder: false,
-      isLoadingOlder: false,
-      setInFlight: inFlight.setInFlight,
+  it("requests the page before the authority start cursor", async () => {
+    const store = new AuthorityProjectionStore();
+    store.applyProjectionDelta("server", {
+      type: "timeline_page",
+      agentId: "agent-1",
+      page: page(),
     });
-
-    expect(client.calls).toEqual([]);
-    expect(inFlight.values).toEqual([false]);
+    const fetchAgentTimeline = vi.fn(async () => page({ direction: "before" }));
+    const service = new DaemonProjectionService(store);
+    service.start(client(fetchAgentTimeline), "server");
+    await service.fetchOlder("agent-1");
+    expect(fetchAgentTimeline).toHaveBeenCalledWith("agent-1", {
+      direction: "before",
+      cursor: { epoch: "epoch-1", seq: 10 },
+      limit: 100,
+      projection: "projected",
+    });
+    expect(store.getSnapshot("server").timelines.get("agent-1")?.loadingOlder).toBe(false);
   });
 
-  it("no-ops when a request is already in flight", async () => {
-    const client = createClient();
-    const inFlight = createInFlight(true);
-
-    await loadOlderAgentHistory(agentId, {
-      client,
-      cursor: someCursor,
-      hasOlder: true,
-      isLoadingOlder: true,
-      setInFlight: inFlight.setInFlight,
+  it("propagates failure and always clears loading state", async () => {
+    const store = new AuthorityProjectionStore();
+    store.applyProjectionDelta("server", {
+      type: "timeline_page",
+      agentId: "agent-1",
+      page: page(),
     });
-
-    expect(client.calls).toEqual([]);
-    expect(inFlight.values).toEqual([true]);
-  });
-
-  it("requests the page before the current start cursor and clears in-flight on success", async () => {
-    const client = createClient();
-    const inFlight = createInFlight();
-
-    await loadOlderAgentHistory(agentId, {
-      client,
-      cursor: someCursor,
-      hasOlder: true,
-      isLoadingOlder: false,
-      setInFlight: inFlight.setInFlight,
-    });
-
-    expect(client.calls).toEqual([
-      {
-        agentId,
-        request: {
-          direction: "before",
-          cursor: { epoch: "epoch-1", seq: 10 },
-          limit: TIMELINE_FETCH_PAGE_SIZE,
-          projection: "projected",
-        },
-      },
-    ]);
-    expect(inFlight.values).toEqual([false, true, false]);
-  });
-
-  it("shows a panel toast, warns, and clears in-flight on failure", async () => {
     const error = new Error("network");
-    const client = createClient(async () => {
-      throw error;
-    });
-    const inFlight = createInFlight();
-    const toast = createToast();
-    const logger = createLogger();
-
-    await loadOlderAgentHistory(agentId, {
-      client,
-      cursor: someCursor,
-      hasOlder: true,
-      isLoadingOlder: false,
-      setInFlight: inFlight.setInFlight,
-      toast,
-      logger,
-    });
-
-    expect(client.calls).toHaveLength(1);
-    expect(toast.shown).toEqual([
-      {
-        message: "Couldn't load older history",
-        options: { durationMs: 2200, testID: "agent-load-older-history-toast" },
-      },
-    ]);
-    expect(logger.warnings).toEqual([
-      ["[Timeline] failed to load older agent history", agentId, error],
-    ]);
-    expect(inFlight.values).toEqual([false, true, false]);
+    const service = new DaemonProjectionService(store);
+    service.start(
+      client(
+        vi.fn(async () => {
+          throw error;
+        }),
+      ),
+      "server",
+    );
+    await expect(service.fetchOlder("agent-1")).rejects.toBe(error);
+    expect(store.getSnapshot("server").timelines.get("agent-1")?.loadingOlder).toBe(false);
   });
 });

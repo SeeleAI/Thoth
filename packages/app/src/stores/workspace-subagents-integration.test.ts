@@ -1,4 +1,3 @@
-import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildWorkspaceTabSnapshot,
@@ -7,7 +6,8 @@ import {
 } from "@/workspace-tabs/agent-visibility";
 import { selectSubagentsForParent } from "@/subagents/select";
 import { buildWorkspaceTabPersistenceKey, useWorkspaceLayoutStore } from "./workspace-layout-store";
-import { useSessionStore, type Agent } from "./session-store";
+import type { Agent } from "@/projection/authority-model";
+import { deriveProjectPlacementFromCwd } from "@/utils/project-placement";
 
 vi.mock("@react-native-async-storage/async-storage", () => {
   const storage = new Map<string, string>();
@@ -66,32 +66,32 @@ const AGENT_DEFAULTS: Agent = {
   archivedAt: null,
   parentAgentId: null,
   labels: {},
-  projectPlacement: null,
+  projectPlacement: deriveProjectPlacementFromCwd(WORKSPACE_DIRECTORY),
 };
 
 function makeAgent(input: Partial<Agent> & Pick<Agent, "id">): Agent {
   return { ...AGENT_DEFAULTS, ...input };
 }
 
-function initializeAgents(agents: Agent[]): void {
-  useSessionStore.getState().initializeSession(SERVER_ID, null as unknown as DaemonClient);
-  useSessionStore
-    .getState()
-    .setAgents(SERVER_ID, new Map(agents.map((agent) => [agent.id, agent])));
+let agents = new Map<string, Agent>();
+
+function initializeAgents(nextAgents: Agent[]): void {
+  setAgentMap(new Map(nextAgents.map((agent) => [agent.id, agent])));
 }
 
 function appendAgent(agent: Agent): void {
-  useSessionStore.getState().setAgents(SERVER_ID, (agents) => {
-    const nextAgents = new Map(agents);
-    nextAgents.set(agent.id, agent);
-    return nextAgents;
-  });
+  const next = new Map(agents);
+  next.set(agent.id, agent);
+  setAgentMap(next);
+}
+
+function setAgentMap(next: Map<string, Agent>): void {
+  agents = next;
 }
 
 function deriveVisibilityFromSession(): WorkspaceAgentVisibility {
-  const sessionAgents = useSessionStore.getState().sessions[SERVER_ID]?.agents ?? new Map();
   return deriveWorkspaceAgentVisibility({
-    sessionAgents,
+    agents,
     workspaceId: WORKSPACE_ID,
   });
 }
@@ -118,7 +118,7 @@ function getWorkspaceTabIds(workspaceKey: string): string[] {
 }
 
 afterEach(() => {
-  useSessionStore.getState().clearSession(SERVER_ID);
+  agents = new Map();
   useWorkspaceLayoutStore.setState({
     layoutByWorkspace: {},
     splitSizesByWorkspace: {},
@@ -158,7 +158,7 @@ describe("workspace subagents integration", () => {
     expect(getWorkspaceTabIds(workspaceKey!)).toEqual(["agent_parent-agent"]);
     expect(
       selectSubagentsForParent(
-        useSessionStore.getState(),
+        agents,
         {
           serverId: SERVER_ID,
           parentAgentId: "parent-agent",
@@ -191,7 +191,7 @@ describe("workspace subagents integration", () => {
     expect(getWorkspaceTabIds(workspaceKey!)).toEqual(["agent_parent-agent"]);
     expect(
       selectSubagentsForParent(
-        useSessionStore.getState(),
+        agents,
         {
           serverId: SERVER_ID,
           parentAgentId: "parent-agent",
@@ -206,7 +206,7 @@ describe("workspace subagents integration", () => {
     expect(getWorkspaceTabIds(workspaceKey!)).toEqual(["agent_parent-agent", "agent_child-agent"]);
     expect(
       selectSubagentsForParent(
-        useSessionStore.getState(),
+        agents,
         {
           serverId: SERVER_ID,
           parentAgentId: "parent-agent",

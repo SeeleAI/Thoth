@@ -10,15 +10,15 @@ import {
 import { useTranslation } from "react-i18next";
 import { Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { useShallow } from "zustand/shallow";
-import { useStoreWithEqualityFn } from "zustand/traditional";
+import { shallow } from "zustand/shallow";
 import { Bot, ShieldAlert, ShieldCheck, ShieldOff, ShieldQuestionMark } from "lucide-react-native";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
 import { type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Shortcut } from "@/components/ui/shortcut";
-import { useSessionStore } from "@/stores/session-store";
+import { useAuthorityProjection } from "@/projection/projection-context";
+import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { mergeProviderPreferences, useFormPreferences } from "@/hooks/use-form-preferences";
 import { resolveProviderDefinition } from "@/utils/provider-definitions";
@@ -266,10 +266,6 @@ export function AgentModeControlView({
 
 const EMPTY_MODES: AgentMode[] = [];
 
-function compareAvailableModes(a: AgentMode[], b: AgentMode[]): boolean {
-  return a === b || JSON.stringify(a) === JSON.stringify(b);
-}
-
 interface AgentModeControlProps {
   serverId: string;
   agentId: string;
@@ -285,23 +281,22 @@ export const AgentModeControl = memo(function AgentModeControl({
 }: AgentModeControlProps) {
   const isCompactFormFactor = useIsCompactFormFactor();
   const isCompact = isCompactLayout ?? isCompactFormFactor;
-  const slice = useSessionStore(
-    useShallow((state) => {
-      const agent = state.sessions[serverId]?.agents?.get(agentId);
+  const slice = useAuthorityProjection(
+    serverId,
+    (projection) => {
+      const agent = projection.agents.get(agentId);
       if (!agent) return null;
       return {
         provider: agent.provider,
         cwd: agent.cwd,
         currentModeId: agent.currentModeId,
+        availableModes: agent.availableModes,
       };
-    }),
+    },
+    shallow,
   );
-  const availableModes = useStoreWithEqualityFn(
-    useSessionStore,
-    (state) => state.sessions[serverId]?.agents?.get(agentId)?.availableModes ?? EMPTY_MODES,
-    compareAvailableModes,
-  );
-  const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
+  const availableModes = slice?.availableModes ?? EMPTY_MODES;
+  const client = useHostRuntimeClient(serverId);
   const { updatePreferences } = useFormPreferences();
   const toast = useToast();
   const { entries: snapshotEntries } = useProvidersSnapshot(serverId, { cwd: slice?.cwd });

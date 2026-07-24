@@ -4,7 +4,7 @@ import {
   buildDraftAgentSetup,
   resolveClientSlashCommand,
 } from "@/client-slash-commands";
-import type { Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
 
 function createAgent(overrides: Partial<Agent> = {}): Agent {
   const now = new Date("2026-05-15T00:00:00.000Z");

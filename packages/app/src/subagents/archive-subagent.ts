@@ -1,4 +1,4 @@
-import type { Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
 import type { ConfirmDialogInput } from "@/utils/confirm-dialog";
 
 export interface ResolveArchiveSubagentDialogInput {

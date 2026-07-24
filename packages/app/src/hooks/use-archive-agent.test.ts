@@ -1,8 +1,5 @@
-import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import { QueryClient } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it } from "vitest";
-import type { Agent } from "@/stores/session-store";
-import { useSessionStore } from "@/stores/session-store";
+import { describe, expect, it } from "vitest";
 import { agentHistoryQueryKey, allAgentHistoryQueryKey } from "./agent-history-query-key";
 import {
   applyArchivedAgentCloseResults,
@@ -10,45 +7,9 @@ import {
   removeAgentFromListPayload,
   selectPendingArchiveAgentIds,
   setAgentArchiving,
-} from "./use-archive-agent";
+} from "@/query/agent-archive-state";
 
-function makeAgent(overrides: Partial<Agent> = {}): Agent {
-  return {
-    serverId: "server-a",
-    id: "agent-1",
-    provider: "codex",
-    status: "running",
-    createdAt: new Date("2026-04-01T03:00:00.000Z"),
-    updatedAt: new Date("2026-04-01T03:00:00.000Z"),
-    lastUserMessageAt: null,
-    lastActivityAt: new Date("2026-04-01T03:00:00.000Z"),
-    capabilities: {
-      supportsStreaming: true,
-      supportsSessionPersistence: true,
-      supportsDynamicModes: true,
-      supportsMcpServers: true,
-      supportsReasoningStream: true,
-      supportsToolInvocations: true,
-    },
-    currentModeId: null,
-    availableModes: [],
-    pendingPermissions: [],
-    persistence: null,
-    title: "Agent 1",
-    cwd: "/repo",
-    model: null,
-    parentAgentId: null,
-    labels: {},
-    archivedAt: null,
-    ...overrides,
-  };
-}
-
-describe("useArchiveAgent", () => {
-  beforeEach(() => {
-    useSessionStore.setState((state) => ({ ...state, sessions: {} }));
-  });
-
+describe("agent archive query state", () => {
   it("tracks pending archive state in shared react-query cache", () => {
     const queryClient = new QueryClient();
 
@@ -123,10 +84,8 @@ describe("useArchiveAgent", () => {
     expect(next.pageInfo).toEqual({ hasMore: false });
   });
 
-  it("applies archived agent close results to session state and cached lists", async () => {
+  it("applies archived agent close results to cached lists", async () => {
     const queryClient = new QueryClient();
-    useSessionStore.getState().initializeSession("server-a", {} as DaemonClient);
-    useSessionStore.getState().setAgents("server-a", new Map([["agent-1", makeAgent()]]));
     queryClient.setQueryData(["sidebarAgentsList", "server-a"], {
       entries: [{ agent: { id: "agent-1" } }, { agent: { id: "agent-2" } }],
     });
@@ -162,12 +121,6 @@ describe("useArchiveAgent", () => {
       results: [{ agentId: "agent-1", archivedAt: "2026-04-01T04:00:00.000Z" }],
     });
 
-    expect(
-      useSessionStore
-        .getState()
-        .sessions["server-a"]?.agents.get("agent-1")
-        ?.archivedAt?.toISOString(),
-    ).toBe("2026-04-01T04:00:00.000Z");
     expect(queryClient.getQueryData(["sidebarAgentsList", "server-a"])).toEqual({
       entries: [{ agent: { id: "agent-2" } }],
     });
@@ -207,8 +160,6 @@ describe("useArchiveAgent", () => {
 
   it("can apply archived agent close results without invalidating cached lists", () => {
     const queryClient = new QueryClient();
-    useSessionStore.getState().initializeSession("server-a", {} as DaemonClient);
-    useSessionStore.getState().setAgents("server-a", new Map([["agent-1", makeAgent()]]));
     queryClient.setQueryData(["sidebarAgentsList", "server-a"], {
       entries: [{ agent: { id: "agent-1" } }, { agent: { id: "agent-2" } }],
     });

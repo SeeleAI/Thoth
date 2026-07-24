@@ -54,7 +54,7 @@ import { useSidebarViewStore, type SidebarGroupMode } from "@/stores/sidebar-vie
 import { useKeyboardShortcutsStore } from "@/stores/keyboard-shortcuts-store";
 import { useHosts } from "@/runtime/host-runtime";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
-import { useWorkspace } from "@/stores/session-store-hooks";
+import { useWorkspace } from "@/projection/hooks";
 import {
   MAX_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,

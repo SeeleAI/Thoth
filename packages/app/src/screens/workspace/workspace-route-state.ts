@@ -1,5 +1,5 @@
 import type { HostRuntimeConnectionStatus } from "@/runtime/host-runtime";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 
 export type WorkspaceRouteState =
   | { kind: "ready" }

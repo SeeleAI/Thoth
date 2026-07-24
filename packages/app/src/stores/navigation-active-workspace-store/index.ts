@@ -13,7 +13,8 @@ import {
   parseActiveWorkspaceSelection,
   type NavigateToWorkspaceDeps,
 } from "./navigation";
-import { useSessionStore } from "@/stores/session-store";
+import { appProjectionRuntime } from "@/projection/projection-context";
+import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import { stripHostWorkspaceRouteEchoSearchFromBrowserUrlAfterCommit } from "@/utils/host-route-browser";
 import { navigateToHostWorkspaceRoute } from "@/navigation/workspace-route-navigation";
@@ -42,14 +43,9 @@ function shouldPopToExistingHostRoute(options: NavigateToWorkspaceOptions): bool
 
 function navigateDeps(options: NavigateToWorkspaceOptions): NavigateToWorkspaceDeps {
   return {
-    getSessionWorkspaces: (serverId) => useSessionStore.getState().sessions[serverId]?.workspaces,
-    getSessionAgents: (serverId) => {
-      const session = useSessionStore.getState().sessions[serverId];
-      if (!session) {
-        return [];
-      }
-      return [...session.agents.values(), ...session.agentDetails.values()];
-    },
+    getSessionWorkspaces: (serverId) => appProjectionRuntime.store.getSnapshot(serverId).workspaces,
+    getSessionAgents: (serverId) =>
+      appProjectionRuntime.store.getSnapshot(serverId).agents.values(),
     openWorkspaceAgentTab: (workspaceKey, agentId) => {
       useWorkspaceLayoutStore.getState().openTabFocused(workspaceKey, { kind: "agent", agentId });
     },
@@ -81,7 +77,7 @@ export function navigateToWorkspace(
   options: NavigateToWorkspaceOptions = {},
 ) {
   navigateToWorkspacePure(serverId, workspaceId, navigateDeps(options));
-  const client = useSessionStore.getState().sessions[serverId]?.client ?? null;
+  const client = getHostRuntimeStore().getClient(serverId);
   void restoreWorkspaceAgentTabFromHistory({
     serverId,
     workspaceId,

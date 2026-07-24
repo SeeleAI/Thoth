@@ -1,4 +1,4 @@
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import { estimateAssistantMessageHeightFromCache } from "@/utils/assistant-message-height-estimate";
 
 export const DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD = 100;
@@ -33,7 +33,7 @@ export function getWebMountedRecentStreamItems(): number {
 }
 
 export interface IndexedStreamItem {
-  item: StreamItem;
+  item: TimelineViewModel;
   index: number;
 }
 
@@ -42,7 +42,7 @@ export interface WebVirtualizedHistoryWindow {
   mountedEntries: IndexedStreamItem[];
 }
 
-export function estimateStreamItemHeight(item: StreamItem): number {
+export function estimateStreamItemHeight(item: TimelineViewModel): number {
   switch (item.kind) {
     case "user_message":
       return item.images && item.images.length > 0 ? 220 : 96;
@@ -72,7 +72,7 @@ export function estimateStreamItemHeight(item: StreamItem): number {
 }
 
 export function findMountedWindowStart(input: {
-  items: StreamItem[];
+  items: TimelineViewModel[];
   minMountedCount: number;
 }): number {
   const { items, minMountedCount } = input;

@@ -258,6 +258,7 @@ import type {
   AgentPersistenceHandle,
   ProviderStatus,
   AgentRuntimeInfo,
+  AgentTimelineEntry,
   AgentTimelineItem,
   AgentProviderNotice,
   ToolCallDetail,
@@ -2796,7 +2797,7 @@ const AgentTimelineSeqRangeSchema = z.object({
   endSeq: z.number().int().nonnegative(),
 });
 
-export const AgentTimelineEntryPayloadSchema = z.object({
+export const AgentTimelineEntryPayloadSchema: z.ZodType<AgentTimelineEntry> = z.object({
   provider: AgentProviderSchema,
   item: AgentTimelineItemPayloadSchema,
   timestamp: z.string(),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import {
   clearAssistantImageMetadataCache,
   setAssistantImageMetadata,
@@ -19,7 +19,7 @@ function createTimestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
 }
 
-function userMessage(id: string, seed: number): StreamItem {
+function userMessage(id: string, seed: number): TimelineViewModel {
   return {
     kind: "user_message",
     id,
@@ -28,7 +28,7 @@ function userMessage(id: string, seed: number): StreamItem {
   };
 }
 
-function assistantMessage(id: string, seed: number): StreamItem {
+function assistantMessage(id: string, seed: number): TimelineViewModel {
   return {
     kind: "assistant_message",
     id,
@@ -37,7 +37,7 @@ function assistantMessage(id: string, seed: number): StreamItem {
   };
 }
 
-function toolCall(id: string, seed: number): StreamItem {
+function toolCall(id: string, seed: number): TimelineViewModel {
   return {
     kind: "tool_call",
     id,
@@ -54,7 +54,7 @@ function toolCall(id: string, seed: number): StreamItem {
   };
 }
 
-function thought(id: string, seed: number): StreamItem {
+function thought(id: string, seed: number): TimelineViewModel {
   return {
     kind: "thought",
     id,
@@ -64,7 +64,7 @@ function thought(id: string, seed: number): StreamItem {
   };
 }
 
-function indexEntries(items: StreamItem[]): IndexedStreamItem[] {
+function indexEntries(items: TimelineViewModel[]): IndexedStreamItem[] {
   return items.map((item, index) => ({ item, index }));
 }
 
@@ -81,7 +81,7 @@ describe("findMountedWindowStart", () => {
   });
 
   it("rewinds to the previous user boundary when the cutoff lands inside a turn", () => {
-    const items: StreamItem[] = [];
+    const items: TimelineViewModel[] = [];
     for (let index = 0; index < 30; index += 1) {
       const seed = index * 3;
       items.push(userMessage(`u${index}`, seed + 1));
@@ -100,7 +100,7 @@ describe("findMountedWindowStart", () => {
 
 describe("splitWebVirtualizedHistory", () => {
   it("splits older entries into the virtualized section and keeps the recent window mounted", () => {
-    const items: StreamItem[] = [];
+    const items: TimelineViewModel[] = [];
     for (let index = 0; index < 30; index += 1) {
       const seed = index * 2;
       items.push(userMessage(`u${index}`, seed + 1));
@@ -127,7 +127,7 @@ describe("estimateStreamItemHeight", () => {
   });
 
   it("uses a larger estimate for user messages with image attachments", () => {
-    const item: StreamItem = {
+    const item: TimelineViewModel = {
       kind: "user_message",
       id: "u-image",
       text: "image",
@@ -157,7 +157,7 @@ describe("estimateStreamItemHeight", () => {
       { width: 800, height: 1600 },
     );
 
-    const item: StreamItem = {
+    const item: TimelineViewModel = {
       kind: "assistant_message",
       id: "a-image",
       text: "Look at this\n\n![Screenshot](https://example.com/tall.png)",

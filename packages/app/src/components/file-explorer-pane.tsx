@@ -29,9 +29,8 @@ import {
 } from "lucide-react-native";
 import { getFileIconSvg } from "@/components/material-file-icons";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import type { AgentFileExplorerState, ExplorerEntry } from "@/stores/session-store";
+import type { AgentFileExplorerState, ExplorerEntry } from "@/query/file-explorer-model";
 import { useHosts } from "@/runtime/host-runtime";
-import { useSessionStore } from "@/stores/session-store";
 import { useDownloadStore } from "@/stores/download-store";
 import {
   DropdownMenu,
@@ -40,8 +39,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
-import { buildWorkspaceExplorerStateKey } from "@/hooks/use-file-explorer-actions";
+import {
+  buildWorkspaceExplorerStateKey,
+  emptyFileExplorerState,
+  fileExplorerQueryKey,
+  useFileExplorerActions,
+} from "@/hooks/use-file-explorer-actions";
 import { usePanelStore, type SortOption } from "@/stores/panel-store";
 import { formatTimeAgo } from "@/utils/time";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
@@ -257,11 +260,11 @@ export function FileExplorerPane({
     [normalizedWorkspaceRoot, workspaceId],
   );
   const hasWorkspaceScope = Boolean(workspaceStateKey && normalizedWorkspaceRoot);
-  const explorerState = useSessionStore((state) =>
-    workspaceStateKey && state.sessions[serverId]
-      ? state.sessions[serverId]?.fileExplorer.get(workspaceStateKey)
-      : undefined,
-  );
+  const { data: explorerState } = useQuery({
+    queryKey: fileExplorerQueryKey(serverId, workspaceStateKey ?? "unavailable"),
+    queryFn: async () => emptyFileExplorerState(),
+    enabled: false,
+  });
 
   const { requestDirectoryListing, requestFileDownloadToken, selectExplorerEntry } =
     useFileExplorerActions({

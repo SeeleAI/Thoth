@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Agent } from "@/contexts/session-context";
+import type { Agent } from "@/projection/authority-model";
 import {
   deriveAgentScreenViewState,
   type AgentScreenMachineInput,

@@ -2,6 +2,7 @@ import "@/styles/unistyles";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { PortalProvider } from "@gorhom/portal";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { ProjectionProvider } from "@/projection/projection-context";
 import * as Linking from "expo-linking";
 import * as Notifications from "expo-notifications";
 import {
@@ -47,7 +48,7 @@ import {
   HorizontalScrollProvider,
   useHorizontalScrollOptional,
 } from "@/contexts/horizontal-scroll-context";
-import { SessionProvider } from "@/contexts/session-context";
+import { DaemonProjectionHost } from "@/projection/daemon-projection-host";
 import { ExplorerSidebarAnimationProvider } from "@/contexts/explorer-sidebar-animation-context";
 import {
   SidebarAnimationProvider,
@@ -245,9 +246,9 @@ function ManagedDaemonSession({ daemon }: { daemon: HostProfile }) {
   }
 
   return (
-    <SessionProvider key={daemon.serverId} serverId={daemon.serverId} client={client}>
+    <DaemonProjectionHost key={daemon.serverId} serverId={daemon.serverId} client={client}>
       {null}
-    </SessionProvider>
+    </DaemonProjectionHost>
   );
 }
 
@@ -988,17 +989,19 @@ function RuntimeProviders({ children }: { children: ReactNode }) {
 function RootProviders({ children }: { children: ReactNode }) {
   return (
     <QueryProvider>
-      <I18nProvider>
-        <SafeAreaProvider>
-          <KeyboardProvider>
-            <KeyboardShiftProvider>
-              <PortalProvider>
-                <BottomSheetModalProvider>{children}</BottomSheetModalProvider>
-              </PortalProvider>
-            </KeyboardShiftProvider>
-          </KeyboardProvider>
-        </SafeAreaProvider>
-      </I18nProvider>
+      <ProjectionProvider>
+        <I18nProvider>
+          <SafeAreaProvider>
+            <KeyboardProvider>
+              <KeyboardShiftProvider>
+                <PortalProvider>
+                  <BottomSheetModalProvider>{children}</BottomSheetModalProvider>
+                </PortalProvider>
+              </KeyboardShiftProvider>
+            </KeyboardProvider>
+          </SafeAreaProvider>
+        </I18nProvider>
+      </ProjectionProvider>
     </QueryProvider>
   );
 }

@@ -1,4 +1,4 @@
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 
 export interface TurnTiming {
   startedAt: Date;
@@ -13,8 +13,8 @@ export interface StreamTurnTiming {
 
 export function deriveStreamTurnTiming(params: {
   agentStatus: string;
-  tail: StreamItem[];
-  head: StreamItem[];
+  tail: TimelineViewModel[];
+  head: TimelineViewModel[];
 }): StreamTurnTiming {
   const byAssistantId = new Map<string, TurnTiming>();
   let currentUserAt: Date | null = null;
@@ -35,7 +35,7 @@ export function deriveStreamTurnTiming(params: {
     }
   };
 
-  const visitItem = (item: StreamItem) => {
+  const visitItem = (item: TimelineViewModel) => {
     if (item.kind === "user_message") {
       flushCompletedTurn();
       currentUserAt = item.timestamp;
@@ -73,7 +73,7 @@ export function deriveStreamTurnTiming(params: {
   };
 }
 
-function findLastUserMessageTimestamp(items: StreamItem[]): Date | null {
+function findLastUserMessageTimestamp(items: TimelineViewModel[]): Date | null {
   for (let i = items.length - 1; i >= 0; i -= 1) {
     const item = items[i];
     if (item?.kind === "user_message") {

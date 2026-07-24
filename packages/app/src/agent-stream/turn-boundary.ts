@@ -1,7 +1,7 @@
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 
 export function resolveAssistantTurnBoundaryMessageId(input: {
-  items: readonly StreamItem[];
+  items: readonly TimelineViewModel[];
   startIndex: number;
 }): string | undefined {
   const item = input.items[input.startIndex];

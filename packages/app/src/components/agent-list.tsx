@@ -16,7 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { formatTimeAgo } from "@/utils/time";
 import { type AggregatedAgent } from "@/hooks/use-aggregated-agents";
-import { useSessionStore } from "@/stores/session-store";
+import { getHostRuntimeStore, useHostRuntimeClient } from "@/runtime/host-runtime";
 import { Archive, ChevronRight } from "lucide-react-native";
 import { getProviderIcon } from "@/components/provider-icons";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
@@ -376,9 +376,7 @@ export function AgentList({
   const { archiveAgent } = useArchiveAgent();
   const queryClient = useQueryClient();
 
-  const actionClient = useSessionStore((state) =>
-    actionAgent?.serverId ? (state.sessions[actionAgent.serverId]?.client ?? null) : null,
-  );
+  const actionClient = useHostRuntimeClient(actionAgent?.serverId ?? "");
 
   const isActionSheetVisible = actionAgent !== null;
   const isActionDaemonUnavailable = Boolean(actionAgent?.serverId && !actionClient);
@@ -402,7 +400,7 @@ export function AgentList({
       };
 
       if (agent.archivedAt) {
-        const client = useSessionStore.getState().sessions[serverId]?.client ?? null;
+        const client = getHostRuntimeStore().getClient(serverId);
         if (client) {
           void client
             .refreshAgent(agentId)
@@ -430,7 +428,7 @@ export function AgentList({
         return;
       }
 
-      const client = useSessionStore.getState().sessions[agent.serverId]?.client ?? null;
+      const client = getHostRuntimeStore().getClient(agent.serverId);
       if (!client) {
         setActionAgent(agent);
         return;

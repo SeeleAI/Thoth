@@ -17,7 +17,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
@@ -57,7 +57,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     strategy,
   } = props;
   const { renderHistoryMountedRow, renderLiveHeadRow, renderLiveAuxiliary } = renderers;
-  const flatListRef = useRef<FlatList<StreamItem>>(null);
+  const flatListRef = useRef<FlatList<TimelineViewModel>>(null);
   const streamViewportMetricsRef = useRef({
     containerKey: "native-virtualized",
     contentHeight: 0,
@@ -306,7 +306,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   });
 
   const renderItem = useStableEvent(
-    ({ item, index }: ListRenderItemInfo<StreamItem>): ReactElement | null => {
+    ({ item, index }: ListRenderItemInfo<TimelineViewModel>): ReactElement | null => {
       const rendered = renderHistoryMountedRow(item, index, historyRows);
       return (rendered ?? null) as ReactElement | null;
     },

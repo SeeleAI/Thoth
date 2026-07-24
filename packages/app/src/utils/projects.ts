@@ -1,4 +1,4 @@
-import type { EmptyProjectDescriptor, WorkspaceDescriptor } from "@/stores/session-store";
+import type { EmptyProjectDescriptor, WorkspaceDescriptor } from "@/projection/authority-model";
 import { buildHostProjectList, type HostProjectListItem } from "@/projects/host-project-model";
 import { buildWorkspaceStructureProjects } from "@/projects/workspace-structure";
 

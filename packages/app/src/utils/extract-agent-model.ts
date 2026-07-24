@@ -1,4 +1,4 @@
-import type { Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
 
 export function extractAgentModel(agent?: Agent | null): string | null {
   if (!agent) return null;

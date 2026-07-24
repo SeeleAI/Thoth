@@ -1,17 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import { queryClient as appQueryClient } from "@/query/query-client";
-import { useSessionStore } from "@/stores/session-store";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
+import { appProjectionRuntime } from "@/projection/projection-context";
+import { clearTestProjections, setTestProjection } from "@/test-utils/authority-projection";
 import {
   __resetCheckoutGitActionsStoreForTests,
   isLocalWorktreeArchivePending,
   useCheckoutGitActionsStore,
 } from "@/git/actions-store";
-import {
-  clearWorkspaceArchivePending,
-  isWorkspaceArchivePending,
-} from "@/contexts/session-workspace-upserts";
+import { isWorkspaceArchivePending } from "@/query/workspace-archive-state";
+
+const hostRuntime = vi.hoisted(() => ({
+  clients: new Map<string, unknown>(),
+  serverInfo: new Map<string, unknown>(),
+}));
+
+vi.mock("@/runtime/host-runtime", () => ({
+  getHostRuntimeStore: () => ({
+    getClient: (serverId: string) => hostRuntime.clients.get(serverId) ?? null,
+    getSnapshot: (serverId: string) => ({
+      client: hostRuntime.clients.get(serverId) ?? null,
+      serverInfo: hostRuntime.serverInfo.get(serverId) ?? null,
+    }),
+  }),
+}));
 
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
@@ -49,6 +61,16 @@ function workspace(input: Partial<WorkspaceDescriptor> & Pick<WorkspaceDescripto
   } satisfies WorkspaceDescriptor;
 }
 
+function setRuntimeClient(client: unknown, features: Record<string, boolean> = {}): void {
+  hostRuntime.clients.set("server-1", client);
+  hostRuntime.serverInfo.set("server-1", {
+    serverId: "server-1",
+    hostname: null,
+    version: null,
+    features,
+  });
+}
+
 describe("checkout-git-actions-store", () => {
   const serverId = "server-1";
   const cwd = "/tmp/repo/worktrees/feature";
@@ -57,17 +79,19 @@ describe("checkout-git-actions-store", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     __resetCheckoutGitActionsStoreForTests();
-    clearWorkspaceArchivePending({ serverId, workspaceId });
+    hostRuntime.clients.clear();
+    hostRuntime.serverInfo.clear();
     appQueryClient.clear();
-    useSessionStore.setState((state) => ({ ...state, sessions: {} }));
+    clearTestProjections();
   });
 
   afterEach(() => {
     vi.useRealTimers();
     __resetCheckoutGitActionsStoreForTests();
-    clearWorkspaceArchivePending({ serverId, workspaceId });
+    hostRuntime.clients.clear();
+    hostRuntime.serverInfo.clear();
     appQueryClient.clear();
-    useSessionStore.setState((state) => ({ ...state, sessions: {} }));
+    clearTestProjections();
   });
 
   it("shares pending state per checkout and de-dupes in-flight calls", async () => {
@@ -76,13 +100,7 @@ describe("checkout-git-actions-store", () => {
       checkoutCommit: vi.fn(() => deferred.promise),
     };
 
-    useSessionStore.setState((state) => ({
-      ...state,
-      sessions: {
-        ...state.sessions,
-        [serverId]: { client } as unknown as (typeof state.sessions)[string],
-      },
-    }));
+    setRuntimeClient(client);
 
     const store = useCheckoutGitActionsStore.getState();
 
@@ -112,13 +130,7 @@ describe("checkout-git-actions-store", () => {
         return {};
       }),
     };
-    useSessionStore.setState((state) => ({
-      ...state,
-      sessions: {
-        ...state.sessions,
-        [serverId]: { client } as unknown as (typeof state.sessions)[string],
-      },
-    }));
+    setRuntimeClient(client);
 
     await useCheckoutGitActionsStore.getState().pullAndPush({ serverId, cwd });
 
@@ -133,13 +145,7 @@ describe("checkout-git-actions-store", () => {
       checkoutPull: vi.fn(async () => ({ error: { message: "pull conflict" } })),
       checkoutPush: vi.fn(async () => ({})),
     };
-    useSessionStore.setState((state) => ({
-      ...state,
-      sessions: {
-        ...state.sessions,
-        [serverId]: { client } as unknown as (typeof state.sessions)[string],
-      },
-    }));
+    setRuntimeClient(client);
 
     await expect(
       useCheckoutGitActionsStore.getState().pullAndPush({ serverId, cwd }),
@@ -154,13 +160,7 @@ describe("checkout-git-actions-store", () => {
       checkoutPull: vi.fn(async () => ({})),
       checkoutPush: vi.fn(async () => ({ error: { message: "push rejected" } })),
     };
-    useSessionStore.setState((state) => ({
-      ...state,
-      sessions: {
-        ...state.sessions,
-        [serverId]: { client } as unknown as (typeof state.sessions)[string],
-      },
-    }));
+    setRuntimeClient(client);
 
     await expect(
       useCheckoutGitActionsStore.getState().pullAndPush({ serverId, cwd }),
@@ -174,13 +174,7 @@ describe("checkout-git-actions-store", () => {
     const client = {
       checkoutRefresh: vi.fn(async () => ({ success: true, error: null })),
     };
-    useSessionStore.setState((state) => ({
-      ...state,
-      sessions: {
-        ...state.sessions,
-        [serverId]: { client } as unknown as (typeof state.sessions)[string],
-      },
-    }));
+    setRuntimeClient(client);
 
     await useCheckoutGitActionsStore.getState().refresh({ serverId, cwd });
 
@@ -194,13 +188,7 @@ describe("checkout-git-actions-store", () => {
     const client = {
       checkoutRefresh: vi.fn(async () => ({ error: { message: "not a git repository" } })),
     };
-    useSessionStore.setState((state) => ({
-      ...state,
-      sessions: {
-        ...state.sessions,
-        [serverId]: { client } as unknown as (typeof state.sessions)[string],
-      },
-    }));
+    setRuntimeClient(client);
 
     await expect(useCheckoutGitActionsStore.getState().refresh({ serverId, cwd })).rejects.toThrow(
       "not a git repository",
@@ -218,13 +206,7 @@ describe("checkout-git-actions-store", () => {
         error: null,
       })),
     };
-    useSessionStore.getState().initializeSession(serverId, client as unknown as DaemonClient);
-    useSessionStore.getState().updateSessionServerInfo(serverId, {
-      serverId,
-      hostname: null,
-      version: null,
-      features: { checkoutGithubSetAutoMerge: true },
-    });
+    setRuntimeClient(client, { checkoutGithubSetAutoMerge: true });
 
     await useCheckoutGitActionsStore
       .getState()
@@ -249,13 +231,7 @@ describe("checkout-git-actions-store", () => {
         error: null,
       })),
     };
-    useSessionStore.getState().initializeSession(serverId, client as unknown as DaemonClient);
-    useSessionStore.getState().updateSessionServerInfo(serverId, {
-      serverId,
-      hostname: null,
-      version: null,
-      features: { checkoutGithubSetAutoMerge: true },
-    });
+    setRuntimeClient(client, { checkoutGithubSetAutoMerge: true });
 
     await useCheckoutGitActionsStore.getState().disablePrAutoMerge({ serverId, cwd });
 
@@ -275,13 +251,7 @@ describe("checkout-git-actions-store", () => {
         error: null,
       })),
     };
-    useSessionStore.getState().initializeSession(serverId, client as unknown as DaemonClient);
-    useSessionStore.getState().updateSessionServerInfo(serverId, {
-      serverId,
-      hostname: null,
-      version: null,
-      features: {},
-    });
+    setRuntimeClient(client);
 
     await expect(
       useCheckoutGitActionsStore.getState().enablePrAutoMerge({ serverId, cwd, method: "merge" }),
@@ -305,8 +275,10 @@ describe("checkout-git-actions-store", () => {
       name: "feature",
       workspaceDirectory: cwd,
     });
-    useSessionStore.getState().initializeSession(serverId, client as unknown as DaemonClient);
-    useSessionStore.getState().setWorkspaces(serverId, new Map([[workspaceId, featureWorkspace]]));
+    setRuntimeClient(client);
+    setTestProjection(serverId, {
+      workspaces: new Map([[workspaceId, featureWorkspace]]),
+    });
     appQueryClient.setQueryData(
       ["sidebarThothWorktreeList", serverId, "/tmp"],
       [{ worktreePath: cwd }, { worktreePath: "/tmp/other" }],
@@ -316,8 +288,9 @@ describe("checkout-git-actions-store", () => {
       .getState()
       .archiveWorktree({ serverId, cwd, worktreePath: cwd, workspaceId });
 
-    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(workspaceId)).toBe(false);
-    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(cwd)).toBe(false);
+    expect(appProjectionRuntime.store.getSnapshot(serverId).workspaces.get(workspaceId)).toBe(
+      featureWorkspace,
+    );
     expect(appQueryClient.getQueryData(["sidebarThothWorktreeList", serverId, "/tmp"])).toEqual([
       { worktreePath: "/tmp/other" },
     ]);
@@ -328,12 +301,14 @@ describe("checkout-git-actions-store", () => {
 
     expect(
       isWorkspaceArchivePending({
+        queryClient: appQueryClient,
         serverId,
         workspaceId,
       }),
     ).toBe(true);
     expect(
       isWorkspaceArchivePending({
+        queryClient: appQueryClient,
         serverId,
         workspaceId: cwd,
       }),
@@ -344,7 +319,7 @@ describe("checkout-git-actions-store", () => {
     const client = {
       archiveThothWorktree: vi.fn(async () => ({})),
     };
-    useSessionStore.getState().initializeSession(serverId, client as unknown as DaemonClient);
+    setRuntimeClient(client);
 
     await useCheckoutGitActionsStore
       .getState()
@@ -353,7 +328,9 @@ describe("checkout-git-actions-store", () => {
     // The server archive is keyed by worktreePath and must run regardless.
     expect(client.archiveThothWorktree).toHaveBeenCalledWith({ worktreePath: cwd });
     // The optimistic client-side mark is never keyed by the path.
-    expect(isWorkspaceArchivePending({ serverId, workspaceId: cwd })).toBe(false);
+    expect(
+      isWorkspaceArchivePending({ queryClient: appQueryClient, serverId, workspaceId: cwd }),
+    ).toBe(false);
   });
 
   it("restores an optimistically hidden worktree when archive fails", async () => {
@@ -366,8 +343,10 @@ describe("checkout-git-actions-store", () => {
       workspaceDirectory: cwd,
     });
     const listSnapshot = [{ worktreePath: cwd }, { worktreePath: "/tmp/other" }];
-    useSessionStore.getState().initializeSession(serverId, client as unknown as DaemonClient);
-    useSessionStore.getState().setWorkspaces(serverId, new Map([[workspaceId, featureWorkspace]]));
+    setRuntimeClient(client);
+    setTestProjection(serverId, {
+      workspaces: new Map([[workspaceId, featureWorkspace]]),
+    });
     appQueryClient.setQueryData(["sidebarThothWorktreeList", serverId, "/tmp"], listSnapshot);
 
     await expect(
@@ -376,7 +355,7 @@ describe("checkout-git-actions-store", () => {
         .archiveWorktree({ serverId, cwd, worktreePath: cwd, workspaceId }),
     ).rejects.toThrow("archive failed");
 
-    expect(useSessionStore.getState().sessions[serverId]?.workspaces.get(workspaceId)).toEqual(
+    expect(appProjectionRuntime.store.getSnapshot(serverId).workspaces.get(workspaceId)).toEqual(
       featureWorkspace,
     );
     expect(appQueryClient.getQueryData(["sidebarThothWorktreeList", serverId, "/tmp"])).toEqual(
@@ -394,8 +373,10 @@ describe("checkout-git-actions-store", () => {
       name: "feature",
       workspaceDirectory: cwd,
     });
-    useSessionStore.getState().initializeSession(serverId, client as unknown as DaemonClient);
-    useSessionStore.getState().setWorkspaces(serverId, new Map([[workspaceId, featureWorkspace]]));
+    setRuntimeClient(client);
+    setTestProjection(serverId, {
+      workspaces: new Map([[workspaceId, featureWorkspace]]),
+    });
 
     const archive = useCheckoutGitActionsStore
       .getState()

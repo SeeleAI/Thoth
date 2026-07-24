@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import { buildAgentStreamRenderModel } from "./model";
 
 function createTimestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
 }
 
-function userMessage(id: string, seed: number): StreamItem {
+function userMessage(id: string, seed: number): TimelineViewModel {
   return {
     kind: "user_message",
     id,
@@ -15,7 +15,7 @@ function userMessage(id: string, seed: number): StreamItem {
   };
 }
 
-function assistantMessage(id: string, seed: number): StreamItem {
+function assistantMessage(id: string, seed: number): TimelineViewModel {
   return {
     kind: "assistant_message",
     id,
@@ -26,7 +26,7 @@ function assistantMessage(id: string, seed: number): StreamItem {
 
 describe("buildAgentStreamRenderModel", () => {
   it("keeps head separate from committed history on desktop web", () => {
-    const tail: StreamItem[] = [];
+    const tail: TimelineViewModel[] = [];
     for (let index = 0; index < 60; index += 1) {
       const seed = index * 2;
       tail.push(userMessage(`u${index}`, seed + 1));

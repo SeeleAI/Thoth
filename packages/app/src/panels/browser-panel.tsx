@@ -6,7 +6,7 @@ import { BrowserPane } from "@/components/browser-pane";
 import { usePaneContext, usePaneFocus } from "@/panels/pane-context";
 import type { PanelDescriptor, PanelIconProps, PanelRegistration } from "@/panels/panel-registry";
 import { useBrowserStore } from "@/stores/browser-store";
-import { useWorkspaceDirectory } from "@/stores/session-store-hooks";
+import { useWorkspaceDirectory } from "@/projection/hooks";
 
 function getBrowserLabel(input: { title: string; url: string }): string {
   const title = input.title.trim();

@@ -17,7 +17,9 @@ vi.mock("@react-native-async-storage/async-storage", () => {
 
 import type { DaemonClient, FetchAgentHistoryEntry } from "@thoth/client/internal/daemon-client";
 import type { AgentSnapshotPayload } from "@thoth/protocol/messages";
-import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
+import { appProjectionRuntime } from "@/projection/projection-context";
+import { clearTestProjections, setTestProjection } from "@/test-utils/authority-projection";
 import {
   buildWorkspaceTabPersistenceKey,
   useWorkspaceLayoutStore,
@@ -32,7 +34,7 @@ const WORKSPACE_ID = "workspace-history";
 const WORKSPACE_KEY = buildWorkspaceTabPersistenceKey({
   serverId: SERVER_ID,
   workspaceId: WORKSPACE_ID,
-});
+})!;
 
 function createWorkspace(input: Partial<WorkspaceDescriptor> = {}): WorkspaceDescriptor {
   return {
@@ -124,13 +126,22 @@ function createClient(entries: FetchAgentHistoryEntry[]): Pick<DaemonClient, "fe
 
 beforeEach(() => {
   resetWorkspaceAgentHistoryRestoreForTests();
-  useSessionStore.getState().initializeSession(SERVER_ID, null as unknown as DaemonClient);
-  useSessionStore.getState().setWorkspaces(SERVER_ID, new Map([[WORKSPACE_ID, createWorkspace()]]));
+  appProjectionRuntime.attach(
+    {
+      on: () => () => {},
+      subscribeAgentThothStateUpdates: () => () => {},
+      getLastServerInfoMessage: () => null,
+    } as unknown as DaemonClient,
+    SERVER_ID,
+  );
+  setTestProjection(SERVER_ID, {
+    workspaces: new Map([[WORKSPACE_ID, createWorkspace()]]),
+  });
 });
 
 afterEach(() => {
   resetWorkspaceAgentHistoryRestoreForTests();
-  useSessionStore.getState().clearSession(SERVER_ID);
+  clearTestProjections();
   useWorkspaceLayoutStore.setState({
     layoutByWorkspace: {},
     splitSizesByWorkspace: {},
@@ -167,9 +178,9 @@ describe("restoreWorkspaceAgentTabFromHistory", () => {
     ).resolves.toBe(true);
 
     expect(client.fetchAgentHistory).toHaveBeenCalledTimes(1);
-    expect(
-      useSessionStore.getState().sessions[SERVER_ID]?.agentDetails.get("agent-new")?.title,
-    ).toBe("Restored history");
+    expect(appProjectionRuntime.store.getSnapshot(SERVER_ID).agents.get("agent-new")?.title).toBe(
+      "Restored history",
+    );
     expect(
       useWorkspaceLayoutStore
         .getState()
@@ -226,8 +237,7 @@ describe("restoreWorkspaceAgentTabFromHistory", () => {
 
     expect(useWorkspaceLayoutStore.getState().getWorkspaceTabs(WORKSPACE_KEY)).toEqual([]);
     expect(
-      useSessionStore.getState().sessions[SERVER_ID]?.agentDetails.get("agent-archived")
-        ?.archivedAt,
+      appProjectionRuntime.store.getSnapshot(SERVER_ID).agents.get("agent-archived")?.archivedAt,
     ).toBeInstanceOf(Date);
   });
 });

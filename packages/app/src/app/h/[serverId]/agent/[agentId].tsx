@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useLocalSearchParams, usePathname, useRouter, type Href } from "expo-router";
 import { HostRouteBootstrapBoundary } from "@/components/host-route-bootstrap-boundary";
-import { useSessionStore } from "@/stores/session-store";
+import { useAuthorityProjection } from "@/projection/projection-context";
+import { useHasHydratedWorkspaces } from "@/projection/hooks";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { buildHostRootRoute } from "@/utils/host-routes";
 import { normalizeWorkspaceOpaqueId } from "@/utils/workspace-identity";
@@ -27,15 +28,13 @@ function HostAgentReadyRouteContent() {
   const agentId = typeof params.agentId === "string" ? params.agentId : "";
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
-  const agentWorkspaceId = useSessionStore((state) => {
+  const agentWorkspaceId = useAuthorityProjection(serverId, (projection) => {
     if (!serverId || !agentId) {
       return null;
     }
-    return state.sessions[serverId]?.agents?.get(agentId)?.workspaceId ?? null;
+    return projection.agents.get(agentId)?.workspaceId ?? null;
   });
-  const hasHydratedWorkspaces = useSessionStore((state) =>
-    serverId ? (state.sessions[serverId]?.hasHydratedWorkspaces ?? false) : false,
-  );
+  const hasHydratedWorkspaces = useHasHydratedWorkspaces(serverId);
   const resolvedWorkspaceId = normalizeWorkspaceOpaqueId(agentWorkspaceId);
 
   useEffect(() => {

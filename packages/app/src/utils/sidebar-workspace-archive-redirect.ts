@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useSessionStore } from "@/stores/session-store";
+import { appProjectionRuntime } from "@/projection/projection-context";
 import {
   redirectIfArchivingActiveWorkspace as redirectIfArchivingActiveWorkspacePure,
   type RedirectIfArchivingActiveWorkspaceInput,
@@ -11,6 +11,6 @@ export function redirectIfArchivingActiveWorkspace(
   return redirectIfArchivingActiveWorkspacePure(input, {
     navigateToRoute: (route) => router.replace(route),
     readWorkspaces: (serverId) =>
-      useSessionStore.getState().sessions[serverId]?.workspaces.values() ?? [],
+      appProjectionRuntime.store.getSnapshot(serverId).workspaces.values(),
   });
 }

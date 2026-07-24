@@ -1,6 +1,6 @@
 import type { DaemonClient } from "@thoth/client/internal/daemon-client";
-import { useSessionStore } from "@/stores/session-store";
-import { selectHostFeature } from "@/runtime/host-features";
+import { hostSupportsFeature } from "@/runtime/host-features";
+import { getHostRuntimeStore } from "@/runtime/host-runtime";
 
 interface ProjectRemoveHost {
   serverId: string;
@@ -51,10 +51,11 @@ export function getProjectRemoveReadiness(input: {
 export function getCurrentProjectRemoveReadiness(
   project: ProjectRemoveProject,
 ): ProjectRemoveReadiness {
-  const sessionState = useSessionStore.getState();
+  const runtime = getHostRuntimeStore();
   return getProjectRemoveReadiness({
     project,
-    supportsProjectRemove: (serverId) => selectHostFeature(sessionState, serverId, "projectRemove"),
+    supportsProjectRemove: (serverId) =>
+      hostSupportsFeature(runtime.getSnapshot(serverId)?.serverInfo, "projectRemove"),
   });
 }
 

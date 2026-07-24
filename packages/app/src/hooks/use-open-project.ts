@@ -2,7 +2,8 @@ import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { projectsQueryKey } from "@/hooks/use-projects";
-import { useSessionStore } from "@/stores/session-store";
+import { useProjectionRuntime } from "@/projection/projection-context";
+import { useHostFeature } from "@/runtime/host-features";
 import { openProjectDirectly, type OpenProjectResult } from "@/hooks/open-project";
 
 export function useOpenProject(
@@ -12,13 +13,8 @@ export function useOpenProject(
   const client = useHostRuntimeClient(normalizedServerId);
   const isConnected = useHostRuntimeIsConnected(normalizedServerId);
   const queryClient = useQueryClient();
-  const canAddProject = useSessionStore((state) =>
-    normalizedServerId
-      ? state.sessions[normalizedServerId]?.serverInfo?.features?.projectAdd === true
-      : false,
-  );
-  const addEmptyProject = useSessionStore((state) => state.addEmptyProject);
-  const setHasHydratedWorkspaces = useSessionStore((state) => state.setHasHydratedWorkspaces);
+  const projectionRuntime = useProjectionRuntime();
+  const canAddProject = useHostFeature(normalizedServerId, "projectAdd");
 
   return useCallback(
     async (path: string) => {
@@ -28,8 +24,11 @@ export function useOpenProject(
         isConnected,
         canAddProject,
         client,
-        addEmptyProject,
-        setHasHydratedWorkspaces,
+        revalidate: async () => {
+          const service = projectionRuntime.service(normalizedServerId);
+          if (!service) throw new Error("Projection service is not attached");
+          await service.refreshWorkspaces();
+        },
       });
       // The aggregated projects query derives the project list from a fetch
       // that now includes empty projects; refetch so a freshly-added project
@@ -40,14 +39,6 @@ export function useOpenProject(
       }
       return result;
     },
-    [
-      addEmptyProject,
-      canAddProject,
-      client,
-      isConnected,
-      normalizedServerId,
-      queryClient,
-      setHasHydratedWorkspaces,
-    ],
+    [canAddProject, client, isConnected, normalizedServerId, projectionRuntime, queryClient],
   );
 }

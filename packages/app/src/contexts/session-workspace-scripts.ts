@@ -1,6 +1,6 @@
 import equal from "fast-deep-equal";
 import type { ScriptStatusUpdateMessage } from "@thoth/protocol/messages";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
 
 export function patchWorkspaceScripts(

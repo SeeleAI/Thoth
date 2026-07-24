@@ -1,5 +1,6 @@
 import type { ServerInfoStatusPayload } from "@thoth/protocol/messages";
 import type { HostRuntimeSnapshot } from "@/runtime/host-runtime";
+import type { ProjectionHydration } from "@/projection/authority-projection";
 import type { HostConnection, HostProfile } from "@/types/host-connection";
 
 interface DiagnosticEntry {
@@ -29,6 +30,7 @@ export function formatAppDiagnosticHeader(input: {
 export function formatHostRuntimeSection(input: {
   host: HostProfile;
   snapshot: HostRuntimeSnapshot | null;
+  agentHydration?: ProjectionHydration;
 }): string {
   const { host, snapshot } = input;
   const entries: DiagnosticEntry[] = [
@@ -44,7 +46,7 @@ export function formatHostRuntimeSection(input: {
     { label: "Last error", value: snapshot?.lastError ?? "none" },
     {
       label: "Agent directory",
-      value: snapshot?.agentDirectoryStatus ?? "unknown",
+      value: input.agentHydration ?? "unknown",
     },
   ];
 

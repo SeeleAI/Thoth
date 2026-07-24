@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { deriveStreamTurnTiming, type StreamTurnTiming } from "@/timeline/turn-time";
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import {
   findMountedWindowStart,
   getWebMountedRecentStreamItems,
@@ -10,9 +10,9 @@ import { orderHeadForStreamRenderStrategy, orderTailForStreamRenderStrategy } fr
 import { resolveStreamRenderStrategy } from "./strategy-resolver";
 
 export interface StreamRenderSegments {
-  historyVirtualized: StreamItem[];
-  historyMounted: StreamItem[];
-  liveHead: StreamItem[];
+  historyVirtualized: TimelineViewModel[];
+  historyMounted: TimelineViewModel[];
+  liveHead: TimelineViewModel[];
 }
 
 export interface StreamHistoryBoundary {
@@ -27,7 +27,7 @@ export interface StreamRenderAuxiliary {
 }
 
 export interface AgentStreamRenderModel {
-  history: StreamItem[];
+  history: TimelineViewModel[];
   segments: StreamRenderSegments;
   turnTiming: StreamTurnTiming;
   boundary: StreamHistoryBoundary;
@@ -36,35 +36,35 @@ export interface AgentStreamRenderModel {
 
 export interface BuildAgentStreamRenderModelInput {
   agentStatus: string;
-  tail: StreamItem[];
-  head: StreamItem[];
+  tail: TimelineViewModel[];
+  head: TimelineViewModel[];
   platform: "web" | "native";
   isMobileBreakpoint: boolean;
 }
 
-const EMPTY_STREAM_ITEMS: StreamItem[] = [];
+const EMPTY_STREAM_ITEMS: TimelineViewModel[] = [];
 const EMPTY_AUXILIARY: StreamRenderAuxiliary = {
   pendingPermissions: null,
   turnFooter: null,
 };
 
-const orderedTailCache = new WeakMap<StreamItem[], Map<string, StreamItem[]>>();
-const orderedHeadCache = new WeakMap<StreamItem[], Map<string, StreamItem[]>>();
+const orderedTailCache = new WeakMap<TimelineViewModel[], Map<string, TimelineViewModel[]>>();
+const orderedHeadCache = new WeakMap<TimelineViewModel[], Map<string, TimelineViewModel[]>>();
 const splitHistoryCache = new WeakMap<
-  StreamItem[],
+  TimelineViewModel[],
   Map<string, Pick<AgentStreamRenderModel, "history" | "segments">>
 >();
 const turnTimingCache = new WeakMap<
-  StreamItem[],
-  WeakMap<StreamItem[], Map<string, StreamTurnTiming>>
+  TimelineViewModel[],
+  WeakMap<TimelineViewModel[], Map<string, StreamTurnTiming>>
 >();
 
 function getOrderedItems(params: {
-  cache: WeakMap<StreamItem[], Map<string, StreamItem[]>>;
-  source: StreamItem[];
+  cache: WeakMap<TimelineViewModel[], Map<string, TimelineViewModel[]>>;
+  source: TimelineViewModel[];
   cacheKey: string;
-  order: (items: StreamItem[]) => StreamItem[];
-}): StreamItem[] {
+  order: (items: TimelineViewModel[]) => TimelineViewModel[];
+}): TimelineViewModel[] {
   const { cache, source, cacheKey, order } = params;
   let cachedByKey = cache.get(source);
   if (!cachedByKey) {
@@ -81,7 +81,7 @@ function getOrderedItems(params: {
 }
 
 function splitOrderedTail(params: {
-  orderedTail: StreamItem[];
+  orderedTail: TimelineViewModel[];
   platform: "web" | "native";
   isMobileBreakpoint: boolean;
 }): Pick<AgentStreamRenderModel, "history" | "segments"> {
@@ -132,8 +132,8 @@ function splitOrderedTail(params: {
 
 function getTurnTiming(params: {
   agentStatus: string;
-  tail: StreamItem[];
-  head: StreamItem[];
+  tail: TimelineViewModel[];
+  head: TimelineViewModel[];
 }): StreamTurnTiming {
   let cachedByHead = turnTimingCache.get(params.tail);
   if (!cachedByHead) {

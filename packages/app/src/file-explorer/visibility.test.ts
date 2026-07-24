@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ExplorerEntry } from "@/stores/session-store";
+import type { ExplorerEntry } from "@/query/file-explorer-model";
 import { filterVisibleExplorerEntries, isHiddenExplorerPath } from "./visibility";
 
 function makeEntry(name: string, kind: ExplorerEntry["kind"]): ExplorerEntry {

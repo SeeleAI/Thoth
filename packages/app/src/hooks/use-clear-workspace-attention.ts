@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { i18n } from "@/i18n/i18next";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
-import { useSessionStore } from "@/stores/session-store";
+import { useWorkspace } from "@/projection/hooks";
 
 export interface ClearWorkspaceAttentionController {
   hasClearableAttention: boolean;
@@ -15,10 +15,8 @@ export function useClearWorkspaceAttention({
   serverId: string;
   workspaceId: string;
 }): ClearWorkspaceAttentionController {
-  const hasClearableAttention = useSessionStore((state) => {
-    const workspace = state.sessions[serverId]?.workspaces.get(workspaceId);
-    return workspace?.status === "attention" || workspace?.status === "failed";
-  });
+  const workspace = useWorkspace(serverId, workspaceId);
+  const hasClearableAttention = workspace?.status === "attention" || workspace?.status === "failed";
 
   const clearAttention = useCallback(async () => {
     if (!hasClearableAttention) {

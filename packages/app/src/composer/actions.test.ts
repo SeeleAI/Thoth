@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
 import type {
   AgentAttachment,
   GitHubSearchItem,
@@ -283,6 +284,8 @@ describe("dispatchComposerAgentMessage", () => {
 
     await dispatchComposerAgentMessage({
       client,
+      queryClient: new QueryClient(),
+      serverId: "server",
       agentId: "agent",
       text: "send attachments",
       attachments: [
@@ -318,6 +321,8 @@ describe("dispatchComposerAgentMessage", () => {
 
     await dispatchComposerAgentMessage({
       client,
+      queryClient: new QueryClient(),
+      serverId: "server",
       agentId: "agent",
       text: "plain message",
       attachments: [],
@@ -341,6 +346,8 @@ describe("dispatchComposerAgentMessage", () => {
 
     await dispatchComposerAgentMessage({
       client,
+      queryClient: new QueryClient(),
+      serverId: "server",
       agentId: "agent",
       text: "run this in the background",
       attachments: [],
@@ -357,6 +364,8 @@ describe("dispatchComposerAgentMessage", () => {
 
     await dispatchComposerAgentMessage({
       client,
+      queryClient: new QueryClient(),
+      serverId: "server",
       agentId: "agent",
       text: "review this",
       attachments: [review],
@@ -373,6 +382,8 @@ describe("dispatchComposerAgentMessage", () => {
 
     await dispatchComposerAgentMessage({
       client,
+      queryClient: new QueryClient(),
+      serverId: "server",
       agentId: "agent",
       text: "inspect element",
       attachments: [browserElement],

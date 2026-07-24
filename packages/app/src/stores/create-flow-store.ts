@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { UserMessageImageAttachment } from "@/types/stream";
+import type { UserMessageImageAttachment } from "@/projection/timeline-view-model";
 import type { AgentAttachment } from "@thoth/protocol/messages";
 import type { TaskContextReference } from "@thoth/protocol/task-authority";
 

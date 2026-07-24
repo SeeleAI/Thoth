@@ -4,7 +4,7 @@ import {
   normalizeEmptyProjectDescriptor,
   normalizeWorkspaceDescriptor,
   type WorkspaceDescriptor,
-} from "@/stores/session-store";
+} from "@/projection/authority-model";
 
 export type FetchWorkspacesClient = Pick<DaemonClient, "fetchWorkspaces">;
 export type FetchWorkspacesSort = NonNullable<

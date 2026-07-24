@@ -18,7 +18,7 @@ import { getOpenProjectFailureReason, type OpenProjectFailureReason } from "@/ho
 import { useOpenProject } from "@/hooks/use-open-project";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { useProjectPickerStore } from "@/stores/project-picker-store";
-import { useRecommendedProjectPaths } from "@/stores/session-store-hooks";
+import { useRecommendedProjectPaths } from "@/projection/hooks";
 import { shortenPath } from "@/utils/shorten-path";
 import { isNative } from "@/constants/platform";
 import { buildProjectPickerOptions, type ProjectPickerOption } from "./project-picker-options";

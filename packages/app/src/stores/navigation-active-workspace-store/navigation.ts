@@ -1,4 +1,4 @@
-import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
+import type { Agent, WorkspaceDescriptor } from "@/projection/authority-model";
 import { pickAttentionAgent } from "@/utils/agent-attention";
 import {
   buildHostWorkspaceRoute,
@@ -20,7 +20,9 @@ export interface RouteSelectionInput {
 }
 
 export interface NavigateToWorkspaceDeps {
-  getSessionWorkspaces: (serverId: string) => Map<string, WorkspaceDescriptor> | null | undefined;
+  getSessionWorkspaces: (
+    serverId: string,
+  ) => ReadonlyMap<string, WorkspaceDescriptor> | null | undefined;
   getSessionAgents: (serverId: string) => Iterable<Agent>;
   openWorkspaceAgentTab: (workspaceKey: string, agentId: string) => void;
   rememberLastWorkspace: (selection: ActiveWorkspaceSelection) => void;

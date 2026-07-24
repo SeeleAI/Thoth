@@ -1,7 +1,6 @@
-import type { DaemonClient } from "@thoth/client/internal/daemon-client";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { selectSubagentsForParent } from "./select";
-import { useSessionStore, type Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
 
 const SERVER_ID = "server-1";
 const AGENT_TIMESTAMP = new Date("2026-03-08T10:00:00.000Z");
@@ -49,16 +48,11 @@ function makeAgent(input: Partial<Agent> & Pick<Agent, "id">): Agent {
   return { ...AGENT_DEFAULTS, ...input };
 }
 
-function setAgents(agents: Agent[]): void {
-  useSessionStore.getState().initializeSession(SERVER_ID, null as unknown as DaemonClient);
-  useSessionStore
-    .getState()
-    .setAgents(SERVER_ID, new Map(agents.map((agent) => [agent.id, agent])));
-}
+let agents = new Map<string, Agent>();
 
-afterEach(() => {
-  useSessionStore.getState().clearSession(SERVER_ID);
-});
+function setAgents(next: Agent[]): void {
+  agents = new Map(next.map((agent) => [agent.id, agent]));
+}
 
 describe("selectSubagentsForParent", () => {
   it("returns only non-archived children for the requested parent", () => {
@@ -73,7 +67,7 @@ describe("selectSubagentsForParent", () => {
     ]);
 
     const rows = selectSubagentsForParent(
-      useSessionStore.getState(),
+      agents,
       {
         serverId: SERVER_ID,
         parentAgentId: "parent-a",
@@ -95,7 +89,7 @@ describe("selectSubagentsForParent", () => {
     ]);
 
     const rows = selectSubagentsForParent(
-      useSessionStore.getState(),
+      agents,
       {
         serverId: SERVER_ID,
         parentAgentId: "parent-a",
@@ -114,7 +108,7 @@ describe("selectSubagentsForParent", () => {
     ]);
 
     const parentRows = selectSubagentsForParent(
-      useSessionStore.getState(),
+      agents,
       {
         serverId: SERVER_ID,
         parentAgentId: "parent",
@@ -122,7 +116,7 @@ describe("selectSubagentsForParent", () => {
       EMPTY_PENDING_ARCHIVE_IDS,
     );
     const childRows = selectSubagentsForParent(
-      useSessionStore.getState(),
+      agents,
       {
         serverId: SERVER_ID,
         parentAgentId: "child",
@@ -155,7 +149,7 @@ describe("selectSubagentsForParent", () => {
     ]);
 
     const rows = selectSubagentsForParent(
-      useSessionStore.getState(),
+      agents,
       {
         serverId: SERVER_ID,
         parentAgentId: "parent",
@@ -184,7 +178,7 @@ describe("selectSubagentsForParent", () => {
     ]);
 
     const rows = selectSubagentsForParent(
-      useSessionStore.getState(),
+      agents,
       {
         serverId: SERVER_ID,
         parentAgentId: "parent",
@@ -221,7 +215,7 @@ describe("selectSubagentsForParent", () => {
 
     expect(
       selectSubagentsForParent(
-        useSessionStore.getState(),
+        agents,
         {
           serverId: SERVER_ID,
           parentAgentId: "parent-a",
@@ -231,7 +225,7 @@ describe("selectSubagentsForParent", () => {
     ).toEqual(["child"]);
     expect(
       selectSubagentsForParent(
-        useSessionStore.getState(),
+        agents,
         {
           serverId: SERVER_ID,
           parentAgentId: "parent-b",
@@ -248,7 +242,7 @@ describe("selectSubagentsForParent", () => {
 
     expect(
       selectSubagentsForParent(
-        useSessionStore.getState(),
+        agents,
         {
           serverId: SERVER_ID,
           parentAgentId: "parent-a",
@@ -258,7 +252,7 @@ describe("selectSubagentsForParent", () => {
     ).toEqual([]);
     expect(
       selectSubagentsForParent(
-        useSessionStore.getState(),
+        agents,
         {
           serverId: SERVER_ID,
           parentAgentId: "parent-b",
@@ -276,7 +270,7 @@ describe("selectSubagentsForParent", () => {
     ]);
 
     const rows = selectSubagentsForParent(
-      useSessionStore.getState(),
+      agents,
       {
         serverId: SERVER_ID,
         parentAgentId: "parent",
@@ -291,7 +285,7 @@ describe("selectSubagentsForParent", () => {
     setAgents([makeAgent({ id: "parent" }), makeAgent({ id: "child", parentAgentId: "parent" })]);
 
     const rows = selectSubagentsForParent(
-      useSessionStore.getState(),
+      agents,
       {
         serverId: SERVER_ID,
         parentAgentId: "parent",
@@ -302,7 +296,7 @@ describe("selectSubagentsForParent", () => {
     expect(rows).toEqual([]);
     expect(rows).toBe(
       selectSubagentsForParent(
-        useSessionStore.getState(),
+        agents,
         {
           serverId: SERVER_ID,
           parentAgentId: "missing-parent",

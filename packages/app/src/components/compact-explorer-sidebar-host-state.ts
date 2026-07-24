@@ -1,6 +1,6 @@
 import { buildWorkspaceTabPersistenceKey } from "@/stores/workspace-layout-store";
 import type { ActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 
 export interface CompactExplorerSidebarHostModel {
   serverId: string;

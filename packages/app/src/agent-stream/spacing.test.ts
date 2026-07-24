@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import { getAssistantBlockSpacing, isSameAssistantBlockGroup } from "./spacing";
 
 function assistantBlock(params: {
@@ -7,7 +7,7 @@ function assistantBlock(params: {
   blockGroupId: string;
   blockIndex: number;
   text?: string;
-}): Extract<StreamItem, { kind: "assistant_message" }> {
+}): Extract<TimelineViewModel, { kind: "assistant_message" }> {
   return {
     kind: "assistant_message",
     id: params.id,
@@ -18,7 +18,7 @@ function assistantBlock(params: {
   };
 }
 
-function toolCallBlock(id: string): Extract<StreamItem, { kind: "tool_call" }> {
+function toolCallBlock(id: string): Extract<TimelineViewModel, { kind: "tool_call" }> {
   return {
     kind: "tool_call",
     id,

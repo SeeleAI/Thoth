@@ -1,9 +1,8 @@
 import { useMemo, useCallback, useRef, useSyncExternalStore } from "react";
 import equal from "fast-deep-equal";
-import { useShallow } from "zustand/shallow";
-import { useSessionStore } from "@/stores/session-store";
+import { useAuthorityProjections, useProjectionRuntime } from "@/projection/projection-context";
 import type { AgentDirectoryEntry } from "@/types/agent-directory";
-import type { Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
 
 export interface AggregatedAgent extends AgentDirectoryEntry {
@@ -24,6 +23,7 @@ export function useAggregatedAgents(options?: {
 }): AggregatedAgentsResult {
   const daemons = useHosts();
   const runtime = getHostRuntimeStore();
+  const projectionRuntime = useProjectionRuntime();
   const includeArchived = options?.includeArchived ?? false;
   const runtimeVersion = useSyncExternalStore(
     (onStoreChange) => runtime.subscribeAll(onStoreChange),
@@ -31,19 +31,28 @@ export function useAggregatedAgents(options?: {
     () => runtime.getVersion(),
   );
 
-  const sessionAgents = useSessionStore(
-    useShallow((state) => {
-      const result: Record<string, Map<string, Agent> | undefined> = {};
-      for (const [serverId, session] of Object.entries(state.sessions)) {
-        result[serverId] = session.agents;
-      }
-      return result;
-    }),
+  const projections = useAuthorityProjections(
+    (store) =>
+      Object.fromEntries(
+        store.getServerIds().map((serverId) => {
+          const projection = store.getSnapshot(serverId);
+          return [serverId, { agents: projection.agents, hydration: projection.hydration.agents }];
+        }),
+      ) as Record<
+        string,
+        { agents: ReadonlyMap<string, Agent>; hydration: "idle" | "loading" | "ready" | "error" }
+      >,
+    equal,
   );
 
   const refreshAll = useCallback(() => {
-    runtime.refreshAllAgentDirectories();
-  }, [runtime]);
+    for (const serverId of projectionRuntime.store.getServerIds()) {
+      void projectionRuntime
+        .service(serverId)
+        ?.refreshAgents()
+        .catch(() => undefined);
+    }
+  }, [projectionRuntime]);
 
   // Keyed by "serverId:agentId" — reuse the previous AggregatedAgent object when
   // none of its fields changed, so downstream memo/shallow comparisons can bail early.
@@ -61,7 +70,7 @@ export function useAggregatedAgents(options?: {
     );
 
     // Derive agent directory from all sessions
-    for (const [serverId, agents] of Object.entries(sessionAgents)) {
+    for (const [serverId, { agents }] of Object.entries(projections)) {
       if (!agents || agents.size === 0) {
         continue;
       }
@@ -133,11 +142,9 @@ export function useAggregatedAgents(options?: {
     const hasAnyData = stableAgents.length > 0;
 
     // Align list loading with the runtime directory-sync machine.
-    const isLoading = daemons.some((daemon) => {
-      const status =
-        runtime.getSnapshot(daemon.serverId)?.agentDirectoryStatus ?? "initial_loading";
-      return status === "initial_loading" || status === "revalidating";
-    });
+    const isLoading = daemons.some(
+      (daemon) => (projections[daemon.serverId]?.hydration ?? "idle") === "loading",
+    );
     const isInitialLoad = isLoading && !hasAnyData;
     const isRevalidating = isLoading && hasAnyData;
 
@@ -147,7 +154,7 @@ export function useAggregatedAgents(options?: {
       isInitialLoad,
       isRevalidating,
     };
-  }, [daemons, includeArchived, runtime, runtimeVersion, sessionAgents]);
+  }, [daemons, includeArchived, projections, runtimeVersion]);
 
   return {
     ...result,

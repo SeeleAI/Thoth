@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TurnTiming } from "@/timeline/turn-time";
-import type { StreamItem } from "@/types/stream";
+import type { TimelineViewModel } from "@/projection/timeline-view-model";
 import {
   orderHeadForStreamRenderStrategy,
   orderTailForStreamRenderStrategy,
@@ -13,7 +13,10 @@ function timestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
 }
 
-function userMessage(id: string, seed: number): Extract<StreamItem, { kind: "user_message" }> {
+function userMessage(
+  id: string,
+  seed: number,
+): Extract<TimelineViewModel, { kind: "user_message" }> {
   return {
     kind: "user_message",
     id,
@@ -26,7 +29,7 @@ function assistantMessage(
   id: string,
   seed: number,
   block?: { groupId: string; index: number },
-): Extract<StreamItem, { kind: "assistant_message" }> {
+): Extract<TimelineViewModel, { kind: "assistant_message" }> {
   return {
     kind: "assistant_message",
     id,
@@ -36,7 +39,7 @@ function assistantMessage(
   };
 }
 
-function toolCall(id: string, seed: number): Extract<StreamItem, { kind: "tool_call" }> {
+function toolCall(id: string, seed: number): Extract<TimelineViewModel, { kind: "tool_call" }> {
   return {
     kind: "tool_call",
     id,
@@ -57,7 +60,7 @@ function toolCall(id: string, seed: number): Extract<StreamItem, { kind: "tool_c
 function pendingAuthorityToolCall(
   id: string,
   seed: number,
-): Extract<StreamItem, { kind: "tool_call" }> {
+): Extract<TimelineViewModel, { kind: "tool_call" }> {
   return {
     kind: "tool_call",
     id,
@@ -85,7 +88,7 @@ function pendingAuthorityToolCall(
   };
 }
 
-function thought(id: string, seed: number): Extract<StreamItem, { kind: "thought" }> {
+function thought(id: string, seed: number): Extract<TimelineViewModel, { kind: "thought" }> {
   return {
     kind: "thought",
     id,
@@ -114,8 +117,8 @@ function strategyFor(platform: "web" | "android"): StreamStrategy {
 function layoutFor(input: {
   platform: "web" | "android";
   agentStatus?: string;
-  tail: StreamItem[];
-  head?: StreamItem[];
+  tail: TimelineViewModel[];
+  head?: TimelineViewModel[];
   timingIds?: string[];
 }): StreamLayout {
   const strategy = strategyFor(input.platform);

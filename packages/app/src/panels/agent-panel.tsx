@@ -1,6 +1,7 @@
 import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import type { TFunction } from "i18next";
 import { SquarePen } from "lucide-react-native";
+import { useQuery } from "@tanstack/react-query";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, Text, View } from "react-native";
@@ -9,7 +10,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import invariant from "tiny-invariant";
 import { shallow, useShallow } from "zustand/shallow";
-import { useStoreWithEqualityFn } from "zustand/traditional";
 import { AgentStreamView, type AgentStreamViewHandle } from "@/agent-stream/view";
 import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
@@ -64,18 +64,29 @@ import { WorkspaceDraftAgentTab } from "@/composer/draft/workspace-tab";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
 import { buildDraftStoreKey, generateDraftId } from "@/stores/draft-keys";
 import { usePanelStore } from "@/stores/panel-store";
-import { type Agent, useSessionStore } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
+import { useAuthorityProjection, useProjectionRuntime } from "@/projection/projection-context";
+import type {
+  AuthorityProjection,
+  DaemonProjectionService,
+} from "@/projection/authority-projection";
+import { useHostFeature } from "@/runtime/host-features";
+import { createTimelineViewModels } from "@/projection/timeline-view-model";
+import {
+  pendingAgentMessagesKey,
+  type PendingAgentMessage,
+} from "@/projection/pending-agent-messages";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import { buildWorkspaceTabPersistenceKey } from "@/stores/workspace-tabs-store";
 import type { Theme } from "@/styles/theme";
 import { useArchiveSubagent, useDetachSubagent, useSubagentsForParent } from "@/subagents";
 import { SubagentsTrack } from "@/subagents/track";
 import type { PendingPermission } from "@/types/shared";
-import { generateMessageId, type StreamItem } from "@/types/stream";
+import { generateMessageId } from "@/utils/message-id";
+import type { AgentTimelineEntry } from "@thoth/protocol/agent-types";
 import type { ThothCardAnswerPayload } from "@thoth/protocol/thoth/rpc-schemas";
 import { getInitDeferred, getInitKey } from "@/utils/agent-initialization";
-import { derivePendingPermissionKey, normalizeAgentSnapshot } from "@/utils/agent-snapshots";
-import { applyLegacyDaemonWorkspaceOwnership } from "@/workspace/legacy-daemon-workspaces";
+import { derivePendingPermissionKey } from "@/utils/agent-snapshots";
 import type { WorkspaceFileOpenRequest } from "@/workspace/file-open";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { deriveSidebarStateBucket } from "@/utils/sidebar-agent-state";
@@ -103,14 +114,12 @@ interface ChatAgentSelectedState extends ChatAgentStateShape {
   attentionReason: Agent["attentionReason"] | null;
 }
 
-function resolveChatAgentFromSession(
-  state: ReturnType<typeof useSessionStore.getState>,
-  serverId: string,
+function resolveChatAgent(
+  projection: AuthorityProjection,
   agentId: string | undefined,
 ): Agent | null {
   if (!agentId) return null;
-  const session = state.sessions[serverId];
-  return session?.agents?.get(agentId) ?? session?.agentDetails?.get(agentId) ?? null;
+  return projection.agents.get(agentId) ?? null;
 }
 
 const EMPTY_CHAT_AGENT_STATE: ChatAgentSelectedState = {
@@ -125,11 +134,10 @@ const EMPTY_CHAT_AGENT_STATE: ChatAgentSelectedState = {
 };
 
 function selectChatAgentState(
-  state: ReturnType<typeof useSessionStore.getState>,
-  serverId: string,
+  projection: AuthorityProjection,
   agentId: string | undefined,
 ): ChatAgentSelectedState {
-  const agent = resolveChatAgentFromSession(state, serverId, agentId);
+  const agent = resolveChatAgent(projection, agentId);
   if (!agent) return EMPTY_CHAT_AGENT_STATE;
   return {
     serverId: agent.serverId,
@@ -238,66 +246,23 @@ function resolveWorkspaceAgentTabLabel(title: string | null | undefined): string
   return normalized;
 }
 
-function shouldStoreFetchedAgentInActiveDirectory(agent: Agent): boolean {
-  return !agent.archivedAt && Boolean(agent.projectPlacement);
-}
-
 type FetchAgentResult = Awaited<ReturnType<DaemonClient["fetchAgent"]>>;
 
 function storeFetchedAgentDetail(input: {
-  serverId: string;
+  service: Pick<DaemonProjectionService, "acceptAgentSnapshot">;
   result: NonNullable<FetchAgentResult>;
 }): Agent {
-  const normalized = normalizeAgentSnapshot(input.result.agent, input.serverId);
-  const hydrated: Agent = applyLegacyDaemonWorkspaceOwnership({
-    serverId: input.serverId,
-    agent: {
-      ...normalized,
-      projectPlacement: input.result.project,
-    },
-  });
-  const store = useSessionStore.getState();
-
-  if (shouldStoreFetchedAgentInActiveDirectory(hydrated)) {
-    store.setAgents(input.serverId, (previous) => {
-      const next = new Map(previous);
-      next.set(hydrated.id, hydrated);
-      return next;
-    });
-  } else {
-    store.setAgentDetails(input.serverId, (previous) => {
-      const next = new Map(previous);
-      next.set(hydrated.id, hydrated);
-      return next;
-    });
-  }
-
-  store.setPendingPermissions(input.serverId, (previous) => {
-    const next = new Map(previous);
-    for (const [key, pending] of next.entries()) {
-      if (pending.agentId === hydrated.id) {
-        next.delete(key);
-      }
-    }
-    for (const request of hydrated.pendingPermissions) {
-      const key = derivePendingPermissionKey(hydrated.id, request);
-      next.set(key, { key, agentId: hydrated.id, request });
-    }
-    return next;
-  });
-
-  return hydrated;
+  return input.service.acceptAgentSnapshot(input.result.agent, input.result.project ?? undefined);
 }
 
 function useAgentPanelDescriptor(
   target: { kind: "agent"; agentId: string },
   context: { serverId: string },
 ): PanelDescriptor {
-  const descriptorState = useSessionStore(
-    useShallow((state) => {
-      const session = state.sessions[context.serverId];
-      const agent =
-        session?.agents?.get(target.agentId) ?? session?.agentDetails?.get(target.agentId) ?? null;
+  const descriptorState = useAuthorityProjection(
+    context.serverId,
+    (projection) => {
+      const agent = projection.agents.get(target.agentId) ?? null;
       return {
         provider: agent?.provider ?? "unknown",
         title: agent?.title ?? null,
@@ -306,7 +271,8 @@ function useAgentPanelDescriptor(
         requiresAttention: agent?.requiresAttention ?? false,
         attentionReason: agent?.attentionReason ?? null,
       };
-    }),
+    },
+    shallow,
   );
   const provider = descriptorState.provider;
   const label = resolveWorkspaceAgentTabLabel(descriptorState.title);
@@ -362,19 +328,16 @@ function DraftPanel() {
     retargetCurrentTab,
   } = usePaneContext();
   const { isInteractive } = usePaneFocus();
+  const projectionRuntime = useProjectionRuntime();
   invariant(target.kind === "draft", "DraftPanel requires draft target");
   const handleCreated = useCallback(
-    (agentSnapshot: Parameters<typeof normalizeAgentSnapshot>[0]) => {
-      const normalized = normalizeAgentSnapshot(agentSnapshot, serverId);
-      const agent = applyLegacyDaemonWorkspaceOwnership({ serverId, agent: normalized });
-      useSessionStore.getState().setAgents(serverId, (prev) => {
-        const next = new Map(prev);
-        next.set(agentSnapshot.id, agent);
-        return next;
-      });
+    (agentSnapshot: Parameters<DaemonProjectionService["acceptAgentSnapshot"]>[0]) => {
+      const service = projectionRuntime.service(serverId);
+      if (!service) throw new Error("Projection service is not attached");
+      service.acceptAgentSnapshot(agentSnapshot);
       retargetCurrentTab({ kind: "agent", agentId: agentSnapshot.id });
     },
-    [retargetCurrentTab, serverId],
+    [projectionRuntime, retargetCurrentTab, serverId],
   );
 
   return (
@@ -437,7 +400,8 @@ export function useDraftPanelDescriptor(
   });
 }
 
-const EMPTY_STREAM_ITEMS: StreamItem[] = [];
+const EMPTY_TIMELINE_ENTRIES: readonly AgentTimelineEntry[] = [];
+const EMPTY_PENDING_MESSAGES: readonly PendingAgentMessage[] = [];
 const EMPTY_PENDING_PERMISSIONS = new Map<string, PendingPermission>();
 const EMPTY_PENDING_PERMISSION_LIST: PendingPermission[] = [];
 
@@ -555,24 +519,16 @@ function AgentPanelBody({
 }) {
   const { t } = useTranslation();
   const { isArchivingAgent: _isArchivingAgent } = useArchiveAgent();
-  const hasSession = useSessionStore((state) => Boolean(state.sessions[serverId]));
-  const projectPlacement = useStoreWithEqualityFn(
-    useSessionStore,
-    (state) => {
-      if (!agentId) {
-        return null;
-      }
-      const session = state.sessions[serverId];
-      return (
-        session?.agents?.get(agentId)?.projectPlacement ??
-        session?.agentDetails?.get(agentId)?.projectPlacement ??
-        null
-      );
-    },
-    (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b),
+  const projectionRuntime = useProjectionRuntime();
+  const projectPlacement = useAuthorityProjection(
+    serverId,
+    (projection) => (agentId ? (projection.agents.get(agentId)?.projectPlacement ?? null) : null),
+    shallow,
   );
-  const agentState = useSessionStore(
-    useShallow((state) => selectChatAgentState(state, serverId, agentId)),
+  const agentState = useAuthorityProjection(
+    serverId,
+    (projection) => selectChatAgentState(projection, agentId),
+    shallow,
   );
   const [lookupState, setLookupState] = useState<AgentLookupState>({ tag: "idle" });
   const lookupAttemptTokenRef = useRef(0);
@@ -592,7 +548,7 @@ function AgentPanelBody({
       }
       return;
     }
-    if (!isConnected || !hasSession) {
+    if (!isConnected) {
       return;
     }
     if (lookupState.tag === "loading" || lookupState.tag === "not_found") {
@@ -617,7 +573,9 @@ function AgentPanelBody({
           return;
         }
 
-        storeFetchedAgentDetail({ serverId, result });
+        const service = projectionRuntime.service(serverId);
+        if (!service) throw new Error("Projection service is not attached");
+        storeFetchedAgentDetail({ service, result });
         setLookupState({ tag: "idle" });
         return;
       })
@@ -631,10 +589,10 @@ function AgentPanelBody({
     agentId,
     agentState.id,
     client,
-    hasSession,
     isConnected,
     lookupState.tag,
     onAgentNotFound,
+    projectionRuntime,
     serverId,
   ]);
 
@@ -725,6 +683,7 @@ function ChatAgentContent({
   const { t } = useTranslation();
   const { api: toastApi, toast: toastState, dismiss: dismissToast } = useToastHost();
   const { isArchivingAgent } = useArchiveAgent();
+  const projectionRuntime = useProjectionRuntime();
   const streamViewRef = useRef<AgentStreamViewHandle>(null);
   const clearOnAgentBlurRef = useRef<() => void>(() => {});
   const wasPaneFocusedRef = useRef(isPaneFocused);
@@ -734,45 +693,26 @@ function ChatAgentContent({
     routeKey: string;
     reason: "initial-entry" | "resume";
   } | null>(null);
-  const agentState = useSessionStore(
-    useShallow((state) => selectChatAgentState(state, serverId, agentId)),
+  const agentState = useAuthorityProjection(
+    serverId,
+    (projection) => selectChatAgentState(projection, agentId),
+    shallow,
   );
-  const projectPlacement = useStoreWithEqualityFn(
-    useSessionStore,
-    (state) => {
-      if (!agentId) {
-        return null;
-      }
-      const session = state.sessions[serverId];
-      return (
-        session?.agents?.get(agentId)?.projectPlacement ??
-        session?.agentDetails?.get(agentId)?.projectPlacement ??
-        null
-      );
-    },
-    (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b),
+  const projectPlacement = useAuthorityProjection(
+    serverId,
+    (projection) => (agentId ? (projection.agents.get(agentId)?.projectPlacement ?? null) : null),
+    shallow,
   );
-  const isInitializingFromMap = useSessionStore((state) =>
-    agentId ? (state.sessions[serverId]?.initializingAgents?.get(agentId) ?? false) : false,
+  const timeline = useAuthorityProjection(serverId, (projection) =>
+    agentId ? projection.timelines.get(agentId) : undefined,
   );
-  const historySyncGeneration = useSessionStore(
-    (state) => state.sessions[serverId]?.historySyncGeneration ?? 0,
-  );
-  const hasAppliedAuthoritativeHistory = useSessionStore((state) =>
-    agentId
-      ? state.sessions[serverId]?.agentAuthoritativeHistoryApplied?.get(agentId) === true
-      : false,
-  );
-  const agentHistorySyncGeneration = useSessionStore((state) =>
-    agentId ? (state.sessions[serverId]?.agentHistorySyncGeneration?.get(agentId) ?? -1) : -1,
-  );
+  const hasAppliedAuthoritativeHistory = Boolean(timeline?.epoch);
   const hasActiveCreateHandoff = useCreateFlowStore((state) =>
     findActiveCreateHandoff({ pendingByDraftId: state.pendingByDraftId, serverId, agentId }),
   );
-  const hasSession = useSessionStore((state) => Boolean(state.sessions[serverId]));
   const { ensureAgentIsInitialized } = useAgentInitialization({
     serverId,
-    client: hasSession ? client : null,
+    client,
   });
   const [missingAgentState, setMissingAgentState] = useState<AgentScreenMissingState>({
     kind: "idle",
@@ -862,11 +802,11 @@ function ChatAgentContent({
   }, [connectionStatus, dismissToast, toastApi, t]);
 
   useEffect(() => {
-    if (!isPaneFocused || !agentId || !isConnected || !hasSession) {
+    if (!isPaneFocused || !agentId || !isConnected) {
       return;
     }
     ensureInitializedWithSyncErrorHandling("focus");
-  }, [agentId, ensureInitializedWithSyncErrorHandling, hasSession, isConnected, isPaneFocused]);
+  }, [agentId, ensureInitializedWithSyncErrorHandling, isConnected, isPaneFocused]);
 
   const isArchivingCurrentAgent = Boolean(agentId && isArchivingAgent({ serverId, agentId }));
 
@@ -885,7 +825,7 @@ function ChatAgentContent({
     };
   }, []);
 
-  const isInitializing = agentId ? isInitializingFromMap : false;
+  const isInitializing = Boolean(agentId && timeline?.loadingTail);
   const isHistorySyncing = useMemo(() => {
     if (!agentId || !isInitializing) {
       return false;
@@ -893,12 +833,7 @@ function ChatAgentContent({
     const initKey = getInitKey(serverId, agentId);
     return Boolean(getInitDeferred(initKey));
   }, [agentId, isInitializing, serverId]);
-  const needsAuthoritativeSync = useMemo(() => {
-    if (!agentId) {
-      return false;
-    }
-    return agentHistorySyncGeneration < historySyncGeneration;
-  }, [agentHistorySyncGeneration, agentId, historySyncGeneration]);
+  const needsAuthoritativeSync = Boolean(agentId && timeline?.loadingTail && timeline.epoch);
 
   const agent = useMemo<AgentScreenAgent | null>(
     () => buildChatAgentFromState(agentState, projectPlacement),
@@ -971,7 +906,7 @@ function ChatAgentContent({
     if (!agentId) {
       return;
     }
-    if (!isConnected || !hasSession) {
+    if (!isConnected) {
       return;
     }
     const shouldSyncOnEntry = needsAuthoritativeSync || isNative;
@@ -980,13 +915,7 @@ function ChatAgentContent({
     }
 
     ensureInitializedWithSyncErrorHandling("entry");
-  }, [
-    agentId,
-    ensureInitializedWithSyncErrorHandling,
-    hasSession,
-    isConnected,
-    needsAuthoritativeSync,
-  ]);
+  }, [agentId, ensureInitializedWithSyncErrorHandling, isConnected, needsAuthoritativeSync]);
 
   useEffect(() => {
     initAttemptTokenRef.current += 1;
@@ -1003,7 +932,7 @@ function ChatAgentContent({
       }
       return;
     }
-    if (!isConnected || !hasSession) {
+    if (!isConnected) {
       return;
     }
     if (missingAgentState.kind === "resolving" || missingAgentState.kind === "not_found") {
@@ -1018,9 +947,7 @@ function ChatAgentContent({
         if (attemptToken !== initAttemptTokenRef.current) {
           return;
         }
-        const currentSession = useSessionStore.getState().sessions[serverId];
-        const currentAgent =
-          currentSession?.agents.get(agentId) ?? currentSession?.agentDetails.get(agentId);
+        const currentAgent = projectionRuntime.store.getSnapshot(serverId).agents.get(agentId);
         if (!currentAgent) {
           const result = await client.fetchAgent({ agentId });
           if (attemptToken !== initAttemptTokenRef.current) {
@@ -1034,7 +961,9 @@ function ChatAgentContent({
             });
             return;
           }
-          storeFetchedAgentDetail({ serverId, result });
+          const service = projectionRuntime.service(serverId);
+          if (!service) throw new Error("Projection service is not attached");
+          storeFetchedAgentDetail({ service, result });
         }
         if (attemptToken !== initAttemptTokenRef.current) {
           return;
@@ -1065,10 +994,10 @@ function ChatAgentContent({
     agentId,
     client,
     ensureAgentIsInitialized,
-    hasSession,
     isConnected,
     missingAgentState.kind,
     onAgentNotFound,
+    projectionRuntime,
     serverId,
   ]);
 
@@ -1269,30 +1198,64 @@ const AgentStreamSection = memo(function AgentStreamSection({
   toast: ReturnType<typeof useToastHost>["api"];
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
-  const streamItemsRaw = useSessionStore((state) =>
-    agentId ? state.sessions[serverId]?.agentStreamTail?.get(agentId) : undefined,
+  const timelineEntries = useAuthorityProjection(
+    serverId,
+    (projection) =>
+      (agentId ? projection.timelines.get(agentId)?.entries : undefined) ?? EMPTY_TIMELINE_ENTRIES,
   );
+  const { data: pendingMessages = EMPTY_PENDING_MESSAGES } = useQuery({
+    queryKey: pendingAgentMessagesKey(serverId, agentId ?? ""),
+    queryFn: async (): Promise<readonly PendingAgentMessage[]> => [],
+    enabled: false,
+  });
   const client = useHostRuntimeClient(serverId);
-  const setAgentStreamTail = useSessionStore((state) => state.setAgentStreamTail);
-  const setAgentStreamHead = useSessionStore((state) => state.setAgentStreamHead);
-  const streamItems = streamItemsRaw ?? EMPTY_STREAM_ITEMS;
-  const pendingPermissionList = useStoreWithEqualityFn(
-    useSessionStore,
-    (state) => {
+  const streamItems = useMemo(() => {
+    const presentationByMessageId = new Map(
+      pendingMessages.map((message) => [message.messageId, message]),
+    );
+    const canonicalIds = new Set<string>();
+    const canonical = createTimelineViewModels(timelineEntries, {
+      agentIsRunning: agent.status === "running",
+    }).map((model) => {
+      if (model.kind !== "user_message") return model;
+      canonicalIds.add(model.id);
+      const presentation = presentationByMessageId.get(model.id);
+      if (!presentation) return model;
+      return {
+        ...model,
+        ...(presentation.images.length > 0 ? { images: presentation.images } : {}),
+        ...(presentation.attachments.length > 0 ? { attachments: presentation.attachments } : {}),
+      };
+    });
+    return [
+      ...canonical,
+      ...pendingMessages
+        .filter((message) => message.status === "pending" && !canonicalIds.has(message.messageId))
+        .map((message) => ({
+          kind: "user_message" as const,
+          id: message.messageId,
+          text: message.text,
+          timestamp: message.timestamp,
+          optimistic: true as const,
+          ...(message.images.length > 0 ? { images: message.images } : {}),
+          ...(message.attachments.length > 0 ? { attachments: message.attachments } : {}),
+        })),
+    ];
+  }, [agent.status, pendingMessages, timelineEntries]);
+  const pendingPermissionList = useAuthorityProjection(
+    serverId,
+    (projection) => {
       if (!agentId) {
         return EMPTY_PENDING_PERMISSION_LIST;
       }
-      const allPendingPermissions = state.sessions[serverId]?.pendingPermissions;
-      if (!allPendingPermissions) {
-        return EMPTY_PENDING_PERMISSION_LIST;
-      }
-      const filtered: PendingPermission[] = [];
-      for (const permission of allPendingPermissions.values()) {
-        if (permission.agentId === agentId) {
-          filtered.push(permission);
-        }
-      }
-      return filtered.length > 0 ? filtered : EMPTY_PENDING_PERMISSION_LIST;
+      const requests = projection.agents.get(agentId)?.pendingPermissions ?? [];
+      return requests.length === 0
+        ? EMPTY_PENDING_PERMISSION_LIST
+        : requests.map((request) => ({
+            key: derivePendingPermissionKey(agentId, request),
+            agentId,
+            request,
+          }));
     },
     shallow,
   );
@@ -1422,6 +1385,7 @@ function ActiveAgentComposer({
   onMessageSent: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const projectionRuntime = useProjectionRuntime();
   const isCompactFormFactor = useIsCompactFormFactor();
   const { onLayout: onInputAreaLayout, isBelow: isCompactComposerLayout } = useContainerWidthBelow(
     COMPACT_FORM_FACTOR_WIDTH,
@@ -1437,9 +1401,7 @@ function ActiveAgentComposer({
     serverId,
     parentAgentId: agentId,
   });
-  const canDetachSubagents = useSessionStore(
-    (state) => state.sessions[serverId]?.serverInfo?.features?.agentDetach === true,
-  );
+  const canDetachSubagents = useHostFeature(serverId, "agentDetach");
   const handleOpenSubagent = useCallback(
     (subagentId: string) => {
       navigateToAgent({ serverId, agentId: subagentId });
@@ -1483,7 +1445,7 @@ function ActiveAgentComposer({
 
   const handleClientSlashCommand = useCallback(
     async (command: ClientSlashCommand) => {
-      const agent = resolveChatAgentFromSession(useSessionStore.getState(), serverId, agentId);
+      const agent = resolveChatAgent(projectionRuntime.store.getSnapshot(serverId), agentId);
       if (!agent) {
         throw new Error("Agent not found");
       }
@@ -1511,6 +1473,7 @@ function ActiveAgentComposer({
       archiveAgent,
       closeWorkspaceTab,
       hideWorkspaceAgent,
+      projectionRuntime,
       retargetCurrentTab,
       serverId,
       tabId,

@@ -1,9 +1,8 @@
 import {
   clearWorkspaceArchivePending,
   markWorkspaceArchivePending,
-} from "@/contexts/session-workspace-upserts";
-import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
-import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
+} from "@/query/workspace-archive-state";
+import type { QueryClient } from "@tanstack/react-query";
 import { i18n } from "@/i18n/i18next";
 
 export interface WorkspaceArchiveTarget {
@@ -14,10 +13,6 @@ export interface WorkspaceArchiveTarget {
 
 interface WorkspaceArchiveClient {
   archiveWorkspace: (workspaceId: string) => Promise<{ error: string | null }>;
-}
-
-interface OptimisticWorkspaceArchiveSnapshot {
-  workspace: WorkspaceDescriptor | null;
 }
 
 export interface WorkspaceArchiveFailure {
@@ -39,35 +34,27 @@ function isWorkspaceArchiveFailure(error: unknown): error is WorkspaceArchiveFai
 }
 
 function hideWorkspaceOptimistically(
+  queryClient: QueryClient,
   workspace: WorkspaceArchiveTarget,
-): OptimisticWorkspaceArchiveSnapshot {
-  const workspaces = useSessionStore.getState().sessions[workspace.serverId]?.workspaces;
-  const workspaceKey = resolveWorkspaceMapKeyByIdentity({
-    workspaces,
-    workspaceId: workspace.workspaceId,
-  });
-  const snapshot = workspaceKey ? (workspaces?.get(workspaceKey) ?? null) : null;
+): void {
   markWorkspaceArchivePending({
+    queryClient,
     serverId: workspace.serverId,
     workspaceId: workspace.workspaceId,
     workspaceDirectory: workspace.workspaceDirectory,
   });
-  useSessionStore.getState().removeWorkspace(workspace.serverId, workspace.workspaceId);
-  return { workspace: snapshot };
 }
 
 function restoreOptimisticallyHiddenWorkspace(input: {
+  queryClient: QueryClient;
   serverId: string;
   workspaceId: string;
-  snapshot: OptimisticWorkspaceArchiveSnapshot;
 }): void {
   clearWorkspaceArchivePending({
+    queryClient: input.queryClient,
     serverId: input.serverId,
     workspaceId: input.workspaceId,
   });
-  if (input.snapshot.workspace) {
-    useSessionStore.getState().mergeWorkspaces(input.serverId, [input.snapshot.workspace]);
-  }
 }
 
 async function archiveWorkspaceOrThrow(input: {
@@ -81,11 +68,12 @@ async function archiveWorkspaceOrThrow(input: {
 }
 
 export async function archiveWorkspaceOptimistically(input: {
+  queryClient: QueryClient;
   client: WorkspaceArchiveClient;
   workspace: WorkspaceArchiveTarget;
   afterHide?: () => void;
 }): Promise<void> {
-  const snapshot = hideWorkspaceOptimistically(input.workspace);
+  hideWorkspaceOptimistically(input.queryClient, input.workspace);
   input.afterHide?.();
 
   try {
@@ -95,15 +83,16 @@ export async function archiveWorkspaceOptimistically(input: {
     });
   } catch (error) {
     restoreOptimisticallyHiddenWorkspace({
+      queryClient: input.queryClient,
       serverId: input.workspace.serverId,
       workspaceId: input.workspace.workspaceId,
-      snapshot,
     });
     throw error;
   }
 }
 
 export async function archiveWorkspacesOptimistically(input: {
+  queryClient: QueryClient;
   getClient: (serverId: string) => WorkspaceArchiveClient | null;
   workspaces: WorkspaceArchiveTarget[];
 }): Promise<WorkspaceArchiveFailure[]> {
@@ -120,6 +109,7 @@ export async function archiveWorkspacesOptimistically(input: {
 
       try {
         await archiveWorkspaceOptimistically({
+          queryClient: input.queryClient,
           client,
           workspace,
         });

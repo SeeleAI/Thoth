@@ -3,12 +3,12 @@ import type {
   FetchAgentHistoryEntry,
   FetchAgentHistoryOptions,
 } from "@thoth/client/internal/daemon-client";
-import { buildAgentDirectoryState } from "@/utils/agent-directory-sync";
 import {
   normalizeWorkspaceOpaqueId,
   resolveWorkspaceMapKeyByIdentity,
 } from "@/utils/workspace-identity";
-import { type Agent, useSessionStore } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
+import { appProjectionRuntime } from "@/projection/projection-context";
 import {
   buildWorkspaceTabPersistenceKey,
   useWorkspaceLayoutStore,
@@ -30,10 +30,10 @@ function resolveWorkspaceIdForSession(input: {
   serverId: string;
   workspaceId: string;
 }): string | null {
-  const session = useSessionStore.getState().sessions[input.serverId];
+  const projection = appProjectionRuntime.store.getSnapshot(input.serverId);
   return (
     resolveWorkspaceMapKeyByIdentity({
-      workspaces: session?.workspaces,
+      workspaces: projection.workspaces,
       workspaceId: input.workspaceId,
     }) ?? normalizeWorkspaceOpaqueId(input.workspaceId)
   );
@@ -54,24 +54,14 @@ function selectLatestAgentForWorkspace(input: {
   serverId: string;
   workspaceId: string;
 }): Agent | null {
-  const session = useSessionStore.getState().sessions[input.serverId];
-  if (!session) {
-    return null;
-  }
-
-  const candidates = new Map<string, Agent>();
-  for (const agent of session.agents.values()) {
+  const candidates: Agent[] = [];
+  for (const agent of appProjectionRuntime.store.getSnapshot(input.serverId).agents.values()) {
     if (workspaceIdsMatch(agent.workspaceId, input.workspaceId) && !agent.archivedAt) {
-      candidates.set(agent.id, agent);
-    }
-  }
-  for (const agent of session.agentDetails.values()) {
-    if (workspaceIdsMatch(agent.workspaceId, input.workspaceId) && !agent.archivedAt) {
-      candidates.set(agent.id, agent);
+      candidates.push(agent);
     }
   }
 
-  return Array.from(candidates.values()).sort(compareAgentActivityDescending)[0] ?? null;
+  return candidates.sort(compareAgentActivityDescending)[0] ?? null;
 }
 
 function focusWorkspaceAgentTab(input: {
@@ -97,7 +87,7 @@ function focusWorkspaceAgentTab(input: {
   );
 }
 
-function upsertHistoryEntriesIntoAgentDetails(input: {
+function upsertHistoryEntries(input: {
   serverId: string;
   entries: FetchAgentHistoryEntry[];
 }): Agent[] {
@@ -105,41 +95,9 @@ function upsertHistoryEntriesIntoAgentDetails(input: {
     return [];
   }
 
-  const { agents, pendingPermissions } = buildAgentDirectoryState({
-    serverId: input.serverId,
-    entries: input.entries,
-  });
-  const store = useSessionStore.getState();
-
-  store.setAgentDetails(input.serverId, (previous) => {
-    const next = new Map(previous);
-    for (const agent of agents.values()) {
-      next.set(agent.id, agent);
-    }
-    return next;
-  });
-  store.setAgentLastActivityBatch((previous) => {
-    const next = new Map(previous);
-    for (const agent of agents.values()) {
-      const current = next.get(agent.id);
-      if (!current || current.getTime() < agent.lastActivityAt.getTime()) {
-        next.set(agent.id, agent.lastActivityAt);
-      }
-    }
-    return next;
-  });
-  store.setPendingPermissions(input.serverId, (previous) => {
-    if (pendingPermissions.size === 0) {
-      return previous;
-    }
-    const next = new Map(previous);
-    for (const [key, pending] of pendingPermissions.entries()) {
-      next.set(key, pending);
-    }
-    return next;
-  });
-
-  return Array.from(agents.values());
+  const service = appProjectionRuntime.service(input.serverId);
+  if (!service) throw new Error("Projection service is not attached");
+  return input.entries.map((entry) => service.acceptAgentSnapshot(entry.agent, entry.project));
 }
 
 async function fetchWorkspaceHistoryAgent(input: {
@@ -154,7 +112,7 @@ async function fetchWorkspaceHistoryAgent(input: {
   const matchingEntries = payload.entries.filter((entry) =>
     workspaceIdsMatch(entry.agent.workspaceId, input.workspaceId),
   );
-  const restoredAgents = upsertHistoryEntriesIntoAgentDetails({
+  const restoredAgents = upsertHistoryEntries({
     serverId: input.serverId,
     entries: matchingEntries,
   });

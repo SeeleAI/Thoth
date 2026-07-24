@@ -6,7 +6,7 @@ import { canCreateWorktreeForProjectKind } from "@/projects/host-projects";
 import { useHostFeature } from "@/runtime/host-features";
 import { useHosts } from "@/runtime/host-runtime";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
-import { useWorkspace } from "@/stores/session-store-hooks";
+import { useWorkspace } from "@/projection/hooks";
 import { buildNewWorkspaceRoute } from "@/utils/host-routes";
 
 const WORKSPACE_NEW_ACTIONS: readonly KeyboardActionId[] = ["workspace.new"];

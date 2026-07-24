@@ -1,4 +1,4 @@
-import { generateMessageId } from "@/types/stream";
+import { generateMessageId } from "@/utils/message-id";
 import { isAbsolutePath } from "@/utils/path";
 import { isRasterImageMimeType } from "./file-types";
 

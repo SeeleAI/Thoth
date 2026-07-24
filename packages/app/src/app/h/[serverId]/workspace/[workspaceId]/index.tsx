@@ -7,7 +7,7 @@ import {
   type ActiveWorkspaceSelection,
   useActiveWorkspaceSelection,
 } from "@/stores/navigation-active-workspace-store";
-import { useHasHydratedWorkspaces, useWorkspaceExists } from "@/stores/session-store-hooks";
+import { useHasHydratedWorkspaces, useWorkspaceExists } from "@/projection/hooks";
 import type { WorkspaceTabTarget } from "@/stores/workspace-tabs-store";
 import { WorkspaceScreen } from "@/screens/workspace/workspace-screen";
 import { useWorkspaceLayoutStoreHydrated } from "@/stores/workspace-layout-store";

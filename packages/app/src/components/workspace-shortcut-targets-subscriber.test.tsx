@@ -3,12 +3,13 @@
  */
 import React from "react";
 import { act } from "@testing-library/react";
-import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useKeyboardShortcutsStore } from "@/stores/keyboard-shortcuts-store";
-import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
+import { ProjectionProvider } from "@/projection/projection-context";
+import { clearTestProjections, setTestProjection } from "@/test-utils/authority-projection";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
@@ -91,15 +92,13 @@ describe("WorkspaceShortcutTargetsSubscriber", () => {
 
     act(() => {
       setHostProfiles([hostProfile()]);
-      useSessionStore.getState().initializeSession("srv", null as unknown as DaemonClient);
-      useSessionStore.getState().setWorkspaces(
-        "srv",
-        new Map([
+      setTestProjection("srv", {
+        workspaces: new Map([
           ["ws-1", workspaceDescriptor({ id: "ws-1", name: "Workspace 1" })],
           ["ws-2", workspaceDescriptor({ id: "ws-2", name: "Workspace 2" })],
         ]),
-      );
-      useSessionStore.getState().setHasHydratedWorkspaces("srv", true);
+        hydration: { agents: "idle", workspaces: "ready" },
+      });
     });
   });
 
@@ -114,15 +113,17 @@ describe("WorkspaceShortcutTargetsSubscriber", () => {
     container = null;
     act(() => {
       setHostProfiles([]);
-      useSessionStore.getState().clearSession("srv");
-      useSessionStore.getState().clearSession("host-a");
-      useSessionStore.getState().clearSession("host-b");
+      clearTestProjections();
     });
   });
 
   it("publishes workspace shortcut targets without rendering the sidebar", async () => {
     await act(async () => {
-      root?.render(<WorkspaceShortcutTargetsSubscriber enabled={true} />);
+      root?.render(
+        <ProjectionProvider>
+          <WorkspaceShortcutTargetsSubscriber enabled={true} />
+        </ProjectionProvider>,
+      );
     });
 
     expect(useKeyboardShortcutsStore.getState().sidebarShortcutWorkspaceTargets).toEqual([
@@ -134,9 +135,8 @@ describe("WorkspaceShortcutTargetsSubscriber", () => {
   it("publishes status-mode shortcut targets in visual status order", async () => {
     act(() => {
       useSidebarViewStore.getState().setGroupMode("status");
-      useSessionStore.getState().setWorkspaces(
-        "srv",
-        new Map([
+      setTestProjection("srv", {
+        workspaces: new Map([
           [
             "ws-done",
             workspaceDescriptor({
@@ -182,11 +182,16 @@ describe("WorkspaceShortcutTargetsSubscriber", () => {
             }),
           ],
         ]),
-      );
+        hydration: { agents: "idle", workspaces: "ready" },
+      });
     });
 
     await act(async () => {
-      root?.render(<WorkspaceShortcutTargetsSubscriber enabled={true} />);
+      root?.render(
+        <ProjectionProvider>
+          <WorkspaceShortcutTargetsSubscriber enabled={true} />
+        </ProjectionProvider>,
+      );
     });
 
     expect(useKeyboardShortcutsStore.getState().sidebarShortcutWorkspaceTargets).toEqual([
@@ -200,27 +205,23 @@ describe("WorkspaceShortcutTargetsSubscriber", () => {
   it("publishes shortcut targets from the visible host filter in project and status modes", async () => {
     act(() => {
       setHostProfiles([hostProfile("host-a"), hostProfile("host-b")]);
-      useSessionStore.getState().initializeSession("host-a", null as unknown as DaemonClient);
-      useSessionStore.getState().initializeSession("host-b", null as unknown as DaemonClient);
-      useSessionStore
-        .getState()
-        .setWorkspaces(
-          "host-a",
-          new Map([["a-1", workspaceDescriptor({ id: "a-1", name: "Host A" })]]),
-        );
-      useSessionStore
-        .getState()
-        .setWorkspaces(
-          "host-b",
-          new Map([["b-1", workspaceDescriptor({ id: "b-1", name: "Host B" })]]),
-        );
-      useSessionStore.getState().setHasHydratedWorkspaces("host-a", true);
-      useSessionStore.getState().setHasHydratedWorkspaces("host-b", true);
+      setTestProjection("host-a", {
+        workspaces: new Map([["a-1", workspaceDescriptor({ id: "a-1", name: "Host A" })]]),
+        hydration: { agents: "idle", workspaces: "ready" },
+      });
+      setTestProjection("host-b", {
+        workspaces: new Map([["b-1", workspaceDescriptor({ id: "b-1", name: "Host B" })]]),
+        hydration: { agents: "idle", workspaces: "ready" },
+      });
       useSidebarViewStore.getState().setHostFilter("host-b");
     });
 
     await act(async () => {
-      root?.render(<WorkspaceShortcutTargetsSubscriber enabled={true} />);
+      root?.render(
+        <ProjectionProvider>
+          <WorkspaceShortcutTargetsSubscriber enabled={true} />
+        </ProjectionProvider>,
+      );
     });
 
     expect(useKeyboardShortcutsStore.getState().sidebarShortcutWorkspaceTargets).toEqual([
@@ -238,11 +239,19 @@ describe("WorkspaceShortcutTargetsSubscriber", () => {
 
   it("clears targets when disabled", async () => {
     await act(async () => {
-      root?.render(<WorkspaceShortcutTargetsSubscriber enabled={true} />);
+      root?.render(
+        <ProjectionProvider>
+          <WorkspaceShortcutTargetsSubscriber enabled={true} />
+        </ProjectionProvider>,
+      );
     });
 
     await act(async () => {
-      root?.render(<WorkspaceShortcutTargetsSubscriber enabled={false} />);
+      root?.render(
+        <ProjectionProvider>
+          <WorkspaceShortcutTargetsSubscriber enabled={false} />
+        </ProjectionProvider>,
+      );
     });
 
     expect(useKeyboardShortcutsStore.getState().sidebarShortcutWorkspaceTargets).toEqual([]);

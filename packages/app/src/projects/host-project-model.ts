@@ -1,4 +1,4 @@
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 import type {
   WorkspaceStructureHostPlacement,
   WorkspaceStructureProject,

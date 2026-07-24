@@ -1,6 +1,8 @@
 import { useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { useSessionStore, type AgentFileExplorerState } from "@/stores/session-store";
+import type { AgentFileExplorerState } from "@/query/file-explorer-model";
+import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { explorerFileFromReadResult } from "@/file-explorer/read-result";
 
 function createExplorerState(): AgentFileExplorerState {
@@ -16,6 +18,11 @@ function createExplorerState(): AgentFileExplorerState {
     selectedEntryPath: null,
   };
 }
+
+export const fileExplorerQueryKey = (serverId: string, workspaceStateKey: string) =>
+  ["file-explorer", serverId, workspaceStateKey] as const;
+
+export const emptyFileExplorerState = createExplorerState;
 
 function pushHistory(history: string[], path: string): string[] {
   const normalizedHistory = history.length === 0 ? ["."] : history;
@@ -53,9 +60,9 @@ export function buildWorkspaceExplorerStateKey(scope: FileExplorerWorkspaceScope
 
 export function useFileExplorerActions(params: { serverId: string } & FileExplorerWorkspaceScope) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const { serverId, workspaceId, workspaceRoot } = params;
-  const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
-  const setFileExplorer = useSessionStore((state) => state.setFileExplorer);
+  const client = useHostRuntimeClient(serverId);
   const normalizedWorkspaceRoot = useMemo(
     () => normalizeWorkspaceValue(workspaceRoot),
     [workspaceRoot],
@@ -74,14 +81,12 @@ export function useFileExplorerActions(params: { serverId: string } & FileExplor
       if (!workspaceStateKey) {
         return;
       }
-      setFileExplorer(serverId, (prev) => {
-        const next = new Map(prev);
-        const current = next.get(workspaceStateKey) ?? createExplorerState();
-        next.set(workspaceStateKey, updater(current));
-        return next;
-      });
+      queryClient.setQueryData<AgentFileExplorerState>(
+        fileExplorerQueryKey(serverId, workspaceStateKey),
+        (current) => updater(current ?? createExplorerState()),
+      );
     },
-    [serverId, setFileExplorer, workspaceStateKey],
+    [queryClient, serverId, workspaceStateKey],
   );
 
   const requestDirectoryListing = useCallback(

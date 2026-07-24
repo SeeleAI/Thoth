@@ -1,5 +1,5 @@
 import type { Href } from "expo-router";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 import { buildHostRootRoute, buildNewWorkspaceRoute } from "@/utils/host-routes";
 import { resolveWorkspaceRouteId } from "@/utils/workspace-identity";
 

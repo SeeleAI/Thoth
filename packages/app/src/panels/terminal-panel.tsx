@@ -11,8 +11,8 @@ import type { PanelDescriptor, PanelRegistration } from "@/panels/panel-registry
 import { queryClient } from "@/query/query-client";
 import { buildTerminalsQueryKey } from "@/screens/workspace/terminals/state";
 import { usePanelStore } from "@/stores/panel-store";
-import { useSessionStore } from "@/stores/session-store";
-import { useWorkspaceDirectory, useWorkspaceFields } from "@/stores/session-store-hooks";
+import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { useWorkspaceDirectory, useWorkspaceFields } from "@/projection/hooks";
 
 type ListTerminalsPayload = ListTerminalsResponse["payload"];
 
@@ -40,7 +40,7 @@ function useTerminalPanelDescriptor(
   context: { serverId: string; workspaceId: string },
 ): PanelDescriptor {
   const { t } = useTranslation();
-  const client = useSessionStore((state) => state.sessions[context.serverId]?.client ?? null);
+  const client = useHostRuntimeClient(context.serverId);
   const workspaceDirectory = useWorkspaceDirectory(context.serverId, context.workspaceId);
   const terminalsQuery = useQuery(
     {

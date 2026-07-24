@@ -355,6 +355,23 @@ export type AgentTimelineItem =
   | { type: "error"; message: string }
   | CompactionTimelineItem;
 
+export interface AgentTimelineSeqRange {
+  startSeq: number;
+  endSeq: number;
+}
+
+export type AgentTimelineCollapseReason = "assistant_merge" | "reasoning_merge" | "tool_lifecycle";
+
+export interface AgentTimelineEntry {
+  provider: AgentProvider;
+  item: AgentTimelineItem;
+  timestamp: string;
+  seqStart: number;
+  seqEnd: number;
+  sourceSeqRanges: AgentTimelineSeqRange[];
+  collapsed: AgentTimelineCollapseReason[];
+}
+
 export type AgentStreamEvent =
   | { type: "thread_started"; sessionId: string; provider: AgentProvider }
   | { type: "turn_started"; provider: AgentProvider; turnId?: string }

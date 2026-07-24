@@ -3803,3 +3803,45 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   Foundation/build, public behavior, real Web visual/interaction and TUI gate passed in `140.770s`. Source remains
   `306,055` production LOC and the Release digest remains unchanged.
 - No production code, AppImage/native package, real Provider, hosted Relay, push, tag, Release or publication ran.
+
+## 2026-07-24 [Cut 4 canonical AgentTimeline WIP]
+
+- Began the atomic `NTH-TD-035` cut without committing an intermediate dual path. Protocol now owns
+  `AgentTimelineEntry`; App added `AuthorityProjectionStore`, `DaemonProjectionService`, canonical cursor/epoch/page
+  merge rules, QueryClient optimistic-message reconciliation and exhaustive Timeline ViewModel registries.
+- The real Agent panel now consumes protocol-owned entries. Deleted production `types/stream.ts` and
+  `session-stream-reducers.ts`; renamed the remaining React event attachment from misleading `SessionProvider` to
+  `DaemonProjectionHost`. Older-page, live catch-up, gap/stale cursor, rewind and attachment presentation behavior
+  now enter through the canonical projection path.
+- Focused suites passed `130/130`; the complete App suite passed `2,573/2,573` across `330` files in `72.37s`; real
+  Web export passed with `4,419` modules; Foundation passed with zero lint errors/warnings. The first Foundation run
+  stopped at format check on seven changed files; root `npm run format` fixed them and the repeated gate passed.
+- Current production metrics are `303,032` LOC (`-5,499` from clean baseline, `-3,023` from Cut 3), `1,294,387`
+  tokens, `1,326,946` AST nodes, `5,035` imports and `164` runtime dependency edges. An attempted unsupported
+  `metrics:refactor -- --json` option failed explicitly; the standard root script then produced these metrics.
+- Cut 4 remains `[doing]`: the old Session entity/client/UI/query state store still has consumers, token/import
+  metrics are not yet below the verified Cut 3 values, architecture guards and the complete shared gate have not
+  run. No local commit was created. Next action remains `NTH-TD-035`: migrate those consumers to Projection,
+  HostRuntime, QueryClient and UiPreferences, delete the old store, then run the full stage-4 gate.
+
+## 2026-07-24 [Final-architecture Cut 4 App Projection verified]
+
+- Completed the atomic `NTH-TD-035` cut. `AuthorityProjectionStore` and `DaemonProjectionService` now exclusively
+  own Agent, Workspace, Thoth State and protocol-owned AgentTimeline projection; HostRuntime owns Client/ServerInfo,
+  QueryClient owns provider/Git/file and pending overlays, and UiPreferences owns local Agent/Terminal focus.
+- Deleted Session Store and selector hooks, Session Context/workspace upserts, duplicate Timeline reducers and the
+  third `StreamItem` model. App production scans found no old Store/model references, arbitrary authority setters,
+  fallback, compatibility facade or dual write; the sole production projection writer remains
+  `packages/app/src/projection/authority-projection.ts`.
+- The complete App suite passed `331/331` files and `2,582/2,582` tests in `67.49s`; Foundation passed; real Expo
+  Web bundled `4,418` modules; interaction regressions passed in `25.503s`; Provider Control passed in `36.825s`.
+  Stage 4 architecture guards and the Release `05775486` semantic digest also passed.
+- Final production metrics are `300,931` LOC, `1,278,968` scanner tokens, `1,319,295` AST nodes, `5,032` static
+  imports and `164` runtime dependency edges. Relative to clean baseline the reductions are `7,600 / 19,596 /
+27,364 / 25 / 1`; relative to Cut 3 they are `5,124 / 10,773 / 19,550 / 2 / 0`.
+- `npm run accept:refactor:fast` passed Stage 4 in `144.145s` under one shared `300s` deadline, including real Web
+  visual/keyboard/focus/a11y/responsive evidence and the OpenTUI fixed frame. `NTH-EV-056` is verified; the
+  `-12,000` Cut A budget was not reached and the final `-50,000` target remains open. The sole top next action is
+  `NTH-TD-036`, shared Timeline/ViewModel/responsive UI convergence.
+- No AppImage, native package, real Provider, hosted Relay final journey, GitHub Actions, push, tag, Release or
+  publication ran, and Paseo `127.0.0.1:6767` was not probed or modified.

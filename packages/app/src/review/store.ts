@@ -20,7 +20,7 @@ import {
   setDiffModeOverrideInState,
   updateCommentInState,
 } from "@/review/state";
-import { generateMessageId } from "@/types/stream";
+import { generateMessageId } from "@/utils/message-id";
 import { buildNumberedDiffHunks, type NumberedDiffLine } from "@/utils/diff-layout";
 import type { AgentAttachment } from "@thoth/protocol/messages";
 

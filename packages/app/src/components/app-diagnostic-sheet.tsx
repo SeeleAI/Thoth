@@ -18,6 +18,7 @@ import {
   redactAppDiagnosticReport,
 } from "@/diagnostics/app-diagnostic-report";
 import { getHostRuntimeStore, useHosts, type HostRuntimeSnapshot } from "@/runtime/host-runtime";
+import { appProjectionRuntime } from "@/projection/projection-context";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import type { HostProfile } from "@/types/host-connection";
 
@@ -113,7 +114,11 @@ export function AppDiagnosticSheet({
         const hostProgressId = `host:${host.serverId}`;
         updateRunProgress(hostProgressId, host.label, "running");
         const snapshot = store.getSnapshot(host.serverId);
-        const hostResult = await collectHostDiagnosticSections(host, snapshot);
+        const hostResult = await collectHostDiagnosticSections(
+          host,
+          snapshot,
+          appProjectionRuntime.store.getSnapshot(host.serverId).hydration.agents,
+        );
         sections.push(...hostResult.sections);
         updateRunProgress(hostProgressId, host.label, hostResult.status);
       }
@@ -293,8 +298,9 @@ async function collectDesktopDiagnosticSections(): Promise<DiagnosticCollectionR
 async function collectHostDiagnosticSections(
   host: HostProfile,
   snapshot: HostRuntimeSnapshot | null,
+  agentHydration: "idle" | "loading" | "ready" | "error",
 ): Promise<DiagnosticCollectionResult> {
-  const sections = [formatHostRuntimeSection({ host, snapshot })];
+  const sections = [formatHostRuntimeSection({ host, snapshot, agentHydration })];
   const client = snapshot?.client ?? null;
   if (snapshot?.connectionStatus !== "online" || !client) {
     sections.push(

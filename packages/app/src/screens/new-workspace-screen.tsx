@@ -39,8 +39,9 @@ import { useHostFeature, useHostFeatureMap } from "@/runtime/host-features";
 import type { HostProfile } from "@/types/host-connection";
 import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 import { useLastWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
-import { normalizeWorkspaceDescriptor, useSessionStore } from "@/stores/session-store";
-import { useWorkspace } from "@/stores/session-store-hooks";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
+import { useProjectionRuntime } from "@/projection/projection-context";
+import { useWorkspace } from "@/projection/hooks";
 import { generateDraftId } from "@/stores/draft-keys";
 import { useDraftStore } from "@/stores/draft-store";
 import { isActiveCreateFlowForDraft, useCreateFlowStore } from "@/stores/create-flow-store";
@@ -53,7 +54,7 @@ import { useFormPreferences } from "@/hooks/use-form-preferences";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import { buildThothTurnSnapshot } from "@/composer/agent-controls/thoth-mode";
 import type { CreateAgentInitialValues } from "@/hooks/use-agent-form-state";
-import { generateMessageId } from "@/types/stream";
+import { generateMessageId } from "@/utils/message-id";
 import { toErrorMessage } from "@/utils/error-messages";
 import { projectIconPlaceholderLabelFromDisplayName } from "@/utils/project-display-name";
 import { navigateToPreparedWorkspaceTab } from "@/utils/workspace-navigation";
@@ -75,6 +76,7 @@ import type {
   AgentAttachment,
   GitHubSearchItem,
   ThothTurnSnapshot,
+  WorkspaceDescriptorPayload,
 } from "@thoth/protocol/messages";
 import type { CreateThothWorktreeInput } from "@thoth/client/internal/daemon-client";
 import type { AgentProvider } from "@thoth/protocol/agent-types";
@@ -830,28 +832,19 @@ interface WorkspaceDraftSubmissionConfig {
   target: WorkspaceTabTarget;
 }
 
-async function createAndMergeWorkspace(input: {
+async function createWorkspace(input: {
   client: NonNullable<ReturnType<typeof useHostRuntimeClient>>;
   createInput: Parameters<
     NonNullable<ReturnType<typeof useHostRuntimeClient>>["createThothWorktree"]
   >[0];
-  mergeWorkspaces: (
-    serverId: string,
-    workspaces: ReturnType<typeof normalizeWorkspaceDescriptor>[],
-  ) => void;
-  serverId: string;
+  acceptWorkspace: (workspace: WorkspaceDescriptorPayload) => WorkspaceDescriptor;
   createFailedMessage: string;
-}): Promise<ReturnType<typeof normalizeWorkspaceDescriptor>> {
+}): Promise<WorkspaceDescriptor> {
   const payload = await input.client.createThothWorktree(input.createInput);
   if (payload.error || !payload.workspace) {
     throw new Error(payload.error ?? input.createFailedMessage);
   }
-  const normalizedWorkspace = normalizeWorkspaceDescriptor(payload.workspace);
-  const workspaceForInitialMerge = input.createInput.firstAgentContext
-    ? { ...normalizedWorkspace, status: "running" as const, statusEnteredAt: new Date() }
-    : normalizedWorkspace;
-  input.mergeWorkspaces(input.serverId, [workspaceForInitialMerge]);
-  return normalizedWorkspace;
+  return input.acceptWorkspace(payload.workspace);
 }
 
 async function createMultiplicityWorkspace(input: {
@@ -864,13 +857,9 @@ async function createMultiplicityWorkspace(input: {
   withInitialAgent: boolean;
   prompt: string;
   attachments: AgentAttachment[];
-  mergeWorkspaces: (
-    serverId: string,
-    workspaces: ReturnType<typeof normalizeWorkspaceDescriptor>[],
-  ) => void;
-  serverId: string;
+  acceptWorkspace: (workspace: WorkspaceDescriptorPayload) => WorkspaceDescriptor;
   createFailedMessage: string;
-}): Promise<ReturnType<typeof normalizeWorkspaceDescriptor>> {
+}): Promise<WorkspaceDescriptor> {
   const isWorktree = input.isolation === "worktree";
   const checkoutRequest = isWorktree
     ? resolveCheckoutRequest(input.selectedItem, input.currentBranch)
@@ -898,12 +887,7 @@ async function createMultiplicityWorkspace(input: {
   if (payload.error || !payload.workspace) {
     throw new Error(payload.error ?? input.createFailedMessage);
   }
-  const normalizedWorkspace = normalizeWorkspaceDescriptor(payload.workspace);
-  const workspaceForInitialMerge = input.withInitialAgent
-    ? { ...normalizedWorkspace, status: "running" as const, statusEnteredAt: new Date() }
-    : normalizedWorkspace;
-  input.mergeWorkspaces(input.serverId, [workspaceForInitialMerge]);
-  return normalizedWorkspace;
+  return input.acceptWorkspace(payload.workspace);
 }
 
 interface CreateChatAgentInput {
@@ -915,7 +899,7 @@ interface CreateChatAgentInput {
     prompt: string;
     attachments: AgentAttachment[];
     withInitialAgent: boolean;
-  }) => Promise<ReturnType<typeof normalizeWorkspaceDescriptor>>;
+  }) => Promise<WorkspaceDescriptor>;
   serverId: string;
   draftKey: string;
   draftId?: string;
@@ -1704,7 +1688,7 @@ export function NewWorkspaceScreen({
   const insets = useSafeAreaInsets();
   const isCompact = useIsCompactFormFactor();
   const toast = useToast();
-  const mergeWorkspaces = useSessionStore((state) => state.mergeWorkspaces);
+  const projectionRuntime = useProjectionRuntime();
   const {
     allHosts,
     selectedServerId,
@@ -1725,9 +1709,7 @@ export function NewWorkspaceScreen({
   // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
   const supportsWorkspaceMultiplicity = useHostFeature(selectedServerId, "workspaceMultiplicity");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [createdWorkspace, setCreatedWorkspace] = useState<ReturnType<
-    typeof normalizeWorkspaceDescriptor
-  > | null>(null);
+  const [createdWorkspace, setCreatedWorkspace] = useState<WorkspaceDescriptor | null>(null);
   const [pendingAction, setPendingAction] = useState<"chat" | "empty" | null>(null);
   const [manualPickerSelection, setManualPickerSelection] = useState<PickerSelection | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -2085,6 +2067,8 @@ export function NewWorkspaceScreen({
       if (!selectedSourceDirectory) {
         throw new Error("Choose a host for this project");
       }
+      const service = projectionRuntime.service(selectedServerId);
+      if (!service) throw new Error(t("workspace.terminal.hostDisconnected"));
       const normalizedWorkspace = supportsWorkspaceMultiplicity
         ? await createMultiplicityWorkspace({
             client: withConnectedClient(),
@@ -2096,15 +2080,13 @@ export function NewWorkspaceScreen({
             withInitialAgent: input.withInitialAgent,
             prompt: input.prompt,
             attachments: input.attachments,
-            mergeWorkspaces,
-            serverId: selectedServerId,
+            acceptWorkspace: (workspace) => service.acceptWorkspaceSnapshot(workspace),
             createFailedMessage: t("newWorkspace.errors.createWorktreeFailed"),
           })
-        : await createAndMergeWorkspace({
+        : await createWorkspace({
             client: withConnectedClient(),
             createInput: buildCreateWorktreeInput(input),
-            mergeWorkspaces,
-            serverId: selectedServerId,
+            acceptWorkspace: (workspace) => service.acceptWorkspaceSnapshot(workspace),
             createFailedMessage: t("newWorkspace.errors.createWorktreeFailed"),
           });
       setCreatedWorkspace(normalizedWorkspace);
@@ -2115,7 +2097,7 @@ export function NewWorkspaceScreen({
       createdWorkspace,
       currentBranch,
       effectiveIsolation,
-      mergeWorkspaces,
+      projectionRuntime,
       selectedItem,
       selectedProject,
       selectedServerId,

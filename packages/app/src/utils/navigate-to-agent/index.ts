@@ -1,6 +1,11 @@
 import { router, type Href } from "expo-router";
-import { useSessionStore } from "@/stores/session-store";
+import { appProjectionRuntime } from "@/projection/projection-context";
 import { getHostRuntimeStore, isHostRuntimeConnected } from "@/runtime/host-runtime";
+import { queryClient } from "@/query/query-client";
+import {
+  readWorkspaceRestoreStatus,
+  setWorkspaceRestoreStatus,
+} from "@/query/workspace-restore-state";
 import { resolveNavigateToAgent, type NavigateToAgentInput } from "./resolve";
 import { navigateToPreparedWorkspaceTab } from "@/utils/workspace-navigation";
 
@@ -15,23 +20,22 @@ const RESTORE_TIMEOUT_MS = 30000;
 function restoreArchivedWorkspace(serverId: string, agentId: string, workspaceId: string): void {
   const snapshot = getHostRuntimeStore().getSnapshot(serverId);
   const client = snapshot?.client ?? null;
-  if (!client || !isHostRuntimeConnected(snapshot)) {
+  if (!snapshot || !client || !isHostRuntimeConnected(snapshot)) {
     return;
   }
 
-  const store = useSessionStore.getState();
-  const session = store.sessions[serverId];
+  const projection = appProjectionRuntime.store.getSnapshot(serverId);
   // Self-gate: only an archived agent whose workspace is absent needs restoring.
   // A still-present workspace or an in-flight restore is a no-op; fire-once is
   // derived from store state.
-  const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
+  const agent = projection.agents.get(agentId);
   if (!agent?.archivedAt) {
     return;
   }
-  if (session?.workspaces.has(workspaceId)) {
+  if (projection.workspaces.has(workspaceId)) {
     return;
   }
-  if (session?.restoringWorkspaces.get(workspaceId) === "restoring") {
+  if (readWorkspaceRestoreStatus(queryClient, serverId, workspaceId) === "restoring") {
     return;
   }
 
@@ -39,29 +43,27 @@ function restoreArchivedWorkspace(serverId: string, agentId: string, workspaceId
   // Single capability read for restore. An old daemon recreates nothing on
   // refresh_agent, so a gone directory would spin then flash a misleading
   // "couldn't restore". Surface an explicit "update your host" state instead.
-  if (session?.serverInfo?.features?.worktreeRestore !== true) {
-    store.setWorkspaceRestoreStatus(serverId, workspaceId, "needs-host-upgrade");
+  if (snapshot.serverInfo?.features?.worktreeRestore !== true) {
+    setWorkspaceRestoreStatus(queryClient, serverId, workspaceId, "needs-host-upgrade");
     return;
   }
 
-  store.setWorkspaceRestoreStatus(serverId, workspaceId, "restoring");
+  setWorkspaceRestoreStatus(queryClient, serverId, workspaceId, "restoring");
   // The reducer guards "failed" so a late timeout after the descriptor lands is a no-op.
-  setTimeout(
-    () => useSessionStore.getState().setWorkspaceRestoreStatus(serverId, workspaceId, "failed"),
-    RESTORE_TIMEOUT_MS,
-  );
+  setTimeout(() => {
+    if (readWorkspaceRestoreStatus(queryClient, serverId, workspaceId) === "restoring") {
+      setWorkspaceRestoreStatus(queryClient, serverId, workspaceId, "failed");
+    }
+  }, RESTORE_TIMEOUT_MS);
   client
     .refreshAgent(agentId)
-    .catch(() =>
-      useSessionStore.getState().setWorkspaceRestoreStatus(serverId, workspaceId, "failed"),
-    );
+    .catch(() => setWorkspaceRestoreStatus(queryClient, serverId, workspaceId, "failed"));
 }
 
 export function navigateToAgent(input: NavigateToAgentInput): string {
   return resolveNavigateToAgent(input, {
     readAgentNavTarget: ({ serverId, agentId }) => {
-      const session = useSessionStore.getState().sessions[serverId];
-      const agent = session?.agents.get(agentId) ?? session?.agentDetails.get(agentId);
+      const agent = appProjectionRuntime.store.getSnapshot(serverId).agents.get(agentId);
       return {
         agentWorkspaceId: agent?.workspaceId,
       };

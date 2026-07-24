@@ -1,4 +1,4 @@
-import type { Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
 
 export type AgentDirectoryEntry = Pick<
   Agent,

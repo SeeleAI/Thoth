@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo } from "react";
 import equal from "fast-deep-equal";
-import { shallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
-import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
-import { selectWorkspace, workspaceEqualityFns } from "@/stores/session-store-hooks/selectors";
+import {
+  useAuthorityProjection,
+  useAuthorityProjections,
+  useProjectionRuntime,
+} from "@/projection/projection-context";
+import { workspaceEqualityFns } from "@/projection/workspace-selectors";
 import { useHostProjects } from "@/projects/host-projects";
-import { fetchAllWorkspaceDescriptors } from "@/projects/workspace-fetching";
 import { getHostRuntimeStore, useHostRegistryLoaded, useHosts } from "@/runtime/host-runtime";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
-import { shouldSuppressWorkspaceForLocalArchive } from "@/contexts/session-workspace-upserts";
+import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
 import {
   buildSidebarWorkspacePlacementModel,
   computeSidebarOrderUpdates,
@@ -53,20 +55,22 @@ export function useSidebarWorkspaceEntry(
     workspaceEqualityFns.deep,
   );
 
-  // Single subscription: reads workspace + agents together, computes the full entry, and
-  // deep-compares the output. Agents-Map identity churn (setAgents replaces the Map on every
-  // status transition) never causes a React re-render unless the derived entry actually changes.
-  return useStoreWithEqualityFn(
-    useSessionStore,
-    (state) => {
-      const workspace = selectWorkspace(state, serverId, workspaceId);
+  // Single subscription reads Workspace and Agent projection together, then deep-compares the
+  // output so unrelated authority updates do not re-render this row.
+  return useAuthorityProjection(
+    serverId ?? "",
+    (projection) => {
+      const key = resolveWorkspaceMapKeyByIdentity({
+        workspaces: projection.workspaces,
+        workspaceId,
+      });
+      const workspace = key ? projection.workspaces.get(key) : null;
       if (!workspace) return null;
-      const agents = serverId ? state.sessions[serverId]?.agents : undefined;
       return createSidebarWorkspaceEntry({
         serverId: serverId ?? "",
         workspace,
         pendingCreateAttempts,
-        agents,
+        agents: projection.agents,
       });
     },
     equal,
@@ -93,6 +97,7 @@ export function useSidebarWorkspacesList(options?: {
   enabled?: boolean;
 }): SidebarWorkspacesListResult {
   const runtime = getHostRuntimeStore();
+  const projectionRuntime = useProjectionRuntime();
   const allHosts = useHosts();
   const hostRegistryLoaded = useHostRegistryLoaded();
   const allServerIds = useMemo(() => allHosts.map((h) => h.serverId), [allHosts]);
@@ -121,10 +126,9 @@ export function useSidebarWorkspacesList(options?: {
 
   const persistedProjectOrder = useSidebarOrderStore((state) => state.projectOrder ?? EMPTY_ORDER);
 
-  const hydratedServerIds = useStoreWithEqualityFn(
-    useSessionStore,
-    (state) => serverIds.filter((id) => state.sessions[id]?.hasHydratedWorkspaces ?? false),
-    shallow,
+  const hydratedServerIds = useAuthorityProjections(
+    (store) => serverIds.filter((id) => store.getSnapshot(id).hydration.workspaces === "ready"),
+    workspaceEqualityFns.deep,
   );
 
   const hostProjects = useHostProjects(serverIds);
@@ -165,37 +169,17 @@ export function useSidebarWorkspacesList(options?: {
     for (const serverId of serverIds) {
       const snapshot = runtime.getSnapshot(serverId);
       if (snapshot?.connectionStatus !== "online") continue;
-      const client = runtime.getClient(serverId);
-      if (!client) continue;
-      void (async () => {
-        const next = new Map<string, WorkspaceDescriptor>();
-        try {
-          const { workspaces, emptyProjects } = await fetchAllWorkspaceDescriptors({
-            client,
-            sort: [{ key: "activity_at", direction: "desc" }],
-          });
-          for (const workspace of workspaces) {
-            if (shouldSuppressWorkspaceForLocalArchive({ serverId, workspace })) {
-              continue;
-            }
-            next.set(workspace.id, workspace);
-          }
-          const store = useSessionStore.getState();
-          store.setWorkspaces(serverId, next);
-          // Keep parents with no workspaces yet, so a manual refresh doesn't drop
-          // a freshly-added project from the sidebar.
-          store.setEmptyProjects(serverId, emptyProjects);
-          store.setHasHydratedWorkspaces(serverId, true);
-        } catch (error) {
+      void projectionRuntime
+        .service(serverId)
+        ?.refreshWorkspaces()
+        .catch((error) => {
           console.error("[WorkspaceFetch][sidebar-refresh] failed", {
             serverId,
             error,
           });
-          // ignore explicit refresh failures; hook keeps existing data
-        }
-      })();
+        });
     }
-  }, [isActive, runtime, serverIds]);
+  }, [isActive, projectionRuntime, runtime, serverIds]);
 
   const loadingState = deriveSidebarLoadingState({
     isActive,

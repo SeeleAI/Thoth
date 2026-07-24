@@ -1,4 +1,4 @@
-import { generateMessageId } from "@/types/stream";
+import { generateMessageId } from "@/utils/message-id";
 
 export function generateDraftId(): string {
   return `draft_${generateMessageId()}`;

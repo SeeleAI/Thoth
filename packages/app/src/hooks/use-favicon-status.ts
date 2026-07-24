@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getIsElectronRuntimeMac } from "@/constants/layout";
 import { useAggregatedAgents } from "./use-aggregated-agents";
 import { getDesktopHost } from "@/desktop/host";
-import { useWorkspaceStatusesForBadges } from "@/stores/session-store-hooks";
+import { useWorkspaceStatusesForBadges } from "@/projection/hooks";
 import { deriveMacDockBadgeCountFromWorkspaceStatuses } from "@/utils/desktop-badge-state";
 import { isNative } from "@/constants/platform";
 

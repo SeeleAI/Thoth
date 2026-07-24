@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useToast } from "@/contexts/toast-context";
@@ -8,7 +9,7 @@ import {
   DEFAULT_WORKTREE_ARCHIVE_WARNING_LABELS,
   type WorktreeArchiveWarningLabels,
 } from "@/git/worktree-archive-warning";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
 import { archiveWorkspaceOptimistically } from "@/workspace/workspace-archive";
 import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
 
@@ -46,6 +47,7 @@ export function useWorkspaceArchive(input: ArchiveWorkspaceInput): WorkspaceArch
   } = input;
   const { t } = useTranslation();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const archiveWorktree = useCheckoutGitActionsStore((state) => state.archiveWorktree);
 
   const archiveWorktreeRecord = useCallback(() => {
@@ -85,6 +87,7 @@ export function useWorkspaceArchive(input: ArchiveWorkspaceInput): WorkspaceArch
     onSetHiding?.(true);
     try {
       await archiveWorkspaceOptimistically({
+        queryClient,
         client,
         workspace: {
           serverId,
@@ -99,7 +102,7 @@ export function useWorkspaceArchive(input: ArchiveWorkspaceInput): WorkspaceArch
     } finally {
       onSetHiding?.(false);
     }
-  }, [onArchiveStarted, onSetHiding, serverId, t, toast, workspaceId]);
+  }, [onArchiveStarted, onSetHiding, queryClient, serverId, t, toast, workspaceId]);
 
   const archive = useCallback(() => {
     void (async () => {

@@ -7,7 +7,7 @@ import {
   type NavigateToLastWorkspaceDeps,
   type NavigateToWorkspaceDeps,
 } from "./navigation";
-import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
+import type { Agent, WorkspaceDescriptor } from "@/projection/authority-model";
 
 interface RecordedAgentTab {
   workspaceKey: string;

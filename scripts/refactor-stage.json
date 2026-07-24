@@ -1,5 +1,5 @@
 {
   "schemaVersion": 1,
-  "stage": 3,
-  "name": "rpc-registry"
+  "stage": 4,
+  "name": "app-projection-timeline"
 }

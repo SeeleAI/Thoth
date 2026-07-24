@@ -5,9 +5,8 @@ import { useMutation } from "@tanstack/react-query";
 import { ChevronDown, ExternalLink, Globe, Play, SquareTerminal } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
-import { useSessionStore } from "@/stores/session-store";
-import { useHostRuntimeSnapshot } from "@/runtime/host-runtime";
+import type { WorkspaceDescriptor } from "@/projection/authority-model";
+import { useHostRuntimeClient, useHostRuntimeSnapshot } from "@/runtime/host-runtime";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -384,7 +383,7 @@ export function WorkspaceScriptsButton({
 }: WorkspaceScriptsButtonProps): ReactElement | null {
   const { t } = useTranslation();
   const toast = useToast();
-  const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
+  const client = useHostRuntimeClient(serverId);
   const activeConnection = useHostRuntimeSnapshot(serverId)?.activeConnection ?? null;
   const liveTerminalIdSet = useMemo(() => new Set(liveTerminalIds), [liveTerminalIds]);
 

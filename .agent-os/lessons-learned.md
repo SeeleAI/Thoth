@@ -1192,3 +1192,33 @@ Retry condition:
 后续 Registry/Facade 重构若出现 LOC 下降但 token/import 回升，先删除泛型中间层和重复 module edge；若
 Session/transport 测试在构造期统一失败，先核对最终 composition boundary 与独立 storage home。不得把正式
 依赖改成 optional、给 Runtime 增加测试 fallback、放宽 lint，或修改 public-surface 统计集合来绕过失败。
+
+## `NTH-EXP-043` Session Store 删除后测试装配必须迁移到最终 Owner
+
+Observed on `2026-07-24` during `NTH-TD-035`:
+
+1. 旧测试第一次完整迁移前，App suite 为 `330` files、`310` passed / `20` failed，`2,451` passed /
+   `106` failed。失败集中于测试仍装配已删除的 Session Store；恢复兼容 Store 会制造第二套 authority，
+   因而选择把 fixture 和断言迁入 Projection、HostRuntime、QueryClient 和 UiPreferences 的正式边界。
+2. 第二次完整 App suite 为 `328/330` files、`2,569/2,573` tests，剩余四项失败来自 Timeline gap reset
+   会先创建正式 `loadingTail` placeholder，以及 fake Client 缺少正式
+   `subscribeAgentThothStateUpdates()`。测试跟随最终 loading/subscription contract 后通过，没有放宽生产语义。
+3. Archive query suite 最初 `5/5` 失败，因为旧 `beforeEach` 仍调用 `useSessionStore`。测试改为重置并断言
+   QueryClient pending cache；没有恢复 Store proxy。HostRuntime ServerInfo event 新测试最初因 fixture 缺
+   Protocol `status: "server_info"` 失败，补齐正式 wire shape 后通过，没有放宽 parser。
+4. DaemonProjectionService stale-Agent 测试最初 deep-equal 失败，因为 canonical Agent 保留正式
+   `projectPlacement`。最终改为验证 stale event 不替换对象 identity，没有删除字段或弱化快照语义。
+5. WIP 中曾运行不受支持的 `npm run metrics:refactor -- --json` 并明确失败；最终指标只来自标准根命令
+   `npm run metrics:refactor`。
+
+Conclusion:
+
+删除旧 authority 后，批量测试失败首先说明 fixture 仍依赖旧 ownership，并不证明需要兼容层。测试必须
+装配最终 Store/Service/Query 边界；Protocol fixture 必须满足正式 wire schema，canonical entity 字段不能为
+旧 deep-equal 断言而裁掉。这样才能证明单主链，而不是让测试迫使生产代码恢复双轨。
+
+Retry condition:
+
+后续 Cut 若在删除旧 Store/Controller 后出现大面积 fixture 失败，先按 owner mapping 迁移 setup、fake Client
+和断言，再检查最终 service lifecycle。不得新增兼容 facade、nullable production dependency、test-only
+authority writer、放宽 parser 或删除 canonical 字段来让旧测试继续通过。

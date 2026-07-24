@@ -3060,8 +3060,43 @@ tag、Release 或 publication；未探测、停止、重启或复用 Paseo `127.
 
 ### `NTH-EV-056` App Authority Projection Cutover
 
-Status: not started. Reserved for `NTH-TD-035` snapshot/delta/epoch/cursor behavior, authority-write guards,
-canonical AgentTimeline replay, server/preference state separation, visual equality, source deltas and the shared gate.
+Status: verified.
+
+Evidence on `2026-07-24`:
+
+1. App authority now has one normalized `AuthorityProjectionStore`, and production writes through only
+   `DaemonProjectionService`. It owns Agents, Workspaces, Empty Projects, Agent Thoth State, hydration and
+   protocol-owned `AgentTimelineEntry`; HostRuntime owns Client/connection/ServerInfo/capabilities, QueryClient owns
+   provider/Git/file and archive/restore/message pending overlays, and UiPreferences owns focused Agent/Terminal.
+2. Deleted Session Store and its selector hooks, Session Context/workspace upsert path, duplicate Timeline reducers
+   and the third `StreamItem` model. Production App scans contain no `useSessionStore`, `SessionState`, `StreamItem`,
+   `session-store`, `session-stream-reducers` or arbitrary Agent/Workspace authority setters, and no compatibility
+   facade, fallback, dual read or dual write was added.
+3. Projection tests cover snapshot and delta reconciliation, stale Agent revisions, independent usage merges,
+   Workspace identity preservation, permission correlation, Thoth State revision deduplication, canonical/live
+   Timeline merge, older/newer pages, gap, stale cursor, epoch reset, rewind/reconnect, optimistic message echo,
+   archive/restore pending overlays, HostRuntime ServerInfo and selector identity. The complete App suite passed
+   `331/331` files and `2,582/2,582` tests in `67.49s`, above the locked `330 / 2,573` floor.
+4. `npm run check:foundation` passed with zero lint warnings/errors and Protocol `351/351`, Client `119/119`, Relay
+   `29/29` and Highlight `66/66`. The real Expo Web export bundled `4,418` modules successfully;
+   `accept:interaction-regressions:fast` passed in `25.503s`, and `accept:provider-control:fast` passed in `36.825s`.
+5. Stage 4 architecture/source guards passed. Final metrics are `1,241` production files, `300,931` LOC,
+   `1,278,968` scanner tokens, `1,319,295` AST nodes, `5,032` non-type static imports and `164` runtime dependency
+   edges. Relative to clean baseline this is `-7,600` LOC, `-19,596` tokens, `-27,364` AST nodes, `-25` imports
+   and `-1` dependency; relative to Cut 3 it is `-5,124 / -10,773 / -19,550 / -2 / 0`. Every Cut A complexity
+   hard condition passed.
+6. `npm run accept:refactor:fast` passed Stage 4 in `144.145s` under the shared `300s` deadline. It covered Release
+   `05775486` migration/digest, Foundation, Core `9/9`, Drivers/TUI/Daemon build, real Web, public Plan/Loop/Queue/
+   Rewind/Provider Control, interaction regressions, three real Playwright scorecards, desktop/compact/mobile
+   screenshot/keyboard/focus/a11y/responsive equality and the OpenTUI fixed frame. The Release semantic digest
+   remains `74f79a53c1cae8d58dbedb7d57a553b8696170371a11650e2d70e91720f74d5f`.
+
+Boundary:
+
+The Cut A budget target of `-12,000` LOC was not reached; the verified Cut 4 delta relative to Cut 3 is `-5,124`, so the
+remaining reduction stays open under later cuts and the final `-50,000` requirement is not claimed. This cut did
+not run AppImage, Android/iOS/native packaging, real Provider, hosted Relay final journey, GitHub Actions, push,
+tag, Release or publication, and it did not probe or modify Paseo `127.0.0.1:6767`.
 
 ### `NTH-EV-057` Timeline View And Responsive UI Convergence
 

@@ -11,7 +11,7 @@ import {
 } from "./use-agent-commands-query";
 import { orderAutocompleteOptions } from "@/components/ui/autocomplete-utils";
 import { useAutocomplete } from "./use-autocomplete";
-import { useSessionStore } from "@/stores/session-store";
+import { useAuthorityProjection } from "@/projection/projection-context";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { CLIENT_SLASH_COMMANDS, type ClientSlashCommand } from "@/client-slash-commands";
 import {
@@ -364,7 +364,9 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
   const queryDraftConfig = normalizedDraftConfig;
   const canLoadCommands = resolveCanLoadCommands({ serverId, agentId, isDraftContext });
 
-  const agentContext = useSessionStore((state) => state.sessions[serverId]?.agents?.get(agentId));
+  const agentContext = useAuthorityProjection(serverId, (projection) =>
+    projection.agents.get(agentId),
+  );
   const agentCwd = agentContext?.cwd ?? "";
   const workspaceId = inputWorkspaceId?.trim() || agentContext?.workspaceId?.trim() || "";
   const autocompleteCwd = useMemo(() => {

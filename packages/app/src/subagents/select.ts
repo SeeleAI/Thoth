@@ -1,7 +1,7 @@
 import { usePendingArchiveAgentIds } from "@/hooks/use-archive-agent";
 import equal from "fast-deep-equal";
-import { useStoreWithEqualityFn } from "zustand/traditional";
-import { useSessionStore, type Agent } from "@/stores/session-store";
+import type { Agent } from "@/projection/authority-model";
+import { useAuthorityProjection } from "@/projection/projection-context";
 
 export interface SubagentRow {
   id: Agent["id"];
@@ -11,8 +11,6 @@ export interface SubagentRow {
   requiresAttention: Agent["requiresAttention"];
   createdAt: Agent["createdAt"];
 }
-
-type SessionStoreSnapshot = ReturnType<typeof useSessionStore.getState>;
 
 interface SelectSubagentsParams {
   serverId: string;
@@ -33,12 +31,11 @@ function toSubagentRow(agent: Agent): SubagentRow {
 }
 
 export function selectSubagentsForParent(
-  state: SessionStoreSnapshot,
+  agents: ReadonlyMap<string, Agent>,
   params: SelectSubagentsParams,
   pendingArchiveIds: ReadonlySet<string>,
 ): SubagentRow[] {
-  const agents = state.sessions[params.serverId]?.agents;
-  if (!agents || agents.size === 0) {
+  if (agents.size === 0) {
     return EMPTY_SUBAGENT_ROWS;
   }
 
@@ -64,9 +61,9 @@ export function selectSubagentsForParent(
 
 export function useSubagentsForParent(params: SelectSubagentsParams): SubagentRow[] {
   const pendingArchiveIds = usePendingArchiveAgentIds(params.serverId);
-  return useStoreWithEqualityFn(
-    useSessionStore,
-    (state) => selectSubagentsForParent(state, params, pendingArchiveIds),
+  return useAuthorityProjection(
+    params.serverId,
+    (projection) => selectSubagentsForParent(projection.agents, params, pendingArchiveIds),
     equal,
   );
 }
