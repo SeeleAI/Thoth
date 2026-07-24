@@ -464,8 +464,8 @@ Acceptance:
 State: `doing`
 
 Goal: Replace the repeated Paseo-derived production layers with one final Thoth main chain, preserve all current
-public semantics and user experience, remove at least `50,000` real production lines and meet the locked startup,
-memory, interaction and response-overhead targets.
+public semantics and user experience, and remove at least `50,000` real production lines before the deferred
+performance milestone.
 
 Architecture:
 
@@ -489,10 +489,12 @@ Atomic sequence:
 3. `NTH-TD-033` `[verified]`: direct capability HarnessAdapter, ExecutionService and ToolGateway cutover.
 4. `NTH-TD-034` `[verified]`: single Protocol RPC Registry and derived Client/Daemon dispatch.
 5. `NTH-TD-035` `[doing]`: App authority projection, query state and UI preference separation.
-6. `NTH-TD-036`: shared Timeline/View Registry, responsive composition and real lazy UI boundaries.
+6. `NTH-TD-036`: shared Timeline/View Registry and responsive composition without a performance/lazy-loading cut.
 7. `NTH-TD-037`: VcsRepository, VcsApplicationService and VcsActionRegistry convergence.
-8. `NTH-TD-038`: lazy composition root, ServiceSupervisor and on-demand shard/process lifecycle.
-9. `NTH-TD-039`: final LOC, migration, behavior, visual, Relay and performance closure.
+8. `NTH-TD-040`: capability-composed Provider adapter mechanical convergence.
+9. `NTH-TD-041`: CLI, Desktop controller and Terminal control/data-plane convergence.
+10. `NTH-TD-042`: fixed-order residual controller/query/transport convergence.
+11. `NTH-TD-039`: final LOC, migration, behavior, visual and Relay closure.
 
 Acceptance:
 
@@ -502,7 +504,18 @@ Acceptance:
    scanner tokens, AST nodes and non-type static import edges without increasing runtime dependencies.
 3. Public Client/Protocol/Provider/AgentTimeline/VCS semantics, Release `05775486` data, screenshots, keyboard,
    focus, a11y, responsive behavior and TUI frame remain equivalent.
-4. Final production LOC is at least `50,000` below the clean baseline and all performance targets in
-   `NTH-REQ-025` pass without touching Paseo `127.0.0.1:6767`.
+4. Final production LOC is at least `50,000` below the clean baseline and the complete Feature Lock passes without
+   touching Paseo `127.0.0.1:6767`; performance is deferred by `NTH-CD-067` without weakening its later targets.
 5. No push, merge, native package, real Provider, tag, Release or publication occurs without a new explicit user
    authorization.
+
+### `NTH-MS-019` Deferred Performance Optimization
+
+State: `backlog`
+
+Goal: After `NTH-MS-018` reaches the final smaller single-path architecture, optimize and verify the locked daemon
+cold-ready, idle RSS, App interaction and local response-overhead targets without changing product behavior.
+
+Scope: Existing performance scripts and baselines, `NTH-TD-038` lazy composition root/ServiceSupervisor work and
+`NTH-EV-059` lifecycle/performance evidence move here unchanged. This milestone is not active during the 50k source
+reduction and must not be used to reintroduce old paths or pre-empt functional convergence.

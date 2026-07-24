@@ -8,14 +8,21 @@
    - Related: `NTH-MS-004`, `NTH-REQ-005`
 3. `NTH-TD-006` `[backlog]`: Design E2EE relay deployment path for Cloudflare prototype and seeles.ai hosted/self-hosted service.
    - Related: `NTH-MS-005`, `NTH-REQ-006`
-4. `NTH-TD-036` `[backlog]`: Converge AgentTimeline rendering and responsive desktop/compact/mobile composition through one View Registry and shared primitives, adding real lazy boundaries without any visual or interaction change.
-   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-057`
+4. `NTH-TD-036` `[backlog]`: Converge AgentTimeline rendering and responsive desktop/compact/mobile composition through the final View Registry and shared primitives without any visual or interaction change.
+   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-057`
 5. `NTH-TD-037` `[backlog]`: Converge Git, Worktree and GitHub through VcsRepository, VcsApplicationService and one VcsActionRegistry; delete duplicate RPC/actions/results/polling while preserving every current capability.
-   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-058`
+   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-058`
 6. `NTH-TD-038` `[backlog]`: Install one lazy composition root and ServiceSupervisor, open Workspace shards and Provider/GitHub/MCP/Terminal/Relay resources on demand, and delete eager heavy imports, duplicate controllers and idle polling.
-   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-059`
-7. `NTH-TD-039` `[backlog]`: Close the final 50k production reduction, public capability, Release migration, visual/interaction, source Relay, 300-second and four hard performance targets; remove any architecture-guarded dual path.
-   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-060`
+   - Related: `NTH-MS-019`, `NTH-CD-067`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-059`
+7. `NTH-TD-039` `[backlog]`: Close the final feature-zero-loss 50k production reduction, public capability, Release migration, visual/interaction, source Relay and 300-second functional gate; remove every architecture-guarded dual path.
+   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-060`
+8. `NTH-TD-040` `[backlog]`: Converge duplicated Provider permission/question, tool lifecycle, usage, interrupt and unknown-event mechanics through capability-composed objects while preserving every adapter capability.
+   - Related: `NTH-MS-018`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-061`
+9. `NTH-TD-041` `[backlog]`: Converge CLI command registration, Desktop daemon controllers and Terminal JSON/binary subscription lifecycle without changing any public shell capability.
+   - Related: `NTH-MS-018`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-062`
+10. `NTH-TD-042` `[backlog]`: Apply the fixed residual order for App controllers, file/attachment queries, Direct/Relay framing and Desktop feature glue until the final 50k target is met without deleting public behavior.
+
+- Related: `NTH-MS-018`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-063`
 
 ## Ready
 
@@ -43,8 +50,8 @@
 ## Doing
 
 1. `NTH-TD-035` `[doing]`: Atomically migrate App authority consumers to one non-React normalized projection service, QueryClient server state and versioned UI preferences, then delete Session authority Context/reducers and the third Timeline model.
-   - Acceptance: authority only accepts daemon snapshot/delta/epoch updates; server/query state and local preferences stay separate; all App consumers switch in one cut; old Session authority mutation and duplicate Timeline reducers disappear; UI/interaction remains byte/visual equivalent; `npm run accept:refactor:fast` passes inside the shared `300s` deadline with every production complexity metric lower.
-   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-REQ-025`, `NTH-AC-020`, `NTH-EV-056`
+   - Acceptance: authority only accepts daemon snapshot/delta/epoch updates; App stores protocol-owned AgentTimeline entries with exhaustive Timeline/tool view registries; server/query state and local preferences stay separate; all App consumers switch in one cut; `StreamItem`, old Session authority mutation and duplicate Timeline reducers disappear; UI/interaction remains byte/visual equivalent; `npm run accept:refactor:fast` passes inside the shared `300s` deadline with every production complexity metric lower.
+   - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-056`
 2. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
    - Goal: Keep restored Paseo surface and Codex dynamicTools path, but make Clarify behave like a pending authority decision lifecycle with intelligent timeline badges and model-submitted frontier ledger.
    - Scope: `thoth_submit_clarify_card` carries `public_badge_summary` and `frontier_ledger`; `thoth_submit_task_card` carries convergence review; `balanced` has a 5-10 card soft range and `dive` has a 10-20 card soft range; cards must not show completed/idle footer before user submission; `decision_it_changes` is legacy optional input only. Under `NTH-CD-052`, raw Provider conversation is an explicit Thoth-off state rather than an ambiguous `Quick + Direct` sub-selection; only Thoth-on exposes structured Clarify and Loop controls. Under `NTH-CD-053`, that off/on choice is strictly per turn: one Workspace Secretary topic reuses one foreground provider session, and a daemon authority fence blocks remembered runtime tools during raw turns instead of using historical `bare` / `structured` sessions.

@@ -3790,3 +3790,16 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   baseline；Cut 3 独立净减 `1,484` LOC、`2,487` tokens、`3,039` AST nodes 和 `1` import。
 - `NTH-TD-034` / `NTH-EV-055` verified；唯一 top next action 前进到 `NTH-TD-035` App authority projection。
   未运行 AppImage/native package/真实 Provider/hosted Relay/push/tag/Release；未触碰 Paseo `6767`。
+
+## 2026-07-24 [Feature-zero-loss 50k gate rebaseline]
+
+- Recorded `NTH-CD-067`, `NTH-REQ-026` and `NTH-AC-021`: the remaining main-chain refactor uses compositional OOP,
+  preserves the complete public/AgentTimeline/UX contract and must reach at least `50,000` production LOC removed
+  before performance optimization.
+- Added deferred `NTH-MS-019`; existing performance scripts/baselines and `NTH-TD-038` remain intact there. Added
+  `NTH-TD-040` through `NTH-TD-042` and `NTH-EV-061` through `NTH-EV-063` for Provider, shell/terminal and residual
+  convergence. The sole top next action remains `NTH-TD-035`.
+- Removed only the three performance groups from `accept:refactor:fast`; the complete architecture/storage,
+  Foundation/build, public behavior, real Web visual/interaction and TUI gate passed in `140.770s`. Source remains
+  `306,055` production LOC and the Release digest remains unchanged.
+- No production code, AppImage/native package, real Provider, hosted Relay, push, tag, Release or publication ran.

@@ -3061,12 +3061,12 @@ tag、Release 或 publication；未探测、停止、重启或复用 Paseo `127.
 ### `NTH-EV-056` App Authority Projection Cutover
 
 Status: not started. Reserved for `NTH-TD-035` snapshot/delta/epoch/cursor behavior, authority-write guards,
-server/preference state separation, visual equality, source/performance deltas and the shared gate.
+canonical AgentTimeline replay, server/preference state separation, visual equality, source deltas and the shared gate.
 
 ### `NTH-EV-057` Timeline View And Responsive UI Convergence
 
 Status: not started. Reserved for `NTH-TD-036` complete Timeline/tool-detail rendering, desktop/compact/mobile
-component reuse, lazy boundaries, screenshot/keyboard/focus/a11y equality, source/performance deltas and the gate.
+component reuse, screenshot/keyboard/focus/a11y equality, source deltas and the gate.
 
 ### `NTH-EV-058` VCS Service And Action Registry Cutover
 
@@ -3075,11 +3075,52 @@ invalidation behavior, duplicate model/polling absence, source/performance delta
 
 ### `NTH-EV-059` Lazy Composition Root And Service Supervisor Cutover
 
-Status: not started. Reserved for `NTH-TD-038` on-demand Provider/shard/GitHub/MCP/Terminal/Relay lifecycle,
-idle polling absence, desktop/source controller parity, startup/RSS progress, source deltas and the shared gate.
+Status: deferred under `NTH-MS-019`. Reserved for post-50k `NTH-TD-038` on-demand
+Provider/shard/GitHub/MCP/Terminal/Relay lifecycle, idle polling absence, desktop/source controller parity and the
+unchanged performance targets.
 
 ### `NTH-EV-060` Final 50k Architecture Refactor Acceptance
 
 Status: not started. It requires the full public semantic and Release migration contract, at least `50,000`
-production LOC removed, lower tokens/AST/import/dependencies, all four hard performance targets, stable visual and
-interaction transcripts, source daemon/Client hosted Relay journey, one `300s` gate and no remaining dual path.
+production LOC removed, lower tokens/AST/import/dependencies, stable visual and interaction transcripts, source
+daemon/Client hosted Relay journey, one `300s` functional gate and no remaining dual path. Performance is deferred
+to `NTH-MS-019` without weakening its later targets.
+
+### `NTH-EV-061` Provider Mechanical Composition Cutover
+
+Status: not started. Reserved for `NTH-TD-040` full Provider capability conformance, common lifecycle composition,
+provider-specific transport preservation, source deltas and zero fallback/provider-name business branches.
+
+### `NTH-EV-062` CLI Desktop Terminal Convergence
+
+Status: not started. Reserved for `NTH-TD-041` CLI command coverage, source/development/packaged Desktop controller
+parity, Terminal JSON/binary/reconnect behavior, source deltas and the shared functional gate.
+
+### `NTH-EV-063` Residual Production Convergence
+
+Status: not started. Reserved for `NTH-TD-042` fixed-order App controller, file/attachment query, Direct/Relay
+framing and Desktop feature convergence with complete Feature Lock coverage and no public semantic deletion.
+
+### `NTH-EV-064` Functional 50k Gate Rebaseline
+
+Status: verified.
+
+Evidence on `2026-07-24`:
+
+1. `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021` and `NTH-MS-019` record the user-locked compositional-OOP,
+   feature-zero-loss and performance-deferred boundary without rewriting the later performance targets.
+2. `accept:refactor:fast` removed only the exclusive App sampling, App performance contract and isolated
+   daemon/response performance groups. All benchmark scripts and baseline files remain tracked and callable for
+   `NTH-MS-019`; no production source or runtime dependency changed.
+3. The complete stage 3 gate passed in `140.770s`: static contracts `3.285s`, Foundation `39.517s`, Core/Drivers/TUI
+   build and Core tests `6.759s`, Daemon and real `4416`-module Web build `14.722s`, and public behavior plus real
+   Web visual/interaction/TUI contracts `76.487s`.
+4. Source metrics remain `1,234` files, `306,055` physical LOC, `1,289,741` scanner tokens, `1,338,845` AST nodes,
+   `5,034` non-type static imports and `164` runtime dependency edges. The Release semantic digest remains
+   `74f79a53c1cae8d58dbedb7d57a553b8696170371a11650e2d70e91720f74d5f`.
+
+Boundary:
+
+This evidence changes only refactor ordering and the functional gate. It does not implement or verify
+`NTH-TD-035`, does not claim the 50k target, and did not run AppImage/native packaging, real Provider, hosted
+Relay, push, tag, Release or publication.

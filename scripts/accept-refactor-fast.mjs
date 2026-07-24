@@ -17,7 +17,7 @@ const sourceArgs = [
   "scripts/refactor-baseline.json",
 ];
 if (stage.stage >= 1) sourceArgs.push("--require-net-negative");
-if (stage.stage >= 7) sourceArgs.push("--require-target", "50000");
+if (stage.stage >= 9) sourceArgs.push("--require-target", "50000");
 
 try {
   await runGroup("static contracts", [
@@ -51,29 +51,7 @@ try {
     command(npm, ["run", "smoke:tui:navigation"]),
   ]);
 
-  await runGroup("exclusive App performance sampling", [
-    command(npm, ["run", "accept:refactor:visual"], {
-      THOTH_ACCEPT_PREBUILT: "1",
-      THOTH_ACCEPT_WEB_STAGE_PREBUILT: "1",
-      THOTH_REFACTOR_VISUAL_MODE: "performance",
-    }),
-  ]);
-
-  const appPerformanceArgs = ["scripts/check-refactor-app-performance.mjs"];
-  if (stage.stage >= 7) appPerformanceArgs.push("--final");
-  await runGroup("App performance contract", [command(process.execPath, appPerformanceArgs)]);
-
-  const performanceArgs = [
-    "scripts/refactor-performance.mjs",
-    "--baseline",
-    "scripts/refactor-performance-baseline.json",
-    "--write",
-    ".dev/refactor-performance-current.json",
-  ];
-  if (stage.stage >= 7) performanceArgs.push("--final");
-  await runGroup("isolated performance", [command(process.execPath, performanceArgs)]);
-
-  if (stage.stage >= 7) {
+  if (stage.stage >= 9) {
     await runGroup("source Relay journey", [
       command(process.execPath, ["scripts/accept-refactor-relay.mjs"]),
     ]);

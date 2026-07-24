@@ -9,7 +9,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const stage = JSON.parse(readFileSync(resolve(repoRoot, "scripts/refactor-stage.json"), "utf8"));
 const failures = [];
 
-if (!Number.isInteger(stage.stage) || stage.stage < 0 || stage.stage > 7) {
+if (!Number.isInteger(stage.stage) || stage.stage < 0 || stage.stage > 9) {
   failures.push(`Invalid refactor stage: ${stage.stage}`);
 }
 
