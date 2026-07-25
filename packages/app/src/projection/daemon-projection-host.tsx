@@ -73,11 +73,7 @@ export function DaemonProjectionHost({ children, serverId, client }: DaemonProje
   const revalidationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const revalidationInFlightRef = useRef<Promise<void> | null>(null);
   const revalidationQueuedRef = useRef(false);
-
-  useEffect(
-    () => projectionRuntime.attach(client, serverId),
-    [client, projectionRuntime, serverId],
-  );
+  const hasHydratedConnectionRef = useRef(false);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
@@ -126,8 +122,19 @@ export function DaemonProjectionHost({ children, serverId, client }: DaemonProje
   }, [flushRevalidation, isConnected]);
 
   useEffect(() => {
-    if (isConnected) scheduleRevalidation();
-  }, [isConnected, scheduleRevalidation]);
+    hasHydratedConnectionRef.current = false;
+    return projectionRuntime.attach(client, serverId);
+  }, [client, projectionRuntime, serverId]);
+
+  useEffect(() => {
+    if (!isConnected) return;
+    if (!hasHydratedConnectionRef.current) {
+      hasHydratedConnectionRef.current = true;
+      flushRevalidation();
+      return;
+    }
+    scheduleRevalidation();
+  }, [client, flushRevalidation, isConnected, scheduleRevalidation]);
 
   useEffect(
     () => () => {

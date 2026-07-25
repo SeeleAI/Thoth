@@ -41,7 +41,7 @@ import {
 } from "@/components/message";
 import { PlanCard } from "@/components/plan-card";
 import { generateMessageId } from "@/utils/message-id";
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import type { PendingAgentMessage } from "@/projection/pending-agent-messages";
 import type { PendingPermission } from "@/types/shared";
 import type {
   AgentCapabilityFlags,
@@ -107,6 +107,13 @@ import {
   resolveForegroundAgentStatus,
   shouldShowForegroundTurnSpinner,
 } from "@/agent-thoth/foreground-state";
+import {
+  renderTimelineItem,
+  timelineId,
+  type TimelineRenderContext,
+  type TimelineRenderItem,
+  type TimelineRenderLayout,
+} from "./timeline-view-registry";
 
 function renderLiveAuxiliaryNode(input: {
   pendingPermissions: ReactNode;
@@ -207,11 +214,11 @@ function renderListEmptyComponent(input: {
 }
 
 function renderHistoryStreamItem(input: {
-  item: TimelineViewModel;
+  item: TimelineRenderItem;
   layoutItemById: Map<string, StreamLayoutItem>;
   renderStreamItem: (layoutItem: StreamLayoutItem) => ReactNode;
 }): ReactNode {
-  const layoutItem = input.layoutItemById.get(input.item.id);
+  const layoutItem = input.layoutItemById.get(timelineId(input.item));
   if (!layoutItem) {
     return null;
   }
@@ -219,11 +226,11 @@ function renderHistoryStreamItem(input: {
 }
 
 function renderLiveHeadStreamItem(input: {
-  item: TimelineViewModel;
+  item: TimelineRenderItem;
   layoutItemById: Map<string, StreamLayoutItem>;
   renderStreamItem: (layoutItem: StreamLayoutItem) => ReactNode;
 }): ReactNode {
-  const layoutItem = input.layoutItemById.get(input.item.id);
+  const layoutItem = input.layoutItemById.get(timelineId(input.item));
   if (!layoutItem) {
     return null;
   }
@@ -239,7 +246,7 @@ export interface AgentStreamViewProps {
   agentId: string;
   serverId?: string;
   agent: AgentScreenAgent;
-  streamItems: TimelineViewModel[];
+  streamItems: TimelineRenderItem[];
   pendingPermissions: Map<string, PendingPermission>;
   routeBottomAnchorRequest?: BottomAnchorRouteRequest | null;
   isAuthoritativeHistoryReady?: boolean;
@@ -261,7 +268,7 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
   "supportsRewindBoth",
 ];
 
-const EMPTY_STREAM_HEAD: TimelineViewModel[] = [];
+const EMPTY_STREAM_HEAD: TimelineRenderItem[] = [];
 
 function buildChatHistoryAttachment(input: {
   draftId: string;
@@ -635,36 +642,43 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [streamRenderStrategy],
     );
 
-    const renderUserMessageItem = useCallback(
+    const renderUserMessage = useCallback(
       (
-        layoutItem: StreamLayoutItem,
-        item: Extract<TimelineViewModel, { kind: "user_message" }>,
-      ) => {
-        return (
-          <UserMessage
-            serverId={resolvedServerId}
-            agentId={agentId}
-            messageId={item.id}
-            message={item.text}
-            images={item.images}
-            attachments={item.attachments}
-            timestamp={item.timestamp.getTime()}
-            capabilities={agent.capabilities}
-            client={client}
-            isFirstInGroup={layoutItem.isFirstInUserGroup}
-            isLastInGroup={layoutItem.isLastInUserGroup}
-          />
-        );
-      },
+        messageId: string,
+        text: string,
+        timestamp: Date,
+        presentation: PendingAgentMessage | undefined,
+        layout: TimelineRenderLayout,
+      ) => (
+        <UserMessage
+          serverId={resolvedServerId}
+          agentId={agentId}
+          messageId={messageId}
+          message={text}
+          images={presentation?.images}
+          attachments={presentation?.attachments}
+          timestamp={timestamp.getTime()}
+          capabilities={agent.capabilities}
+          client={client}
+          isFirstInGroup={layout.isFirstInUserGroup}
+          isLastInGroup={layout.isLastInUserGroup}
+        />
+      ),
       [agent.capabilities, agentId, client, resolvedServerId],
     );
-
-    const renderAssistantMessageItem = useCallback(
-      (
-        layoutItem: StreamLayoutItem,
-        item: Extract<TimelineViewModel, { kind: "assistant_message" }>,
-      ) => {
-        return (
+    const renderContext = useMemo<Omit<TimelineRenderContext, "layout" | "agentIsRunning">>(
+      () => ({
+        renderPendingUser: (message, layout) =>
+          renderUserMessage(message.messageId, message.text, message.timestamp, message, layout),
+        renderUser: (entry, layout) =>
+          renderUserMessage(
+            entry.item.messageId ?? timelineId(entry),
+            entry.item.text,
+            new Date(entry.timestamp),
+            entry.presentation,
+            layout,
+          ),
+        renderAssistant: (entry, layout) => (
           <AssistantFileLinkResolverProvider
             client={client}
             serverId={resolvedServerId}
@@ -673,152 +687,105 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             toast={toast}
           >
             <AssistantMessage
-              message={item.text}
-              timestamp={item.timestamp.getTime()}
+              message={entry.item.text}
+              timestamp={new Date(entry.timestamp).getTime()}
               workspaceRoot={workspaceRoot}
               serverId={resolvedServerId}
               client={client}
-              spacing={layoutItem.assistantSpacing}
+              spacing={layout.assistantSpacing}
             />
           </AssistantFileLinkResolverProvider>
-        );
-      },
-      [client, handleInlinePathPress, resolvedServerId, toast, workspaceRoot],
-    );
-
-    const renderThoughtItem = useCallback(
-      (layoutItem: StreamLayoutItem, item: Extract<TimelineViewModel, { kind: "thought" }>) => {
-        return (
+        ),
+        renderReasoning: (entry, loading, layout) => (
           <ToolCallSlot
-            itemId={item.id}
+            itemId={timelineId(entry)}
             onInlineDetailsExpandedChangeByItemId={setInlineDetailsExpanded}
             toolName="thinking"
-            args={item.text}
-            status={item.status === "ready" ? "completed" : "executing"}
-            isLastInSequence={layoutItem.isLastInToolSequence}
+            args={entry.item.text}
+            status={loading ? "executing" : "completed"}
+            isLastInSequence={layout.isLastInToolSequence}
           />
-        );
-      },
-      [setInlineDetailsExpanded],
-    );
-
-    const renderToolCallItem = useCallback(
-      (layoutItem: StreamLayoutItem, item: Extract<TimelineViewModel, { kind: "tool_call" }>) => {
-        const { payload } = item;
-
-        if (payload.source === "agent") {
-          const data = payload.data;
-
-          return (
-            <ToolCallSlot
-              itemId={item.id}
-              onInlineDetailsExpandedChangeByItemId={setInlineDetailsExpanded}
-              toolName={data.name}
-              error={data.error}
-              status={data.status}
-              detail={data.detail}
-              cwd={agent.cwd}
-              metadata={data.metadata}
-              isLastInSequence={layoutItem.isLastInToolSequence}
-              onOpenFilePath={handleToolCallOpenFile}
-            />
-          );
-        }
-
-        const data = payload.data;
-        return (
+        ),
+        renderTool: (entry, layout) => (
           <ToolCallSlot
-            itemId={item.id}
+            itemId={timelineId(entry)}
             onInlineDetailsExpandedChangeByItemId={setInlineDetailsExpanded}
-            toolName={data.toolName}
-            args={data.arguments}
-            result={data.result}
-            status={data.status}
-            isLastInSequence={layoutItem.isLastInToolSequence}
+            toolName={entry.item.name}
+            error={entry.item.error}
+            status={entry.item.status}
+            detail={entry.item.detail}
+            cwd={agent.cwd}
+            metadata={entry.item.metadata}
+            isLastInSequence={layout.isLastInToolSequence}
             onOpenFilePath={handleToolCallOpenFile}
           />
-        );
-      },
-      [agent.cwd, setInlineDetailsExpanded, handleToolCallOpenFile],
-    );
-
-    const renderStreamItemContent = useCallback(
-      (layoutItem: StreamLayoutItem) => {
-        const item = layoutItem.item;
-        switch (item.kind) {
-          case "user_message":
-            return renderUserMessageItem(layoutItem, item);
-
-          case "assistant_message":
-            return renderAssistantMessageItem(layoutItem, item);
-
-          case "thought":
-            return renderThoughtItem(layoutItem, item);
-
-          case "tool_call":
-            return renderToolCallItem(layoutItem, item);
-
-          case "clarify_card":
-            return (
-              <ClarifyDecisionCard
-                card={item.card}
-                onSubmit={(answer) => handleSubmitClarifyAnswer(item.card.id, answer)}
-              />
-            );
-          case "task_card":
-            return (
-              <ThothApprovalCard
-                card={item.card}
-                kind="task"
-                approvalMode={approvalMode}
-                onSubmit={(answer) => handleSubmitClarifyAnswer(item.card.id, answer)}
-              />
-            );
-          case "goal_card":
-            return (
-              <ThothApprovalCard
-                card={item.card}
-                kind="goal"
-                approvalMode={approvalMode}
-                onSubmit={(answer) => handleSubmitClarifyAnswer(item.card.id, answer)}
-              />
-            );
-          case "registered_task":
-            return <RegisteredTaskCard task={item.task} />;
-
-          case "activity_log":
-            return (
-              <ActivityLog
-                type={item.activityType}
-                message={item.message}
-                timestamp={item.timestamp.getTime()}
-                metadata={item.metadata}
-              />
-            );
-
-          case "todo_list":
-            return <TodoListCard items={item.items} />;
-
-          case "compaction":
-            return (
-              <CompactionMarker
-                status={item.status}
-                trigger={item.trigger}
-                preTokens={item.preTokens}
-              />
-            );
-
-          default:
-            return null;
-        }
-      },
+        ),
+        renderClarify: (entry) => (
+          <ClarifyDecisionCard
+            card={entry.item.card}
+            onSubmit={(answer) => handleSubmitClarifyAnswer(entry.item.card.id, answer)}
+          />
+        ),
+        renderTask: (entry) => (
+          <ThothApprovalCard
+            card={entry.item.card}
+            kind="task"
+            approvalMode={approvalMode}
+            onSubmit={(answer) => handleSubmitClarifyAnswer(entry.item.card.id, answer)}
+          />
+        ),
+        renderGoal: (entry) => (
+          <ThothApprovalCard
+            card={entry.item.card}
+            kind="goal"
+            approvalMode={approvalMode}
+            onSubmit={(answer) => handleSubmitClarifyAnswer(entry.item.card.id, answer)}
+          />
+        ),
+        renderRegisteredTask: (entry) => <RegisteredTaskCard task={entry.item.task} />,
+        renderTodo: (entry) => <TodoListCard items={entry.item.items} />,
+        renderError: (entry) => (
+          <ActivityLog
+            type="error"
+            message={entry.item.message}
+            timestamp={new Date(entry.timestamp).getTime()}
+          />
+        ),
+        renderCompaction: (entry) => (
+          <CompactionMarker
+            status={entry.item.status}
+            trigger={entry.item.trigger}
+            preTokens={entry.item.preTokens}
+          />
+        ),
+      }),
       [
+        agent.cwd,
+        approvalMode,
+        client,
+        handleInlinePathPress,
         handleSubmitClarifyAnswer,
-        renderUserMessageItem,
-        renderAssistantMessageItem,
-        renderThoughtItem,
-        renderToolCallItem,
+        handleToolCallOpenFile,
+        renderUserMessage,
+        resolvedServerId,
+        setInlineDetailsExpanded,
+        toast,
+        workspaceRoot,
       ],
+    );
+    const finalItemId =
+      effectiveStreamItems.length > 0
+        ? timelineId(effectiveStreamItems[effectiveStreamItems.length - 1]!)
+        : null;
+    const renderStreamItemContent = useCallback(
+      (layoutItem: StreamLayoutItem) =>
+        renderTimelineItem(layoutItem.item, {
+          ...renderContext,
+          layout: layoutItem,
+          agentIsRunning:
+            effectiveAgentStatus === "running" && timelineId(layoutItem.item) === finalItemId,
+        }),
+      [effectiveAgentStatus, finalItemId, renderContext],
     );
 
     const bottomTurnFooterHost = streamLayout.auxiliaryTurnFooter;
@@ -899,7 +866,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const layoutHistoryItemById = useMemo(() => {
       const itemById = new Map<string, StreamLayoutItem>();
       for (const item of streamLayout.history) {
-        itemById.set(item.item.id, item);
+        itemById.set(timelineId(item.item), item);
       }
       return itemById;
     }, [streamLayout.history]);
@@ -907,13 +874,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const layoutLiveHeadItemById = useMemo(() => {
       const itemById = new Map<string, StreamLayoutItem>();
       for (const item of streamLayout.liveHead) {
-        itemById.set(item.item.id, item);
+        itemById.set(timelineId(item.item), item);
       }
       return itemById;
     }, [streamLayout.liveHead]);
 
     const renderHistoryRow = useCallback(
-      (item: TimelineViewModel) =>
+      (item: TimelineRenderItem) =>
         renderHistoryStreamItem({
           item,
           layoutItemById: layoutHistoryItemById,
@@ -934,7 +901,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     // so the live-head render always uses the latest layout without causing renderers
     // to be a new object on every text-chunk flush.
     const renderLiveHeadRow: StreamSegmentRenderers["renderLiveHeadRow"] = useStableEvent(
-      (item: TimelineViewModel) =>
+      (item: TimelineRenderItem) =>
         renderLiveHeadStreamItem({
           item,
           layoutItemById: layoutLiveHeadItemById,
@@ -1457,21 +1424,6 @@ const stylesheet = StyleSheet.create((theme) => ({
   listHeaderContent: {
     gap: theme.spacing[3],
   },
-  syncingIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
-    paddingLeft: theme.spacing[2],
-  },
-  syncingIndicatorText: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
-  },
-  invertedWrapper: {
-    transform: [{ scaleY: -1 }],
-    width: "100%",
-  },
   emptyStateText: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
@@ -1524,12 +1476,6 @@ const permissionStyles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     lineHeight: 20,
     color: theme.colors.foregroundMuted,
-  },
-  section: {
-    gap: theme.spacing[2],
-  },
-  sectionTitle: {
-    fontSize: theme.fontSize.xs,
   },
   question: {
     fontSize: theme.fontSize.sm,

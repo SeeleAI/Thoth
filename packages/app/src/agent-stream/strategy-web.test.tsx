@@ -5,9 +5,10 @@ import React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import { userTimelineEntry } from "@/test-fixtures/timeline";
 import type { StreamSegmentRenderers, StreamViewportHandle } from "./strategy";
 import { createWebStreamStrategy } from "./strategy-web";
+import { timelineId, type TimelineRenderItem } from "./timeline-view-registry";
 
 vi.hoisted(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -27,13 +28,8 @@ vi.hoisted(() => {
 
 vi.mock("@/components/use-web-scrollbar", () => ({ useWebElementScrollbar: () => null }));
 
-function userMessage(index: number): TimelineViewModel {
-  return {
-    kind: "user_message",
-    id: `message-${index}`,
-    text: `Message ${index}`,
-    timestamp: new Date(`2026-04-20T00:00:${String(index % 60).padStart(2, "0")}.000Z`),
-  };
+function userMessage(index: number): TimelineRenderItem {
+  return userTimelineEntry(`message-${index}`, index % 60, `Message ${index}`);
 }
 
 const VIRTUAL_ROW_STYLE = { height: 24 };
@@ -42,10 +38,10 @@ function createRenderers(onRowRender: () => void): StreamSegmentRenderers {
   return {
     renderHistoryVirtualizedRow: (item) => {
       onRowRender();
-      return <div style={VIRTUAL_ROW_STYLE}>{item.id}</div>;
+      return <div style={VIRTUAL_ROW_STYLE}>{timelineId(item)}</div>;
     },
-    renderHistoryMountedRow: (item) => <div>{item.id}</div>,
-    renderLiveHeadRow: (item) => <div>{item.id}</div>,
+    renderHistoryMountedRow: (item) => <div>{timelineId(item)}</div>,
+    renderLiveHeadRow: (item) => <div>{timelineId(item)}</div>,
     renderLiveAuxiliary: () => null,
   };
 }

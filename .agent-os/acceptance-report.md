@@ -3100,8 +3100,38 @@ tag, Release or publication, and it did not probe or modify Paseo `127.0.0.1:676
 
 ### `NTH-EV-057` Timeline View And Responsive UI Convergence
 
-Status: not started. Reserved for `NTH-TD-036` complete Timeline/tool-detail rendering, desktop/compact/mobile
-component reuse, screenshot/keyboard/focus/a11y equality, source deltas and the gate.
+Status: third attempt preparation in progress; not verified.
+
+Baseline on `2026-07-24`: commit `7430e080`, `300,931` production LOC, `1,278,968` scanner tokens,
+`1,319,295` AST nodes, `5,032` static imports, `164` runtime dependency edges and App
+`331 files / 2,582 tests`. This evidence is not verified until the final single-path implementation reaches
+`280,931` LOC or lower and passes the complete functional/visual gate.
+
+Current failing boundary on `2026-07-24`:
+
+1. The WIP replaces the third Timeline ViewModel with the protocol-owned entry Registry; consolidates Workspace
+   Sidebar rows, desktop/mobile tab menu items and labels, stable tab descriptor maps, Agent controls,
+   ContextMenu/Dropdown/Tooltip geometry, Bottom Sheet background, Markdown base rendering and repeated date/tab-id
+   normalization; and removes proven private unreachable files and styles. No VCS, Provider, RPC, authority,
+   public method or AgentTimeline wire semantic was intentionally changed.
+2. Current production metrics are `1,233` files, `296,353` LOC, `1,271,951` scanner tokens, `1,300,201` AST
+   nodes, `4,991` static imports and `164` runtime dependency edges. Relative to the Stage 4 start this is
+   `-4,578 / -7,017 / -19,094 / -41 / 0`; the required LOC ceiling is missed by `15,422` lines.
+3. A conservative App entry graph counted `754` production candidates, `721` reachable and only `33` unreachable
+   files totaling `1,777` lines. Those residual files are platform declarations/stubs, test fakes, or private
+   modules directly owned by existing behavior tests; deleting them would violate the locked test/feature contract.
+   A normalized function scan found only one remaining cross-file structural clone at `>=80` tokens: a `94`-token
+   Markdown list-item shape whose Plan renderer deliberately preserves different paragraph/code/list layout.
+4. Latest focused checks passed: `36/36`, `271/271`, `41/41`, `159/159`, `86/86` and date-group `7/7` tests in
+   their respective narrow runs. Root `npm run lint` passed with `0` errors and `23` existing warnings;
+   `npm run format:check` and `git diff --check` passed.
+5. Debug-only `npm run lint --workspace=@thoth/app` failed before source lint because the existing package
+   `eslint.config.js` uses CommonJS `require` under `type: module`. Debug-only App `tsgo --noEmit` also remains red
+   on pre-existing React DOM typings, Unistyles/native WebView and stale test-fixture types. Neither command is used
+   as completion evidence, and no fallback or suppression was added.
+6. Because the source hard target is red, the latest WIP did not run the complete App suite, real Web visual gate,
+   `accept:refactor:fast`, or create a commit. `NTH-EV-057` remains unverified, `NTH-TD-036` remains doing and
+   `scripts/refactor-stage.json` remains Stage 4.
 
 ### `NTH-EV-058` VCS Service And Action Registry Cutover
 
@@ -3159,3 +3189,345 @@ Boundary:
 This evidence changes only refactor ordering and the functional gate. It does not implement or verify
 `NTH-TD-035`, does not claim the 50k target, and did not run AppImage/native packaging, real Provider, hosted
 Relay, push, tag, Release or publication.
+
+### `NTH-EV-065` Refactor Intermediate Promotion And Fixed Beta Replacement
+
+Status: in progress.
+
+Preflight authority on `2026-07-24`:
+
+1. The clean root worktree remains at local `agent/dev/mvp=743e8d29`. The refactor worktree remains on
+   `agent/refactor/final-architecture-50k=7430e080` with the existing Cut B WIP preserved; no reset, stash,
+   rebase or intermediate commit occurred.
+2. A fresh fetch froze `origin/agent/dev/mvp=2a97c3128ef3d07e82d2c1ef441a7e9813b306fa`,
+   `origin/release/mvp-actions=05775486ba72457f4c7f9506b217ca7c88ebd07a` and
+   `origin/main=e74c6e0de8a110d5e07249880d0e4e4f0ceab691`. The local root worktree is clean and both authorized
+   target branches can still fast-forward through the refactor lineage.
+3. The isolated repository GitHub configuration authenticated as `Royalvice`; Node is `24.14.0` and npm is
+   `11.9.0`. No push, tag or Release mutation has occurred.
+4. `NTH-TD-036` remains doing, `NTH-EV-057` remains unverified, `scripts/refactor-stage.json` remains Stage 4,
+   and the independent `15,422`-LOC gap plus final 50k target remain open.
+
+Pending evidence: the one-hour local gate, atomic WIP commit and fast-forward, both normal pushes, exact-SHA
+Actions run, public 26-asset manifest/checksums/build identity, downloaded public AppImage journey and final branch/
+archive/Relay invariants.
+
+Eighth failed attempt on `2026-07-25`:
+
+1. The fresh attempt passed the full functional, packaged, hosted Relay and frozen statistical stages through App
+   performance. Workspace interactive was `1590.0ms`, heap was `46.7MiB`, Settings navigation was `211.8ms`, and
+   the Daemon/response contract also passed.
+2. The local load phase established `200` encrypted Relay clients, then was manually stopped before completing its
+   required `600000ms` duration because a UTC wall-clock estimate suggested fewer than eight minutes remained.
+3. The approved deadline is a single monotonic `3600s` window. Since separate shells did not retain one monotonic
+   start value, UTC time cannot prove deadline expiry; the attempt is invalid and none of its green phases count as
+   release completion evidence.
+4. No commit, merge, push, Actions, tag or Release mutation occurred. `NTH-EXP-055` requires a wholly fresh run
+   under one monotonic runner with a `300s` sub-limit for `accept:refactor:fast`.
+
+Ninth failed attempt and retry preparation on `2026-07-25`:
+
+1. `.dev/release-ninth-gate-result.json` records one monotonic process. It stopped at
+   `clarify-user-simulation` after `890894ms`; all prior stages passed, but no later package, performance/load/TUI
+   stage or Git/Release mutation ran.
+2. Both simulated Task Cards were invalid against `ThothSubmitTaskCardInputSchema` because their content omitted
+   `convergence_review`. Several fixture inputs also differed from their immutable verbatim provenance. These are
+   evidence defects, not an authorized threshold or golden change.
+3. The Task Cards now carry schema-valid frontier/convergence reviews; pre-Task user inputs are preserved exactly;
+   deterministic validation applies the operation-specific schema and exact provenance check. Targeted Drivers
+   tests passed `6/6`, followed by an independent user-simulation judge PASS.
+4. These narrow results only clear preparation. A wholly new monotonic `3600s` attempt must rerun all stages.
+
+Tenth failed attempt and retry preparation on `2026-07-25`:
+
+1. `.dev/release-tenth-gate-result.json` stopped at `tui-stress` after `2352116ms`. All earlier stages passed,
+   including fresh packaged/hosted journeys, frozen performance and the full `600000ms` Relay load with zero of
+   `24000` pings lost; these remain failed-attempt evidence only.
+2. The TUI script expected connected/provider/offer state but did not own a daemon. With no Thoth process on
+   `6688`, the real CLI correctly rendered recovery. The old test had depended on unrelated external dev state.
+3. The script now owns a real random-port source daemon and isolated temporary home, cleans its own process group,
+   and never probes or mutates Paseo. Narrow stress passed at `72x34`, `96x34` and `132x34` with unchanged UX and
+   credential-leak guards.
+4. No commit, merge, push, Actions, tag or Release mutation occurred. A wholly new monotonic attempt remains
+   required from the first phase.
+
+Eleventh complete local attempt on `2026-07-25`:
+
+1. `.dev/release-eleventh-gate-result.json` records `ok=true`, all `23` phases at status `0`, and one monotonic
+   duration of `2336161ms` against the shared `3600000ms` deadline. `accept:refactor:fast` separately completed in
+   `153723ms`, below its `300000ms` ceiling.
+2. Complete suites passed: App `332/332` and `2587/2587`; Daemon `188/188`, `2417` passed and `26` skipped;
+   Desktop `26` passed with one platform skip and `171` tests with four skips; CLI `40/40`; foreground `12/12`;
+   Provider transports `575` passed with `21` skipped; Harness lifecycle `4` passed with `8` skipped.
+3. Release/brand/runtime contracts, Clarify golden, Clarify user simulation, Loop golden and Thoth/Paseo isolation
+   passed. Paseo remained PID `3597831` on `127.0.0.1:6767`; no Thoth process reused or changed it.
+4. A fresh AppImage passed the complete packaged journey with `13` hot-switch turns, Quick/Card/Loop, Review
+   retry, Stop, six sessions, `3` PlanExec, `3` Review, two RuntimeBundles and exact Release migration preservation
+   of `22` Agents and `17` Timeline rows. Fresh Server CLI installed `286` packages in `14s` and its hosted Relay
+   v3 journey passed on the first attempt with TLS/E2EE, pairing, reconnect, restart, Pause/Resume, Stop, six
+   attachments, `5` PlanExec and `5` Review calls.
+5. Frozen performance contracts passed. Daemon startup median was `2109.995ms`, idle RSS `408223744` bytes, idle
+   CPU median `0ms`, health p50 `0.122ms`, and local response overhead median `14.522ms`. App Workspace interactive
+   median was `1607.946ms`, heap `48970152` bytes and Settings navigation `220.831ms`.
+6. Local Relay load completed `600000ms` with `200` clients, `24000/24000` pongs, zero failures, zero decrypt/send/
+   socket errors and `19/27/52ms` p50/p95/p99. Hermetic OpenTUI stress passed `72x34`, `96x34` and `132x34`, then
+   root format and diff checks passed.
+7. This proves the local `NTH-AC-022` gate only. `NTH-TD-043` remains doing until the atomic commit, both authorized
+   normal pushes, exact-SHA Actions and downloaded public Release verification all complete.
+
+Failed attempt on `2026-07-24`:
+
+1. The local monotonic deadline started at `2026-07-24T16:08:51.420Z`. The first command was
+   `timeout --signal=TERM --kill-after=20s 300s npm run accept:refactor:fast`.
+2. The static architecture phase failed after `0.597s` with exit code `1`. It required the deleted path
+   `packages/app/src/projection/timeline-view-model.ts` and reported the exhaustive Registry plus all 11 Timeline
+   kinds missing from that obsolete location.
+3. Read-only diagnosis confirmed those requirements are hard-coded at lines `194`, `247` and `265` of
+   `scripts/check-refactor-architecture.mjs`. The WIP's actual final Registry is
+   `packages/app/src/agent-stream/timeline-view-registry.tsx`; it declares `user_message` through `compaction`, and
+   its dedicated test asserts the complete kind set. The checker and implementation boundary are out of sync.
+4. Per `NTH-AC-022`, execution stopped immediately. App/Daemon/Desktop/CLI suites, public journeys, AppImage,
+   hosted Relay, benchmarks, Relay load, TUI stress, commit, merge, push, Actions and Release replacement did not
+   run. No threshold, expected output, sample or fallback was changed.
+
+Retry condition: update the Stage 4 architecture guard to validate the canonical Registry and its full exhaustive
+kind contract, then begin a new `3600s` local attempt from `accept:refactor:fast`. This failed run cannot be reused
+as partial completion evidence.
+
+Retry preparation on `2026-07-24`:
+
+1. The user explicitly authorized continuation after the failed attempt.
+2. `scripts/check-refactor-architecture.mjs` now requires
+   `packages/app/src/agent-stream/timeline-view-registry.tsx`, checks `satisfies TimelineItemViewRegistry` and the
+   same 11 Timeline kind keys, and forbids the removed `packages/app/src/projection/timeline-view-model.ts`.
+3. No compatibility file, schema change, expected-output reduction, Stage switch, commit, push or Release mutation
+   was introduced. The new local deadline must begin from the first complete gate.
+
+Second failed attempt on `2026-07-24`:
+
+1. A fresh local deadline started at `2026-07-24T16:36:19.797Z`. The corrected architecture, storage fixture,
+   source metrics, Foundation, Core/Drivers/TUI build, real `4423`-module Web export, public Plan/Loop, Queue/
+   Rewind, Provider Control, interaction, real visual/keyboard/focus/a11y/responsive and TUI contracts all passed;
+   `accept:refactor:fast` completed in `144.240s`.
+2. The next exact command, `npm --workspace=@thoth/app run test -- --project unit`, exited successfully after
+   `74.82s` but discovered only `330` files and `2,566` tests, below `NTH-AC-022`'s locked `331 / 2,582` floor.
+   Configuration inspection shows the unit project excludes two `src/**/*.browser.test.ts` files containing 16
+   tests; the current WIP contains `332` total App test files. Thus the exact unit-only command and historical
+   all-project `331 / 2,582` floor cannot both be satisfied as currently written.
+3. The shell had already started `npm --workspace=@thoth/daemon run test:unit`. Before interruption it reported two
+   failures in `session.workspaces.test.ts`: `create_agent_request resolves cwd from daemon workspace authority`
+   and `create_agent_request does not title an existing workspace from the agent prompt`. Because the suite was
+   intentionally interrupted, no complete Daemon pass/fail count is claimed.
+4. The local attempt stopped after approximately `348s`, with more than `3250s` left. Desktop/CLI suites, public
+   foreground/adapters, Release contracts, golden judges, isolation, AppImage, hosted Relay, all performance/load/
+   TUI stress stages, commit, merge, push, Actions and Release replacement did not run.
+
+Retry condition: choose one internally consistent non-reduced App contract—either the complete default App suite
+with the existing `331 / 2,582` floor or an explicitly unit-only floor that does not pretend browser coverage—then
+diagnose and repair the two Daemon tests. The second attempt cannot be reused as partial release evidence.
+
+Third-attempt preparation on `2026-07-24`:
+
+1. The user selected the complete default App suite path proposed after `NTH-EXP-046`. `NTH-CD-069` preserves the
+   existing `331 / 2,582` minimum and requires both unit and browser projects.
+2. The two Daemon Workspace creation failures will be reproduced through their existing package test entry and
+   repaired before starting a new release deadline. No result from either prior failed attempt will be reused.
+3. Both failures were missing final-boundary test setup, not product fallbacks: real `WorkspaceTaskCoordinator`
+   fixtures now receive the same `ToolGateway`; notification tests own independent schema-v2 authority homes;
+   Provider availability seeds normalized Workspace Agent storage; and ScheduleService passes test adapters through
+   the current `adapters` option. Focused tests passed, followed by complete Daemon unit `188/188 files`,
+   `2,416` passed and `26` skipped.
+4. The complete default App suite passed `332/332 files` and `2,586/2,586 tests`, including both browser projects.
+   Daemon typecheck, root format check and `git diff --check` passed. These are preparation evidence only; the
+   release attempt must rerun its entire required sequence inside a fresh `3600s` deadline.
+
+Third failed attempt on `2026-07-24`:
+
+1. A fresh monotonic deadline started at `2026-07-24T17:37:18.738Z`. `npm run accept:refactor:fast` passed all
+   twelve functional/data/architecture/real-Web/visual/TUI phases in `145.798s`; the real Web export contained
+   `4,423` modules.
+2. The complete default App suite passed `332/332 files` and `2,586/2,586 tests` in `69.41s`. The complete Daemon
+   unit suite passed `188/188 files`, `2,416` tests with `26` skipped in `159.05s`.
+3. The Desktop suite then failed during discovery after `5.11s`: `20` files and `110` tests passed, while seven
+   files could not import Electron because `node_modules/electron` had no installed platform binary. The repository
+   intentionally uses `ignore-scripts=true` and provides the explicit `npm run setup:electron` initializer; it had
+   not been run in this ignored worktree toolchain.
+4. Per `NTH-AC-022`, the attempt stopped. CLI, release preflight, AppImage, hosted Relay, benchmarks, Relay load,
+   TUI stress, commit, merge, push, Actions and Release replacement did not run. No test was skipped, threshold or
+   golden changed, fallback added, or partial receipt promoted to release evidence.
+
+Retry condition: run the tracked explicit Electron initializer, prove the complete Desktop suite in preparation,
+then start another fresh `3600s` attempt from `accept:refactor:fast`. The third attempt cannot be combined with a
+later partial run.
+
+Fourth-attempt preparation on `2026-07-24`:
+
+1. `npm run setup:electron` completed through the tracked explicit initializer while the repository-wide
+   `ignore-scripts=true` policy remained unchanged. The complete Desktop suite then passed `26` files with one
+   skipped and `171` tests with four skipped in `4.75s`.
+2. A complete CLI preparation run exposed five daemon-start failures. All rejected the test home as older than
+   Release `05775486`: the shared helper still created the removed `agents/` directory, while `daemon pair` and
+   onboarding legitimately create current config/identity/relay metadata before the first authority database.
+3. The helper no longer creates legacy storage. Fresh-home detection now ignores only five exact non-authority
+   metadata filenames and still rejects an `agents/legacy.json` source. It does not read legacy authority, migrate
+   unknown storage, or add runtime fallback.
+4. The normalized migration suite passed `12/12`. Debug-only direct execution of the five previously failing CLI
+   files passed after the formal CLI stack build; these targeted commands diagnosed the boundary and are not
+   release gates. The complete root-declared CLI suite then passed all `40/40` files in `184.1s`.
+5. The fourth release attempt must still begin from the first complete gate under a new `3600s` deadline. No
+   third-attempt result or preparation receipt counts as release completion.
+
+Fourth failed attempt on `2026-07-24`:
+
+1. The fresh deadline started at `2026-07-24T18:03:55.700Z`. `accept:refactor:fast` passed in `144.917s` with
+   `296,361` production LOC. App passed `332/332 files` and `2,586/2,586 tests`; Daemon passed `188/188 files`,
+   `2,417` tests with `26` skipped; Desktop passed `26` files and `171` tests with platform skips; CLI passed
+   `40/40` files in `184.2s`.
+2. Foreground `12/12`, Provider transports `575` plus lifecycle `4/4`, Release/brand contracts, Release runtime,
+   Clarify golden, Clarify user simulation, Loop golden and the isolation smoke all passed. Paseo remained an
+   independent PID on `127.0.0.1:6767`.
+3. A fresh AppImage was built from this source at `137,695,418` bytes. The packaged journey then timed out after
+   its desktop-managed daemon exited with code `1`; evidence is preserved in
+   `.dev/packaged-appimage-thoth-flow/`.
+4. Root cause is deterministic: the smoke's `seedLegacyStorage()` creates `agents/`, `provider-sessions/` and a
+   standalone `agent-timeline/` layout older than Release `05775486`. The locked migration correctly refuses it,
+   so no daemon log or startup marker can be produced. Restoring the removed importer or allowing unknown old
+   storage would violate `NTH-CD-060` and the Release floor.
+5. The attempt stopped after `1,509s`. Hosted Relay, performance, Relay load, TUI stress, commit, merge, push,
+   Actions and Release replacement did not run. The new AppImage is diagnostic evidence only and cannot be reused
+   as a successful packaged receipt.
+
+Retry condition: seed the immutable `packages/daemon/src/test-fixtures/refactor-release-05775486` catalog and
+authority databases plus its version-1 marker, assert that exact data survives packaged migration, then rerun the
+packaged journey in preparation and restart the complete local deadline. Do not broaden the runtime migration.
+
+Fifth-attempt preparation on `2026-07-24`:
+
+1. The packaged smoke now copies the immutable Release `05775486` catalog/authority databases into their formal
+   paths and writes the exact version-1 marker. It no longer invents a pre-support `agents/provider-sessions/
+agent-timeline` source.
+2. Post-migration assertions require layout/schema v2, the Release Workspace locator, byte-identical Timeline
+   probe, manual `.release-05775486.bak` recovery files and no `provider-sessions` tree. Formatting and diff hygiene
+   passed.
+3. The narrow packaged journey passed against the previously built diagnostic AppImage: `13` hot-switch turns,
+   Quick/Card/Loop, one failed Review retry, Stop settlement, six visible provider sessions, `3` PlanExec and `3`
+   Review calls, `2` content-addressed RuntimeBundles and six Loop attachments. Release migration retained `22`
+   Agent locators and `17` Timeline rows after the journey; durable state was `10,288,976` bytes.
+4. This is preparation only. The fifth attempt must rebuild the AppImage and rerun every local phase under a new
+   `3600s` deadline; the fourth attempt remains failed.
+
+Fifth failed attempt on `2026-07-24`:
+
+1. A fresh deadline started at `2026-07-24T18:34:30.529Z`. `accept:refactor:fast` passed in `149.445s`; the complete
+   App suite passed `332/332` files and `2,586/2,586` tests; Daemon passed `188/188` files with `2,417` passed and
+   `26` skipped; Desktop passed `26` files plus one platform skip with `171` tests plus four skips; CLI passed all
+   `40/40` files.
+2. Foreground `12/12`, Provider transport `575` plus Harness lifecycle `4/4`, Release/brand contracts, Release
+   runtime, all three judges and isolation passed. A fresh AppImage then passed the complete migration, Quick/Card/
+   Loop/Review/Stop/restart journey with `13` hot-switch turns, six visible sessions, `3` PlanExec and `3` Review
+   calls, two RuntimeBundles, `22` migrated Agent locators and `17` migrated Timeline rows.
+3. `npm run accept:thoth:relay` failed before contacting the hosted Relay. Its Server CLI packaging stage packed
+   Highlight, Protocol, Relay, Client, Drivers, Daemon and TUI but omitted `@thoth/core`. Because Daemon declares
+   `@thoth/core@0.0.0-mvp-beta`, the temporary bundle install attempted the public npm registry and received `404`.
+4. The attempt stopped immediately. No hosted Relay result, benchmark, App performance sample, local 200-client
+   Relay load, TUI stress, commit, merge, push, Actions run, tag or Release mutation occurred. No pairing credential
+   was emitted. All earlier green phases are diagnostic receipts only and cannot be reused for release completion.
+
+Retry condition: derive the Server CLI private package set from the complete runtime dependency closure, statically
+guard that closure in the MVP Release contract, prove the packaged CLI and hosted Relay narrowly, then begin a new
+sixth `3600s` attempt from `accept:refactor:fast`.
+
+Post-failure Server CLI preparation on `2026-07-24`:
+
+1. The packer now traverses runtime private dependencies from `@thoth/cli`, embeds all eight reachable packages and
+   asserts their exact installed/archive set. The temporary install cannot use a public registry for `@thoth/*`.
+2. `npm run check:mvp-release-contract` passed and reported eight embedded private runtime packages.
+   `npm run package:server-cli` built the Release runtime, explicitly packed `@thoth/core`, installed `285` external
+   packages and produced a `1,407,889`-byte ignored tgz.
+3. The first narrow packaged Relay journey installed and started that bundle, but its data socket timed out after
+   five pairing attempts. Daemon evidence shows an initial IPv4 timeout, a later successful Relay control
+   registration and then a Relay data timeout. No product journey began and no pairing credential was logged.
+4. A subsequent public health probe returned Relay protocol `3`, and a direct TLS 1.3 handshake to the same endpoint
+   passed. This supports one explicit retry but does not convert the failed journey into success evidence.
+
+Retry condition: rerun the narrow hosted Relay journey once with the same tgz and retain both outcomes. Only a full
+pass permits a fresh sixth release deadline; another failure remains an external blocker and must stop execution.
+
+Narrow hosted Relay retry on `2026-07-24`:
+
+1. The same `1,407,889`-byte tgz was installed again without rebuilding or changing product code.
+2. The second and final permitted narrow attempt passed the hosted Relay v3 E2EE journey: pairing, Quick/Card/Loop,
+   client reconnect, daemon restart with exact pending Card restoration, Pause/Resume completion and Stop settlement.
+3. The report records one consumed failed Review, six durable Loop attachments, five PlanExec calls, five Review
+   calls, a completed resumed Task and a stopped Task with no active execution. Pairing credentials were absent from
+   logs and the report.
+4. This clears only release preparation. None of the fifth full attempt's green phases count toward the next release
+   decision; a sixth full deadline must restart at `accept:refactor:fast`.
+
+Sixth failed attempt on `2026-07-24`:
+
+1. The shared `3600s` window started at `2026-07-24T19:21:09.509Z`. Fast acceptance passed in `151.360s`; App
+   passed `332/332` files and `2,586/2,586` tests; Daemon passed `188/188` files with `2,417` passed and `26`
+   skipped; Desktop passed `26` files plus one skip and `171` tests plus four skips; CLI passed `40/40` files.
+2. Foreground `12/12`, Provider transport `575` plus lifecycle `4/4`, Release/brand/runtime contracts, all three
+   independent judges and isolation passed. Paseo remained PID `3597831` on `127.0.0.1:6767` and Thoth did not
+   stop, restart or reuse it.
+3. A freshly rebuilt AppImage passed Release migration, AgentTimeline, Quick/Card/Loop/Review/Stop/restart with
+   `13` hot-switch turns, six visible sessions, three PlanExec and three Review calls, two RuntimeBundles, `22`
+   migrated Agent locators and `17` migrated Timeline rows. The freshly repacked eight-private-package Server CLI
+   passed hosted Relay v3 E2EE, reconnect, Quick/Card/Loop, daemon restart, Pause/Resume and Stop with six durable
+   attachments, five PlanExec and five Review calls.
+4. Daemon/response performance passed: startup median `1999.70ms`, idle RSS median `407,887,872` bytes, idle CPU
+   median `0ms`, health p50 median `0.123ms` and local response samples `13.86-15.92ms`.
+5. The App candidate then produced seven tightly grouped Workspace interactive samples from `2072.36ms` to
+   `2111.14ms`, median `2085.29ms`. The frozen baseline median is `1817.51ms`; the regression is `14.7%`, exceeds
+   the `4.6%` MAD-derived tolerance and is statistically worse at one-sided Mann-Whitney `p=0.0003`. Heap improved
+   to `49,061,368` bytes and Settings navigation improved to `198.45ms`, but one failed metric fails the phase.
+6. The attempt stopped after `1,627.201s`. The 200-client Relay load, TUI stress, final format/diff checks, commit,
+   merge, both pushes, Actions, tag and Release mutation did not run. The complete machine receipt is ignored at
+   `.dev/release-sixth-gate-result.json`; performance samples are ignored at
+   `.dev/refactor-app-performance-release.json`.
+
+Retry condition: identify and repair the Workspace first-interactive regression without changing the frozen
+measurement, baseline, sample count, visual behavior or feature surface. A narrow matched performance pass is only
+preparation; publication still requires a wholly new complete `3600s` attempt from the first gate.
+
+Performance-repair preparation on `2026-07-25`:
+
+1. A clean `7430e080` Cut 4 comparison produced `2119.09ms` median and failed the same frozen contract, proving the
+   regression predates the uncommitted Cut B UI work. The temporary comparison worktree changed no production source.
+2. The critical path was the initial `300ms` Host revalidation debounce followed by serial Agent-before-Workspace
+   hydration. Initial connection now revalidates immediately and Agent/Workspace authority refreshes concurrently;
+   reconnect and App resume retain the existing debounce, and the Workspace ready marker is unchanged.
+3. Focused Projection/Host tests passed `57/57`. Two independent real-Web runs, each with one warmup plus seven fresh
+   Chromium contexts, passed the frozen contract at `1581.89ms` and `1581.91ms` Workspace interactive medians.
+   Each run retained exactly eight Agent and eight Workspace fetches across warmup plus samples, so no duplicate
+   initial hydration was introduced. Heap remained `46.7MiB`; Settings navigation medians were `198.5ms` and
+   `204.5ms`.
+4. This is preparation evidence only. No result from the sixth attempt is reused; publication still requires a
+   wholly new complete `3600s` attempt from `accept:refactor:fast`.
+
+Seventh failed attempt on `2026-07-25`:
+
+1. A new shared window started at `2026-07-25T08:23:43.666Z`. Fast acceptance passed in `155.330s`; App passed
+   `332/332` files and `2,587/2,587` tests; Daemon passed `188/188` with `2,417` passed and `26` skipped; Desktop
+   passed `26` files plus one skip with `171` tests plus four skips; CLI passed `40/40`.
+2. Foreground, Provider adapters, Release contracts/runtime, all three judges, isolation and a newly built AppImage
+   journey passed. Paseo remained PID `3597831` on `127.0.0.1:6767`.
+3. Server CLI packaging then exceeded the local `600s` phase limit before the hosted journey began. npm had resolved
+   the repository's locked `@anthropic-ai/claude-agent-sdk@0.3.196` range to newly published `0.3.220` and stalled
+   downloading its platform package. The attempt stopped at `2026-07-25T08:57:01.014Z`; no performance/load/TUI
+   stress, commit, push, Actions, tag or Release mutation followed.
+
+Retry preparation:
+
+1. `package-server-cli.mjs` now resolves every external runtime dependency to the exact root `package-lock.json`
+   version and uses bounded, cache-preferred npm fetches. The Release contract fails if this lock ownership is
+   removed.
+2. `check:mvp-release-contract` passed. A no-rebuild package run installed `286` packages in `14s` and produced a
+   `1,407,872`-byte tgz with the same eight private runtime packages.
+3. The first hosted Relay attempt failed during pairing with external close code `1006`. The one permitted retry of
+   the exact same tgz passed Relay v3 TLS/E2EE, pairing, reconnect, Quick/Card/Loop, daemon restart, Pause/Resume,
+   Stop, six attachments, five PlanExec and five Review calls without credential leakage.
+4. These are preparation receipts only. The seventh attempt remains failed and a wholly new complete `3600s`
+   attempt is required.

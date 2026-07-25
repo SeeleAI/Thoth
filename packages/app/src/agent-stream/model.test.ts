@@ -1,32 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import type { TimelineRenderItem } from "./timeline-view-registry";
+import { timelineId, timelineTimestamp } from "./timeline-view-registry";
+import { assistantTimelineEntry, userTimelineEntry } from "@/test-fixtures/timeline";
 import { buildAgentStreamRenderModel } from "./model";
 
-function createTimestamp(seed: number): Date {
-  return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
-}
-
-function userMessage(id: string, seed: number): TimelineViewModel {
-  return {
-    kind: "user_message",
-    id,
-    text: id,
-    timestamp: createTimestamp(seed),
-  };
-}
-
-function assistantMessage(id: string, seed: number): TimelineViewModel {
-  return {
-    kind: "assistant_message",
-    id,
-    text: id,
-    timestamp: createTimestamp(seed),
-  };
-}
+const userMessage = userTimelineEntry;
+const assistantMessage = assistantTimelineEntry;
 
 describe("buildAgentStreamRenderModel", () => {
   it("keeps head separate from committed history on desktop web", () => {
-    const tail: TimelineViewModel[] = [];
+    const tail: TimelineRenderItem[] = [];
     for (let index = 0; index < 60; index += 1) {
       const seed = index * 2;
       tail.push(userMessage(`u${index}`, seed + 1));
@@ -44,7 +27,7 @@ describe("buildAgentStreamRenderModel", () => {
 
     expect(model.segments.historyVirtualized.length).toBeGreaterThan(0);
     expect(model.segments.historyMounted.length).toBeGreaterThan(0);
-    expect(model.segments.liveHead.map((item) => item.id)).toEqual(["live-a"]);
+    expect(model.segments.liveHead.map(timelineId)).toEqual(["live-a"]);
     expect(model.history).not.toContain(head[0]);
   });
 
@@ -87,7 +70,7 @@ describe("buildAgentStreamRenderModel", () => {
 
     expect(first.history).toBe(second.history);
     expect(first.segments.historyMounted).toBe(second.segments.historyMounted);
-    expect(second.segments.liveHead.map((item) => item.id)).toEqual(["live-b"]);
+    expect(second.segments.liveHead.map(timelineId)).toEqual(["live-b"]);
   });
 
   it("derives running turn timing across committed history and live head", () => {
@@ -102,7 +85,7 @@ describe("buildAgentStreamRenderModel", () => {
       isMobileBreakpoint: false,
     });
 
-    expect(model.turnTiming.runningStartedAt).toBe(tail[0]?.timestamp);
+    expect(model.turnTiming.runningStartedAt).toEqual(timelineTimestamp(tail[0]!));
     expect(model.turnTiming.byAssistantId.has("live-a")).toBe(false);
   });
 
@@ -120,8 +103,8 @@ describe("buildAgentStreamRenderModel", () => {
 
     expect(model.turnTiming.runningStartedAt).toBe(null);
     expect(model.turnTiming.byAssistantId.get("live-a")).toEqual({
-      startedAt: tail[0]?.timestamp,
-      completedAt: head[0]?.timestamp,
+      startedAt: timelineTimestamp(tail[0]!),
+      completedAt: timelineTimestamp(head[0]!),
       durationMs: 3000,
     });
   });
@@ -137,10 +120,10 @@ describe("buildAgentStreamRenderModel", () => {
       isMobileBreakpoint: false,
     });
 
-    expect(model.segments.historyMounted.map((item) => item.id)).toEqual(["a1", "u1"]);
+    expect(model.segments.historyMounted.map(timelineId)).toEqual(["a1", "u1"]);
     expect(model.turnTiming.byAssistantId.get("a1")).toEqual({
-      startedAt: tail[0]?.timestamp,
-      completedAt: tail[1]?.timestamp,
+      startedAt: timelineTimestamp(tail[0]!),
+      completedAt: timelineTimestamp(tail[1]!),
       durationMs: 3000,
     });
   });

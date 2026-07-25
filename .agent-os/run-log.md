@@ -3845,3 +3845,264 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   `NTH-TD-036`, shared Timeline/ViewModel/responsive UI convergence.
 - No AppImage, native package, real Provider, hosted Relay final journey, GitHub Actions, push, tag, Release or
   publication ran, and Paseo `127.0.0.1:6767` was not probed or modified.
+
+## 2026-07-24 [Final-architecture Cut 5 shared UI started]
+
+- Began `NTH-TD-036` from clean commit `7430e080`. The independent hard target is production LOC
+  `300,931 -> <=280,931`; Stage 4 baseline tokens/AST/imports are `1,278,968 / 1,319,295 / 5,032` and runtime
+  dependencies are `164`.
+- Scope is restricted to final AgentTimeline/tool registries and App presentation composition. Public behavior,
+  wire/data authority, Provider/VCS semantics, visual/keyboard/focus/a11y behavior and the App
+  `331 files / 2,582 tests` floor remain locked. No intermediate commit will be created.
+
+## 2026-07-24 [Final-architecture Cut 5 UI-only budget conflict exposed]
+
+- Continued the existing atomic WIP without reset, stash, Stage switch or intermediate commit. Canonical Timeline
+  rendering, Sidebar Workspace rows, Agent controls, Markdown base renderer, floating geometry, desktop/mobile Tab
+  menu items/labels, stable descriptor maps, Bottom Sheet background, date buckets, tab-id normalization and dead
+  private styles now each have one production owner.
+- Latest production metrics are `296,353` LOC, `1,271,951` scanner tokens, `1,300,201` AST nodes, `4,991` static
+  imports and `164` runtime dependency edges. Cut B has reduced `4,578 / 7,017 / 19,094 / 41 / 0`, but the
+  independent `20,000`-LOC target still misses by `15,422`.
+- Conservative reachability found `721/754` production candidates reachable and only `1,777` residual unreachable
+  lines, all tied to behavior tests, platform declarations/stubs or test adapters. Structural clone convergence left
+  one deliberate `94`-token Plan-vs-shared Markdown difference; no remaining presentation clone can support the
+  requested gap without deleting semantics.
+- Focused App runs passed `36`, `271`, `41`, `159`, `86` and `7` tests; root lint passed with `0` errors / `23`
+  existing warnings; format and diff checks passed. Package Expo lint and direct App tsgo were debug-only red checks
+  on existing config/type debt and are recorded in `NTH-EV-057`, not hidden or used as completion evidence.
+- Per the locked failure contract, the complete gate was not run after the LOC failure, Stage remains 4,
+  `NTH-TD-036` remains doing, `NTH-EV-057` remains unverified and no local commit was created. Continuing requires
+  a user decision to expand the atomic architecture scope; Paseo `127.0.0.1:6767` was not probed or modified.
+
+## 2026-07-24 [Refactor intermediate Beta promotion started]
+
+- Recorded `NTH-CD-068`, `NTH-AC-022`, `NTH-TD-043` and WIP `NTH-EV-065`. The user authorized promotion of the
+  current functional intermediate state without claiming Cut B `-20,000` or final `-50,000`; `NTH-TD-036` stays
+  doing, `NTH-EV-057` stays unverified and Stage stays 4.
+- Fresh remote guards match the approved transaction: development `2a97c312`, release `05775486`, main
+  `e74c6e0d`; the root worktree is clean and the isolated GitHub identity is `Royalvice`.
+- The sole top next action is temporarily `NTH-TD-043`. No local verification deadline, WIP commit, merge, push,
+  Actions run, tag replacement or Release mutation has occurred yet.
+
+## 2026-07-24 [Refactor intermediate Beta promotion stopped at first gate]
+
+- Started the single local deadline at `2026-07-24T16:08:51.420Z`. `npm run accept:refactor:fast` failed in the
+  first static phase after `0.597s`: the Stage 4 architecture guard still requires the deleted
+  `packages/app/src/projection/timeline-view-model.ts` and therefore reports its Registry/all 11 kinds missing.
+- Read-only diagnosis found the stale path assertions in `scripts/check-refactor-architecture.mjs`; the actual Cut
+  B owner is `packages/app/src/agent-stream/timeline-view-registry.tsx` with exhaustive kind coverage and a
+  dedicated test. `NTH-EXP-045` records why restoring the old file would violate the single-path architecture.
+- Applied the approved fail-closed rule. No later suite, AppImage, Relay journey, benchmark, load test, TUI stress,
+  commit, merge, push, Actions run, tag or Release mutation occurred. `NTH-TD-043` is blocked and remains the top
+  action until the guard is corrected and a fresh full local attempt starts from the first gate.
+
+## 2026-07-24 [Refactor intermediate Beta promotion retry authorized]
+
+- The user explicitly authorized continuing `NTH-TD-043`. Changed only the architecture guard ownership:
+  Stage 4 now requires the canonical `agent-stream/timeline-view-registry.tsx`, preserves the same 11 Timeline kind
+  assertions and forbids the deleted projection ViewModel.
+- `NTH-EXP-045` and the first `0.597s` failure remain recorded. No compatibility file, reduced expectation, Stage
+  switch, commit, push or Release mutation was used to clear the blocker.
+- `NTH-TD-043` returned to doing with no active blocker. The next action is a completely fresh local `3600s`
+  attempt beginning at `accept:refactor:fast`; no result from the failed attempt will be reused.
+
+## 2026-07-24 [Refactor intermediate Beta promotion retry stopped at full suites]
+
+- The corrected single-Registry architecture passed the complete `accept:refactor:fast` gate in `144.240s`.
+  Source remained `296,353` LOC; Release digest, Foundation, real Web, public behavior, visual/interaction and TUI
+  contracts all passed.
+- The exact App unit command then passed in `74.82s` with `330 files / 2,566 tests`, below the locked
+  `331 / 2,582` floor. The unit project excludes two browser files containing 16 tests; the WIP has `332` total
+  App test files, proving the command and all-project floor are inconsistent rather than authorizing lower coverage.
+- The already-started full Daemon unit suite reported two `create_agent_request` Workspace failures before being
+  interrupted. Per fail-closed rules no later suite, package, benchmark, stress, commit, merge, push, Actions or
+  Release step ran. `NTH-EXP-046` records the command/floor mismatch and incomplete Daemon evidence.
+
+## 2026-07-24 [Third Beta promotion attempt preparation started]
+
+- The user approved the proposed complete App path. Recorded `NTH-CD-069`: release acceptance runs both Vitest
+  projects through the default App suite and retains at least `331 files / 2,582 tests`; unit-only coverage is not
+  accepted and no floor was reduced.
+- `NTH-TD-043` returned to doing. The immediate action is to reproduce and repair the two Daemon Workspace
+  creation failures, then run the complete App suite and begin a wholly new `3600s` release attempt.
+
+## 2026-07-24 [Third Beta promotion preparation repaired]
+
+- Reproduced the two Session failures as missing real ToolGateway fixture setup and repaired both; focused `2/2`
+  passed. The complete Daemon suite then exposed 14 shared schema-0 notification failures, one legacy JSON Agent
+  seed and one stale `clients` option. Migrated the fixtures to independent normalized schema-v2 authority homes,
+  normalized Workspace Agent persistence and the current `adapters` boundary without changing production fallback.
+- Complete Daemon unit passed `188/188 files`, `2,416` tests with `26` skipped. Complete default App passed
+  `332/332 files` and `2,586/2,586` tests, including both browser projects. Daemon typecheck, root formatting and
+  diff hygiene passed.
+- These are preparation receipts only. The next action remains a fresh `3600s` attempt from the first refactor
+  gate; neither prior failed release attempt contributes partial completion evidence.
+
+## 2026-07-24 [Third Beta promotion attempt stopped at Desktop discovery]
+
+- Started the fresh deadline at `2026-07-24T17:37:18.738Z`. `accept:refactor:fast` passed in `145.798s`; complete
+  App passed `332/332 files` and `2,586/2,586` tests; complete Daemon passed `188/188 files`, `2,416` tests and
+  `26` skipped.
+- Desktop then failed during discovery after `5.11s`: `20` files / `110` tests passed, while seven files could not
+  import Electron because its platform binary was not initialized under the repository's intentional
+  `ignore-scripts=true` policy. `NTH-EXP-047` records the missed explicit `npm run setup:electron` prerequisite.
+- Fail-closed execution stopped before CLI, release preflight, AppImage, Relay, benchmarks, load/TUI stress,
+  commit, merge, push, Actions or Release mutation. The next action is explicit Electron setup plus a narrow
+  Desktop preparation pass, followed by a wholly fresh local deadline.
+
+## 2026-07-24 [Fourth Beta promotion preparation repaired]
+
+- Ran the tracked `setup:electron` initializer without enabling global install scripts; complete Desktop passed
+  `26` files plus one skipped and `171` tests plus four skipped.
+- The first full CLI preparation run failed `5/40` because old fixtures created an `agents/` directory and the
+  storage migration treated legitimate pairing/config identity metadata as prior authority. Removed the legacy
+  helper directory and restricted fresh-home exceptions to five exact non-authority filenames; unknown/legacy
+  storage still refuses startup. `NTH-EXP-048` preserves the diagnosis and rejected broad-ignore alternative.
+- Migration passed `12/12`, the five debug-only targeted CLI files passed, and the formal complete CLI suite passed
+  `40/40` in `184.1s`. No third-attempt receipt is reused. The next action is a new fourth `3600s` release attempt
+  beginning at `accept:refactor:fast`.
+
+## 2026-07-24 [Fourth Beta promotion attempt stopped at packaged migration]
+
+- Started the fresh deadline at `2026-07-24T18:03:55.700Z`. Fast acceptance, App `332/2,586`, Daemon
+  `188/2,417`, Desktop `26/171`, CLI `40/40`, foreground/adapters, Release contracts/runtime, all three judges and
+  isolation passed. Paseo stayed independently owned on `6767`.
+- Built a fresh `137,695,418`-byte AppImage. Its packaged daemon exited before readiness because the smoke still
+  seeded removed pre-05775486 `agents/provider-sessions/agent-timeline` storage; the final migration correctly
+  refused it. `NTH-EXP-049` records why production compatibility cannot be restored for this fixture.
+- Stopped after `1,509s` before hosted Relay, benchmark/load/TUI stress, commit, merge, push, Actions or Release.
+  The next action is to use the immutable Release `05775486` fixture in packaged acceptance, prove the journey
+  narrowly, and only then begin another fresh full deadline.
+
+## 2026-07-24 [Fifth Beta promotion preparation repaired]
+
+- Replaced the packaged smoke's invented pre-floor storage with the immutable Release `05775486` catalog,
+  authority and v1 marker. Assertions now verify v2 activation, exact locator/Timeline preservation, manual
+  recovery backups and absence of `provider-sessions`; production migration behavior did not broaden.
+- The narrow packaged journey passed with `13` hot-switch turns, Quick/Card/Loop, one failed Review retry, Stop,
+  six visible sessions, `3` PlanExec and `3` Review submissions, two RuntimeBundles and Release data preservation.
+- This preparation does not repair the fourth attempt retroactively. The next action is a new fifth `3600s`
+  deadline from the first fast gate with a newly rebuilt AppImage.
+
+## 2026-07-24 [Fifth Beta promotion attempt stopped at Server CLI dependency closure]
+
+- Started the fresh deadline at `2026-07-24T18:34:30.529Z`. Fast acceptance, App `332/2,586`, Daemon
+  `188/2,417`, Desktop `26/171`, CLI `40/40`, foreground/adapters, Release contracts/runtime, all three judges,
+  isolation and a newly built complete AppImage journey passed.
+- `accept:thoth:relay` failed before contacting the hosted Relay: the Server CLI packer omitted the Daemon runtime
+  dependency `@thoth/core`, so its temporary install requested the private package from the public npm registry and
+  received `404`. `NTH-EXP-050` records why Core must remain private, required and locally embedded.
+- Stopped before hosted Relay evidence, benchmarks, App samples, 200-client Relay load, TUI stress, commit, merge,
+  push, Actions or Release mutation. The next action is graph-derived private package closure plus narrow packaged
+  Relay proof, followed by a wholly fresh sixth `3600s` attempt from the first gate.
+
+## 2026-07-24 [Server CLI closure repaired; first narrow Relay preparation timed out]
+
+- Replaced the seven-package Server CLI list with the runtime dependency closure from `@thoth/cli`. The Release
+  contract reports eight private packages; package construction explicitly embedded Core and produced a
+  `1,407,889`-byte ignored tgz without a public `@thoth/*` registry path.
+- The first narrow hosted Relay run installed and started the bundle, then timed out on its paired data socket after
+  five attempts. Control registration eventually connected; subsequent protocol-3 health and direct TLS probes
+  passed. `NTH-EXP-051` preserves why these probes do not replace the E2EE journey.
+- No sixth full deadline, benchmark, stress, commit, push, Actions or Release mutation started. One narrow Relay
+  retry remains; another failure must stop as an external blocker.
+
+## 2026-07-24 [Narrow hosted Relay retry passed]
+
+- Reused the exact repaired Server CLI tgz for the one permitted retry. The hosted Relay v3 E2EE journey passed
+  pairing, reconnect, Quick/Card/Loop, daemon restart with pending-Card restoration, Pause/Resume, Stop, six durable
+  Loop attachments, five PlanExec calls and five Review calls without credential leakage.
+- The first socket timeout remains `NTH-EXP-051`; the retry clears only the preparation blocker. No prior full-gate
+  receipt is reused. The next action is a fresh sixth `3600s` deadline from `accept:refactor:fast`, including all
+  performance/load/TUI stress phases before any commit or push.
+
+## 2026-07-24 [Sixth Beta promotion attempt stopped at App performance]
+
+- Started a new shared deadline at `2026-07-24T19:21:09.509Z`. Fast acceptance, App `332/2,586`, Daemon
+  `188/2,417`, Desktop `26/171`, CLI `40/40`, public behavior, adapters, Release contracts/runtime, all judges,
+  isolation, a newly rebuilt complete AppImage and a newly packed hosted Relay journey all passed.
+- Seven-sample Daemon/response performance passed. App heap and Settings navigation improved, but Workspace first
+  interactive regressed `1817.51ms -> 2085.29ms`, exceeded the `4.6%` tolerance and was statistically worse at
+  `p=0.0003`. `NTH-EXP-052` preserves the full distribution and prohibits baseline/golden/sample changes.
+- Fail-closed execution stopped after `1,627.201s`; 200-client Relay load, TUI stress, commit, merge, push, Actions,
+  tag and Release mutation did not run. Top action remains `NTH-TD-043`, now blocked on no-UX-change Workspace
+  interactive diagnosis and repair before any wholly new release deadline.
+
+## 2026-07-25 [App first-interactive release blocker repaired]
+
+- A clean `7430e080` Cut 4 comparison reproduced the Workspace regression at `2119.09ms`, proving the current Cut B
+  UI WIP was not the cause. The fixed overhead came from applying the reconnect/resume `300ms` debounce to initial
+  Projection hydration and then serializing Agent before Workspace refresh.
+- Initial connection now hydrates immediately and Agent/Workspace refreshes concurrently. Reconnect, App resume,
+  Timeline catch-up, the authority model, the Workspace ready marker and UX are unchanged. Focused tests passed
+  `57/57`.
+- Two independent one-warmup plus seven-sample real-Web runs passed the frozen performance contract at `1581.89ms`
+  and `1581.91ms` medians, with exactly one Agent and Workspace fetch per context. Heap remained `46.7MiB` and
+  Settings navigation passed.
+- This is preparation only. The next action is a wholly new complete `3600s` release attempt from
+  `accept:refactor:fast`; no sixth-attempt receipt is reusable and no commit, push or Release mutation occurred.
+
+## 2026-07-25 [Seventh Beta promotion attempt stopped at non-hermetic Server CLI install]
+
+- The fresh window passed fast acceptance, App `332/2,587`, Daemon `188/2,417`, Desktop `26/171`, CLI `40/40`,
+  foreground/adapters, Release contracts/runtime, all judges, isolation and a new complete AppImage journey.
+- Server CLI packaging resolved a manifest range beyond the root lockfile and exceeded `600s` while fetching the new
+  Claude Agent SDK platform package. The attempt stopped before hosted product evidence, performance/load/TUI
+  stress and every Git/Release mutation.
+- External runtime dependencies are now pinned to exact root-lock versions and cache-preferred bounded fetches.
+  Packaging completed in `14s`; the exact tgz passed hosted Relay on its one permitted retry after an initial
+  external `1006` failure.
+- `NTH-EXP-053` and `NTH-EXP-054` preserve both failures. The next action remains a wholly new complete `3600s`
+  attempt from the first gate; seventh-attempt results are not reusable.
+
+## 2026-07-25 [Eighth Beta promotion attempt invalidated by deadline orchestration]
+
+- A wholly new run passed fast acceptance, complete App/Daemon/Desktop/CLI suites, public behavior, Provider
+  transports, Release contracts/runtime, three judges, isolation, fresh AppImage, fresh Server CLI, hosted Relay,
+  seven-sample Daemon/response performance and seven-sample App performance. The frozen App contract passed at
+  `1590.0ms` Workspace interactive, `46.7MiB` heap and `211.8ms` Settings navigation.
+- The `200`-client local Relay load established its encrypted clients, but was manually stopped after a UTC
+  wall-clock estimate suggested the remaining window was too short. The approved contract requires one monotonic
+  `3600s` deadline; separate shells did not preserve such a start value, so neither expiry nor completion was
+  proven and the ten-minute load did not finish.
+- `NTH-EXP-055` records the failure. No commit, merge, push, Actions, tag or Release mutation occurred. The next
+  attempt starts from the first phase under one ignored `performance.now()` runner; all eighth-attempt green
+  results remain preparation/failure evidence only.
+
+## 2026-07-25 [Ninth Beta promotion attempt stopped at Clarify simulation provenance]
+
+- The first single-process monotonic attempt passed fast acceptance in `153940ms`, App `332/2587`, Daemon
+  `188/2417` with `26` skips, Desktop, CLI `40/40`, foreground/adapters, Release contracts/runtime and Clarify
+  golden. The independent Clarify user-simulation judge then failed; the runner stopped at `890894ms` with all
+  remaining stages and every Git/Release mutation untouched.
+- Diagnosis found that simulated Task Cards omitted the required `convergence_review`; the broad packet validator
+  had not applied the semantic tool schema. A second narrow judge exposed normalized fixture inputs that did not
+  exactly match immutable verbatim provenance.
+- Both Task Cards now carry schema-valid convergence evidence, every pre-Task user input exactly matches the
+  transcript, and deterministic validation enforces both properties before the model judge. Targeted tests passed
+  `6/6` and the independent judge passed. `NTH-EXP-056` preserves the failed attempt; the next action is a wholly
+  new monotonic run from phase one.
+
+## 2026-07-25 [Tenth Beta promotion attempt stopped at non-hermetic TUI stress]
+
+- One monotonic process passed all stages through the local Relay load: fresh AppImage and hosted Relay journeys,
+  frozen Daemon/App performance, and `200` E2EE clients for `600000ms` with `24000/24000` pongs, zero failures and
+  `19/26/30ms` p50/p95/p99.
+- TUI stress then failed after `2352116ms` because it expected a connected offer-ready frame while no process owned
+  Thoth `6688`. The script had never started its required daemon; historical success depended on external dev state.
+- The stress now starts a real source daemon on a reserved random port with isolated temporary home, drives the
+  unchanged public CLI and cleans only its own process group. Narrow `72/96/132x34` all passed with safe connected
+  frames. `NTH-EXP-057` preserves the failed full attempt; no commit, push, Actions, tag or Release mutation ran.
+
+## 2026-07-25 [Eleventh Beta promotion local gate passed]
+
+- The single-process monotonic runner completed all `23` phases with `ok=true` in `2336161ms`; fast acceptance
+  stayed below its separate `300s` limit. App `332/2587`, Daemon `188/2417` plus `26` skips, Desktop, CLI `40/40`,
+  foreground/adapters, three judges, Release contracts and isolation all passed.
+- Fresh AppImage and fresh Server CLI/hosted Relay product journeys passed. Frozen Daemon/App performance passed;
+  App Workspace interactive median was `1607.946ms`. The `200`-client Relay load completed `600000ms` with
+  `24000/24000` pongs and zero failures; hermetic TUI stress passed all three widths.
+- Format and diff hygiene passed. This is local evidence only: `NTH-TD-043` remains doing, Cut B remains doing and
+  no commit, push, Actions, tag or Release mutation has occurred. Next action is the fresh remote drift guard,
+  followed by the approved atomic commit and normal fast-forward transaction only if all SHAs remain frozen.

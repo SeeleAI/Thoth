@@ -1,26 +1,29 @@
 import type { TurnTiming } from "@/timeline/turn-time";
-import {
-  hasPendingAuthorityDecisionViewModel,
-  type TimelineViewModel,
-} from "@/projection/timeline-view-model";
-import { getAssistantBlockSpacing, getGapBetweenStreamItems } from "./spacing";
+import { getGapBetweenStreamItems } from "./spacing";
 import type { StreamFrameChildOrder, StreamStrategy } from "./strategy";
+import {
+  hasPendingAuthorityDecision,
+  timelineId,
+  timelineMeta,
+  timelineType,
+  type TimelineRenderItem,
+} from "./timeline-view-registry";
 
 export type StreamToolSequence = "single" | "first" | "middle" | "last" | "none";
 
 export interface TurnFooterHost {
   itemId: string;
-  items: TimelineViewModel[];
+  items: TimelineRenderItem[];
   timing?: TurnTiming;
   startIndex: number;
 }
 
 export interface StreamLayoutItem {
-  item: TimelineViewModel;
+  item: TimelineRenderItem;
   index: number;
-  items: TimelineViewModel[];
-  aboveItem: TimelineViewModel | null;
-  belowItem: TimelineViewModel | null;
+  items: TimelineRenderItem[];
+  aboveItem: TimelineRenderItem | null;
+  belowItem: TimelineRenderItem | null;
   gapBelow: number;
   assistantSpacing: "default" | "compactTop" | "compactBottom" | "compactBoth";
   completedFooter: TurnFooterHost | null;
@@ -40,40 +43,40 @@ export interface StreamLayout {
 export interface StreamLayoutInput {
   strategy: StreamStrategy;
   agentStatus: string;
-  history: TimelineViewModel[];
-  liveHead: TimelineViewModel[];
+  history: TimelineRenderItem[];
+  liveHead: TimelineRenderItem[];
   timingByAssistantId: Map<string, TurnTiming>;
 }
 
 interface LayoutSegmentInput {
   strategy: StreamStrategy;
   agentStatus: string;
-  items: TimelineViewModel[];
+  items: TimelineRenderItem[];
   timingByAssistantId: Map<string, TurnTiming>;
   auxiliaryTurnFooter: TurnFooterHost | null;
   frameOrder: StreamFrameChildOrder;
   boundaryIndex: number | null;
-  boundaryAboveItem: TimelineViewModel | null;
-  boundaryBelowItem: TimelineViewModel | null;
+  boundaryAboveItem: TimelineRenderItem | null;
+  boundaryBelowItem: TimelineRenderItem | null;
 }
 
 function createTurnFooterHost(input: {
-  item: TimelineViewModel;
-  items: TimelineViewModel[];
+  item: TimelineRenderItem;
+  items: TimelineRenderItem[];
   index: number;
   timingByAssistantId: Map<string, TurnTiming>;
 }): TurnFooterHost {
   return {
-    itemId: input.item.id,
+    itemId: timelineId(input.item),
     items: input.items,
-    timing: input.timingByAssistantId.get(input.item.id),
+    timing: input.timingByAssistantId.get(timelineId(input.item)),
     startIndex: input.index,
   };
 }
 
 function findLatestAssistantIndexInTurn(input: {
   strategy: StreamStrategy;
-  items: TimelineViewModel[];
+  items: TimelineRenderItem[];
   startIndex: number;
 }): number | null {
   for (
@@ -82,10 +85,10 @@ function findLatestAssistantIndexInTurn(input: {
     index = input.strategy.getNeighborIndex(index, "above")
   ) {
     const item = input.items[index];
-    if (!item || item.kind === "user_message") {
+    if (!item || timelineType(item) === "user_message") {
       return null;
     }
-    if (item.kind === "assistant_message") {
+    if (timelineType(item) === "assistant_message") {
       return index;
     }
   }
@@ -93,10 +96,7 @@ function findLatestAssistantIndexInTurn(input: {
 }
 
 function resolveAuxiliaryTurnFooter(input: StreamLayoutInput): TurnFooterHost | null {
-  if (
-    hasPendingAuthorityDecisionViewModel(input.liveHead) ||
-    hasPendingAuthorityDecisionViewModel(input.history)
-  ) {
+  if (hasPendingAuthorityDecision(input.liveHead) || hasPendingAuthorityDecision(input.history)) {
     return null;
   }
   if (input.agentStatus === "running") {
@@ -119,7 +119,7 @@ function resolveAuxiliaryTurnFooter(input: StreamLayoutInput): TurnFooterHost | 
   }
 
   const item = footerItems[assistantIndex];
-  if (!item || item.kind !== "assistant_message") {
+  if (!item || timelineType(item) !== "assistant_message") {
     return null;
   }
 
@@ -133,7 +133,7 @@ function resolveAuxiliaryTurnFooter(input: StreamLayoutInput): TurnFooterHost | 
 
 function findTurnEndIndexInSegment(input: {
   strategy: StreamStrategy;
-  items: TimelineViewModel[];
+  items: TimelineRenderItem[];
   startIndex: number;
 }): number {
   let endIndex = input.startIndex;
@@ -143,7 +143,7 @@ function findTurnEndIndexInSegment(input: {
     index = input.strategy.getNeighborIndex(index, "below")
   ) {
     const item = input.items[index];
-    if (!item || item.kind === "user_message") {
+    if (!item || timelineType(item) === "user_message") {
       break;
     }
     endIndex = index;
@@ -153,25 +153,25 @@ function findTurnEndIndexInSegment(input: {
 
 function shouldRenderCompletedFooter(input: {
   strategy: StreamStrategy;
-  items: TimelineViewModel[];
+  items: TimelineRenderItem[];
   index: number;
-  item: TimelineViewModel;
-  belowItem: TimelineViewModel | null;
+  item: TimelineRenderItem;
+  belowItem: TimelineRenderItem | null;
   agentStatus: string;
   auxiliaryTurnFooter: TurnFooterHost | null;
   boundaryIndex: number | null;
-  boundaryBelowItem: TimelineViewModel | null;
+  boundaryBelowItem: TimelineRenderItem | null;
 }): boolean {
   if (
-    input.item.kind !== "assistant_message" ||
-    input.auxiliaryTurnFooter?.itemId === input.item.id ||
-    hasPendingAuthorityDecisionViewModel(input.items)
+    timelineType(input.item) !== "assistant_message" ||
+    input.auxiliaryTurnFooter?.itemId === timelineId(input.item) ||
+    hasPendingAuthorityDecision(input.items)
   ) {
     return false;
   }
 
   if (
-    input.belowItem?.kind === "user_message" ||
+    (input.belowItem && timelineType(input.belowItem) === "user_message") ||
     (input.belowItem === null && input.agentStatus !== "running")
   ) {
     return true;
@@ -182,7 +182,11 @@ function shouldRenderCompletedFooter(input: {
   }
 
   const sameSegmentBelowItem = input.strategy.getNeighborItem(input.items, input.index, "below");
-  if (sameSegmentBelowItem?.id !== input.belowItem.id) {
+  if (
+    !sameSegmentBelowItem ||
+    !input.belowItem ||
+    timelineId(sameSegmentBelowItem) !== timelineId(input.belowItem)
+  ) {
     return false;
   }
 
@@ -199,7 +203,10 @@ function shouldRenderCompletedFooter(input: {
     boundaryIndex: input.boundaryIndex,
     boundaryItem: input.boundaryBelowItem,
   });
-  if (input.agentStatus === "running" && belowTurnItem?.kind !== "user_message") {
+  if (
+    input.agentStatus === "running" &&
+    (!belowTurnItem || timelineType(belowTurnItem) !== "user_message")
+  ) {
     return false;
   }
   const assistantIndex = findLatestAssistantIndexInTurn({
@@ -210,16 +217,14 @@ function shouldRenderCompletedFooter(input: {
   return assistantIndex === input.index;
 }
 
-function isToolSequenceItem(
-  item: TimelineViewModel | null,
-): item is Extract<TimelineViewModel, { kind: "tool_call" | "thought" | "todo_list" }> {
-  return item?.kind === "tool_call" || item?.kind === "thought" || item?.kind === "todo_list";
+function isToolSequenceItem(item: TimelineRenderItem | null): item is TimelineRenderItem {
+  return item ? timelineMeta(item).toolSequence : false;
 }
 
 function getToolSequence(input: {
-  item: TimelineViewModel;
-  aboveItem: TimelineViewModel | null;
-  belowItem: TimelineViewModel | null;
+  item: TimelineRenderItem;
+  aboveItem: TimelineRenderItem | null;
+  belowItem: TimelineRenderItem | null;
 }): StreamToolSequence {
   if (!isToolSequenceItem(input.item)) {
     return "none";
@@ -241,12 +246,12 @@ function getToolSequence(input: {
 
 function getSegmentNeighbor(input: {
   strategy: StreamStrategy;
-  items: TimelineViewModel[];
+  items: TimelineRenderItem[];
   index: number;
   relation: "above" | "below";
   boundaryIndex: number | null;
-  boundaryItem: TimelineViewModel | null;
-}): TimelineViewModel | null {
+  boundaryItem: TimelineRenderItem | null;
+}): TimelineRenderItem | null {
   const neighbor = input.strategy.getNeighborItem(input.items, input.index, input.relation);
   if (neighbor) {
     return neighbor;
@@ -275,11 +280,6 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
       boundaryIndex: input.boundaryIndex,
       boundaryItem: input.boundaryBelowItem,
     });
-    const assistantSpacing = getAssistantBlockSpacing({
-      item,
-      aboveItem,
-      belowItem,
-    });
     const completedFooter = shouldRenderCompletedFooter({
       strategy: input.strategy,
       items: input.items,
@@ -306,11 +306,15 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
       aboveItem,
       belowItem,
       gapBelow: completedFooter ? 0 : getGapBetweenStreamItems(item, belowItem),
-      assistantSpacing,
+      assistantSpacing: "default",
       completedFooter,
       toolSequence: getToolSequence({ item, aboveItem, belowItem }),
-      isFirstInUserGroup: item.kind === "user_message" && aboveItem?.kind !== "user_message",
-      isLastInUserGroup: item.kind === "user_message" && belowItem?.kind !== "user_message",
+      isFirstInUserGroup:
+        timelineType(item) === "user_message" &&
+        (!aboveItem || timelineType(aboveItem) !== "user_message"),
+      isLastInUserGroup:
+        timelineType(item) === "user_message" &&
+        (!belowItem || timelineType(belowItem) !== "user_message"),
       isLastInToolSequence: isToolSequenceItem(item) && !isToolSequenceItem(belowItem),
       frameOrder: input.frameOrder,
     };
@@ -320,7 +324,7 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
 // Keyed by history array identity; inner key encodes the inputs that affect history layout.
 // History layout is stable across text-chunk flushes because the liveHead boundary item's
 // kind and id don't change when only its text grows.
-const historyLayoutCache = new WeakMap<TimelineViewModel[], Map<string, StreamLayoutItem[]>>();
+const historyLayoutCache = new WeakMap<TimelineRenderItem[], Map<string, StreamLayoutItem[]>>();
 
 export function layoutStream(input: StreamLayoutInput): StreamLayout {
   const auxiliaryTurnFooter = resolveAuxiliaryTurnFooter(input);
@@ -341,8 +345,8 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
       input.agentStatus,
       frameOrder,
       historyBoundaryIndex ?? "null",
-      liveHeadBoundaryItem?.id ?? "null",
-      liveHeadBoundaryItem?.kind ?? "null",
+      liveHeadBoundaryItem ? timelineId(liveHeadBoundaryItem) : "null",
+      liveHeadBoundaryItem ? timelineType(liveHeadBoundaryItem) : "null",
       auxiliaryTurnFooter?.itemId ?? "null",
     ].join(":");
     let byKey = historyLayoutCache.get(input.history);

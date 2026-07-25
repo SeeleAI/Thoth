@@ -11,7 +11,6 @@ import {
   type TextStyle,
 } from "react-native";
 import { useTranslation } from "react-i18next";
-import { MarkdownParagraphView, MarkdownTextSpan } from "@/components/markdown-text";
 import * as React from "react";
 import {
   useState,
@@ -58,16 +57,18 @@ import Animated, {
 } from "react-native-reanimated";
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from "react-native-svg";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
-import { MarkdownRenderer, type MarkdownStyles } from "@/components/markdown/renderer";
-import type { TodoEntry, UserMessageImageAttachment } from "@/projection/timeline-view-model";
+import {
+  createSharedMarkdownRules,
+  MarkdownInheritedText,
+  MarkdownRenderer,
+  type MarkdownStyles,
+} from "@/components/markdown/renderer";
+import type { AttachmentMetadata } from "@/attachments/types";
 import type { AgentAttachment } from "@thoth/protocol/messages";
 import type { ToolCallDetail } from "@thoth/protocol/agent-types";
 import { buildToolCallPresentation } from "@/tool-calls/presentation";
 import { resolveToolCallIcon } from "@/utils/tool-call-icon";
-import { getMarkdownListMarker, getMarkdownListSpacing } from "@/utils/markdown-list";
-import { markdownNodeContainsType } from "@/utils/markdown-ast";
 import { useStableEvent } from "@/hooks/use-stable-event";
-import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
 import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
 import { formatDuration, formatMessageTimestamp } from "@/utils/time";
 import { writeMarkdownToRichClipboard } from "@/utils/rich-clipboard";
@@ -92,7 +93,6 @@ import {
   AssistantMarkdownLink,
   type InlinePathTarget,
   useAssistantFileLinkActions,
-  useAssistantLinkPress,
 } from "@/assistant-file-links";
 import { getCompactionMarkerLabel } from "./message-compaction-label";
 import { useFilePreviewSource } from "@/file-explorer/use-file-preview-source";
@@ -116,7 +116,7 @@ interface UserMessageProps {
   agentId?: string;
   messageId?: string;
   message: string;
-  images?: UserMessageImageAttachment[];
+  images?: AttachmentMetadata[];
   attachments?: AgentAttachment[];
   timestamp: number;
   capabilities?: AgentCapabilityFlags;
@@ -391,8 +391,8 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
 }));
 
 interface UserMessageImagePillProps {
-  image: UserMessageImageAttachment;
-  onOpen: (image: UserMessageImageAttachment) => void;
+  image: AttachmentMetadata;
+  onOpen: (image: AttachmentMetadata) => void;
   accessibilityLabel: string;
 }
 
@@ -424,7 +424,7 @@ export const UserMessage = memo(function UserMessage({
   const isCompact = useIsCompactFormFactor();
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
-  const [lightboxMetadata, setLightboxMetadata] = useState<UserMessageImageAttachment | null>(null);
+  const [lightboxMetadata, setLightboxMetadata] = useState<AttachmentMetadata | null>(null);
   const handleLightboxClose = useCallback(() => setLightboxMetadata(null), []);
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
   const hasText = message.trim().length > 0;
@@ -1463,66 +1463,6 @@ const MemoizedMarkdownBlock = React.memo(function MemoizedMarkdownBlock({
   );
 });
 
-interface MarkdownInheritedTextProps {
-  inheritedStyles: TextStyle;
-  textStyle: TextStyle;
-  style?: StyleProp<TextStyle>;
-  monoSurface?: boolean;
-  children: ReactNode;
-}
-
-function MarkdownInheritedText({
-  inheritedStyles,
-  textStyle,
-  style: overrideStyle,
-  monoSurface,
-  children,
-}: MarkdownInheritedTextProps) {
-  const style = useMemo(
-    () => [inheritedStyles, textStyle, overrideStyle],
-    [inheritedStyles, textStyle, overrideStyle],
-  );
-  // When this span renders link label text on iOS, pick up the link's press
-  // handler from context and hand it to MarkdownTextSpan, which forwards it to
-  // the leaf string children react-native-uitextview makes tappable. Null
-  // outside a link (and on every other platform, where no provider mounts), so
-  // ordinary text is unaffected. See assistant-file-links/link-press-context.
-  const linkPress = useAssistantLinkPress();
-  return (
-    <MarkdownTextSpan
-      monoSurface={monoSurface}
-      style={style}
-      onPress={linkPress?.onPress}
-      accessibilityRole={linkPress?.accessibilityRole}
-    >
-      {children}
-    </MarkdownTextSpan>
-  );
-}
-
-interface MarkdownListItemContentProps {
-  contentStyle: ViewStyle;
-  children: ReactNode;
-}
-
-const MARKDOWN_LIST_ITEM_CONTENT_FLEX: ViewStyle = { flex: 1, flexShrink: 1, minWidth: 0 };
-
-function MarkdownListItemContent({ contentStyle, children }: MarkdownListItemContentProps) {
-  const style = useMemo(() => [contentStyle, MARKDOWN_LIST_ITEM_CONTENT_FLEX], [contentStyle]);
-  return <View style={style}>{children}</View>;
-}
-
-interface MarkdownListViewProps {
-  baseStyle: ViewStyle;
-  spacing: { marginTop: number; marginBottom: number };
-  children: ReactNode;
-}
-
-function MarkdownListView({ baseStyle, spacing, children }: MarkdownListViewProps) {
-  const style = useMemo(() => [baseStyle, spacing], [baseStyle, spacing]);
-  return <View style={style}>{children}</View>;
-}
-
 export const AssistantMessage = memo(function AssistantMessage({
   message,
   timestamp: _timestamp,
@@ -1554,127 +1494,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 
   const markdownRules = useMemo<RenderRules>(() => {
     return {
-      text: (
-        node: ASTNode,
-        _children: ReactNode[],
-        _parent: ASTNode[],
-        styles: MarkdownStyles,
-        inheritedStyles: TextStyle = {},
-      ) => (
-        <MarkdownInheritedText
-          key={node.key}
-          inheritedStyles={inheritedStyles}
-          textStyle={styles.text}
-        >
-          {node.content}
-        </MarkdownInheritedText>
-      ),
-      textgroup: (
-        node: ASTNode,
-        children: ReactNode[],
-        _parent: ASTNode[],
-        styles: MarkdownStyles,
-        inheritedStyles: TextStyle = {},
-      ) => (
-        <MarkdownInheritedText
-          key={node.key}
-          inheritedStyles={inheritedStyles}
-          textStyle={styles.textgroup}
-        >
-          {children}
-        </MarkdownInheritedText>
-      ),
-      // strong/em/s have no custom rule in react-native-markdown-display's
-      // defaults beyond wrapping children in a plain RN <Text>. On iOS the
-      // paragraph/textgroup are native UITextViews (see markdown-text.ios.tsx),
-      // and a plain <Text> nested inside one is not hoisted into a
-      // UITextViewChild, so its content renders invisibly. Route these inline
-      // marks through MarkdownTextSpan (same path as text/textgroup) so the
-      // styled content composes and stays visible + selectable on iOS.
-      strong: (
-        node: ASTNode,
-        children: ReactNode[],
-        _parent: ASTNode[],
-        styles: MarkdownStyles,
-        inheritedStyles: TextStyle = {},
-      ) => (
-        <MarkdownInheritedText
-          key={node.key}
-          inheritedStyles={inheritedStyles}
-          textStyle={styles.strong}
-        >
-          {children}
-        </MarkdownInheritedText>
-      ),
-      em: (
-        node: ASTNode,
-        children: ReactNode[],
-        _parent: ASTNode[],
-        styles: MarkdownStyles,
-        inheritedStyles: TextStyle = {},
-      ) => (
-        <MarkdownInheritedText
-          key={node.key}
-          inheritedStyles={inheritedStyles}
-          textStyle={styles.em}
-        >
-          {children}
-        </MarkdownInheritedText>
-      ),
-      s: (
-        node: ASTNode,
-        children: ReactNode[],
-        _parent: ASTNode[],
-        styles: MarkdownStyles,
-        inheritedStyles: TextStyle = {},
-      ) => (
-        <MarkdownInheritedText
-          key={node.key}
-          inheritedStyles={inheritedStyles}
-          textStyle={styles.s}
-        >
-          {children}
-        </MarkdownInheritedText>
-      ),
-      // hardbreak/softbreak fall back to react-native-markdown-display's
-      // default, a plain RN <Text>{"\n"}. Inside the paragraph UITextView that
-      // plain <Text> is not hoisted into a UITextViewChild and is dropped (same
-      // root cause as strong/em/s) — so on iOS a hard line break vanished, and
-      // a softbreak between words jammed them together ("one\ntwo" -> "onetwo").
-      // Emit the break through MarkdownTextSpan so it composes on iOS; web and
-      // Android keep the same "\n" they rendered before.
-      hardbreak: (node: ASTNode) => <MarkdownTextSpan key={node.key}>{"\n"}</MarkdownTextSpan>,
-      softbreak: (node: ASTNode) => <MarkdownTextSpan key={node.key}>{"\n"}</MarkdownTextSpan>,
-      code_block: (
-        node: ASTNode,
-        _children: ReactNode[],
-        _parent: ASTNode[],
-        styles: MarkdownStyles,
-        inheritedStyles: TextStyle = {},
-      ) => (
-        <HighlightedCodeBlock
-          key={node.key}
-          code={node.content}
-          language={null}
-          inheritedStyles={inheritedStyles}
-          textStyle={styles.code_block}
-        />
-      ),
-      fence: (
-        node: ASTNode,
-        _children: ReactNode[],
-        _parent: ASTNode[],
-        styles: MarkdownStyles,
-        inheritedStyles: TextStyle = {},
-      ) => (
-        <HighlightedCodeBlock
-          key={node.key}
-          code={node.content}
-          language={node.sourceInfo}
-          inheritedStyles={inheritedStyles}
-          textStyle={styles.fence}
-        />
-      ),
+      ...createSharedMarkdownRules(),
       code_inline: (
         node: ASTNode,
         _children: ReactNode[],
@@ -1734,67 +1554,6 @@ export const AssistantMessage = memo(function AssistantMessage({
           </MarkdownInheritedText>
         );
       },
-      bullet_list: (
-        node: ASTNode,
-        children: ReactNode[],
-        parent: ASTNode[],
-        styles: MarkdownStyles,
-      ) => (
-        <MarkdownListView
-          key={node.key}
-          baseStyle={styles.bullet_list}
-          spacing={getMarkdownListSpacing(node, parent)}
-        >
-          {children}
-        </MarkdownListView>
-      ),
-      ordered_list: (
-        node: ASTNode,
-        children: ReactNode[],
-        parent: ASTNode[],
-        styles: MarkdownStyles,
-      ) => (
-        <MarkdownListView
-          key={node.key}
-          baseStyle={styles.ordered_list}
-          spacing={getMarkdownListSpacing(node, parent)}
-        >
-          {children}
-        </MarkdownListView>
-      ),
-      list_item: (
-        node: ASTNode,
-        children: ReactNode[],
-        parent: ASTNode[],
-        styles: MarkdownStyles,
-      ) => {
-        const { isOrdered, marker } = getMarkdownListMarker(node, parent);
-        const iconStyle = isOrdered ? styles.ordered_list_icon : styles.bullet_list_icon;
-        const contentStyle = isOrdered ? styles.ordered_list_content : styles.bullet_list_content;
-
-        return (
-          <View key={node.key} style={styles.list_item}>
-            <Text style={iconStyle}>{marker}</Text>
-            <MarkdownListItemContent contentStyle={contentStyle}>
-              {children}
-            </MarkdownListItemContent>
-          </View>
-        );
-      },
-      paragraph: (
-        node: ASTNode,
-        children: ReactNode[],
-        _parent: ASTNode[],
-        styles: MarkdownStyles,
-      ) => (
-        <MarkdownParagraphView
-          key={node.key}
-          paragraphStyle={styles.paragraph}
-          containsImage={markdownNodeContainsType(node, "image")}
-        >
-          {children}
-        </MarkdownParagraphView>
-      ),
       link: (node: ASTNode, children: ReactNode[], _parent: ASTNode[], styles: MarkdownStyles) => (
         <AssistantMarkdownLink
           key={node.key}
@@ -2120,7 +1879,7 @@ export const CompactionMarker = memo(function CompactionMarker({
 });
 
 interface TodoListCardProps {
-  items: TodoEntry[];
+  items: { text: string; completed: boolean }[];
   disableOuterSpacing?: boolean;
 }
 

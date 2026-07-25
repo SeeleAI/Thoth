@@ -902,7 +902,6 @@ export function Composer({
     buildOutgoingAttachments,
     removeAttachment,
     openAttachment,
-    clearSentAttachments,
     completeSubmit,
     resetSuppression,
   } = composerWorkspaceAttachment.useBinding({
@@ -1116,7 +1115,6 @@ export function Composer({
   const effectiveAgentStatus =
     agentStatusOverride ?? resolveForegroundAgentStatus(agentState.status, agentState.thothState);
   const isAgentRunning = effectiveAgentStatus === "running";
-  const hasAgent = effectiveAgentStatus !== null;
 
   const sendMessageWithContent = useCallback(
     async (

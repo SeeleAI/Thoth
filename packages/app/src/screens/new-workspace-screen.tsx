@@ -2498,9 +2498,4 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
   },
-  hostStatusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
 }));

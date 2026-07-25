@@ -92,6 +92,39 @@ function start(input?: { queryClient?: QueryClient }) {
 }
 
 describe("DaemonProjectionService events", () => {
+  it("refreshes Agent and Workspace authority concurrently", async () => {
+    type AgentPage = Awaited<ReturnType<DaemonClient["fetchAgents"]>>;
+    type WorkspacePage = Awaited<ReturnType<DaemonClient["fetchWorkspaces"]>>;
+    let resolveAgents!: (page: AgentPage) => void;
+    const agents = new Promise<AgentPage>((resolve) => {
+      resolveAgents = resolve;
+    });
+    const wire = transport();
+    const fetchAgents = vi.fn(() => agents);
+    const fetchWorkspaces = vi.fn(
+      async () =>
+        ({
+          entries: [],
+          emptyProjects: [],
+          pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+        }) satisfies WorkspacePage,
+    );
+    Object.assign(wire.client, { fetchAgents, fetchWorkspaces });
+    const service = new DaemonProjectionService(new AuthorityProjectionStore());
+    service.start(wire.client, SERVER_ID);
+
+    const revalidation = service.revalidate();
+
+    expect(fetchAgents).toHaveBeenCalledOnce();
+    expect(fetchWorkspaces).toHaveBeenCalledOnce();
+    resolveAgents({
+      entries: [],
+      pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+      requestId: "agents-concurrent",
+    } as AgentPage);
+    await revalidation;
+  });
+
   it("correlates permission request and resolution through the normalized Agent", () => {
     const { store, service, wire } = start();
     service.acceptAgentSnapshot(agentSnapshot());

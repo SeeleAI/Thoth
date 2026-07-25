@@ -2392,19 +2392,10 @@ const styles = StyleSheet.create((theme) => ({
   diffModeTriggerHovered: {
     backgroundColor: theme.colors.surface2,
   },
-  diffModeTriggerPressed: {
-    backgroundColor: theme.colors.surface2,
-  },
-  diffStatusRowHovered: {
-    backgroundColor: theme.colors.surface2,
-  },
   diffStatusText: {
     fontSize: theme.fontSize.xs,
     lineHeight: theme.fontSize.xs * 1.25,
     color: theme.colors.foregroundMuted,
-  },
-  diffStatusIconHidden: {
-    opacity: 0,
   },
   diffStatusButtons: {
     flexDirection: "row",
@@ -2525,12 +2516,6 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.lg,
     color: theme.colors.foregroundMuted,
   },
-  fileSection: {
-    overflow: "hidden",
-    backgroundColor: theme.colors.surface2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
   fileSectionHeaderContainer: {
     overflow: "hidden",
   },
@@ -2606,16 +2591,6 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 0,
   },
   deletedBadgeText: {
-    fontSize: theme.fontSize.xs,
-    fontWeight: theme.fontWeight.normal,
-    color: theme.colors.diffDeletion,
-  },
-  additions: {
-    fontSize: theme.fontSize.xs,
-    fontWeight: theme.fontWeight.normal,
-    color: theme.colors.diffAddition,
-  },
-  deletions: {
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.diffDeletion,

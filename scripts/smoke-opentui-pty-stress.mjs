@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
-const host = process.env.THOTH_TUI_SMOKE_HOST ?? "127.0.0.1:6688";
+const repoRoot = resolve(import.meta.dirname, "..");
+const ownedDaemon = process.env.THOTH_TUI_SMOKE_HOST ? null : await startDaemon();
+const host = process.env.THOTH_TUI_SMOKE_HOST ?? ownedDaemon.host;
 const height = Number.parseInt(process.env.THOTH_TUI_SMOKE_HEIGHT ?? "34", 10);
 const widths = parseWidths(process.env.THOTH_TUI_STRESS_WIDTHS ?? "72,96,132");
 const forbiddenPatterns = [
@@ -12,23 +18,27 @@ const forbiddenPatterns = [
   /UnhandledPromiseRejection|TypeError|ReferenceError|SyntaxError/,
 ];
 
-for (const width of widths) {
-  const plain = runStress({ width, height, host });
-  assertFrame(plain, { width, height, host });
-  console.log(plain);
-  console.log(
-    JSON.stringify(
-      {
-        ok: true,
-        smoke: "opentui-pty-stress",
-        width,
-        height,
-        host,
-      },
-      null,
-      2,
-    ),
-  );
+try {
+  for (const width of widths) {
+    const plain = runStress({ width, height, host });
+    assertFrame(plain, { width, height, host });
+    console.log(plain);
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          smoke: "opentui-pty-stress",
+          width,
+          height,
+          host,
+        },
+        null,
+        2,
+      ),
+    );
+  }
+} finally {
+  if (ownedDaemon) await stopDaemon(ownedDaemon);
 }
 
 function runStress({ width, height, host }) {
@@ -130,4 +140,97 @@ function stripAnsi(value) {
     .replace(/\x1BP[^\x1B]*(?:\x1B\\)/g, "")
     .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/\x1B[@-Z\\-_]/g, "");
+}
+
+async function startDaemon() {
+  const home = mkdtempSync(join(tmpdir(), "thoth-tui-stress-"));
+  const port = await availablePort();
+  const host = `127.0.0.1:${port}`;
+  const output = [];
+  const child = spawn(
+    process.execPath,
+    [
+      resolve(repoRoot, "packages/daemon/dist/scripts/supervisor-entrypoint.js"),
+      "--no-mcp",
+      "--no-web-ui",
+    ],
+    {
+      cwd: repoRoot,
+      detached: process.platform !== "win32",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        THOTH_HOME: home,
+        THOTH_LISTEN: host,
+        THOTH_NODE_INSPECT: "0",
+        THOTH_RELAY_ENABLED: "true",
+        THOTH_RELAY_ENDPOINT: "relay.test.thoth.seeles.ai:443",
+        THOTH_RELAY_PUBLIC_ENDPOINT: "relay.test.thoth.seeles.ai:443",
+        THOTH_RELAY_USE_TLS: "true",
+        THOTH_RELAY_PUBLIC_USE_TLS: "true",
+      },
+    },
+  );
+  child.stdout.on("data", (chunk) => output.push(chunk.toString()));
+  child.stderr.on("data", (chunk) => output.push(chunk.toString()));
+
+  try {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      if (child.exitCode !== null) {
+        throw new Error(`Owned TUI stress daemon exited early:\n${output.join("")}`);
+      }
+      try {
+        const response = await fetch(`http://${host}/api/health`);
+        if (response.ok) return { child, home, host };
+      } catch {}
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    }
+    throw new Error(`Owned TUI stress daemon did not become ready:\n${output.join("")}`);
+  } catch (error) {
+    await stopDaemon({ child, home, host });
+    throw error;
+  }
+}
+
+async function stopDaemon(runtime) {
+  if (runtime.child.exitCode === null) {
+    try {
+      if (process.platform === "win32") runtime.child.kill("SIGTERM");
+      else process.kill(-runtime.child.pid, "SIGTERM");
+    } catch {
+      runtime.child.kill("SIGTERM");
+    }
+    await Promise.race([
+      new Promise((resolveExit) => runtime.child.once("exit", resolveExit)),
+      new Promise((resolveDelay) => setTimeout(resolveDelay, 5_000)),
+    ]);
+    if (runtime.child.exitCode === null) {
+      try {
+        if (process.platform === "win32") runtime.child.kill("SIGKILL");
+        else process.kill(-runtime.child.pid, "SIGKILL");
+      } catch {
+        runtime.child.kill("SIGKILL");
+      }
+    }
+  }
+  rmSync(runtime.home, { recursive: true, force: true });
+}
+
+async function availablePort() {
+  return await new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : null;
+      server.close((error) => {
+        if (error) reject(error);
+        else if (port === null) reject(new Error("Unable to reserve TUI stress daemon port"));
+        else resolvePort(port);
+      });
+    });
+  });
 }

@@ -71,7 +71,7 @@ import type {
   DaemonProjectionService,
 } from "@/projection/authority-projection";
 import { useHostFeature } from "@/runtime/host-features";
-import { createTimelineViewModels } from "@/projection/timeline-view-model";
+import type { TimelineRenderItem } from "@/agent-stream/timeline-view-registry";
 import {
   pendingAgentMessagesKey,
   type PendingAgentMessage,
@@ -1209,39 +1209,24 @@ const AgentStreamSection = memo(function AgentStreamSection({
     enabled: false,
   });
   const client = useHostRuntimeClient(serverId);
-  const streamItems = useMemo(() => {
+  const streamItems = useMemo<TimelineRenderItem[]>(() => {
     const presentationByMessageId = new Map(
       pendingMessages.map((message) => [message.messageId, message]),
     );
     const canonicalIds = new Set<string>();
-    const canonical = createTimelineViewModels(timelineEntries, {
-      agentIsRunning: agent.status === "running",
-    }).map((model) => {
-      if (model.kind !== "user_message") return model;
-      canonicalIds.add(model.id);
-      const presentation = presentationByMessageId.get(model.id);
-      if (!presentation) return model;
-      return {
-        ...model,
-        ...(presentation.images.length > 0 ? { images: presentation.images } : {}),
-        ...(presentation.attachments.length > 0 ? { attachments: presentation.attachments } : {}),
-      };
+    const canonical = timelineEntries.map((entry) => {
+      if (entry.item.type !== "user_message" || !entry.item.messageId) return entry;
+      canonicalIds.add(entry.item.messageId);
+      const presentation = presentationByMessageId.get(entry.item.messageId);
+      return presentation ? { ...entry, presentation } : entry;
     });
     return [
       ...canonical,
       ...pendingMessages
         .filter((message) => message.status === "pending" && !canonicalIds.has(message.messageId))
-        .map((message) => ({
-          kind: "user_message" as const,
-          id: message.messageId,
-          text: message.text,
-          timestamp: message.timestamp,
-          optimistic: true as const,
-          ...(message.images.length > 0 ? { images: message.images } : {}),
-          ...(message.attachments.length > 0 ? { attachments: message.attachments } : {}),
-        })),
+        .map((message) => ({ source: "pending" as const, message })),
     ];
-  }, [agent.status, pendingMessages, timelineEntries]);
+  }, [pendingMessages, timelineEntries]);
   const pendingPermissionList = useAuthorityProjection(
     serverId,
     (projection) => {

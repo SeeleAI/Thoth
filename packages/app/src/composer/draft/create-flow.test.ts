@@ -4,7 +4,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
-import type { UserMessageImageAttachment } from "@/projection/timeline-view-model";
+import type { AttachmentMetadata } from "@/attachments/types";
 import type { AgentAttachment } from "@thoth/protocol/messages";
 import { useDraftAgentCreateFlow, type DraftCreateAttempt } from "./create-flow";
 
@@ -14,7 +14,7 @@ describe("useDraftAgentCreateFlow", () => {
   });
 
   it("renders a prepared new-workspace create attempt as optimistic chat before continuing it", async () => {
-    const image: UserMessageImageAttachment = {
+    const image: AttachmentMetadata = {
       id: "image-1",
       mimeType: "image/png",
       storageType: "web-indexeddb",
@@ -37,7 +37,7 @@ describe("useDraftAgentCreateFlow", () => {
       async (ctx: {
         attempt: DraftCreateAttempt;
         text: string;
-        images?: UserMessageImageAttachment[];
+        images?: AttachmentMetadata[];
         attachments?: AgentAttachment[];
         cwd: string;
       }) => ({
@@ -60,13 +60,12 @@ describe("useDraftAgentCreateFlow", () => {
 
     expect(result.current.isSubmitting).toBe(true);
     expect(result.current.draftAgent).toEqual({ currentAttempt: attempt });
-    expect(result.current.optimisticStreamItems).toEqual([
+    expect(result.current.optimisticMessages).toEqual([
       {
-        kind: "user_message",
-        id: "msg-prepared",
+        messageId: "msg-prepared",
         text: "build this",
         timestamp: attempt.timestamp,
-        optimistic: true,
+        status: "pending",
         images: [image],
         attachments: [attachment],
       },

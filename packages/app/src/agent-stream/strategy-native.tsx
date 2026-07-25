@@ -17,7 +17,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import { timelineId, type TimelineRenderItem } from "./timeline-view-registry";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
@@ -33,8 +33,8 @@ const DEFAULT_MAINTAIN_VISIBLE_CONTENT_POSITION = Object.freeze({
 });
 const HISTORY_START_THRESHOLD_PX = 96;
 
-function keyExtractor(item: { id: string }): string {
-  return item.id;
+function keyExtractor(item: TimelineRenderItem): string {
+  return timelineId(item);
 }
 
 function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrategy }) {
@@ -57,7 +57,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     strategy,
   } = props;
   const { renderHistoryMountedRow, renderLiveHeadRow, renderLiveAuxiliary } = renderers;
-  const flatListRef = useRef<FlatList<TimelineViewModel>>(null);
+  const flatListRef = useRef<FlatList<TimelineRenderItem>>(null);
   const streamViewportMetricsRef = useRef({
     containerKey: "native-virtualized",
     contentHeight: 0,
@@ -306,7 +306,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   });
 
   const renderItem = useStableEvent(
-    ({ item, index }: ListRenderItemInfo<TimelineViewModel>): ReactElement | null => {
+    ({ item, index }: ListRenderItemInfo<TimelineRenderItem>): ReactElement | null => {
       const rendered = renderHistoryMountedRow(item, index, historyRows);
       return (rendered ?? null) as ReactElement | null;
     },
@@ -314,7 +314,9 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
 
   const liveHeaderContent = useMemo(() => {
     const liveHeadRows = segments.liveHead.map((item, index) => (
-      <Fragment key={item.id}>{renderLiveHeadRow(item, index, segments.liveHead)}</Fragment>
+      <Fragment key={timelineId(item)}>
+        {renderLiveHeadRow(item, index, segments.liveHead)}
+      </Fragment>
     ));
     const liveAuxiliary = renderLiveAuxiliary();
     if (

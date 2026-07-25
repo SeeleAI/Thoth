@@ -1,7 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import {
-  Alert,
   Pressable,
   ScrollView,
   Text,
@@ -46,12 +45,10 @@ import { SettingsSection } from "@/screens/settings/settings-section";
 import { AppearanceSection } from "@/screens/settings/appearance/appearance-section";
 import {
   useAppSettings,
-  useSettings,
   parseTerminalScrollbackLines,
   type AppSettings,
   type SendBehavior,
   type ServiceUrlBehavior,
-  type Settings as EffectiveSettings,
 } from "@/hooks/use-settings";
 import {
   useHostRuntimeIsConnected,
@@ -61,7 +58,6 @@ import {
 import { orderHostsLocalFirst, type HostProfile } from "@/types/host-connection";
 import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
 import { useWindowControlsPadding } from "@/utils/desktop-window";
-import { confirmDialog } from "@/utils/confirm-dialog";
 import { BackHeader } from "@/components/headers/back-header";
 import { ScreenHeader } from "@/components/headers/screen-header";
 import { AddHostMethodModal } from "@/components/add-host-method-modal";
@@ -131,9 +127,19 @@ interface SidebarSectionItem {
 
 const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
   { id: "general", labelKey: "settings.sections.general", icon: Settings },
-  { id: "daemon", labelKey: "settings.sections.daemon", icon: Server, desktopOnly: true },
+  {
+    id: "daemon",
+    labelKey: "settings.sections.daemon",
+    icon: Server,
+    desktopOnly: true,
+  },
   { id: "appearance", labelKey: "settings.sections.appearance", icon: Palette },
-  { id: "shortcuts", labelKey: "settings.sections.shortcuts", icon: Keyboard, desktopOnly: true },
+  {
+    id: "shortcuts",
+    labelKey: "settings.sections.shortcuts",
+    icon: Keyboard,
+    desktopOnly: true,
+  },
   {
     id: "integrations",
     labelKey: "settings.sections.integrations",
@@ -665,21 +671,23 @@ function useSortedHosts(hosts: HostProfile[], localServerId: string | null): Hos
   return useMemo(() => orderHostsLocalFirst(hosts, localServerId), [hosts, localServerId]);
 }
 
-interface SidebarSectionButtonProps {
-  itemId: SettingsSectionSlug;
+interface SidebarNavigationButtonProps<T extends string> {
+  itemId: T;
   label: string;
   icon: ComponentType<{ size: number; color: string }>;
   isSelected: boolean;
-  onSelect: (section: SettingsSectionSlug) => void;
+  onSelect: (itemId: T) => void;
+  testID?: string;
 }
 
-function SidebarSectionButton({
+function SidebarNavigationButton<T extends string>({
   itemId,
   label,
   icon: IconComponent,
   isSelected,
   onSelect,
-}: SidebarSectionButtonProps) {
+  testID,
+}: SidebarNavigationButtonProps<T>) {
   const { theme } = useUnistyles();
   const handlePress = useCallback(() => {
     onSelect(itemId);
@@ -694,6 +702,7 @@ function SidebarSectionButton({
       accessibilityRole="button"
       accessibilityState={accessibilityState}
       onPress={handlePress}
+      testID={testID}
       style={isSelected ? selectedSidebarItemStyle : sidebarItemStyle}
     >
       <IconComponent
@@ -702,81 +711,6 @@ function SidebarSectionButton({
       />
       <Text style={labelStyle} numberOfLines={1}>
         {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-interface SidebarHostSectionButtonProps {
-  itemId: HostSectionSlug;
-  label: string;
-  icon: ComponentType<{ size: number; color: string }>;
-  isSelected: boolean;
-  onSelect: (section: HostSectionSlug) => void;
-}
-
-function SidebarHostSectionButton({
-  itemId,
-  label,
-  icon: IconComponent,
-  isSelected,
-  onSelect,
-}: SidebarHostSectionButtonProps) {
-  const { theme } = useUnistyles();
-  const handlePress = useCallback(() => {
-    onSelect(itemId);
-  }, [onSelect, itemId]);
-  const accessibilityState = useMemo(() => ({ selected: isSelected }), [isSelected]);
-  const labelStyle = useMemo(
-    () => [sidebarStyles.label, isSelected && { color: theme.colors.foreground }],
-    [isSelected, theme.colors.foreground],
-  );
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={accessibilityState}
-      onPress={handlePress}
-      testID={`settings-host-section-${itemId}`}
-      style={isSelected ? selectedSidebarItemStyle : sidebarItemStyle}
-    >
-      <IconComponent
-        size={theme.iconSize.md}
-        color={isSelected ? theme.colors.foreground : theme.colors.foregroundMuted}
-      />
-      <Text style={labelStyle} numberOfLines={1}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-interface SidebarProjectsButtonProps {
-  isSelected: boolean;
-  onSelect: () => void;
-}
-
-function SidebarProjectsButton({ isSelected, onSelect }: SidebarProjectsButtonProps) {
-  const { theme } = useUnistyles();
-  const { t } = useTranslation();
-  const accessibilityState = useMemo(() => ({ selected: isSelected }), [isSelected]);
-  const labelStyle = useMemo(
-    () => [sidebarStyles.label, isSelected && { color: theme.colors.foreground }],
-    [isSelected, theme.colors.foreground],
-  );
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={accessibilityState}
-      onPress={onSelect}
-      testID="settings-projects"
-      style={isSelected ? selectedSidebarItemStyle : sidebarItemStyle}
-    >
-      <FolderGit2
-        size={theme.iconSize.md}
-        color={isSelected ? theme.colors.foreground : theme.colors.foregroundMuted}
-      />
-      <Text style={labelStyle} numberOfLines={1}>
-        {t("settings.projects")}
       </Text>
     </Pressable>
   );
@@ -908,7 +842,7 @@ function SettingsSidebar({
         <Text style={sidebarStyles.groupLabel}>{t("settings.groups.app")}</Text>
         {items.map((item) => (
           <Fragment key={item.id}>
-            <SidebarSectionButton
+            <SidebarNavigationButton
               itemId={item.id}
               label={t(item.labelKey)}
               icon={item.icon}
@@ -916,7 +850,14 @@ function SettingsSidebar({
               onSelect={onSelectSection}
             />
             {item.id === "general" ? (
-              <SidebarProjectsButton isSelected={isProjectsSelected} onSelect={onSelectProjects} />
+              <SidebarNavigationButton
+                itemId="projects"
+                label={t("settings.projects")}
+                icon={FolderGit2}
+                isSelected={isProjectsSelected}
+                onSelect={onSelectProjects}
+                testID="settings-projects"
+              />
             ) : null}
           </Fragment>
         ))}
@@ -932,13 +873,14 @@ function SettingsSidebar({
             onAddHost={onAddHost}
           />
           {HOST_SECTION_ITEMS.map((item) => (
-            <SidebarHostSectionButton
+            <SidebarNavigationButton
               key={item.id}
               itemId={item.id}
               label={t(item.labelKey)}
               icon={item.icon}
               isSelected={selectedHostSection === item.id}
               onSelect={onSelectHostSection}
+              testID={`settings-host-section-${item.id}`}
             />
           ))}
         </View>
@@ -1211,12 +1153,12 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     titleAccessory?: ReactNode;
   } | null => {
     if (view.kind === "host") {
-      const item = HOST_SECTION_ITEMS.find((s) => s.id === view.section);
+      const item = HOST_SECTION_ITEMS.find((item) => item.id === view.section);
       if (!item) return null;
       return { title: t(item.labelKey), Icon: item.icon };
     }
     if (view.kind === "section") {
-      const item = SIDEBAR_SECTION_ITEMS.find((s) => s.id === view.section);
+      const item = SIDEBAR_SECTION_ITEMS.find((item) => item.id === view.section);
       if (!item) return null;
       return { title: t(item.labelKey), Icon: item.icon };
     }
@@ -1474,16 +1416,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     textAlign: "right",
-  },
-  placeholder: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: theme.spacing[8],
-  },
-  placeholderText: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
   },
 }));
 

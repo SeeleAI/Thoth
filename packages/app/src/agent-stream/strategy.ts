@@ -1,6 +1,10 @@
 import type { ComponentType, ReactElement, ReactNode, RefObject } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import {
+  timelineAssistantText,
+  timelineType,
+  type TimelineRenderItem,
+} from "./timeline-view-registry";
 import type { StreamHistoryBoundary, StreamRenderSegments } from "./model";
 import type {
   BottomAnchorLocalRequest,
@@ -46,19 +50,19 @@ export interface StreamViewportHandle {
 
 export interface StreamSegmentRenderers {
   renderHistoryVirtualizedRow: (
-    item: TimelineViewModel,
+    item: TimelineRenderItem,
     index: number,
-    items: TimelineViewModel[],
+    items: TimelineRenderItem[],
   ) => ReactNode;
   renderHistoryMountedRow: (
-    item: TimelineViewModel,
+    item: TimelineRenderItem,
     index: number,
-    items: TimelineViewModel[],
+    items: TimelineRenderItem[],
   ) => ReactNode;
   renderLiveHeadRow: (
-    item: TimelineViewModel,
+    item: TimelineRenderItem,
     index: number,
-    items: TimelineViewModel[],
+    items: TimelineRenderItem[],
   ) => ReactNode;
   renderLiveAuxiliary: () => ReactNode;
 }
@@ -89,15 +93,15 @@ export interface ResolveStreamRenderStrategyInput {
 
 export interface StreamStrategy {
   render: (input: StreamRenderInput) => ReactNode;
-  orderTail: (streamItems: TimelineViewModel[]) => TimelineViewModel[];
-  orderHead: (streamHead: TimelineViewModel[]) => TimelineViewModel[];
+  orderTail: (streamItems: TimelineRenderItem[]) => TimelineRenderItem[];
+  orderHead: (streamHead: TimelineRenderItem[]) => TimelineRenderItem[];
   getNeighborIndex: (index: number, relation: NeighborRelation) => number;
   getNeighborItem: (
-    items: TimelineViewModel[],
+    items: TimelineRenderItem[],
     index: number,
     relation: NeighborRelation,
-  ) => TimelineViewModel | undefined;
-  collectAssistantTurnContent: (items: TimelineViewModel[], startIndex: number) => string;
+  ) => TimelineRenderItem | undefined;
+  collectAssistantTurnContent: (items: TimelineRenderItem[], startIndex: number) => string;
   isNearBottom: (input: StreamNearBottomInput) => boolean;
   getBottomOffset: (metrics: StreamViewportMetrics) => number;
   getEdgeSlotProps: (
@@ -106,9 +110,9 @@ export interface StreamStrategy {
   ) => StreamEdgeSlotProps;
   getMaintainVisibleContentPosition: () => MaintainVisibleContentPositionConfig | undefined;
   getBottomAnchorTransportBehavior: () => BottomAnchorTransportBehavior;
-  getHistoryLiveBoundaryIndex: (history: TimelineViewModel[]) => number | null;
-  getLiveHeadHistoryBoundaryIndex: (liveHead: TimelineViewModel[]) => number | null;
-  getLatestItemIndex: (items: TimelineViewModel[]) => number | null;
+  getHistoryLiveBoundaryIndex: (history: TimelineRenderItem[]) => number | null;
+  getLiveHeadHistoryBoundaryIndex: (liveHead: TimelineRenderItem[]) => number | null;
+  getLatestItemIndex: (items: TimelineRenderItem[]) => number | null;
   getFrameChildOrder: () => StreamFrameChildOrder;
   getFlatListInverted: () => boolean;
   getOverlayScrollbarInverted: () => boolean;
@@ -170,12 +174,11 @@ export function createStreamStrategy(config: StreamStrategyConfig): StreamStrate
         index += config.assistantTurnTraversalStep
       ) {
         const currentItem = items[index];
-        if (currentItem.kind === "user_message") {
+        if (timelineType(currentItem) === "user_message") {
           break;
         }
-        if (currentItem.kind === "assistant_message") {
-          messages.push(currentItem.text);
-        }
+        const text = timelineAssistantText(currentItem);
+        if (text) messages.push(text);
       }
       return messages.toReversed().join("\n\n");
     },
@@ -243,15 +246,15 @@ export function resolveBottomAnchorTransportBehavior(input: {
 
 export function orderTailForStreamRenderStrategy(params: {
   strategy: StreamStrategy;
-  streamItems: TimelineViewModel[];
-}): TimelineViewModel[] {
+  streamItems: TimelineRenderItem[];
+}): TimelineRenderItem[] {
   return params.strategy.orderTail(params.streamItems);
 }
 
 export function orderHeadForStreamRenderStrategy(params: {
   strategy: StreamStrategy;
-  streamHead: TimelineViewModel[];
-}): TimelineViewModel[] {
+  streamHead: TimelineRenderItem[];
+}): TimelineRenderItem[] {
   return params.strategy.orderHead(params.streamHead);
 }
 
@@ -265,16 +268,16 @@ export function getStreamNeighborIndex(params: {
 
 export function getStreamNeighborItem(params: {
   strategy: StreamStrategy;
-  items: TimelineViewModel[];
+  items: TimelineRenderItem[];
   index: number;
   relation: NeighborRelation;
-}): TimelineViewModel | undefined {
+}): TimelineRenderItem | undefined {
   return params.strategy.getNeighborItem(params.items, params.index, params.relation);
 }
 
 export function collectAssistantTurnContentForStreamRenderStrategy(params: {
   strategy: StreamStrategy;
-  items: TimelineViewModel[];
+  items: TimelineRenderItem[];
   startIndex: number;
 }): string {
   return params.strategy.collectAssistantTurnContent(params.items, params.startIndex);
@@ -312,14 +315,14 @@ export function getStreamEdgeSlotProps(params: {
 
 export function getHistoryLiveBoundaryIndexForStreamRenderStrategy(params: {
   strategy: StreamStrategy;
-  history: TimelineViewModel[];
+  history: TimelineRenderItem[];
 }): number | null {
   return params.strategy.getHistoryLiveBoundaryIndex(params.history);
 }
 
 export function getLiveHeadHistoryBoundaryIndexForStreamRenderStrategy(params: {
   strategy: StreamStrategy;
-  liveHead: TimelineViewModel[];
+  liveHead: TimelineRenderItem[];
 }): number | null {
   return params.strategy.getLiveHeadHistoryBoundaryIndex(params.liveHead);
 }

@@ -1222,3 +1222,317 @@ Retry condition:
 后续 Cut 若在删除旧 Store/Controller 后出现大面积 fixture 失败，先按 owner mapping 迁移 setup、fake Client
 和断言，再检查最终 service lifecycle。不得新增兼容 facade、nullable production dependency、test-only
 authority writer、放宽 parser 或删除 canonical 字段来让旧测试继续通过。
+
+## `NTH-EXP-044` UI 组合复用不能凭预算假设制造两万行重复
+
+Observed on `2026-07-24` during `NTH-TD-036`:
+
+1. 规划把 shared UI 单刀估算为 `-20,000` LOC，但完成 canonical Timeline Registry、统一 Sidebar row、
+   ContextMenu/Dropdown substrate、Agent controls、Markdown renderer、Workspace tab menu/descriptor、Sheet
+   background、死文件和死样式后，真实 production delta 只有 `-4,578` LOC。
+2. SettingsRouteRegistry 试验只减少 `4` LOC，却增加 `490` scanner tokens；它只改变代码形状，没有消除
+   真实复杂度，因此被撤回，没有为了满足“Registry”名义保留无收益抽象。
+3. 保守入口图扫描得到 `754` 个 production candidates、`721` 个可达文件和 `33 / 1,777 LOC` 个不可达
+   文件。剩余不可达项由现有行为测试、平台声明/stub 或 test adapter 直接拥有，不能在“功能和测试零损失”
+   合同下当作自由删除预算。
+4. 归一化函数结构扫描把 `>=80` tokens 的跨文件 clone 从 `9` 组收敛到 `1` 组；最后一组只有 `94`
+   tokens，而且是 Plan Markdown 与普通 Markdown 明确不同的 paragraph/code/list presentation 边界。
+5. 最终指标为 `296,353 / 1,271,951 / 1,300,201 / 4,991 / 164`，LOC 仍比本刀 ceiling 高
+   `15,422`。没有删 feature、删测试、压行、移动生产逻辑、越界修改 VCS/Provider/RPC 或虚假切 Stage。
+
+Conclusion:
+
+“大文件很多”不等于“UI 有两万行重复”。共享抽象只有在同时删除两套真实实现时才是裁剪；把不同业务
+组件塞进 Registry、PanelFrame 或巨型基类会增加 token/import 和耦合。预算若与 reachability/clone/consumer
+事实冲突，必须暴露估算失败，而不是让数值反向驱动功能删除。
+
+Retry condition:
+
+只有用户批准扩大原子范围到相邻的 VCS、Provider、Shell/Terminal 或 transport 最终模块后，才继续寻找
+剩余 `15,422` 行；仍需逐模块执行最终实现、全部消费者切换、旧路径删除和行为验收。若坚持 UI-only，必须
+先给出新的、可定位到具体重复 owner 的删除清单；不得重复 Settings Registry 试验或抽象不同语义组件凑数。
+
+## `NTH-EXP-045` Architecture guards must move with the final owner they enforce
+
+Observed on `2026-07-24` during `NTH-TD-043`:
+
+1. The first release gate, `npm run accept:refactor:fast`, failed in its static phase after `0.597s`, before any
+   functional, visual, packaged or performance test ran.
+2. Cut B intentionally deleted `packages/app/src/projection/timeline-view-model.ts` and replaced the third model
+   with `packages/app/src/agent-stream/timeline-view-registry.tsx`, which declares strategies for all 11 protocol
+   Timeline kinds and has a dedicated exhaustive kind test.
+3. `scripts/check-refactor-architecture.mjs` still hard-coded the deleted path at lines `194`, `247` and `265`, so
+   it interpreted the intended single-path cutover as a missing architecture. This is checker drift, not evidence
+   that the old ViewModel should be restored.
+4. The release attempt stopped immediately under `NTH-AC-022`. No compatibility file, stub, bypass, changed
+   expected output, commit, push or Release mutation was used to make the gate green.
+
+Conclusion:
+
+An architecture guard is part of the atomic cutover. When ownership moves from a projection ViewModel to the
+canonical Agent Stream Registry, the guard must validate the new owner and retain exhaustive semantic coverage in
+the same final change. Keeping the old path in the guard pressures developers to restore a forbidden dual model.
+
+Retry condition:
+
+Change the Stage 4 guard to require the actual Registry and all 11 kinds, preserve the prohibition on the deleted
+ViewModel and rerun the complete release attempt from the first command. Do not add an empty compatibility file or
+weaken the exhaustive checks.
+
+## `NTH-EXP-046` Test-count floors must match the selected Vitest project
+
+Observed on `2026-07-24` during the second `NTH-TD-043` attempt:
+
+1. `accept:refactor:fast` passed completely in `144.240s` after the architecture guard repair.
+2. The approved App command selected only `--project unit` but also required the historical complete-suite floor
+   `331 files / 2,582 tests`. It passed with `330 / 2,566` because `vitest.config.ts` excludes browser tests from
+   the unit project; the separate browser project contains two files and 16 tests, while the WIP contains `332`
+   total App test files.
+3. Treating the green unit command as satisfying the higher floor would silently drop browser coverage. Lowering
+   the floor would rewrite the acceptance contract. The attempt therefore stopped.
+4. The subsequently started Daemon unit suite printed two Workspace creation failures before it was interrupted.
+   No result from that incomplete run is treated as a complete suite receipt.
+
+Conclusion:
+
+A count floor is meaningful only for the same discovery configuration that produced its baseline. An all-project
+baseline cannot be attached to a unit-only command, and a green exit code cannot override the locked coverage
+floor. Separately, interrupted suites may expose failures but cannot be reported as fully executed.
+
+Retry condition:
+
+Use a command and floor from the same App project set without deleting or skipping tests, and repair the two
+Daemon Workspace creation tests before restarting the release gate. Preserve both the successful unit receipt and
+the incomplete Daemon failure as diagnostic evidence, not release completion.
+
+## `NTH-EXP-047` Explicit native dependency setup belongs before the timed release gate
+
+Observed on `2026-07-24` during the third `NTH-TD-043` attempt:
+
+1. The complete fast gate, App suite and Daemon suite passed inside the fresh local deadline.
+2. The Desktop suite discovered `20` passing files and `110` passing tests, but seven files failed before test
+   execution because importing Electron reported that it was not installed correctly.
+3. Root `.npmrc` intentionally sets `ignore-scripts=true`, so ordinary dependency installation does not download
+   the Electron platform binary. The tracked contract exposes `npm run setup:electron` for exactly this explicit
+   native/toolchain initialization, but the release preparation had not checked it.
+4. The failure stopped the attempt before CLI, packages, benchmarks, stress, commit, push or Release mutation.
+   Reusing the earlier green phases after initializing Electron would violate the one-deadline contract.
+
+Conclusion:
+
+Native dependency readiness is release preparation, not a product fallback. A timed release gate must validate
+its explicit ignored toolchain prerequisites before the first command while preserving `ignore-scripts=true`.
+
+Retry condition:
+
+Run `npm run setup:electron`, prove the Desktop suite narrowly, and then restart the entire local release sequence
+under a new `3600s` deadline. Do not weaken test discovery or enable global lifecycle scripts.
+
+## `NTH-EXP-048` Fresh authority storage is not the same as an empty Thoth home
+
+Observed on `2026-07-24` while preparing the fourth `NTH-TD-043` attempt:
+
+1. The CLI helper mechanically created the removed `agents/` directory, so the final migration correctly rejected
+   it as unrecognized pre-Release storage.
+2. Separately, the public `daemon pair` and onboarding flows create `config.json`, daemon identity/key material,
+   relay credentials and a CLI client ID before first daemon startup. Treating any non-empty home as legacy storage
+   therefore rejected a valid current product sequence.
+3. Allowing arbitrary files or restoring the old `agents/` fixture would weaken the no-guess migration contract.
+   The final fix recognizes only the exact current non-authority metadata filenames and leaves unknown directories,
+   legacy `agents/` data and malformed databases fail-closed.
+4. Migration passed `12/12`; all five affected CLI startup scenarios passed; the complete CLI suite passed
+   `40/40` files. No production compatibility reader, old schema import or silent fallback was introduced.
+
+Conclusion:
+
+Freshness for a versioned authority store must be defined by absence of prior authority data, not by total home
+emptiness. Current identity/config metadata may safely precede authority initialization; unknown storage may not.
+
+Retry condition:
+
+If another legitimate pre-daemon artifact appears, prove it is non-authority and add its exact owner plus migration
+test. Never replace the allowlist with a broad ignore rule or accept legacy authority directories.
+
+## `NTH-EXP-049` Packaged migration smoke must start at the locked Release floor
+
+Observed on `2026-07-24` during the fourth `NTH-TD-043` attempt:
+
+1. All source suites, public behavior, judges, isolation and the fresh AppImage build passed.
+2. The packaged smoke manually seeded JSON `agents/`, standalone `agent-timeline/timeline.sqlite` and copied
+   `provider-sessions/`. That layout predates Release `05775486`, while the final migration contract explicitly
+   supports exactly `05775486` and rejects anything older or unrecognized.
+3. The packaged supervisor therefore exited with code `1` before emitting the desktop smoke marker. The retained
+   home contains the prohibited old trees and no `catalog.sqlite`, `storage-layout.json` or daemon log, matching
+   the expected fail-closed path.
+4. Reintroducing the deleted importer, accepting arbitrary legacy directories or changing the packaged wait would
+   make the smoke green by weakening production. The repository already owns an immutable Release `05775486`
+   catalog/authority fixture with a semantic digest and must use that same source in packaged migration acceptance.
+
+Conclusion:
+
+A migration test is only meaningful when its source equals the documented support floor. A fixture from an older
+deleted architecture tests rejection, not upgrade, and must not pressure production into an unauthorized fallback.
+
+Retry condition:
+
+Copy the immutable Release `05775486` fixture into the isolated packaged home, write its version-1 marker, verify
+its locator/Timeline rows after AppImage-managed migration and retain the absence of `provider-sessions`. Then
+rerun the complete packaged journey before starting another full release deadline.
+
+## `NTH-EXP-050` Server CLI bundle must close over private runtime workspace dependencies
+
+Observed on `2026-07-24` during the fifth `NTH-TD-043` attempt:
+
+1. Every source, Release-contract, isolation and freshly built AppImage phase before hosted Relay passed.
+2. `package-server-cli.mjs` kept a hand-written list of seven private runtime packages. Daemon gained a formal
+   `@thoth/core` runtime dependency during the refactor, but that list was not updated.
+3. The temporary bundle install received local tarballs for the listed packages, then followed Daemon's manifest
+   to `@thoth/core@0.0.0-mvp-beta`. Because Thoth packages remain private and are not published to npm, the install
+   failed with a public-registry `404` before any hosted Relay connection or credential creation.
+4. Publishing Core, making it optional, using a registry fallback or stripping the dependency would hide the
+   bundle defect and violate the private-package/runtime contracts.
+
+Conclusion:
+
+A deployable private-workspace bundle must derive its package set from the runtime dependency graph, not from a
+manually synchronized list. The final archive must also assert every reachable private package is embedded, so a
+new internal dependency cannot silently escape to the public registry.
+
+Retry condition:
+
+Make the Server CLI packer traverse runtime `dependencies` and `optionalDependencies` from `@thoth/cli`, embed the
+complete reachable `@thoth/*` closure, and extend the MVP Release contract plus archive assertions accordingly.
+Then prove the package and hosted Relay narrowly before restarting the entire local release deadline.
+
+## `NTH-EXP-051` Hosted Relay health does not prove the paired data socket journey
+
+Observed on `2026-07-24` while preparing the sixth `NTH-TD-043` attempt:
+
+1. The repaired Server CLI tgz installed and its daemon reached direct readiness. Relay control registration
+   eventually connected after initial IPv4 timeouts.
+2. Five fresh pairing offers were issued without leaking their credentials, but the client data WebSocket timed out
+   and the product journey never began.
+3. Immediately afterward the public Relay health endpoint returned protocol `3`, and a direct TLS 1.3 handshake to
+   the same host succeeded. Those probes establish current endpoint reachability, not paired E2EE data-path success.
+4. Treating health/control success as journey success would drop pairing, E2EE and reconnect semantics. Rebuilding
+   the same tgz or changing product timeouts without evidence would hide a likely transient network boundary.
+
+Conclusion:
+
+Hosted Relay acceptance must remain an end-to-end paired data journey. A bounded retry may distinguish a transient
+Cloudflare/socket route from a deterministic product defect, but the first failure must remain visible and no full
+release deadline may start until a narrow journey actually passes.
+
+Retry condition:
+
+Retry the same packaged journey once after independent health/TLS probes. If it fails again, stop with an external
+Relay/network blocker; do not weaken the journey, increase the approved retry count or substitute health evidence.
+
+## `NTH-EXP-052` A green functional refactor can still fail first-interactive performance
+
+Observed on `2026-07-24` during the sixth `NTH-TD-043` attempt:
+
+1. Source/visual tests, complete package suites, fresh AppImage and hosted Relay journeys all passed. Daemon startup,
+   RSS, idle CPU, health and response distributions also passed their frozen contract.
+2. All seven App Workspace interactive samples were slower than every frozen baseline sample: candidate
+   `2072-2111ms` versus baseline `1693-1859ms`. The low candidate MAD makes this a stable regression rather than a
+   single outlier.
+3. The same samples improved JS heap from `50,742,068` to `49,061,368` bytes and Settings navigation from
+   `207.05ms` to `198.45ms`, localizing the failure to first Workspace readiness instead of a global browser or
+   state-size degradation.
+4. Updating the baseline, reducing samples, accepting heap as compensation, moving the ready marker or continuing
+   to load/stress/publish would each violate the frozen release contract.
+
+Conclusion:
+
+Behavioral equivalence and smaller memory do not imply startup equivalence. Shared UI/state refactors can add work
+before the existing ready boundary even when later interactions improve; that work must be profiled and removed at
+its real owner rather than hidden in the acceptance harness.
+
+Retry condition:
+
+Profile the current and clean-baseline Workspace navigation under the identical seven-sample fixture, identify the
+new pre-ready critical path and repair it without UX or readiness-semantic changes. Preserve this failed distribution
+and require a fresh complete release attempt after narrow proof.
+
+Retry result on `2026-07-25`:
+
+1. Clean Cut 4 reproduced the failure at `2119.09ms`, excluding the later Cut B presentation work.
+2. Removing only the initial `300ms` debounce and running Agent/Workspace hydration concurrently produced two stable
+   `1581.9ms` medians without changing the ready marker, baseline, sample count or UX.
+3. Reconnect and resume remain debounced. The lesson is to distinguish initial authority hydration from bursty
+   lifecycle revalidation instead of applying one scheduler policy to both.
+
+## `NTH-EXP-053` Server CLI ranges made release packaging depend on npm publication timing
+
+Observed on `2026-07-25` during the seventh `NTH-TD-043` attempt:
+
+1. The repository lockfile selected Claude Agent SDK `0.3.196`, but the staged Server CLI copied `^0.3.195` and npm
+   selected newly published `0.3.220`.
+2. The new platform artifact was not in the verified cache and the install exceeded `600s`; no hosted product
+   journey started.
+3. Copying manifest ranges into a synthetic release root is not hermetic even when source installation is locked.
+
+Conclusion: synthetic release manifests must resolve external versions from the root lockfile. With exact pins and
+cache-preferred bounded fetches, the same packaging path completed in `14s`.
+
+## `NTH-EXP-054` Hosted Relay pairing remained transient after deterministic packaging
+
+Observed on `2026-07-25` during retry preparation:
+
+1. The first exact-tgz journey received close code `1006` after five pairing attempts.
+2. The sole permitted retry of the unchanged tgz passed the complete Relay v3 E2EE and product journey.
+3. Health probes were not used as substitute evidence, and the first failure remains recorded.
+
+Retry condition: a future complete attempt may use at most the contract's existing two hosted attempts and must
+report both outcomes without exposing credentials.
+
+## `NTH-EXP-055` UTC wall-clock estimation cannot enforce a shared monotonic release deadline
+
+Observed on `2026-07-25` during the eighth `NTH-TD-043` attempt:
+
+1. The attempt passed every stage through the frozen Daemon and App performance contracts, then established the
+   `200` encrypted local Relay clients required by the final `600000ms` load phase.
+2. The load was stopped manually after a UTC wall-clock estimate suggested fewer than eight minutes remained.
+   Because the stages had run in separate shells, no single monotonic start value survived across the attempt.
+3. UTC wall time can jump and cannot prove either expiry or compliance with the locked monotonic `3600s` deadline.
+   The partial load therefore proves neither its ten-minute duration nor the complete local gate.
+
+Conclusion: the entire release gate must be orchestrated by one process using `performance.now()`, with every child
+receiving only the global remaining duration and `accept:refactor:fast` additionally capped at `300s`. Persist the
+phase receipts to an ignored machine-readable result. Retry only from the first phase; none of the eighth-attempt
+green stages may be combined with the retry.
+
+## `NTH-EXP-056` A broad packet validator hid invalid Clarify semantic evidence
+
+Observed on `2026-07-25` during the ninth `NTH-TD-043` attempt:
+
+1. The monotonic runner correctly stopped at the independent Clarify user-simulation judge after `890894ms`.
+   Every prior phase passed, but the two simulated `C_TASK_CARD` outputs omitted the semantic tool schema's required
+   `convergence_review`.
+2. Existing deterministic validation checked only the broad `ClarifyRuntimePacketSchema`, whose content is not the
+   operation-specific semantic tool input. Five earlier independent judges happened not to identify the mismatch.
+3. After adding the missing convergence evidence, a narrow judge found that several fixture `userInput` strings
+   differed from the supposedly verbatim transcript. The source had normalized or expanded user answers inside
+   provenance instead of preserving the immutable text.
+
+Conclusion: test/eval packets must validate their content through the same operation-specific schema as production,
+and verbatim provenance must be compared against exact per-turn inputs before an independent model judge runs. The
+fixture and deterministic validator now enforce both contracts; the targeted test passed `6/6` and the independent
+judge passed. Retry the complete release gate from phase one because the ninth attempt remains failed evidence.
+
+## `NTH-EXP-057` OpenTUI PTY stress depended on an unowned daemon process
+
+Observed on `2026-07-25` during the tenth `NTH-TD-043` attempt:
+
+1. The complete monotonic gate passed through the ten-minute `200`-client Relay load, then TUI stress rendered an
+   honest recovery frame because no Thoth daemon owned `127.0.0.1:6688`.
+2. The stress asserted connected/offer-ready behavior but did not start a daemon. Its historical pass had depended
+   on an unrelated development daemon already listening on `6688`, so the test was not hermetic.
+3. Changing the expected frame to recovery would reduce the device/provider churn contract. Starting or stopping
+   an arbitrary existing `6688` process would violate ownership and isolation.
+
+Conclusion: the stress script now owns a real source daemon with an isolated temporary `THOTH_HOME` and reserved
+random port, drives the same CLI path at all three widths, and terminates only its own process group. Narrow
+`72x34`, `96x34` and `132x34` receipts passed with connected/provider/offer state and no credential or `6767`
+leakage. Retry the complete release gate from phase one; the tenth attempt remains failed evidence.

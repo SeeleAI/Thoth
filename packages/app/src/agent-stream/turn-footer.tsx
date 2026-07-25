@@ -4,7 +4,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { MAX_CONTENT_WIDTH } from "@/constants/layout";
 import type { Theme } from "@/styles/theme";
 import type { TurnTiming } from "@/timeline/turn-time";
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import type { TimelineRenderItem } from "./timeline-view-registry";
 import {
   collectAssistantTurnContentForStreamRenderStrategy,
   type StreamStrategy,
@@ -75,7 +75,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   onForkAssistantTurn,
 }: {
   strategy: TurnContentStrategy;
-  items: TimelineViewModel[];
+  items: TimelineRenderItem[];
   timing?: TurnTiming;
   startIndex: number;
   onForkAssistantTurn?: AssistantTurnForkHandler;
@@ -130,7 +130,7 @@ function CompletedTurnFooter({
   onForkAssistantTurn,
 }: {
   strategy: TurnContentStrategy;
-  items: TimelineViewModel[];
+  items: TimelineRenderItem[];
   timing?: TurnTiming;
   startIndex: number;
   onForkAssistantTurn?: AssistantTurnForkHandler;

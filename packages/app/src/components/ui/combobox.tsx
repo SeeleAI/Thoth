@@ -26,12 +26,8 @@ import {
 import { useTranslation } from "react-i18next";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import {
-  BottomSheetScrollView,
-  BottomSheetBackdrop,
-  BottomSheetBackgroundProps,
-} from "@gorhom/bottom-sheet";
-import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import { BottomSheetScrollView, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
+import { FadeIn, FadeOut } from "react-native-reanimated";
 import { Check, File, Folder, Search } from "lucide-react-native";
 import {
   flip,
@@ -54,6 +50,7 @@ import {
   useIsolatedBottomSheetVisibility,
 } from "./isolated-bottom-sheet-modal";
 import {
+  AdaptiveSheetBackground,
   AdaptiveTextInput,
   InlineHeaderView,
   SheetHeaderView,
@@ -137,24 +134,6 @@ function toNumericStyleValue(value: unknown): number | null {
     }
   }
   return null;
-}
-
-function ComboboxSheetBackground({ style }: BottomSheetBackgroundProps) {
-  const { theme } = useUnistyles();
-
-  const combinedStyle = useMemo(
-    () => [
-      style,
-      {
-        backgroundColor: theme.colors.surface0,
-        borderTopLeftRadius: theme.borderRadius["2xl"],
-        borderTopRightRadius: theme.borderRadius["2xl"],
-      },
-    ],
-    [style, theme.colors.surface0, theme.borderRadius],
-  );
-
-  return <Animated.View pointerEvents="none" style={combinedStyle} />;
 }
 
 export interface SearchInputProps {
@@ -1023,7 +1002,7 @@ function MobileComboboxBody(props: MobileBodyProps): ReactElement {
       onDismiss={props.handleSheetDismiss}
       backdropComponent={renderBackdrop}
       enablePanDownToClose
-      backgroundComponent={ComboboxSheetBackground}
+      backgroundComponent={AdaptiveSheetBackground}
       handleIndicatorStyle={props.handleIndicatorStyle}
       keyboardBehavior="extend"
       keyboardBlurBehavior="none"

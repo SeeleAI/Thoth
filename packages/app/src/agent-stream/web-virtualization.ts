@@ -1,9 +1,11 @@
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
-import { estimateAssistantMessageHeightFromCache } from "@/utils/assistant-message-height-estimate";
+import {
+  timelineEstimateHeight,
+  timelineType,
+  type TimelineRenderItem,
+} from "./timeline-view-registry";
 
 export const DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD = 100;
 export const DEFAULT_WEB_MOUNTED_RECENT_STREAM_ITEMS = 50;
-const COLLAPSED_TOOL_SEQUENCE_ROW_HEIGHT_ESTIMATE = 40;
 
 type BottomAnchorE2ETestGlobals = typeof globalThis & {
   __THOTH_E2E_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD?: unknown;
@@ -33,7 +35,7 @@ export function getWebMountedRecentStreamItems(): number {
 }
 
 export interface IndexedStreamItem {
-  item: TimelineViewModel;
+  item: TimelineRenderItem;
   index: number;
 }
 
@@ -42,37 +44,12 @@ export interface WebVirtualizedHistoryWindow {
   mountedEntries: IndexedStreamItem[];
 }
 
-export function estimateStreamItemHeight(item: TimelineViewModel): number {
-  switch (item.kind) {
-    case "user_message":
-      return item.images && item.images.length > 0 ? 220 : 96;
-    case "assistant_message":
-      return estimateAssistantMessageHeightFromCache(item.text) ?? 220;
-    case "tool_call":
-      return COLLAPSED_TOOL_SEQUENCE_ROW_HEIGHT_ESTIMATE;
-    case "clarify_card":
-      return 360;
-    case "task_card":
-      return 340;
-    case "goal_card":
-      return 380;
-    case "registered_task":
-      return 220;
-    case "thought":
-      return COLLAPSED_TOOL_SEQUENCE_ROW_HEIGHT_ESTIMATE;
-    case "todo_list":
-      return 144;
-    case "activity_log":
-      return 88;
-    case "compaction":
-      return 72;
-    default:
-      return 120;
-  }
+export function estimateStreamItemHeight(item: TimelineRenderItem): number {
+  return timelineEstimateHeight(item);
 }
 
 export function findMountedWindowStart(input: {
-  items: TimelineViewModel[];
+  items: TimelineRenderItem[];
   minMountedCount: number;
 }): number {
   const { items, minMountedCount } = input;
@@ -81,7 +58,7 @@ export function findMountedWindowStart(input: {
   }
 
   let startIndex = Math.max(items.length - minMountedCount, 0);
-  while (startIndex > 0 && items[startIndex]?.kind !== "user_message") {
+  while (startIndex > 0 && timelineType(items[startIndex]!) !== "user_message") {
     startIndex -= 1;
   }
   return startIndex;

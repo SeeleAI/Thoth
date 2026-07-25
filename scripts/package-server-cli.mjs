@@ -18,18 +18,22 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { MVP_VERSION } from "./mvp-release-contract.mjs";
+import {
+  MVP_PACKAGE_JSON_PATHS,
+  MVP_SERVER_CLI_PACKAGE_NAME,
+  MVP_VERSION,
+  resolveMvpServerCliPackages,
+} from "./mvp-release-contract.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const internalPackages = [
-  ["@thoth/highlight", "packages/app/highlight"],
-  ["@thoth/protocol", "packages/protocol"],
-  ["@thoth/relay", "packages/relay"],
-  ["@thoth/client", "packages/client"],
-  ["@thoth/drivers", "packages/drivers"],
-  ["@thoth/daemon", "packages/daemon"],
-  ["@thoth/tui", "packages/tui"],
-];
+const mvpPackageManifests = MVP_PACKAGE_JSON_PATHS.map((relativePath) => ({
+  relativePath,
+  value: readJson(join(repoRoot, relativePath)),
+}));
+const rootLockfile = readJson(join(repoRoot, "package-lock.json"));
+const internalPackages = resolveMvpServerCliPackages(mvpPackageManifests).map(
+  ({ relativePath, value }) => [value.name, dirname(relativePath)],
+);
 const internalNames = new Set(internalPackages.map(([name]) => name));
 
 function optionValue(name) {
@@ -73,6 +77,14 @@ function mergeDependency(target, name, version, source) {
   target[name] = version;
 }
 
+function lockedExternalVersion(name, source) {
+  const version = rootLockfile.packages?.[`node_modules/${name}`]?.version;
+  if (typeof version !== "string" || version.length === 0) {
+    throw new Error(`Missing locked external dependency ${name} required by ${source}`);
+  }
+  return version;
+}
+
 const outputDir = resolve(repoRoot, optionValue("--output-dir") ?? ".dev/release-artifacts");
 const skipBuild = process.argv.includes("--skip-build");
 const workRoot = mkdtempSync(join(tmpdir(), "thoth-server-cli-"));
@@ -100,8 +112,12 @@ try {
     console.log(`Packed ${packageName}`);
   }
 
-  const cliRoot = join(repoRoot, "packages/cli");
-  const cliPackage = readJson(join(cliRoot, "package.json"));
+  const cliManifest = mvpPackageManifests.find(
+    ({ value }) => value.name === MVP_SERVER_CLI_PACKAGE_NAME,
+  );
+  if (!cliManifest) throw new Error(`Missing ${MVP_SERVER_CLI_PACKAGE_NAME} manifest`);
+  const cliRoot = join(repoRoot, dirname(cliManifest.relativePath));
+  const cliPackage = cliManifest.value;
   const externalDependencies = {};
   const externalOptionalDependencies = {};
   for (const [packageName, relativeRoot] of [
@@ -109,14 +125,24 @@ try {
     [cliPackage.name, "packages/cli"],
   ]) {
     const packageJson = readJson(join(repoRoot, relativeRoot, "package.json"));
-    for (const [name, version] of Object.entries(packageJson.dependencies ?? {})) {
+    for (const name of Object.keys(packageJson.dependencies ?? {})) {
       if (!internalNames.has(name)) {
-        mergeDependency(externalDependencies, name, version, packageName);
+        mergeDependency(
+          externalDependencies,
+          name,
+          lockedExternalVersion(name, packageName),
+          packageName,
+        );
       }
     }
-    for (const [name, version] of Object.entries(packageJson.optionalDependencies ?? {})) {
+    for (const name of Object.keys(packageJson.optionalDependencies ?? {})) {
       if (!internalNames.has(name) && !externalDependencies[name]) {
-        mergeDependency(externalOptionalDependencies, name, version, packageName);
+        mergeDependency(
+          externalOptionalDependencies,
+          name,
+          lockedExternalVersion(name, packageName),
+          packageName,
+        );
       }
     }
   }
@@ -138,6 +164,7 @@ try {
   };
 
   writeFileSync(join(stageDir, "package.json"), `${JSON.stringify(stagedPackage, null, 2)}\n`);
+  writeFileSync(join(stageDir, ".npmrc"), "@thoth:registry=http://127.0.0.1:9\n");
   cpSync(join(cliRoot, "bin"), join(stageDir, "bin"), { recursive: true });
   cpSync(join(cliRoot, "dist"), join(stageDir, "dist"), { recursive: true });
   if (existsSync(join(cliRoot, "README.md"))) {
@@ -159,13 +186,23 @@ try {
       "--omit=dev",
       "--no-audit",
       "--no-fund",
+      "--prefer-offline",
+      "--fetch-retries=1",
+      "--fetch-timeout=30000",
       ...packageTarballs,
     ],
     { cwd: stageDir, stdio: "inherit" },
   );
 
   const installedScope = join(stageDir, "node_modules", "@thoth");
-  for (const installedName of readdirSync(installedScope)) {
+  const installedNames = readdirSync(installedScope).sort();
+  const expectedNames = [...internalNames].map((name) => name.slice("@thoth/".length)).sort();
+  if (JSON.stringify(installedNames) !== JSON.stringify(expectedNames)) {
+    throw new Error(
+      `Server CLI installed private package set mismatch: expected ${expectedNames.join(", ")}; got ${installedNames.join(", ")}`,
+    );
+  }
+  for (const installedName of installedNames) {
     const packageRoot = join(installedScope, installedName);
     const packageJsonPath = join(packageRoot, "package.json");
     const packageJson = readJson(packageJsonPath);
@@ -179,6 +216,7 @@ try {
     writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
     rmSync(join(packageRoot, "node_modules"), { recursive: true, force: true });
   }
+  rmSync(join(stageDir, ".npmrc"), { force: true });
 
   const stageNodeModules = join(stageDir, "node_modules");
   for (const entry of readdirSync(stageNodeModules)) {
@@ -193,12 +231,16 @@ try {
   renameSync(packedPath, finalPath);
 
   const archiveList = run("tar", ["-tzf", finalPath]);
-  for (const requiredEntry of [
+  const requiredEntries = [
     "package/bin/thoth",
-    "package/node_modules/@thoth/daemon/package.json",
+    ...internalPackages.map(
+      ([packageName]) =>
+        `package/node_modules/@thoth/${packageName.slice("@thoth/".length)}/package.json`,
+    ),
     "package/node_modules/@thoth/drivers/dist/runtime-skills/thoth-clarify/SKILL.md",
     "package/node_modules/@thoth/drivers/dist/runtime-skills/thoth-loop/SKILL.md",
-  ]) {
+  ];
+  for (const requiredEntry of requiredEntries) {
     if (!archiveList.includes(requiredEntry)) {
       throw new Error(`Server CLI archive is missing ${requiredEntry}`);
     }

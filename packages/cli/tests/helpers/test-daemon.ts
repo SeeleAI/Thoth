@@ -12,7 +12,7 @@
  * 5. Cleanup: Kill daemon and remove temp dirs after each test
  */
 
-import { mkdtemp, rm, mkdir } from "fs/promises";
+import { mkdtemp, rm } from "fs/promises";
 import { existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -153,10 +153,6 @@ export function getRandomPort(): number {
 export async function createTempDirs(): Promise<{ thothHome: string; workDir: string }> {
   const thothHome = await mkdtemp(join(tmpdir(), "thoth-e2e-home-"));
   const workDir = await mkdtemp(join(tmpdir(), "thoth-e2e-work-"));
-
-  // Create the agents directory that the daemon expects
-  const agentsDir = join(thothHome, "agents");
-  await mkdir(agentsDir, { recursive: true });
 
   return { thothHome, workDir };
 }

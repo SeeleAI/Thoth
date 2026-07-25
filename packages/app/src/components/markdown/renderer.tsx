@@ -37,6 +37,7 @@ import {
 } from "./html-ish";
 import { resolveInlineImageSize, type InlineImageDimensions } from "./inline-image-size";
 import { groupMarkdownParts, type MarkdownPartGroup } from "./part-groups";
+import { useAssistantLinkPress } from "@/assistant-file-links/link-press-context";
 
 export type MarkdownStyles = Record<string, TextStyle & ViewStyle & { [key: string]: unknown }>;
 
@@ -428,11 +429,12 @@ export function MarkdownInheritedText({
     () => [inheritedStyles, textStyle, overrideStyle],
     [inheritedStyles, textStyle, overrideStyle],
   );
+  const inheritedLinkPress = useAssistantLinkPress();
   return (
     <MarkdownTextSpan
       monoSurface={monoSurface}
-      onPress={onPress}
-      accessibilityRole={accessibilityRole}
+      onPress={onPress ?? inheritedLinkPress?.onPress}
+      accessibilityRole={accessibilityRole ?? inheritedLinkPress?.accessibilityRole}
       style={style}
     >
       {children}

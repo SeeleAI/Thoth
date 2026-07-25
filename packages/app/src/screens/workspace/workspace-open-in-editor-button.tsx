@@ -289,13 +289,6 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     position: "relative",
   },
-  splitButtonPrimaryIconOnly: {
-    paddingLeft: theme.spacing[2],
-    paddingRight: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
-    justifyContent: "center",
-    position: "relative",
-  },
   splitButtonPrimaryHovered: {
     backgroundColor: theme.colors.surface2,
   },

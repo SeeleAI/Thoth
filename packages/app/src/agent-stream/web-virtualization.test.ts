@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import type { TimelineRenderItem } from "./timeline-view-registry";
+import { timelineId } from "./timeline-view-registry";
+import {
+  assistantTimelineEntry,
+  reasoningTimelineEntry,
+  timelineTimestamp,
+  toolTimelineEntry,
+  userTimelineEntry,
+} from "@/test-fixtures/timeline";
 import {
   clearAssistantImageMetadataCache,
   setAssistantImageMetadata,
@@ -15,56 +23,12 @@ import {
   type IndexedStreamItem,
 } from "./web-virtualization";
 
-function createTimestamp(seed: number): Date {
-  return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
-}
+const userMessage = userTimelineEntry;
+const assistantMessage = assistantTimelineEntry;
+const toolCall = (id: string, seed: number) => toolTimelineEntry({ id, seed });
+const thought = reasoningTimelineEntry;
 
-function userMessage(id: string, seed: number): TimelineViewModel {
-  return {
-    kind: "user_message",
-    id,
-    text: id,
-    timestamp: createTimestamp(seed),
-  };
-}
-
-function assistantMessage(id: string, seed: number): TimelineViewModel {
-  return {
-    kind: "assistant_message",
-    id,
-    text: id,
-    timestamp: createTimestamp(seed),
-  };
-}
-
-function toolCall(id: string, seed: number): TimelineViewModel {
-  return {
-    kind: "tool_call",
-    id,
-    timestamp: createTimestamp(seed),
-    payload: {
-      source: "orchestrator",
-      data: {
-        toolCallId: id,
-        toolName: "test_tool",
-        arguments: {},
-        status: "completed",
-      },
-    },
-  };
-}
-
-function thought(id: string, seed: number): TimelineViewModel {
-  return {
-    kind: "thought",
-    id,
-    text: id,
-    status: "ready",
-    timestamp: createTimestamp(seed),
-  };
-}
-
-function indexEntries(items: TimelineViewModel[]): IndexedStreamItem[] {
+function indexEntries(items: TimelineRenderItem[]): IndexedStreamItem[] {
   return items.map((item, index) => ({ item, index }));
 }
 
@@ -81,7 +45,7 @@ describe("findMountedWindowStart", () => {
   });
 
   it("rewinds to the previous user boundary when the cutoff lands inside a turn", () => {
-    const items: TimelineViewModel[] = [];
+    const items: TimelineRenderItem[] = [];
     for (let index = 0; index < 30; index += 1) {
       const seed = index * 3;
       items.push(userMessage(`u${index}`, seed + 1));
@@ -100,7 +64,7 @@ describe("findMountedWindowStart", () => {
 
 describe("splitWebVirtualizedHistory", () => {
   it("splits older entries into the virtualized section and keeps the recent window mounted", () => {
-    const items: TimelineViewModel[] = [];
+    const items: TimelineRenderItem[] = [];
     for (let index = 0; index < 30; index += 1) {
       const seed = index * 2;
       items.push(userMessage(`u${index}`, seed + 1));
@@ -113,9 +77,9 @@ describe("splitWebVirtualizedHistory", () => {
     });
 
     expect(window.virtualizedEntries).toHaveLength(10);
-    expect(window.virtualizedEntries[0]?.item.id).toBe("u0");
-    expect(window.virtualizedEntries.at(-1)?.item.id).toBe("a4");
-    expect(window.mountedEntries[0]?.item.id).toBe("u5");
+    expect(timelineId(window.virtualizedEntries[0]!.item)).toBe("u0");
+    expect(timelineId(window.virtualizedEntries.at(-1)!.item)).toBe("a4");
+    expect(timelineId(window.mountedEntries[0]!.item)).toBe("u5");
     expect(window.mountedEntries).toHaveLength(50);
   });
 });
@@ -127,22 +91,26 @@ describe("estimateStreamItemHeight", () => {
   });
 
   it("uses a larger estimate for user messages with image attachments", () => {
-    const item: TimelineViewModel = {
-      kind: "user_message",
-      id: "u-image",
-      text: "image",
-      timestamp: createTimestamp(1),
-      images: [
-        {
-          id: "att-1",
-          mimeType: "image/png",
-          storageType: "desktop-file",
-          storageKey: "/tmp/screenshot.png",
-          fileName: "screenshot.png",
-          byteSize: 1024,
-          createdAt: Date.now(),
-        },
-      ],
+    const item: TimelineRenderItem = {
+      ...userMessage("u-image", 1, "image"),
+      presentation: {
+        messageId: "u-image",
+        text: "image",
+        timestamp: timelineTimestamp(1),
+        status: "confirmed",
+        attachments: [],
+        images: [
+          {
+            id: "att-1",
+            mimeType: "image/png",
+            storageType: "desktop-file",
+            storageKey: "/tmp/screenshot.png",
+            fileName: "screenshot.png",
+            byteSize: 1024,
+            createdAt: Date.now(),
+          },
+        ],
+      },
     };
 
     expect(estimateStreamItemHeight(item)).toBe(220);
@@ -157,12 +125,11 @@ describe("estimateStreamItemHeight", () => {
       { width: 800, height: 1600 },
     );
 
-    const item: TimelineViewModel = {
-      kind: "assistant_message",
-      id: "a-image",
-      text: "Look at this\n\n![Screenshot](https://example.com/tall.png)",
-      timestamp: createTimestamp(2),
-    };
+    const item = assistantMessage(
+      "a-image",
+      2,
+      "Look at this\n\n![Screenshot](https://example.com/tall.png)",
+    );
 
     expect(estimateStreamItemHeight(item)).toBeGreaterThan(220);
   });

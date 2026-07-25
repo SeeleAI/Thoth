@@ -951,11 +951,6 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     minWidth: 0,
   },
-  rowErrorText: {
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.foregroundMuted,
-    maxWidth: 140,
-  },
   rowIconButton: {
     width: 24,
     height: 24,

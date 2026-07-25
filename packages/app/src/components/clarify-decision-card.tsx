@@ -166,7 +166,7 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
       setChoiceNotes((current) => ({
         ...current,
         [questionId]: {
-          ...(current[questionId] ?? {}),
+          ...current[questionId],
           [choiceId]: note,
         },
       }));
@@ -608,9 +608,6 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: 3,
     backgroundColor: theme.colors.accent,
   },
-  questions: {
-    gap: theme.spacing[4],
-  },
   questionBlock: {
     gap: theme.spacing[2],
   },
@@ -705,9 +702,6 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface0,
     padding: theme.spacing[3],
     fontSize: theme.fontSize.sm,
-  },
-  readonlyChoice: {
-    opacity: theme.opacity[50],
   },
   readonlyBanner: {
     borderWidth: 1,

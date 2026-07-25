@@ -1,10 +1,15 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import pino from "pino";
 import { afterEach, describe, expect, test } from "vitest";
 import { ensureAgentLoaded } from "./agent/agent-loading.js";
 import type { ThothDaemonConfig } from "./bootstrap.js";
+import { WorkspaceAuthorityManager } from "./workspace-authority/workspace-authority-manager.js";
+import {
+  createPersistedProjectRecord,
+  createPersistedWorkspaceRecord,
+} from "./workspace-registry.js";
 
 const originalEnv = {
   PATH: process.env.PATH,
@@ -37,32 +42,57 @@ describe("bootstrap provider availability", () => {
     const agentStoragePath = path.join(thothHome, "agents");
     const now = new Date("2026-04-16T00:00:00.000Z").toISOString();
     const agentId = "11111111-1111-4111-8111-111111111111";
-    await mkdir(agentStoragePath, { recursive: true });
     await mkdir(staticDir, { recursive: true });
-    await writeFile(
-      path.join(agentStoragePath, `${agentId}.json`),
-      JSON.stringify({
-        id: agentId,
-        provider: "codex",
-        cwd: root,
+    const workspaceId = "workspace-bootstrap-provider";
+    const projectId = "project-bootstrap-provider";
+    const authority = new WorkspaceAuthorityManager(thothHome);
+    authority.catalog.upsertProjectRecord(
+      createPersistedProjectRecord({
+        projectId,
+        rootPath: root,
+        kind: "non_git",
+        displayName: "Bootstrap Provider",
         createdAt: now,
         updatedAt: now,
-        lastStatus: "idle",
-        lastModeId: "auto",
-        config: {
-          modeId: "auto",
-          model: "gpt-5.4",
-        },
-        persistence: {
-          provider: "codex",
-          sessionId: "codex-session-1",
-          metadata: {
-            provider: "codex",
-            cwd: root,
-          },
-        },
       }),
     );
+    authority.catalog.upsertWorkspaceRecord(
+      createPersistedWorkspaceRecord({
+        workspaceId,
+        projectId,
+        cwd: root,
+        kind: "directory",
+        displayName: "Bootstrap Provider",
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+    authority.forWorkspace(workspaceId).upsertAgentRecord({
+      id: agentId,
+      provider: "codex",
+      cwd: root,
+      workspaceId,
+      createdAt: now,
+      updatedAt: now,
+      labels: {},
+      lastStatus: "idle",
+      lastModeId: "auto",
+      providerRunMode: "default",
+      providerControlRevision: 0,
+      config: {
+        modeId: "auto",
+        model: "gpt-5.4",
+      },
+      persistence: {
+        provider: "codex",
+        sessionId: "codex-session-1",
+        metadata: {
+          provider: "codex",
+          cwd: root,
+        },
+      },
+    });
+    authority.close();
 
     const config: ThothDaemonConfig = {
       listen: "127.0.0.1:0",

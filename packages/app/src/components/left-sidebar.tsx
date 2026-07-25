@@ -445,7 +445,6 @@ const SidebarNewWorkspaceHeaderRow = memo(function SidebarNewWorkspaceHeaderRow(
   const activeWorkspaceSelection = useActiveWorkspaceSelection();
   const activeWorkspaceServerId = activeWorkspaceSelection?.serverId ?? null;
   const activeWorkspaceId = activeWorkspaceSelection?.workspaceId ?? null;
-  const isCompactLayout = useIsCompactFormFactor();
   const activeWorkspace = useWorkspace(activeWorkspaceServerId, activeWorkspaceId);
   const supportsWorkspaceMultiplicity = useHostFeature(
     activeWorkspaceServerId,

@@ -1,24 +1,20 @@
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
 import { deriveStreamTurnTiming } from "./turn-time";
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import type { TimelineRenderItem } from "@/agent-stream/timeline-view-registry";
+import { timelineEntry } from "@/test-fixtures/timeline";
 
-function user(id: string, timestamp: Date): TimelineViewModel {
-  return {
-    kind: "user_message",
-    id,
-    text: id,
-    timestamp,
-  };
+function entryAt(item: Parameters<typeof timelineEntry>[0], timestamp: Date): TimelineRenderItem {
+  const entry = timelineEntry(item, 1);
+  return { ...entry, timestamp: timestamp.toISOString() };
 }
 
-function assistant(id: string, timestamp: Date): TimelineViewModel {
-  return {
-    kind: "assistant_message",
-    id,
-    text: id,
-    timestamp,
-  };
+function user(id: string, timestamp: Date): TimelineRenderItem {
+  return entryAt({ type: "user_message", messageId: id, text: id }, timestamp);
+}
+
+function assistant(id: string, timestamp: Date): TimelineRenderItem {
+  return entryAt({ type: "assistant_message", messageId: id, text: id }, timestamp);
 }
 
 describe("deriveStreamTurnTiming", () => {
@@ -36,7 +32,7 @@ describe("deriveStreamTurnTiming", () => {
       head: [assistant("a2", new Date("2026-05-15T00:01:04.000Z"))],
     });
 
-    assert.equal(timing.runningStartedAt, secondUserAt);
+    assert.deepEqual(timing.runningStartedAt, secondUserAt);
     assert.equal(timing.byAssistantId.has("a2"), false);
   });
 

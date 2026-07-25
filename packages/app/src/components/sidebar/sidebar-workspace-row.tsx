@@ -310,7 +310,6 @@ function WorkspaceRowBody({
   const draggable = Boolean(drag);
   const interaction = useLongPressDragInteraction({
     drag: drag ?? noop,
-    menuController: null,
   });
   const {
     role: _dragRole,

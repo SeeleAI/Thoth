@@ -17,14 +17,8 @@ import {
   type PressableStateCallbackType,
 } from "react-native";
 import {
-  CopyX,
-  ArrowLeftToLine,
-  ArrowRightToLine,
   ChevronDown,
   Columns2,
-  Copy,
-  Pencil,
-  RotateCw,
   Rows2,
   Globe,
   Plus,
@@ -44,7 +38,6 @@ import { isNative, isWeb } from "@/constants/platform";
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
@@ -71,9 +64,12 @@ import { buildDeterministicWorkspaceTabId } from "@/workspace-tabs/identity";
 import {
   buildWorkspaceDesktopTabActions,
   type WorkspaceDesktopTabActions,
-  type WorkspaceTabMenuEntry,
   type WorkspaceTabMenuLabels,
 } from "@/screens/workspace/workspace-tab-menu";
+import {
+  useWorkspaceTabMenuLabels,
+  WorkspaceTabMenuItem,
+} from "@/screens/workspace/workspace-tab-menu-item";
 import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
 import type { Theme } from "@/styles/theme";
 import { RenderProfile } from "@/utils/render-profiler";
@@ -93,12 +89,6 @@ const DEFAULT_INLINE_ADD_BUTTON_RESERVED_WIDTH = 36;
 
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedX = withUnistyles(X);
-const ThemedCopy = withUnistyles(Copy);
-const ThemedRotateCw = withUnistyles(RotateCw);
-const ThemedArrowLeftToLine = withUnistyles(ArrowLeftToLine);
-const ThemedArrowRightToLine = withUnistyles(ArrowRightToLine);
-const ThemedCopyX = withUnistyles(CopyX);
-const ThemedPencil = withUnistyles(Pencil);
 const ThemedSquarePen = withUnistyles(SquarePen);
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
 const ThemedChevronDown = withUnistyles(ChevronDown);
@@ -313,50 +303,6 @@ function WorkspaceTabRowExtras({
       </DropdownMenu>
       <PinnedTargetsRow launchers={launchers} testIdPrefix="workspace-pinned-target" />
     </>
-  );
-}
-
-function TabContextMenuItem({
-  entry,
-}: {
-  entry: Extract<WorkspaceTabMenuEntry, { kind: "item" }>;
-}) {
-  const leading = useMemo(() => {
-    switch (entry.icon) {
-      case "copy":
-        return <ThemedCopy size={16} uniProps={mutedColorMapping} />;
-      case "rotate-cw":
-        return <ThemedRotateCw size={16} uniProps={mutedColorMapping} />;
-      case "arrow-left-to-line":
-        return <ThemedArrowLeftToLine size={16} uniProps={mutedColorMapping} />;
-      case "arrow-right-to-line":
-        return <ThemedArrowRightToLine size={16} uniProps={mutedColorMapping} />;
-      case "copy-x":
-        return <ThemedCopyX size={16} uniProps={mutedColorMapping} />;
-      case "pencil":
-        return <ThemedPencil size={16} uniProps={mutedColorMapping} />;
-      case "x":
-        return <ThemedX size={16} uniProps={mutedColorMapping} />;
-      default:
-        return undefined;
-    }
-  }, [entry.icon]);
-  const trailing = useMemo(
-    () => (entry.hint ? <Text style={styles.menuItemHint}>{entry.hint}</Text> : undefined),
-    [entry.hint],
-  );
-  return (
-    <ContextMenuItem
-      testID={entry.testID}
-      disabled={entry.disabled}
-      destructive={entry.destructive}
-      onSelect={entry.onSelect}
-      tooltip={entry.tooltip}
-      leading={leading}
-      trailing={trailing}
-    >
-      {entry.label}
-    </ContextMenuItem>
   );
 }
 
@@ -721,7 +667,7 @@ function TabChip({
             entry.kind === "separator" ? (
               <ContextMenuSeparator key={entry.key} />
             ) : (
-              <TabContextMenuItem key={entry.key} entry={entry} />
+              <WorkspaceTabMenuItem key={entry.key} entry={entry} />
             ),
           )}
         </ContextMenuContent>
@@ -809,23 +755,7 @@ export function WorkspaceDesktopTabsRow({
     }),
     [t],
   );
-  const tabMenuLabels = useMemo<WorkspaceTabMenuLabels>(
-    () => ({
-      copyResumeCommand: t("workspace.tabs.menu.copyResumeCommand"),
-      copyAgentId: t("workspace.tabs.menu.copyAgentId"),
-      copyFilePath: t("workspace.tabs.menu.copyFilePath"),
-      rename: t("workspace.tabs.menu.rename"),
-      closeAbove: t("workspace.tabs.menu.closeAbove"),
-      closeBelow: t("workspace.tabs.menu.closeBelow"),
-      closeLeft: t("workspace.tabs.menu.closeLeft"),
-      closeRight: t("workspace.tabs.menu.closeRight"),
-      closeOthers: t("workspace.tabs.menu.closeOthers"),
-      reloadAgent: t("workspace.tabs.menu.reloadAgent"),
-      reloadAgentTooltip: t("workspace.tabs.menu.reloadAgentTooltip"),
-      close: t("workspace.tabs.menu.close"),
-    }),
-    [t],
-  );
+  const tabMenuLabels = useWorkspaceTabMenuLabels();
   const tabLabelLengths = useMemo(
     () =>
       tabs.map((tab) => {
@@ -1298,9 +1228,6 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
   },
-  newTabActionButtonDisabled: {
-    opacity: 0.5,
-  },
   newTabActionButtonHovered: {
     backgroundColor: theme.colors.surface2,
   },
@@ -1320,10 +1247,6 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
   },
   tooltipAgentId: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
-  },
-  menuItemHint: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
   },

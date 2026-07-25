@@ -23,6 +23,7 @@ import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { useQueryClient } from "@tanstack/react-query";
 import { agentHistoryQueryKey } from "@/hooks/agent-history-query-key";
+import { deriveDateBucket, type AgentDateBucket } from "@/utils/agent-grouping";
 
 interface AgentListProps {
   agents: AggregatedAgent[];
@@ -36,49 +37,19 @@ interface AgentListProps {
   showHostColumn?: boolean;
 }
 
-type DateSectionKey = "today" | "yesterday" | "thisWeek" | "thisMonth" | "older";
-
 const DATE_SECTION_ORDER = [
   "today",
   "yesterday",
   "thisWeek",
   "thisMonth",
   "older",
-] as const satisfies readonly DateSectionKey[];
+] as const satisfies readonly AgentDateBucket[];
 
 type FlatListItem =
-  | { type: "header"; key: string; section: DateSectionKey }
+  | { type: "header"; key: string; section: AgentDateBucket }
   | { type: "agent"; key: string; agent: AggregatedAgent };
 
-function deriveDateSectionKey(lastActivityAt: Date): DateSectionKey {
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
-  const activityStart = new Date(
-    lastActivityAt.getFullYear(),
-    lastActivityAt.getMonth(),
-    lastActivityAt.getDate(),
-  );
-
-  if (activityStart.getTime() >= todayStart.getTime()) {
-    return "today";
-  }
-  if (activityStart.getTime() >= yesterdayStart.getTime()) {
-    return "yesterday";
-  }
-
-  const diffTime = todayStart.getTime() - activityStart.getTime();
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  if (diffDays <= 7) {
-    return "thisWeek";
-  }
-  if (diffDays <= 30) {
-    return "thisMonth";
-  }
-  return "older";
-}
-
-function formatDateSectionLabel(t: TFunction, section: DateSectionKey): string {
+function formatDateSectionLabel(t: TFunction, section: AgentDateBucket): string {
   switch (section) {
     case "today":
       return t("agentList.dateSections.today");
@@ -454,7 +425,7 @@ export function AgentList({
   const flatItems = useMemo((): FlatListItem[] => {
     const buckets = new Map<DateSectionKey, AggregatedAgent[]>();
     for (const agent of agents) {
-      const section = deriveDateSectionKey(agent.lastActivityAt);
+      const section = deriveDateBucket(agent.lastActivityAt);
       const existing = buckets.get(section) ?? [];
       existing.push(agent);
       buckets.set(section, existing);

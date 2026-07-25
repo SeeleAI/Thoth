@@ -219,14 +219,11 @@ const styles = StyleSheet.create((theme) => ({
   adaptiveInputText: {
     color: theme.colors.foreground,
   },
-  adaptiveInputPlaceholder: {
-    color: theme.colors.foregroundMuted,
-  },
 }));
 
 const SEARCH_INPUT_STYLE = [styles.searchInput, isWeb && { outlineStyle: "none" }];
 
-function SheetBackground({ style }: BottomSheetBackgroundProps) {
+export function AdaptiveSheetBackground({ style }: BottomSheetBackgroundProps) {
   const { theme } = useUnistyles();
   const combinedStyle = useMemo(
     () => [
@@ -546,7 +543,7 @@ export function AdaptiveModalSheet({
         onDismiss={handleSheetDismiss}
         backdropComponent={renderBackdrop}
         enablePanDownToClose
-        backgroundComponent={SheetBackground}
+        backgroundComponent={AdaptiveSheetBackground}
         handleIndicatorStyle={handleIndicatorStyle}
         keyboardBehavior="extend"
         keyboardBlurBehavior="restore"

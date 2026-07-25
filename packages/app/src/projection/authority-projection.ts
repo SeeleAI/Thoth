@@ -571,8 +571,8 @@ export class DaemonProjectionService {
   }
 
   async revalidate(): Promise<void> {
-    await this.refreshAgents();
     await Promise.all([
+      this.refreshAgents(),
       this.refreshWorkspaces(),
       ...[...this.activeAgents].map((agentId) => this.fetchTail(agentId)),
     ]);

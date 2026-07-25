@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import type { TimelineRenderItem } from "./timeline-view-registry";
+import { timelineId } from "./timeline-view-registry";
+import { assistantTimelineEntry, userTimelineEntry } from "@/test-fixtures/timeline";
 import {
   collectAssistantTurnContentForStreamRenderStrategy,
   getBottomOffsetForStreamRenderStrategy,
@@ -16,26 +18,12 @@ import {
 } from "./strategy";
 import { resolveStreamRenderStrategy } from "./strategy-resolver";
 
-function createTimestamp(seed: number): Date {
-  return new Date(`2026-01-01T00:00:0${seed}.000Z`);
+function userMessage(id: string, text: string, seed: number): TimelineRenderItem {
+  return userTimelineEntry(id, seed, text);
 }
 
-function userMessage(id: string, text: string, seed: number): TimelineViewModel {
-  return {
-    kind: "user_message",
-    id,
-    text,
-    timestamp: createTimestamp(seed),
-  };
-}
-
-function assistantMessage(id: string, text: string, seed: number): TimelineViewModel {
-  return {
-    kind: "assistant_message",
-    id,
-    text,
-    timestamp: createTimestamp(seed),
-  };
+function assistantMessage(id: string, text: string, seed: number): TimelineRenderItem {
+  return assistantTimelineEntry(id, seed, text);
 }
 
 describe("resolveStreamRenderStrategy", () => {
@@ -107,7 +95,7 @@ describe("resolveStreamRenderStrategy", () => {
 });
 
 describe("stream ordering", () => {
-  const streamItems: TimelineViewModel[] = [
+  const streamItems: TimelineRenderItem[] = [
     userMessage("u1", "user-1", 1),
     assistantMessage("a1", "assistant-1", 2),
     assistantMessage("a2", "assistant-2", 3),
@@ -122,8 +110,8 @@ describe("stream ordering", () => {
     const tail = orderTailForStreamRenderStrategy({ strategy, streamItems });
     const head = orderHeadForStreamRenderStrategy({ strategy, streamHead: streamItems });
 
-    expect(tail.map((item) => item.id)).toEqual(["u1", "a1", "a2"]);
-    expect(head.map((item) => item.id)).toEqual(["u1", "a1", "a2"]);
+    expect(tail.map(timelineId)).toEqual(["u1", "a1", "a2"]);
+    expect(head.map(timelineId)).toEqual(["u1", "a1", "a2"]);
   });
 
   it("reverses inverted_stream order for tail and head", () => {
@@ -135,8 +123,8 @@ describe("stream ordering", () => {
     const tail = orderTailForStreamRenderStrategy({ strategy, streamItems });
     const head = orderHeadForStreamRenderStrategy({ strategy, streamHead: streamItems });
 
-    expect(tail.map((item) => item.id)).toEqual(["a2", "a1", "u1"]);
-    expect(head.map((item) => item.id)).toEqual(["a2", "a1", "u1"]);
+    expect(tail.map(timelineId)).toEqual(["a2", "a1", "u1"]);
+    expect(head.map(timelineId)).toEqual(["a2", "a1", "u1"]);
   });
 });
 
@@ -158,7 +146,7 @@ describe("neighbor and traversal semantics", () => {
   });
 
   it("collects assistant turn content with strategy traversal direction", () => {
-    const chronological: TimelineViewModel[] = [
+    const chronological: TimelineRenderItem[] = [
       userMessage("u1", "user-1", 1),
       assistantMessage("a1", "assistant-1", 2),
       assistantMessage("a2", "assistant-2", 3),
@@ -169,7 +157,7 @@ describe("neighbor and traversal semantics", () => {
       platform: "web",
       isMobileBreakpoint: false,
     });
-    const forwardStartIndex = chronological.findIndex((item) => item.id === "a2");
+    const forwardStartIndex = chronological.findIndex((item) => timelineId(item) === "a2");
     expect(
       collectAssistantTurnContentForStreamRenderStrategy({
         strategy: forward,
@@ -186,7 +174,7 @@ describe("neighbor and traversal semantics", () => {
       strategy: inverted,
       streamItems: chronological,
     });
-    const invertedStartIndex = invertedItems.findIndex((item) => item.id === "a2");
+    const invertedStartIndex = invertedItems.findIndex((item) => timelineId(item) === "a2");
     expect(
       collectAssistantTurnContentForStreamRenderStrategy({
         strategy: inverted,
@@ -201,7 +189,7 @@ describe("neighbor and traversal semantics", () => {
       platform: "web",
       isMobileBreakpoint: false,
     });
-    const items: TimelineViewModel[] = [userMessage("u1", "user-1", 1)];
+    const items: TimelineRenderItem[] = [userMessage("u1", "user-1", 1)];
 
     expect(
       getStreamNeighborItem({
@@ -333,7 +321,7 @@ describe("edge slot semantics", () => {
 });
 
 describe("layout strategy edges", () => {
-  const streamItems: TimelineViewModel[] = [
+  const streamItems: TimelineRenderItem[] = [
     userMessage("u1", "user-1", 1),
     assistantMessage("a1", "assistant-1", 2),
   ];

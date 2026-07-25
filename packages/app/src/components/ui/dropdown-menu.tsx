@@ -10,6 +10,7 @@ import {
   type PropsWithChildren,
   type ReactElement,
   type ReactNode,
+  type Ref,
 } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -26,7 +27,7 @@ import {
   type ViewStyle,
   type StyleProp,
 } from "react-native";
-import { Keyframe, runOnJS } from "react-native-reanimated";
+import { FadeIn, FadeOut, Keyframe, runOnJS } from "react-native-reanimated";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { Check, CheckCircle } from "lucide-react-native";
 import { FloatingScrollView, FloatingSurface } from "@/components/ui/floating";
@@ -34,26 +35,20 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useWebScrollbarStyle } from "@/hooks/use-web-scrollbar-style";
 import { isWeb } from "@/constants/platform";
 import { useDismissKeyboardOnOpen } from "@/components/ui/keyboard-dismiss";
+import {
+  computeFloatingPosition,
+  measureFloatingElement,
+  useControllableOpenState,
+  type FloatingAlign as Alignment,
+  type FloatingRect as Rect,
+  type FloatingSide as Placement,
+  type FloatingSize as Size,
+} from "@/components/ui/floating-core";
 
 // Action status for menu items with loading/success feedback
 export type ActionStatus = "idle" | "pending" | "success";
 
 const DROPDOWN_SCROLL_CONTENT_STYLE = { flexGrow: 1 } as const;
-
-type Placement = "top" | "bottom" | "left" | "right";
-type Alignment = "start" | "center" | "end";
-
-interface Rect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-interface Size {
-  width: number;
-  height: number;
-}
 
 interface DropdownMenuContextValue {
   open: boolean;
@@ -61,6 +56,8 @@ interface DropdownMenuContextValue {
   selectItem: (onSelect: (() => void) | undefined, closeOnSelect: boolean) => void;
   flushPendingSelect: () => void;
   triggerRef: React.RefObject<View | null>;
+  anchorRect: Rect | null;
+  setAnchorRect: (rect: Rect | null) => void;
 }
 
 const DropdownMenuContext = createContext<DropdownMenuContextValue | null>(null);
@@ -78,101 +75,18 @@ function useDropdownMenuContext(componentName: string): DropdownMenuContextValue
   return ctx;
 }
 
-function useControllableOpenState({
-  open,
-  defaultOpen,
-  onOpenChange,
-}: {
-  open?: boolean;
-  defaultOpen?: boolean;
-  onOpenChange?: (open: boolean) => void;
-}): [boolean, (next: boolean) => void] {
-  const [internalOpen, setInternalOpen] = useState(Boolean(defaultOpen));
-  const isControlled = typeof open === "boolean";
-  const value = isControlled ? open : internalOpen;
-  const setValue = useCallback(
-    (next: boolean) => {
-      if (!isControlled) setInternalOpen(next);
-      onOpenChange?.(next);
-    },
-    [isControlled, onOpenChange],
-  );
-  return [value, setValue];
+function assignRef<T>(ref: Ref<T> | undefined, value: T): void {
+  if (typeof ref === "function") ref(value);
+  else if (ref && typeof ref === "object") Object.assign(ref, { current: value });
 }
 
-function measureElement(element: View): Promise<Rect> {
-  return new Promise((resolve) => {
-    element.measureInWindow((x, y, width, height) => {
-      resolve({ x, y, width, height });
-    });
-  });
-}
-
-function computePosition({
-  triggerRect,
-  contentSize,
-  displayArea,
-  placement,
-  alignment,
-  offset,
-}: {
-  triggerRect: Rect;
-  contentSize: { width: number; height: number };
-  displayArea: Rect;
-  placement: Placement;
-  alignment: Alignment;
-  offset: number;
-}): { x: number; y: number; actualPlacement: Placement } {
-  const { width: contentWidth, height: contentHeight } = contentSize;
-
-  // Calculate available space
-  const spaceTop = triggerRect.y - displayArea.y;
-  const spaceBottom = displayArea.y + displayArea.height - (triggerRect.y + triggerRect.height);
-
-  // Flip if needed
-  let actualPlacement = placement;
-  if (placement === "bottom" && spaceBottom < contentHeight && spaceTop > spaceBottom) {
-    actualPlacement = "top";
-  } else if (placement === "top" && spaceTop < contentHeight && spaceBottom > spaceTop) {
-    actualPlacement = "bottom";
-  }
-
-  let x: number;
-  let y: number;
-
-  // Position based on placement
-  if (actualPlacement === "bottom") {
-    y = triggerRect.y + triggerRect.height + offset;
-  } else if (actualPlacement === "top") {
-    y = triggerRect.y - contentHeight - offset;
-  } else if (actualPlacement === "left") {
-    x = triggerRect.x - contentWidth - offset;
-    y = triggerRect.y;
-  } else {
-    x = triggerRect.x + triggerRect.width + offset;
-    y = triggerRect.y;
-  }
-
-  // Alignment
-  if (actualPlacement === "top" || actualPlacement === "bottom") {
-    if (alignment === "start") {
-      x = triggerRect.x;
-    } else if (alignment === "end") {
-      x = triggerRect.x + triggerRect.width - contentWidth;
-    } else {
-      x = triggerRect.x + (triggerRect.width - contentWidth) / 2;
-    }
-  }
-
-  // Constrain to screen
-  const padding = 8;
-  x = Math.max(padding, Math.min(displayArea.width - contentWidth - padding, x!));
-  y = Math.max(
-    displayArea.y + padding,
-    Math.min(displayArea.y + displayArea.height - contentHeight - padding, y!),
-  );
-
-  return { x, y, actualPlacement };
+function eventPoint(event: unknown): { x: number; y: number } | null {
+  if (!event || typeof event !== "object") return null;
+  const nativeEvent = Reflect.get(event, "nativeEvent");
+  const value = nativeEvent && typeof nativeEvent === "object" ? nativeEvent : event;
+  const x = Reflect.get(value, "pageX") ?? Reflect.get(value, "clientX");
+  const y = Reflect.get(value, "pageY") ?? Reflect.get(value, "clientY");
+  return typeof x === "number" && typeof y === "number" ? { x, y } : null;
 }
 
 function renderDropdownSurface(input: {
@@ -184,6 +98,7 @@ function renderDropdownSurface(input: {
   content: ReactElement;
   surfaceNativeID: string;
   onExited: () => void;
+  motion: "scale" | "fade";
 }): ReactElement {
   const {
     frameStyle,
@@ -194,6 +109,7 @@ function renderDropdownSurface(input: {
     content,
     surfaceNativeID,
     onExited,
+    motion,
   } = input;
 
   const body = scrollable ? (
@@ -216,13 +132,15 @@ function renderDropdownSurface(input: {
       testID={testID}
       style={surfaceStyle}
       frameStyle={frameStyle}
-      entering={contentEntering}
-      exiting={contentExiting.withCallback((finished) => {
-        "worklet";
-        if (finished) {
-          runOnJS(onExited)();
-        }
-      })}
+      entering={motion === "fade" ? FadeIn.duration(100) : contentEntering}
+      exiting={(motion === "fade" ? FadeOut.duration(100) : contentExiting).withCallback(
+        (finished) => {
+          "worklet";
+          if (finished) {
+            runOnJS(onExited)();
+          }
+        },
+      )}
     >
       {body}
     </FloatingSurface>
@@ -240,6 +158,7 @@ export function DropdownMenu({
   onOpenChange?: (open: boolean) => void;
 }>): ReactElement {
   const triggerRef = useRef<View>(null);
+  const [anchorRect, setAnchorRect] = useState<Rect | null>(null);
   const pendingSelectRef = useRef<(() => void) | null>(null);
   const [isOpen, setIsOpen] = useControllableOpenState({
     open,
@@ -247,6 +166,10 @@ export function DropdownMenu({
     onOpenChange,
   });
   useDismissKeyboardOnOpen(isOpen);
+
+  useEffect(() => {
+    if (!isOpen) setAnchorRect(null);
+  }, [isOpen]);
 
   const flushPendingSelect = useCallback(() => {
     const pendingSelect = pendingSelectRef.current;
@@ -289,8 +212,10 @@ export function DropdownMenu({
       selectItem,
       flushPendingSelect,
       triggerRef,
+      anchorRect,
+      setAnchorRect,
     }),
-    [flushPendingSelect, isOpen, selectItem, setIsOpen],
+    [anchorRect, flushPendingSelect, isOpen, selectItem, setIsOpen],
   );
 
   return <DropdownMenuContext.Provider value={value}>{children}</DropdownMenuContext.Provider>;
@@ -306,20 +231,45 @@ type TriggerStyleProp = StyleProp<ViewStyle> | ((state: TriggerState) => StylePr
 export interface DropdownMenuTriggerProps extends Omit<PressableProps, "style" | "children"> {
   style?: TriggerStyleProp;
   children: ReactNode | ((state: TriggerState) => ReactNode);
+  activation?: "press" | "context";
+  triggerRef?: Ref<View | null>;
 }
 
 export function DropdownMenuTrigger({
   children,
   disabled,
   style,
+  activation = "press",
+  triggerRef,
   ...props
 }: DropdownMenuTriggerProps): ReactElement {
   const ctx = useDropdownMenuContext("DropdownMenuTrigger");
 
   const handlePress = useCallback(() => {
-    if (disabled) return;
+    if (disabled || activation !== "press") return;
     ctx.setOpen(!ctx.open);
-  }, [disabled, ctx]);
+  }, [activation, disabled, ctx]);
+
+  const handleContextMenu = useCallback(
+    (event: unknown) => {
+      if (disabled || activation !== "context") return;
+      const point = eventPoint(event);
+      if (!point) return;
+      const preventDefault = Reflect.get(event as object, "preventDefault");
+      if (typeof preventDefault === "function") preventDefault.call(event);
+      ctx.setAnchorRect({ x: point.x, y: point.y, width: 0, height: 0 });
+      ctx.setOpen(true);
+    },
+    [activation, ctx, disabled],
+  );
+
+  const handleRef = useCallback(
+    (node: View | null) => {
+      assignRef(ctx.triggerRef, node);
+      assignRef(triggerRef, node);
+    },
+    [ctx.triggerRef, triggerRef],
+  );
 
   const pressableStyle = useCallback(
     ({ pressed, hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => {
@@ -342,10 +292,12 @@ export function DropdownMenuTrigger({
   return (
     <Pressable
       {...props}
-      ref={ctx.triggerRef}
+      ref={handleRef}
       collapsable={false}
       disabled={disabled}
       onPress={handlePress}
+      // @ts-expect-error React Native Web context-menu event.
+      onContextMenu={handleContextMenu}
       style={pressableStyle}
     >
       {renderChildren}
@@ -429,6 +381,7 @@ export function DropdownMenuContent({
   fullWidth = false,
   horizontalPadding = 16,
   scrollable = false,
+  motion = "scale",
   testID,
 }: PropsWithChildren<{
   side?: Placement;
@@ -441,10 +394,11 @@ export function DropdownMenuContent({
   fullWidth?: boolean;
   horizontalPadding?: number;
   scrollable?: boolean;
+  motion?: "scale" | "fade";
   testID?: string;
 }>): ReactElement | null {
   const { t } = useTranslation();
-  const { open, setOpen, triggerRef, flushPendingSelect } =
+  const { open, setOpen, triggerRef, anchorRect, flushPendingSelect } =
     useDropdownMenuContext("DropdownMenuContent");
   const [modalVisible, setModalVisible] = useState(false);
   const surfaceNativeID = useId();
@@ -500,12 +454,18 @@ export function DropdownMenuContent({
 
   // Measure trigger when opening
   useEffect(() => {
-    if (!open || !triggerRef.current) {
+    if (!open) {
       setTriggerRect(null);
       setContentSize(null);
       setPosition(null);
       return undefined;
     }
+
+    if (anchorRect) {
+      setTriggerRect(anchorRect);
+      return undefined;
+    }
+    if (!triggerRef.current) return undefined;
 
     // Capture status bar height synchronously before async measurement.
     // This avoids race conditions where StatusBar.currentHeight could change
@@ -513,7 +473,7 @@ export function DropdownMenuContent({
     const statusBarHeight = Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
     let cancelled = false;
 
-    void measureElement(triggerRef.current).then((rect) => {
+    void measureFloatingElement(triggerRef.current).then((rect) => {
       if (cancelled) return undefined;
       // On Android with statusBarTranslucent, measureInWindow returns coordinates
       // relative to below the status bar, but Modal content starts from screen top.
@@ -528,7 +488,7 @@ export function DropdownMenuContent({
     return () => {
       cancelled = true;
     };
-  }, [open, triggerRef]);
+  }, [anchorRect, open, triggerRef]);
 
   // Calculate position when we have both measurements
   useEffect(() => {
@@ -544,19 +504,21 @@ export function DropdownMenuContent({
       height: screenHeight,
     };
 
-    const result = computePosition({
+    const result = computeFloatingPosition({
       triggerRect,
       contentSize: visibleContentSize,
       displayArea,
-      placement: side,
-      alignment: align,
+      side,
+      align,
       offset,
+      flipHorizontal: false,
+      alignHorizontalSides: false,
     });
 
     // For fullWidth, x is simply the horizontal padding to center on screen
     const x = fullWidth ? horizontalPadding : result.x;
     setPosition({ x, y: result.y });
-    setActualPlacement(result.actualPlacement);
+    setActualPlacement(result.actualSide);
   }, [triggerRect, visibleContentSize, side, align, offset, fullWidth, horizontalPadding]);
 
   const handleMeasuredContentLayout = useCallback(
@@ -641,6 +603,7 @@ export function DropdownMenuContent({
               scrollViewportStyle,
               content,
               surfaceNativeID,
+              motion,
               onExited: () => setModalVisible(false),
             })
           : null}

@@ -3,11 +3,12 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-036`
+2. Top next action: `NTH-TD-043`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: None.
+4. Active blockers: none. The eleventh complete local gate passed all `23` phases in `2336161ms`; remote SHA drift
+   guards and the authorized Git/Actions/Release transaction remain pending.
 5. Current branch: `agent/refactor/final-architecture-50k` in ignored worktree `.dev/worktrees/final-architecture-50k`, based on clean commit `743e8d29` from `agent/dev/mvp`.
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-CD-066` governs atomic convergence of that path; `NTH-CD-067` locks feature-zero-loss compositional OOP and at least `50,000` production LOC removed before deferred performance work. `NTH-TD-031` froze the clean baseline and shared-`300s` gate; `NTH-TD-032` verified Core/Repository, `NTH-TD-033` direct Provider Harness, `NTH-TD-034` the single RPC Registry and `NTH-TD-035` the Stage 4 App authority/canonical AgentTimeline projection cut. `NTH-EV-056` is verified; `NTH-TD-036` is the active shared Timeline/ViewModel/responsive UI convergence cut. `NTH-TD-038` and performance sampling remain deferred to `NTH-MS-019`.
+6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-031` through `NTH-TD-035` are verified; `NTH-TD-036` remains doing at Stage 4 with `296,368` production LOC and `15,437` lines still required for its independent target. The complete local release gate is green; commit, push, Actions and public Release verification remain pending.
 
 ## Objective Summary
 
@@ -24,11 +25,13 @@
 
 ## Top Next Action
 
-`NTH-TD-036` `[ready]`: Converge AgentTimeline rendering and responsive desktop/compact/mobile composition through the final View Registry and shared primitives without any visual or interaction change.
+`NTH-TD-043` `[doing]`: Revalidate the three frozen remote SHAs, create the atomic intermediate-refactor commit,
+then perform only the authorized normal fast-forward pushes and verify exact-SHA Actions plus the fixed Beta assets.
 
 ## Active Blockers
 
-None.
+None. The first six failed full attempts and all preparation failures remain permanently recorded under
+`NTH-EV-065` / `NTH-EXP-045` through `NTH-EXP-057` and do not count as partial release evidence.
 
 ## Recent Important Changes
 

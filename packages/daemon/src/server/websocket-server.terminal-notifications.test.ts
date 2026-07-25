@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Server as HTTPServer } from "http";
 import type pino from "pino";
@@ -15,8 +18,13 @@ import type {
 } from "../terminal/terminal-manager.js";
 import type { PersistedWorkspaceRecord, WorkspaceRegistry } from "./workspace-registry.js";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
-import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
+import {
+  createProviderSnapshotManagerStub,
+  createTestToolGateway,
+} from "./test-utils/session-stubs.js";
 import type { PushNotificationSender, PushPayload } from "./push/notifications.js";
+import { WorkspaceAuthorityManager } from "./workspace-authority/workspace-authority-manager.js";
+import { WorkspaceTaskCoordinator } from "./workspace-authority/task-coordinator.js";
 
 const wsModuleMock = vi.hoisted(() => {
   class MockWebSocketServer {
@@ -54,6 +62,9 @@ class RecordingPushNotificationSender implements PushNotificationSender {
     this.sent.push(payload);
   }
 }
+
+const authorityManagers: WorkspaceAuthorityManager[] = [];
+const tempHomes: string[] = [];
 
 function createLogger() {
   const logger = {
@@ -126,6 +137,15 @@ function createServer(terminalManager: TerminalManager, workspaceRegistry?: Work
   const daemonConfigStore = {
     onChange: vi.fn(() => () => {}),
   };
+  const thothHome = mkdtempSync(join(tmpdir(), "thoth-terminal-notifications-"));
+  const authorityManager = new WorkspaceAuthorityManager(thothHome);
+  const authorityCoordinator = new WorkspaceTaskCoordinator(
+    authorityManager,
+    createStub<pino.Logger>(createLogger()),
+  );
+  authorityCoordinator.setToolGateway(createTestToolGateway());
+  tempHomes.push(thothHome);
+  authorityManagers.push(authorityManager);
 
   const server = new DaemonWebSocketServer(
     createStub<HTTPServer>({}),
@@ -134,7 +154,7 @@ function createServer(terminalManager: TerminalManager, workspaceRegistry?: Work
     createStub<ExecutionService>(executionService),
     createStub<AgentStorage>({}),
     createStub<DownloadTokenStore>({}),
-    "/tmp/thoth-test",
+    thothHome,
     createStub<DaemonConfigStore>(daemonConfigStore),
     null,
     { allowedOrigins: new Set() },
@@ -167,6 +187,9 @@ function createServer(terminalManager: TerminalManager, workspaceRegistry?: Work
     undefined,
     pushNotifications,
     createProviderSnapshotManagerStub().manager,
+    undefined,
+    undefined,
+    { manager: authorityManager, coordinator: authorityCoordinator },
   );
 
   return { server, pushNotifications };
@@ -260,6 +283,8 @@ function transition(input: {
 
 describe("DaemonWebSocketServer terminal attention notifications", () => {
   afterEach(() => {
+    for (const manager of authorityManagers.splice(0)) manager.close();
+    for (const home of tempHomes.splice(0)) rmSync(home, { recursive: true, force: true });
     vi.clearAllMocks();
   });
 

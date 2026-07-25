@@ -1,6 +1,7 @@
 import type { AgentProvider } from "@thoth/protocol/agent-types";
 import {
   buildDeterministicWorkspaceTabId,
+  normalizeWorkspaceTabIds,
   normalizeWorkspaceDraftTabSetup,
   normalizeWorkspaceTabTarget,
   workspaceTabTargetsEqual,
@@ -74,23 +75,6 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 
 function toObjectRecord(value: unknown): Record<string, unknown> | undefined {
   return isPlainRecord(value) ? value : undefined;
-}
-
-function normalizeTabOrder(list: unknown): string[] {
-  if (!Array.isArray(list)) {
-    return [];
-  }
-  const next: string[] = [];
-  const used = new Set<string>();
-  for (const value of list) {
-    const tabId = trimNonEmpty(typeof value === "string" ? value : null);
-    if (!tabId || used.has(tabId)) {
-      continue;
-    }
-    used.add(tabId);
-    next.push(tabId);
-  }
-  return next;
 }
 
 function ensureInOrder(input: { current: string[]; tabId: string }): string[] {
@@ -396,7 +380,7 @@ export function applyReorderTabs(
     return state;
   }
 
-  const normalized = normalizeTabOrder(input.tabIds);
+  const normalized = normalizeWorkspaceTabIds(input.tabIds);
   const current = state.tabOrderByWorkspace[key] ?? [];
   if (current.length === normalized.length) {
     let same = true;
@@ -589,12 +573,12 @@ function mergeExplicitTabOrder(
   rawOrder: Record<string, unknown>,
 ): void {
   for (const key in rawOrder) {
-    const normalizedOrder = normalizeTabOrder(rawOrder[key]);
+    const normalizedOrder = normalizeWorkspaceTabIds(rawOrder[key]);
     if (normalizedOrder.length === 0) {
       continue;
     }
     const existing = tabOrderByWorkspace[key] ?? [];
-    tabOrderByWorkspace[key] = normalizeTabOrder([...existing, ...normalizedOrder]);
+    tabOrderByWorkspace[key] = normalizeWorkspaceTabIds([...existing, ...normalizedOrder]);
   }
 }
 
@@ -639,7 +623,7 @@ function mergeLegacyTabOrder(
       continue;
     }
     const existing = tabOrderByWorkspace[key] ?? [];
-    tabOrderByWorkspace[key] = normalizeTabOrder([...existing, ...normalizedLegacyOrder]);
+    tabOrderByWorkspace[key] = normalizeWorkspaceTabIds([...existing, ...normalizedLegacyOrder]);
   }
 }
 
@@ -692,7 +676,7 @@ function pruneTabOrderAndFocusToExistingTabs(
 
   for (const key in state.uiTabsByWorkspace) {
     const tabIds = new Set((state.uiTabsByWorkspace[key] ?? []).map((tab) => tab.tabId));
-    const order = normalizeTabOrder(state.tabOrderByWorkspace[key] ?? []).filter((tabId) =>
+    const order = normalizeWorkspaceTabIds(state.tabOrderByWorkspace[key] ?? []).filter((tabId) =>
       tabIds.has(tabId),
     );
     if (order.length > 0) {
@@ -773,7 +757,7 @@ export function partializeWorkspaceTabsState(
 
   const nextTabOrderByWorkspace: Record<string, string[]> = {};
   for (const key in state.tabOrderByWorkspace) {
-    const order = normalizeTabOrder(state.tabOrderByWorkspace[key]);
+    const order = normalizeWorkspaceTabIds(state.tabOrderByWorkspace[key]);
     if (order.length > 0) {
       nextTabOrderByWorkspace[key] = order;
     }

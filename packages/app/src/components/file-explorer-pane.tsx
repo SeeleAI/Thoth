@@ -1028,36 +1028,12 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     backgroundColor: theme.colors.surfaceSidebar,
   },
-  desktopSplit: {
-    flex: 1,
-    flexDirection: "row",
-    minHeight: 0,
-  },
   treePane: {
     minWidth: 0,
     position: "relative",
   },
   treePaneFill: {
     flex: 1,
-  },
-  treePaneWithPreview: {
-    flex: 0,
-    flexGrow: 0,
-    flexShrink: 0,
-    borderLeftWidth: 1,
-    borderLeftColor: theme.colors.border,
-  },
-  splitResizeHandle: {
-    position: "absolute",
-    left: -5,
-    top: 0,
-    bottom: 0,
-    width: 10,
-    zIndex: 20,
-  },
-  previewPane: {
-    flex: 1,
-    minWidth: 0,
   },
   paneHeader: {
     height: WORKSPACE_SECONDARY_HEADER_HEIGHT,
@@ -1137,10 +1113,6 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
     textAlign: "center",
   },
-  binaryMetaText: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
-  },
   entryRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1217,12 +1189,6 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     textAlign: "right",
   },
-  previewHeaderText: {
-    flex: 1,
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
-    fontWeight: theme.fontWeight.normal,
-  },
   iconButton: {
     width: 22,
     height: 22,
@@ -1241,66 +1207,6 @@ const styles = StyleSheet.create((theme) => ({
     height: 16,
     alignItems: "center",
     justifyContent: "center",
-  },
-  previewContent: {
-    flex: 1,
-  },
-  previewScrollContainer: {
-    flex: 1,
-    minHeight: 0,
-    position: "relative",
-  },
-  previewCodeScrollContent: {
-    paddingTop: theme.spacing[3],
-    paddingHorizontal: theme.spacing[3],
-    paddingBottom: theme.spacing[3] + theme.spacing[2],
-  },
-  codeText: {
-    color: theme.colors.foreground,
-    fontFamily: theme.fontFamily.mono,
-    fontSize: theme.fontSize.code,
-    flexShrink: 0,
-  },
-  previewImageScrollContent: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: theme.spacing[3],
-  },
-  previewImage: {
-    width: "100%",
-    aspectRatio: 1,
-  },
-  sheetBackground: {
-    backgroundColor: theme.colors.surface2,
-  },
-  handleIndicator: {
-    backgroundColor: theme.colors.palette.zinc[600],
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: theme.spacing[4],
-    paddingVertical: theme.spacing[3],
-    borderBottomWidth: theme.borderWidth[1],
-    borderBottomColor: theme.colors.border,
-  },
-  sheetTitle: {
-    fontSize: theme.fontSize.lg,
-    fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.foreground,
-    flex: 1,
-  },
-  sheetCloseButton: {
-    padding: theme.spacing[2],
-  },
-  sheetCenterState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: theme.spacing[2],
-    padding: theme.spacing[4],
   },
 }));
 

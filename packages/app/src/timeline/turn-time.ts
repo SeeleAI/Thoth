@@ -1,4 +1,9 @@
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import {
+  timelineId,
+  timelineTimestamp,
+  timelineType,
+  type TimelineRenderItem,
+} from "@/agent-stream/timeline-view-registry";
 
 export interface TurnTiming {
   startedAt: Date;
@@ -13,8 +18,8 @@ export interface StreamTurnTiming {
 
 export function deriveStreamTurnTiming(params: {
   agentStatus: string;
-  tail: TimelineViewModel[];
-  head: TimelineViewModel[];
+  tail: TimelineRenderItem[];
+  head: TimelineRenderItem[];
 }): StreamTurnTiming {
   const byAssistantId = new Map<string, TurnTiming>();
   let currentUserAt: Date | null = null;
@@ -35,10 +40,10 @@ export function deriveStreamTurnTiming(params: {
     }
   };
 
-  const visitItem = (item: TimelineViewModel) => {
-    if (item.kind === "user_message") {
+  const visitItem = (item: TimelineRenderItem) => {
+    if (timelineType(item) === "user_message") {
       flushCompletedTurn();
-      currentUserAt = item.timestamp;
+      currentUserAt = timelineTimestamp(item);
       currentLastItemAt = null;
       currentAssistantIds = [];
       return;
@@ -46,9 +51,9 @@ export function deriveStreamTurnTiming(params: {
     if (!currentUserAt) {
       return;
     }
-    currentLastItemAt = item.timestamp;
-    if (item.kind === "assistant_message") {
-      currentAssistantIds.push(item.id);
+    currentLastItemAt = timelineTimestamp(item);
+    if (timelineType(item) === "assistant_message") {
+      currentAssistantIds.push(timelineId(item));
     }
   };
 
@@ -73,11 +78,11 @@ export function deriveStreamTurnTiming(params: {
   };
 }
 
-function findLastUserMessageTimestamp(items: TimelineViewModel[]): Date | null {
+function findLastUserMessageTimestamp(items: TimelineRenderItem[]): Date | null {
   for (let i = items.length - 1; i >= 0; i -= 1) {
     const item = items[i];
-    if (item?.kind === "user_message") {
-      return item.timestamp;
+    if (item && timelineType(item) === "user_message") {
+      return timelineTimestamp(item);
     }
   }
   return null;

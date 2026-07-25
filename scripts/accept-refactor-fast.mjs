@@ -17,6 +17,20 @@ const sourceArgs = [
   "scripts/refactor-baseline.json",
 ];
 if (stage.stage >= 1) sourceArgs.push("--require-net-negative");
+if (stage.stage >= 5) {
+  sourceArgs.push(
+    "--max-physical-lines",
+    "280931",
+    "--max-scanner-tokens",
+    "1278967",
+    "--max-ast-nodes",
+    "1319294",
+    "--max-static-import-edges",
+    "5031",
+    "--max-runtime-dependency-edges",
+    "164",
+  );
+}
 if (stage.stage >= 9) sourceArgs.push("--require-target", "50000");
 
 try {

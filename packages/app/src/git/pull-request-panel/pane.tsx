@@ -1247,9 +1247,6 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minHeight: 0,
   },
-  invisible: {
-    opacity: 0,
-  },
   hoverable: {
     backgroundColor: theme.colors.surfaceSidebarHover,
   },
@@ -1443,18 +1440,6 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: 28,
     paddingRight: theme.spacing[3],
     paddingBottom: theme.spacing[2],
-  },
-  toolbarTrailing: {
-    marginLeft: "auto",
-  },
-  filterTriggerContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-  },
-  filterHiddenCount: {
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.foregroundMuted,
   },
   eventRow: {
     marginHorizontal: theme.spacing[3],

@@ -1,35 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import type { TimelineEntry } from "@/test-fixtures/timeline";
+import { timelineEntry, userTimelineEntry } from "@/test-fixtures/timeline";
 import { resolveAssistantTurnBoundaryMessageId } from "./turn-boundary";
 
-function timestamp(seed: number): Date {
-  return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
-}
-
-function userMessage(
-  id: string,
-  seed: number,
-): Extract<TimelineViewModel, { kind: "user_message" }> {
-  return {
-    kind: "user_message",
-    id,
-    text: id,
-    timestamp: timestamp(seed),
-  };
-}
+const userMessage = userTimelineEntry;
 
 function assistantMessage(
   id: string,
   seed: number,
   messageId?: string,
-): Extract<TimelineViewModel, { kind: "assistant_message" }> {
-  return {
-    kind: "assistant_message",
-    id,
-    text: id,
-    timestamp: timestamp(seed),
-    ...(messageId ? { messageId } : {}),
-  };
+): TimelineEntry<"assistant_message"> {
+  return timelineEntry(
+    { type: "assistant_message", text: id, ...(messageId ? { messageId } : {}) },
+    seed,
+  );
 }
 
 describe("resolveAssistantTurnBoundaryMessageId", () => {

@@ -1,6 +1,7 @@
 import {
   ClarifyProviderRuntimeInputPacketSchema,
   ClarifyRuntimePacketSchema,
+  ThothSubmitTaskCardInputSchema,
   type ClarifyProviderRuntimeInputPacket,
   type ClarifyRuntimeCode,
   type ClarifyRuntimePacket,
@@ -481,6 +482,22 @@ function taskCardPacket(): ClarifyRuntimePacket {
       provenance: {
         clarify_transcript_verbatim: transcriptVerbatim,
       },
+      convergence_review: {
+        frontier_ledger: {
+          clarify_strength: "dive",
+          grounded_user_decisions: [
+            "真实 Three.js PathTracing 引擎并集成现有项目",
+            "画质优先，保留现有渲染路径和可关闭回退",
+            "以截图、交互负载性能基线和测试作为验收证据",
+          ],
+          remaining_material_user_owned_assumptions: [],
+          agent_owned_assumptions: ["具体技术路线由 agent 选择最稳方式"],
+          discoverable_assumptions: ["现有渲染入口、应用状态源和目标设备事实由 agent 查证"],
+          why_this_round: "十轮 Clarify 已覆盖交付、集成、验收、风险、资源和发布边界。",
+          convergence_state: "ready_for_task",
+        },
+        why_task_is_now_grounded: "所有适用的高影响用户边界均已由完整 transcript 明确。",
+      },
     },
     ui: {
       kind: "task_registration_card",
@@ -506,6 +523,23 @@ function stopClarifyTaskCardPacket(): ClarifyRuntimePacket {
       },
       provenance: {
         clarify_transcript_verbatim: stopTranscriptVerbatim,
+      },
+      convergence_review: {
+        frontier_ledger: {
+          clarify_strength: "dive",
+          grounded_user_decisions: [
+            "真实 Three.js PathTracing 引擎并集成现有项目",
+            "用户明确要求停止继续澄清并按现有 transcript 编译 Task Card",
+          ],
+          remaining_material_user_owned_assumptions: [],
+          agent_owned_assumptions: ["具体技术路线由 agent 选择最稳方式"],
+          discoverable_assumptions: ["现有仓库、渲染入口和运行环境由 agent 查证"],
+          why_this_round: "用户明确终止 Clarify，现有答案足以形成可审批的 Task 边界。",
+          convergence_state: "ready_for_task",
+        },
+        why_task_is_now_grounded: "用户显式停止提问并授权基于已有 transcript 形成 Task Card。",
+        below_soft_target_rationale:
+          "用户明确停止 Clarify；尚未查明的仓库与实现事实均由 agent 发现或决定，不再占用用户认知。",
       },
     },
     ui: {
@@ -664,11 +698,11 @@ export function buildClarifyUserSimulationReport(
     ),
     turn(
       "threejs-pathtracing",
-      "实现完整 Three.js PathTracing 引擎，能在项目里真实使用",
+      "要做完整 Three.js PathTracing 引擎，先在现有项目里真实使用。",
       buildClarifyTurnInputPacket({
         sessionId: mainSessionId,
         currentState: "C_ASK",
-        userInput: "实现完整 Three.js PathTracing 引擎，能在项目里真实使用",
+        userInput: "要做完整 Three.js PathTracing 引擎，先在现有项目里真实使用。",
         clarify: "dive",
         mode: "loop",
         loop: "balanced",
@@ -693,11 +727,11 @@ export function buildClarifyUserSimulationReport(
     ),
     turn(
       "branch-choice-answer",
-      "选画质优先；注意要能集成真实项目",
+      "选画质优先；注意要能集成真实项目，并保留现有渲染路径。",
       buildClarifyTurnInputPacket({
         sessionId: mainSessionId,
         currentState: "C_ASK",
-        userInput: "选画质优先；注意要能集成真实项目",
+        userInput: "选画质优先；注意要能集成真实项目，并保留现有渲染路径。",
         clarify: "dive",
         mode: "loop",
         loop: "balanced",
@@ -722,11 +756,11 @@ export function buildClarifyUserSimulationReport(
     ),
     turn(
       "note-only-answer",
-      "不选，补充：验收要有路径追踪截图、性能基线和测试，不能做 demo 降级",
+      "不选，补充：验收要有路径追踪截图、交互负载性能基线和测试，不能做 demo 降级。",
       buildClarifyTurnInputPacket({
         sessionId: mainSessionId,
         currentState: "C_ASK",
-        userInput: "不选，补充：验收要有路径追踪截图、性能基线和测试，不能做 demo 降级",
+        userInput: "不选，补充：验收要有路径追踪截图、交互负载性能基线和测试，不能做 demo 降级。",
         clarify: "dive",
         mode: "loop",
         loop: "balanced",
@@ -752,11 +786,11 @@ export function buildClarifyUserSimulationReport(
     ),
     turn(
       "integration-boundary",
-      "集成风险优先，必须保留可关闭回退",
+      "集成风险优先，必须保留可关闭回退。",
       buildClarifyTurnInputPacket({
         sessionId: mainSessionId,
         currentState: "C_ASK",
-        userInput: "集成风险优先，必须保留可关闭回退",
+        userInput: "集成风险优先，必须保留可关闭回退。",
         clarify: "dive",
         mode: "loop",
         loop: "balanced",
@@ -781,11 +815,11 @@ export function buildClarifyUserSimulationReport(
     ),
     turn(
       "scene-data-contract",
-      "增量接入，先不替换现有主链",
+      "增量接入，先不替换现有主链，通过功能开关逐步启用。",
       buildClarifyTurnInputPacket({
         sessionId: mainSessionId,
         currentState: "C_ASK",
-        userInput: "增量接入，先不替换现有主链",
+        userInput: "增量接入，先不替换现有主链，通过功能开关逐步启用。",
         clarify: "dive",
         mode: "loop",
         loop: "balanced",
@@ -810,11 +844,11 @@ export function buildClarifyUserSimulationReport(
     ),
     turn(
       "resource-budget",
-      "沿用现有应用状态源，通过适配层消费",
+      "沿用现有应用状态源，通过适配层消费，不复制应用状态源。",
       buildClarifyTurnInputPacket({
         sessionId: mainSessionId,
         currentState: "C_ASK",
-        userInput: "沿用现有应用状态源，通过适配层消费",
+        userInput: "沿用现有应用状态源，通过适配层消费，不复制应用状态源。",
         clarify: "dive",
         mode: "loop",
         loop: "balanced",
@@ -839,11 +873,11 @@ export function buildClarifyUserSimulationReport(
     ),
     turn(
       "benchmark-profile",
-      "优先保持交互响应，资源接近上限时可降低路径追踪负担",
+      "优先保持交互响应，资源接近上限时降低路径追踪负担。",
       buildClarifyTurnInputPacket({
         sessionId: mainSessionId,
         currentState: "C_ASK",
-        userInput: "优先保持交互响应，资源接近上限时可降低路径追踪负担",
+        userInput: "优先保持交互响应，资源接近上限时降低路径追踪负担。",
         clarify: "dive",
         mode: "loop",
         loop: "balanced",
@@ -868,11 +902,11 @@ export function buildClarifyUserSimulationReport(
     ),
     turn(
       "compatibility-envelope",
-      "用交互场景和目标设备档位",
+      "用交互场景和目标设备档位。",
       buildClarifyTurnInputPacket({
         sessionId: mainSessionId,
         currentState: "C_ASK",
-        userInput: "用交互场景和目标设备档位",
+        userInput: "用交互场景和目标设备档位。",
         clarify: "dive",
         mode: "loop",
         loop: "balanced",
@@ -897,11 +931,11 @@ export function buildClarifyUserSimulationReport(
     ),
     turn(
       "change-control",
-      "覆盖现有调用方和新渲染路径的相关回归",
+      "覆盖现有调用方和新渲染路径的相关回归。",
       buildClarifyTurnInputPacket({
         sessionId: mainSessionId,
         currentState: "C_ASK",
-        userInput: "覆盖现有调用方和新渲染路径的相关回归",
+        userInput: "覆盖现有调用方和新渲染路径的相关回归。",
         clarify: "dive",
         mode: "loop",
         loop: "balanced",
@@ -926,11 +960,11 @@ export function buildClarifyUserSimulationReport(
     ),
     turn(
       "you-decide-task-card",
-      "先看画质结果，再看性能和回归；具体技术路线你决定，优先用最稳方式",
+      "先看画质结果，再看性能和回归；画质偏差和运行边界都进入证据包；具体技术路线你决定，优先用最稳方式。",
       transitionPacket(
         "C_ASK",
         "C_TASK_CARD",
-        "先看画质结果，再看性能和回归；具体技术路线你决定，优先用最稳方式",
+        "先看画质结果，再看性能和回归；画质偏差和运行边界都进入证据包；具体技术路线你决定，优先用最稳方式。",
         11,
         skillRef,
         "dive",
@@ -1151,6 +1185,12 @@ export function validateClarifyUserSimulationReport(
     if (!outputParse.success) {
       failures.push(`${turn.id}: output packet failed schema validation`);
     }
+    if (
+      turn.outputPacket.code === "C_TASK_CARD" &&
+      !ThothSubmitTaskCardInputSchema.safeParse(turn.outputPacket.content).success
+    ) {
+      failures.push(`${turn.id}: C_TASK_CARD content failed semantic tool schema validation`);
+    }
     const inputJson = JSON.stringify(turn.inputPacket);
     if (inputJson.includes("## State Codes") || inputJson.includes("## Transition Rules")) {
       failures.push(`${turn.id}: input packet repeats full Skill rules`);
@@ -1194,6 +1234,18 @@ export function validateClarifyUserSimulationReport(
   const goalTurn = report.turns.find((turn) => turn.id === "task-card-confirm");
   const taskProvenance = taskTurn ? packetProvenance(taskTurn.outputPacket) : undefined;
   const goalProvenance = goalTurn ? packetProvenance(goalTurn.outputPacket) : undefined;
+  const transcriptInputs = new Set(
+    report.transcriptVerbatim.split("\n").flatMap((line) => {
+      const match = /^(?:User|A): (.+)$/u.exec(line);
+      return match ? [match[1]] : [];
+    }),
+  );
+  const taskTurnIndex = report.turns.findIndex((turn) => turn.id === "you-decide-task-card");
+  for (const turn of report.turns.slice(0, taskTurnIndex + 1)) {
+    if (!transcriptInputs.has(turn.userInput)) {
+      failures.push(`${turn.id}: C_TASK_CARD transcript does not preserve user input verbatim`);
+    }
+  }
   const clarifiedQuestionTexts = report.turns.flatMap((turn) => {
     if (turn.outputPacket.code !== "C_ASK") {
       return [];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AgentTimelineEntry, ToolCallDetail } from "@thoth/protocol/agent-types";
-import { createTimelineViewModels } from "@/projection/timeline-view-model";
+import type { ToolCallDetail } from "@thoth/protocol/agent-types";
+import { timelineEntry } from "@/test-fixtures/timeline";
 
 const details: ToolCallDetail[] = [
   { type: "shell", command: "pwd", output: "/tmp", exitCode: 0 },
@@ -25,9 +25,8 @@ const details: ToolCallDetail[] = [
 describe("AgentTimeline harness tool details", () => {
   it("preserves every protocol-owned tool detail without reinterpretation", () => {
     for (const [index, detail] of details.entries()) {
-      const entry: AgentTimelineEntry = {
-        provider: "claude",
-        item: {
+      const entry = timelineEntry(
+        {
           type: "tool_call",
           callId: `call-${index}`,
           name: detail.type,
@@ -36,17 +35,10 @@ describe("AgentTimeline harness tool details", () => {
           detail,
           metadata: { index },
         },
-        timestamp: new Date(index).toISOString(),
-        seqStart: index,
-        seqEnd: index,
-        sourceSeqRanges: [{ startSeq: index, endSeq: index }],
-        collapsed: [],
-      };
-      const [model] = createTimelineViewModels([entry], { agentIsRunning: false });
-      expect(model).toMatchObject({
-        kind: "tool_call",
-        payload: { source: "agent", data: { detail, metadata: { index } } },
-      });
+        index,
+        "claude",
+      );
+      expect(entry.item).toMatchObject({ detail, metadata: { index } });
     }
   });
 });

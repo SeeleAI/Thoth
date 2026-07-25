@@ -123,6 +123,27 @@ describe("Thoth storage layout migration", () => {
     });
   });
 
+  it("creates fresh authority storage after pairing metadata already exists", async () => {
+    const root = temporaryRoot("paired-fresh");
+    const home = path.join(root, ".thoth");
+    mkdirSync(home, { recursive: true });
+    for (const fileName of [
+      "cli-client-id",
+      "config.json",
+      "daemon-keypair.json",
+      "relay-credentials.json",
+      "server-id",
+    ]) {
+      writeFileSync(path.join(home, fileName), `${fileName}\n`);
+    }
+
+    await expect(ensureThothStorageLayout(home, createTestLogger())).resolves.toEqual({
+      requiresProviderThreadFinalization: false,
+    });
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(2);
+    expect(readFileSync(path.join(home, "server-id"), "utf8")).toBe("server-id\n");
+  });
+
   it("rejects a concurrent migration lock owned by a live process", async () => {
     const root = temporaryRoot("lock");
     const home = path.join(root, ".thoth");
@@ -139,8 +160,8 @@ describe("Thoth storage layout migration", () => {
   it("rejects older unrecognized storage without moving or rewriting it", async () => {
     const root = temporaryRoot("old");
     const home = path.join(root, ".thoth");
-    mkdirSync(home, { recursive: true });
-    const legacy = path.join(home, "config.json");
+    mkdirSync(path.join(home, "agents"), { recursive: true });
+    const legacy = path.join(home, "agents", "legacy.json");
     writeFileSync(legacy, '{"legacy":true}\n');
     const original = sha256(legacy);
     await expect(ensureThothStorageLayout(home, createTestLogger())).rejects.toThrow(

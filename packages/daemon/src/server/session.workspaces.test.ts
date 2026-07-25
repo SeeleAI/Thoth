@@ -50,6 +50,7 @@ import {
   asDaemonConfigStore,
   asTerminalManager,
   asSessionInternals,
+  createTestToolGateway,
   createProviderSnapshotManagerStub,
   createSessionWithAuthority,
   isSessionOutboundMessage,
@@ -748,6 +749,7 @@ test("create_agent_request resolves cwd from daemon workspace authority", async 
       workspaceAuthorityManager,
       asSessionLogger(logger),
     );
+    workspaceTaskCoordinator.setToolGateway(createTestToolGateway());
 
     await projectRegistry.upsert(
       createPersistedProjectRecord({
@@ -903,6 +905,7 @@ test("create_agent_request does not title an existing workspace from the agent p
       workspaceAuthorityManager,
       asSessionLogger(logger),
     );
+    workspaceTaskCoordinator.setToolGateway(createTestToolGateway());
 
     let generateCalls = 0;
     const session = asTestSession(

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { UserMessageImageAttachment } from "@/projection/timeline-view-model";
+import type { AttachmentMetadata } from "@/attachments/types";
 import type { AgentAttachment } from "@thoth/protocol/messages";
 import type { TaskContextReference } from "@thoth/protocol/task-authority";
 
@@ -14,7 +14,7 @@ export interface PendingCreateAttempt {
   text: string;
   timestamp: number;
   lifecycle: CreateFlowLifecycleState;
-  images?: UserMessageImageAttachment[];
+  images?: AttachmentMetadata[];
   attachments?: AgentAttachment[];
   contextRefs?: TaskContextReference[];
 }

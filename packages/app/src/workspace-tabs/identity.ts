@@ -153,6 +153,22 @@ export function buildDeterministicWorkspaceTabId(target: WorkspaceTabTarget): st
   return `file_${target.path}`;
 }
 
+export function normalizeWorkspaceTabIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const tabIds: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const tabId = trimNonEmpty(typeof item === "string" ? item : null);
+    if (tabId && !seen.has(tabId)) {
+      seen.add(tabId);
+      tabIds.push(tabId);
+    }
+  }
+  return tabIds;
+}
+
 function trimNonEmpty(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
     return null;

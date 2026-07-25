@@ -36,13 +36,12 @@ import type { AgentCapabilityFlags } from "@thoth/protocol/agent-types";
 import type { AgentSnapshotPayload, ThothTurnSnapshot } from "@thoth/protocol/messages";
 import type { ProviderRunMode } from "@thoth/protocol/provider-control";
 import type { DaemonClient } from "@thoth/client/internal/daemon-client";
-import type { WorkspaceComposerAttachment } from "@/attachments/types";
+import type { AttachmentMetadata, WorkspaceComposerAttachment } from "@/attachments/types";
 import {
   useDraftWorkspaceAttachmentScopeKey,
   useWorkspaceAttachmentScopeKey,
   useWorkspaceAttachmentsStore,
 } from "@/attachments/workspace-attachments-store";
-import type { UserMessageImageAttachment } from "@/projection/timeline-view-model";
 import {
   COMPACT_FORM_FACTOR_WIDTH,
   MAX_CONTENT_WIDTH,
@@ -128,7 +127,7 @@ function resolveDraftModeId(input: {
 async function submitDraftCreateRequest(input: {
   attempt: { clientMessageId: string };
   text: string;
-  images?: UserMessageImageAttachment[];
+  images?: AttachmentMetadata[];
   attachments?: unknown;
   contextRefs?: DraftCreateAttempt["contextRefs"];
   cwd: string;
@@ -466,7 +465,7 @@ export function WorkspaceDraftAgentTab({
   const {
     formErrorMessage,
     isSubmitting,
-    optimisticStreamItems,
+    optimisticMessages,
     draftAgent,
     handleCreateFromInput,
     continueCreateFromAttempt,
@@ -689,7 +688,10 @@ export function WorkspaceDraftAgentTab({
               agentId={tabId}
               serverId={serverId}
               agent={draftAgent}
-              streamItems={optimisticStreamItems}
+              streamItems={optimisticMessages.map((message) => ({
+                source: "pending" as const,
+                message,
+              }))}
               pendingPermissions={EMPTY_PENDING_PERMISSIONS}
               onOpenWorkspaceFile={onOpenWorkspaceFile}
             />

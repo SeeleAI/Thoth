@@ -8,7 +8,7 @@ export const MVP_VERSION = "0.0.0-mvp-beta";
 export const MVP_TAG = `v${MVP_VERSION}`;
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const packageJsonPaths = [
+export const MVP_PACKAGE_JSON_PATHS = [
   "package.json",
   "packages/app/highlight/package.json",
   "packages/app/package.json",
@@ -22,12 +22,14 @@ const packageJsonPaths = [
   "packages/relay/package.json",
   "packages/tui/package.json",
 ];
+export const MVP_SERVER_CLI_PACKAGE_NAME = "@thoth/cli";
 const dependencySections = [
   "dependencies",
   "devDependencies",
   "optionalDependencies",
   "peerDependencies",
 ];
+const runtimeDependencySections = ["dependencies", "optionalDependencies", "peerDependencies"];
 
 function readJson(relativePath) {
   return JSON.parse(readFileSync(join(repoRoot, relativePath), "utf8"));
@@ -42,8 +44,50 @@ function verifyInternalDependencies({ dependencies, source, failures }) {
   }
 }
 
+export function resolveMvpServerCliPackages(manifests) {
+  const internalManifests = new Map(
+    manifests
+      .filter(({ value }) => value.name?.startsWith("@thoth/"))
+      .map((manifest) => [manifest.value.name, manifest]),
+  );
+  const root = internalManifests.get(MVP_SERVER_CLI_PACKAGE_NAME);
+  if (!root) {
+    throw new Error(`Missing ${MVP_SERVER_CLI_PACKAGE_NAME} manifest`);
+  }
+
+  const resolved = [];
+  const visiting = new Set();
+  const visited = new Set();
+  const visit = (manifest) => {
+    const packageName = manifest.value.name;
+    if (visited.has(packageName)) return;
+    if (visiting.has(packageName)) {
+      throw new Error(`Circular private runtime dependency at ${packageName}`);
+    }
+    visiting.add(packageName);
+    for (const section of runtimeDependencySections) {
+      for (const dependencyName of Object.keys(manifest.value[section] ?? {})) {
+        if (!dependencyName.startsWith("@thoth/")) continue;
+        const dependency = internalManifests.get(dependencyName);
+        if (!dependency) {
+          throw new Error(
+            `${packageName} has unknown private runtime dependency ${dependencyName}`,
+          );
+        }
+        visit(dependency);
+      }
+    }
+    visiting.delete(packageName);
+    visited.add(packageName);
+    if (packageName !== MVP_SERVER_CLI_PACKAGE_NAME) resolved.push(manifest);
+  };
+
+  visit(root);
+  return resolved;
+}
+
 export function runMvpReleaseContract({ writeMode = false } = {}) {
-  const manifests = packageJsonPaths.map((relativePath) => ({
+  const manifests = MVP_PACKAGE_JSON_PATHS.map((relativePath) => ({
     relativePath,
     value: readJson(relativePath),
   }));
@@ -51,6 +95,12 @@ export function runMvpReleaseContract({ writeMode = false } = {}) {
     manifests.map(({ value }) => value.name).filter((name) => name?.startsWith("@thoth/")),
   );
   const failures = [];
+  let serverCliPackages = [];
+  try {
+    serverCliPackages = resolveMvpServerCliPackages(manifests);
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : String(error));
+  }
 
   for (const manifest of manifests) {
     const { relativePath, value } = manifest;
@@ -92,7 +142,7 @@ export function runMvpReleaseContract({ writeMode = false } = {}) {
   }
 
   if (writeMode) {
-    console.log(`Pinned ${packageJsonPaths.length} package manifests to ${MVP_VERSION}.`);
+    console.log(`Pinned ${MVP_PACKAGE_JSON_PATHS.length} package manifests to ${MVP_VERSION}.`);
     return;
   }
 
@@ -163,6 +213,41 @@ export function runMvpReleaseContract({ writeMode = false } = {}) {
   const desktopManifest = readJson("packages/desktop/package.json");
   if (desktopManifest.dependencies?.["electron-updater"]) {
     failures.push("Desktop MVP must not depend on the legacy electron-updater path");
+  }
+
+  const serverCliPackageNames = new Set(serverCliPackages.map(({ value }) => value.name));
+  for (const { relativePath, value } of serverCliPackages) {
+    if (value.private !== true) {
+      failures.push(`${relativePath}: bundled Server CLI runtime packages must remain private`);
+    }
+    for (const section of runtimeDependencySections) {
+      for (const dependencyName of Object.keys(value[section] ?? {})) {
+        if (
+          dependencyName.startsWith("@thoth/") &&
+          dependencyName !== MVP_SERVER_CLI_PACKAGE_NAME &&
+          !serverCliPackageNames.has(dependencyName)
+        ) {
+          failures.push(
+            `${relativePath}:${section} private runtime dependency ${dependencyName} is missing from the Server CLI closure`,
+          );
+        }
+      }
+    }
+  }
+  const packageServerCli = readFileSync(join(repoRoot, "scripts/package-server-cli.mjs"), "utf8");
+  if (!packageServerCli.includes("resolveMvpServerCliPackages(mvpPackageManifests)")) {
+    failures.push("Server CLI packaging must derive private packages from the MVP runtime closure");
+  }
+  if (!packageServerCli.includes("...internalPackages.map(")) {
+    failures.push(
+      "Server CLI packaging must assert every private runtime package in the final archive",
+    );
+  }
+  if (!packageServerCli.includes("lockedExternalVersion(name, packageName)")) {
+    failures.push("Server CLI packaging must pin external dependencies to the root lockfile");
+  }
+  if (!packageServerCli.includes('"--prefer-offline"')) {
+    failures.push("Server CLI packaging must prefer the verified local npm cache");
   }
 
   const hermeticBuildScripts = new Map([
@@ -261,7 +346,9 @@ export function runMvpReleaseContract({ writeMode = false } = {}) {
     throw new Error(failures.join("\n"));
   }
 
-  console.log(`MVP release contract verified: ${MVP_TAG}`);
+  console.log(
+    `MVP release contract verified: ${MVP_TAG}; Server CLI embeds ${serverCliPackages.length} private runtime packages`,
+  );
 }
 
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);

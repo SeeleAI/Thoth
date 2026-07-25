@@ -191,7 +191,7 @@ if (stage.stage >= 4) {
     "packages/app/src/projection/authority-projection.ts",
     "packages/app/src/projection/projection-context.tsx",
     "packages/app/src/projection/daemon-projection-host.tsx",
-    "packages/app/src/projection/timeline-view-model.ts",
+    "packages/app/src/agent-stream/timeline-view-registry.tsx",
     "packages/app/src/query/agent-archive-state.ts",
     "packages/app/src/query/workspace-archive-state.ts",
     "packages/app/src/query/workspace-restore-state.ts",
@@ -206,6 +206,7 @@ if (stage.stage >= 4) {
     "packages/app/src/contexts/session-workspace-upserts.ts",
     "packages/app/src/timeline/session-stream-reducers.ts",
     "packages/app/src/types/stream.ts",
+    "packages/app/src/projection/timeline-view-model.ts",
   ]) {
     forbidPath(path);
   }
@@ -244,8 +245,8 @@ if (stage.stage >= 4) {
     "single DaemonProjectionService writer",
   );
   requireText(
-    "packages/app/src/projection/timeline-view-model.ts",
-    /satisfies TimelineViewRegistry/,
+    "packages/app/src/agent-stream/timeline-view-registry.tsx",
+    /satisfies TimelineItemViewRegistry/,
     "exhaustive AgentTimeline View Registry",
   );
   for (const type of [
@@ -262,7 +263,7 @@ if (stage.stage >= 4) {
     "compaction",
   ]) {
     requireText(
-      "packages/app/src/projection/timeline-view-model.ts",
+      "packages/app/src/agent-stream/timeline-view-registry.tsx",
       new RegExp(`\\b${type}:`),
       `${type} Timeline View strategy`,
     );
@@ -294,7 +295,6 @@ if (stage.stage >= 4) {
   requireAppProjectionWriteOwnership();
 }
 
-if (stage.stage >= 5) requirePath("packages/app/src/agent-stream/timeline-view-registry.tsx");
 if (stage.stage >= 6) requirePath("packages/daemon/src/services/vcs-application-service.ts");
 
 if (stage.stage >= 7) {

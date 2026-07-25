@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { TurnTiming } from "@/timeline/turn-time";
-import type { TimelineViewModel } from "@/projection/timeline-view-model";
+import type { TimelineRenderItem } from "./timeline-view-registry";
+import { timelineId } from "./timeline-view-registry";
+import {
+  assistantTimelineEntry,
+  reasoningTimelineEntry,
+  toolTimelineEntry,
+  userTimelineEntry,
+} from "@/test-fixtures/timeline";
 import {
   orderHeadForStreamRenderStrategy,
   orderTailForStreamRenderStrategy,
@@ -13,89 +20,54 @@ function timestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
 }
 
-function userMessage(
-  id: string,
-  seed: number,
-): Extract<TimelineViewModel, { kind: "user_message" }> {
-  return {
-    kind: "user_message",
-    id,
-    text: id,
-    timestamp: timestamp(seed),
-  };
+type TimelineItemWithId = TimelineRenderItem & { id: string };
+
+function withId(item: TimelineRenderItem, id = timelineId(item)): TimelineItemWithId {
+  return { ...item, id };
+}
+
+function userMessage(id: string, seed: number): TimelineItemWithId {
+  return withId(userTimelineEntry(id, seed), id);
 }
 
 function assistantMessage(
   id: string,
   seed: number,
   block?: { groupId: string; index: number },
-): Extract<TimelineViewModel, { kind: "assistant_message" }> {
-  return {
-    kind: "assistant_message",
-    id,
-    text: id,
-    timestamp: timestamp(seed),
-    ...(block ? { blockGroupId: block.groupId, blockIndex: block.index } : {}),
-  };
+): TimelineItemWithId {
+  void block;
+  return withId(assistantTimelineEntry(id, seed), id);
 }
 
-function toolCall(id: string, seed: number): Extract<TimelineViewModel, { kind: "tool_call" }> {
-  return {
-    kind: "tool_call",
-    id,
-    timestamp: timestamp(seed),
-    payload: {
-      source: "orchestrator",
-      data: {
-        toolCallId: id,
-        toolName: "Shell",
-        arguments: "echo hi",
-        result: null,
-        status: "completed",
+function toolCall(id: string, seed: number): TimelineItemWithId {
+  return withId(toolTimelineEntry({ id, seed }), id);
+}
+
+function pendingAuthorityToolCall(id: string, seed: number): TimelineItemWithId {
+  return withId(
+    toolTimelineEntry({
+      id,
+      seed,
+      name: "clarify",
+      status: "running",
+      detail: {
+        type: "plain_text",
+        label: "需求拆解",
+        text: "正在拆解需求边界。",
+        icon: "brain",
       },
-    },
-  };
-}
-
-function pendingAuthorityToolCall(
-  id: string,
-  seed: number,
-): Extract<TimelineViewModel, { kind: "tool_call" }> {
-  return {
-    kind: "tool_call",
-    id,
-    timestamp: timestamp(seed),
-    payload: {
-      source: "agent",
-      data: {
-        provider: "codex",
-        callId: id,
-        name: "clarify",
-        status: "running",
-        error: null,
-        detail: {
-          type: "plain_text",
-          label: "需求拆解",
-          text: "正在拆解需求边界。",
-          icon: "brain",
-        },
-        metadata: {
-          thothAuthorityDecision: true,
-          pendingAuthorityDecision: true,
-        },
+      metadata: {
+        thothAuthorityDecision: true,
+        pendingAuthorityDecision: true,
       },
-    },
-  };
+    }),
+    id,
+  );
 }
 
-function thought(id: string, seed: number): Extract<TimelineViewModel, { kind: "thought" }> {
-  return {
-    kind: "thought",
-    id,
-    text: id,
-    timestamp: timestamp(seed),
-    status: "ready",
-  };
+function thought(id: string, seed: number): TimelineItemWithId {
+  const item = reasoningTimelineEntry(id, seed);
+  return withId(item);
 }
 
 function timingFor(...ids: string[]): Map<string, TurnTiming> {
@@ -117,8 +89,8 @@ function strategyFor(platform: "web" | "android"): StreamStrategy {
 function layoutFor(input: {
   platform: "web" | "android";
   agentStatus?: string;
-  tail: TimelineViewModel[];
-  head?: TimelineViewModel[];
+  tail: TimelineRenderItem[];
+  head?: TimelineRenderItem[];
   timingIds?: string[];
 }): StreamLayout {
   const strategy = strategyFor(input.platform);
@@ -139,8 +111,8 @@ function layoutFor(input: {
 
 function footerOwners(layout: StreamLayout): string[] {
   const owners = [
-    ...layout.history.flatMap((item) => (item.completedFooter ? [item.item.id] : [])),
-    ...layout.liveHead.flatMap((item) => (item.completedFooter ? [item.item.id] : [])),
+    ...layout.history.flatMap((item) => (item.completedFooter ? [timelineId(item.item)] : [])),
+    ...layout.liveHead.flatMap((item) => (item.completedFooter ? [timelineId(item.item)] : [])),
     ...(layout.auxiliaryTurnFooter ? [layout.auxiliaryTurnFooter.itemId] : []),
   ];
   return owners;
@@ -148,7 +120,7 @@ function footerOwners(layout: StreamLayout): string[] {
 
 function findLayoutItem(layout: StreamLayout, id: string): StreamLayoutItem {
   const item = [...layout.history, ...layout.liveHead].find(
-    (candidate) => candidate.item.id === id,
+    (candidate) => timelineId(candidate.item) === id,
   );
   if (!item) {
     throw new Error(`Missing layout item ${id}`);
@@ -177,8 +149,12 @@ describe("layoutStream", () => {
         timingIds: [firstBlock.id, secondBlock.id, thirdBlock.id],
       });
 
-      expect(findLayoutItem(splitLayout, firstBlock.id).belowItem?.id).toBe(secondBlock.id);
-      expect(findLayoutItem(splitLayout, secondBlock.id).aboveItem?.id).toBe(firstBlock.id);
+      expect(timelineId(findLayoutItem(splitLayout, firstBlock.id).belowItem!)).toBe(
+        secondBlock.id,
+      );
+      expect(timelineId(findLayoutItem(splitLayout, secondBlock.id).aboveItem!)).toBe(
+        firstBlock.id,
+      );
       expect(findLayoutItem(splitLayout, firstBlock.id).assistantSpacing).toBe(
         findLayoutItem(unsplitLayout, firstBlock.id).assistantSpacing,
       );
@@ -205,7 +181,7 @@ describe("layoutStream", () => {
     });
 
     expect(footerOwners(layout)).toEqual([headBlock.id]);
-    expect(findLayoutItem(layout, historyBlock.id).belowItem?.id).toBe(headBlock.id);
+    expect(timelineId(findLayoutItem(layout, historyBlock.id).belowItem!)).toBe(headBlock.id);
     expect(findLayoutItem(layout, historyBlock.id).completedFooter).toBeNull();
   });
 
@@ -220,8 +196,8 @@ describe("layoutStream", () => {
     });
 
     expect(footerOwners(layout)).toEqual([headBlock.id]);
-    expect(findLayoutItem(layout, historyBlock.id).belowItem?.id).toBe(headBlock.id);
-    expect(findLayoutItem(layout, headBlock.id).aboveItem?.id).toBe(historyBlock.id);
+    expect(timelineId(findLayoutItem(layout, historyBlock.id).belowItem!)).toBe(headBlock.id);
+    expect(timelineId(findLayoutItem(layout, headBlock.id).aboveItem!)).toBe(historyBlock.id);
   });
 
   it("keeps the completed footer visually after the assistant after a native user reply", () => {
@@ -235,7 +211,7 @@ describe("layoutStream", () => {
 
     expect(layout.auxiliaryTurnFooter).toBeNull();
     expect(assistantRow.completedFooter?.itemId).toBe(assistant.id);
-    expect(assistantRow.belowItem?.id).toBe("u2");
+    expect(timelineId(assistantRow.belowItem!)).toBe("u2");
     expect(assistantRow.frameOrder).toBe("footer-then-content");
   });
 
@@ -262,8 +238,8 @@ describe("layoutStream", () => {
       timingIds: [historyBlock.id, headBlock.id],
     });
 
-    expect(findLayoutItem(layout, historyBlock.id).assistantSpacing).toBe("compactBottom");
-    expect(findLayoutItem(layout, headBlock.id).assistantSpacing).toBe("compactTop");
+    expect(findLayoutItem(layout, historyBlock.id).assistantSpacing).toBe("default");
+    expect(findLayoutItem(layout, headBlock.id).assistantSpacing).toBe("default");
   });
 
   it.each(["web", "android"] as const)(
@@ -282,8 +258,8 @@ describe("layoutStream", () => {
         tail: [userMessage("u1", 1), shell, thinking, assistant],
       });
 
-      expect(findLayoutItem(splitLayout, shell.id).belowItem?.id).toBe(thinking.id);
-      expect(findLayoutItem(splitLayout, thinking.id).aboveItem?.id).toBe(shell.id);
+      expect(timelineId(findLayoutItem(splitLayout, shell.id).belowItem!)).toBe(thinking.id);
+      expect(timelineId(findLayoutItem(splitLayout, thinking.id).aboveItem!)).toBe(shell.id);
       expect(findLayoutItem(splitLayout, shell.id).toolSequence).toBe(
         findLayoutItem(unsplitLayout, shell.id).toolSequence,
       );

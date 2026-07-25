@@ -193,7 +193,9 @@ export function deriveProjectDisplayName(input: {
 /**
  * Determines the date group label for an agent based on lastActivityAt.
  */
-export function deriveDateGroup(lastActivityAt: Date): string {
+export type AgentDateBucket = "today" | "yesterday" | "thisWeek" | "thisMonth" | "older";
+
+export function deriveDateBucket(lastActivityAt: Date): AgentDateBucket {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
@@ -204,22 +206,37 @@ export function deriveDateGroup(lastActivityAt: Date): string {
   );
 
   if (activityDate.getTime() >= today.getTime()) {
-    return "Recent";
+    return "today";
   }
   if (activityDate.getTime() >= yesterday.getTime()) {
-    return "Yesterday";
+    return "yesterday";
   }
 
   const diffTime = today.getTime() - activityDate.getTime();
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
   if (diffDays <= 7) {
-    return "This week";
+    return "thisWeek";
   }
   if (diffDays <= 30) {
-    return "This month";
+    return "thisMonth";
   }
-  return "Older";
+  return "older";
+}
+
+export function deriveDateGroup(lastActivityAt: Date): string {
+  switch (deriveDateBucket(lastActivityAt)) {
+    case "today":
+      return "Recent";
+    case "yesterday":
+      return "Yesterday";
+    case "thisWeek":
+      return "This week";
+    case "thisMonth":
+      return "This month";
+    case "older":
+      return "Older";
+  }
 }
 
 export interface ProjectGroup {

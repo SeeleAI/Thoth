@@ -7,6 +7,10 @@ import {
 } from "./contract.js";
 import { evaluateClarifyGoldenDataset } from "./eval.js";
 import { CLARIFY_GOLDEN_SCENARIOS } from "./golden.js";
+import {
+  buildClarifyUserSimulationReport,
+  validateClarifyUserSimulationReport,
+} from "./user-simulation.js";
 
 describe("thoth.clarify harness", () => {
   it("builds normal provider input envelopes without repeating Skill rules", () => {
@@ -104,5 +108,14 @@ describe("thoth.clarify harness", () => {
         "codex-exec-user-simulation",
       ]),
     );
+  });
+
+  it("keeps user-simulation Task Cards schema-valid with verbatim provenance", () => {
+    const report = buildClarifyUserSimulationReport({
+      id: "thoth.clarify",
+      digest: `sha256:${"0".repeat(64)}`,
+    });
+
+    expect(validateClarifyUserSimulationReport(report)).toEqual({ passed: true, failures: [] });
   });
 });

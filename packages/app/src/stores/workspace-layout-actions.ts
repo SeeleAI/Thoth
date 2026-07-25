@@ -5,6 +5,7 @@ import { defaultWorkspaceLayoutIds } from "@/stores/workspace-layout-ids";
 import type { WorkspaceLayoutNodeIdPrefix } from "@/stores/workspace-layout-ids";
 import {
   buildDeterministicWorkspaceTabId,
+  normalizeWorkspaceTabIds,
   normalizeWorkspaceTabTarget,
   workspaceTabTargetsEqual,
 } from "@/workspace-tabs/identity";
@@ -219,23 +220,6 @@ function trimNonEmpty(value: string | null | undefined): string | null {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeTabIds(list: unknown): string[] {
-  if (!Array.isArray(list)) {
-    return [];
-  }
-  const next: string[] = [];
-  const seen = new Set<string>();
-  for (const value of list) {
-    const tabId = trimNonEmpty(typeof value === "string" ? value : null);
-    if (!tabId || seen.has(tabId)) {
-      continue;
-    }
-    seen.add(tabId);
-    next.push(tabId);
-  }
-  return next;
 }
 
 function createPaneNode(input: {
@@ -568,7 +552,7 @@ function normalizePaneNode(rawPane: SplitPaneInternal | undefined): SplitNodeInt
     return null;
   }
   const tabs = normalizeWorkspaceTabs(rawPane?.tabs);
-  const tabIds = normalizeTabIds(rawPane?.tabIds);
+  const tabIds = normalizeWorkspaceTabIds(rawPane?.tabIds);
   const mergedTabs =
     tabs.length > 0
       ? tabs
@@ -631,7 +615,7 @@ function normalizeNode(node: unknown): SplitNodeInternal | null {
 }
 
 function reorderTabsForPane(input: ReorderTabsForPaneInput): SplitPaneInternal {
-  const nextIds = normalizeTabIds(input.tabIds);
+  const nextIds = normalizeWorkspaceTabIds(input.tabIds);
   const byId = new Map(input.pane.tabs.map((tab) => [tab.tabId, tab]));
   const reordered: WorkspaceTab[] = [];
   const seen = new Set<string>();

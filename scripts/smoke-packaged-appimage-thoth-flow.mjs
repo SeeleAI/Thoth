@@ -36,7 +36,13 @@ const appImagePath = option(
 const outputDir = option("--output-dir", path.join(root, ".dev/packaged-appimage-thoth-flow"));
 const quickPromptPath = option("--quick-prompt-file", null);
 const loopPromptPath = option("--loop-prompt-file", null);
-const legacyAgentId = "packaged-legacy-agent";
+const releaseFixtureRoot = path.join(
+  root,
+  "packages/daemon/src/test-fixtures/refactor-release-05775486",
+);
+const releaseFixtureManifest = JSON.parse(
+  readFileSync(path.join(releaseFixtureRoot, "manifest.json"), "utf8"),
+);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -109,89 +115,91 @@ function directorySize(rootPath) {
   return total;
 }
 
-function seedLegacyStorage(thothHome, workspacePath) {
-  const createdAt = "2026-07-20T00:00:00.000Z";
-  const agentsRoot = path.join(thothHome, "agents");
-  mkdirSync(agentsRoot, { recursive: true });
-  writeFileSync(
-    path.join(agentsRoot, `${legacyAgentId}.json`),
-    `${JSON.stringify({
-      id: legacyAgentId,
-      provider: "codex",
-      cwd: workspacePath,
-      createdAt,
-      updatedAt: createdAt,
-      labels: {},
-      lastStatus: "closed",
-    })}\n`,
+function seedReleaseStorage(thothHome) {
+  const workspaceId = releaseFixtureManifest.workspaceId;
+  assert(typeof workspaceId === "string" && workspaceId.length > 0, "Invalid Release fixture");
+  const workspaceRoot = path.join(thothHome, "workspaces", workspaceId);
+  mkdirSync(workspaceRoot, { recursive: true });
+  copyFileSync(
+    path.join(releaseFixtureRoot, "catalog.sqlite"),
+    path.join(thothHome, "catalog.sqlite"),
   );
-  const timelineRoot = path.join(thothHome, "agent-timeline");
-  mkdirSync(timelineRoot, { recursive: true });
-  const timeline = new DatabaseSync(path.join(timelineRoot, "timeline.sqlite"));
-  timeline.exec(`
-    CREATE TABLE agent_timeline_rows (
-      agent_id TEXT NOT NULL,
-      seq INTEGER NOT NULL,
-      timestamp TEXT NOT NULL,
-      item_json TEXT NOT NULL,
-      PRIMARY KEY(agent_id, seq)
-    ) STRICT;
-  `);
-  timeline
-    .prepare("INSERT INTO agent_timeline_rows VALUES (?, 1, ?, ?)")
-    .run(
-      legacyAgentId,
-      createdAt,
-      JSON.stringify({ type: "assistant_message", text: "Packaged legacy timeline" }),
-    );
-  timeline.close();
-  const legacyProviderRoot = path.join(thothHome, "provider-sessions", "legacy-session");
-  mkdirSync(legacyProviderRoot, { recursive: true });
-  writeFileSync(path.join(legacyProviderRoot, "legacy-runtime.txt"), "legacy session copy\n");
-  writeFileSync(path.join(thothHome, "config.json"), "{}\n");
+  copyFileSync(
+    path.join(releaseFixtureRoot, "authority.sqlite"),
+    path.join(workspaceRoot, "authority.sqlite"),
+  );
+  writeFileSync(
+    path.join(thothHome, "storage-layout.json"),
+    `${JSON.stringify({ version: 1, migrationState: "complete" })}\n`,
+  );
+
+  const fixture = new DatabaseSync(path.join(releaseFixtureRoot, "authority.sqlite"), {
+    readOnly: true,
+  });
+  const timeline = fixture
+    .prepare(
+      `SELECT agent_id, seq, item_json
+       FROM agent_timeline_rows
+       ORDER BY agent_id, seq
+       LIMIT 1`,
+    )
+    .get();
+  fixture.close();
+  assert(
+    typeof timeline?.agent_id === "string" &&
+      typeof timeline?.seq === "number" &&
+      typeof timeline?.item_json === "string",
+    "Release fixture has no Timeline probe",
+  );
+  return {
+    workspaceId,
+    agentId: timeline.agent_id,
+    seq: timeline.seq,
+    itemJson: timeline.item_json,
+  };
 }
 
-function inspectStorageMigration(thothHome) {
+function inspectStorageMigration(thothHome, probe) {
   const marker = JSON.parse(readFileSync(path.join(thothHome, "storage-layout.json"), "utf8"));
-  assert(marker.migrated === true, "Packaged legacy storage was not marked as migrated");
+  assert(marker.version === 2, "Packaged Release storage did not activate layout v2");
+  assert(marker.schemaVersion === 2, "Packaged Release storage did not activate schema v2");
+  assert(marker.migrated === true, "Packaged Release storage was not marked as migrated");
   assert(
-    marker.counts?.agents === 1,
-    `Expected one migrated Agent, received ${marker.counts?.agents}`,
-  );
-  assert(
-    marker.counts?.timelineRows === 1,
-    `Expected one migrated timeline row, received ${marker.counts?.timelineRows}`,
-  );
-  assert(
-    !existsSync(`${thothHome}.migration-source-v1`),
-    "Packaged migration source remained after successful provider-thread finalization",
+    marker.workspaceCount === 1,
+    "Packaged Release storage migrated an unexpected Workspace count",
   );
   const catalog = new DatabaseSync(path.join(thothHome, "catalog.sqlite"), { readOnly: true });
   const locator = catalog
     .prepare("SELECT workspace_id FROM catalog_agent_locator WHERE agent_id = ?")
-    .get(legacyAgentId);
+    .get(probe.agentId);
+  const agents = catalog.prepare("SELECT COUNT(*) AS count FROM catalog_agent_locator").get().count;
   catalog.close();
-  assert(locator?.workspace_id, "Migrated Agent is missing from the global locator");
-  const authorityPath = path.join(
-    thothHome,
-    "workspaces",
-    String(locator.workspace_id),
-    "authority.sqlite",
+  assert(
+    locator?.workspace_id === probe.workspaceId,
+    "Release Agent is missing from the migrated global locator",
   );
+  const authorityPath = path.join(thothHome, "workspaces", probe.workspaceId, "authority.sqlite");
   const authority = new DatabaseSync(authorityPath, { readOnly: true });
   const timeline = authority
-    .prepare("SELECT item_json FROM agent_timeline_rows WHERE agent_id = ? AND seq = 1")
-    .get(legacyAgentId);
+    .prepare("SELECT item_json FROM agent_timeline_rows WHERE agent_id = ? AND seq = ?")
+    .get(probe.agentId, probe.seq);
+  const timelineRows = authority
+    .prepare("SELECT COUNT(*) AS count FROM agent_timeline_rows")
+    .get().count;
   authority.close();
   assert(
-    typeof timeline?.item_json === "string" &&
-      timeline.item_json.includes("Packaged legacy timeline"),
-    "Migrated Agent timeline was not preserved in Workspace authority",
+    timeline?.item_json === probe.itemJson,
+    "Release Agent Timeline probe changed during packaged migration",
+  );
+  assert(
+    existsSync(`${path.join(thothHome, "catalog.sqlite")}.release-05775486.bak`) &&
+      existsSync(`${authorityPath}.release-05775486.bak`),
+    "Packaged migration did not preserve the manual Release recovery backups",
   );
   return {
-    workspaceId: String(locator.workspace_id),
-    agents: marker.counts.agents,
-    timelineRows: marker.counts.timelineRows,
+    workspaceId: probe.workspaceId,
+    agents,
+    timelineRows,
   };
 }
 
@@ -351,20 +359,12 @@ async function main() {
   const desktopStdoutPath = path.join(runRoot, "desktop.stdout.log");
   const desktopStderrPath = path.join(runRoot, "desktop.stderr.log");
   const quickWorkspace = path.join(runRoot, "quick-workspace");
-  const legacyWorkspace = path.join(runRoot, "legacy-workspace");
-  for (const directory of [
-    home,
-    thothHome,
-    xdgConfigHome,
-    xdgCacheHome,
-    fakeBin,
-    quickWorkspace,
-    legacyWorkspace,
-  ]) {
+  for (const directory of [home, thothHome, xdgConfigHome, xdgCacheHome, fakeBin, quickWorkspace]) {
     mkdirSync(directory, { recursive: true });
   }
+  let releaseMigrationProbe = null;
   if (!realCodex) {
-    seedLegacyStorage(thothHome, legacyWorkspace);
+    releaseMigrationProbe = seedReleaseStorage(thothHome);
     writeFileSync(statePath, JSON.stringify({ planExec: 0, review: 0 }));
     const fakeCodexPath = path.join(fakeBin, "codex");
     copyFileSync(path.join(root, "scripts/fixtures/scripted-codex-app-server.mjs"), fakeCodexPath);
@@ -609,7 +609,7 @@ async function main() {
       durableBytes < 25 * 1024 * 1024,
       `Packaged durable Thoth state exceeded 25MB: ${durableBytes} bytes`,
     );
-    const migration = realCodex ? null : inspectStorageMigration(thothHome);
+    const migration = realCodex ? null : inspectStorageMigration(thothHome, releaseMigrationProbe);
 
     report = {
       ok: true,

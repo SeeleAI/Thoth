@@ -29,6 +29,13 @@ import {
 
 const RELEASE_SOURCE = "05775486";
 const LOCK_SUFFIX = ".migration.lock";
+const NON_AUTHORITY_HOME_ENTRIES = new Set([
+  "cli-client-id",
+  "config.json",
+  "daemon-keypair.json",
+  "relay-credentials.json",
+  "server-id",
+]);
 const CATALOG_REQUIRED_TABLES = [
   "catalog_agent_locator",
   "catalog_card_locator",
@@ -395,7 +402,8 @@ function quoteIdentifier(value: string): string {
 function isFreshHome(thothHome: string): boolean {
   if (!existsSync(thothHome)) return true;
   return readdirSync(thothHome).every(
-    (name) => name === path.basename(`${thothHome}${LOCK_SUFFIX}`),
+    (name) =>
+      name === path.basename(`${thothHome}${LOCK_SUFFIX}`) || NON_AUTHORITY_HOME_ENTRIES.has(name),
   );
 }
 

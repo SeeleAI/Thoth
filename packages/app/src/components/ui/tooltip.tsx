@@ -30,16 +30,14 @@ import { StyleSheet } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { FloatingSurface } from "@/components/ui/floating";
 import { isWeb } from "@/constants/platform";
-
-type Side = "top" | "bottom" | "left" | "right";
-type Align = "start" | "center" | "end";
-
-interface Rect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+import {
+  computeFloatingPosition,
+  measureFloatingElement,
+  useControllableOpenState,
+  type FloatingAlign as Align,
+  type FloatingRect as Rect,
+  type FloatingSide as Side,
+} from "@/components/ui/floating-core";
 
 interface TooltipContextValue {
   open: boolean;
@@ -96,132 +94,6 @@ function composeEventHandlers(
     }
     injected(event);
   };
-}
-
-function useControllableOpenState({
-  open,
-  defaultOpen,
-  onOpenChange,
-}: {
-  open?: boolean;
-  defaultOpen?: boolean;
-  onOpenChange?: (open: boolean) => void;
-}): [boolean, (next: boolean) => void] {
-  const [internalOpen, setInternalOpen] = useState(Boolean(defaultOpen));
-  const isControlled = typeof open === "boolean";
-  const value = isControlled ? open : internalOpen;
-  const setValue = useCallback(
-    (next: boolean) => {
-      if (!isControlled) setInternalOpen(next);
-      onOpenChange?.(next);
-    },
-    [isControlled, onOpenChange],
-  );
-  return [value, setValue];
-}
-
-function measureElement(element: View): Promise<Rect> {
-  return new Promise((resolve) => {
-    element.measureInWindow((x, y, width, height) => {
-      resolve({ x, y, width, height });
-    });
-  });
-}
-
-function resolveActualSide(args: {
-  triggerRect: Rect;
-  contentSize: { width: number; height: number };
-  displayArea: Rect;
-  side: Side;
-}): Side {
-  const { triggerRect, contentSize, displayArea, side } = args;
-  const spaceTop = triggerRect.y - displayArea.y;
-  const spaceBottom = displayArea.y + displayArea.height - (triggerRect.y + triggerRect.height);
-  const spaceLeft = triggerRect.x - displayArea.x;
-  const spaceRight = displayArea.x + displayArea.width - (triggerRect.x + triggerRect.width);
-
-  if (side === "bottom" && spaceBottom < contentSize.height && spaceTop > spaceBottom) return "top";
-  if (side === "top" && spaceTop < contentSize.height && spaceBottom > spaceTop) return "bottom";
-  if (side === "left" && spaceLeft < contentSize.width && spaceRight > spaceLeft) return "right";
-  if (side === "right" && spaceRight < contentSize.width && spaceLeft > spaceRight) return "left";
-  return side;
-}
-
-function resolveAlignedCoordinate(args: {
-  align: Align;
-  start: number;
-  size: number;
-  contentSize: number;
-}): number {
-  const { align, start, size, contentSize } = args;
-  if (align === "start") return start;
-  if (align === "end") return start + size - contentSize;
-  return start + (size - contentSize) / 2;
-}
-
-function computePosition({
-  triggerRect,
-  contentSize,
-  displayArea,
-  side,
-  align,
-  offset,
-}: {
-  triggerRect: Rect;
-  contentSize: { width: number; height: number };
-  displayArea: Rect;
-  side: Side;
-  align: Align;
-  offset: number;
-}): { x: number; y: number; actualSide: Side } {
-  const { width: contentWidth, height: contentHeight } = contentSize;
-  const actualSide = resolveActualSide({ triggerRect, contentSize, displayArea, side });
-
-  let x = 0;
-  let y = 0;
-
-  if (actualSide === "bottom") {
-    y = triggerRect.y + triggerRect.height + offset;
-    x = resolveAlignedCoordinate({
-      align,
-      start: triggerRect.x,
-      size: triggerRect.width,
-      contentSize: contentWidth,
-    });
-  } else if (actualSide === "top") {
-    y = triggerRect.y - contentHeight - offset;
-    x = resolveAlignedCoordinate({
-      align,
-      start: triggerRect.x,
-      size: triggerRect.width,
-      contentSize: contentWidth,
-    });
-  } else if (actualSide === "left") {
-    x = triggerRect.x - contentWidth - offset;
-    y = resolveAlignedCoordinate({
-      align,
-      start: triggerRect.y,
-      size: triggerRect.height,
-      contentSize: contentHeight,
-    });
-  } else {
-    x = triggerRect.x + triggerRect.width + offset;
-    y = resolveAlignedCoordinate({
-      align,
-      start: triggerRect.y,
-      size: triggerRect.height,
-      contentSize: contentHeight,
-    });
-  }
-
-  const padding = 8;
-  x = Math.max(padding, Math.min(displayArea.width - contentWidth - padding, x));
-  y = Math.max(
-    displayArea.y + padding,
-    Math.min(displayArea.y + displayArea.height - contentHeight - padding, y),
-  );
-
-  return { x, y, actualSide };
 }
 
 export function Tooltip({
@@ -462,7 +334,7 @@ export function TooltipContent({
     const statusBarHeight = Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
     let cancelled = false;
 
-    void measureElement(ctx.triggerRef.current).then((rect) => {
+    void measureFloatingElement(ctx.triggerRef.current).then((rect) => {
       if (!cancelled) setTriggerRect({ ...rect, y: rect.y + statusBarHeight });
       return undefined;
     });
@@ -476,7 +348,7 @@ export function TooltipContent({
     if (!triggerRect || !contentSize) return;
     const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
     const displayArea = { x: 0, y: 0, width: screenWidth, height: screenHeight };
-    const result = computePosition({
+    const result = computeFloatingPosition({
       triggerRect,
       contentSize,
       displayArea,

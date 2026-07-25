@@ -672,9 +672,6 @@ const styles = StyleSheet.create((theme) => ({
   tabTextActive: {
     color: theme.colors.foreground,
   },
-  tabTextMuted: {
-    opacity: 0.8,
-  },
   headerRightSection: {
     flexDirection: "row",
     alignItems: "center",

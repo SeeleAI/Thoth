@@ -16,9 +16,6 @@ import * as Clipboard from "expo-clipboard";
 import { useTranslation } from "react-i18next";
 import { DiffStat } from "@/components/diff-stat";
 import {
-  CopyX,
-  ArrowLeftToLine,
-  ArrowRightToLine,
   ChevronDown,
   Copy,
   Ellipsis,
@@ -27,8 +24,6 @@ import {
   Import as ImportIcon,
   ListTodo,
   PanelRight,
-  Pencil,
-  RotateCw,
   Settings,
   SquarePen,
   SquareTerminal,
@@ -89,7 +84,6 @@ import { useUiPreferencesStore } from "@/stores/ui-preferences-store";
 import {
   buildDeterministicWorkspaceTabId,
   normalizeWorkspaceTabTarget,
-  workspaceTabTargetsEqual,
 } from "@/workspace-tabs/identity";
 import {
   getHostRuntimeStore,
@@ -137,10 +131,14 @@ import {
 import {
   buildWorkspaceTabMenuEntries,
   type WorkspaceTabMenuEntry,
-  type WorkspaceTabMenuLabels,
 } from "@/screens/workspace/workspace-tab-menu";
+import {
+  useWorkspaceTabMenuLabels,
+  WorkspaceTabMenuItem,
+} from "@/screens/workspace/workspace-tab-menu-item";
 import { useDesktopBrowserNewTabRequests } from "@/browser/new-tab-requests";
 import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
+import { useStableTabDescriptorMap } from "@/screens/workspace/use-stable-tab-descriptor-map";
 import {
   resolveWorkspaceHeaderRenderState,
   type WorkspaceHeaderCheckoutState,
@@ -242,11 +240,6 @@ const ThemedEllipsis = withUnistyles(Ellipsis);
 const ThemedEllipsisVertical = withUnistyles(EllipsisVertical);
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedCopy = withUnistyles(Copy);
-const ThemedRotateCw = withUnistyles(RotateCw);
-const ThemedArrowLeftToLine = withUnistyles(ArrowLeftToLine);
-const ThemedArrowRightToLine = withUnistyles(ArrowRightToLine);
-const ThemedCopyX = withUnistyles(CopyX);
-const ThemedPencil = withUnistyles(Pencil);
 const ThemedX = withUnistyles(X);
 const ThemedSquarePen = withUnistyles(SquarePen);
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
@@ -519,55 +512,11 @@ function MobileTabTrailingAccessory({
           entry.kind === "separator" ? (
             <DropdownMenuSeparator key={entry.key} />
           ) : (
-            <MobileTabDropdownMenuItem key={entry.key} entry={entry} />
+            <WorkspaceTabMenuItem key={entry.key} entry={entry} />
           ),
         )}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function MobileTabDropdownMenuItem({
-  entry,
-}: {
-  entry: Extract<WorkspaceTabMenuEntry, { kind: "item" }>;
-}) {
-  const leading = useMemo(() => {
-    switch (entry.icon) {
-      case "copy":
-        return <ThemedCopy size={16} uniProps={mutedColorMapping} />;
-      case "rotate-cw":
-        return <ThemedRotateCw size={16} uniProps={mutedColorMapping} />;
-      case "arrow-left-to-line":
-        return <ThemedArrowLeftToLine size={16} uniProps={mutedColorMapping} />;
-      case "arrow-right-to-line":
-        return <ThemedArrowRightToLine size={16} uniProps={mutedColorMapping} />;
-      case "copy-x":
-        return <ThemedCopyX size={16} uniProps={mutedColorMapping} />;
-      case "pencil":
-        return <ThemedPencil size={16} uniProps={mutedColorMapping} />;
-      case "x":
-        return <ThemedX size={16} uniProps={mutedColorMapping} />;
-      default:
-        return undefined;
-    }
-  }, [entry.icon]);
-  const trailing = useMemo(
-    () => (entry.hint ? <Text style={styles.menuItemHint}>{entry.hint}</Text> : undefined),
-    [entry.hint],
-  );
-  return (
-    <DropdownMenuItem
-      testID={entry.testID}
-      disabled={entry.disabled}
-      destructive={entry.destructive}
-      onSelect={entry.onSelect}
-      tooltip={entry.tooltip}
-      leading={leading}
-      trailing={trailing}
-    >
-      {entry.label}
-    </DropdownMenuItem>
   );
 }
 
@@ -608,24 +557,7 @@ function MobileWorkspaceTabOption({
   onCloseTabsBelow: (tabId: string) => Promise<void> | void;
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
 }) {
-  const { t } = useTranslation();
-  const tabMenuLabels = useMemo<WorkspaceTabMenuLabels>(
-    () => ({
-      copyResumeCommand: t("workspace.tabs.menu.copyResumeCommand"),
-      copyAgentId: t("workspace.tabs.menu.copyAgentId"),
-      copyFilePath: t("workspace.tabs.menu.copyFilePath"),
-      rename: t("workspace.tabs.menu.rename"),
-      closeAbove: t("workspace.tabs.menu.closeAbove"),
-      closeBelow: t("workspace.tabs.menu.closeBelow"),
-      closeLeft: t("workspace.tabs.menu.closeLeft"),
-      closeRight: t("workspace.tabs.menu.closeRight"),
-      closeOthers: t("workspace.tabs.menu.closeOthers"),
-      reloadAgent: t("workspace.tabs.menu.reloadAgent"),
-      reloadAgentTooltip: t("workspace.tabs.menu.reloadAgentTooltip"),
-      close: t("workspace.tabs.menu.close"),
-    }),
-    [t],
-  );
+  const tabMenuLabels = useWorkspaceTabMenuLabels();
   const menuTestIDBase = `workspace-tab-menu-${buildDeterministicWorkspaceTabId(tab.target)}`;
   const menuEntries = buildWorkspaceTabMenuEntries({
     surface: "mobile",
@@ -869,32 +801,6 @@ const MobileMountedTabSlot = memo(function MobileMountedTabSlot({
     </RenderProfile>
   );
 });
-
-function useStableTabDescriptorMap(tabDescriptors: WorkspaceTabDescriptor[]) {
-  const cacheRef = useRef(new Map<string, WorkspaceTabDescriptor>());
-  const tabDescriptorMap = useMemo(() => {
-    const next = new Map<string, WorkspaceTabDescriptor>();
-    for (const tabDescriptor of tabDescriptors) {
-      const cachedDescriptor = cacheRef.current.get(tabDescriptor.tabId);
-      if (
-        cachedDescriptor &&
-        cachedDescriptor.key === tabDescriptor.key &&
-        cachedDescriptor.kind === tabDescriptor.kind &&
-        workspaceTabTargetsEqual(cachedDescriptor.target, tabDescriptor.target)
-      ) {
-        next.set(tabDescriptor.tabId, cachedDescriptor);
-        continue;
-      }
-      next.set(tabDescriptor.tabId, tabDescriptor);
-    }
-    return next;
-  }, [tabDescriptors]);
-  useEffect(() => {
-    cacheRef.current = tabDescriptorMap;
-  }, [tabDescriptorMap]);
-
-  return tabDescriptorMap;
-}
 
 export const WorkspaceScreen = memo(function WorkspaceScreen({
   serverId,
@@ -3969,15 +3875,6 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minHeight: 0,
   },
-  headerTitle: {
-    fontSize: theme.fontSize.base,
-    fontWeight: {
-      xs: "400",
-      md: "300",
-    },
-    color: theme.colors.foreground,
-    flexShrink: 1,
-  },
   headerTitleContainer: {
     flex: 1,
     flexShrink: 1,
@@ -4076,34 +3973,6 @@ const styles = StyleSheet.create((theme) => ({
   sourceControlButtonHovered: {
     backgroundColor: theme.colors.surface2,
   },
-  newTabActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-  },
-  newTabActionButton: {
-    width: 30,
-    height: 30,
-    borderRadius: theme.borderRadius.md,
-    borderWidth: theme.borderWidth[1],
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  newTabActionButtonHovered: {
-    backgroundColor: theme.colors.surface2,
-  },
-  newTabTooltipText: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.popoverForeground,
-  },
-  newTabTooltipRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-  },
-  newTabTooltipShortcut: {},
   explorerTooltipRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -4155,97 +4024,13 @@ const styles = StyleSheet.create((theme) => ({
   mobileTabMenuTriggerActive: {
     backgroundColor: theme.colors.surface2,
   },
-  menuItemHint: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
-  },
   headerMenuProfileIconWrapper: {
     width: 16,
     height: 16,
   },
-  tabsContainer: {
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.surface0,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  tabsScroll: {
-    flex: 1,
-    minWidth: 0,
-  },
-  tabsContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-    paddingHorizontal: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
-  },
-  tabsActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-    paddingRight: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
-  },
   centerContent: {
     flex: 1,
     minHeight: 0,
-  },
-  tab: {
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[2],
-    borderRadius: theme.borderRadius.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-    maxWidth: 260,
-  },
-  tabHandle: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-    flex: 1,
-    minWidth: 0,
-  },
-  tabIcon: {
-    flexShrink: 0,
-  },
-  tabActive: {
-    backgroundColor: theme.colors.surface2,
-  },
-  tabHovered: {
-    backgroundColor: theme.colors.surface2,
-  },
-  tabLabel: {
-    flexShrink: 1,
-    minWidth: 0,
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
-    fontWeight: theme.fontWeight.normal,
-  },
-  tabLabelWithCloseButton: {
-    paddingRight: 0,
-  },
-  tabLabelActive: {
-    color: theme.colors.foreground,
-  },
-  tabCloseButton: {
-    width: 18,
-    height: 18,
-    marginLeft: 0,
-    borderRadius: theme.borderRadius.sm,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  tabCloseButtonShown: {
-    opacity: 1,
-  },
-  tabCloseButtonHidden: {
-    opacity: 0,
-  },
-  tabCloseButtonActive: {
-    backgroundColor: theme.colors.surface3,
   },
   content: {
     flex: 1,
@@ -4268,11 +4053,6 @@ const styles = StyleSheet.create((theme) => ({
     bottom: 0,
     left: 0,
     opacity: 0,
-  },
-  contentPlaceholder: {
-    flex: 1,
-    minHeight: 0,
-    backgroundColor: theme.colors.surface0,
   },
   emptyState: {
     flex: 1,

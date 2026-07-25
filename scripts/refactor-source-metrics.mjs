@@ -43,11 +43,19 @@ if (args.write) {
 printSummary(manifest, args.baseline ? readJson(resolve(repoRoot, args.baseline)) : null);
 
 function parseArgs(argv) {
+  const ceilingFlags = new Map([
+    ["--max-physical-lines", "physicalLines"],
+    ["--max-scanner-tokens", "scannerTokens"],
+    ["--max-ast-nodes", "astNodes"],
+    ["--max-static-import-edges", "staticImportEdges"],
+    ["--max-runtime-dependency-edges", "runtimeDependencyEdges"],
+  ]);
   const result = {
     baseline: null,
     write: null,
     requireNetNegative: false,
     requireTarget: null,
+    ceilings: {},
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -63,6 +71,12 @@ function parseArgs(argv) {
         throw new Error(`Invalid --require-target value: ${value}`);
       }
       result.requireTarget = value;
+    } else if (ceilingFlags.has(arg)) {
+      const value = Number(requiredValue(argv, ++index, arg));
+      if (!Number.isSafeInteger(value) || value < 0) {
+        throw new Error(`Invalid ${arg} value: ${value}`);
+      }
+      result.ceilings[ceilingFlags.get(arg)] = value;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -497,6 +511,13 @@ function compareWithBaseline(current, baseline, options) {
     failures.push(
       `production LOC reduction is ${baseline.totals.physicalLines - current.totals.physicalLines}, required ${options.requireTarget}`,
     );
+  }
+  for (const [key, maximum] of Object.entries(options.ceilings)) {
+    const value =
+      key === "runtimeDependencyEdges" ? current.runtimeDependencies.length : current.totals[key];
+    if (value > maximum) {
+      failures.push(`${key} exceeds ceiling: ${value} > ${maximum}`);
+    }
   }
   if (failures.length > 0)
     throw new Error(`Refactor source contract failed:\n- ${failures.join("\n- ")}`);

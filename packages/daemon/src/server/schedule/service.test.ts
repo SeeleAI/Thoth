@@ -713,7 +713,7 @@ describe("ScheduleService", () => {
     } satisfies HarnessAdapter;
     const manager = new ExecutionService({
       logger: createTestLogger(),
-      clients,
+      adapters: clients,
       registry: agentStorage,
     });
     const service = new ScheduleService({
