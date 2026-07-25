@@ -1580,3 +1580,24 @@ Observed on `2026-07-25` while validating the Windows repair:
 Conclusion: prepare the content-addressed Web dependency cache before every timed refactor gate when the source or
 lock digest changes. Cache preparation is not part of the timed receipt, and a cache-miss run never contributes
 partial acceptance evidence.
+
+## `NTH-EXP-060` Windows storage durability had both directory-handle and file-handle constraints
+
+Observed on `2026-07-25` in exact-SHA workflow `30159851556`:
+
+1. Candidate `f50b9ea7` skipped parent-directory `fsync` on Windows and passed simulated Windows storage, source
+   CLI, packaged CLI and the complete local fast gate. Both real Windows jobs nevertheless failed at the same
+   pre-log daemon start; every non-Windows and hosted Relay job passed.
+2. Simulating only `process.platform` on Linux cannot reproduce Windows kernel handle-access requirements. The
+   remaining Cut 1 code reopened a fully written temporary file with mode `r` and then called `fsyncSync`.
+   Windows implements this through `FlushFileBuffers`, which requires a handle opened with write access.
+3. Extending readiness, skipping Windows jobs or branching Server CLI/Desktop behavior would not repair storage
+   durability and remains forbidden. Replacing all durability calls with no-ops would weaken the atomic migration
+   contract and is also rejected.
+4. The second correction uses mode `r+` for the file flush, keeps atomic rename and POSIX directory flush, and
+   records all supervisor failures before worker logging into `daemon.log`. Focused storage/logging tests passed
+   `21/21`; future Windows failures will expose their actual exception through the existing CLI log tail.
+
+Conclusion: platform simulation is useful for branch coverage but cannot substitute for native OS handle tests.
+Storage durability must distinguish file flush access requirements from directory-entry flush availability, while
+all product consumers continue through one shared startup implementation.

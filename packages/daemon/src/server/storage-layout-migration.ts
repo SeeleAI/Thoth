@@ -32,6 +32,7 @@ const LOCK_SUFFIX = ".migration.lock";
 const NON_AUTHORITY_HOME_ENTRIES = new Set([
   "cli-client-id",
   "config.json",
+  "daemon.log",
   "daemon-keypair.json",
   "relay-credentials.json",
   "server-id",
@@ -408,7 +409,8 @@ function isFreshHome(thothHome: string): boolean {
 }
 
 function fsyncFile(filePath: string): void {
-  const fd = openSync(filePath, "r");
+  // Windows FlushFileBuffers requires a handle opened with write access.
+  const fd = openSync(filePath, "r+");
   try {
     fsyncSync(fd);
   } finally {

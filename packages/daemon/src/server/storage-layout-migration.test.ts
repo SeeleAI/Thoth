@@ -144,6 +144,7 @@ describe("Thoth storage layout migration", () => {
     for (const fileName of [
       "cli-client-id",
       "config.json",
+      "daemon.log",
       "daemon-keypair.json",
       "relay-credentials.json",
       "server-id",

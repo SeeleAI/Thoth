@@ -3328,6 +3328,27 @@ Authorized Windows repair evidence on `2026-07-25`:
 
 Status: repair locally verified; exact-SHA Windows Actions and public Release replacement remain pending.
 
+First authorized repair workflow failure on `2026-07-25`:
+
+1. Repair candidate `f50b9ea742cd0aab61f5c0391e8dc132d625f6d1` was normally pushed to both authorized
+   branches and triggered exact-SHA workflow `30159851556`.
+2. Preflight, Server CLI package, Linux Desktop/AppImage, both macOS Desktop builds, Ubuntu/macOS Server CLI smoke
+   and hosted Relay passed. Windows Server CLI smoke job `89684415529` and Windows Desktop job `89684232206`
+   failed at the same background-daemon startup boundary; publish job `89685026320` skipped. The old fixed Beta was
+   not mutated.
+3. This falsified the claim that unsupported parent-directory `fsync` was the only Windows issue. Cut 1 also opens
+   the already-written temporary marker/database file as read-only before `fsyncSync`; Windows
+   `FlushFileBuffers` requires a handle with write access, so the process still exits before worker logging.
+4. The corrected candidate opens that file as `r+`, retains file flush and atomic rename everywhere, and retains
+   the prior POSIX-only parent-directory flush. It also writes supervisor errors that occur before worker logging
+   to the canonical `daemon.log`, which `startLocalDaemonDetached` already tails.
+5. Focused storage plus supervisor logging passed `21/21`; daemon typecheck passed. A wholly fresh
+   `accept:refactor:fast` then passed every stage with exit code `0` in `149.010s`, including Release storage,
+   Foundation, real Web/browser, public behavior, Provider controls, interaction regressions and OpenTUI. A new
+   exact-SHA workflow is still required. See `NTH-EXP-060`.
+
+Status: failed workflow preserved; second repair in progress; `NTH-EV-065` remains unverified.
+
 Failed attempt on `2026-07-24`:
 
 1. The local monotonic deadline started at `2026-07-24T16:08:51.420Z`. The first command was

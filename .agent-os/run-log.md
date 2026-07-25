@@ -4151,3 +4151,19 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - Next action: commit this final shared repair, normally push `agent/dev/mvp`, fast-forward and normally push
   `release/mvp-actions`, then require exact-SHA Windows Server CLI/Desktop jobs plus every other job to pass before
   the old fixed Beta is replaced.
+
+## 2026-07-25 [First Windows durability repair failed native proof]
+
+- Committed and normally pushed candidate `f50b9ea7` to both authorized branches. Exact-SHA workflow
+  `30159851556` passed preflight, Server CLI package, Linux, both macOS builds, Ubuntu/macOS CLI smoke and hosted
+  Relay; Windows CLI job `89684415529` and Desktop job `89684232206` failed at background daemon start. Publish
+  skipped and the old fixed Beta stayed intact.
+- The failure proved directory `fsync` was a real Cut bug but not the only one. Cut 1 also reopened the temporary
+  file read-only before `fsyncSync`; Windows `FlushFileBuffers` requires write access. The second candidate uses
+  `r+` without removing file flush, atomic rename or POSIX directory durability.
+- Supervisor startup failures before worker logging now append to canonical `daemon.log`, so the existing CLI tail
+  exposes the real exception on any further native failure. `daemon.log` is classified as non-authority metadata
+  for fresh-home recovery.
+- Focused storage and supervisor logging passed `21/21`; daemon typecheck passed. A wholly fresh complete refactor
+  gate passed with exit code `0` in `149.010s`. `NTH-EXP-060` preserves the failed native proof. Next action is an
+  atomic commit followed by a new guarded normal-push/exact-SHA workflow transaction.

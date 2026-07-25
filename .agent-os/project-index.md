@@ -6,17 +6,18 @@
 2. Top next action: `NTH-TD-043`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
 4. Active blockers: none. `NTH-CD-070` authorizes the shared Windows repair and another exact-SHA Release attempt.
-   Historical/source comparison isolated the regression to Cut 1 storage durability; one platform-correct policy
-   now retains file `fsync` and atomic rename everywhere while applying parent-directory `fsync` only on POSIX.
-5. Current branch: `agent/dev/mvp`; published source commit
-   `fbc33f72435471534444e1f858647c3c5d427977` is also on `release/mvp-actions` and
-   `agent/refactor/final-architecture-50k`, while the development line additionally carries only the failed-release
-   documentation closeout. Remote `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+   Run `30159851556` proved that skipping unsupported directory `fsync` alone was insufficient. The remaining Cut 1
+   defect was reopening the temporary file read-only before Windows `FlushFileBuffers`; the candidate now uses a
+   write-capable handle and persists all pre-worker startup errors to `daemon.log`.
+5. Current branch: `agent/dev/mvp`; failed repair candidate
+   `f50b9ea742cd0aab61f5c0391e8dc132d625f6d1` is also on `release/mvp-actions`, while the second shared repair is
+   locally uncommitted. Remote `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-031` through `NTH-TD-035`
    are verified; `NTH-TD-036` remains doing at Stage 4 with `296,368` production LOC and `15,437` lines still
-   required for its independent target. The Windows repair passed simulated fresh/migrated storage, source and
-   packaged CLI cold starts, the MVP Release contract and the complete `151.055s` refactor gate. Commit, guarded
-   branch pushes, exact-SHA Actions and public Release replacement remain pending.
+   required for its independent target. The first candidate passed local gates but exact-SHA Windows failed again;
+   every other job passed and publish skipped. The corrected file-handle policy plus early diagnostic logging pass
+   targeted `21/21`, daemon typecheck and a fresh `149.010s` complete refactor gate. Commit, guarded pushes,
+   exact-SHA Actions and public Release replacement remain pending.
 
 ## Objective Summary
 
@@ -33,16 +34,16 @@
 
 ## Top Next Action
 
-`NTH-TD-043` `[doing]`: Commit the locally verified platform-correct storage repair, normally fast-forward the two
-authorized branches, then require one exact-SHA green workflow and downloaded public AppImage verification.
+`NTH-TD-043` `[doing]`: Commit the locally verified Windows file-handle durability and early-diagnostic repair,
+normally fast-forward both authorized branches, then require exact-SHA green Windows/native jobs and downloaded
+public AppImage verification.
 
 ## Active Blockers
 
-None. Workflow `30157560990` remains failed evidence. `NTH-EXP-058` records the original diagnostic gap; the
-subsequent code-history comparison proved that Cut 1 commit `26855ab7` was the only change in the shared early
-startup path and introduced directory-handle `fsync` before supervisor logging. The unified repair is locally
-green. `NTH-EXP-059` records one discarded pre-cache gate; the old fixed Beta remains untouched until a complete
-exact-SHA workflow passes.
+None. Workflow `30159851556` concluded `failure`: only Windows Server CLI and Desktop failed; preflight, Linux,
+both macOS builds, Linux/macOS CLI smoke and hosted Relay passed, and publish skipped. `NTH-EXP-060` records why the
+first Cut durability repair was incomplete and how write-capable file flush plus durable early diagnostics close
+the remaining shared boundary. The old fixed Beta remains untouched until a complete exact-SHA workflow passes.
 
 ## Recent Important Changes
 

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,6 +9,9 @@ import { resolveSupervisorLogFile } from "./supervisor-log-config.js";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const supervisorPath = fileURLToPath(new URL("./supervisor.ts", import.meta.url));
+const supervisorEntrypointPath = fileURLToPath(
+  new URL("./supervisor-entrypoint.ts", import.meta.url),
+);
 
 async function runSupervisorFixture(options: {
   workerSource: string;
@@ -154,6 +157,34 @@ describe("supervisor durable logging", () => {
     expect(result.log).toContain('"worker-json-stderr"');
     expect(result.stdout).toContain('"worker-json-stdout"');
     expect(result.stderr).toContain('"worker-json-stderr"');
+  });
+
+  test("persists failures that happen before supervised worker logging starts", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "thoth-supervisor-startup-failure-"));
+    const thothHome = path.join(tempDir, ".thoth");
+    await mkdir(path.join(thothHome, "agents"), { recursive: true });
+    const child = spawn(process.execPath, ["--import", "tsx", supervisorEntrypointPath], {
+      cwd: repoRoot,
+      env: { ...process.env, THOTH_HOME: thothHome },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+
+    const code = await new Promise<number | null>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", resolve);
+    });
+    const log = await readFile(path.join(thothHome, "daemon.log"), "utf8");
+    await rm(tempDir, { recursive: true, force: true });
+
+    expect(code).toBe(1);
+    expect(stderr).toContain("Unsupported storage older than Release 05775486");
+    expect(log).toContain("[DaemonRunner] startup_failed");
+    expect(log).toContain("Unsupported storage older than Release 05775486");
   });
 
   test("preserves raw non-JSON stdout and stderr lines", async () => {

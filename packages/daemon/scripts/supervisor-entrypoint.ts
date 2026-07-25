@@ -1,5 +1,5 @@
 import { fileURLToPath, pathToFileURL } from "url";
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import pino from "pino";
 import {
@@ -176,8 +176,24 @@ async function main(): Promise<void> {
   });
 }
 
-void main().catch((error) => {
+function reportStartupFailure(error: unknown): void {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  try {
+    const thothHome = resolveThothHome(process.env);
+    mkdirSync(thothHome, { recursive: true });
+    appendFileSync(
+      path.join(thothHome, "daemon.log"),
+      `[DaemonRunner] startup_failed\n${message}\n`,
+      {
+        encoding: "utf8",
+        mode: 0o600,
+      },
+    );
+  } catch {
+    // Preserve the original startup failure even when its diagnostic file cannot be written.
+  }
   process.stderr.write(`${message}\n`);
   process.exit(1);
-});
+}
+
+void main().catch(reportStartupFailure);
