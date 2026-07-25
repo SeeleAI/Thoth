@@ -3,21 +3,19 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-043`
+2. Top next action: `NTH-TD-036`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. `NTH-CD-070` authorizes the shared Windows repair and another exact-SHA Release attempt.
-   Run `30159851556` proved that skipping unsupported directory `fsync` alone was insufficient. The remaining Cut 1
-   defect was reopening the temporary file read-only before Windows `FlushFileBuffers`; the candidate now uses a
-   write-capable handle and persists all pre-worker startup errors to `daemon.log`.
-5. Current branch: `agent/dev/mvp`; failed repair candidate
-   `f50b9ea742cd0aab61f5c0391e8dc132d625f6d1` is also on `release/mvp-actions`, while the second shared repair is
-   locally uncommitted. Remote `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+4. Active blockers: none. The Cut 1 Windows durability regression is closed by `NTH-EV-065`; native Windows Server
+   CLI and Desktop, every other required job, publish and the downloaded public AppImage journey all passed.
+5. Current branch: `agent/dev/mvp`. Published source, `release/mvp-actions` and fixed tag
+   `v0.0.0-mvp-beta` resolve to `198562296fadb0539b217f0eb5170d0b439ad385`; this closeout advances only the
+   development branch with documentation. Remote `main` remains unchanged at
+   `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-031` through `NTH-TD-035`
-   are verified; `NTH-TD-036` remains doing at Stage 4 with `296,368` production LOC and `15,437` lines still
-   required for its independent target. The first candidate passed local gates but exact-SHA Windows failed again;
-   every other job passed and publish skipped. The corrected file-handle policy plus early diagnostic logging pass
-   targeted `21/21`, daemon typecheck and a fresh `149.010s` complete refactor gate. Commit, guarded pushes,
-   exact-SHA Actions and public Release replacement remain pending.
+   are verified; `NTH-TD-036` remains doing at Stage 4 with `296,374` production LOC and `15,443` lines still
+   required for its independent Cut B target. `NTH-TD-043` is verified: the intermediate source is released without
+   claiming Cut B or the final 50k reduction complete. Current metrics are `1,272,064` scanner tokens, `1,300,264`
+   AST nodes, `4,991` non-type static imports and `164` runtime dependency edges.
 
 ## Objective Summary
 
@@ -34,16 +32,15 @@
 
 ## Top Next Action
 
-`NTH-TD-043` `[doing]`: Commit the locally verified Windows file-handle durability and early-diagnostic repair,
-normally fast-forward both authorized branches, then require exact-SHA green Windows/native jobs and downloaded
-public AppImage verification.
+`NTH-TD-036` `[doing]`: Continue the feature-zero-loss shared UI convergence from the published Stage 4
+intermediate state. Remove the remaining duplicated presentation paths until the independent Cut B ceiling of
+`280,931` production LOC is reached, without changing AgentTimeline, public behavior or UX.
 
 ## Active Blockers
 
-None. Workflow `30159851556` concluded `failure`: only Windows Server CLI and Desktop failed; preflight, Linux,
-both macOS builds, Linux/macOS CLI smoke and hosted Relay passed, and publish skipped. `NTH-EXP-060` records why the
-first Cut durability repair was incomplete and how write-capable file flush plus durable early diagnostics close
-the remaining shared boundary. The old fixed Beta remains untouched until a complete exact-SHA workflow passes.
+None. `NTH-TD-036` remains open by design: the published intermediate source is `15,443` LOC above its independent
+Cut B ceiling. `NTH-CD-068` and `NTH-EV-065` explicitly prevent this release from being misreported as Cut B or
+the final 50k reduction.
 
 ## Recent Important Changes
 

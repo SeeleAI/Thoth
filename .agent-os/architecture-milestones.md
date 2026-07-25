@@ -489,16 +489,17 @@ Atomic sequence:
 3. `NTH-TD-033` `[verified]`: direct capability HarnessAdapter, ExecutionService and ToolGateway cutover.
 4. `NTH-TD-034` `[verified]`: single Protocol RPC Registry and derived Client/Daemon dispatch.
 5. `NTH-TD-035` `[verified]`: App authority projection, query state and UI preference separation.
-6. `NTH-TD-036` `[doing]`: shared Timeline/View Registry and responsive composition with an independent `20,000` production-LOC reduction, without a performance/lazy-loading cut. The UI-only fixed scope currently proves `-4,578`; the remaining `15,422` requires a user-approved scope correction before Stage 5 can close.
+6. `NTH-TD-036` `[doing]`: shared Timeline/View Registry and responsive composition with an independent `20,000` production-LOC reduction, without a performance/lazy-loading cut. The published Stage 4 intermediate proves `-4,557`; the remaining `15,443` must be removed before Stage 5 can close.
 7. `NTH-TD-037`: VcsRepository, VcsApplicationService and VcsActionRegistry convergence.
 8. `NTH-TD-040`: capability-composed Provider adapter mechanical convergence.
 9. `NTH-TD-041`: CLI, Desktop controller and Terminal control/data-plane convergence.
 10. `NTH-TD-042`: fixed-order residual controller/query/transport convergence.
 11. `NTH-TD-039`: final LOC, migration, behavior, visual and Relay closure.
 
-Intermediate promotion transaction: `NTH-TD-043` may publish the current verified-behavior intermediate state
-under `NTH-CD-068` / `NTH-AC-022`. It does not advance this atomic sequence, verify `NTH-TD-036`, switch Stage 4,
-or reduce the `50,000`-LOC completion requirement.
+Intermediate promotion transaction: `NTH-TD-043` is verified by `NTH-EV-065`. Source `198562296` passed the
+complete local contract, exact-SHA native workflow and downloaded public AppImage journey, then replaced the fixed
+Beta. This does not advance the atomic sequence, verify `NTH-TD-036`, switch Stage 4 or reduce the `50,000`-LOC
+completion requirement.
 
 Acceptance:
 

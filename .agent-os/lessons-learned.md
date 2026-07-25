@@ -1601,3 +1601,22 @@ Observed on `2026-07-25` in exact-SHA workflow `30159851556`:
 Conclusion: platform simulation is useful for branch coverage but cannot substitute for native OS handle tests.
 Storage durability must distinguish file flush access requirements from directory-entry flush availability, while
 all product consumers continue through one shared startup implementation.
+
+## `NTH-EXP-061` Public AppImage verification must await download completion and restore executable mode
+
+Observed on `2026-07-25` after workflow `30160730623` published the replacement Beta:
+
+1. A nested GitHub download yielded an ongoing process session after the orchestration window. Inspecting its file
+   before awaiting completion produced partial sizes and mismatched hashes; this was local in-progress state, not a
+   corrupt public asset. Redundant downloads were stopped and their partial files were retained under ignored
+   verification storage rather than presented as Release evidence.
+2. A fresh 16-range public download completed at the GitHub-declared `137,691,148` bytes and matched the API,
+   `MVP-UPDATE.json` and `SHA256SUMS` digest
+   `8b817a8c4fb38fe7adcd6a470e9230b2cc59c5c475d3318bbe3a1492b1518ff4`.
+3. The first packaged journey then failed at AppImage extraction because an HTTP download creates a regular
+   non-executable file. `chmod 755` changed only mode metadata, not bytes or SHA-256; the immediate retry passed the
+   complete packaged product journey.
+
+Conclusion: post-Release verification must use a fresh directory, await the download process to completion, assert
+both declared size and digest, restore the executable bit and only then invoke the AppImage. Partial files and a
+pre-`chmod` extraction failure are tooling evidence, not product acceptance or product failure.

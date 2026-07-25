@@ -3349,6 +3349,44 @@ First authorized repair workflow failure on `2026-07-25`:
 
 Status: failed workflow preserved; second repair in progress; `NTH-EV-065` remains unverified.
 
+Successful exact-SHA replacement and public verification on `2026-07-25`:
+
+1. The second shared repair was committed as `198562296fadb0539b217f0eb5170d0b439ad385` and normally
+   fast-forwarded to both `agent/dev/mvp` and `release/mvp-actions`. It uses a write-capable handle for Windows
+   `FlushFileBuffers`, retains file flush and atomic rename everywhere, retains parent-directory flush on POSIX and
+   writes pre-worker supervisor failures to `daemon.log`; no CLI/Desktop split, fallback or weakened readiness path
+   was added.
+2. Exact-SHA workflow `30160730623` completed with `conclusion=success`. Preflight passed the full package and
+   product suites plus real Web build; Windows Server CLI smoke job `89686668495` passed in `1m19s`; Windows
+   Desktop job `89686491510` passed in `7m29s`; both macOS builds, Linux build and packaged journey, Ubuntu/macOS
+   CLI smoke, hosted Relay and publish also passed. Publish job `89687353790` replaced the fixed Beta in `2m06s`.
+3. Public Release `v0.0.0-mvp-beta` is a non-draft prerelease targeting exact source `198562296`. Its tag is a
+   direct commit ref to the same SHA and the Release exposes exactly `26` desktop assets: macOS DMG/ZIP, Windows
+   NSIS/ZIP, Linux AppImage/DEB/RPM/tar.gz, blockmaps/updater metadata, `BUILD-SOURCE.txt`, `MVP-UPDATE.json` and
+   `SHA256SUMS`. It contains no APK, iOS package or Server CLI tgz.
+4. Ignored verification artifacts live under
+   `.dev/release-verification/198562296fadb0539b217f0eb5170d0b439ad385/`. `BUILD-SOURCE.txt` records the exact
+   tag, commit and workflow. `MVP-UPDATE.json` records `workflowRunId=30160730623`, the same commit and six preferred
+   installers. Downloaded metadata hashes are `102a4ab5...4582`, `dbd7b5cd...ae84` and `9ce55ea8...b63b`.
+5. The public AppImage was downloaded into a fresh verification directory, measured exactly `137,691,148` bytes
+   and matched GitHub, update-manifest and checksum authority at
+   `8b817a8c4fb38fe7adcd6a470e9230b2cc59c5c475d3318bbe3a1492b1518ff4`. The first invocation failed before
+   extraction because HTTP download does not preserve its executable bit; after `chmod 755`, the same bytes and
+   hash passed the complete packaged public-API journey. The result covered 13 hot-switch turns, Quick/Clarify,
+   Loop, one failed Review plus retry/pass, Stop, six visible sessions, Release migration `22` Agents / `17`
+   Timeline rows, three PlanExec calls, three Review calls, two RuntimeBundles and six attachments.
+6. Remote `main` remains `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`; archived tag object
+   `thoth-plugin-final-archive` remains `4524430186b5cd1669ed2904d1e3ced62a9d30e4`; no Relay deployment, npm,
+   mobile store or Paseo `127.0.0.1:6767` mutation occurred. The hosted Relay journey passed through the existing
+   deployment.
+7. Current source metrics are `296,374` production LOC, `1,272,064` scanner tokens, `1,300,264` AST nodes,
+   `4,991` non-type static imports and `164` runtime dependency edges. `NTH-TD-036` remains doing at Stage 4 with
+   an independent `15,443`-LOC gap; neither Cut B nor the final 50k target is claimed complete.
+
+Status: verified. `NTH-TD-043` is closed by this evidence; the only global top next action returns to
+`NTH-TD-036`. This documentation-only closeout is pushed only to `agent/dev/mvp`, so it does not trigger another
+Release workflow.
+
 Failed attempt on `2026-07-24`:
 
 1. The local monotonic deadline started at `2026-07-24T16:08:51.420Z`. The first command was

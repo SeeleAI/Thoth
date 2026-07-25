@@ -4167,3 +4167,19 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - Focused storage and supervisor logging passed `21/21`; daemon typecheck passed. A wholly fresh complete refactor
   gate passed with exit code `0` in `149.010s`. `NTH-EXP-060` preserves the failed native proof. Next action is an
   atomic commit followed by a new guarded normal-push/exact-SHA workflow transaction.
+
+## 2026-07-25 [Windows Cut regression closed and fixed Beta replaced]
+
+- Committed the second shared durability/diagnostic repair as `198562296`, normally fast-forwarded both authorized
+  branches and left `main` unchanged. Exact-SHA workflow `30160730623` passed preflight, Server CLI packaging,
+  Windows/Linux/macOS CLI smoke, Windows/Linux/both macOS Desktop builds, packaged Linux Clarify/Loop, hosted Relay
+  and publish.
+- Native Windows proof closed both prior blockers: Server CLI job `89686668495` passed in `1m19s` and Desktop job
+  `89686491510` passed in `7m29s`. The common repair keeps one storage/supervisor path; no consumer patch, fallback,
+  readiness extension or disabled Windows coverage was introduced.
+- The fixed prerelease and tag now target `198562296` and expose exactly `26` desktop-only assets. Downloaded
+  metadata and the `137,691,148`-byte public AppImage matched their declared SHA-256; after restoring its executable
+  bit, that public AppImage passed the complete Quick/Clarify/Loop/Review-retry/Stop/migration journey.
+- `NTH-EXP-061` records the incomplete-download and executable-bit verification trap. `NTH-TD-043` / `NTH-EV-065`
+  are verified. `NTH-TD-036` remains doing at Stage 4 with `296,374` production LOC and a `15,443`-LOC independent
+  Cut B gap; it is restored as the sole global top next action.
