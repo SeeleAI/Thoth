@@ -4183,3 +4183,7 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - `NTH-EXP-061` records the incomplete-download and executable-bit verification trap. `NTH-TD-043` / `NTH-EV-065`
   are verified. `NTH-TD-036` remains doing at Stage 4 with `296,374` production LOC and a `15,443`-LOC independent
   Cut B gap; it is restored as the sole global top next action.
+- The documentation-only closeout commit `197ebdeb` was pushed only to `agent/dev/mvp`. An initial normal push
+  failed before remote mutation because of a stale VS Code credential socket; the explicit repository-local
+  isolated helper then completed the normal fast-forward. `NTH-EXP-062` preserves that operational trap, and the
+  Release branch was not pushed again.

@@ -1620,3 +1620,17 @@ Observed on `2026-07-25` after workflow `30160730623` published the replacement 
 Conclusion: post-Release verification must use a fresh directory, await the download process to completion, assert
 both declared size and digest, restore the executable bit and only then invoke the AppImage. Partial files and a
 pre-`chmod` extraction failure are tooling evidence, not product acceptance or product failure.
+
+## `NTH-EXP-062` Headless closeout push must override stale editor credential routing
+
+Observed on `2026-07-25` after the Release evidence commit:
+
+1. The first normal development-branch push exited `128` before changing the remote because the inherited VS Code
+   askpass socket no longer existed and the configured GitHub CLI helper did not support the attempted `erase`
+   operation.
+2. The repository-local `.dev/git-credential-isolated.mjs` helper reads only the ignored Royalvice GitHub config.
+   Clearing inherited helpers and selecting it per command allowed the same normal fast-forward push to succeed;
+   no credential was printed, no force push occurred and `release/mvp-actions` was not touched.
+
+Conclusion: headless authenticated Git writes in this workspace must explicitly clear inherited editor helpers and
+select the repository-local isolated helper. A failed credential negotiation is not evidence of remote mutation.
