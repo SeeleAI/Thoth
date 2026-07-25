@@ -4106,3 +4106,19 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - Format and diff hygiene passed. This is local evidence only: `NTH-TD-043` remains doing, Cut B remains doing and
   no commit, push, Actions, tag or Release mutation has occurred. Next action is the fresh remote drift guard,
   followed by the approved atomic commit and normal fast-forward transaction only if all SHAs remain frozen.
+
+## 2026-07-25 [Exact-SHA Beta workflow blocked on Windows daemon startup]
+
+- Created atomic source commit `fbc33f72435471534444e1f858647c3c5d427977`, normally fast-forwarded
+  `agent/dev/mvp` and `release/mvp-actions`, and left `main` unchanged. Exact-SHA workflow `30157560990` completed
+  with failure; the publish job was skipped, so fixed Beta `v0.0.0-mvp-beta` still targets `05775486` and retains
+  its existing `26` assets.
+- Preflight, Server CLI packaging, Ubuntu/macOS CLI smoke, Linux and both macOS Desktop builds, packaged AppImage
+  journey and hosted Relay journey passed. Windows Server CLI smoke job `89678717333` and Windows Desktop job
+  `89678617488` both failed when the shared CLI background-daemon start exited with code `1`.
+- Read-only diagnosis confirmed the two jobs share `startLocalDaemonDetached`, but its ignored supervisor/worker
+  stdio and absent `daemon.log` hide the specific exception. `NTH-EXP-058` records the proven common boundary and
+  rejects guessing a root cause or rerunning unchanged.
+- Updated `NTH-EV-065` as a failed release attempt and moved `NTH-TD-043` to blocked. This documentation-only
+  closeout is pushed only to `agent/dev/mvp`; `release/mvp-actions` is not pushed again. The next action requires
+  explicit user authorization to add Windows diagnostics, repair the proven root cause and trigger a new Release.

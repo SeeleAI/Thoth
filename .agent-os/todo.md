@@ -47,15 +47,11 @@
 
 ## Doing
 
-1. `NTH-TD-043` `[doing]`: Promote the current refactor intermediate state to `agent/dev/mvp` and replace the fixed desktop-only MVP Beta Release after complete local and native verification.
-   - Acceptance: run the complete default App suite with at least `331 / 2,582`, preserve the open Cut B/final LOC targets honestly, pass one fresh `60`-minute local functional/packaged/statistical/stress deadline, normally push only the two authorized branches, and require exact-SHA Actions plus public-asset/AppImage verification.
-   - Current result: the eleventh single-process attempt passed all `23` phases in `2336161ms`, including complete suites, fresh AppImage/Server CLI/hosted Relay, frozen performance, `200` clients for `600000ms`, hermetic three-width TUI stress, format and diff checks. Next: revalidate remote SHAs, create the atomic commit, then perform only the authorized normal fast-forward pushes and exact-SHA release verification.
-   - Related: `NTH-CD-068`, `NTH-CD-069`, `NTH-AC-022`, `NTH-EV-065`, `NTH-EXP-045`, `NTH-EXP-046`, `NTH-EXP-047`, `NTH-EXP-048`, `NTH-EXP-049`, `NTH-EXP-050`, `NTH-EXP-051`, `NTH-EXP-052`, `NTH-EXP-053`, `NTH-EXP-054`, `NTH-EXP-055`, `NTH-EXP-056`, `NTH-EXP-057`, `NTH-TD-036`, `NTH-REQ-026`
-2. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
+1. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
    - Acceptance: no public semantic or UX change; no VCS/Provider/RPC/authority/performance work; App suite remains at least `331 files / 2,582 tests`; Stage 5 source is at most `280,931` production LOC with tokens/AST/imports below Stage 4 and dependencies no higher; the shared `300s` gate passes.
    - Current result: final UI-only convergence WIP is `296,353` LOC (`-4,578`), `1,271,951` tokens, `1,300,201` AST nodes, `4,991` imports and `164` runtime dependency edges. The remaining `15,422`-LOC gap is blocked on an explicit scope decision; Stage stays 4 and no commit exists.
    - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-057`
-3. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
+2. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
    - Goal: Keep restored Paseo surface and Codex dynamicTools path, but make Clarify behave like a pending authority decision lifecycle with intelligent timeline badges and model-submitted frontier ledger.
    - Scope: `thoth_submit_clarify_card` carries `public_badge_summary` and `frontier_ledger`; `thoth_submit_task_card` carries convergence review; `balanced` has a 5-10 card soft range and `dive` has a 10-20 card soft range; cards must not show completed/idle footer before user submission; `decision_it_changes` is legacy optional input only. Under `NTH-CD-052`, raw Provider conversation is an explicit Thoth-off state rather than an ambiguous `Quick + Direct` sub-selection; only Thoth-on exposes structured Clarify and Loop controls. Under `NTH-CD-053`, that off/on choice is strictly per turn: one Workspace Secretary topic reuses one foreground provider session, and a daemon authority fence blocks remembered runtime tools during raw turns instead of using historical `bare` / `structured` sessions.
    - Verification: Reopened under `NTH-EV-029`; unit/build/foundation gates and most real Codex web paths now pass after the frontier-ledger repair, including local/public Balanced sort, local Dive sort, local Balanced PathTracing and local Loop `registered_pending`. Under `NTH-CD-057` / `NTH-EV-038`, ordinary Agent sends now reuse the visible provider session for Thoth Clarify/Quick, remote workspace identity overrides client cwd, and packaged Clarify/Loop skills were confirmed in the public Linux `app.asar`. Do not return this TODO to verified until installed/Relay real-provider behavior is exercised from the replacement build.
@@ -63,7 +59,11 @@
 
 ## Blocked
 
-None.
+1. `NTH-TD-043` `[blocked]`: Promote the current refactor intermediate state to `agent/dev/mvp` and replace the fixed desktop-only MVP Beta Release after complete local and native verification.
+   - Acceptance: run the complete default App suite with at least `331 / 2,582`, preserve the open Cut B/final LOC targets honestly, pass one fresh `60`-minute local functional/packaged/statistical/stress deadline, normally push only the two authorized branches, and require exact-SHA Actions plus public-asset/AppImage verification.
+   - Current result: source commit `fbc33f72435471534444e1f858647c3c5d427977` was normally pushed to both authorized branches after the eleventh local gate passed all `23` phases in `2336161ms`. Exact-SHA workflow `30157560990` failed only the Windows Server CLI smoke and Windows Desktop build at their shared background-daemon start; publish was skipped and the old fixed Beta at `05775486` remains intact. The logs discard the supervisor/worker exception, so a specific code root cause is not yet proven.
+   - Blocker: code repair and another `release/mvp-actions` push require explicit user authorization. First add fail-closed Windows diagnostics and a Windows-specific background-start regression, then rerun the full release transaction without deleting or overwriting the old Beta on failure.
+   - Related: `NTH-CD-068`, `NTH-CD-069`, `NTH-AC-022`, `NTH-EV-065`, `NTH-EXP-045`, `NTH-EXP-046`, `NTH-EXP-047`, `NTH-EXP-048`, `NTH-EXP-049`, `NTH-EXP-050`, `NTH-EXP-051`, `NTH-EXP-052`, `NTH-EXP-053`, `NTH-EXP-054`, `NTH-EXP-055`, `NTH-EXP-056`, `NTH-EXP-057`, `NTH-EXP-058`, `NTH-TD-036`, `NTH-REQ-026`
 
 ## Done
 

@@ -1536,3 +1536,25 @@ Conclusion: the stress script now owns a real source daemon with an isolated tem
 random port, drives the same CLI path at all three widths, and terminates only its own process group. Narrow
 `72x34`, `96x34` and `132x34` receipts passed with connected/provider/offer state and no credential or `6767`
 leakage. Retry the complete release gate from phase one; the tenth attempt remains failed evidence.
+
+## `NTH-EXP-058` Windows background-daemon smoke discarded the exception needed to identify the root cause
+
+Observed on `2026-07-25` in exact-SHA workflow `30157560990` for `NTH-TD-043`:
+
+1. Windows Server CLI smoke job `89678717333` and Windows Desktop build job `89678617488` independently reached
+   the same public CLI background-start boundary and exited with `Daemon failed to start in background (exit code
+1)`. Linux and macOS Server CLI smoke, Linux packaged execution and both macOS builds passed.
+2. The CLI spawns the supervisor with `stdio: ["ignore", "ignore", "ignore"]`, waits only `1200ms`, and on early
+   exit tails `daemon.log`. The Windows failures produced no recent daemon log, so the supervisor's actual startup
+   exception was not present in either Actions log.
+3. The two jobs therefore prove a shared Windows-only launch-path failure, but they do not prove whether the cause
+   is detached process creation, supervisor entry resolution, storage preparation, PID locking or worker spawn.
+   Selecting one of those explanations from source shape alone would be unsupported.
+4. Retrying the workflow unchanged would consume release time without improving evidence. Changing the smoke to
+   ignore the early exit, extending readiness only, or disabling Windows coverage would weaken the release
+   contract and is rejected.
+
+Conclusion: before another release attempt, preserve or surface the supervisor startup exception on Windows and
+add a real Windows test covering packaged Server CLI plus bundled Desktop CLI cold background start. Use that
+evidence to make one root-cause repair, then rerun the complete exact-SHA workflow. Do not mutate the old fixed Beta
+unless every required job is green.

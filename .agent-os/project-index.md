@@ -5,10 +5,16 @@
 1. Objective: `NTH-OBJ-001`
 2. Top next action: `NTH-TD-043`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. The eleventh complete local gate passed all `23` phases in `2336161ms`; remote SHA drift
-   guards and the authorized Git/Actions/Release transaction remain pending.
-5. Current branch: `agent/refactor/final-architecture-50k` in ignored worktree `.dev/worktrees/final-architecture-50k`, based on clean commit `743e8d29` from `agent/dev/mvp`.
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-031` through `NTH-TD-035` are verified; `NTH-TD-036` remains doing at Stage 4 with `296,368` production LOC and `15,437` lines still required for its independent target. The complete local release gate is green; commit, push, Actions and public Release verification remain pending.
+4. Active blocker: exact-SHA workflow `30157560990` failed both Windows daemon-start consumers. Server CLI smoke
+   job `89678717333` and Desktop build job `89678617488` both exited while starting the same background daemon
+   path; the current logs suppress the supervisor/worker error, so the specific Windows root cause remains unproven.
+5. Current branch: `agent/dev/mvp` at `fbc33f72435471534444e1f858647c3c5d427977`; the same source commit is on
+   `release/mvp-actions` and `agent/refactor/final-architecture-50k`. Remote `main` remains unchanged at
+   `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-031` through `NTH-TD-035`
+   are verified; `NTH-TD-036` remains doing at Stage 4 with `296,368` production LOC and `15,437` lines still
+   required for its independent target. The complete local release gate is green and both authorized branches were
+   normally fast-forwarded, but the fixed Beta was not replaced because the exact-SHA workflow failed.
 
 ## Objective Summary
 
@@ -25,13 +31,18 @@
 
 ## Top Next Action
 
-`NTH-TD-043` `[doing]`: Revalidate the three frozen remote SHAs, create the atomic intermediate-refactor commit,
-then perform only the authorized normal fast-forward pushes and verify exact-SHA Actions plus the fixed Beta assets.
+`NTH-TD-043` `[blocked]`: Diagnose and repair the common Windows background-daemon startup failure only after new
+user authorization, then rerun the exact-SHA release transaction. Do not mutate the fixed Beta or push
+`release/mvp-actions` while the blocker remains.
 
 ## Active Blockers
 
-None. The first six failed full attempts and all preparation failures remain permanently recorded under
-`NTH-EV-065` / `NTH-EXP-045` through `NTH-EXP-057` and do not count as partial release evidence.
+Exact-SHA workflow `30157560990` concluded `failure`. Windows Server CLI smoke job `89678717333` reported
+`Daemon failed to start in background (exit code 1)` and never became ready within `30` seconds. Windows Desktop
+job `89678617488` failed the bundled CLI shim cold daemon start with the same message. Linux/macOS consumers and
+all other required jobs passed, while publish job `89679095629` was skipped. `NTH-EXP-058` records that the shared
+symptom is proven but the discarded child diagnostics prevent a specific root-cause claim. The previous failures
+under `NTH-EXP-045` through `NTH-EXP-057` remain preserved.
 
 ## Recent Important Changes
 

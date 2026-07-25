@@ -3275,6 +3275,34 @@ Eleventh complete local attempt on `2026-07-25`:
 7. This proves the local `NTH-AC-022` gate only. `NTH-TD-043` remains doing until the atomic commit, both authorized
    normal pushes, exact-SHA Actions and downloaded public Release verification all complete.
 
+Exact-SHA GitHub Actions failure on `2026-07-25`:
+
+1. Atomic source commit `fbc33f72435471534444e1f858647c3c5d427977` was normally fast-forwarded to
+   `agent/dev/mvp` and `release/mvp-actions`. Remote `main` stayed at
+   `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+2. Workflow `MVP Beta Release`, run `30157560990`, used the exact source SHA and concluded `failure`.
+   Preflight, Server CLI packaging, Linux/macOS Server CLI smoke, both macOS builds, Linux build/AppImage journey
+   and hosted Relay journey passed.
+3. Windows Server CLI smoke job `89678717333` installed `278` packages, verified the version and runtime skills,
+   then `thoth daemon start --home ... --listen 127.0.0.1:16689 --no-web-ui` reported
+   `Daemon failed to start in background (exit code 1)`; its readiness loop ended with
+   `Thoth daemon did not become ready within 30 seconds`.
+4. Windows Desktop job `89678617488` built the real Web, CLI, Daemon and Desktop main process and packaged x64.
+   Its bundled CLI shim cold-start smoke then failed with the same
+   `Daemon failed to start in background (exit code 1)` message. The workflow's publish job `89679095629` was
+   skipped as designed.
+5. Both failures execute `startLocalDaemonDetached`, but that path starts the supervisor with all stdio ignored and
+   only tails `daemon.log`; neither failed run exposed the supervisor/worker exception. The common Windows launch
+   boundary is evidence, while a more specific code root cause remains unverified and is recorded as
+   `NTH-EXP-058`.
+6. The fixed public Beta was not replaced. Release `v0.0.0-mvp-beta` remains a prerelease targeting
+   `05775486ba72457f4c7f9506b217ca7c88ebd07a` with its existing `26` assets; the public tag also remains at the
+   old release lineage. No Release/tag deletion, force push, rollback or downloaded-new-AppImage claim occurred.
+
+Status: failed release attempt / blocked. Local `NTH-AC-022` evidence remains valid, but `NTH-EV-065` is not
+verified and `NTH-TD-043` cannot close until an authorized repair produces a new exact-SHA green workflow and
+public download verification.
+
 Failed attempt on `2026-07-24`:
 
 1. The local monotonic deadline started at `2026-07-24T16:08:51.420Z`. The first command was
