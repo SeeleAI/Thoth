@@ -8,9 +8,10 @@
 4. Active blocker: exact-SHA workflow `30157560990` failed both Windows daemon-start consumers. Server CLI smoke
    job `89678717333` and Desktop build job `89678617488` both exited while starting the same background daemon
    path; the current logs suppress the supervisor/worker error, so the specific Windows root cause remains unproven.
-5. Current branch: `agent/dev/mvp` at `fbc33f72435471534444e1f858647c3c5d427977`; the same source commit is on
-   `release/mvp-actions` and `agent/refactor/final-architecture-50k`. Remote `main` remains unchanged at
-   `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+5. Current branch: `agent/dev/mvp`; published source commit
+   `fbc33f72435471534444e1f858647c3c5d427977` is also on `release/mvp-actions` and
+   `agent/refactor/final-architecture-50k`, while the development line additionally carries only the failed-release
+   documentation closeout. Remote `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-031` through `NTH-TD-035`
    are verified; `NTH-TD-036` remains doing at Stage 4 with `296,368` production LOC and `15,437` lines still
    required for its independent target. The complete local release gate is green and both authorized branches were
