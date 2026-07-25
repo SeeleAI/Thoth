@@ -417,6 +417,10 @@ function fsyncFile(filePath: string): void {
 }
 
 function fsyncDirectory(directory: string): void {
+  // Node cannot open directory handles for fsync on Windows. The file itself is
+  // already synced before the atomic rename; parent-directory fsync is the
+  // additional POSIX durability step.
+  if (process.platform === "win32") return;
   const fd = openSync(directory, "r");
   try {
     fsyncSync(fd);

@@ -123,6 +123,20 @@ describe("Thoth storage layout migration", () => {
     });
   });
 
+  it("uses platform-correct durability for fresh and migrated Windows homes", async () => {
+    await withProcessPlatform("win32", async () => {
+      const freshHome = path.join(temporaryRoot("windows-fresh"), ".thoth");
+      await ensureThothStorageLayout(freshHome, createTestLogger());
+      expect(schemaVersion(path.join(freshHome, "catalog.sqlite"))).toBe(2);
+
+      const migratedHome = releaseHome();
+      const before = entityDigest(migratedHome);
+      await ensureThothStorageLayout(migratedHome, createTestLogger());
+      expect(entityDigest(migratedHome)).toBe(before);
+      expect(schemaVersion(workspaceAuthorityPath(migratedHome))).toBe(2);
+    });
+  });
+
   it("creates fresh authority storage after pairing metadata already exists", async () => {
     const root = temporaryRoot("paired-fresh");
     const home = path.join(root, ".thoth");
@@ -221,6 +235,20 @@ function releaseHome(): string {
     '{"version":1,"migrationState":"complete"}\n',
   );
   return home;
+}
+
+async function withProcessPlatform<T>(
+  platform: NodeJS.Platform,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  if (!descriptor) throw new Error("process.platform descriptor is unavailable");
+  Object.defineProperty(process, "platform", { ...descriptor, value: platform });
+  try {
+    return await operation();
+  } finally {
+    Object.defineProperty(process, "platform", descriptor);
+  }
 }
 
 function temporaryRoot(label: string): string {

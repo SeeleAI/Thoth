@@ -3303,6 +3303,31 @@ Status: failed release attempt / blocked. Local `NTH-AC-022` evidence remains va
 verified and `NTH-TD-043` cannot close until an authorized repair produces a new exact-SHA green workflow and
 public download verification.
 
+Authorized Windows repair evidence on `2026-07-25`:
+
+1. `git diff 05775486..fbc33f72` and `git diff 743e8d29..fbc33f72` over CLI launch, shared process spawn,
+   supervisor, Desktop cold-start smoke, Windows workflow, PID lock and storage showed that only
+   `storage-layout-migration.ts` changed in the failing pre-log startup boundary. The new implementation came from
+   Cut 1 commit `26855ab7` and added parent-directory `openSync + fsyncSync`.
+2. The repair preserves file `fsync`, atomic rename, migration validation and rollback on all platforms. One shared
+   `fsyncDirectory` policy applies the additional directory-entry durability step on POSIX and returns on Windows,
+   where Node cannot open directory handles for this operation. Server CLI, bundled Desktop CLI and ordinary CLI
+   continue to use the same startup path without a consumer-specific branch or fallback.
+3. Targeted storage test passed `13/13`, including real fresh-home creation and Release `05775486` semantic-digest
+   migration while `process.platform` was set to `win32`. Daemon typecheck and a built source CLI isolated cold
+   start/ready/graceful-stop journey passed on random port `37719`.
+4. The first complete gate attempt passed Foundation and stopped after `50.465s` because the ignored local Web
+   dependency cache was stale. No assertion was weakened; `npm run setup:refactor-web-cache` rebuilt the required
+   cache and `NTH-EXP-059` preserves the failed attempt.
+5. A wholly fresh `npm run accept:refactor:fast` then passed with explicit exit code `0` in `151.055s`. It verified
+   architecture/source/storage, Foundation, Daemon and real Web build, public Plan/Loop, AgentTimeline, Provider
+   controls, interaction regressions, responsive browser evidence and OpenTUI.
+6. `npm run check:mvp-release-contract` passed. A fresh Server CLI package embedded all eight private runtime
+   packages, measured `1,408,855` bytes, installed `278` packages, reported `0.0.0-mvp-beta` and completed packaged
+   cold start/ready/graceful stop on random port `40457`.
+
+Status: repair locally verified; exact-SHA Windows Actions and public Release replacement remain pending.
+
 Failed attempt on `2026-07-24`:
 
 1. The local monotonic deadline started at `2026-07-24T16:08:51.420Z`. The first command was

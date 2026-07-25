@@ -1558,3 +1558,25 @@ Conclusion: before another release attempt, preserve or surface the supervisor s
 add a real Windows test covering packaged Server CLI plus bundled Desktop CLI cold background start. Use that
 evidence to make one root-cause repair, then rerun the complete exact-SHA workflow. Do not mutate the old fixed Beta
 unless every required job is green.
+
+Resolution under `NTH-CD-070`: old-Release/current-source comparison narrowed the only shared early-startup change
+to Cut 1 storage migration. Commit `26855ab7` added parent-directory `openSync + fsyncSync` before supervisor log
+initialization. Node does not expose that directory-handle operation on Windows, while file `fsync` and atomic
+rename remain supported. The final policy retains file durability everywhere and performs parent-directory `fsync`
+only on POSIX; simulated Windows fresh/migrated storage, source CLI and packaged CLI passed locally. Exact Windows
+proof remains the next workflow run.
+
+## `NTH-EXP-059` Refactor Web acceptance cache is a required untimed prerequisite
+
+Observed on `2026-07-25` while validating the Windows repair:
+
+1. The first fresh `accept:refactor:fast` passed static contracts, Release storage and Foundation, then failed after
+   `50.465s` because `/tmp/thoth-refactor-web-5d74e57ca1aa` was missing or stale.
+2. The gate intentionally refuses to install or refresh Web dependencies inside its shared `300s` deadline. Reusing
+   its earlier green phases or treating this as a code pass would violate fail-closed acceptance.
+3. `npm run setup:refactor-web-cache` rebuilt the ignored cache. A new gate started from static contracts and passed
+   every stage in `151.055s` with exit code `0`.
+
+Conclusion: prepare the content-addressed Web dependency cache before every timed refactor gate when the source or
+lock digest changes. Cache preparation is not part of the timed receipt, and a cache-miss run never contributes
+partial acceptance evidence.

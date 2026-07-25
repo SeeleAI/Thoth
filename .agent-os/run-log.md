@@ -4122,3 +4122,32 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - Updated `NTH-EV-065` as a failed release attempt and moved `NTH-TD-043` to blocked. This documentation-only
   closeout is pushed only to `agent/dev/mvp`; `release/mvp-actions` is not pushed again. The next action requires
   explicit user authorization to add Windows diagnostics, repair the proven root cause and trigger a new Release.
+
+## 2026-07-25 [Windows blocker repair and re-release authorized]
+
+- The user explicitly authorized determining whether the Cut caused the Windows failure, applying one unified
+  repair and rerunning the fixed Beta replacement. Recorded this scope as `NTH-CD-070` and returned `NTH-TD-043`
+  to doing.
+- Compared old Beta `05775486`, Cut baseline `743e8d29`, Cut 1 commit `26855ab7` and published source `fbc33f72`.
+  CLI detached launch, shared process spawn, supervisor and Windows workflow did not change; Cut 1 alone replaced
+  storage migration and added parent-directory `fsync` before supervisor log initialization.
+- The new `openSync(directory, "r")` durability call is unsupported by Windows Node and explains both Server CLI
+  and bundled Desktop CLI exiting before `daemon.log` exists. The next action is one platform-correct storage
+  durability policy plus focused fresh-home/migration and packaged Windows acceptance; no consumer-specific patch
+  or relaxed readiness contract is allowed.
+
+## 2026-07-25 [Windows Cut regression repaired and locally verified]
+
+- Kept file `fsync`, atomic rename and migration rollback on every platform; centralized the only platform
+  distinction in `fsyncDirectory`, which performs the additional parent-directory durability step on POSIX and
+  skips the unsupported Node directory-handle operation on Windows. No CLI/Desktop branch or fallback was added.
+- Storage migration passed `13/13` with simulated Windows fresh home and Release `05775486` migration; daemon
+  typecheck passed. A built source CLI completed isolated cold start/ready/graceful stop on random port `37719`.
+- The first full refactor gate stopped at `50.465s` on a stale ignored Web cache. After the formal cache-preparation
+  script, a wholly fresh gate passed all stages with exit code `0` in `151.055s`; `NTH-EXP-059` preserves the first
+  attempt.
+- MVP Release contract passed. A fresh `1,408,855`-byte Server CLI package embedded eight private packages,
+  installed `278` packages and completed packaged cold start/ready/graceful stop on random port `40457`.
+- Next action: commit this final shared repair, normally push `agent/dev/mvp`, fast-forward and normally push
+  `release/mvp-actions`, then require exact-SHA Windows Server CLI/Desktop jobs plus every other job to pass before
+  the old fixed Beta is replaced.
