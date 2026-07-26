@@ -1692,3 +1692,21 @@ Observed on `2026-07-26` while publishing source `30528b81`:
 Conclusion: distinguish credential routing from network routing. After a direct connection timeout with verified
 repository-local credentials and unchanged remote refs, use the known environment proxy for the same guarded normal
 push; never reinterpret a timeout as success or retry with force.
+
+## `NTH-EXP-065` Tracked skill discovery symlinks must not be read as regular files
+
+Observed on `2026-07-26` after committing the repository-local Paseo synchronization skill:
+
+1. Pre-commit `validate:repo` passed because `checkSecrets` scanned only `git ls-files`, while the Codex discovery
+   link was still untracked. The wider documentation guard already included untracked paths but did not read this
+   extensionless link.
+2. Once committed, `.codex/skills/sync-paseo-into-thoth` became a tracked symlink to a directory. `statSync`
+   followed it and reported the target directory's small size, after which `readFileSync` failed with `EISDIR`.
+3. Removing repo-local discovery, copying the skill or skipping its canonical target would violate `NTH-CD-073`.
+   The validator instead uses `lstatSync`, reads only regular tracked files, and skips symlink objects. Canonical
+   skill files are each tracked regular files and therefore remain covered by the secret scan; repository checks
+   continue to verify the discovery link itself.
+
+Conclusion: file-content scanners over Git path inventories must classify filesystem entries without following
+directory symlinks. A green pre-commit scan does not prove the tracked-index state when the scanner intentionally
+excludes untracked paths; rerun the formal gate after the link enters Git.

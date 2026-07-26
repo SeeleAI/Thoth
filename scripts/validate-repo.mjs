@@ -226,8 +226,8 @@ function checkSecrets() {
   for (const path of tracked) {
     const absolutePath = join(root, path);
     if (!fileExists(absolutePath)) continue;
-    const stats = statSync(absolutePath);
-    if (stats.size > 1024 * 1024) continue;
+    const stats = lstatSync(absolutePath);
+    if (!stats.isFile() || stats.size > 1024 * 1024) continue;
     const buffer = readFileSync(absolutePath);
     if (buffer.includes(0)) continue;
     const content = buffer.toString("utf8");

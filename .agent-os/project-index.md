@@ -7,10 +7,11 @@
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
 4. Active blockers: none. `NTH-TD-045` is verified: the persisted entity-tab repair is published through the fixed
    desktop-only Beta and independently revalidated from the downloaded public AppImage.
-5. Current branch: `agent/dev/mvp`; published source commit `30528b814eff68eb63e2379e133aac6ee36d5fb4`
-   is on both authorized branches, fixed tag `v0.0.0-mvp-beta` and Release metadata. This ledger is the planned
-   documentation-only development-line closeout on top; `release/mvp-actions` remains on the source commit. Remote
-   `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+5. Current branch: `agent/dev/mvp`; repository-maintenance commit
+   `ca71358aabb8fe03891ea24e57939d82547bcd21` is on the remote development branch. Published product source
+   `30528b814eff68eb63e2379e133aac6ee36d5fb4` remains on `release/mvp-actions`, fixed tag
+   `v0.0.0-mvp-beta` and Release metadata. Remote `main` remains unchanged at
+   `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-031` through `NTH-TD-035`
    are verified; `NTH-TD-036` remains doing at Stage 4 with `296,437` production LOC and `15,506` lines still
    required for its independent Cut B target. `NTH-TD-043` is verified: the intermediate source is released without
@@ -19,8 +20,8 @@
    verified under `NTH-EV-066` and published under verified `NTH-TD-045` / `NTH-EV-067`, so the main refactor resumes
    without a Stage switch. Repository-local Paseo synchronization governance is independently verified under
    `NTH-TD-046` / `NTH-EV-069`; it does not change the product stage, source metrics, Release, or sole top action.
-   `NTH-CD-074` authorizes committing the complete verified repository-maintenance batch and normally pushing only
-   `agent/dev/mvp`; the Release branch, tag, GitHub Release, `main`, Relay and Paseo remain outside that transaction.
+   Under `NTH-CD-074`, the complete verified repository-maintenance batch was committed and normally pushed only to
+   `agent/dev/mvp`; the Release branch, tag, GitHub Release, `main`, Relay and Paseo remained unchanged.
 
 ## Objective Summary
 
@@ -137,8 +138,8 @@ this publication.
 86. `NTH-CD-072`: All tracked Thoth project documentation and documentation filenames use English. The canonical core-principles document is `designs/core-design-principles.md`; the obsolete localized README is removed, while identifiers, code, protocol sentinels and historical evidence remain semantically unchanged.
 87. `NTH-EV-068`: English documentation convergence is verified across 72 document paths and 61 physical files. Repository validation now rejects Han content, non-English document paths and localized `zh-*` filenames; all links, formatting, repository gates and 565 Foundation tests pass.
 88. `NTH-CD-073`: Repository-local development skills now have one canonical `.agent-os/skills` source, optional Provider discovery links and a strict separation from product RuntimeBundle skills; Paseo synchronization is a five-stage exact-SHA workflow with publication as an explicitly authorized terminal stage.
-89. `NTH-EV-069`: The `sync-paseo-into-thoth` skill, repo-local Codex discovery link, three deterministic helpers and root entries are verified by positive/negative fixtures, real-worktree boundary audit, skill/repository validation, formatting and the complete `565/565` Foundation gate without product or Release mutation.
-90. `NTH-CD-074`: The complete verified architecture, English-documentation and repository-local Paseo-skill maintenance batch may be committed and normally pushed only to `agent/dev/mvp`; no Release branch, tag, GitHub Release, `main`, deployment or independent service mutation is authorized.
+89. `NTH-EV-069`: The `sync-paseo-into-thoth` skill, repo-local Codex discovery link, three deterministic helpers and root entries are verified by positive/negative fixtures, real-worktree boundary audit, skill/repository validation, formatting and the complete `565/565` Foundation gate without product or Release mutation. Post-commit `NTH-EXP-065` closed the tracked-directory-symlink secret-scan assumption by limiting reads to regular files and rerunning the same repository/Foundation gates.
+90. `NTH-CD-074`: The complete verified architecture, English-documentation and repository-local Paseo-skill maintenance batch was committed as `ca71358a` and normally pushed only to `agent/dev/mvp`; the Release branch, fixed tag, GitHub Release, `main`, deployments and independent services remained unchanged.
 
 ## Read Next
 

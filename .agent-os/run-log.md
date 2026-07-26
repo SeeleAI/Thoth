@@ -4326,3 +4326,32 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   The first project-state validator invocation used unsupported optional arguments and exited `2`; the immediately
   corrected invocation used the helper's declared CLI and passed without any file mutation. The candidate is ready
   for one complete repository-maintenance commit and a normal development-branch push.
+
+## 2026-07-26 [Repository maintenance batch pushed without Release]
+
+- Committed all `44` audited paths as `ca71358aabb8fe03891ea24e57939d82547bcd21`
+  (`chore(project): converge docs and add Paseo sync skill`) on `agent/dev/mvp`. The commit contains the complete
+  architecture/root-contract rewrite, English documentation convergence, canonical repository-local Paseo skill,
+  Codex discovery symlink, deterministic helpers and synchronized authority/evidence records.
+- The first ordinary HTTPS push exited `128` before remote mutation because the inherited stale VS Code credential
+  socket intercepted authentication, matching the existing `NTH-EXP-062` trap. After the GitHub API confirmed the
+  development ref was still the audited old SHA, the repository-local isolated Royalvice helper and known
+  environment proxy completed the exact same normal fast-forward; no force push, merge or history rewrite occurred.
+- Remote verification reports `agent/dev/mvp=ca71358aabb8fe03891ea24e57939d82547bcd21`,
+  `release/mvp-actions=30528b814eff68eb63e2379e133aac6ee36d5fb4`, and
+  `main=e74c6e0de8a110d5e07249880d0e4e4f0ceab691`. Fixed tag `v0.0.0-mvp-beta` and Release
+  `RE_kwDOSLNO4M4Vc63L` still target `30528b814eff68eb63e2379e133aac6ee36d5fb4` with the same creation and
+  publication timestamps. No Release workflow was dispatched, no Release/tag was mutated, and no package, store,
+  Relay, Provider or Paseo publication/service operation occurred.
+- No Paseo commit range or product source was synchronized by this maintenance batch. Product Stage 4, production
+  LOC, the `15,506`-LOC Cut B gap and the sole top next action `NTH-TD-036` remain unchanged.
+- The first documentation-closeout `validate:repo` then exposed one tracked-index sequencing gap: the secret scan
+  followed the committed Codex skill-discovery symlink into its target directory and failed with `EISDIR`.
+  `NTH-EXP-065` records why the pre-commit scan did not see the untracked link. The scanner now classifies entries
+  with `lstatSync` and reads only regular tracked files, preserving scans of every canonical skill file without
+  copying or removing the discovery link. The repaired candidate requires the same repository and Foundation gates
+  before its closeout commit and development-only push.
+- Post-fix project-state validation, repository validation, format and diff hygiene passed with the link tracked.
+  A fresh complete Foundation gate then passed lint/build/typecheck and all `565/565` tests
+  (`66 + 351 + 29 + 119`). The closeout is ready for one normal fast-forward of `agent/dev/mvp`; all Release and
+  independent-service boundaries remain unchanged.

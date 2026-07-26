@@ -3812,8 +3812,16 @@ Evidence on `2026-07-26`:
    and all `565/565` tests: Highlight `66`, Protocol `351`, Relay `29` and Client `119`. This tooling change did not
    run `accept:refactor:fast` because it changes no production package, product behavior, UX, authority, source
    metric or current Cut B path.
-8. No new Paseo commit range was synchronized. No product source, daemon, Provider session, independent Paseo
-   service, Relay deployment, Git commit, push, merge, tag, Release, npm publication or store artifact was changed.
+8. No new Paseo commit range or product source was synchronized. After verification, the repository-maintenance
+   batch was committed and normally pushed only to `agent/dev/mvp` under `NTH-CD-074`; no merge, Release branch,
+   tag, GitHub Release, npm/store publication, Relay deployment, Provider session or independent Paseo service was
+   changed.
+9. The first post-commit `npm run validate:repo` exposed that the secret scan followed the now-tracked Codex
+   discovery symlink into its target directory and attempted `readFileSync` on that directory, producing `EISDIR`.
+   `NTH-EXP-065` preserves this sequencing gap. The validator now uses `lstatSync` and scans only regular tracked
+   files; the tracked skill target remains scanned through its canonical regular files, while the discovery symlink
+   remains independently validated by repository/skill checks. The repaired post-commit repository and Foundation
+   gates pass with the link tracked in Git.
 
 Conclusion: `NTH-TD-046` is verified. The skill can reproducibly analyze and guard future exact-SHA Paseo
 transplants, while `NTH-TD-036` remains the sole product top next action.
