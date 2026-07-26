@@ -2,488 +2,488 @@
 
 ## Status
 
-1. 日期：`2026-06-29`
-2. 性质：全新版本 Thoth 的 high-level 设计、目标与约束文档
-3. 范围：只记录产品理念、设计目标、原则、约束与非目标
-4. 边界：不包含代码设计、开发设计、目录结构、接口细节、参考项目代码路径或用户点击流程
-5. 原始归档：`.agent-os/designs/thoth-migration-architecture-20260625.md`
+1. Date: `2026-06-29`
+2. Nature: high-level design, goals, and constraints document for the entirely new version of Thoth
+3. Scope: records only product philosophy, design goals, principles, constraints, and non-goals
+4. Boundary: does not include code design, development design, directory structure, interface details, reference project code paths, or user click flows
+5. Original archive: `.agent-os/designs/thoth-migration-architecture-20260625.md`
 
-## 1. 设计背景
+## 1. Design Background
 
-### 1.1 当前判断
+### 1.1 Current Assessment
 
-1. AI harness、coding agent、IDE agent、mobile agent control surface 会继续快速变化。
-2. 单个执行 agent 的能力会持续增强，单次对话能完成的事情也会变多。
-3. Thoth 不应把长期价值押注在某个具体 harness、某个具体 UI、某个具体模型能力或某个具体执行命令上。
-4. Thoth 的长期价值应来自更稳定的一层：把人的模糊意图转成可恢复、可验证、可审计、可异步执行的任务控制平面。
+1. AI harnesses, coding agents, IDE agents, and mobile agent control surfaces will continue to change rapidly.
+2. The capabilities of individual execution agents will continue to improve, and the amount of work that can be completed in a single conversation will continue to grow.
+3. Thoth should not stake its long-term value on any particular harness, UI, model capability, or execution command.
+4. Thoth's long-term value should come from a more stable layer: turning people's vague intent into a recoverable, verifiable, auditable, and asynchronously executable task control plane.
 
-### 1.2 重新出发的原因
+### 1.2 Why Start Again
 
-1. Thoth 不继续围绕归档 plugin 形态做兼容开发。
-2. 旧版本中有价值的思想可以迁移，但旧实现形态不再决定新版架构。
-3. Thoth 的核心入口从命令转为对话，从一次性执行转为长期任务，从单宿主投影转为宿主无关控制平面。
-4. Thoth 的设计必须从未来几年仍然成立的需求倒推，而不是从当前某个工具的能力倒推。
+1. Thoth will not continue compatibility development around the archived plugin form.
+2. Valuable ideas from the old version can be migrated, but the old implementation form no longer determines the new architecture.
+3. Thoth's core entry point changes from commands to conversation, from one-off execution to long-running tasks, and from a single-host projection to a host-independent control plane.
+4. Thoth's design must be derived from needs that will remain valid over the next several years, rather than from the capabilities of a particular current tool.
 
-### 1.3 最重要的问题
+### 1.3 The Most Important Questions
 
-1. 用户真正需要的不是更多按钮、更多 agent 名称、更多 provider 选项。
-2. 用户真正需要的是把目标、边界、风险、验收和进展从脑子里卸下来。
-3. Thoth 应该替用户承担拆解、追问、记录、派发、跟踪、审查、汇报的负担。
-4. 用户只需要在目标、边界、风险和必要拍板处介入。
+1. What users truly need is not more buttons, more agent names, or more provider options.
+2. What users truly need is to unload goals, boundaries, risks, acceptance criteria, and progress from their minds.
+3. Thoth should take on the burden of decomposition, questioning, recording, dispatching, tracking, reviewing, and reporting on the user's behalf.
+4. Users need to intervene only for goals, boundaries, risks, and necessary decisions.
 
-## 2. 未来 5 年不易被替代的能力
+## 2. Capabilities Unlikely to Be Replaced Over the Next 5 Years
 
-### 2.1 不把执行能力当成唯一护城河
+### 2.1 Do Not Treat Execution Capability as the Only Moat
 
-1. 执行能力会被更强的模型、更强的本地工具、更强的 IDE 与更强的 harness 持续追赶。
-2. 如果 Thoth 只是另一个执行器，它会被更强的执行器替代。
-3. 如果 Thoth 只是另一个聊天壳，它会被更好的聊天壳替代。
-4. 如果 Thoth 只是另一个日志面板，它会被更好的可视化工具替代。
+1. Execution capability will be continually caught up with by stronger models, stronger local tools, stronger IDEs, and stronger harnesses.
+2. If Thoth is merely another executor, it will be replaced by a stronger executor.
+3. If Thoth is merely another chat shell, it will be replaced by a better chat shell.
+4. If Thoth is merely another log panel, it will be replaced by a better visualization tool.
 
-### 2.2 长期稀缺能力
+### 2.2 Long-Term Scarce Capabilities
 
-1. 澄清编译能力：把用户不完整、混合、含糊的输入转成可执行意图。
-2. 验收编译能力：把“做完”翻译成证据、指标、状态、人工确认或可复核 artifact。
-3. 权威任务图能力：把目标、约束、假设、决策、验收、执行和结论长期保存为可恢复真相。
-4. loop 控制能力：让任务不是一次 turn，而是可暂停、可恢复、可重试、可审查的长期过程。
-5. 多角色对抗能力：让执行者不能自己宣布成功，必须经过独立审查。
-6. 证据账本能力：让每个结论都能回到原始证据，而不是停在自然语言声称。
-7. 宿主无关能力：让 Thoth 不绑定某个具体执行工具。
-8. 多端一致能力：让桌面、手机、终端看到同一份进展与真相。
-9. 实时可观察能力：让 provider 的真实输出、工具事件、权限请求和阶段进度持续流式可见，而不是黑箱等待后只给结果。
+1. Clarification compilation: turn incomplete, mixed, and ambiguous user input into executable intent.
+2. Acceptance compilation: translate “done” into evidence, metrics, status, human confirmation, or a reviewable artifact.
+3. Authoritative task-graph capability: preserve goals, constraints, assumptions, decisions, acceptance, execution, and conclusions as recoverable truth over time.
+4. Loop control capability: make a task a long-running process that can be paused, resumed, retried, and reviewed, rather than a single turn.
+5. Multi-role adversarial capability: prevent the executor from declaring success on its own by requiring independent review.
+6. Evidence ledger capability: make every conclusion traceable to original evidence rather than stopping at a natural-language claim.
+7. Host-independent capability: keep Thoth from being bound to a particular execution tool.
+8. Cross-client consistency: let desktop, mobile, and terminal clients see the same progress and truth.
+9. Real-time observability: continuously stream the provider's actual output, tool events, permission requests, and phase progress instead of waiting behind a black box and returning only a result.
 
-### 2.3 核心判断
+### 2.3 Core Judgment
 
-1. Thoth 的护城河不是“我能调用哪个 agent”。
-2. Thoth 的护城河是“我能把用户的意图稳定编译成一个可执行、可验证、可恢复、可审计的任务控制过程”。
-3. 执行工具可以替换，任务控制平面不能漂移。
+1. Thoth's moat is not “which agent can I call?”
+2. Thoth's moat is “how reliably can I compile a user's intent into an executable, verifiable, recoverable, and auditable task control process?”
+3. Execution tools can be replaced; the task control plane must not drift.
 
-## 3. Thoth 的定位
+## 3. Thoth's Positioning
 
-### 3.1 主定位
+### 3.1 Primary Positioning
 
-1. Thoth 是任务控制平面。
-2. Thoth 是 One Thoth，而不是多个可见 agent 的集合。
-3. Thoth 是用户和各种执行 harness 之间的稳定协调层。
-4. Thoth 负责把对话、澄清、任务、执行、审查、证据、汇报组织成统一生命周期。
+1. Thoth is a task control plane.
+2. Thoth is One Thoth, not a collection of multiple visible agents.
+3. Thoth is a stable coordination layer between users and various execution harnesses.
+4. Thoth organizes conversation, clarification, tasks, execution, review, evidence, and reporting into a unified lifecycle.
 
-### 3.2 用户感知
+### 3.2 User Perception
 
-1. 用户面对的是一个 Thoth。
-2. 用户可以把想法、需求、背景、担忧一次性说出来。
-3. Thoth 根据用户显式任务模式或 provider-backed Router session 处理这段输入应该直接回答、直接处理，还是注册成正式任务。
-4. Thoth 主动追问目标、边界、风险、约束、验收，而不是让用户先写完美 prompt。
-5. Thoth 在任务完成后汇报结论、证据、风险和后续建议，而不是把用户丢进原始日志里。
+1. Users face one Thoth.
+2. Users can say their ideas, requirements, context, and concerns all at once.
+3. Based on the user's explicit task mode or a provider-backed Router session, Thoth determines whether this input should be answered directly, handled directly, or registered as a formal task.
+4. Thoth proactively asks about goals, boundaries, risks, constraints, and acceptance instead of requiring users to write a perfect prompt first.
+5. After a task is complete, Thoth reports conclusions, evidence, risks, and follow-up recommendations instead of throwing users into raw logs.
 
-### 3.3 系统责任
+### 3.3 System Responsibilities
 
-1. Thoth 持有任务真相。
-2. Thoth 持有决策真相。
-3. Thoth 持有验收真相。
-4. Thoth 持有执行证据。
-5. Thoth 持有阶段结论。
-6. Thoth 协调外部 harness，但不把任务权威交给任意单个 harness。
+1. Thoth holds task truth.
+2. Thoth holds decision truth.
+3. Thoth holds acceptance truth.
+4. Thoth holds execution evidence.
+5. Thoth holds phase conclusions.
+6. Thoth coordinates external harnesses without handing task authority to any individual harness.
 
-## 4. Thoth 不是什么
+## 4. What Thoth Is Not
 
-### 4.1 不是另一个 coding agent
-
-1. Thoth 不以替代具体 coding agent 为目标。
-2. Thoth 可以调度 coding agent，但不把自身价值等同于执行代码。
-3. Thoth 的主要边界在任务控制、澄清、验收、证据和对抗审查。
-4. Thoth 本身不提供 agent 执行能力；执行能力来自被配置的 provider 和 harness runtime。
-5. Thoth 不私自调用 LLM API 来伪装成一个内部 coding agent。
+### 4.1 Not Another Coding Agent
+
+1. Thoth does not aim to replace any particular coding agent.
+2. Thoth can schedule coding agents, but does not equate its own value with executing code.
+3. Thoth's primary boundaries are task control, clarification, acceptance, evidence, and adversarial review.
+4. Thoth itself does not provide agent execution capability; execution capability comes from configured providers and harness runtimes.
+5. Thoth does not privately call an LLM API to pretend to be an internal coding agent.
 
-### 4.2 不是另一个 IDE
+### 4.2 Not Another IDE
 
-1. Thoth 不追求成为完整 IDE。
-2. Thoth 不把文件编辑器、终端模拟器、视觉布局当成核心价值。
-3. Thoth 可以呈现必要的 diff、日志和报告，但它们是任务控制过程的证据，不是产品中心。
+1. Thoth does not seek to become a full IDE.
+2. Thoth does not treat a file editor, terminal emulator, or visual layout as its core value.
+3. Thoth may present necessary diffs, logs, and reports, but these are evidence of the task control process, not the center of the product.
 
-### 4.3 不是漂亮日志浏览器
+### 4.3 Not a Pretty Log Browser
 
-1. 原始日志不能替代判断。
-2. timeline 不能替代验收。
-3. agent chatter 不能替代汇报。
-4. Thoth 必须把复杂过程压缩成用户能采取行动的信息。
-
-### 4.4 不是单宿主 plugin
-
-1. Thoth 不绑定单一宿主。
-2. Thoth 不把某个宿主的 session、权限、上下文或运行语义当成全局真相。
-3. 宿主可以变化，Thoth 的任务、验收、证据和阶段语义必须稳定。
-
-### 4.5 不是手工 prompt 管理器
-
-1. 用户不应该被迫学习内部 prompt。
-2. 用户不应该手写角色指令来驱动系统。
-3. 用户不应该通过复制粘贴上下文来维持任务连续性。
-
-### 4.6 不是隐藏的 LLM API wrapper
-
-1. Thoth 的源码只拥有流程、路由判断、预设 prompt、任务合同、验收、证据、记忆和 session 记录。
-2. Thoth 不直接把 OpenAI、Anthropic 或其他模型推理 API 当成自己的执行层。
-3. 所有 AI 与 agent 能力必须来自用户配置的 provider。
-4. Provider 可以是 ACP adapter、harness runtime、app-server、官方 harness SDK/control surface 或本地 harness CLI。
-5. Thoth 可以把 prompt contract、上下文包和验收要求传给 provider session，但不能绕过 provider 语义私自开模型调用。
-
-## 5. 第一原则：最大程度减少用户心智负担和使用门槛
-
-### 5.1 用户不应该管理的东西
-
-1. 不应该管理 provider 差异。
-2. 不应该管理 session 恢复。
-3. 不应该管理上下文注入细节。
-4. 不应该管理工具权限细节。
-5. 不应该判断哪条日志重要。
-6. 不应该判断哪个阶段该重试。
-7. 不应该判断执行者是否自证成功。
-8. 不应该在多个端之间手动同步状态。
-9. 不应该持续盯着长任务是否还在运行。
-10. 不应该为了打招呼、查状态、问一句简单问题而等待一个重型 agent loop。
-11. 不应该为了看到 provider 正在做什么而进入原始 harness 窗口。
-
-### 5.2 用户应该管理的东西
-
-1. 目标。
-2. 边界。
-3. 风险。
-4. 验收。
-5. 必要拍板。
-6. 对结果的最终满意度。
-
-### 5.3 Thoth 应该主动承担的东西
-
-1. 通过 provider-backed session 理解混合输入中的真实意图。
-2. 在用户显式模式或 provider-backed 判断下区分 `Quick` 和 `Loop`。
-3. 对轻量输入快速响应，例如用户只说 `hi` 时不应等待超过 `10s`。
-4. 追问缺失的关键假设。
-5. 记录用户决定。
-6. 编译验收条件。
-7. 控制执行 loop。
-8. 发现证据不足。
-9. 组织审查。
-10. 失败时给出清楚的下一步选择。
-11. 成功时给出简洁报告。
-
-## 6. 用户与 Thoth 的关系
-
-### 6.1 One Thoth + 私人秘书式路由
-
-1. 用户只需要面对一个 Thoth。
-2. 系统内部可以有多个角色，但不向用户暴露成多个需要选择的 agent。
-3. 用户可以直接请求 Thoth 做事，也可以在特定 workspace 中与 Thoth 对话。
-4. Thoth 应该像稳定的协调者，而不是临时的一次性工具调用。
-5. Thoth 内部可以有私人秘书或幕僚长式的路由判断，但这种判断必须通过 provider-backed session 执行，不能伪装成本地确定性规则。
-6. 这个内部判断层负责理解意图、选择上下文、选择执行能力、汇总证据和判断何时需要用户拍板。
-7. Claude、Codex、ACP、provider、driver 和内部角色都只是调度细节，不是用户日常选择项。
-
-### 6.2 不暴露不必要复杂度
-
-1. 用户不在普通对话框里管理 provider session、内部角色或 provider-native 差异。
-2. 用户可以在输入框附近看到少量 Thoth-level 控件：`+`、Provider、Mode、Clarify 和 Loop。
-3. 任务模式是 `Quick` 和 `Loop` 二选一，用来显式告诉 Thoth 这次输入是否进入正式任务生命周期。
-4. Clarify 控制 provider session 在回答、行动或进入正式任务前问到多细，不是 provider-native thinking strength。
-5. Loop 控制正式任务失败后的重试策略和持续推进强度，不是 provider-native thinking strength。
-6. 用户只在需要拍板时看到清晰卡片。
-7. Provider 控件可以直通 provider/model/runtime 设置，包括 model id、thinking strength、permission mode 和 fast mode。
-
-### 6.3 信任关系
-
-1. Thoth 可以替用户推进低风险、可逆、边界清楚的事情。
-2. Thoth 不可以替用户决定高风险、不可逆、会改变验收或会越过边界的事情。
-3. Thoth 不可以为了显得顺利而隐藏不确定性。
-4. Thoth 不可以把未确认的关键假设包装成已确定事实。
-
-### 6.4 不采用可见 team / squad 心智
-
-1. Thoth 不应让用户像管理 agent dashboard 一样选择 agent、squad、leader 或内部执行模式。
-2. 类似 Multica 的可见团队模型适合 managed agents platform，但不适合 Thoth 的 CEO 私人秘书模型。
-3. Thoth 可以借鉴这类系统的短任务队列、执行记录和通知机制。
-4. Thoth 不应把这些机制暴露成用户必须理解的新组织结构。
-
-### 6.5 上下文解析像秘书，不像路由表
-
-1. 用户在 global chat 里没有显式写 `@workspace` 时，Thoth 不应机械放弃上下文理解。
-2. Thoth 应通过 provider-backed session 根据最近对话、活跃项目、用户习惯、workspace 状态和历史任务做 confidence-based context resolution。
-3. 如果只有一个高置信候选，Thoth 应自然对应上下文，例如理解“昨天说的那个项目怎么样了？”。
-4. 如果存在多个合理候选，Thoth 只问一个能消除歧义的黄金问题。
-5. Thoth 不应在低置信时擅自把全局意图写入错误 workspace。
-6. 产品默认相信 provider-backed 高置信上下文判断；过度确认本身也是心智负担。
-
-## 7. 任务控制平面的核心理念
-
-### 7.1 不是所有输入都应该变成正式任务
-
-1. `Quick` 用于回答、状态解释、概念解释、已有信息查询和快速动作。
-2. `Quick` 可以读、写、搜索、整理或执行简单操作，但不进入完整正式任务生命周期。
-3. `Loop` 用于长程、不确定、高风险、需要验收闭环或持续执行的工作。
-4. MVP composer 应提供 `Quick` 和 `Loop` 两种显式任务模式，让用户直接选择本次输入是否进入正式任务生命周期。
-5. 回答和快速动作是 `Quick` 的结果类型，不是第三个用户可见模式。
-6. 如果后续加入自动推荐模式，自动判断也必须来自 provider-backed Router session，而不是本地启发式分类器。
-
-### 7.2 正式任务不是一条消息
-
-1. 正式任务不是单轮对话。
-2. 正式任务必须有目标、约束、验收和风险边界。
-3. 正式任务必须能恢复、暂停、审查和汇报。
-4. 正式任务必须能解释当前卡在哪里。
-
-### 7.3 注册任务就是注册 loop
-
-1. 任务一旦进入正式状态，就不只是“执行一次”。
-2. 任务应被视为一个受控 loop。
-3. loop 至少包含计划、执行、审查和必要重试。
-4. loop 必须有停止条件。
-5. loop 必须有升级给用户的条件。
+1. Raw logs cannot replace judgment.
+2. A timeline cannot replace acceptance.
+3. Agent chatter cannot replace a report.
+4. Thoth must compress a complex process into information on which users can act.
+
+### 4.4 Not a Single-Host Plugin
+
+1. Thoth is not bound to a single host.
+2. Thoth does not treat any host's session, permissions, context, or runtime semantics as global truth.
+3. Hosts may change, but Thoth's task, acceptance, evidence, and phase semantics must remain stable.
+
+### 4.5 Not a Manual Prompt Manager
+
+1. Users should not be forced to learn internal prompts.
+2. Users should not have to write role instructions by hand to drive the system.
+3. Users should not have to maintain task continuity by copying and pasting context.
+
+### 4.6 Not a Hidden LLM API Wrapper
+
+1. Thoth's source code owns only process, routing decisions, preset prompts, task contracts, acceptance, evidence, memory, and session records.
+2. Thoth does not directly treat OpenAI, Anthropic, or other model inference APIs as its own execution layer.
+3. All AI and agent capabilities must come from the user's configured provider.
+4. A provider may be an ACP adapter, harness runtime, app-server, official harness SDK/control surface, or local harness CLI.
+5. Thoth may pass prompt contracts, context packages, and acceptance requirements to a provider session, but may not bypass provider semantics to privately initiate model calls.
+
+## 5. First Principle: Minimize the User's Cognitive Burden and Barrier to Use
+
+### 5.1 Things Users Should Not Have to Manage
+
+1. Provider differences.
+2. Session resumption.
+3. Context-injection details.
+4. Tool-permission details.
+5. Which logs matter.
+6. Which phase should be retried.
+7. Whether the executor has self-certified success.
+8. Manually synchronizing state across multiple clients.
+9. Continuously watching whether a long-running task is still running.
+10. Waiting for a heavy agent loop just to say hello, check status, or ask a simple question.
+11. Entering a raw harness window just to see what the provider is doing.
+
+### 5.2 Things Users Should Manage
+
+1. Goals.
+2. Boundaries.
+3. Risks.
+4. Acceptance.
+5. Necessary decisions.
+6. Final satisfaction with the result.
+
+### 5.3 Things Thoth Should Proactively Take On
+
+1. Understand the true intent in mixed input through a provider-backed session.
+2. Distinguish `Quick` from `Loop` under the user's explicit mode or a provider-backed judgment.
+3. Respond quickly to lightweight input; for example, it should not wait more than `10s` when the user only says `hi`.
+4. Ask about missing critical assumptions.
+5. Record user decisions.
+6. Compile acceptance conditions.
+7. Control the execution loop.
+8. Detect insufficient evidence.
+9. Organize review.
+10. Give clear next-step choices when something fails.
+11. Give a concise report when something succeeds.
+
+## 6. The Relationship Between Users and Thoth
+
+### 6.1 One Thoth + Private-Secretary-Style Routing
+
+1. Users need to face only one Thoth.
+2. The system may contain multiple internal roles, but does not expose them as multiple agents users must choose between.
+3. Users can directly ask Thoth to do something, or converse with Thoth in a specific workspace.
+4. Thoth should feel like a stable coordinator rather than a temporary one-off tool call.
+5. Thoth may internally use private-secretary- or chief-of-staff-style routing judgments, but those judgments must be executed through a provider-backed session and cannot be disguised as local deterministic rules.
+6. This internal judgment layer is responsible for understanding intent, selecting context, selecting execution capabilities, aggregating evidence, and determining when the user must make a decision.
+7. Claude, Codex, ACP, providers, drivers, and internal roles are all dispatching details, not daily choices for users.
+
+### 6.2 Do Not Expose Unnecessary Complexity
+
+1. Users do not manage provider sessions, internal roles, or provider-native differences in an ordinary chat box.
+2. Users can see a small number of Thoth-level controls near the input box: `+`, Provider, Mode, Clarify, and Loop.
+3. Task mode is a choice between `Quick` and `Loop`, used to explicitly tell Thoth whether this input enters the formal task lifecycle.
+4. Clarify controls how deeply the provider session asks questions before answering, taking action, or entering a formal task; it is not provider-native thinking strength.
+5. Loop controls the retry strategy and persistence after a formal task fails; it is not provider-native thinking strength.
+6. Users see clear cards only when a decision is needed.
+7. The Provider control can pass through provider/model/runtime settings, including model id, thinking strength, permission mode, and fast mode.
+
+### 6.3 Trust Relationship
+
+1. Thoth may advance low-risk, reversible, clearly bounded matters on the user's behalf.
+2. Thoth may not decide matters that are high-risk, irreversible, change acceptance, or cross a boundary on the user's behalf.
+3. Thoth may not hide uncertainty in order to appear smooth.
+4. Thoth may not package unconfirmed critical assumptions as established facts.
+
+### 6.4 Do Not Adopt a Visible Team / Squad Mental Model
+
+1. Thoth should not make users choose agents, squads, leaders, or internal execution modes as if they were managing an agent dashboard.
+2. A visible team model like Multica's is suitable for a managed agents platform, but not for Thoth's CEO private-secretary model.
+3. Thoth may borrow short-task queues, execution records, and notification mechanisms from such systems.
+4. Thoth should not expose these mechanisms as a new organizational structure that users must understand.
+
+### 6.5 Context Resolution Should Resemble a Secretary, Not a Routing Table
+
+1. When users do not explicitly write `@workspace` in global chat, Thoth should not mechanically abandon context understanding.
+2. Through a provider-backed session, Thoth should perform confidence-based context resolution using recent conversation, active projects, user habits, workspace state, and historical tasks.
+3. If there is only one high-confidence candidate, Thoth should naturally resolve to that context, for example by understanding “How is that project we talked about yesterday doing?”
+4. If multiple reasonable candidates exist, Thoth should ask only one golden question that removes the ambiguity.
+5. Thoth should not, under low confidence, write a global intent into the wrong workspace on its own.
+6. By default, the product trusts high-confidence context judgments backed by the provider; excessive confirmation is itself a cognitive burden.
+
+## 7. Core Philosophy of the Task Control Plane
+
+### 7.1 Not Every Input Should Become a Formal Task
+
+1. `Quick` is for answers, status explanations, conceptual explanations, queries over existing information, and quick actions.
+2. `Quick` may read, write, search, organize, or perform simple operations, but does not enter the complete formal task lifecycle.
+3. `Loop` is for long-running, uncertain, high-risk work that requires an acceptance loop or continued execution.
+4. The MVP composer should provide two explicit task modes, `Quick` and `Loop`, so users can directly choose whether this input enters the formal task lifecycle.
+5. Answers and quick actions are result types of `Quick`, not a third user-visible mode.
+6. If automatic mode recommendations are added later, the automatic judgment must also come from a provider-backed Router session rather than a local heuristic classifier.
+
+### 7.2 A Formal Task Is Not a Message
+
+1. A formal task is not a single-turn conversation.
+2. A formal task must have goals, constraints, acceptance, and risk boundaries.
+3. A formal task must be resumable, pausable, reviewable, and reportable.
+4. A formal task must be able to explain where it is currently blocked.
+
+### 7.3 Registering a Task Means Registering a Loop
+
+1. Once a task enters a formal state, it is no longer merely “execute once.”
+2. A task should be treated as a controlled loop.
+3. A loop includes at least planning, execution, review, and necessary retries.
+4. A loop must have stopping conditions.
+5. A loop must have conditions for escalation to the user.
 
-### 7.4 真相不能散落在聊天里
+### 7.4 Truth Must Not Be Scattered Across Chat
 
-1. 聊天是入口，不是最终 authority。
-2. 用户决定必须被记录为任务真相的一部分。
-3. 验收标准必须被记录为任务真相的一部分。
-4. 执行证据必须被记录为任务真相的一部分。
-5. 汇报必须能追溯到证据，而不是只依赖自然语言总结。
-6. `Quick` 不需要正式任务 authority，但发生动作时必须有最小执行记录和证据。
+1. Chat is the entry point, not the final authority.
+2. User decisions must be recorded as part of task truth.
+3. Acceptance criteria must be recorded as part of task truth.
+4. Execution evidence must be recorded as part of task truth.
+5. Reports must be traceable to evidence rather than relying only on natural-language summaries.
+6. `Quick` does not need formal task authority, but actions must have a minimal execution record and evidence.
 
-### 7.5 Provider 过程必须实时可见
-
-1. Thoth 不应把 provider session 包成黑箱。
-2. 无论是澄清、直接处理、正式执行还是审查，provider 可展示的输出都应实时流式回到用户界面。
-3. Thoth 可以对输出加阶段标签、证据标签和风险标签，但不应隐藏可见执行过程。
-4. 这让用户感知到 Thoth 在推进，也让长任务可以被远程观察、打断和审计。
+### 7.5 The Provider Process Must Be Visible in Real Time
+
+1. Thoth should not wrap provider sessions as black boxes.
+2. Whether for clarification, direct handling, formal execution, or review, all provider output that can be shown should stream back to the user interface in real time.
+3. Thoth may add phase labels, evidence labels, and risk labels to the output, but should not hide the visible execution process.
+4. This lets users feel that Thoth is making progress and lets long-running tasks be observed, interrupted, and audited remotely.
 
-## 8. 生命周期原则
+## 8. Lifecycle Principles
 
-### 8.1 至少三个独立阶段
+### 8.1 At Least Three Independent Phases
 
-1. 澄清与合同阶段。
-2. Plan+Exec 执行阶段。
-3. 审查、验证与反思阶段。
-4. 这些阶段只适用于注册后的正式任务，不强加给回答或直接处理。
-5. `Quick + Don't Bother Me` 必须保留裸 provider passthrough 体验，不被正式任务生命周期拖慢。
+1. Clarification and contract phase.
+2. Plan+Exec execution phase.
+3. Review, verification, and reflection phase.
+4. These phases apply only to formal tasks after registration; they are not imposed on answers or direct handling.
+5. `Quick + Don't Bother Me` must preserve a bare provider passthrough experience and must not be slowed down by the formal task lifecycle.
 
-### 8.2 三条职责边界
+### 8.2 Three Responsibility Boundaries
 
-1. 澄清不能替用户做高影响拍板。
-2. 澄清不能修改 workspace 文件；它只能只读调查、联网查资料、整理问题和记录决策。
-3. Plan+Exec 不能重新定义成功，只能按冻结合同执行。
-4. 审查不能改写验收，也不能直接变成第二个执行者。
+1. Clarification cannot make high-impact decisions on the user's behalf.
+2. Clarification cannot modify workspace files; it can only conduct read-only investigation, research materials online, organize questions, and record decisions.
+3. Plan+Exec cannot redefine success; it can only execute according to the frozen contract.
+4. Review cannot rewrite acceptance or directly become a second executor.
 
-### 8.3 阶段独立
+### 8.3 Phase Independence
 
-1. Clarify 是独立 provider session，负责只读调查、用户讨论、假设消解、决策记录和合同草案。
-2. Plan+Exec 是同一个 provider session，使用 provider 自带 plan mode 完成计划与执行的连续过程。
-3. Review 是独立 provider session，负责对抗式检查，不修改文件。
-4. 阶段之间通过结构化 handoff packet 传递，不默认共享完整聊天历史。
-5. 合同冻结后，Plan+Exec 中出现的 provider 澄清问题不再打扰用户；系统应根据冻结合同或推荐首选项自动回答并记录。
-6. 合同冻结后，权限批准仍按权限策略处理，不能被自动回答规则绕过。
-7. 失败后必须回到受控 loop，而不是让执行者自己继续漂移。
-8. daemon 的 phase、round、预算、receipt、hash、manifest、session handle 和恢复状态属于任务控制面；它们不能成为任何 Agent Harness session 的思维上下文或 Review 结论模板。
+1. Clarify is an independent provider session responsible for read-only investigation, user discussion, assumption resolution, decision recording, and a contract draft.
+2. Plan+Exec is the same provider session, using the provider's native plan mode to complete the continuous process of planning and execution.
+3. Review is an independent provider session responsible for adversarial checking and does not modify files.
+4. Phases pass information through a structured handoff packet and do not share the complete chat history by default.
+5. Once the contract is frozen, provider clarification questions that arise during Plan+Exec should no longer disturb the user; the system should answer and record them automatically according to the frozen contract or recommended defaults.
+6. Once the contract is frozen, permission approvals are still handled according to the permission policy and cannot be bypassed by automatic-answer rules.
+7. After failure, the system must return to a controlled loop instead of allowing the executor to drift onward on its own.
+8. The daemon's phase, round, budget, receipt, hash, manifest, session handle, and recovery state belong to the task control plane; they must not become the thought context of any Agent Harness session or the template for a Review conclusion.
 
-## 9. 多端一致性原则
+## 9. Cross-Client Consistency Principles
 
-### 9.1 UI 是壳
+### 9.1 The UI Is a Shell
 
-1. 任何 UI 都不拥有独立业务语义。
-2. 任何 UI 都不拥有独立任务状态机。
-3. 同一个任务在不同端看到的是同一份真相的不同呈现。
-4. UI 可以优化交互，但不能改变任务生命周期含义。
+1. No UI owns independent business semantics.
+2. No UI owns an independent task state machine.
+3. The same task is shown on different clients as different presentations of the same truth.
+4. A UI may optimize interaction, but may not change the meaning of the task lifecycle.
 
-### 9.2 多端不等于多份真相
+### 9.2 Multiple Clients Do Not Mean Multiple Truths
 
-1. 桌面端、手机端、终端端不能各自维护一套任务状态。
-2. 多端同步必须以权威历史为准。
-3. live 展示负责即时性，历史追赶负责正确性。
-4. 断线重连后必须能补齐状态。
+1. Desktop, mobile, and terminal clients cannot each maintain their own task state.
+2. Cross-client synchronization must follow authoritative history.
+3. Live presentation provides immediacy; historical catch-up provides correctness.
+4. State must be fillable after a disconnection and reconnection.
 
-### 9.3 端的职责可以不同
+### 9.3 Client Responsibilities May Differ
 
-1. 桌面 app 可以承担全局入口和本机后台服务管理。
-2. 手机 app 可以承担远程查看、澄清、批准和汇报阅读。
-3. 终端 UI 可以承担当前 workspace 的高效控制。
-4. CLI 可以承担高级脚本化入口。
-5. Claude、Codex 和 ACP 宿主面可以承担同一 authority 的外部操作入口。
-6. Relay 可以承担远程加密同步入口。
-7. 职责不同不代表语义不同。
+1. The desktop app may provide the global entry point and manage local background services.
+2. The mobile app may provide remote viewing, clarification, approval, and report reading.
+3. The terminal UI may provide efficient control of the current workspace.
+4. The CLI may provide an advanced scripting entry point.
+5. Claude, Codex, and ACP host surfaces may provide external operation entry points into the same authority.
+6. Relay may provide a remote encrypted synchronization entry point.
+7. Different responsibilities do not mean different semantics.
 
-## 10. 宿主无关原则
+## 10. Host-Independence Principles
 
-### 10.1 不假装宿主相同
+### 10.1 Do Not Pretend Hosts Are Identical
 
-1. 不同 harness 的能力不同。
-2. 不同 harness 的 session、权限、上下文、工具和输出语义不同。
-3. 宿主无关不是抹平差异，而是让差异不污染 Thoth 的任务真相。
+1. Different harnesses have different capabilities.
+2. Different harnesses have different session, permission, context, tool, and output semantics.
+3. Host independence does not mean flattening differences; it means preventing differences from contaminating Thoth's task truth.
 
-### 10.2 上层语义必须稳定
+### 10.2 Upper-Layer Semantics Must Remain Stable
 
-1. 创建任务的语义必须稳定。
-2. 澄清问题的语义必须稳定。
-3. 执行证据的语义必须稳定。
-4. 审查结论的语义必须稳定。
-5. 失败和成功的语义必须稳定。
+1. The semantics of creating a task must remain stable.
+2. The semantics of asking a clarification question must remain stable.
+3. The semantics of execution evidence must remain stable.
+4. The semantics of a review conclusion must remain stable.
+5. The semantics of failure and success must remain stable.
 
-### 10.3 宿主只是执行能力来源
+### 10.3 Hosts Are Merely Sources of Execution Capability
 
-1. 宿主可以被替换。
-2. 宿主可以失败。
-3. 宿主可以暂停。
-4. 宿主可以只支持部分能力。
-5. Thoth 必须知道这些差异，但不把差异暴露为用户日常负担。
+1. A host may be replaced.
+2. A host may fail.
+3. A host may pause.
+4. A host may support only some capabilities.
+5. Thoth must understand these differences without exposing them as a daily burden to users.
 
-## 11. 对抗审查原则
+## 11. Adversarial Review Principles
 
-### 11.1 执行者不能自证成功
+### 11.1 The Executor Cannot Self-Certify Success
 
-1. 执行者可以报告自己做了什么。
-2. 执行者可以报告自己产出了哪些证据。
-3. 执行者不能单方面宣布任务满足验收。
-4. 成功必须经过独立审查。
+1. The executor may report what it did.
+2. The executor may report what evidence it produced.
+3. The executor may not unilaterally declare that the task satisfies acceptance.
+4. Success must pass independent review.
 
-### 11.2 审查者的职责
+### 11.2 Reviewer's Responsibilities
 
-1. 独立判断目标是否真正达成，而不是接受执行者的自述。
-2. 主动挑战当前问题定义、技术路线、架构判断和局部优化是否仍然正确。
-3. 检查约束、验收和现实证据之间是否存在根本矛盾。
-4. 识别伪成功、范围漂移、漏测、遗漏 artifact、不可靠结论和“测试绿但方向错”的情况。
-5. 当当前路径已错时，明确要求停止 incremental 修补，指出应放弃什么、重新理解什么、下一轮最应推进什么。
-6. 当路径正确时，仍要解释为什么它经得起独立挑战，而不是只返回通过。
-7. 只以用户合同与可观察现实作为判断材料；不以 daemon 的预算、phase、round、hash、manifest 或表单字段作为审查框架。
+1. Independently determine whether the goal was truly achieved rather than accepting the executor's account.
+2. Actively challenge whether the current problem definition, technical approach, architectural judgment, and local optimizations remain correct.
+3. Check for fundamental contradictions among constraints, acceptance, and real-world evidence.
+4. Identify false success, scope drift, insufficient testing, missing artifacts, unreliable conclusions, and situations where “tests are green but the direction is wrong.”
+5. When the current path is wrong, clearly require stopping incremental fixes, identify what should be abandoned, clarify what must be understood again, and state what should be advanced most in the next round.
+6. When the path is correct, still explain why it withstands independent challenge instead of merely returning pass.
+7. Use only the user contract and observable reality as judgment material; do not use the daemon's budget, phase, round, hash, manifest, or form fields as the review framework.
 
-### 11.3 审查者不被执行者牵引
+### 11.3 The Reviewer Must Not Be Led by the Executor
 
-1. PlanExec 报告是被审查的材料，不是 Review 的待办清单。
-2. Review 可以否定 PlanExec 的风险判断、验证范围和下一步建议。
-3. Review 的失败结论必须形成一份能改变下一轮方法的方向性判断，而不是把上轮工作拆成更多局部补丁。
+1. The PlanExec report is material to be reviewed, not a to-do list for Review.
+2. Review may reject PlanExec's risk assessment, verification scope, and next-step recommendations.
+3. A failed Review conclusion must produce a directional judgment capable of changing the next round's method, rather than breaking the previous round's work into more local patches.
 
-### 11.4 审查者不执行修复
+### 11.4 The Reviewer Does Not Perform Fixes
 
-1. 审查者发现问题后输出问题、证据和重试建议。
-2. 修复必须回到计划和执行阶段。
-3. 这样才能保持对抗边界干净。
+1. After finding a problem, the reviewer outputs the problem, evidence, and retry recommendation.
+2. Fixes must return to the planning and execution phases.
+3. This keeps the adversarial boundary clean.
 
-## 12. 验收与证据原则
+## 12. Acceptance and Evidence Principles
 
-### 12.1 验收先于成功
+### 12.1 Acceptance Comes Before Success
 
-1. 没有验收标准，不应进入正式执行。
-2. 没有证据，不应宣告完成。
-3. 验收不清，必须继续澄清或显式阻塞。
-4. 任务成功必须以验收和证据为准，而不是以 agent 语气为准。
+1. Without acceptance criteria, formal execution should not begin.
+2. Without evidence, completion should not be declared.
+3. If acceptance is unclear, clarification must continue or the task must be explicitly blocked.
+4. Task success must be determined by acceptance and evidence, not by the agent's tone.
 
-### 12.2 证据类型
+### 12.2 Evidence Types
 
-1. 可以是自动化测试。
-2. 可以是指标。
-3. 可以是文件或 artifact。
-4. 可以是服务状态。
-5. 可以是截图或可视结果。
-6. 可以是人工验收。
-7. 可以是多种证据组合。
-8. 证据向审查者呈现现实，不把审查者降级成 receipt、hash 或验收矩阵的机械核对器。
+1. It may be automated tests.
+2. It may be metrics.
+3. It may be a file or artifact.
+4. It may be service status.
+5. It may be a screenshot or visible result.
+6. It may be human acceptance.
+7. It may be a combination of multiple forms of evidence.
+8. Evidence presents reality to the reviewer; it must not reduce the reviewer to a mechanical checker of receipts, hashes, or an acceptance matrix.
 
-### 12.3 人工验收不能被 AI 自评替代
+### 12.3 Human Acceptance Cannot Be Replaced by AI Self-Evaluation
 
-1. 有些任务天然没有可靠自动 validator。
-2. 这类任务可以进入正式执行，但必须显式标记人工验收方式。
-3. AI 审查可以提供建议和风险判断，但不能冒充用户最终验收。
+1. Some tasks naturally lack a reliable automatic validator.
+2. Such tasks may enter formal execution, but the method of human acceptance must be explicitly marked.
+3. AI review may provide recommendations and risk judgments, but cannot impersonate the user's final acceptance.
 
-## 13. MVP 约束
+## 13. MVP Constraints
 
-### 13.1 产品形态约束
+### 13.1 Product-Form Constraints
 
-1. MVP 同时覆盖 desktop app、mobile app、TUI、CLI、relay、Claude、Codex 和 ACP。
-2. 桌面 app 与手机 app 可以有全局入口。
-3. TUI 和 CLI 面向当前 workspace 的高效控制与脚本化操作。
-4. Claude、Codex 和 ACP 只是同一 authority 的宿主入口，不拥有独立任务语义。
-5. Relay 只承担远程同步和连接，不拥有任务真相。
-6. 所有 UI 和宿主面共享同一底层语义。
-7. MVP 范围保持覆盖这些入口；真正难点不是常规软件开发，而是 clarify 与 loop 的设计质量。
+1. The MVP covers the desktop app, mobile app, TUI, CLI, relay, Claude, Codex, and ACP simultaneously.
+2. The desktop app and mobile app may have global entry points.
+3. The TUI and CLI are intended for efficient control and scripted operations of the current workspace.
+4. Claude, Codex, and ACP are host entry points into the same authority and do not own independent task semantics.
+5. Relay provides only remote synchronization and connectivity and does not own task truth.
+6. All UI and host surfaces share the same underlying semantics.
+7. The MVP scope continues to cover these entry points; the real difficulty is not conventional software development, but the quality of clarify and loop design.
 
-### 13.2 任务入口约束
+### 13.2 Task-Entry Constraints
 
-1. 用户输入不必预先结构化。
-2. 用户可以在 composer 中显式选择输入类型：`Quick` 或 `Loop`。
-3. MVP 不依赖本地 auto router 来猜测用户意图。
-4. 如果需要自动推荐输入类型，推荐必须来自 provider-backed Router session。
-5. `Quick` 用于回答和快速动作，不进入合同冻结、Plan+Exec、Review 或 Loop。
-6. `Loop` 用于正式任务，进入 Clarify -> Contract Freeze -> Plan+Exec -> Review。
-7. 回答和快速动作不应被强行注册成正式任务。
+1. User input does not need to be structured in advance.
+2. Users can explicitly select the input type in the composer: `Quick` or `Loop`.
+3. The MVP does not depend on a local auto router to guess user intent.
+4. If automatic input-type recommendations are needed, the recommendations must come from a provider-backed Router session.
+5. `Quick` is for answers and quick actions and does not enter contract freeze, Plan+Exec, Review, or Loop.
+6. `Loop` is for formal tasks and enters Clarify -> Contract Freeze -> Plan+Exec -> Review.
+7. Answers and quick actions should not be forcibly registered as formal tasks.
 
-### 13.3 澄清约束
+### 13.3 Clarification Constraints
 
-1. 默认 Clarify 为 Auto。
-2. 正式任务进入执行前必须有合同冻结确认。
-3. 系统可以少问，但不能假装关键不确定性不存在。
-4. 能由系统自行调查的事实不应推给用户。
-5. 需要用户拍板的决策必须显式问。
-6. 澄清能力是 MVP 的核心质量门，不应被普通 UI 或 provider 接入工作稀释。
+1. Clarify defaults to Auto.
+2. A formal task must have contract-freeze confirmation before entering execution.
+3. The system may ask fewer questions, but must not pretend critical uncertainty does not exist.
+4. Facts that the system can investigate itself should not be pushed to the user.
+5. Decisions requiring the user must be asked explicitly.
+6. Clarification capability is a core quality gate for the MVP and must not be diluted by ordinary UI or provider-integration work.
 
 Clarify levels:
 
-1. `auto`: 由 provider-backed session 选择澄清力度。
-2. `Don't Bother Me`: 不主动追问；技术细节由 agent 自行判断并记录假设；遇到必须由用户拍板的高影响分叉时停止汇报。
-3. `light`: 少问，只问会明显改变方向、权限或验收的问题。
-4. `Balanced`: 平衡模式，问少数黄金问题。
-5. `deep`: 深度澄清，适合高风险、高成本或验收复杂任务。
-6. Clarify 阶段必须只读；它可以读取 workspace、查看 git 状态、搜索资料和联网研究，但不能修改文件。
-7. 最新 Loop 1/2 口径见 `NTH-CD-033` 和 `NTH-CD-034`：Clarify 不主动提供默认推荐，不问目标降级式兜底问题，问题卡使用标题、2-4 个行为树分支选择和 note 回答；`thoth.clarify` 规则住在标准 `SKILL.md` 中，普通 packet 不重复 Skill 规则。
+1. `auto`: the provider-backed session chooses the clarification intensity.
+2. `Don't Bother Me`: do not ask proactive follow-up questions; the agent determines and records technical details and assumptions on its own; stop and report when a high-impact fork requires a user decision.
+3. `light`: ask little; ask only questions that would clearly change direction, permissions, or acceptance.
+4. `Balanced`: balanced mode; ask a small number of golden questions.
+5. `deep`: deep clarification, suitable for high-risk, high-cost, or acceptance-complex tasks.
+6. The Clarify phase must be read-only; it may read the workspace, inspect git status, search materials, and conduct online research, but may not modify files.
+7. The latest Loop 1/2 interpretation is defined by `NTH-CD-033` and `NTH-CD-034`: Clarify does not proactively provide a default recommendation, does not ask goal-downgrade fallback questions, and question cards use a title, 2-4 behavior-tree branch choices, and a note response; `thoth.clarify` rules live in the standard `SKILL.md`, and ordinary packets do not repeat Skill rules.
 
-### 13.4 Loop 强度约束
+### 13.4 Loop-Intensity Constraints
 
-1. 默认 Loop 为 `auto`。
-2. Loop 控件只在 Mode = `Loop` 时生效；Mode = `Quick` 时灰色不可用。
-3. `auto`: 由 provider-backed session 根据任务风险、失败模式和成本判断 loop 策略。
-4. `One Plan, One Do`: 只做一次 Plan+Exec 和一次 Review，失败后直接阻塞并汇报。
-5. `light`: 更快、更省成本，失败后更早阻塞并汇报。
-6. `balanced`: 有限重试，保持明确失败原因和证据补齐。
-7. `Run Until Stopped`: 红色高消耗模式，持续推进直到用户手动停止。
-8. `Run Until Stopped` 仍必须遵守权限、安全硬停、provider availability 和资源边界。
-9. Loop 强度是 Thoth 的任务控制策略，不是 provider-native thinking strength。
+1. Loop defaults to `auto`.
+2. The Loop control takes effect only when Mode = `Loop`; it is disabled when Mode = `Quick`.
+3. `auto`: the provider-backed session determines the loop strategy based on task risk, failure modes, and cost.
+4. `One Plan, One Do`: perform one Plan+Exec and one Review; block and report directly after failure.
+5. `light`: faster and less expensive; block and report earlier after failure.
+6. `balanced`: limited retries while maintaining clear failure reasons and complete evidence.
+7. `Run Until Stopped`: a red, high-consumption mode that continues until the user manually stops it.
+8. `Run Until Stopped` must still obey permissions, safety hard stops, provider availability, and resource boundaries.
+9. Loop intensity is Thoth's task control strategy, not provider-native thinking strength.
 
-### 13.5 执行约束
+### 13.5 Execution Constraints
 
-1. 同一个 workspace 的写执行默认串行。
-2. 用户可以继续澄清或查看其他任务。
-3. 用户可以随时终止任务。
-4. 停止任务时保留状态、证据和未完成原因，不自动回滚。
-5. 默认高风险操作需要用户批准。
-6. 用户可以启用 full access / 信任模式跳过审批卡。
-7. 跳过审批不等于跳过 timeline、证据、风险记录和最终汇报。
-8. 正式任务的写执行默认通过任务分支或任务 worktree 隔离。
-9. git push 不随检查通过自动发生，只能作为高风险 `Quick` 动作执行。
-10. loop 能否针对上一轮失败点激进推进，是 MVP 的核心质量门。
-11. 所有阶段的 provider 可展示输出必须实时流式进入 timeline。
-12. Plan+Exec 必须尽量利用 provider 的原生 plan mode，而不是由 Thoth 重新实现一个执行 agent。
+1. Write execution within the same workspace is serial by default.
+2. Users can continue clarifying or view other tasks.
+3. Users can terminate a task at any time.
+4. When a task is stopped, retain its state, evidence, and reason for incompletion; do not roll it back automatically.
+5. High-risk operations require user approval by default.
+6. Users can enable full access / trust mode to skip approval cards.
+7. Skipping approval does not mean skipping the timeline, evidence, risk record, or final report.
+8. Write execution for formal tasks passes through a task branch or task worktree for isolation by default.
+9. `git push` does not happen automatically when checks pass; it can only be executed as a high-risk `Quick` action.
+10. Whether the loop can push aggressively on the previous round's failure points is a core quality gate for the MVP.
+11. Provider output that can be shown from all phases must stream into the timeline in real time.
+12. Plan+Exec must make the most of the provider's native plan mode rather than having Thoth reimplement an execution agent.
 
-### 13.6 汇报约束
+### 13.6 Reporting Constraints
 
-1. 汇报面向用户行动。
-2. 汇报应说明做了什么、是否通过、证据在哪里、风险是什么、是否需要用户处理。
-3. 汇报不应把大量原始日志直接丢给用户。
+1. Reports should support user action.
+2. Reports should state what was done, whether it passed, where the evidence is, what the risks are, and whether the user needs to take action.
+3. Reports should not dump large amounts of raw logs directly on the user.
 
-## 14. 非目标
+## 14. Non-Goals
 
-### 14.1 不兼容归档 plugin 形态
+### 14.1 No Compatibility with the Archived Plugin Form
 
-1. Thoth 不以兼容归档 plugin 架构为目标。
-2. 旧版本的思想、prompt 经验、authority 经验、loop 经验和 review 经验可以迁移。
-3. 旧版本的命令形态、项目内存储形态和宿主投影形态不作为新版约束。
+1. Thoth does not aim to be compatible with the archived plugin architecture.
+2. Ideas, prompt experience, authority experience, loop experience, and review experience from the old version may be migrated.
+3. The old version's command form, in-project storage form, and host projection form do not constrain the new version.
 
-### 14.2 不做全 IDE
+### 14.2 Not a Full IDE
 
-1. MVP 不追求重型代码编辑。
-2. MVP 不追求完整 terminal 工作台。
-3. MVP 不追求替代现有开发环境。
+1. The MVP does not pursue heavyweight code editing.
+2. The MVP does not pursue a complete terminal workstation.
+3. The MVP does not pursue replacing existing development environments.
 
-### 14.3 不做全量自动自治
+### 14.3 Not Fully Autonomous Operation
 
-1. Thoth 不应在高风险问题上绕过用户。
-2. Thoth 不应把用户未批准的假设当成事实。
-3. Thoth 不应为了减少打扰而牺牲验收真实性。
+1. Thoth should not bypass the user on high-risk matters.
+2. Thoth should not treat user-unapproved assumptions as facts.
+3. Thoth should not sacrifice acceptance truth in order to reduce interruptions.
 
-### 14.4 不以 provider 数量作为成功标准
+### 14.4 Provider Count Is Not the Success Criterion
 
-1. 首要成功标准是完整任务生命周期成立。
-2. 多宿主能力必须服务于任务控制平面，而不是变成支持清单竞赛。
-3. 后续接入更多 harness 时，不应破坏任务真相、证据和审查边界。
+1. The primary success criterion is that the complete task lifecycle works.
+2. Multi-host capability must serve the task control plane rather than becoming a support-list competition.
+3. When integrating more harnesses later, task truth, evidence, and review boundaries must not be broken.

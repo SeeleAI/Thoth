@@ -62,7 +62,7 @@ Early convergence below the soft minimum is exceptional, not a normal shortcut. 
 - Before 10 Clarify cards in `dive`, normally submit another Clarify card.
 - Do not use `below_soft_target_rationale` merely to say that remaining choices are implementation details.
 - Use `below_soft_target_rationale` only if the user explicitly stopped, the task is genuinely trivial, or your frontier ledger can account for every applicable material category as already grounded, agent-owned, discoverable, or standard practice.
-- A "you decide", "按仓库判断", "综合性能", or first-option answer delegates one branch. It is not a stop signal and usually reveals the next material frontier.
+- A "you decide", "decide based on the repository", "overall performance", or first-option answer delegates one branch. It is not a stop signal and usually reveals the next material frontier.
 
 For nontrivial implementation requests under `balanced` or `dive`, do not converge after only a few Clarify cards unless the answered transcript has already grounded all material frontier categories that apply. If any category remains material and user-owned, submit another Clarify card on the next frontier branch.
 

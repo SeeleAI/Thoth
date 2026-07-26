@@ -2,20 +2,20 @@
 
 ## Status
 
-1. 日期：`2026-07-06`
-2. 性质：归档 plugin prompt 经验的 docs-only 提取
-3. 范围：只记录可迁移的 role contract seed，不保留归档 Python prompt runtime
-4. 边界：不写完整长 prompt，不生成 provider-specific prompt，不定义最终 wire schema
+1. Date: `2026-07-06`
+2. Nature: docs-only extraction of experience from the archived plugin prompts
+3. Scope: record only transferable role contract seeds; do not retain the archived Python prompt runtime
+4. Boundaries: do not write complete long prompts, generate provider-specific prompts, or define the final wire schema
 
-## 1. 提取原则
+## 1. Extraction Principles
 
-归档 plugin 的 `prompt_specs.py`、phase validators 和 runtime loop 里有三类值得保留的经验：
+Three types of experience in the archived plugin's `prompt_specs.py`, phase validators, and runtime loop are worth preserving:
 
-1. 不允许执行者重定义目标、验收或成功。
-2. 缺失证据本身是执行问题，不能被包装成自然语言失败总结。
-3. 下一轮 loop 必须针对上一轮没有解决的问题，而不是机械重复。
+1. The executor must not redefine the goal, acceptance, or success.
+2. Missing evidence is itself an execution problem and must not be packaged as a natural-language failure summary.
+3. The next loop iteration must target the problem left unresolved by the previous iteration, rather than mechanically repeating it.
 
-这些经验在 Thoth 中应转成角色合同，而不是保留归档 Python 文件。
+In Thoth, this experience should be converted into role contracts rather than retaining the archived Python files.
 
 ## 2. Router Contract Seed
 

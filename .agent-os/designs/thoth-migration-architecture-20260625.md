@@ -3,187 +3,187 @@
 ## Status
 
 - Date: `2026-06-25`
-- Scope: 将用户本轮关于“全新版本 Thoth”的原始目标、输入、参考资料、调研结论与当前设计方案压缩沉淀为单一详细文档
+- Scope: Condense the user's original goals, inputs, reference materials, research conclusions, and current design proposal for a "completely new version of Thoth" from this round into a single detailed document
 - Nature: planning/design artifact, no implementation in this document
 - Intended follow-up: feed `TD-003` and future `MS-004` design freeze / migration planning
 
-## 1. 原始用户目标与输入
+## 1. Original User Goals and Inputs
 
-本轮用户要做的不是现有 Thoth 的小修小补，而是一个“完全全新版本”的 `Thoth`。目标不是追随某一代 harness，而是从未来 `5` 年仍然能成立的价值出发，最大程度减少人的心智负担。
+The user did not want minor incremental changes to the existing Thoth in this round, but a "completely new version" of `Thoth`. The goal is not to follow any particular generation of harness, but to start from value that will still hold in `5` years and minimize human cognitive burden as much as possible.
 
-用户明确给出的目标与约束如下。
+The user explicitly provided the following goals and constraints.
 
-### 1.1 顶层目标
+### 1.1 Top-Level Goals
 
-1. 从结果倒推，设计一个未来 `5` 年后仍然有作用的 `Thoth`
-2. 以“最大程度减少人的心智负担”为第一原则
-3. 让 Thoth 更像“数字员工 / digital employee control plane”，而不是某个单一 coding agent 的 UI 包装
+1. Work backward from the desired outcome to design a `Thoth` that will still be useful `5` years from now
+2. Make "minimizing human cognitive burden as much as possible" the first principle
+3. Make Thoth more like a "digital employee control plane" rather than a UI wrapper around a single coding agent
 
-### 1.2 产品形态要求
+### 1.2 Product Form Requirements
 
-1. 同时有 `TUI` 和 `APP` 两种形态
-2. 底层接口必须完全一致
-3. `UI` 只是壳，不能拥有自己的业务语义
-4. `TUI` 明确要求使用 `OpenTUI`
-5. `APP` 形态当时尚未拍板，需要结合参考项目调研后给出建议
+1. Provide both `TUI` and `APP` forms
+2. The underlying interfaces must be completely identical
+3. The `UI` is only a shell and must not own business semantics
+4. The `TUI` must explicitly use `OpenTUI`
+5. The `APP` form had not yet been decided and should be recommended after researching the reference projects
 
-### 1.3 用户入口与工作方式
+### 1.3 User Entry Points and Working Model
 
-1. 用户入口包括：
-   - 各个 workspace 下开启对话
-   - 一个全局 chat
-2. 用户可以像对数字员工一样，直接把需求、想法、背景一股脑说出来
-3. Thoth 负责主动拆解、追问、澄清，而不是要求用户事先写好结构化 prompt
-4. 澄清重点必须放在：
-   - 假设
-   - 目标
-   - 约束
-   - 验收标准
-5. 只有当任务被拆清楚之后，才注册成一个任务，类似 `issue`
-6. 一旦注册，后续交给固定 role 的 agent 异步执行
-7. 用户不关心具体执行时间，希望像“老板给数字员工下发任务”一样
-8. 用户睡觉时，AI 也应该继续运行
+1. User entry points include:
+   - Starting a conversation within each workspace
+   - A global chat
+2. Users can speak freely about requirements, ideas, and background all at once, as they would when addressing a digital employee
+3. Thoth is responsible for proactively decomposing, questioning, and clarifying the request, rather than requiring users to write a structured prompt in advance
+4. Clarification must focus on:
+   - Assumptions
+   - Goals
+   - Constraints
+   - Acceptance criteria
+5. Only after the task has been sufficiently decomposed should it be registered as a task, similar to an `issue`
+6. Once registered, it is executed asynchronously by agents with fixed roles
+7. Users do not care about the exact execution time; the experience should resemble "a boss assigning work to a digital employee"
+8. The AI should continue running while the user sleeps
 
-### 1.4 Loop 要求
+### 1.4 Loop Requirements
 
-1. 执行者要建立在“当前 loop engineering”的概念上
-2. 注册任务时，本质上也是在注册一个 `loop`
-3. 任务不是一次 turn，而是一个可长期运行、可恢复、可审查的 loop contract
+1. The executor should be built around the concept of "current loop engineering"
+2. Registering a task is, in essence, also registering a `loop`
+3. A task is not a single turn, but a long-running, recoverable, reviewable loop contract
 
-### 1.5 多端同步要求
+### 1.5 Multi-Device Synchronization Requirements
 
-1. APP 端需要类似 `Paseo`
-2. 手机端和电脑端需要能够同步 session 和进度
-3. 用户希望远程查看、远程跟进、远程批准，而不要求完整桌面开发体验搬到手机
+1. The APP side should be similar to `Paseo`
+2. Phone and computer clients must be able to synchronize sessions and progress
+3. Users want to view, follow up on, and approve work remotely, without requiring the full desktop development experience to be transferred to the phone
 
-### 1.6 宿主无关要求
+### 1.6 Host-Neutrality Requirements
 
-用户明确要求Thoth 宿主无关，至少要能支持：
+The user explicitly required Thoth to be host-neutral and to support at least:
 
 - `cc` / Claude Code
 - `codex`
 - `opencode`
 - `hermes`
 - `openclaw`
-- `qwencode` / QwenCode 一类 harness
+- `qwencode` / QwenCode-like harnesses
 
-这里的要求不是“表面支持”，而是要真正理解：
+This does not mean "surface-level support"; it requires a real understanding of:
 
-1. 如何做到 agent / harness 工具无关
-2. 如何接这么多 harness
-3. role 分配怎么做
-4. prompt engineering 怎么做
+1. How to make the system agent- and harness-tool-neutral
+2. How to integrate this many harnesses
+3. How to allocate roles
+4. How to do prompt engineering
 
-### 1.7 生命周期与对抗要求
+### 1.7 Lifecycle and Adversarial Requirements
 
-用户明确要求每个任务生命周期至少有三个独立阶段，而且每个阶段都应该是独立 role、独立 session，并且要有对抗。
+The user explicitly required each task lifecycle to have at least three independent phases, with each phase using an independent role and independent session, and with adversarial review.
 
-至少包含：
+It must include at least:
 
-1. 向用户澄清需求、假设、引导用户的阶段
-2. 执行任务 loop 的阶段
-3. 审查、验证、反思的阶段
+1. A phase for clarifying requirements and assumptions with the user and guiding the user
+2. A phase for executing the task loop
+3. A phase for review, validation, and reflection
 
-用户强调：
+The user emphasized:
 
-- 每个阶段都应该是独立 role 设计
-- 每个阶段都应该是独立 session
-- 必须有对抗，不要把“执行者自评为成功”当成系统成功
+- Each phase should have an independently designed role
+- Each phase should have an independent session
+- There must be adversarial review; do not treat "the executor self-assessing success" as system success
 
-### 1.8 用户要求重点讨论和调研的点
+### 1.8 Topics the User Asked to Discuss and Research in Depth
 
-用户要求重点讨论与设计：
+The user asked for focused discussion and design of:
 
-1. 所有的预设 prompt
-2. 记忆和上下文设计
-3. 如何做到宿主无关
-4. 如何做到多端同步
-5. 如何做到多阶段间的上下文和记忆
-6. 架构设计
+1. All preset prompts
+2. Memory and context design
+3. How to achieve host neutrality
+4. How to achieve multi-device synchronization
+5. How to pass context and memory between phases
+6. Architecture design
 
-### 1.9 用户给出的参考资料与关注重点
+### 1.9 Reference Materials and Areas of Focus Provided by the User
 
-#### 参考一：数字员工 / 多 harness / agent 控制面
+#### Reference One: Digital Employees / Multiple Harnesses / Agent Control Plane
 
 - Upstream: `https://github.com/multica-ai/multica`
-- 本地 clone: `<harness-workspace>/multica`
-- 本地 HEAD: `343ace8`
+- Local clone: `<harness-workspace>/multica`
+- Local HEAD: `343ace8`
 
-用户要求重点看：
+The user asked for focused examination of:
 
-1. 如何做到 agent、harness 工具无关
-2. 如何调用这么多 harness 工具
-3. role 分配
-4. prompt engineering
+1. How to make the system agent- and harness-tool-neutral
+2. How to invoke this many harness tools
+3. Role allocation
+4. Prompt engineering
 
-#### 参考二：APP 远程 / 手机同步 / 多 provider / 多平台打包
+#### Reference Two: Remote APP / Phone Synchronization / Multiple Providers / Multi-Platform Packaging
 
 - Upstream: `https://github.com/getpaseo/paseo`
-- 本地 clone: `<harness-workspace>/paseo`
-- 本地 HEAD: `507345d`
+- Local clone: `<harness-workspace>/paseo`
+- Local HEAD: `507345d`
 
-用户要求重点看：
+The user asked for focused examination of:
 
-1. 如何做到支持这么多 harness 工具
-2. 如何做到 Windows、macOS、Android、iOS 都能打包出 app
-3. 用的是什么框架
-4. 多端同步怎么做
+1. How to support this many harness tools
+2. How to package apps for Windows, macOS, Android, and iOS
+3. Which framework is used
+4. How multi-device synchronization is implemented
 
-#### 参考三：TUI 方案
+#### Reference Three: TUI Approach
 
 - Skill path: `<codex-skills>/opentui`
-- 核心 docs:
+- Core docs:
   - `<codex-skills>/opentui/docs/getting-started.mdx`
   - `<codex-skills>/opentui/docs/bindings/react.mdx`
 
-用户明确要求：
+The user explicitly required:
 
-- `TUI` 用 `OpenTUI`
+- Use `OpenTUI` for the `TUI`
 
-## 2. 当前 Thoth 基线
+## 2. Current Thoth Baseline
 
-本设计不是完全脱离当前仓库状态的空想，必须从当前 Thoth 已经收敛出来的长期有效部分出发。
+This design is not speculation detached from the current repository state; it must start from the parts of the current Thoth that have already converged and are expected to remain valid over the long term.
 
-依据当前仓库状态文档，现有 Thoth 已经形成以下几个重要基线：
+According to the current repository state documents, the existing Thoth has established the following important baselines:
 
-1. `.thoth/objects` 作为 authority 的基本方向已经成立
-2. `work_id@revision`、`run`、`controller`、`phase_result`、`artifact` 的执行模型已经存在
-3. `run` 的固定阶段链已经收敛为 `plan -> execute -> validate -> reflect`
-4. `auto` 已经不是一次性命令，而是 durable controller worker service
-5. `Observe` 已经明确为 authority 的只读派生层
-6. `argue` 已经引入 attacker / adjudicator 这种对抗思路
-7. 当前仓库已经开始区分：
+1. `.thoth/objects` has been established as the basic direction for authority
+2. The execution model for `work_id@revision`, `run`, `controller`, `phase_result`, and `artifact` already exists
+3. The fixed phase chain for `run` has converged to `plan -> execute -> validate -> reflect`
+4. `auto` is no longer a one-off command, but a durable controller worker service
+5. `Observe` has been clearly defined as a read-only derived layer of authority
+6. `argue` has introduced the adversarial concepts of attacker / adjudicator
+7. The current repository has begun distinguishing:
    - authority truth
    - runtime ledger
    - read model / docs / dashboard
 
-当前仓库的基线事实可见 [architecture-milestones.md](<thoth-repo>/.agent-os/architecture-milestones.md:16) 与 [todo.md](<thoth-repo>/.agent-os/todo.md:19)。
+The baseline facts of the current repository are available in [architecture-milestones.md](<thoth-repo>/.agent-os/architecture-milestones.md:16) and [todo.md](<thoth-repo>/.agent-os/todo.md:19).
 
-对 Thoth 有长期价值、建议继承的部分：
+The parts that have long-term value for Thoth and should be carried forward are:
 
-1. `work_item` 作为任务 authority 的核心单位
-2. `acceptance_spec` 作为验收真相的中心
-3. `run` 与 `controller/loop` 分层
-4. `Observe` 只读、不得偷偷修 authority
-5. `argue` / adversarial review 的系统化入口
-6. 宿主 adapter 与 runtime truth 分离
+1. `work_item` as the core unit of task authority
+2. `acceptance_spec` as the center of acceptance truth
+3. Layering `run` and `controller/loop`
+4. `Observe` being read-only and forbidden from secretly repairing authority
+5. A systematic entry point for `argue` / adversarial review
+6. Separating the host adapter from runtime truth
 
-对 Thoth 需要明显升级或替换的部分：
+The parts that Thoth needs to significantly upgrade or replace are:
 
-1. 入口不能再以命令为中心，而要以 conversation / digital employee intake 为中心
-2. 生命周期不能只停留在 `plan/execute/validate/reflect`，还要把“澄清与冻结合同”显式抬到执行前
-3. 当前 TUI / dashboard / host projection 更像 tool surface；Thoth 需要统一 daemon protocol 下的多壳客户端
-4. 当前宿主主要围绕 Claude/Codex；Thoth 要提升到 harness-neutral driver layer
+1. The entry point can no longer be command-centered; it must center on conversation / digital employee intake
+2. The lifecycle cannot stop at `plan/execute/validate/reflect`; "clarification and contract freeze" must also be made explicit before execution
+3. The current TUI / dashboard / host projection is more like a tool surface; Thoth needs multiple shell clients under a unified daemon protocol
+4. Current host support is mainly centered on Claude/Codex; Thoth must advance to a harness-neutral driver layer
 
-## 3. 参考资料调研结论
+## 3. Research Conclusions from Reference Materials
 
-### 3.1 Multica：值得吸收的部分
+### 3.1 Multica: Parts Worth Adopting
 
-#### 3.1.1 产品定位
+#### 3.1.1 Product Positioning
 
-Multica 把 coding agent 当成真正“同事 / teammate”，而不是一次性的 prompt runner。
+Multica treats a coding agent as a real "colleague / teammate" rather than a one-off prompt runner.
 
-它强调：
+It emphasizes:
 
 1. `Agents as Teammates`
 2. `Squads`
@@ -193,38 +193,38 @@ Multica 把 coding agent 当成真正“同事 / teammate”，而不是一次�
 6. `Unified Runtimes`
 7. `Multi-Workspace`
 
-见 [Multica README](<harness-workspace>/multica/README.md:30)。
+See [Multica README](<harness-workspace>/multica/README.md:30).
 
-这与用户想要的“数字员工”方向高度一致。
+This is highly consistent with the user's desired direction of "digital employees."
 
-#### 3.1.2 多 harness 支持的真实方式
+#### 3.1.2 The Actual Approach to Supporting Multiple Harnesses
 
-Multica 的 provider matrix 非常重要，因为它说明“宿主无关”不是把差异消掉，而是把差异限制在 adapter/capability 层。
+Multica's provider matrix is highly important because it shows that "host neutrality" does not mean eliminating differences, but limiting them to the adapter/capability layer.
 
-它明确支持多个工具，但文档同时强调：
+It explicitly supports multiple tools, while its documentation also emphasizes:
 
-1. 它们都实现同一个上层接口
-2. 但 capability 细节差异非常大
-3. 差异包括：
+1. They all implement the same upper-layer interface
+2. But their capability details differ substantially
+3. Differences include:
    - session resumption
-   - MCP 支持
-   - skill 注入路径
-   - model 选择
+   - MCP support
+   - Skill injection path
+   - Model selection
 
-见 [providers.mdx](<harness-workspace>/multica/apps/docs/content/docs/providers.mdx:8)。
+See [providers.mdx](<harness-workspace>/multica/apps/docs/content/docs/providers.mdx:8).
 
-这意味着：
+This means:
 
-1. Thoth 不能假装所有 harness 一样
-2. 必须有 capability matrix
-3. 必须把 provider-specific 行为收敛进 driver adapter
+1. Thoth cannot pretend that all harnesses are identical
+2. A capability matrix is required
+3. Provider-specific behavior must be confined to the driver adapter
 
-#### 3.1.3 技术实现层的统一接口
+#### 3.1.3 Unified Interface at the Technical Implementation Layer
 
-Multica 在 `server/pkg/agent/agent.go` 中定义了一个简洁但有效的统一接口：
+In `server/pkg/agent/agent.go`, Multica defines a simple but effective unified interface:
 
 1. `Backend.Execute(ctx, prompt, opts)`
-2. `ExecOptions` 包含：
+2. `ExecOptions` contains:
    - `Cwd`
    - `Model`
    - `SystemPrompt`
@@ -238,62 +238,62 @@ Multica 在 `server/pkg/agent/agent.go` 中定义了一个简洁但有效的统�
    - `McpConfig`
    - `ThinkingLevel`
    - `OpenclawMode`
-3. `Session` 提供：
+3. `Session` provides:
    - `Messages <-chan Message`
    - `Result <-chan Result`
 
-见 [agent.go](<harness-workspace>/multica/server/pkg/agent/agent.go:15)。
+See [agent.go](<harness-workspace>/multica/server/pkg/agent/agent.go:15).
 
-这说明上层语义上至少需要统一：
+This shows that the upper-layer semantics must unify at least:
 
-1. 执行入口
-2. session resume
-3. streaming
-4. final result
+1. Execution entry point
+2. Session resumption
+3. Streaming
+4. Final result
 5. MCP/materialization
-6. reasoning/effort
-7. provider-specific runtime knobs
+6. Reasoning/effort
+7. Provider-specific runtime knobs
 
-#### 3.1.4 对宿主配置文件的处理方式
+#### 3.1.4 Handling Host Configuration Files
 
-Multica 在 `runtime_config.go` 里做了一个非常关键的设计：
+Multica makes a very important design choice in `runtime_config.go`:
 
-1. 不直接覆盖用户仓库已有的 `AGENTS.md` / `CLAUDE.md`
-2. 用 marker block 注入自己管理的 runtime brief
-3. 下次运行时做 idempotent replace
-4. 清理时恢复用户原始文件字节级状态
+1. It does not directly overwrite the user's existing `AGENTS.md` / `CLAUDE.md`
+2. It injects its managed runtime brief using a marker block
+3. It performs an idempotent replacement on the next run
+4. During cleanup, it restores the user's original files byte for byte
 
-并且它明确区分：
+It also clearly distinguishes:
 
-1. Claude / CodeBuddy 写 `CLAUDE.md`
-2. Codex / Copilot / OpenCode / OpenClaw / Hermes / Pi / Cursor / Kimi / Kiro / Antigravity / Qoder 写 `AGENTS.md`
+1. Claude / CodeBuddy write `CLAUDE.md`
+2. Codex / Copilot / OpenCode / OpenClaw / Hermes / Pi / Cursor / Kimi / Kiro / Antigravity / Qoder write `AGENTS.md`
 
-见 [runtime_config.go](<harness-workspace>/multica/server/internal/daemon/execenv/runtime_config.go:156)。
+See [runtime_config.go](<harness-workspace>/multica/server/internal/daemon/execenv/runtime_config.go:156).
 
-这对Thoth 的启示是：
+The implications for Thoth are:
 
-1. 宿主无关不等于“一个统一文件”
-2. 应该在 driver 层 materialize provider-native context
-3. 永远不要粗暴覆盖用户已有的 repo-local 指令文件
-4. 注入与 cleanup 要成对设计
+1. Host neutrality does not mean "one unified file"
+2. Provider-native context should be materialized at the driver layer
+3. Never crudely overwrite the user's existing repo-local instruction files
+4. Injection and cleanup must be designed as a pair
 
-### 3.2 Multica：不应直接照搬的部分
+### 3.2 Multica: Parts That Should Not Be Copied Directly
 
-1. 它更强在任务队列、issue board、runtime dispatch
-2. 但它的“需求澄清 -> 验收冻结 -> authority graph”不是核心护城河
-3. 对用户来说，它更像 managed agents platform，而不是“把模糊老板意图编译成 loop contract 的系统”
+1. Its strengths lie more in task queues, issue boards, and runtime dispatch
+2. But its "requirements clarification -> acceptance freeze -> authority graph" is not its core moat
+3. To users, it is more like a managed agents platform than a "system that compiles ambiguous boss intent into a loop contract"
 
-因此：
+Therefore:
 
-1. 任务板 / runtime / agent teammate 模型值得吸收
-2. 但 Thoth 的核心不能落在“issue board”
-3. Thoth 的真正价值应该在 `clarification compiler + acceptance compiler + loop controller + evidence authority`
+1. Its task board / runtime / agent teammate model is worth adopting
+2. But Thoth's core cannot be reduced to an "issue board"
+3. Thoth's real value should lie in the `clarification compiler + acceptance compiler + loop controller + evidence authority`
 
-### 3.3 Paseo：值得吸收的部分
+### 3.3 Paseo: Parts Worth Adopting
 
-#### 3.3.1 架构分层
+#### 3.3.1 Architectural Layers
 
-Paseo 的总体结构非常清楚：
+Paseo's overall structure is very clear:
 
 1. `daemon`
 2. `app`（Expo）
@@ -303,39 +303,39 @@ Paseo 的总体结构非常清楚：
 6. `protocol`
 7. `client`
 
-而且所有客户端都围绕同一个 daemon 与 protocol 展开。
+All clients are also organized around the same daemon and protocol.
 
-见 [architecture.md](<harness-workspace>/paseo/docs/architecture.md:3)。
+See [architecture.md](<harness-workspace>/paseo/docs/architecture.md:3).
 
-这对Thoth 的启示非常直接：
+The implications for Thoth are direct:
 
-1. `TUI` 和 `APP` 不应该是两套产品
-2. 它们应该是同一个 `thothd` 的两个 client
-3. 业务语义必须归 daemon / authority / protocol 持有
+1. `TUI` and `APP` should not be two separate products
+2. They should be two clients of the same `thothd`
+3. Business semantics must be owned by the daemon / authority / protocol
 
-#### 3.3.2 多 provider 的抽象方式
+#### 3.3.2 Abstraction for Multiple Providers
 
-Paseo 区分两种 provider integration pattern：
+Paseo distinguishes two provider integration patterns:
 
 1. `ACP` provider：
-   - 推荐
-   - 复用 `ACPAgentClient`
-   - 基类处理 process spawn、stdio transport、session lifecycle、streaming、permissions、model discovery
+   - Recommended
+   - Reuse `ACPAgentClient`
+   - The base class handles process spawn, stdio transport, session lifecycle, streaming, permissions, and model discovery
 2. `Direct` provider：
-   - 直接实现 `AgentClient` 和 `AgentSession`
-   - 完全自己管 process、stream、permission、history、session persistence
+   - Directly implement `AgentClient` and `AgentSession`
+   - Fully manage process, stream, permission, history, and session persistence themselves
 
-见 [providers.md](<harness-workspace>/paseo/docs/providers.md:5)。
+See [providers.md](<harness-workspace>/paseo/docs/providers.md:5).
 
-这说明Thoth 最合理的做法不是发明“超级统一 provider 标准”，而是：
+This shows that the most reasonable approach for Thoth is not to invent a "super-unified provider standard," but to:
 
-1. 对支持 ACP 的 harness，走 ACP adapter
-2. 对强个性的 provider，走 direct adapter
-3. 上层只消费统一 session/timeline/permission/capability 接口
+1. Use an ACP adapter for harnesses that support ACP
+2. Use a direct adapter for highly distinctive providers
+3. Have the upper layer consume only unified session/timeline/permission/capability interfaces
 
-#### 3.3.3 AgentClient / AgentSession 模型
+#### 3.3.3 AgentClient / AgentSession Model
 
-Paseo 的 direct provider checklist 中展示了两个非常实用的抽象：
+Paseo's direct provider checklist presents two very practical abstractions:
 
 1. `AgentClient`
    - createSession
@@ -359,122 +359,122 @@ Paseo 的 direct provider checklist 中展示了两个非常实用的抽象：
    - interrupt
    - close
 
-见 [providers.md](<harness-workspace>/paseo/docs/providers.md:321)。
+See [providers.md](<harness-workspace>/paseo/docs/providers.md:321).
 
-这个抽象比 Multica 更适合 Thoth，因为 Thoth 不只是“派发任务”，而是要真正跨阶段管理 session、permission、history、resume、review。
+This abstraction is better suited to Thoth than Multica's because Thoth does not merely "dispatch tasks"; it must truly manage sessions, permissions, history, resumption, and review across phases.
 
-#### 3.3.4 Timeline sync 不变量
+#### 3.3.4 Timeline Sync Invariants
 
-Paseo 的 `timeline-sync.md` 有一个必须吸收的不变量：
+Paseo's `timeline-sync.md` contains an invariant that must be adopted:
 
-1. live stream 只负责 immediacy
-2. authoritative history 负责 correctness
-3. presence 不是 delivery
-4. catch-up 可以分页，但必须完整
-5. resume 时如果有 cursor，就从 cursor 后补完，而不是简单拉 tail
+1. The live stream is responsible only for immediacy
+2. Authoritative history is responsible for correctness
+3. Presence is not delivery
+4. Catch-up may be paginated, but must be complete
+5. When resuming with a cursor, fill in everything after the cursor rather than simply fetching the tail
 
-见 [timeline-sync.md](<harness-workspace>/paseo/docs/timeline-sync.md:3)。
+See [timeline-sync.md](<harness-workspace>/paseo/docs/timeline-sync.md:3).
 
-这个设计非常关键，因为Thoth 的 loop 很可能是长时间后台运行，手机端/桌面端/TUI 反复 attach/detach，如果没有这个不变量，就会出现：
+This design is critical because Thoth's loops will likely run in the background for long periods, while phone, desktop, and TUI clients repeatedly attach and detach. Without this invariant, the following can occur:
 
-1. 中间阶段消息丢失
-2. 权限卡点不可见
-3. 最终报告与中间 timeline 对不上
+1. Messages from intermediate phases being lost
+2. Permission blockers being invisible
+3. The final report not matching the intermediate timeline
 
 #### 3.3.5 Agent lifecycle / subagent / archive
 
-Paseo 对 agent lifecycle 的处理也值得参考：
+Paseo's handling of the agent lifecycle is also worth studying:
 
-1. agent 有明确状态：
+1. An agent has explicit states:
    - `initializing`
    - `idle`
    - `running`
    - `error`
    - `closed`
-2. agent 可以有：
+2. An agent can have:
    - `subagent`
    - `detached`
-3. archive 是 global lifecycle action，不是单 client 行为
-4. tab 关闭与 archive 解耦
+3. Archiving is a global lifecycle action, not a single-client action
+4. Closing a tab is decoupled from archiving
 
-见 [agent-lifecycle.md](<harness-workspace>/paseo/docs/agent-lifecycle.md:5)。
+See [agent-lifecycle.md](<harness-workspace>/paseo/docs/agent-lifecycle.md:5).
 
-这给Thoth 的启发是：
+The implications for Thoth are:
 
-1. role session / subagent session 必须是 lifecycle object
-2. UI 里的关闭视图不等于销毁任务
-3. review/verifier/adversary 可以是 `subagent-like` session，但 authority 仍归任务系统
+1. A role session / subagent session must be a lifecycle object
+2. Closing a view in the UI does not mean destroying the task
+3. Review/verifier/adversary can be `subagent-like` sessions, but authority still belongs to the task system
 
-#### 3.3.6 APP 与 Desktop 技术路线
+#### 3.3.6 APP and Desktop Technology Paths
 
-Paseo 的现有实现已经验证了一条现实可行的技术路线：
+Paseo's existing implementation has validated a practical and feasible technology path:
 
-1. `packages/app` 用 `Expo`
-2. 覆盖：
+1. `packages/app` uses `Expo`
+2. It covers:
    - iOS
    - Android
    - Web
-3. `packages/desktop` 用 `Electron`
-4. 用 `electron-builder` 产出：
+3. `packages/desktop` uses `Electron`
+4. It uses `electron-builder` to produce:
    - macOS: `dmg` / `zip`
    - Linux: `AppImage` / `deb` / `rpm` / `tar.gz`
    - Windows: `nsis` / `zip`
 
-见 [package.json](<harness-workspace>/paseo/packages/app/package.json:7) 与 [electron-builder.yml](<harness-workspace>/paseo/packages/desktop/electron-builder.yml:27)。
+See [package.json](<harness-workspace>/paseo/packages/app/package.json:7) and [electron-builder.yml](<harness-workspace>/paseo/packages/desktop/electron-builder.yml:27).
 
-这说明对Thoth 来说：
+This means that for Thoth:
 
-1. APP 路线优先选 `Expo React Native`
-2. Desktop 路线优先选 `Electron`
-3. 不要先在 APP 技术栈上发明新轮子
+1. The APP path should prioritize `Expo React Native`
+2. The Desktop path should prioritize `Electron`
+3. Do not invent a new APP technology stack first
 
-### 3.4 Paseo：不应直接照搬的部分
+### 3.4 Paseo: Parts That Should Not Be Copied Directly
 
-1. Paseo 的 authority 主要是 daemon session / timeline / runtime state
-2. 它天然理解的是“agent session”，不是 `.thoth` authority graph
-3. 它并不原生理解：
+1. Paseo's authority is primarily daemon session / timeline / runtime state
+2. It natively understands "agent sessions," not the `.thoth` authority graph
+3. It does not natively understand:
    - `work_id@revision`
    - `acceptance_spec`
    - `phase_result`
    - `validate.passed`
    - `artifact provenance`
 
-因此：
+Therefore:
 
-1. Paseo 的 protocol、provider adapter、多端同步值得吸收
-2. 但 Thoth 不能把自己的 authority 退化成“只是一个更漂亮的 agent session manager”
+1. Paseo's protocol, provider adapter, and multi-device synchronization are worth adopting
+2. But Thoth must not reduce its authority to "merely a prettier agent session manager"
 
-### 3.5 OpenTUI：值得吸收的部分
+### 3.5 OpenTUI: Parts Worth Adopting
 
-OpenTUI 的角色很明确：
+OpenTUI's role is clear:
 
-1. 它是高性能 TUI renderer/core
+1. It is a high-performance TUI renderer/core
 2. Zig native core + TypeScript bindings
-3. 可以从 React binding 构建 TUI
-4. 提供：
+3. It can build a TUI from the React binding
+4. It provides:
    - layout
    - input
    - diff/code/markdown
    - keyboard hooks
 
-见 [getting-started.mdx](<codex-skills>/opentui/docs/getting-started.mdx:13) 与 [react.mdx](<codex-skills>/opentui/docs/bindings/react.mdx:10)。
+See [getting-started.mdx](<codex-skills>/opentui/docs/getting-started.mdx:13) and [react.mdx](<codex-skills>/opentui/docs/bindings/react.mdx:10).
 
-但它也有运行时现实：
+But it also has runtime realities:
 
-1. 真正创建 native renderer 时需要 FFI
-2. 文档主路径更偏 Bun / Node 26.3 + experimental FFI
+1. Actually creating the native renderer requires FFI
+2. The primary documented path leans toward Bun / Node 26.3 + experimental FFI
 
-这意味着Thoth 应该：
+This means Thoth should:
 
-1. 用 OpenTUI 做 TUI 壳
-2. 不让 daemon/core 依赖 OpenTUI runtime
-3. 把 TUI 作为单独 client package
+1. Use OpenTUI for the TUI shell
+2. Keep daemon/core from depending on the OpenTUI runtime
+3. Make the TUI a separate client package
 
-## 4. 当前方案的核心判断
+## 4. Core Judgments of the Current Proposal
 
-### 4.1 Thoth 的真正护城河
+### 4.1 Thoth's Real Moat
 
-未来 `5` 年内，最不容易被 harness 替代的不是“执行能力”，而是以下能力：
+Over the next `5` years, what will be hardest for harnesses to replace is not "execution capability," but the following capabilities:
 
 1. `clarification compiler`
 2. `acceptance compiler`
@@ -485,175 +485,175 @@ OpenTUI 的角色很明确：
 7. `host-neutral driver layer`
 8. `multi-device evidence cockpit`
 
-换句话说：
+In other words:
 
-- 执行 agent 会越来越强
-- 单次对话也会越来越强
-- 真正稀缺的是“把老板含混目标稳定编译成可恢复、可验证、可审计 loop contract”的系统
+- Execution agents will become increasingly capable
+- Single conversations will also become increasingly capable
+- What is truly scarce is a system that "stably compiles ambiguous boss goals into recoverable, verifiable, auditable loop contracts"
 
-### 4.2 Thoth 不是这些东西
+### 4.2 What Thoth Is Not
 
-Thoth 不应该定位成：
+Thoth should not be positioned as:
 
-1. 另一个 coding agent
-2. 另一个 IDE
-3. 一个漂亮的 log viewer
-4. 一个只支持单宿主的 plugin
-5. 一个以手工 prompt 为核心使用方式的工具
+1. Another coding agent
+2. Another IDE
+3. A polished log viewer
+4. A plugin that supports only one host
+5. A tool centered on manually written prompts
 
-### 4.3 Thoth 应该是什么
+### 4.3 What Thoth Should Be
 
-Thoth 应该是：
+Thoth should be:
 
 1. `digital employee control plane`
 2. `clarification-to-loop compiler`
 3. `validator-first orchestration system`
-4. `authority + timeline + artifact + report` 的统一真相持有者
+4. The unified holder of truth for `authority + timeline + artifact + report`
 
-## 5. 产品体验目标
+## 5. Product Experience Goals
 
-### 5.1 用户最理想的体验
+### 5.1 The Ideal User Experience
 
-1. 用户打开 workspace chat 或 global chat
-2. 用户直接描述目标、想法、背景、顾虑
-3. Thoth 主动澄清
-4. Thoth 把任务冻结成结构化合同
-5. 用户只在高风险 / 高影响 / 不可逆决策点拍板
-6. Thoth 异步执行
-7. 手机、桌面、TUI 都能看到同一任务的进展
-8. 完成后 Thoth 给老板式汇报，而不是一堆 agent chatter
+1. The user opens a workspace chat or global chat
+2. The user directly describes goals, ideas, background, and concerns
+3. Thoth proactively clarifies
+4. Thoth freezes the task into a structured contract
+5. The user makes decisions only at high-risk / high-impact / irreversible decision points
+6. Thoth executes asynchronously
+7. Phone, desktop, and TUI clients can all see the progress of the same task
+8. Once complete, Thoth provides a boss-style report rather than a pile of agent chatter
 
-### 5.2 用户不应该承担的心智负担
+### 5.2 Cognitive Burden the User Should Not Bear
 
-用户不应该被迫管理：
+The user should not be forced to manage:
 
-1. provider 差异
+1. Provider differences
 2. session resume
-3. MCP 注入
+3. MCP injection
 4. skill path
-5. 具体 prompt 写法
-6. 哪个 agent 看了哪些上下文
-7. 哪条日志才是关键
-8. 是否应该重试
-9. 现在该看哪个 run
+5. The exact prompt wording
+6. Which agent saw which context
+7. Which log entry matters
+8. Whether to retry
+9. Which run to inspect now
 
-用户应该主要管理：
+The user should mainly manage:
 
-1. 目标
-2. 边界
-3. 风险
-4. 验收
-5. 必要拍板
+1. Goals
+2. Boundaries
+3. Risks
+4. Acceptance
+5. Decisions that require their approval
 
-## 6. 推荐的 Thoth 顶层架构
+## 6. Recommended High-Level Thoth Architecture
 
-建议把 Thoth 划分为以下几个一级模块。
+Thoth should be divided into the following top-level modules.
 
 ### 6.1 Protocol
 
-职责：
+Responsibilities:
 
-1. 定义所有客户端与 daemon 的统一协议
-2. 固化 request/response/event schema
-3. 固化 timeline item、permission、artifact summary、report summary
+1. Define the unified protocol for all clients and the daemon
+2. Codify request/response/event schemas
+3. Codify timeline items, permissions, artifact summaries, and report summaries
 
-要求：
+Requirements:
 
-1. `TUI` / `APP` / `CLI` / `Desktop` 全部使用同一 protocol
-2. UI 不得绕过 daemon 直接写 `.thoth`
+1. `TUI` / `APP` / `CLI` / `Desktop` all use the same protocol
+2. The UI must not bypass the daemon to write `.thoth` directly
 
 ### 6.2 Daemon
 
-建议名：`thothd`
+Suggested name: `thothd`
 
-职责：
+Responsibilities:
 
-1. 本机 authority server
-2. 管理 workspace、task、loop、role session、provider session
-3. commit timeline / event log
-4. broadcast live stream
-5. 提供 history catch-up
-6. 提供 permission/approval/decision 接口
-7. 提供 relay / pairing / notification
+1. Local authority server
+2. Manage workspaces, tasks, loops, role sessions, and provider sessions
+3. Commit the timeline / event log
+4. Broadcast the live stream
+5. Provide history catch-up
+6. Provide permission/approval/decision interfaces
+7. Provide relay / pairing / notification
 
 ### 6.3 Authority Store
 
-职责：
+Responsibilities:
 
-1. 维护 durable truth
-2. 支持恢复、审计、read model 重建
+1. Maintain durable truth
+2. Support recovery, auditing, and read-model reconstruction
 
-建议形态：
+Suggested form:
 
-1. append-only event log
-2. object snapshots
-3. read-model projections
+1. Append-only event log
+2. Object snapshots
+3. Read-model projections
 
-推荐持久化组合：
+Recommended persistence combination:
 
-1. daemon 本地使用 `SQLite`
-2. workspace 下保留 `.thoth/objects` / `.thoth/events` / `.thoth/artifacts` 可审计导出
+1. Use `SQLite` locally in the daemon
+2. Retain `.thoth/objects` / `.thoth/events` / `.thoth/artifacts` under the workspace as auditable exports
 
 ### 6.4 Clarification Compiler
 
-职责：
+Responsibilities:
 
-1. 从自然语言 conversation 中提取结构化任务
-2. 跟踪假设、冲突、open questions
-3. 形成 `work_item + acceptance_spec + loop_contract`
+1. Extract structured tasks from natural-language conversations
+2. Track assumptions, conflicts, and open questions
+3. Form `work_item + acceptance_spec + loop_contract`
 
-这是Thoth 的核心护城河之一。
+This is one of Thoth's core moats.
 
 ### 6.5 Loop Controller
 
-职责：
+Responsibilities:
 
-1. 任务注册即 loop 注册
-2. 控制每轮执行：
-   - 继续
-   - 重试
-   - 切换 driver
-   - 进入验证
-   - 升级给用户
-   - 停止
-3. 不能让 executor 自己判定任务最终成功
+1. Registering a task also registers a loop
+2. Control each execution cycle:
+   - Continue
+   - Retry
+   - Switch driver
+   - Enter validation
+   - Escalate to the user
+   - Stop
+3. Do not allow the executor to determine final task success on its own
 
 ### 6.6 Role Session Runtime
 
-职责：
+Responsibilities:
 
-1. 为不同 phase 提供独立 role session
-2. 用结构化 context packet 代替全历史对话注入
-3. 保持 role 间隔离，同时通过 handoff artifact 连接
+1. Provide independent role sessions for different phases
+2. Use structured context packets instead of injecting the entire conversation history
+3. Preserve isolation between roles while connecting them through handoff artifacts
 
 ### 6.7 Harness Driver Layer
 
-职责：
+Responsibilities:
 
-1. 把 Claude Code、Codex、OpenCode、Hermes、OpenClaw、QwenCode 等抽象成统一上层接口
-2. 差异收敛到 capability matrix 与 adapter
+1. Abstract Claude Code, Codex, OpenCode, Hermes, OpenClaw, QwenCode, and others behind a unified upper-layer interface
+2. Confine differences to the capability matrix and adapters
 
 ### 6.8 Observe / Sync / UI Shells
 
-职责：
+Responsibilities:
 
-1. 提供：
+1. Provide:
    - TUI
    - APP
    - Desktop
    - CLI
-2. 它们只消费 protocol 与 read models
-3. 不拥有业务 authority
+2. Consume only the protocol and read models
+3. Own no business authority
 
-## 7. 对象模型建议
+## 7. Suggested Object Model
 
-建议的核心对象如下。
+The suggested core objects are as follows.
 
-### 7.1 Workspace 相关
+### 7.1 Workspace-Related Objects
 
 #### `workspace`
 
-字段建议：
+Suggested fields:
 
 1. `workspace_id`
 2. `root_path`
@@ -665,21 +665,21 @@ Thoth 应该是：
 
 #### `conversation`
 
-用途：
+Purpose:
 
 1. global chat
 2. workspace chat
 
-说明：
+Notes:
 
-1. 只是入口
-2. 不是最终执行 authority
+1. It is only an entry point
+2. It is not the final execution authority
 
-### 7.2 澄清与合同相关
+### 7.2 Clarification- and Contract-Related Objects
 
 #### `clarification_session`
 
-状态建议：
+Suggested states:
 
 1. `inquiring`
 2. `ready_to_freeze`
@@ -688,7 +688,7 @@ Thoth 应该是：
 
 #### `assumption`
 
-字段建议：
+Suggested fields:
 
 1. `assumption_id`
 2. `statement`
@@ -700,14 +700,14 @@ Thoth 应该是：
 
 #### `decision`
 
-用途：
+Purpose:
 
-1. 用户拍板
-2. 高影响系统决定的正式记录
+1. User approvals
+2. The formal record of high-impact system decisions
 
 #### `acceptance_spec`
 
-字段建议：
+Suggested fields:
 
 1. `acceptance_kind`
 2. `validator_type`
@@ -720,7 +720,7 @@ Thoth 应该是：
 
 #### `work_item`
 
-字段建议：
+Suggested fields:
 
 1. `work_id`
 2. `goal`
@@ -736,7 +736,7 @@ Thoth 应该是：
 
 #### `loop_contract`
 
-字段建议：
+Suggested fields:
 
 1. `bound_work_ref`
 2. `max_iterations`
@@ -747,11 +747,11 @@ Thoth 应该是：
 7. `driver_selection_policy`
 8. `validator_policy`
 
-### 7.3 执行相关
+### 7.3 Execution-Related Objects
 
 #### `role_session`
 
-字段建议：
+Suggested fields:
 
 1. `role_session_id`
 2. `role`
@@ -762,15 +762,15 @@ Thoth 应该是：
 
 #### `run`
 
-说明：
+Notes:
 
-1. 一次 loop child attempt
-2. 固定绑定 `work_id@revision`
-3. 不接收 free-text 执行 authority
+1. One loop child attempt
+2. Permanently bound to `work_id@revision`
+3. Does not accept free-text execution authority
 
 #### `phase_result`
 
-建议覆盖：
+Suggested coverage:
 
 1. `clarify_result`
 2. `contract_freeze_result`
@@ -784,7 +784,7 @@ Thoth 应该是：
 
 #### `artifact`
 
-建议包括：
+Suggested contents:
 
 1. diff
 2. file
@@ -795,7 +795,7 @@ Thoth 应该是：
 7. benchmark report
 8. service endpoint / health evidence
 
-每个 artifact 都应带 provenance：
+Every artifact should carry provenance:
 
 1. `producer_role`
 2. `run_id`
@@ -804,32 +804,32 @@ Thoth 应该是：
 5. `hash`
 6. `source_path_or_uri`
 
-### 7.4 同步与记忆相关
+### 7.4 Synchronization- and Memory-Related Objects
 
 #### `timeline_event`
 
-用途：
+Purpose:
 
-1. live stream
-2. history catch-up
-3. multi-device rendering
+1. Live streaming
+2. History catch-up
+3. Multi-device rendering
 
 #### `memory_item`
 
-用途：
+Purpose:
 
-1. 存放可复用知识
-2. 不直接等于 prompt context
+1. Store reusable knowledge
+2. Do not directly equal prompt context
 
-## 8. 生命周期设计
+## 8. Lifecycle Design
 
-### 8.1 用户可见三大阶段
+### 8.1 Three User-Visible Phases
 
 1. `Clarify / Contract`
 2. `Execute Loop`
 3. `Review / Validate / Reflect`
 
-### 8.2 系统内部建议细分为八个 phase
+### 8.2 Suggested Eight-Phase Internal Breakdown
 
 1. `intake`
 2. `clarify`
@@ -840,133 +840,133 @@ Thoth 应该是：
 7. `adversarial_review`
 8. `reflect_and_report`
 
-### 8.3 每个阶段都应该是独立 role + 独立 session
+### 8.3 Every Phase Should Have an Independent Role + Independent Session
 
-这样做的好处：
+Benefits:
 
-1. 减少上下文污染
-2. 让“执行者”和“审查者”真正对抗
-3. 更容易做 resume / replay / audit
-4. 更容易在 driver 切换时保持结构化 handoff
+1. Reduce context contamination
+2. Make the "executor" and "reviewer" genuinely adversarial
+3. Make resume / replay / audit easier
+4. Make it easier to preserve structured handoffs when switching drivers
 
-## 9. 角色设计
+## 9. Role Design
 
-### 9.1 澄清阶段角色
+### 9.1 Clarification-Phase Roles
 
 #### `Intake Analyst`
 
-职责：
+Responsibilities:
 
-1. 从用户原话中提取候选目标、范围、风险、资源
-2. 先形成 draft，不立即提问
+1. Extract candidate goals, scope, risks, and resources from the user's original words
+2. Form a draft first; do not ask questions immediately
 
 #### `Clarification Interviewer`
 
-职责：
+Responsibilities:
 
-1. 只问真正影响执行决策的问题
-2. 控制提问预算
+1. Ask only questions that genuinely affect execution decisions
+2. Control the question budget
 
 #### `Assumption Adversary`
 
-职责：
+Responsibilities:
 
-1. 专门攻击隐含假设
-2. 找冲突、歧义、范围偷换
+1. Specifically attack implicit assumptions
+2. Find conflicts, ambiguities, and scope substitutions
 
 #### `Acceptance Compiler`
 
-职责：
+Responsibilities:
 
-1. 把“完成”翻译成 evidence
-2. 形成结构化 `acceptance_spec`
+1. Translate "done" into evidence
+2. Form a structured `acceptance_spec`
 
 #### `Contract Freezer`
 
-职责：
+Responsibilities:
 
-1. 输出 `work_item + loop_contract`
-2. 给用户一个可确认的决策卡
+1. Output `work_item + loop_contract`
+2. Give the user a decision card they can confirm
 
-### 9.2 执行阶段角色
+### 9.2 Execution-Phase Roles
 
 #### `Planner`
 
-职责：
+Responsibilities:
 
-1. 把合同翻译成执行计划
-2. 不得改写目标与验收
+1. Translate the contract into an execution plan
+2. Must not rewrite the goals or acceptance criteria
 
 #### `Executor`
 
-职责：
+Responsibilities:
 
-1. 编码
-2. 调试
-3. 跑命令
-4. 产出 artifact
+1. Code
+2. Debug
+3. Run commands
+4. Produce artifacts
 
 #### `Loop Controller`
 
-职责：
+Responsibilities:
 
-1. 决定是否继续 loop
-2. 决定是否切换 driver / retry / escalate
-3. 不直接写代码
+1. Decide whether to continue the loop
+2. Decide whether to switch drivers / retry / escalate
+3. Do not write code directly
 
 #### `Tool Specialist`
 
-职责：
+Responsibilities:
 
-1. 针对 GPU / ML / frontend / release / benchmark 等专项支援
-2. 不持有任务 authority
+1. Provide specialized support for GPU / ML / frontend / release / benchmark work
+2. Do not own task authority
 
-### 9.3 审查阶段角色
+### 9.3 Review-Phase Roles
 
 #### `Verifier`
 
-职责：
+Responsibilities:
 
-1. 运行 `acceptance_spec`
-2. 基于证据做机械判定
+1. Run the `acceptance_spec`
+2. Make a mechanical determination based on evidence
 
 #### `Adversarial Reviewer`
 
-职责：
+Responsibilities:
 
-1. 假设 executor 可能错了
-2. 找范围漂移、伪证据、回归、证据缺失
+1. Assume that the executor may be wrong
+2. Find scope drift, false evidence, regressions, and missing evidence
 
 #### `Judge`
 
-职责：
+Responsibilities:
 
-1. 汇总 verifier 和 adversary
-2. 形成最终 verdict
+1. Consolidate the verifier and adversary
+2. Form the final verdict
 
 #### `Reflector`
 
-职责：
+Responsibilities:
 
-1. 总结失败模式
-2. 形成 memory candidate
+1. Summarize failure patterns
+2. Form memory candidates
 
 #### `Reporter`
 
-职责：
+Responsibilities:
 
-1. 对老板汇报
-2. 压缩复杂度，不抛大量日志
+1. Report to the boss
+2. Compress complexity rather than dumping large amounts of logs
 
-## 10. 澄清阶段的重点设计
+## 10. Key Design for the Clarification Phase
 
-用户明确强调这部分必须重点设计，因此单独记录。
+The user explicitly emphasized that this area must receive focused design, so it is recorded separately.
 
 ### 10.1 Assumption Ledger
 
-系统必须显式维护每条关键假设，而不是藏在 prompt 里。
+The system must explicitly maintain every key assumption rather than hiding it in a prompt.
 
-每条记录建议至少包含：
+Each record should contain at least:
 
 1. `statement`
 2. `source`
@@ -977,58 +977,58 @@ Thoth 应该是：
 
 ### 10.2 Question Budget
 
-目标不是问得多，而是问得值。
+The goal is not to ask many questions, but to ask questions that are worth asking.
 
-建议规则：
+Suggested rules:
 
-1. 每轮最多 `3` 个高价值问题
-2. 低风险且可逆的决策，默认处理
-3. 高风险、不可逆、会改变验收的决策，必须问
-4. 明显可以由 executor 通过仓库勘察得到的信息，不问用户
+1. Ask at most `3` high-value questions per round
+2. Handle low-risk and reversible decisions by default
+3. Ask about high-risk or irreversible decisions, and decisions that change acceptance
+4. Do not ask the user for information that the executor can clearly obtain by inspecting the repository
 
 ### 10.3 Ready Gate
 
-只有满足以下条件，才允许从 conversation freeze 成 `ready` work：
+Only when the following conditions are met may a conversation be frozen into `ready` work:
 
-1. 目标明确
-2. 非目标明确
-3. workspace / repo / 路径边界明确
-4. 验收证据明确
-5. 风险与升级策略明确
-6. 自动化权限边界明确
-7. 剩余 open questions 不会阻断执行
+1. Goals are clear
+2. Non-goals are clear
+3. Workspace / repo / path boundaries are clear
+4. Acceptance evidence is clear
+5. Risks and escalation strategy are clear
+6. Automation permission boundaries are clear
+7. Remaining open questions will not block execution
 
 ### 10.4 Decision Card
 
-给用户看的应该是一个简洁但完整的确认卡，而不是长 prompt。
+The user should see a concise but complete confirmation card, not a long prompt.
 
-卡片至少包含：
+The card should contain at least:
 
-1. 我理解的目标
-2. 我认为不做的内容
-3. 我会默认怎么做
-4. 需要你拍板的项目
-5. 验收方式
-6. 主要风险
+1. The goals as I understand them
+2. What I believe is out of scope
+3. What I will do by default
+4. Items requiring your decision
+5. The acceptance method
+6. The main risks
 
 ### 10.5 No Fake Clarity
 
-如果验收标准不清，系统不能假装 ready。
+If the acceptance criteria are unclear, the system must not pretend to be ready.
 
-允许状态：
+Allowed states:
 
 1. `draft`
 2. `needs_input`
 3. `blocked`
 
-不允许：
+Not allowed:
 
-1. 用模糊验收注册成 ready
-2. 让 executor 自己在执行期重新定义成功标准
+1. Registering as ready with ambiguous acceptance
+2. Allowing the executor to redefine the success criteria during execution
 
-## 11. Prompt 套件建议
+## 11. Suggested Prompt Suite
 
-Thoth 不应依赖单个超长系统 prompt，而应采用：
+Thoth should not depend on one extremely long system prompt, but should use:
 
 1. `PromptSpec`
 2. `InputSchema`
@@ -1036,30 +1036,30 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 4. `HardStops`
 5. `ContextPolicy`
 
-建议的预设 prompt 套件如下。
+The suggested preset prompt suite is as follows.
 
 ### `P0 Global Digital Employee`
 
-职责：
+Responsibilities:
 
-1. 将“减少老板心智负担”设为最高目标
-2. 决定当前应该进入澄清、注册、执行、审查还是汇报
+1. Set "reducing the boss's cognitive burden" as the highest goal
+2. Decide whether the current state should enter clarification, registration, execution, review, or reporting
 
-硬限制：
+Hard limits:
 
-1. 不得假装任务已完成
-2. 不得让用户管理 provider/session/log
-3. 不得绕过验收
+1. Must not pretend that the task is complete
+2. Must not make the user manage providers/sessions/logs
+3. Must not bypass acceptance
 
 ### `P1 Workspace Intake Analyst`
 
-输入：
+Inputs:
 
-1. 用户原话
-2. workspace 摘要
-3. 最近相关 memory
+1. User's original words
+2. Workspace summary
+3. Most recent relevant memory
 
-输出：
+Outputs:
 
 1. `intent_candidates`
 2. `scope_candidates`
@@ -1068,32 +1068,32 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 
 ### `P2 Clarification Interviewer`
 
-输出规则：
+Output rules:
 
-1. 最多 `3` 个问题
-2. 每个问题都要说明：
-   - 为什么需要问
-   - 不回答时默认怎么处理
-   - 这个答案会影响什么
+1. At most `3` questions
+2. Each question must explain:
+   - Why it needs to be asked
+   - What will happen by default if it is unanswered
+   - What the answer will affect
 
 ### `P3 Assumption Adversary`
 
-输入：
+Inputs:
 
 1. draft contract
 
-输出：
+Outputs:
 
 1. `attack_findings`
-2. 按 `blocker/high/medium` 排序
+2. Sort by `blocker/high/medium`
 
 ### `P4 Acceptance Spec Compiler`
 
-职责：
+Responsibilities:
 
-1. 将用户语言翻译成 `acceptance_spec`
+1. Translate the user's language into an `acceptance_spec`
 
-支持的验收类型示例：
+Examples of supported acceptance types:
 
 1. `script`
 2. `metric`
@@ -1105,40 +1105,40 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 
 ### `P5 Work Registrar / Loop Compiler`
 
-职责：
+Responsibilities:
 
-1. 输出 `work_item`
-2. 输出 `loop_contract`
-3. 输出 role plan
+1. Output `work_item`
+2. Output `loop_contract`
+3. Output a role plan
 
 ### `P6 Planner`
 
-职责：
+Responsibilities:
 
-1. 输出具体执行计划
-2. 识别 authority gap
-3. 发现 gap 时返回 `needs_input`
+1. Output a concrete execution plan
+2. Identify authority gaps
+3. Return `needs_input` when a gap is found
 
 ### `P7 Executor`
 
-职责：
+Responsibilities:
 
-1. 实现
-2. 调试
-3. 产出 artifacts
-4. 留可审计收据
+1. Implement
+2. Debug
+3. Produce artifacts
+4. Leave auditable receipts
 
-限制：
+Limit:
 
-1. 不得声称最终通过
-2. 只能声称“已执行 / 已产出”
+1. Must not claim final approval
+2. May claim only "executed / produced"
 
 ### `P8 Loop Controller`
 
-职责：
+Responsibilities:
 
-1. 读取本轮执行结果
-2. 决定下一步：
+1. Read the results of this execution cycle
+2. Decide the next step:
    - `continue`
    - `retry`
    - `switch_driver`
@@ -1149,131 +1149,131 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 
 ### `P9 Verifier`
 
-职责：
+Responsibilities:
 
-1. 跑 validator
-2. 判断证据是否满足
+1. Run the validator
+2. Determine whether the evidence is sufficient
 
 ### `P10 Adversarial Reviewer`
 
-职责：
+Responsibilities:
 
-1. 从反方向审查执行结果
-2. 找漏洞、漂移、伪成功
+1. Review the execution results from the opposite direction
+2. Find vulnerabilities, drift, and false success
 
 ### `P11 Judge / Reflector`
 
-职责：
+Responsibilities:
 
-1. 形成 final verdict
-2. 形成 retry hint
-3. 产出 memory candidates
+1. Form the final verdict
+2. Form a retry hint
+3. Produce memory candidates
 
 ### `P12 Reporter`
 
-职责：
+Responsibilities:
 
-1. 将技术执行过程翻译成老板可读报告
+1. Translate the technical execution process into a report readable by the boss
 
 ### `P13 Memory Curator`
 
-职责：
+Responsibilities:
 
-1. 从完成/失败任务中提取可复用知识
-2. 不直接污染长期记忆
+1. Extract reusable knowledge from completed/failed tasks
+2. Do not directly contaminate long-term memory
 
 ### `P14 Context Compiler`
 
-职责：
+Responsibilities:
 
-1. 为不同 role 编译最小充分 context packet
-2. 严格控制 token 与污染
+1. Compile minimally sufficient context packets for different roles
+2. Strictly control tokens and contamination
 
-## 12. 记忆与上下文设计
+## 12. Memory and Context Design
 
-### 12.1 Memory 分层
+### 12.1 Memory Layers
 
-建议至少分为七层。
+At least seven layers are recommended.
 
 #### `Global User Memory`
 
-包含：
+Contains:
 
-1. 用户偏好
-2. 风格偏好
-3. 风险偏好
-4. 汇报风格
+1. User preferences
+2. Style preferences
+3. Risk preferences
+4. Reporting style
 
 #### `Workspace Memory`
 
-包含：
+Contains:
 
-1. repo 结构
-2. 常用命令
-3. 测试入口
-4. 部署/运行约束
-5. 常见坑
+1. Repository structure
+2. Common commands
+3. Test entry points
+4. Deployment/runtime constraints
+5. Common pitfalls
 
 #### `Authority Memory`
 
-包含：
+Contains:
 
-1. decisions
-2. assumptions
-3. work items
-4. acceptance specs
+1. Decisions
+2. Assumptions
+3. Work items
+4. Acceptance specs
 
-说明：
+Note:
 
-1. 这是最高可信层
+1. This is the highest-trust layer
 
 #### `Run Memory`
 
-包含：
+Contains:
 
-1. 执行计划
-2. 重试历史
-3. 失败原因
-4. artifact 索引
+1. Execution plans
+2. Retry history
+3. Failure reasons
+4. Artifact index
 
 #### `Artifact Memory`
 
-包含：
+Contains:
 
-1. 关键文件
-2. log
-3. screenshot
-4. metrics
-5. receipts
-6. hash / provenance
+1. Key files
+2. Logs
+3. Screenshots
+4. Metrics
+5. Receipts
+6. Hash / provenance
 
 #### `Provider Capability Memory`
 
-包含：
+Contains:
 
-1. 当前 harness 的能力、模式、限制、是否可用
+1. The current harness's capabilities, modes, limitations, and availability
 
-要求：
+Requirements:
 
-1. 带 TTL
-2. 支持 refresh
+1. Include a TTL
+2. Support refresh
 
 #### `Lessons / Skill Memory`
 
-包含：
+Contains:
 
-1. 可复用经验
-2. 失败模式
-3. task archetype 级别经验
+1. Reusable experience
+2. Failure patterns
+3. Task-archetype-level experience
 
-### 12.2 Context 不等于 Memory
+### 12.2 Context Is Not Memory
 
-必须明确：
+It must be clear that:
 
-1. memory 是长期可检索信息
-2. context packet 是面向某个 role/session 的最小充分输入
+1. Memory is long-term retrievable information
+2. A context packet is the minimally sufficient input for a particular role/session
 
-建议 packet 结构：
+Suggested packet structure:
 
 ```json
 {
@@ -1290,33 +1290,33 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 }
 ```
 
-### 12.3 多阶段间上下文如何传递
+### 12.3 How to Pass Context Between Phases
 
-建议通过 handoff artifact，而不是共享整段对话。
+Use handoff artifacts rather than sharing entire conversations.
 
-例如：
+For example:
 
-1. 澄清阶段输出：`contract_freeze.json`
-2. plan 阶段输出：`plan.json`
-3. execute 阶段输出：`execute_receipt.json`
-4. validate 阶段输出：`validate_result.json`
-5. adversarial 阶段输出：`review_findings.json`
-6. judge 阶段输出：`verdict.json`
-7. report 阶段输出：`boss_report.md`
+1. Clarification-phase output: `contract_freeze.json`
+2. Plan-phase output: `plan.json`
+3. Execute-phase output: `execute_receipt.json`
+4. Validate-phase output: `validate_result.json`
+5. Adversarial-phase output: `review_findings.json`
+6. Judge-phase output: `verdict.json`
+7. Report-phase output: `boss_report.md`
 
-## 13. 宿主无关设计
+## 13. Host-Neutral Design
 
-### 13.1 原则
+### 13.1 Principles
 
-宿主无关不是抹平差异，而是：
+Host neutrality does not mean flattening differences; it means:
 
-1. 定义统一上层 contract
-2. 显式建模 capability 差异
-3. 把差异关进 adapter
+1. Define a unified upper-layer contract
+2. Explicitly model capability differences
+3. Confine differences to adapters
 
-### 13.2 建议的统一上层接口
+### 13.2 Suggested Unified Upper-Layer Interface
 
-上层至少应统一这些语义：
+The upper layer should unify at least these semantics:
 
 1. `createSession`
 2. `resumeSession`
@@ -1334,7 +1334,7 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 
 ### 13.3 Capability Matrix
 
-每个 driver 应暴露明确 capability：
+Each driver should expose explicit capabilities:
 
 1. `supports_session_resume`
 2. `supports_streaming`
@@ -1354,91 +1354,91 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 
 ### 13.4 Driver Integration Pattern
 
-建议借鉴 Paseo：
+Paseo is a useful model:
 
-1. 支持 ACP 的 harness：
-   - 走 `ACPAdapter`
-2. 强个性的 harness：
-   - 走 `DirectAdapter`
+1. Harnesses that support ACP:
+   - Use `ACPAdapter`
+2. Highly distinctive harnesses:
+   - Use `DirectAdapter`
 
-### 13.5 Provider Materialization 现实
+### 13.5 The Reality of Provider Materialization
 
-来自参考项目的实证表明：
+Evidence from the reference projects shows:
 
-1. `Claude Code` / `CodeBuddy` 更偏 `CLAUDE.md + .claude/skills + --mcp-config`
-2. `Codex` 更偏 `AGENTS.md + $CODEX_HOME + config.toml`
-3. `OpenCode` 有自己的动态 MCP 和 variant 模型体系
-4. `Hermes` / `OpenClaw` 的 skill path 甚至可能是 fallback path
-5. `Pi` 的 resume id 是文件路径，不是普通字符串
+1. `Claude Code` / `CodeBuddy` favor `CLAUDE.md + .claude/skills + --mcp-config`
+2. `Codex` favors `AGENTS.md + $CODEX_HOME + config.toml`
+3. `OpenCode` has its own dynamic MCP and variant model system
+4. The skill path for `Hermes` / `OpenClaw` may even be a fallback path
+5. `Pi` uses a file path as its resume ID, not an ordinary string
 
-因此：
+Therefore:
 
-1. Thoth 不应在 authority 层假定统一 materialization 行为
-2. 应由 driver 负责：
-   - skill 写入
-   - AGENTS/CLAUDE 注入
-   - MCP 写入
-   - model/mode/thinking 参数映射
+1. Thoth should not assume uniform materialization behavior at the authority layer
+2. The driver should handle:
+   - Skill writing
+   - AGENTS/CLAUDE injection
+   - MCP writing
+   - Model/mode/thinking parameter mapping
 
-## 14. 多端同步设计
+## 14. Multi-Device Synchronization Design
 
-### 14.1 核心不变量
+### 14.1 Core Invariants
 
-建议直接采用以下不变量：
+The following invariants should be adopted directly:
 
-1. live stream 负责即时性
-2. authoritative history 负责正确性
-3. presence 不等于 delivery
-4. catch-up 可以分页，但不能丢
-5. resumed client 必须能补齐历史
+1. The live stream provides immediacy
+2. Authoritative history provides correctness
+3. Presence is not delivery
+4. Catch-up may be paginated, but nothing may be lost
+5. A resumed client must be able to fill in the complete history
 
-### 14.2 Daemon 为 authority server
+### 14.2 The Daemon as Authority Server
 
-建议：
+Recommendations:
 
-1. 所有 timeline event 先 commit 到 daemon
-2. 再广播给各客户端
-3. 所有客户端都可以断线重连、按 cursor catch-up
+1. Commit every timeline event to the daemon first
+2. Then broadcast it to each client
+3. Every client can reconnect after disconnection and catch up by cursor
 
-### 14.3 Relay 与远程访问
+### 14.3 Relay and Remote Access
 
-建议：
+Recommendations:
 
-1. 同网直连优先
-2. 异地走 relay
-3. relay 只转发密文
-4. 手机扫码拿到 daemon public key
-5. 用 E2EE channel 建立通信
+1. Prefer direct connections on the same network
+2. Use a relay for remote connections
+3. The relay forwards ciphertext only
+4. The phone obtains the daemon public key by scanning a code
+5. Establish communication over an E2EE channel
 
-### 14.4 手机端应做什么
+### 14.4 What the Phone Client Should Do
 
-建议手机端优先做：
+The phone client should initially prioritize:
 
-1. 看任务列表
-2. 看阶段进度
-3. 看关键 timeline
-4. 回答澄清问题
-5. 批准 permission / decision
-6. 看最终报告
+1. Viewing the task list
+2. Viewing phase progress
+3. Viewing the key timeline
+4. Answering clarification questions
+5. Approving permissions / decisions
+6. Viewing the final report
 
-不建议一开始做：
+It is not recommended to build initially:
 
-1. 重型 code diff 编辑
-2. 大量 terminal 交互
-3. 全 IDE 级操作
+1. Heavy code-diff editing
+2. Extensive terminal interaction
+3. Full IDE-level operations
 
-## 15. TUI 与 APP 路线建议
+## 15. Recommended TUI and APP Paths
 
 ### 15.1 TUI
 
-建议：
+Recommendations:
 
-1. 使用 `OpenTUI`
-2. 优先用 `@opentui/react`
-3. TUI 只消费 `@thoth/client`
-4. 不直接读取 `.thoth`
+1. Use `OpenTUI`
+2. Prefer `@opentui/react`
+3. Have the TUI consume only `@thoth/client`
+4. Do not read `.thoth` directly
 
-建议 TUI 的核心视图：
+Suggested core TUI views:
 
 1. Global Inbox
 2. Workspace Chat
@@ -1452,32 +1452,32 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 
 ### 15.2 APP
 
-建议：
+Recommendations:
 
-1. 第一版采用 `Expo React Native`
-2. 同时覆盖：
+1. Use `Expo React Native` for the first version
+2. Cover simultaneously:
    - iOS
    - Android
    - Web
-3. Desktop 采用 `Electron` 封装 web/app client，并负责 daemon 管理
+3. Use `Electron` for Desktop to wrap the web/app client and manage the daemon
 
-这条路线的理由：
+Reasons for this path:
 
-1. 参考项目已证明多平台打包可行
-2. 可以复用协议和 TypeScript 类型
-3. 最快达到“手机同步 + 桌面管理”的目标
+1. The reference project has demonstrated that multi-platform packaging is feasible
+2. The protocol and TypeScript types can be reused
+3. It is the fastest way to achieve the goal of "phone synchronization + desktop management"
 
-### 15.3 UI 是壳的具体含义
+### 15.3 The Concrete Meaning of UI as a Shell
 
-必须坚持：
+The following must be upheld:
 
-1. TUI 不得拥有独立业务规则
-2. APP 不得拥有独立任务状态机
-3. 任何 phase、permission、verdict、report 的语义都只能由 daemon / authority 层持有
+1. The TUI must not own independent business rules
+2. The APP must not own an independent task state machine
+3. The semantics of every phase, permission, verdict, and report may be owned only by the daemon / authority layer
 
-## 16. 推荐技术栈
+## 16. Recommended Technology Stack
 
-建议的新仓结构：
+Suggested new repository structure:
 
 1. `packages/protocol`
 2. `packages/client`
@@ -1489,7 +1489,7 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 8. `packages/desktop`
 9. `packages/mcp`
 
-建议语言选择：
+Suggested language choices:
 
 1. `TypeScript`：
    - protocol
@@ -1500,18 +1500,18 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
    - tui
 2. `Python`：
    - validator / benchmark / repo-local execution helper
-   - 不是 UI/protocol 主干
+   - Not the UI/protocol mainline
 
-理由：
+Reasons:
 
-1. driver adapter、多端 client、protocol schema 共享类型最重要
-2. 现成参考项目也多为 TS/Node daemon 生态
+1. Sharing types across driver adapters, multi-device clients, and protocol schemas is most important
+2. The existing reference projects are also largely part of the TS/Node daemon ecosystem
 
-## 17. MVP 路线建议
+## 17. Suggested MVP Path
 
 ### `V0` Design Freeze
 
-产物：
+Deliverables:
 
 1. authority schema
 2. protocol schema
@@ -1520,7 +1520,7 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 
 ### `V1` Local Daemon + Store
 
-能力：
+Capabilities:
 
 1. `thothd`
 2. event log
@@ -1531,7 +1531,7 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 
 ### `Thoth` Clarification Compiler
 
-能力：
+Capabilities:
 
 1. workspace/global chat
 2. assumption ledger
@@ -1541,79 +1541,79 @@ Thoth 不应依赖单个超长系统 prompt，而应采用：
 
 ### `V3` One Real Driver
 
-建议先只接：
+Initially integrate only:
 
-1. `Codex` 或 `Claude Code`
+1. `Codex` or `Claude Code`
 
-目标：
+Goal:
 
-1. 跑通完整合同到执行到验证闭环
+1. Run the complete contract-to-execution-to-validation loop end to end
 
 ### `V4` OpenTUI
 
-目标：
+Goal:
 
-1. 提供第一版真正可用的 TUI 控制面
+1. Provide a genuinely usable first-version TUI control plane
 
 ### `V5` APP + Desktop
 
-目标：
+Goal:
 
-1. 手机扫码连 daemon
-2. 看 timeline
-3. 批准 permission
-4. 看报告
+1. Connect to the daemon by scanning a code on the phone
+2. View the timeline
+3. Approve permissions
+4. View reports
 
 ### `V6` Multi-provider
 
-目标：
+Goal:
 
-1. 再逐步接入 OpenCode、Hermes、OpenClaw、QwenCode 等
-2. 每个 provider 都要有 capability contract 与 conformance tests
+1. Gradually integrate OpenCode, Hermes, OpenClaw, QwenCode, and others
+2. Every provider must have a capability contract and conformance tests
 
 ### `V7` Autopilot / Night Runs
 
-目标：
+Goal:
 
-1. recurring loops
-2. nightly background work
-3. digest report
-4. memory curation
+1. Recurring loops
+2. Nightly background work
+3. Digest reports
+4. Memory curation
 
-## 18. 风险与边界
+## 18. Risks and Boundaries
 
-### 18.1 最大风险
+### 18.1 Greatest Risks
 
-1. 澄清阶段问太多，用户嫌烦
-2. 验收不硬，系统容易“看起来成功”
-3. 多端同步丢历史
-4. context 膨胀污染 role session
-5. 过早支持太多 provider，核心 authority 不稳
+1. Asking too many questions during clarification and annoying the user
+2. Weak acceptance criteria making it easy for the system to "look successful"
+3. Losing history during multi-device synchronization
+4. Context bloat contaminating role sessions
+5. Supporting too many providers too early and destabilizing core authority
 
-### 18.2 设计边界
+### 18.2 Design Boundaries
 
-1. 先做 `clarification -> loop contract -> validator-first run`
-2. 不先追全量 UI 特性
-3. 不先追全量 provider 覆盖
-4. 不把“漂亮的 dashboard”误当成核心价值
+1. First build `clarification -> loop contract -> validator-first run`
+2. Do not pursue complete UI feature coverage first
+3. Do not pursue complete provider coverage first
+4. Do not mistake a "polished dashboard" for the core value
 
-## 19. 当前方案的最终判断
+## 19. Final Judgment on the Current Proposal
 
-### 19.1 一句话版本
+### 19.1 One-Sentence Version
 
-Thoth 的核心不该是“又支持了多少 harness”，而应该是：
+Thoth's core should not be "how many more harnesses it supports," but rather:
 
-**把老板模糊的自然语言意图，编译成可验证、可恢复、可异步执行、可审计的 loop contract，并用任意 harness 去实现。**
+**Compile the boss's vague natural-language intent into a verifiable, recoverable, asynchronously executable, auditable loop contract, and implement it using any harness.**
 
-### 19.2 对参考项目的组合式吸收
+### 19.2 Composed Adoption from the Reference Projects
 
-建议组合：
+Suggested combination:
 
-1. 吸收 `Multica` 的：
+1. Adopt from `Multica`:
    - agent teammate / issue / runtime / multi-workspace / managed daemon
-2. 吸收 `Paseo` 的：
-   - daemon/client/relay/protocol/provider adapter/timeline sync/app+desktop 路线
-3. 吸收当前 `Thoth` 的：
+2. Adopt from `Paseo`:
+   - The daemon/client/relay/protocol/provider adapter/timeline sync/app+desktop path
+3. Adopt from the current `Thoth`:
    - `.thoth` authority
    - `work_id@revision`
    - `acceptance_spec`
@@ -1621,34 +1621,34 @@ Thoth 的核心不该是“又支持了多少 harness”，而应该是：
    - `artifact ledger`
    - adversarial review
 
-### 19.3 不可丢失的原则
+### 19.3 Principles That Must Not Be Lost
 
-1. `UI 是壳`
-2. `任务注册就是 loop 注册`
-3. `至少三阶段，且每阶段独立 role + 独立 session`
-4. `验收必须先于成功宣告`
-5. `多端同步必须以 authority/history 为准`
-6. `宿主无关必须通过 adapter + capability matrix 实现`
-7. `减少人的心智负担高于暴露系统内部复杂性`
+1. `UI is a shell`
+2. `Registering a task is registering a loop`
+3. `At least three phases, with an independent role + independent session for each phase`
+4. `Acceptance must precede the declaration of success`
+5. `Multi-device synchronization must follow authority/history`
+6. `Host neutrality must be implemented through adapters + a capability matrix`
+7. `Reducing human cognitive burden takes priority over exposing internal system complexity`
 
-## 20. 当前仍待拍板的问题
+## 20. Questions Still Requiring a Decision
 
-以下问题在实现前仍建议单独做 decision：
+The following questions should still be decided separately before implementation:
 
-1. `thothd` 是否完全采用 `TypeScript/Node`，还是 authority/store 内核单独下沉到 Rust
-2. `.thoth` 与 daemon 内部数据库的关系：
-   - 单一真相在 SQLite，再投影到 `.thoth`
-   - 还是 `.thoth` 作为真相，SQLite 只作 cache/index
-3. APP 是否第一阶段就做，还是先把 OpenTUI + CLI 打通
-4. 初始首发 provider 是 `Codex` 还是 `Claude Code`
-5. 是否要为 review/verifier/judge 引入专门的“不同 provider 对抗”策略
-6. memory curation 是全自动，还是默认要用户确认后写入长期 memory
+1. Whether `thothd` should use `TypeScript/Node` entirely, or whether the authority/store kernel should be moved separately to Rust
+2. The relationship between `.thoth` and the daemon's internal database:
+   - A single source of truth in SQLite, then projected to `.thoth`
+   - Or `.thoth` as the source of truth, with SQLite used only as a cache/index
+3. Whether to build the APP in the first phase, or first connect OpenTUI + CLI end to end
+4. Whether the initial provider should be `Codex` or `Claude Code`
+5. Whether to introduce a dedicated "different-provider adversarial" strategy for review/verifier/judge
+6. Whether memory curation should be fully automatic or should by default require user confirmation before writing to long-term memory
 
-## 21. 本地参考材料清单
+## 21. Local Reference Materials
 
-本轮设计直接参考的本地材料如下。
+The local materials directly referenced for this round's design are as follows.
 
-### 当前 Thoth 仓库状态
+### Current Thoth Repository State
 
 1. `<thoth-repo>/.agent-os/project-index.md`
 2. `<thoth-repo>/.agent-os/todo.md`
@@ -1678,11 +1678,11 @@ Thoth 的核心不该是“又支持了多少 harness”，而应该是：
 1. `<codex-skills>/opentui/docs/getting-started.mdx`
 2. `<codex-skills>/opentui/docs/bindings/react.mdx`
 
-## 22. 文档用途
+## 22. Document Purpose
 
-本文件用于：
+This document is used to:
 
-1. 固化本轮用户对 Thoth 的原始目标和约束
-2. 固化对 `Multica`、`Paseo`、`OpenTUI` 的关键调研结论
-3. 为后续 `TD-003` 的 decision-complete 迁移主线提供统一入口
-4. 避免后续实现阶段丢失“减少人的心智负担”这一最上层产品原则
+1. Codify the user's original goals and constraints for Thoth from this round
+2. Codify the key research conclusions about `Multica`, `Paseo`, and `OpenTUI`
+3. Provide a unified entry point for the subsequent decision-complete migration mainline of `TD-003`
+4. Prevent the highest-level product principle of "reducing human cognitive burden" from being lost during subsequent implementation phases

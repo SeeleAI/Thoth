@@ -17,7 +17,10 @@
    claiming Cut B or the final 50k reduction complete. Current local metrics are `1,272,435` scanner tokens,
    `1,300,610` AST nodes, `4,992` non-type static imports and `164` runtime dependency edges. `NTH-TD-044` is
    verified under `NTH-EV-066` and published under verified `NTH-TD-045` / `NTH-EV-067`, so the main refactor resumes
-   without a Stage switch.
+   without a Stage switch. Repository-local Paseo synchronization governance is independently verified under
+   `NTH-TD-046` / `NTH-EV-069`; it does not change the product stage, source metrics, Release, or sole top action.
+   `NTH-CD-074` authorizes committing the complete verified repository-maintenance batch and normally pushing only
+   `agent/dev/mvp`; the Release branch, tag, GitHub Release, `main`, Relay and Paseo remain outside that transaction.
 
 ## Objective Summary
 
@@ -131,6 +134,11 @@ this publication.
 83. `NTH-EV-056`: Cut 4 is verified. App authority now has one normalized `AuthorityProjectionStore` written only by `DaemonProjectionService`; HostRuntime owns Client/ServerInfo, QueryClient owns server query and pending overlay state, and UiPreferences owns local focus. Session Store/Context, duplicate Timeline reducers and the third Timeline model are absent. App `331/331` files and `2,582/2,582` tests, Foundation, real Web, Provider Control, interaction regressions and the complete Stage 4 gate passed; `npm run accept:refactor:fast` completed in `144.145s`. Cumulative production source is `7,600` LOC, `19,596` scanner tokens, `27,364` AST nodes, `25` static imports and `1` runtime dependency edge below baseline. The sole top next action advances to `NTH-TD-036`.
 84. `NTH-EV-066`: Persisted Workspace layout is now presentation intent only. Agent/Terminal tabs require current authority before render or action; stale entities reconcile locally in single and bulk close; known root Agents still archive before layout; real archive errors retain the tab. Focused `86/86`, complete App `2,591/2,591`, real Web, interaction, Provider Control and the final fresh `138.424s` shared Stage 4 gate passed without Protocol/daemon changes or Release mutation.
 85. `NTH-EV-067`: The persisted entity-tab repair is published at `30528b81`. Exact-SHA workflow `30182942323` passed preflight, three-OS CLI, Windows/Linux/macOS Desktop, packaged Linux, hosted Relay and publish; the fixed prerelease exposes exactly 26 desktop-only assets, and the checksum-verified downloaded AppImage passed the complete public API journey.
+86. `NTH-CD-072`: All tracked Thoth project documentation and documentation filenames use English. The canonical core-principles document is `designs/core-design-principles.md`; the obsolete localized README is removed, while identifiers, code, protocol sentinels and historical evidence remain semantically unchanged.
+87. `NTH-EV-068`: English documentation convergence is verified across 72 document paths and 61 physical files. Repository validation now rejects Han content, non-English document paths and localized `zh-*` filenames; all links, formatting, repository gates and 565 Foundation tests pass.
+88. `NTH-CD-073`: Repository-local development skills now have one canonical `.agent-os/skills` source, optional Provider discovery links and a strict separation from product RuntimeBundle skills; Paseo synchronization is a five-stage exact-SHA workflow with publication as an explicitly authorized terminal stage.
+89. `NTH-EV-069`: The `sync-paseo-into-thoth` skill, repo-local Codex discovery link, three deterministic helpers and root entries are verified by positive/negative fixtures, real-worktree boundary audit, skill/repository validation, formatting and the complete `565/565` Foundation gate without product or Release mutation.
+90. `NTH-CD-074`: The complete verified architecture, English-documentation and repository-local Paseo-skill maintenance batch may be committed and normally pushed only to `agent/dev/mvp`; no Release branch, tag, GitHub Release, `main`, deployment or independent service mutation is authorized.
 
 ## Read Next
 
@@ -138,6 +146,6 @@ this publication.
 2. [architecture-milestones.md](architecture-milestones.md)
 3. [todo.md](todo.md)
 4. [run-log.md](run-log.md)
-5. [designs/最核心的设计理念.md](designs/最核心的设计理念.md)
+5. [Core Principles](designs/core-design-principles.md)
 6. [designs/thoth-app-runtime-contract.md](designs/thoth-app-runtime-contract.md)
 7. [designs/thoth-mvp-loop-goals.md](designs/thoth-mvp-loop-goals.md)

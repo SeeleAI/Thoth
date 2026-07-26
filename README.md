@@ -72,7 +72,7 @@ The root `package.json` is the canonical command surface. See [`docs/development
 
 Start here:
 
-- [Core Principles](.agent-os/designs/最核心的设计理念.md)
+- [Core Principles](.agent-os/designs/core-design-principles.md)
 - [High-Level Design](.agent-os/designs/thoth-high-level-design.md)
 - [MVP User Journey](.agent-os/designs/thoth-mvp-user-journey.md)
 - [Engineering Architecture](.agent-os/designs/thoth-engineering-architecture.md)

@@ -2,9 +2,9 @@
 
 ## Purpose
 
-本文件综合解析 OpenAI 官方关于 `Background mode`、`Webhooks`、`Codex web/cloud`、`Subagents`、`Subagent concepts`、`Hooks`、`Automations`、`Local environments`、`Config basics/reference`、`Skills`、`Plugins build/install` 的当前公开说明。
+This file provides a consolidated analysis of OpenAI's current official public documentation on `Background mode`, `Webhooks`, `Codex web/cloud`, `Subagents`, `Subagent concepts`, `Hooks`, `Automations`, `Local environments`, `Config basics/reference`, `Skills`, and `Plugins build/install`.
 
-authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
+The official pages remain authoritative; this file is only a repo-local cached synthesis layer.
 
 ## Verification Snapshot
 
@@ -15,203 +15,203 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 
 ### Background mode
 
-官方页面当前表达的核心语义：
+The core semantics currently expressed by the official page are:
 
-- 这是 `Responses API` 下的异步执行模式，适合长任务。
-- 任务通过 `background=true` 进入后台生命周期，而不是要求客户端一直保持同步等待。
-- 文档当前示例已经使用 `gpt-5.4`。
-- 该能力与 webhook / 轮询状态读取形成配套模式。
-- 当前页面明确写到：`background mode` 与 `zero data retention` 不兼容。
+- This is an asynchronous execution mode under the `Responses API`, suitable for long-running tasks.
+- A task enters a background lifecycle through `background=true`, rather than requiring the client to keep waiting synchronously.
+- The current documentation examples already use `gpt-5.4`.
+- This capability forms a complementary pattern with webhooks / polling for status reads.
+- The current page explicitly states that `background mode` is incompatible with `zero data retention`.
 
-它不是什么：
+What it is not:
 
-- 不是 Codex app 自身的任务托管语义
-- 不是跨 session 的 repo-native runtime ledger
-- 不是 worker orchestration 框架
+- It is not the Codex app's own task-hosting semantics.
+- It is not a cross-session repo-native runtime ledger.
+- It is not a worker orchestration framework.
 
-对 Thoth 的设计含义：
+Design implications for Thoth:
 
-- 如果未来需要接 OpenAI API 层的长任务，`background mode + webhook` 是 API primitive，不是控制平面本身。
-- 它可以作为外部异步执行后端，但不能代替 `.thoth` 级别的 repo authority 与 durable ledger。
+- If long-running tasks are later connected through the OpenAI API layer, `background mode + webhook` is an API primitive, not the control plane itself.
+- It can serve as an external asynchronous execution backend, but it cannot replace `.thoth`-level repo authority and the durable ledger.
 
 ### Webhooks
 
-官方页面当前表达的核心语义：
+The core semantics currently expressed by the official page are:
 
-- Webhooks 是异步结果通知机制。
-- 与后台任务配合时，典型模式是：
-  - 创建后台任务
-  - 服务端接收回调
-  - 校验签名
-  - 再根据事件推进本地状态
+- Webhooks are a mechanism for notifying clients of asynchronous results.
+- When used with background tasks, the typical pattern is:
+  - Create a background task.
+  - Receive the callback on the server.
+  - Verify the signature.
+  - Advance local state based on the event.
 
-它不是什么：
+What it is not:
 
-- 不是状态存储
-- 不是任务编排系统
-- 不是 durable run ledger
+- It is not state storage.
+- It is not a task orchestration system.
+- It is not a durable run ledger.
 
-对 Thoth 的设计含义：
+Design implications for Thoth:
 
-- Webhook 适合做“外部执行完成后的状态注入”，不适合直接充当 Thoth 自己的运行时状态机。
+- A webhook is suitable for “injecting state after external execution completes,” but it is not suitable to serve directly as Thoth's own runtime state machine.
 
 ## 2. Codex product/runtime surface
 
 ### Codex web / cloud
 
-官方页面当前展示的方向是：
+The direction currently presented by the official page is:
 
-- Codex 作为一个托管的 coding agent 产品面，可把任务放到 cloud/web 环境中处理。
-- 重点在“托管执行与多工作面协作”，不是单纯的 API 请求包装。
+- Codex, as a hosted coding-agent product surface, can process tasks in cloud/web environments.
+- The focus is “hosted execution and collaboration across multiple work surfaces,” not merely wrapping API requests.
 
-本仓库的综合理解：
+The consolidated understanding in this repository:
 
-- Codex cloud/web 是宿主产品能力。
-- 它与 `Responses API background mode` 是两层不同概念：
-  - 前者偏产品工作流
-  - 后者偏 API primitive
+- Codex cloud/web is a host-product capability.
+- It and `Responses API background mode` are two different conceptual layers:
+  - The former is oriented toward product workflows.
+  - The latter is oriented toward an API primitive.
 
 ### Subagents
 
-官方页面与 concepts 页一起表达的核心语义：
+The official page and the concepts page together express these core semantics:
 
-- Subagents 是把工作拆给更小的代理单元或专门角色。
-- 它们用于隔离上下文、分工协作、提升并行性或专门化程度。
+- Subagents divide work among smaller agent units or specialized roles.
+- They are used to isolate context, divide responsibilities, improve parallelism, or increase specialization.
 
-它不是什么：
+What it is not:
 
-- 不是独立的最终 authority
-- 不是全局控制平面
-- 不是自动获得长期 durability 的保证
+- It is not an independent final authority.
+- It is not a global control plane.
+- It is not a guarantee of automatically obtaining long-term durability.
 
-对 Thoth 的设计含义：
+Design implications for Thoth:
 
-- 这和我们对“Codex 只是 worker / 子任务执行体”的理解一致。
-- 但 OpenAI 官方页描述的是 Codex 自己的产品/运行机制，不能直接等同于 Thoth 的 runtime contract。
+- This is consistent with our understanding that “Codex is only a worker / subtask executor.”
+- However, the OpenAI official pages describe Codex's own product/runtime mechanisms and cannot be equated directly with Thoth's runtime contract.
 
 ### Hooks
 
-截至 `2026-04-25T17:06:00Z` 的官方 latest 页面，`Codex Hooks` 最重要的信号有两个：
+As of the official latest page at `2026-04-25T17:06:00Z`, `Codex Hooks` has two most important signals:
 
-- 页面当前不再带 `Experimental` 标记
-- 启用需要 `config.toml` feature flag
+- The page no longer carries the `Experimental` label.
+- Enabling it requires a `config.toml` feature flag.
 
-额外重要点：
+Additional important points:
 
-- 平台支持信息本身属于高波动区
-- 当前文档明确指出 Windows 暂不支持该能力
+- Platform-support information itself is highly volatile.
+- The current documentation explicitly states that Windows does not yet support this capability.
 
-对 Thoth 的设计含义：
+Design implications for Thoth:
 
-- 即便页面不再写成 `Experimental`，hooks 仍属于高波动宿主扩展点，设计上不应被当成 repo authority 或 durability substrate。
-- 在本仓库内，相关文档仍应写成“宿主扩展接入面”，而不是稳定跨版本基线。
+- Even though the page no longer labels it `Experimental`, hooks remain a highly volatile host extension point and should not be treated architecturally as repo authority or a durability substrate.
+- In this repository, related documentation should still describe it as a “host extension integration surface,” rather than a stable cross-version baseline.
 
 ### Automations
 
-官方产品方向：
+Official product direction:
 
-- Codex app 支持把编码工作流自动化。
-- 该能力与 GitHub / repo 工作流有强关联。
-- 当前页面强调 automations 可以在后台运行，并在专用 worktree 中执行任务。
+- The Codex app supports automating coding workflows.
+- This capability is strongly associated with GitHub / repo workflows.
+- The current page emphasizes that automations can run in the background and execute tasks in dedicated worktrees.
 
-本仓库的综合理解：
+The consolidated understanding in this repository:
 
-- Automations 更像是托管产品工作流层。
-- 它可以启发 Thoth 的自动触发和持续运行设计，但不能代替 repo-native authority。
+- Automations are more like a hosted product-workflow layer.
+- They can inform Thoth's design for automatic triggering and continuous operation, but cannot replace repo-native authority.
 
 ### CLI shell and approvals
 
-截至本轮回源，官方 `Codex CLI features` 页对“shell / live session”最关键的信号有四个：
+As of this round of source rechecking, the official `Codex CLI features` page has four key signals regarding “shell / live session”:
 
-- Codex CLI 内置终端工作流，支持直接从交互界面运行 shell 命令。
-- CLI 有明确的 approval modes，而不是把 shell 长任务自动升格为 durable supervisor。
-- 页面把 shell 交互、补丁编辑、计划与执行视为同一交互式 agent loop 的一部分。
-- 官方文档没有把 CLI shell 说成项目级持久 session store 或 durable monitor。
+- Codex CLI has a built-in terminal workflow and supports running shell commands directly from the interactive interface.
+- The CLI has explicit approval modes; it does not automatically elevate long-running shell tasks into a durable supervisor.
+- The page treats shell interaction, patch editing, planning, and execution as parts of the same interactive agent loop.
+- The official documentation does not describe the CLI shell as a project-level persistent session store or durable monitor.
 
-对 Thoth 的设计含义：
+Design implications for Thoth:
 
-- `Codex` 侧更适合作为“当前交互式执行壳”和子任务 worker。
-- 若任务需要可恢复的长时运行，不能把 CLI shell 本身当成 durability substrate。
-- 更合理的方式是让 `Thoth` 持有 run ledger / heartbeat / attach state，再把 Codex shell 作为前台执行面或短生命周期 worker。
+- The `Codex` side is better suited to serve as the “current interactive execution shell” and subtask worker.
+- If a task requires recoverable long-running operation, the CLI shell itself cannot be treated as a durability substrate.
+- A more appropriate approach is for `Thoth` to hold the run ledger / heartbeat / attach state, while using the Codex shell as the foreground execution surface or a short-lived worker.
 
 ### Local environments
 
-官方页面当前表达的重点：
+The focus currently expressed by the official page is:
 
-- Codex 可以连接到本地环境执行或读取上下文，而不是只待在纯远端托管空间。
-- 这本质上是在定义“产品宿主如何接近你的真实开发环境”。
+- Codex can connect to local environments to execute or read context, rather than remaining only in a purely remote hosted space.
+- This essentially defines “how the product host approaches your real development environment.”
 
-它不是什么：
+What it is not:
 
-- 不是对本地环境拥有永久 authority
-- 不是自动等于项目级状态治理
+- It does not have permanent authority over the local environment.
+- It is not automatically equivalent to project-level state governance.
 
-对 Thoth 的设计含义：
+Design implications for Thoth:
 
-- 这与 `.thoth` 想要建立的 repo-level durable truth 并不冲突。
-- 更合理的关系是：
-  - local environment 提供执行与上下文接近性
-  - `.thoth` 提供项目级 authority 与 recovery
+- This does not conflict with the repo-level durable truth that `.thoth` seeks to establish.
+- The more appropriate relationship is:
+  - The local environment provides execution and proximity to context.
+  - `.thoth` provides project-level authority and recovery.
 
 ### Config basics / reference
 
-截至本轮核验，官方 `Config Basics` / `Config Reference` 页对 Thoth 最关键的信号有四个：
+As of this round of verification, the official `Config Basics` / `Config Reference` pages have four key signals for Thoth:
 
-- user-scoped config 路径是 `~/.codex/config.toml`
-- project-scoped override 路径是 `<repo>/.codex/config.toml`
-- hooks 配置文件路径是 `~/.codex/hooks.json` 或 `<repo>/.codex/hooks.json`
-- `Config Basics` 的 sandbox 说明把 writable roots 下的 `.git` 与 `.codex` 标为 protected paths
+- The user-scoped config path is `~/.codex/config.toml`.
+- The project-scoped override path is `<repo>/.codex/config.toml`.
+- The hooks configuration file path is `~/.codex/hooks.json` or `<repo>/.codex/hooks.json`.
+- The sandbox description in `Config Basics` marks `.git` and `.codex` under writable roots as protected paths.
 
-对 Thoth 的设计含义：
+Design implications for Thoth:
 
-- repo-root `.codex` 是 Codex 宿主保留配置层，不应再被 Thoth 当成受管 authority 目录。
-- 若需要为 Codex 生成 hooks 配置，应该把可审计投影放在 `.thoth/derived/`，再由全局或宿主配置层接入，而不是把 `.codex/` 直接纳入 Thoth 的 init/sync 管辖。
-- heavy host-real 的 preflight 直接管理 `~/.codex/config.toml` 与 `~/.codex/hooks.json` 是与官方层级一致的。
+- The repo-root `.codex` is a configuration layer reserved for the Codex host and should no longer be treated by Thoth as a managed authority directory.
+- If hooks configuration needs to be generated for Codex, the auditable projection should be placed in `.thoth/derived/` and then connected through the global or host configuration layer, rather than placing `.codex/` directly under Thoth's init/sync governance.
+- Having a heavy host-real preflight manage `~/.codex/config.toml` and `~/.codex/hooks.json` directly is consistent with the official hierarchy.
 
 ### Skills
 
-本轮围绕 Thoth 的 Codex public surface 重核后，官方 `Codex Skills` 页对我们最关键的信号有三个：
+After rechecking Thoth's Codex public surface in this round, the official `Codex Skills` page has three key signals for us:
 
-- `SKILL.md` 仍是公开 skill 的核心入口文件。
-- `agents/openai.yaml` 属于官方 metadata 层，可用于 skill 展示与默认提示。
-- skill 名称与展示元数据属于宿主呈现层，不应被误当成 runtime authority。
+- `SKILL.md` remains the core entry file for a public skill.
+- `agents/openai.yaml` belongs to the official metadata layer and can be used for skill presentation and default prompts.
+- Skill names and presentation metadata belong to the host presentation layer and should not be mistaken for runtime authority.
 
-对 Thoth 的设计含义：
+Design implications for Thoth:
 
-- Thoth 的 Codex installable surface 仍应保持单一 skill。
-- `openai.yaml` 应进入生成链路与测试护栏，避免手工漂移。
+- Thoth's Codex installable surface should remain a single skill.
+- `openai.yaml` should be included in the generation pipeline and test guardrails to prevent manual drift.
 
 ### Plugins build / install
 
-本轮围绕 Codex 官方 plugin 对齐重核后，官方 `Plugins build` / `Install plugins` 页对我们最关键的信号有五个：
+After rechecking alignment with official Codex plugins in this round, the official `Plugins build` / `Install plugins` pages have five key signals for us:
 
-- `.codex-plugin/plugin.json` 是官方 plugin manifest。
-- plugin `name` 是 manifest identity，同时也是 component namespace 的关键部分。
-- manifest 采用标准 metadata 字段和 `interface` 展示层，而不是仓库自定义字段。
-- `marketplace.json` 定义 marketplace root、owner 和 plugins 列表。
-- 官方当前把“添加 marketplace source”和“从 plugin directory 安装插件”区分成两个层次，而不是 Claude 风格的单条 `plugin install` 叙事。
+- `.codex-plugin/plugin.json` is the official plugin manifest.
+- The plugin `name` is the manifest identity and is also a key part of the component namespace.
+- The manifest uses standard metadata fields and an `interface` presentation layer, rather than repository-custom fields.
+- `marketplace.json` defines the marketplace root, owner, and plugins list.
+- The official documentation currently distinguishes “adding a marketplace source” from “installing a plugin from a plugin directory” as two layers, rather than presenting a single Claude-style `plugin install` narrative.
 
-对 Thoth 的设计含义：
+Design implications for Thoth:
 
-- README 里的 Codex 安装说明必须明确分成两步：
-  - 先 `marketplace add` 接入 source
-  - 再从 Codex plugin directory 安装或启用 `thoth`
-- repo marketplace 应与 installable plugin package 分层：
-  - marketplace root 放在 `.agents/plugins/marketplace.json`
-  - plugin entry 的 `source.path` 指向 `./plugins/<plugin-name>`
-  - installable plugin 自己再持有 `.codex-plugin/plugin.json` 与 `skills/`
-- Thoth 的 plugin manifest 应尽量收敛到官方 schema，减少 repo 自定义字段。
-- 即使 plugin / skill 展示层做了 UI metadata 收敛，也不能把它们当成 authority；真正 authority 仍是 `.thoth`。
+- The Codex installation instructions in the README must be clearly divided into two steps:
+  - First connect the source with `marketplace add`.
+  - Then install or enable `thoth` from the Codex plugin directory.
+- The repo marketplace should be layered separately from the installable plugin package:
+  - The marketplace root is placed at `.agents/plugins/marketplace.json`.
+  - The plugin entry's `source.path` points to `./plugins/<plugin-name>`.
+  - The installable plugin itself holds `.codex-plugin/plugin.json` and `skills/`.
+- Thoth's plugin manifest should converge as much as possible on the official schema, minimizing repository-custom fields.
+- Even if the plugin / skill presentation layer consolidates UI metadata, those items must not be treated as authority; the actual authority remains `.thoth`.
 
-本仓库在本机 `codex-cli 0.125.0` 的实际 CLI 帮助中额外观察到：
+This repository additionally observed in the actual CLI help for local `codex-cli 0.125.0` that:
 
-- `codex plugin marketplace add` 接受的是 source，例如 `owner/repo[@ref]`
-- `codex plugin marketplace upgrade` 接受的是已配置的 marketplace name
+- `codex plugin marketplace add` accepts a source, such as `owner/repo[@ref]`.
+- `codex plugin marketplace upgrade` accepts the name of a configured marketplace.
 
-对 Thoth 的操作含义是：
+The operational implications for Thoth are:
 
-- `codex plugin marketplace add SeeleAI/Thoth` 是正确的首次接入命令
-- 后续升级不应再写 `SeeleAI/Thoth`，而应写成 `codex plugin marketplace upgrade thoth`
+- `codex plugin marketplace add SeeleAI/Thoth` is the correct initial connection command.
+- Subsequent upgrades should not use `SeeleAI/Thoth` again; they should use `codex plugin marketplace upgrade thoth`.
 
 ## 3. Cross-cutting distinctions
 
@@ -219,17 +219,17 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 
 - `Background mode` / `Webhooks`:
   - API primitive
-  - 服务于异步执行与回调
+  - Serves asynchronous execution and callbacks.
 - `Codex cloud / subagents / hooks / automations / local environments / skills / plugins`:
-  - 产品/宿主运行面
-  - 服务于 Codex 的任务执行形态与扩展机制
+  - Product/host runtime surface.
+  - Serves Codex's task-execution forms and extension mechanisms.
 
 ### Stable vs volatile
 
-高波动内容：
+Highly volatile content:
 
 - Codex hooks
-- config basics / reference 中的路径、protected-path 与 hooks 接入细节
+- Paths, protected-path details, and hooks integration details in config basics / reference.
 - cloud/web product behavior
 - automations
 - CLI shell / approval behavior
@@ -237,14 +237,14 @@ authority 仍是官方页面；本文件只是 repo-local 缓存综合层。
 - subagent operational details
 - skills / plugin presentation metadata
 
-相对更稳的内容：
+Relatively more stable content:
 
-- background mode 作为异步 API primitive 的总体角色
-- webhook 在异步通知中的总体角色
-- subagent concepts 页给出的抽象心智模型
+- The overall role of background mode as an asynchronous API primitive.
+- The overall role of webhooks in asynchronous notification.
+- The abstract mental model provided by the subagent concepts page.
 
 ## 4. Rules For Using These Notes
 
-- 任何涉及具体支持矩阵、配置方式、平台限制、preview/experimental 状态的问题，必须先回官方 latest 页面。
-- 不允许把 OpenAI 产品页里的当前交互行为直接当作 Thoth 已实现能力。
-- 若后续要设计 `.thoth` 与 OpenAI API 的异步桥接，应优先把 `background mode` 视为外部执行 primitive，而不是内部 authority。
+- For any question involving a specific support matrix, configuration method, platform limitation, or preview/experimental status, consult the official latest page first.
+- Current interaction behavior on OpenAI product pages must not be treated directly as an implemented Thoth capability.
+- If an asynchronous bridge between `.thoth` and the OpenAI API is designed later, `background mode` should first be treated as an external execution primitive, not internal authority.

@@ -2,11 +2,11 @@
 
 ## Status
 
-1. 日期：`2026-07-09`
-2. 性质：Thoth MVP 的 6 个 Codex goal-mode loop 合同
-3. 适用范围：`packages/protocol`、`packages/core`、`packages/daemon`、`packages/drivers`、`packages/client`、`packages/app`、`packages/desktop`
-4. 上游合同：`.agent-os/designs/thoth-app-runtime-contract.md`、`packages/protocol/src/thoth-runtime-contract.ts`
-5. 状态：canonical execution plan；用于把 `agent/dev/mvp` 从设计合同推进到最小可验证 MVP 业务链路
+1. Date: `2026-07-09`
+2. Nature: the six Codex goal-mode loop contracts for the Thoth MVP
+3. Scope: `packages/protocol`, `packages/core`, `packages/daemon`, `packages/drivers`, `packages/client`, `packages/app`, `packages/desktop`
+4. Upstream contracts: `.agent-os/designs/thoth-app-runtime-contract.md`, `packages/protocol/src/thoth-runtime-contract.ts`
+5. Status: canonical execution plan; used to advance `agent/dev/mvp` from design contracts to the minimum verifiable MVP product path
 
 2026-07-09 update: `NTH-CD-045` supersedes the earlier strictly sequential Loop Goal 3/4/5/6
 implementation order for the current branch. The active Loop background path is merged: Clarify ->
@@ -14,432 +14,414 @@ Task Card -> Goals Card -> durable background Loop task -> linear goals -> PlanE
 Old `Pyramid Plan Card` and `registered_pending` wording below is historical or legacy compatibility
 unless a later section explicitly says otherwise.
 
-## 1. 拆分原则
+## 1. Decomposition Principles
 
-MVP 的核心不是 daemon 能不能落盘、gate 或渲染状态，而是通过 runtime skill、prompt engineering、provider session harness 和 eval harness，让 agent 产生更高质量的工作行为。
+The core of the MVP is not whether the daemon can persist data, enforce gates, or render state; it is using runtime skills, prompt engineering, provider session harnesses, and eval harnesses to make the agent produce higher-quality work behavior.
 
-Thoth 的 daemon、runtime tool bridge、authority store、repair、permission gate 和 UI 渲染仍然重要，但它们是 agent harness 的机械保障层，不是 MVP 目标本身。
+Thoth's daemon, runtime tool bridge, authority store, repair, permission gate, and UI rendering remain important, but they are the mechanical safeguard layer for the agent harness, not the MVP goals themselves.
 
-执行顺序仍保持工程上的后端/前端交替：
+The execution order remains an engineering alternation between backend and frontend:
 
-1. 后端 loop 做 agent behavior contract、runtime skill、provider harness、runtime tool bridge、eval harness 和 daemon authority 兜底。
-2. 前端 loop 做对应 agent 行为的低心智负担产品体验。
-3. 每个 loop goal 都必须能独立交给 Codex goal mode 执行。
-4. 每个 loop goal 都必须有自己的目标、约束和验收。
-5. 每个 loop goal 完成时必须更新 `.agent-os` 证据账本，不能只提交代码。
+1. Backend loops establish the agent behavior contract, runtime skill, provider harness, runtime tool bridge, eval harness, and daemon authority safeguards.
+2. Frontend loops create a low-cognitive-load product experience for the corresponding agent behavior.
+3. Every loop goal must be independently assignable to Codex goal mode.
+4. Every loop goal must have its own goals, constraints, and acceptance criteria.
+5. When each loop goal is completed, the `.agent-os` evidence ledger must be updated; submitting code alone is insufficient.
 
-固定顺序：
+Fixed order:
 
-1. `NTH-MS-012` / `NTH-TD-015`: 后端，Clarify Agent Harness + Convergence Contract。
-2. `NTH-MS-013` / `NTH-TD-016`: 前端，App Refactor Foundation + Workspace Secretary Clarify Experience。
-3. `NTH-MS-014` / `NTH-TD-017`: 后端，Task Contract Compiler + Approval Harness。
-4. `NTH-MS-015` / `NTH-TD-018`: 前端，Task / Pyramid Plan Approval Experience。
-5. `NTH-MS-016` / `NTH-TD-019`: 后端，Loop Execution + Review Agent Harness。
-6. `NTH-MS-017` / `NTH-TD-020`: 前端，Background Task Dogfood Experience。
+1. `NTH-MS-012` / `NTH-TD-015`: Backend, Clarify Agent Harness + Convergence Contract.
+2. `NTH-MS-013` / `NTH-TD-016`: Frontend, App Refactor Foundation + Workspace Secretary Clarify Experience.
+3. `NTH-MS-014` / `NTH-TD-017`: Backend, Task Contract Compiler + Approval Harness.
+4. `NTH-MS-015` / `NTH-TD-018`: Frontend, Task / Pyramid Plan Approval Experience.
+5. `NTH-MS-016` / `NTH-TD-019`: Backend, Loop Execution + Review Agent Harness.
+6. `NTH-MS-017` / `NTH-TD-020`: Frontend, Background Task Dogfood Experience.
 
-## 2. 全局约束
+## 2. Global Constraints
 
-这些约束适用于全部 6 个 loop goals：
+These constraints apply to all six loop goals:
 
-1. Thoth 是任务控制平面，不是 harness 工具，不是隐藏 LLM API wrapper。
-2. 所有 AI/agent 能力来自配置的 provider session；Thoth 本身不私自调用通用 LLM API。
-3. Thoth daemon 不做自然语言智能；它只做 runtime context、tool/card schema 校验、状态转移、repair、两次确认 gate、permission gate、落盘和 client broadcast。
-4. `thoth.clarify` 和 `thoth.loop` 是内置、隐藏、非可选、跨 provider 兼容 runtime skills，
-   以标准 `SKILL.md` artifact 作为 canonical source。
-5. 用户面对的是 Thoth 任务控制平面；PlanExec、Review、provider roles、skills、packet、state code 都是内部机制。
-6. APP MVP 的前端 substrate 必须回到原版 Paseo app surface，保留其 session/workspace/task/detail、stream、composer、settings、host/provider、attachments、file links、terminal/browser/file panes、responsive layout 和 e2e/test 能力。
-7. Loop-2 允许最小 Background Tasks 浏览入口展示 `registered_pending`，但不得伪装 PlanExec / Review；最终 dogfood task 系统属于后续 loop goal。
-8. `New Agent` / session / workspace 等原版 Paseo surface 能力可以保留为交互 substrate，但用户可见心智必须被映射为 Thoth task loop / Clarify runtime control，而不是原样保留 Paseo agent manager。
-9. 后台 Loop 注册必须经过两次用户确认：Task Card 和 Pyramid Plan Card。wire code 可继续使用
-   `C_GOAL_CARD` 兼容旧协议名，但用户可见语义是 Pyramid Plan Card。
-10. Task Card 是 compact CEO overview，只含 `title`、`goal`、`constraints`、`acceptance`；
-    Pyramid Plan Card 是目标金字塔，表达 target / stages / subgoals / acceptance evidence，不写
-    risk、why_loop、implementation plan、文件路径、命令或代码级执行步骤。
-11. 不恢复归档 Python/plugin runtime、归档 dashboard template、归档 Textual TUI、voice/audio/speech/dictation。
-12. 不触碰、复用、停止或 fallback 到 Paseo/legacy daemon `127.0.0.1:6767`。
-13. Relay pairing token、raw offer、credential、subprotocol token 不得出现在 URL query、日志、截图、docs 示例或 final 报告。
-14. 每个 loop goal 至少运行本次改动相关 root/package gate；基础门禁保持 `npm run check:foundation`。
-15. `thoth.clarify` 和 `thoth.loop` 的开发必须是 golden-driven，不允许只靠 packet/schema 或工具 schema 测试判断 skill 合格。
-16. 每次修改 runtime skill、prompt contract、rubric 或关键行为约束，都必须在固定 golden 数据上复跑，并保留当前输出与审查结论。
-17. 主开发 Codex session 不能自评 skill 行为质量；必须使用独立 session，通常通过 `codex exec`，按 rubric 审查 golden transcripts。
-18. 独立 judge 的核心审查维度是：行为心理学问题质量、行为树收敛、目标/约束/验收符合度、是否减少用户心智负担。
-19. 如果独立 judge 判定 agent 问了无关紧要的问题、把可自行发现的事实推给用户、没有推进收敛、重复追问、忽略 frozen contract、浪费用户注意力或 retry 机械重复失败策略，则该 loop 不能验收，必须修改 skill/prompt/rubric 后重跑 golden review。
-20. Thoth internal runtime skills 不得写入用户全局 provider skill 目录，例如 `~/.codex/skills`、
-    `~/.claude/skills` 或 `~/.agents/skills`；它们只能在 Thoth-owned provider session scope 内
-    原生加载或隔离文件系统发现；不允许把完整 `SKILL.md` 粘进每轮 prompt 作为 fallback。
-21. 普通同状态 provider runtime context 不重复 `SKILL.md` 规则；session start、状态转移、skill
-    digest/version 变化、context 丢失或 repair 多次失败时才带 `skill_ref` / digest marker。
-22. 前端体验必须是 provider-backed streaming-first：Quick 回复、provider reasoning、shell/edit/read/
-    write/search/fetch/tool/progress/evidence 事件通过 AgentTimeline 渐进渲染；Clarify Card、Task
-    Card 和 Pyramid Plan Card 由 daemon 验证完整 runtime tool submission 后作为 typed authority card
-    一次性渲染。
-23. `Quick + none` 是裸 provider / Paseo-like 前台路径，不加载 `thoth.clarify`，不包 Clarify
-    envelope，不注册 Thoth semantic runtime tools，不要求结构化 Clarify output，不进入 Clarify repair。
-24. `Quick + clarify` 使用 `turn_phase` 区分 `clarify`、`approval_task`、
-    `approval_breakdown`、`quick_exec` 和 `repair`；除 `quick_exec` 外，structured phase 必须通过
-    provider runtime tool bridge 调用语义化 Thoth tools，例如 `thoth_submit_clarify_card`、
-    `thoth_submit_task_card`、`thoth_submit_pyramid_plan` 或 `thoth_report_blocked`。
-25. Loop-2 中 `Loop` 的 secretary session 只负责 Clarify 和两张确认卡；确认后 daemon 注册
-    `registered_pending`，不启动 PlanExec / Review。后台执行由 `NTH-TD-019` 实现。
+1. Thoth is a task control plane, not a harness tool or a hidden LLM API wrapper.
+2. All AI/agent capabilities come from configured provider sessions; Thoth itself does not privately call a general-purpose LLM API.
+3. The Thoth daemon does not perform natural-language intelligence; it only handles runtime context, tool/card schema validation, state transitions, repair, the two-confirmation gate, the permission gate, persistence, and client broadcast.
+4. `thoth.clarify` and `thoth.loop` are built-in, hidden, non-optional, cross-provider-compatible runtime skills, with the standard `SKILL.md` artifact as their canonical source.
+5. Users face the Thoth task control plane; PlanExec, Review, provider roles, skills, packets, and state codes are internal mechanisms.
+6. The APP MVP frontend substrate must return to the original Paseo app surface, retaining its session/workspace/task/detail, stream, composer, settings, host/provider, attachments, file links, terminal/browser/file panes, responsive layout, and e2e/test capabilities.
+7. Loop-2 may expose `registered_pending` through a minimal Background Tasks browsing entry, but it must not pretend to be PlanExec / Review; the final dogfood task system belongs to a later loop goal.
+8. Original Paseo surface capabilities such as `New Agent` / session / workspace may remain as the interaction substrate, but the user-visible mental model must map to the Thoth task loop / Clarify runtime control rather than preserving the Paseo agent manager as-is.
+9. Background Loop registration requires two user confirmations: Task Card and Pyramid Plan Card. The wire code may continue using
+   `C_GOAL_CARD` for compatibility with the old protocol name, but the user-visible semantics are Pyramid Plan Card.
+10. Task Card is a compact CEO overview containing only `title`, `goal`, `constraints`, and `acceptance`;
+    Pyramid Plan Card is a goal pyramid expressing target / stages / subgoals / acceptance evidence. It must not contain
+    risk, why_loop, implementation plan, file paths, commands, or code-level execution steps.
+11. Do not restore the archived Python/plugin runtime, archived dashboard template, archived Textual TUI, or voice/audio/speech/dictation.
+12. Do not touch, reuse, stop, or fall back to the Paseo/legacy daemon at `127.0.0.1:6767`.
+13. Relay pairing tokens, raw offers, credentials, and subprotocol tokens must not appear in URL queries, logs, screenshots, docs examples, or final reports.
+14. Every loop goal must run at least the root/package gates relevant to its changes; the foundation gate remains `npm run check:foundation`.
+15. Development of `thoth.clarify` and `thoth.loop` must be golden-driven; packet/schema or tool-schema tests alone cannot establish skill quality.
+16. Every change to a runtime skill, prompt contract, rubric, or key behavioral constraint must be rerun against fixed golden data, preserving the current output and review conclusion.
+17. The primary development Codex session cannot self-evaluate skill behavior quality; an independent session, usually through `codex exec`, must review golden transcripts against the rubric.
+18. The independent judge's core review dimensions are question quality from a behavioral-psychology perspective, behavior-tree convergence, fit with goals/constraints/acceptance, and whether user cognitive load is reduced.
+19. If the independent judge determines that the agent asked immaterial questions, pushed discoverable facts to the user, failed to advance convergence, repeated questions, ignored the frozen contract, wasted the user's attention, or mechanically repeated a failed retry strategy, the loop cannot be accepted; the skill/prompt/rubric must be changed and the golden review rerun.
+20. Thoth internal runtime skills must not be written to the user's global provider skill directories, such as `~/.codex/skills`,
+    `~/.claude/skills`, or `~/.agents/skills`; they may only be natively loaded or discovered in an isolated filesystem within a Thoth-owned provider session scope. The complete `SKILL.md` must not be pasted into every prompt as a fallback.
+21. Ordinary same-state provider runtime context must not repeat `SKILL.md` rules; `skill_ref` / digest markers are included only at session start, on state transitions, when the skill digest/version changes, when context is lost, or after repeated repair failures.
+22. The frontend experience must be provider-backed and streaming-first: Quick responses, provider reasoning, shell/edit/read/write/search/fetch/tool/progress/evidence events are progressively rendered through AgentTimeline; Clarify Card, Task Card, and Pyramid Plan Card are rendered once as typed authority cards after the daemon validates the complete runtime tool submission.
+23. `Quick + none` is the bare-provider / Paseo-like foreground path: it does not load `thoth.clarify`, wrap a Clarify envelope, register Thoth semantic runtime tools, require structured Clarify output, or enter Clarify repair.
+24. `Quick + clarify` uses `turn_phase` to distinguish `clarify`, `approval_task`, `approval_breakdown`, `quick_exec`, and `repair`; except for `quick_exec`, structured phases must call semantic Thoth tools through the provider runtime tool bridge, such as `thoth_submit_clarify_card`, `thoth_submit_task_card`, `thoth_submit_pyramid_plan`, or `thoth_report_blocked`.
+25. In Loop-2, the `Loop` secretary session is responsible only for Clarify and the two confirmation cards; after confirmation the daemon registers `registered_pending` and does not start PlanExec / Review. Background execution is implemented by `NTH-TD-019`.
 
 ## 3. Loop Goal 1: Backend Clarify Agent Harness + Convergence Contract
 
-Milestone：`NTH-MS-012`
-TODO：`NTH-TD-015`
-顺序：第 1 个，后端。
+Milestone: `NTH-MS-012`
+TODO: `NTH-TD-015`
+Order: first, backend.
 
-目标：
+Goal:
 
-设计并实现 `thoth.clarify` 的第一版 agent harness，使 provider-backed secretary session 能通过多轮 Clarify 在用户 prompt 的行为树上切出最高价值分叉、避免低价值追问和目标降级、区分 agent 可自行发现的信息与必须由用户判断的信息，并能判断当前意图是否已经收敛到可以 Quick 裸直答、active Clarify 直答、继续 Clarify、生成 Overview / Task Card、生成 Pyramid Plan Card 或进入 blocked。
+Design and implement the first version of the `thoth.clarify` agent harness so that a provider-backed secretary session can, through multiple rounds of Clarify, identify the highest-value branch in the behavior tree of the user's prompt, avoid low-value questions and goal degradation, distinguish information the agent can discover independently from information that requires the user's judgment, and determine whether the current intent has converged enough to answer directly through bare Quick, answer directly through active Clarify, continue Clarify, generate an Overview / Task Card, generate a Pyramid Plan Card, or enter blocked.
 
-这个 loop 的核心是：让秘书 agent 会澄清，会判断收敛。
+The core of this loop is to make the secretary agent capable of clarifying and judging convergence.
 
-约束：
+Constraints:
 
-1. Clarify 不是 `request_user_input`，不是 `AskUserQuestion`，不是缺字段问卷。
-2. Clarify 必须是行为心理学驱动的秘书式收敛过程。
-3. 本地 deterministic code 不做语义判断；语义判断必须发生在 provider-backed secretary session 中。
-4. agent 可以自行检查的事实，不能推给用户。
-5. 行为树是对用户 prompt 的拆解树；每轮 Clarify 应选择当前最能排除错误路线和分歧的分叉点。
-6. 必须问用户的，只能是会改变目标路线、风险、资源边界、偏好、验收标准、不可逆选择的问题。
-7. 每轮默认只问一个最高杠杆分叉问题，除非多个分叉强相关且会减少来回成本。
-8. 问题必须保留用户原始目标；允许询问目标等级、路线、验收、风险或优先级，但禁止把用户目标降级成更容易的 MVP、demo、mock、局部实现或另一个目标。
-9. Clarify 默认不提供默认值或推荐选项。技术性强且 agent 更适合判断的问题应由 agent 自己判断并记录假设；只有用户要求推荐时才给推荐。
-10. 问题必须降低用户心智负担：给足上下文、切出清楚分叉、避免兜底降级问题、避免泛泛收集需求。
-11. 用户输入 `hi` 等问候时，`Quick + none` 必须走裸 provider stream，不加载 Clarify、不输出 packet、不出卡；`Quick + clarify` / Loop Clarify phase 可以由真实 provider session 产出 active Clarify direct response。两种路径都必须回复得像秘书一样简短自然，不解释产品机制，不展示 Clarify UI，不允许 daemon 本地固定问候。
-12. `thoth.clarify` 必须由标准 skill-create / skill creator 流程制作成 Thoth internal
-    `runtime-skills/thoth-clarify/SKILL.md` artifact；`SKILL.md` 是 canonical source，不使用
-    Codex-only 格式，不依赖 Codex-only metadata。
-13. `clarify_strength` 必须落成可验证行为：`none` 表示不进入 `thoth.clarify`，直接走裸 provider
-    foreground stream；`light` 只问最高影响核心分叉；`balanced` 深入 1-2 层 material leaves；
-    `dive` 尽量消除 material assumptions 但仍不问细枝末节、常识、standard answer 或可发现事实。
-14. Clarify 必须区分 assumption owner：`user_must_decide`、`agent_can_decide`、
-    `agent_can_discover`、`standard_answer/common_sense`；只有高影响 `user_must_decide` 能问用户。
-15. Clarify Card 的 runtime tool/card schema 必须能表达一个标题和 2-4 道紧密相关的行为树问题；
-    每道题有短分支选择，每个选择 label 不超过 15 个字，每个解释不超过 30 个字。
-16. `C_ASK` 可携带 internal `content.meta`，记录 `effective_clarify_strength`、tree depth、QA
-    round count、remaining material assumptions 和 question value reason；这些 meta 不给用户直接看。
-17. 用户答复 card 必须支持：对每道题的选择项附加 note；也可以不选任何项，只写 note。
-18. tool schema、packet 和状态码只是机械约束，不是产品目标。
-19. daemon 只做 schema、状态码和 repair 机械兜底，不负责决定该问什么。
-20. Clarify 结束进入 Task Card 时，Thoth 必须在 runtime tool submission / authority event 中机械化附带此前所有 Clarify 问答的原文 transcript。
-21. Clarify 进入 Pyramid Plan Card 时，Thoth 必须在 runtime tool submission / authority event 中同时附带此前所有 Clarify 问答的原文 transcript，以及第一轮用户确认过的总 CEO Task Card 原文。
-22. Pyramid Plan 分拆必须以原文 Clarify transcript 和已确认 CEO Task Card 为 authority；不能依赖 provider 隐式记忆，不能臆造、丢失、篡改或过度解释用户已确认的目标、约束和验收。
-23. `Quick + none` 不得挂载 `thoth.clarify`、不得构造 Clarify input envelope、不得注册 Thoth
-    semantic runtime tools、不得要求 structured Clarify output、不得把 provider 普通输出强制修成
-    authority card。
-24. `Quick + clarify` 必须显式使用 `turn_phase`：`clarify`、`approval_task`、
-    `approval_breakdown`、`quick_exec`、`repair`。
-25. `clarify` / `approval_task` / `approval_breakdown` / `repair` phases 必须通过 provider runtime
-    tool bridge 调用语义化 Thoth tools；`quick_exec` phase 在同一 secretary session 中流式执行，不提交
-    Clarify authority card，除非遇到新的高影响用户决策点并回到 `clarify`。
-26. Loop-2 中，`Loop` 模式下 secretary session 只完成 Clarify 与两张确认卡；确认后 daemon 注册
-    `registered_pending`，不能在 secretary session 里偷跑 PlanExec / Review。
-27. `submit_runtime_packet` / `submit_clarify_packet` 是旧泛称或 legacy bridge；当前主语义工具是
-    `thoth_submit_clarify_card`、`thoth_submit_task_card`、`thoth_submit_pyramid_plan` 和
-    `thoth_report_blocked`。
-28. Tool/skill 能力通过 provider session config、Codex `dynamicTools`、MCP tools list、
-    ACP/harness control surface 或 scoped runtime bridge 注入，不在每轮用户 prompt 里复制完整 tool
-    schema 或 `SKILL.md` 规则。
-29. 普通同状态轮次 runtime context 只传运行态数据，不重复 Skill 规则，不带 `skill_ref`；运行态数据包括
-    controls / `clarify_strength` / `effective_clarify_strength`、transcript ref、assumption ledger ref
-    和 decision-tree frontier ref。
-30. 状态转移轮次带 `skill_ref` / digest / `according_to_loaded_skill`，但不复制 transition rules；
-    Clarify 强度变化时带 `controls_changed`。
-31. Repair 只修 tool input shape / state / provenance，不重新解释用户意图，不修改 transcript、目标或
-    已确认 CEO Task Card。
-32. `thoth.clarify` / `thoth.loop` 不得安装到用户全局 provider skill dirs；只在 Thoth-owned
-    provider session scope 内可见。
+1. Clarify is not `request_user_input`, not `AskUserQuestion`, and not a missing-field questionnaire.
+2. Clarify must be a secretary-style convergence process driven by behavioral psychology.
+3. Local deterministic code does not make semantic judgments; semantic judgments must occur in the provider-backed secretary session.
+4. Facts the agent can check independently must not be pushed to the user.
+5. The behavior tree is a decomposition tree of the user's prompt; each Clarify round should select the branch point that best eliminates incorrect paths and divergence at that moment.
+6. Questions to the user must be limited to those that can change the goal path, risk, resource boundary, preference, acceptance criteria, or an irreversible choice.
+7. By default, each round asks only one highest-leverage branch question, unless multiple branches are strongly related and would reduce back-and-forth.
+8. Questions must preserve the user's original goal; they may ask about goal level, route, acceptance, risk, or priority, but must not degrade the user's goal into an easier MVP, demo, mock, partial implementation, or another goal.
+9. Clarify does not provide defaults or recommendations by default. For highly technical questions that the agent is better suited to judge, the agent should decide independently and record the assumption; it should recommend only when the user asks for a recommendation.
+10. Questions must reduce user cognitive load: provide enough context, expose clear branches, and avoid fallback-degradation questions and vague requirements gathering.
+11. When the user enters a greeting such as `hi`, `Quick + none` must use the bare provider stream, without loading Clarify, outputting a packet, or producing a card; `Quick + clarify` / the Loop Clarify phase may produce an active Clarify direct response from a real provider session. Both paths must reply briefly and naturally like a secretary, without explaining product mechanics or showing Clarify UI; the daemon may not provide a fixed local greeting.
+12. `thoth.clarify` must be produced through the standard skill-create / skill creator process as the Thoth internal `runtime-skills/thoth-clarify/SKILL.md` artifact; `SKILL.md` is the canonical source, and Codex-only formats and Codex-only metadata must not be used.
+13. `clarify_strength` must become verifiable behavior: `none` means not entering `thoth.clarify` and going directly through the bare provider foreground stream; `light` asks only the highest-impact core branch; `balanced` goes one or two levels into material leaves; `dive` attempts to eliminate material assumptions while still avoiding minutiae, common sense, standard answers, and discoverable facts.
+14. Clarify must distinguish assumption owners: `user_must_decide`, `agent_can_decide`, `agent_can_discover`, and `standard_answer/common_sense`; only high-impact `user_must_decide` items may be asked of the user.
+15. The Clarify Card runtime tool/card schema must express a title and 2-4 closely related behavior-tree questions;
+    each question has short branch choices, each choice label is no longer than 15 characters, and each explanation is no longer than 30 characters.
+16. `C_ASK` may carry internal `content.meta` recording `effective_clarify_strength`, tree depth, QA
+    round count, remaining material assumptions, and question value reason; this metadata is not shown directly to the user.
+17. A user's card response must support attaching a note to the choices for each question; the user may also select nothing and write only a note.
+18. Tool schemas, packets, and state codes are mechanical constraints, not product goals.
+19. The daemon provides only mechanical schema, state-code, and repair safeguards; it does not decide what to ask.
+20. When Clarify ends and enters Task Card, Thoth must mechanically attach the full verbatim transcript of all preceding Clarify questions and answers to the runtime tool submission / authority event.
+21. When Clarify enters Pyramid Plan Card, Thoth must attach both the full verbatim transcript of all preceding Clarify questions and answers and the original CEO Task Card confirmed by the user in the first round to the runtime tool submission / authority event.
+22. Pyramid Plan decomposition must use the verbatim Clarify transcript and the confirmed CEO Task Card as authority; it must not rely on implicit provider memory or invent, omit, alter, or over-interpret the user's confirmed goals, constraints, and acceptance criteria.
+23. `Quick + none` must not mount `thoth.clarify`, construct a Clarify input envelope, register Thoth
+    semantic runtime tools, require structured Clarify output, or force ordinary provider output into an
+    authority card.
+24. `Quick + clarify` must explicitly use `turn_phase`: `clarify`, `approval_task`,
+    `approval_breakdown`, `quick_exec`, and `repair`.
+25. The `clarify` / `approval_task` / `approval_breakdown` / `repair` phases must call semantic Thoth tools through the provider runtime
+    tool bridge; the `quick_exec` phase streams execution in the same secretary session and does not submit
+    a Clarify authority card unless a new high-impact user decision point is encountered and it returns to `clarify`.
+26. In Loop-2, the secretary session in `Loop` mode completes only Clarify and the two confirmation cards; after confirmation the daemon registers
+    `registered_pending` and must not secretly run PlanExec / Review in the secretary session.
+27. `submit_runtime_packet` / `submit_clarify_packet` are old generic names or a legacy bridge; the current primary semantic tools are
+    `thoth_submit_clarify_card`, `thoth_submit_task_card`, `thoth_submit_pyramid_plan`, and
+    `thoth_report_blocked`.
+28. Tool/skill capabilities are injected through provider session config, Codex `dynamicTools`, MCP tools list,
+    ACP/harness control surface, or a scoped runtime bridge; complete tool schemas or `SKILL.md` rules are not copied into each user prompt.
+29. Ordinary same-state runtime context carries only runtime data, does not repeat Skill rules, and does not include `skill_ref`; runtime data includes
+    controls / `clarify_strength` / `effective_clarify_strength`, transcript ref, assumption ledger ref,
+    and decision-tree frontier ref.
+30. State-transition turns carry `skill_ref` / digest / `according_to_loaded_skill` without copying transition rules;
+    they carry `controls_changed` when Clarify strength changes.
+31. Repair fixes only tool input shape / state / provenance; it does not reinterpret user intent or modify the transcript, goal, or
+    confirmed CEO Task Card.
+32. `thoth.clarify` / `thoth.loop` must not be installed in the user's global provider skill directories; they are visible only within the Thoth-owned
+    provider session scope.
 
-验收：
+Acceptance:
 
-1. 有 `thoth.clarify` skill/prompt contract，明确每个 Clarify 状态码下 agent 的行为。
-2. 有 convergence rubric，定义什么时候继续问、什么时候停止问、什么时候 Quick 直答、什么时候生成 Task Card、什么时候 blocked。
-3. 有行为心理学问题原则：最高杠杆行为树分叉、保留用户原目标、禁止兜底降级、默认不提供推荐、避免问可发现事实、避免开放式大问题、避免重复追问。
-4. 有 eval harness，可以用 deterministic fixture provider 或 transcript fixture 模拟多轮 Clarify。
-5. 有 Clarify golden 数据集，记录每个场景的用户输入、上下文、期望行为树分叉节点、可接受输出范围、禁止问题类型和低心智负担判断。
-6. 场景 eval 覆盖用户说 `hi`：`Quick + none` 必须走裸 provider stream，不加载 Clarify、不提交 packet、不出 card；`Quick + clarify` 可走 active Clarify direct response，不澄清，不出 card。两者都必须回复简短自然且不得是 daemon 固定文案。
-7. 场景 eval 覆盖用户说“帮我把这个项目做好”：先问最高杠杆行为树分叉，而不是字段问卷。
-8. 场景 eval 覆盖模糊但低风险小任务：不要过度澄清。
-9. 场景 eval 覆盖想注册后台任务但验收标准不清楚：围绕验收问。
-10. 场景 eval 覆盖缺少风险/权限/资源边界：问边界而不是技术实现。
-11. 场景 eval 覆盖用户回答后仍模糊：第二轮问题必须推进，不重复。
-12. 场景 eval 覆盖信息已经足够：停止 Clarify，输出 task candidate。
-13. 场景 eval 覆盖用户说“你决定”或要求推荐：agent 才给建议；若技术判断 agent 更适合决定，则 agent 自行决定并记录假设，而不是反复推回用户。
-14. 场景 eval 覆盖高风险需求：agent 要求明确确认或 permission。
-15. 场景 eval 覆盖互相矛盾需求：agent 指出冲突并问一个决策问题。
-16. 场景 eval 覆盖目标降级式兜底：例如用户要求实现 A，agent 不得问是否改做更容易的 B、MVP、mock、demo 或局部替代物。
-17. 场景 eval 覆盖 standard Skill artifact：`SKILL.md` 有 YAML frontmatter、`name`、
-    `description`、Markdown body、state codes、transition rules、question rules、good/bad cases 和
-    output contract，且不是 Codex-only 格式。
-18. 场景 eval 覆盖 Clarify answer/card：卡片有标题、2-4 道紧密相关问题，每道题有短分支选择，
-    每个 label 不超过 15 个字、每个解释不超过 30 个字、每个选择可带 note、也可不选只写 note。
-19. 场景 eval 覆盖同一个 Three.js PathTracing prompt 在 `none` / `light` / `balanced` / `dive`
-    下产生不同行为：`none` 走裸 provider foreground stream；`light` 只问最高影响核心分叉；
-    `balanced` 深入 1-2 层 material leaves；`dive` 继续消除 material assumptions，并证明强度不是
-    只写在字段里。
-20. 场景 eval 覆盖 assumption owner：`agent_can_decide`、`agent_can_discover` 和
-    `standard_answer/common_sense` 不能被当成用户问题推回去。
-21. 场景 eval 覆盖 `C_ASK` internal meta：effective strength、tree depth、QA round count、
-    remaining material assumptions 和 question value reason。
-22. 独立 `codex exec` judge 审查 golden transcripts，判断问题是否符合行为心理学、是否推动行为树收敛、是否保留用户原目标、是否满足目标/约束/验收、是否避免浪费用户心智。
-23. judge 审查必须明确指出任何目标降级式兜底、低价值追问、字段问卷化、重复追问、把 agent 可发现事实推给用户、未请求却给默认推荐或没有推进收敛的问题。
-24. Golden eval 覆盖多轮 Clarify 后进入 Task Card：runtime tool submission / authority event 必须包含完整 Clarify 问答原文 transcript，Task Card 内容必须可追溯到 transcript。
-25. Golden eval 覆盖 Task Card 用户确认后进入 Pyramid Plan Card：runtime tool submission / authority event 必须同时包含完整 Clarify 问答原文 transcript 和用户确认过的总 CEO Task Card 原文；第二张卡必须拆成目标层次而非重复 Task Card 或写 implementation steps。
-26. 独立 judge 必须审查 Task Card / Pyramid Plan Card 是否丢失、篡改、臆造、过度解释或偏离 Clarify transcript 与已确认 CEO Task Card。
-27. Golden eval 覆盖 no-global-install、session-scoped-skill-visible、bare-provider-skill-invisible、
-    normal-turn-does-not-repeat-skill-rules、transition-turn-carries-skill-reference 和
-    repair-tool-input-shape-only。
-28. Golden eval 覆盖 semantic runtime tool bridge：structured phases 必须调用且只调用一个合适的
-    Thoth semantic tool；`quick_exec` 不要求 Thoth authority tool call；`submit_runtime_packet` /
-    `submit_clarify_packet` 不再作为 Clarify 主合同。
-29. Golden eval 覆盖 prompt hygiene：tool schema / `SKILL.md` 规则不复制进每轮用户 prompt；per-turn
-    input 只含 phase、state、controls、user input、transcript/provenance refs 和短 expectation。
-30. Golden eval 覆盖 Quick 收尾：Task Card 和 Pyramid Plan Card 确认后，Mode=Quick 进入同一个
-    secretary session 的 `quick_exec` 流式执行，不注册后台 task；Mode=Loop 在 Loop-2 中注册
-    `registered_pending`，不启动 PlanExec / Review。
-31. 独立 `codex exec` judge 必须审查 `SKILL.md`、invocation context、transition context、repair
-    instruction 和 golden outputs。
-32. 独立 `codex exec` 用户交互模拟必须基于安装后的 Thoth runtime artifact，模拟 `hi`、模糊大任务、
-    Three.js PathTracing、分支回答、note-only 回答、`你决定`、`够了/不要再问`、验收不清、风险/删除边界、
-    矛盾需求、Task Card 确认和 Pyramid Plan Card 确认，并明确 PASS/FAIL。
-33. 最终验收标准：agent 问的问题像秘书，不像表单；能减少用户负担，并能被独立 judge 判定稳定收敛；
-    Quick+none 保持裸 provider 体验；Quick+clarify 能在 Clarify / approval / quick_exec phases 间
-    稳定切换；最终两轮确认卡有完整 provenance；internal runtime skill 不污染裸 provider 环境；
-    普通 runtime context 不重复 Skill 规则。
+1. A `thoth.clarify` skill/prompt contract exists and specifies agent behavior for every Clarify state code.
+2. A convergence rubric exists defining when to continue asking, stop asking, answer directly through Quick, generate a Task Card, or enter blocked.
+3. Behavioral-psychology question principles exist: highest-leverage behavior-tree branch, preservation of the user's original goal, no fallback degradation, no recommendation by default, avoidance of discoverable facts, avoidance of overly broad questions, and avoidance of repeated questions.
+4. An eval harness exists that can simulate multiple Clarify rounds with a deterministic fixture provider or transcript fixture.
+5. A Clarify golden dataset exists, recording user input, context, expected behavior-tree branch node, acceptable output range, prohibited question types, and low-cognitive-load judgment for each scenario.
+6. Scenario eval covers the user saying `hi`: `Quick + none` must use the bare provider stream, without loading Clarify, submitting a packet, or producing a card; `Quick + clarify` may use an active Clarify direct response, without clarifying or producing a card. Both must reply briefly and naturally and must not use fixed daemon copy.
+7. Scenario eval covers the user saying “help me get this project done properly”: ask the highest-leverage behavior-tree branch first, not a field questionnaire.
+8. Scenario eval covers a vague but low-risk small task: do not over-clarify.
+9. Scenario eval covers a request to register a background task with unclear acceptance criteria: ask about acceptance.
+10. Scenario eval covers missing risk/permission/resource boundaries: ask about boundaries rather than technical implementation.
+11. Scenario eval covers the user remaining vague after answering: the second-round question must advance the process and must not repeat.
+12. Scenario eval covers information being sufficient: stop Clarify and output a task candidate.
+13. Scenario eval covers the user saying “you decide” or requesting a recommendation: only then should the agent advise; when a technical judgment is better left to the agent, it should decide independently and record the assumption rather than repeatedly pushing the question back to the user.
+14. Scenario eval covers a high-risk request: the agent requires explicit confirmation or permission.
+15. Scenario eval covers contradictory requirements: the agent identifies the conflict and asks one decision question.
+16. Scenario eval covers fallback degradation: for example, when the user requests A, the agent must not ask whether to do the easier B, an MVP, mock, demo, or partial substitute instead.
+17. Scenario eval covers the standard Skill artifact: `SKILL.md` has YAML frontmatter, `name`,
+    `description`, a Markdown body, state codes, transition rules, question rules, good/bad cases, and
+    an output contract, and is not in a Codex-only format.
+18. Scenario eval covers Clarify answer/card: the card has a title and 2-4 closely related questions;
+    each question has short branch choices, each label is no longer than 15 characters, each explanation no longer than 30 characters, and each choice may carry a note or be left unselected with only a note.
+19. Scenario eval covers the same Three.js PathTracing prompt producing different behavior under `none` / `light` / `balanced` / `dive`:
+    `none` uses the bare provider foreground stream; `light` asks only the highest-impact core branch;
+    `balanced` goes 1-2 levels into material leaves; `dive` continues eliminating material assumptions and proves that strength is not merely written into a field.
+20. Scenario eval covers assumption ownership: `agent_can_decide`, `agent_can_discover`, and
+    `standard_answer/common_sense` must not be pushed back to the user as questions.
+21. Scenario eval covers `C_ASK` internal metadata: effective strength, tree depth, QA round count,
+    remaining material assumptions, and question value reason.
+22. An independent `codex exec` judge reviews golden transcripts to determine whether questions follow behavioral psychology, advance behavior-tree convergence, preserve the user's original goal, satisfy goals/constraints/acceptance, and avoid wasting user cognitive effort.
+23. The judge review must explicitly identify any fallback goal degradation, low-value questions, field-questionnaire behavior, repeated questions, pushing discoverable facts to the user, unsolicited default recommendations, or failure to advance convergence.
+24. Golden eval covers entering Task Card after multiple Clarify rounds: the runtime tool submission / authority event must contain the complete verbatim Clarify Q&A transcript, and Task Card content must be traceable to the transcript.
+25. Golden eval covers entering Pyramid Plan Card after the user confirms Task Card: the runtime tool submission / authority event must contain both the complete verbatim Clarify Q&A transcript and the original CEO Task Card confirmed by the user; the second card must decompose goal levels rather than repeat the Task Card or contain implementation steps.
+26. The independent judge must review whether the Task Card / Pyramid Plan Card omits, alters, invents, over-interprets, or deviates from the Clarify transcript and confirmed CEO Task Card.
+27. Golden eval covers no-global-install, session-scoped-skill-visible, bare-provider-skill-invisible,
+    normal-turn-does-not-repeat-skill-rules, transition-turn-carries-skill-reference, and
+    repair-tool-input-shape-only.
+28. Golden eval covers the semantic runtime tool bridge: structured phases must call exactly one appropriate
+    Thoth semantic tool; `quick_exec` does not require a Thoth authority tool call; `submit_runtime_packet` /
+    `submit_clarify_packet` are no longer the primary Clarify contract.
+29. Golden eval covers prompt hygiene: tool schemas / `SKILL.md` rules are not copied into each user prompt; per-turn
+    input contains only phase, state, controls, user input, transcript/provenance refs, and a short expectation.
+30. Golden eval covers Quick wrap-up: after Task Card and Pyramid Plan Card confirmation, Mode=Quick enters streaming
+    `quick_exec` in the same secretary session without registering a background task; Mode=Loop registers
+    `registered_pending` in Loop-2 without starting PlanExec / Review.
+31. The independent `codex exec` judge must review `SKILL.md`, invocation context, transition context, repair
+    instruction, and golden outputs.
+32. The independent `codex exec` user-interaction simulation must be based on the installed Thoth runtime artifact and simulate `hi`, a vague large task,
+    Three.js PathTracing, branch answers, note-only answers, “you decide”, “enough/do not ask again”, unclear acceptance, risk/deletion boundaries,
+    contradictory requirements, Task Card confirmation, and Pyramid Plan Card confirmation, with explicit PASS/FAIL.
+33. Final acceptance criterion: the agent's questions feel like a secretary's, not a form's; they reduce user burden and can be judged by an independent judge to converge reliably;
+    Quick+none preserves the bare-provider experience; Quick+clarify switches reliably among Clarify / approval / quick_exec phases;
+    the final two confirmation cards have complete provenance; the internal runtime skill does not pollute the bare-provider environment;
+    ordinary runtime context does not repeat Skill rules.
 
 ## 4. Loop Goal 2: Frontend App Refactor Foundation + Workspace Secretary Clarify Experience
 
 Milestone：`NTH-MS-013`
 TODO：`NTH-TD-016`
-顺序：第 2 个，前端。
+Order: second, frontend.
 
-目标：
+Goal:
 
-回到原版 Paseo 的生产级 React Native / Expo / web / desktop app surface，把它作为 Thoth Loop-2 的主 frontend substrate；删除、回退或隔离当前自己写的 Thoth toy shell 主入口，只把 Thoth Clarify runtime、phase-aware context、Codex `dynamicTools` semantic runtime tool bridge、composer controls、pending decision authority 和 AgentTimeline authority cards 接入原版 Paseo 的 stream / session / workspace / task/detail 体系。
+Return to the original Paseo production-grade React Native / Expo / web / desktop app surface as the main frontend substrate for Thoth Loop-2; delete, revert, or isolate the currently self-written Thoth toy-shell main entry, and connect only the Thoth Clarify runtime, phase-aware context, Codex `dynamicTools` semantic runtime tool bridge, composer controls, pending decision authority, and AgentTimeline authority cards to Paseo's original stream / session / workspace / task/detail system.
 
-这个 loop 的核心不是“反 Paseo”，而是停止用 toy shell 伪装产品。Paseo 的成熟 UI 能力必须保留；Thoth 的任务控制平面心智必须通过 Clarify / runtime tool bridge / pending authority / AgentTimeline 接进去，不能把 Paseo agent manager 心智原样保留，也不能为了改名丢掉生产级 stream、composer、attachments、settings、panes 和 responsive layout。
+The core of this loop is not “against Paseo”; it is to stop disguising the product with a toy shell. Paseo's mature UI capabilities must remain; the Thoth task-control-plane mental model must be connected through Clarify / runtime tool bridge / pending authority / AgentTimeline. The Paseo agent-manager mental model must not be preserved unchanged, and production-grade stream, composer, attachments, settings, panes, and responsive layout must not be discarded merely to rename things.
 
-1. 恢复 / 保持原版 Paseo frontend app 能力和布局为主入口。
-2. 保留 agent-stream、bottom anchor、turn boundary、virtualization、native-web render strategy、原版 composer、attachments、file drop、file links、markdown/code/diff/highlighted content、adaptive modal sheet、card/sheet primitives、settings、host picker、provider settings、relay pairing、diagnostics、workspace/session list/detail layout、terminal/browser/file panes、keyboard/focus/accessibility、desktop/mobile responsive layout 和现有 e2e/test harness。
-3. 删除、回退或隔离 `packages/app/src/thoth-app/thoth-app-shell.tsx` 及 toy shell route/e2e/snapshot 等主路径依赖。
-4. 在原版 Paseo composer 上映射三个控件：`Models` -> `Provider`，`Think` -> `Clarify`，`Feature` -> `Mode`。
-5. `Provider` 写入 daemon Settings 的 `workspaceSecretary.providerSession` 或等价 provider-session 配置；mock/dev provider 不能用于验收。
-6. `Clarify` 映射 `clarify_strength`，至少支持 `none/direct`、`light`、`balanced`、`dive`，可保留 `auto`。
-7. `Mode` 映射 `Quick` / `Loop`；Quick 是前台对话，不注册后台任务；Loop 进入 Clarify 收敛和后续任务合同路径。
-8. Clarify card 稳定渲染在 Paseo 原始 transcript / agent-stream 中，不作为单独页面或 toy shell 卡片。
-9. Loop/task/background 状态本轮以 Paseo 原始 session/workspace/task/detail view 系统为主；允许一个最小 Background Tasks 浏览入口展示 `registered_pending` 列表和详情，但不得伪装 PlanExec / Review。
-10. Settings 保留 Paseo 原版能力，并接入 provider/session、clarify runtime status、relay status、workspace/session diagnostics 和 required internal skills status；真实 relay 验收绑定 `relay.test.thoth.seeles.ai`。
-11. 真实 provider AgentTimeline 是用户可见体验：`Quick + none` 的裸 provider 文本、thinking/progress/tool/evidence 事件流式进入 AgentTimeline；Clarify / Task / Pyramid 卡片必须来自 validated semantic runtime tool submission，完整校验后 atomic 渲染。
-12. `Quick + clarify` 的 UI journey 必须支持 `clarify -> approval_task -> approval_breakdown -> quick_exec`，其中 `quick_exec` 在同一 session 中前台流式执行，不显示后台注册结果。
+1. Restore / retain the original Paseo frontend app capabilities and layout as the primary entry.
+2. Retain agent-stream, bottom anchor, turn boundary, virtualization, native-web render strategy, original composer, attachments, file drop, file links, markdown/code/diff/highlighted content, adaptive modal sheet, card/sheet primitives, settings, host picker, provider settings, relay pairing, diagnostics, workspace/session list/detail layout, terminal/browser/file panes, keyboard/focus/accessibility, desktop/mobile responsive layout, and the existing e2e/test harness.
+3. Delete, revert, or isolate the main-path dependencies on `packages/app/src/thoth-app/thoth-app-shell.tsx` and toy-shell routes/e2e/snapshots.
+4. Map three controls on the original Paseo composer: `Models` -> `Provider`, `Think` -> `Clarify`, `Feature` -> `Mode`.
+5. `Provider` writes to `workspaceSecretary.providerSession` in daemon Settings or an equivalent provider-session configuration; mock/dev providers cannot be used for acceptance.
+6. `Clarify` maps to `clarify_strength`, supporting at least `none/direct`, `light`, `balanced`, and `dive`; `auto` may be retained.
+7. `Mode` maps to `Quick` / `Loop`; Quick is foreground conversation and does not register a background task; Loop enters Clarify convergence and the subsequent task-contract path.
+8. Clarify cards render stably in Paseo's original transcript / agent-stream, not as a separate page or toy-shell card.
+9. This round uses Paseo's original session/workspace/task/detail view system as the primary system for Loop/task/background state; a minimal Background Tasks browsing entry may show a `registered_pending` list and details, but must not pretend to be PlanExec / Review.
+10. Settings retain original Paseo capabilities and connect provider/session, clarify runtime status, relay status, workspace/session diagnostics, and required internal-skills status; real relay acceptance is bound to `relay.test.thoth.seeles.ai`.
+11. The real provider AgentTimeline is the user-visible experience: bare provider text and thinking/progress/tool/evidence events from `Quick + none` stream into AgentTimeline; Clarify / Task / Pyramid cards must come from validated semantic runtime tool submission and render atomically after complete validation.
+12. The `Quick + clarify` UI journey must support `clarify -> approval_task -> approval_breakdown -> quick_exec`, with `quick_exec` streaming in the foreground within the same session and no background-registration result displayed.
 
-约束：
+Constraints:
 
-1. 不新写平行 Thoth app shell；当前 toy shell 不能继续作为主入口。
-2. 不把 `WORKSPACE SECRETARY`、`当前需求收敛`、`Quick 前台 · Loop 后台`、`真实 provider 已连接`、`Quick 和 Loop 都会通过真实 provider 结果写入历史`、`当前秘书话题`、`新秘书话题`、完整 `/mnt/cfs/...` 路径、`provider-backed clean UI model`、`C_DIRECT` / `C_ASK`、packet、repair、schema、raw JSON、provider role 等内部机制作为生产主界面文案。
-3. 这些内部信息可以进入 Settings diagnostics、tooltip 或测试断言，但不能作为主视觉和普通用户路径。
-4. 前端不得展示 `thoth.clarify`、`SKILL.md`、packet、state code、repair、provider role、PlanExec、Review、raw JSON、schema error 或 runtime skill invocation。
-5. 前端不得本地判断是否继续 Clarify、是否收敛、是否进入 Task Card 或 blocked；不得从 assistant 文本、markdown JSON、code fence、snippet 或 raw packet 猜 UI 状态，只能消费 daemon/client/protocol 给出的 AgentTimeline items 和 typed authority card models。
-6. 前端不得本地生成 semantic card、Task Card、Pyramid Plan Card，不得替用户选择默认项，不得 first-option fallback。
-7. 前端不得把 `Quick + none` 的普通 provider stream 包装成 Clarify card，也不得在 `Quick + none` 下显示 skill、packet、repair 或 structured-output 失败。
-8. 如果协议 view model 尚不完整，只能使用明确命名的 development fixture adapter；fixture/mock/dev path 不得冒充 production authority，不得伪造 relay connected 状态；Quick / Clarify / Loop 验收不得使用 offline fixture、mock success 或 deterministic daemon reply/card 代替真实 provider。
-9. Clarify card 必须是 Thoth decision card，不是 `request_user_input`、`AskUserQuestion`、permission question 或命令行 prompt 的换皮；但应复用 Paseo 现有 card/request-user-input 渲染能力。
-10. Clarify card 支持标题、why-now、2-4 道紧密相关问题、每题 2-4 个短选项、每选项短解释、per-option note、note-only、你推荐、你决定；submitted 后 readonly；多轮不覆盖历史。
-11. 默认不得预选、不得默认推荐、不得用视觉权重诱导用户一路点默认；只有用户主动点“你推荐”或“你决定”时才提交结构化 intent。
-12. 移动端和桌面端同等验收；Clarify card 不能遮挡 composer、压迫聊天流、导致键盘遮挡、按钮溢出或不可恢复滚动。
-13. 不允许新增或保留 voice/audio/dictation 可见能力；不允许复用、探测、fallback 到 Paseo/legacy daemon `127.0.0.1:6767`；不允许用 `#`、`example.com`、localhost relay、假 device link 或 mock success 冒充真实 relay。
-14. `.agent-os/upstreams/paseo` 只能作 ignored reference，不得 stage/commit 或成为 runtime dependency。
-15. "不兜底" 指功能不兜底：没有真实 provider、真实 relay、合格 semantic runtime tool bridge 时，UI 必须显示 honest unavailable / blocked / needs provider / unsupported / needs relay 状态并阻断动作，不能用本地固定回复、mock success、offline fixture、provider waterfall、first-option fallback、assistant markdown JSON 抽取、文本解析、假 provider、假 card 或假 relay 冒充完成。
-16. 普通 assistant response 作为 AgentTimeline 渐进渲染；Clarify Card、Task Card 和 Pyramid Plan Card 必须聚合完整 runtime tool input，完成 daemon schema/provenance/authority 校验后再追加为完整 card，不能出现半张卡、半个选项、半个审批按钮。
+1. Do not write a parallel Thoth app shell; the current toy shell cannot remain the primary entry.
+2. Do not use `WORKSPACE SECRETARY`, `Current request convergence`, `Quick foreground · Loop background`, `Real provider connected`, `Both Quick and Loop write history through real provider results`, `Current secretary topic`, `New secretary topic`, complete `/mnt/cfs/...` paths, `provider-backed clean UI model`, `C_DIRECT` / `C_ASK`, packets, repair, schemas, raw JSON, provider roles, or other internal mechanisms as production main-screen copy.
+3. These internal details may appear in Settings diagnostics, tooltips, or test assertions, but not as the primary visual language or ordinary user path.
+4. The frontend must not display `thoth.clarify`, `SKILL.md`, packets, state codes, repair, provider roles, PlanExec, Review, raw JSON, schema errors, or runtime skill invocation.
+5. The frontend must not locally decide whether to continue Clarify, whether convergence has occurred, or whether to enter Task Card or blocked; it must not infer UI state from assistant text, markdown JSON, code fences, snippets, or raw packets, and may consume only AgentTimeline items and typed authority card models provided by daemon/client/protocol.
+6. The frontend must not locally generate semantic cards, Task Cards, or Pyramid Plan Cards; it must not choose defaults for the user or use first-option fallback.
+7. The frontend must not wrap an ordinary provider stream from `Quick + none` as a Clarify card or display skill, packet, repair, or structured-output failure under `Quick + none`.
+8. If the protocol view model is not yet complete, use only a clearly named development fixture adapter; fixture/mock/dev paths must not impersonate production authority or fake relay-connected status; Quick / Clarify / Loop acceptance must not use an offline fixture, mock success, or deterministic daemon reply/card instead of a real provider.
+9. A Clarify card must be a Thoth decision card, not a re-skinned `request_user_input`, `AskUserQuestion`, permission question, or command-line prompt; it should, however, reuse Paseo's existing card/request-user-input rendering capabilities.
+10. A Clarify card supports a title, why-now, 2-4 closely related questions, 2-4 short choices per question, a short explanation per choice, per-option note, note-only, “your recommendation”, and “you decide”; after submission it is readonly, and multiple rounds must not overwrite history.
+11. Do not preselect, recommend by default, or use visual weight to lead the user through default choices; submit structured intent only when the user actively selects “your recommendation” or “you decide”.
+12. Mobile and desktop have equal acceptance requirements; a Clarify card must not cover the composer, compress the chat stream, cause keyboard occlusion, overflow buttons, or create unrecoverable scrolling.
+13. No visible voice/audio/dictation capability may be added or retained; do not reuse, probe, or fall back to the Paseo/legacy daemon at `127.0.0.1:6767`; do not use `#`, `example.com`, a localhost relay, a fake device link, or mock success to impersonate a real relay.
+14. `.agent-os/upstreams/paseo` may be used only as an ignored reference; it must not be staged/committed or become a runtime dependency.
+15. “No fallback” means no functional fallback: without a real provider, real relay, and qualified semantic runtime tool bridge, the UI must show an honest unavailable / blocked / needs provider / unsupported / needs relay state and block the action. It must not use fixed local replies, mock success, offline fixtures, provider waterfalls, first-option fallback, assistant markdown JSON extraction, text parsing, fake providers, fake cards, or fake relays to impersonate completion.
+16. Ordinary assistant responses are progressively rendered as AgentTimeline; Clarify Card, Task Card, and Pyramid Plan Card must aggregate the complete runtime tool input and be appended as complete cards only after daemon schema/provenance/authority validation, with no partial card, partial choice, or partial approval button.
 
-验收：
+Acceptance:
 
-1. anti-toy-shell / anti-internal-copy residual scan 通过：生产主界面无 toy shell 文案、验收文案、完整本地路径、packet/schema/raw JSON/provider-role/state-code/repair 机制泄漏；最小 Background Tasks 入口只能展示 `registered_pending`，不能成为 fake PlanExec / Review toy 主视图。
-2. Paseo capability retention scan/source review 通过：主路径仍使用 agent-stream、bottom anchor、turn boundary、virtualization/native-web render strategy、原版 composer、attachments/file drop/file links、markdown/code/diff/highlighted content、adaptive sheets/cards、settings、host/provider、relay pairing、diagnostics、workspace/session list/detail layout、terminal/browser/file panes、responsive layout 和 e2e/test harness。
-3. composer 控件通过：Provider / Clarify / Mode 三个控件出现在原版 composer 控制区；Provider 写入真实 provider/session 配置；Clarify 映射 strength；Mode 映射 Quick/Loop；附件、slash command、draft、keyboard、send、focus、mobile behavior 不退化。
-4. Clarify card 通过：卡片稳定渲染在 Paseo transcript / agent-stream 中，支持标题、why-now、2-4 道紧密问题、每题 2-4 个短选项、短解释、per-option note、note-only、你推荐、你决定、submitted readonly 和多轮不覆盖历史。
-5. authority boundary 通过：源码审查证明 app 只渲染 AgentTimeline items 和 typed authority card models，不解析 assistant 文本、markdown JSON、code fence、snippet 或 raw packet，不本地判断收敛，不生成 Task/Pyramid Card，不替用户选择。
-6. stream/render review 通过：真实 provider-backed `Quick + none` 裸文本、thinking/progress/tool/evidence 能渐进显示；Clarify / Task / Pyramid card 只在 validated semantic runtime tool submission 和 daemon validation 后 atomic 出现。
-7. 测试通过：Clarify card component/unit tests、`npm --workspace=@thoth/app run test`、Loop-2 narrow real-provider e2e、`npm run build:web`、真实 `relay.test.thoth.seeles.ai` 验收和 `npm run check:foundation` 均实际运行并记录。
-8. 真实旅程通过：`Quick + none` 的 `hi` 是裸 provider stream 且无 Clarify card/packet/repair；`Quick + clarify` 能 Clarify -> Task Card -> Pyramid Plan Card -> same-session `quick_exec`；Quick -> Loop -> Clarify -> 两卡确认 -> `registered_pending` 稳定；未配置真实 provider/relay/bridge 时动作诚实阻断而非 fake success。
-9. 视觉证据齐全：保存 desktop screenshot、mobile screenshot、原版 Paseo app layout 保留截图、composer Provider/Clarify/Mode 截图、streaming Quick 截图或 trace、`hi` 无 card 截图、完整 atomic Clarify card 截图、submitted readonly card 截图、Task/Pyramid card、quick_exec Shell/Edit timeline、registered_pending、Settings 真实 relay 状态截图和 Playwright trace/video。
-10. 截图必须用 `view_image` 实际打开审查，不得只证明文件存在。
-11. 独立 UI mental-model review 通过：独立 `codex exec` 只看截图、trace、关键代码摘要和验收清单；若发现 toy shell、Paseo 能力破坏、composer 退化、Clarify card 不稳定、Quick+none 被协议化、`quick_exec` 不像普通 provider 执行、authority cards 非 atomic、app 解析 raw packet/markdown JSON、fake provider/relay/mock success、用户可见 debug/验收文案或 fake Background Tasks running/review，则 FAIL。
-12. `.agent-os` 记账完成：更新 change-decisions、loop goals、goal prompt、architecture milestones、todo、project-index、acceptance-report、run-log，必要时 lessons-learned；缺任何关键证据时 `NTH-TD-016` 保持 doing 或 blocked，不得 verified。
+1. The anti-toy-shell / anti-internal-copy residual scan passes: the production main interface has no toy-shell copy, acceptance copy, complete local paths, or packet/schema/raw JSON/provider-role/state-code/repair leakage; the minimal Background Tasks entry may show only `registered_pending` and must not become a fake PlanExec / Review toy main view.
+2. The Paseo capability-retention scan/source review passes: the main path still uses agent-stream, bottom anchor, turn boundary, virtualization/native-web render strategy, original composer, attachments/file drop/file links, markdown/code/diff/highlighted content, adaptive sheets/cards, settings, host/provider, relay pairing, diagnostics, workspace/session list/detail layout, terminal/browser/file panes, responsive layout, and the e2e/test harness.
+3. Composer controls pass: Provider / Clarify / Mode appear in the original composer control area; Provider writes real provider/session configuration; Clarify maps to strength; Mode maps to Quick/Loop; attachments, slash commands, drafts, keyboard, send, focus, and mobile behavior do not regress.
+4. Clarify card passes: the card renders stably in the Paseo transcript / agent-stream and supports a title, why-now, 2-4 closely related questions, 2-4 short choices per question, short explanations, per-option note, note-only, “your recommendation”, “you decide”, submitted readonly state, and history preservation across rounds.
+5. The authority boundary passes: source review proves that the app renders only AgentTimeline items and typed authority card models, does not parse assistant text, markdown JSON, code fences, snippets, or raw packets, does not locally judge convergence, does not generate Task/Pyramid Cards, and does not choose for the user.
+6. Stream/render review passes: real provider-backed bare text and thinking/progress/tool/evidence from `Quick + none` display progressively; Clarify / Task / Pyramid cards appear atomically only after validated semantic runtime tool submission and daemon validation.
+7. Tests pass: Clarify card component/unit tests, `npm --workspace=@thoth/app run test`, Loop-2 narrow real-provider e2e, `npm run build:web`, real `relay.test.thoth.seeles.ai` acceptance, and `npm run check:foundation` are all actually run and recorded.
+8. The real journey passes: `hi` under `Quick + none` is a bare provider stream with no Clarify card/packet/repair; `Quick + clarify` supports Clarify -> Task Card -> Pyramid Plan Card -> same-session `quick_exec`; Quick -> Loop -> Clarify -> two-card confirmation -> `registered_pending` is stable; without a configured real provider/relay/bridge, actions are honestly blocked rather than fake success.
+9. Visual evidence is complete: save desktop and mobile screenshots, a screenshot showing the retained original Paseo app layout, composer Provider/Clarify/Mode screenshots, a streaming Quick screenshot or trace, a `hi` no-card screenshot, a complete atomic Clarify card screenshot, a submitted readonly card screenshot, Task/Pyramid cards, quick_exec Shell/Edit timeline, registered_pending, Settings real relay status, and a Playwright trace/video.
+10. Screenshots must be opened and reviewed with `view_image`; merely proving that the files exist is insufficient.
+11. The independent UI mental-model review passes: an independent `codex exec` sees only screenshots, traces, key code summaries, and the acceptance checklist; if it finds a toy shell, damaged Paseo capabilities, a degraded composer, unstable Clarify cards, Quick+none turned into a protocolized flow, `quick_exec` unlike ordinary provider execution, non-atomic authority cards, app parsing of raw packets/markdown JSON, fake provider/relay/mock success, user-visible debug/acceptance copy, or fake Background Tasks running/review, it returns FAIL.
+12. `.agent-os` bookkeeping is complete: update change-decisions, loop goals, goal prompt, architecture milestones, todo, project-index, acceptance-report, run-log, and lessons-learned when necessary; if any key evidence is missing, `NTH-TD-016` remains doing or blocked and must not be verified.
 
-当前结果：
+Current Result:
 
-`NTH-TD-016` / `NTH-MS-013` 已由 `NTH-EV-029` 验证通过。`NTH-EV-026` 和 `NTH-EV-028` 是历史证据：
-它们证明过三视图 toy Workspace Secretary shell、provider-backed streaming 和 atomic Clarify QA card
-的一部分机制，但不再作为当前 Loop-2 authority。当前通过证据证明 restored Paseo app surface 是主路径，
-Paseo 生产级能力未退化，toy shell 不再是用户入口；`Quick + none` 是裸 Codex/Paseo stream；
-`Quick + Dive` 通过 Codex app-server `dynamicTools` / `item/tool/call` 调用 semantic Thoth runtime
-tools；Clarify/Task/Pyramid cards 通过 pending authority decisions 渲染进 AgentTimeline；
-Quick same-session `quick_exec` 显示真实 Shell/Edit timeline；Loop 确认后只注册 durable
-`registered_pending`，不伪造 PlanExec / Review。
+`NTH-TD-016` / `NTH-MS-013` has been verified by `NTH-EV-029`. `NTH-EV-026` and `NTH-EV-028` are historical evidence:
+they proved portions of the mechanisms for the three-view toy Workspace Secretary shell, provider-backed streaming, and atomic Clarify QA cards,
+but are no longer current Loop-2 authority. Current passing evidence proves that the restored Paseo app surface is the main path,
+Paseo production capabilities have not regressed, and the toy shell is no longer the user entry; `Quick + none` is a bare Codex/Paseo stream;
+`Quick + Dive` calls semantic Thoth runtime tools through Codex app-server `dynamicTools` / `item/tool/call`;
+Clarify/Task/Pyramid cards render into AgentTimeline through pending authority decisions;
+same-session Quick `quick_exec` displays a real Shell/Edit timeline; after Loop confirmation, only durable
+`registered_pending` is registered, without faking PlanExec / Review.
 
 ## 5. Loop Goal 3: Backend Task Contract Compiler + Approval Harness
 
 Milestone：`NTH-MS-014`
 TODO：`NTH-TD-017`
-顺序：第 3 个，后端。
+Order: third, backend.
 
-目标：
+Goal:
 
-实现 `thoth.clarify` 从已收敛意图到可审批任务合同的 agent harness。让 secretary agent 能把多轮 Clarify 的结果编译成两层合同：CEO 级 Task Card 和 Pyramid Plan Card。
+Implement the `thoth.clarify` agent harness from converged intent to an approvable task contract. Enable the secretary agent to compile multiple rounds of Clarify results into two contract layers: a CEO-level Task Card and a Pyramid Plan Card.
 
-这个 loop 的核心是：让 agent 会写合同，而不是写计划。
+The core of this loop is to make the agent write contracts, not plans.
 
-约束：
+Constraints:
 
-1. Task Card 不能是实现计划，必须是整体审批材料。
-2. Pyramid Plan Card 不能是 step-by-step execution plan，只能是 target / stages / subgoals / acceptance evidence 的目标金字塔。
-3. Task Card 只允许 `title`、`goal`、`constraints`、`acceptance`。
-4. agent 必须能判断什么时候不该注册 Loop，而应该保持 Quick。
-5. agent 必须能把用户模糊表达转成清晰验收标准，但不能捏造用户没有授权的目标。
-6. 如果验收标准还不够，必须回到 Clarify，而不是强行出合同。
-7. daemon 的两次确认 gate 是机械保证，但合同质量来自 agent harness。
-8. 合同必须 CEO 可读，短、准、可审批。
+1. Task Card must not be an implementation plan; it must be complete approval material.
+2. Pyramid Plan Card must not be a step-by-step execution plan; it may only be a goal pyramid of target / stages / subgoals / acceptance evidence.
+3. Task Card permits only `title`, `goal`, `constraints`, and `acceptance`.
+4. The agent must determine when not to register Loop and to remain in Quick instead.
+5. The agent must turn vague user language into clear acceptance criteria without inventing goals the user did not authorize.
+6. If acceptance criteria are insufficient, it must return to Clarify rather than force a contract.
+7. The daemon's two-confirmation gate is a mechanical guarantee, but contract quality comes from the agent harness.
+8. The contract must be CEO-readable, concise, precise, and approvable.
 
-验收：
+Acceptance:
 
-1. 有 Task Contract Compiler prompt/rubric。
-2. 有 Task Card rubric，只覆盖 `title`、`goal`、`constraints`、`acceptance`，明确禁止 `risk`、`why_loop` 和 implementation plan。
-3. 有 Pyramid Plan Card rubric，保证 target / stages / subgoals / acceptance evidence 层次化、可追溯、非实现计划。
-4. eval 覆盖已收敛小任务：agent 建议 Quick，不注册 Loop。
-5. eval 覆盖已收敛后台任务：agent 输出 Task Card。
-6. eval 覆盖验收不清楚：agent 回到 Clarify。
-7. eval 覆盖用户目标很大：agent 拆成少量层次化 stages / subgoals。
-8. eval 覆盖 agent 不把 implementation plan 写进 Pyramid Plan Card。
-9. eval 覆盖 agent 不把自己可以决定的执行细节推给用户。
-10. eval 覆盖用户修改 Task Card 后 agent 能更新合同。
-11. eval 覆盖用户修改 Pyramid Plan Card 后 agent 能保持约束一致。
-12. eval 覆盖高风险任务必须用 constraints / acceptance 表达边界，不新增 risk 字段。
-13. 合同内容必须能被 daemon runtime tool/card schema 校验。
-14. 最终验收标准：agent 能把 Clarify 结果编译成用户愿意审批、后续 agent 可执行、review 可验收的任务合同。
+1. A Task Contract Compiler prompt/rubric exists.
+2. A Task Card rubric exists, covering only `title`, `goal`, `constraints`, and `acceptance`, and explicitly prohibiting `risk`, `why_loop`, and implementation plan.
+3. A Pyramid Plan Card rubric exists, ensuring target / stages / subgoals / acceptance evidence are hierarchical, traceable, and not an implementation plan.
+4. Eval covers a converged small task: the agent recommends Quick and does not register Loop.
+5. Eval covers a converged background task: the agent outputs a Task Card.
+6. Eval covers unclear acceptance: the agent returns to Clarify.
+7. Eval covers a very large user goal: the agent decomposes it into a small number of hierarchical stages / subgoals.
+8. Eval covers the agent not writing an implementation plan into the Pyramid Plan Card.
+9. Eval covers the agent not pushing execution details it can decide itself to the user.
+10. Eval covers the agent updating the contract after the user modifies the Task Card.
+11. Eval covers the agent preserving constraint consistency after the user modifies the Pyramid Plan Card.
+12. Eval covers high-risk tasks expressing boundaries through constraints / acceptance without adding a risk field.
+13. Contract content must be validatable by the daemon runtime tool/card schema.
+14. Final acceptance criterion: the agent can compile Clarify results into a task contract the user is willing to approve, a subsequent agent can execute, and Review can accept.
 
 ## 6. Loop Goal 4: Frontend Task / Pyramid Plan Approval Experience
 
 Milestone：`NTH-MS-015`
 TODO：`NTH-TD-018`
-顺序：第 4 个，前端。
+Order: fourth, frontend.
 
-目标：
+Goal:
 
-把 Loop 3 的合同编译能力变成用户可审批体验。用户不应该看到系统生成了 JSON，而应该看到秘书递上来两张清楚、轻量、可修改的审批卡：Task Card 和 Pyramid Plan Card。
+Turn Loop 3's contract-compilation capability into an approvable user experience. Users should not see system-generated JSON; they should see the secretary present two clear, lightweight, editable approval cards: Task Card and Pyramid Plan Card.
 
-这个 loop 的核心是：让用户像 CEO 审批秘书整理好的任务，而不是像工程师检查 schema。
+The core of this loop is to let users approve a task organized by a secretary like a CEO, rather than inspect a schema like an engineer.
 
-约束：
+Constraints:
 
-1. Task Card 要 compact，不能变成 PRD 或计划书。
-2. Pyramid Plan Card 要用目标金字塔表达 target / stages / subgoals / acceptance evidence，不能列 execution steps、文件路径或命令。
-3. 用户必须能修改、确认、取消、保持 Quick。
-4. 两次确认都必须是清楚的用户动作。
-5. UI 不能显示 packet、state code、skill。
-6. 如果用户修改合同，必须回到 agent harness 重新整理，而不是前端本地改 authority。
-7. 确认后仍然回到 Workspace Secretary，不能把用户丢到后台日志页。
-8. 同一个 secretary session 可以继续 Quick，也可以以后再注册另一个 Loop。
+1. Task Card must be compact and must not become a PRD or plan document.
+2. Pyramid Plan Card must express target / stages / subgoals / acceptance evidence as a goal pyramid and must not list execution steps, file paths, or commands.
+3. The user must be able to modify, confirm, cancel, or remain in Quick.
+4. Both confirmations must be clear user actions.
+5. The UI must not display packets, state codes, or skills.
+6. When the user modifies a contract, return to the agent harness for reorganization rather than modifying authority locally in the frontend.
+7. After confirmation, return to Workspace Secretary; do not send the user to a background log page.
+8. The same secretary session can continue Quick and can later register another Loop.
 
-验收：
+Acceptance:
 
-1. Workspace Secretary 能显示 Task Card。
-2. Task Card 支持注册为后台任务、保持 Quick、修改、取消。
-3. 用户修改 Task Card 后，agent 能重新生成更好的 Task Card。
-4. 第一次确认后显示 Pyramid Plan Card。
-5. Pyramid Plan Card 显示目标层次、阶段、子目标和验收证据，不重复 Task Card 全文，不显示 risk。
-6. Pyramid Plan Card 支持确认注册、修改、取消。
-7. 用户确认 Pyramid Plan Card 后显示 Registered Card 和 Background Task 链接。
-8. 注册后 composer 回到 Quick，用户可继续聊天。
-9. e2e 覆盖 Task Card 修改、取消、确认；Pyramid Plan Card 修改、取消、确认；注册后回 Quick。
-10. 验收重点是用户能低负担审批，而不是被迫理解后端状态机。
+1. Workspace Secretary can display a Task Card.
+2. Task Card supports registering as a background task, remaining in Quick, modification, and cancellation.
+3. After the user modifies a Task Card, the agent can regenerate a better Task Card.
+4. The Pyramid Plan Card appears after the first confirmation.
+5. Pyramid Plan Card displays goal hierarchy, stages, subgoals, and acceptance evidence; it does not repeat the full Task Card or display risk.
+6. Pyramid Plan Card supports confirmation and registration, modification, and cancellation.
+7. After the user confirms the Pyramid Plan Card, display a Registered Card and a Background Task link.
+8. After registration, the composer returns to Quick and the user can continue chatting.
+9. E2E covers Task Card modification, cancellation, and confirmation; Pyramid Plan Card modification, cancellation, and confirmation; and returning to Quick after registration.
+10. Acceptance focuses on low-burden user approval, not forcing the user to understand the backend state machine.
 
 ## 7. Loop Goal 5: Backend Loop Execution + Review Agent Harness
 
 Milestone：`NTH-MS-016`
 TODO：`NTH-TD-019`
-顺序：第 5 个，后端。
+Order: fifth, backend.
 
-目标：
+Goal:
 
-实现 `thoth.loop` 的 agent harness，让后台 PlanExec 和 Review provider sessions 能基于 frozen contract 执行、请求权限、产出证据、自我推进、接受独立 review，并在失败时形成 non-repeating retry guidance。
+Implement the `thoth.loop` agent harness so that background PlanExec and Review provider sessions can execute against a frozen contract, request permission, produce evidence, advance themselves, accept independent review, and form non-repeating retry guidance on failure.
 
-这个 loop 的核心是：让后台 agent 会执行和自审，而不是 daemon 会跑任务队列。
+The core of this loop is to make the background agent capable of execution and self-review, rather than making the daemon run a task queue.
 
-约束：
+Constraints:
 
-1. PlanExec 只能推进当前 goal，不能跳 goal。
-2. PlanExec 可以自行调查、执行、验证，但高风险动作必须 permission。
-3. PlanExec 不能反复把 Clarify 后已经冻结的问题再推给用户。
-4. 如果 provider 问执行细节，Thoth 应从 frozen contract 或推荐默认值回答，并记录。
-5. Review session 必须独立，且不能修改 workspace。
-6. Review 不是跑测试、核对 PlanExec 自述或填写 acceptance matrix 的同义词；它必须独立挑战当前路线，判断问题定义、方法或架构是否已错。
-7. Review 失败必须给出真正症结、应放弃的错误路径和下一轮最高杠杆方向；局部修补只有在它仍是正确路线时才允许。
-8. Loop retry 不是机械重跑；必须由独立 Review 的方向性判断改变策略。
-9. `Goal x/y`、`Round a/b`、task/phase id、预算、receipt、manifest 和恢复状态只约束 daemon 调度与恢复，不能作为 Agent Harness 的 prompt/tool 心智模型。
-10. daemon 负责 session orchestration、packet repair、permission gate、stream/evidence 落盘、最小语义结论到 authority state 的绑定和恢复。
+1. PlanExec may advance only the current goal and must not skip goals.
+2. PlanExec may investigate, execute, and verify independently, but high-risk actions require permission.
+3. PlanExec must not repeatedly push questions already frozen after Clarify back to the user.
+4. If the provider asks about execution details, Thoth should answer from the frozen contract or recommended defaults and record the answer.
+5. The Review session must be independent and must not modify the workspace.
+6. Review is not synonymous with running tests, checking PlanExec's self-report, or filling out an acceptance matrix; it must independently challenge the current path and determine whether the problem definition, method, or architecture is already wrong.
+7. A failed Review must identify the true crux, the wrong path to abandon, and the highest-leverage direction for the next round; local patching is allowed only when it remains the correct path.
+8. Loop retry is not a mechanical rerun; an independent Review's directional judgment must change the strategy.
+9. `Goal x/y`, `Round a/b`, task/phase id, budget, receipt, manifest, and recovery state constrain only daemon scheduling and recovery; they must not become the Agent Harness prompt/tool mental model.
+10. The daemon handles session orchestration, packet repair, permission gate, stream/evidence persistence, binding the minimal semantic conclusion to authority state, and recovery.
 
-验收：
+Acceptance:
 
-1. 有 `thoth.loop` skill/prompt contract。
-2. 有 PlanExec behavior rubric。
-3. 有 Review behavior rubric。
-4. 有 retry/non-repetition rubric。
-5. 有 Loop golden 数据集，记录单 goal、多 goal、permission、review、retry、blocked、done 等场景的 frozen contract、期望行为、禁止策略和证据要求。
-6. deterministic or fixture harness 覆盖单 goal 成功执行。
-7. harness 覆盖多 goal 只推进当前 goal。
-8. harness 覆盖 PlanExec 遇到权限动作时停下并请求 permission。
-9. harness 覆盖 PlanExec 遇到缺省执行细节时使用 frozen contract 或推荐默认值，不反复问用户。
-10. harness 覆盖 Review pass 时给出独立、可解释的完成判断，而不是复述执行者报告。
-11. harness 覆盖 Review fail 时识别真正症结、明确应放弃的路线并指出下一轮改变。
-12. harness 覆盖 retry 由方向性判断改变策略，而不是在相同方案上机械补丁或重复命令。
-13. harness 覆盖 Review session 无法修改 workspace。
-14. harness 覆盖 task blocked 时给出用户可理解 blocker。
-15. harness 覆盖 task done 时给出 evidence summary。
-16. 独立 `codex exec` judge 审查 golden Loop transcripts，判断 PlanExec 是否遵守 frozen contract、Review 是否独立挑战当前路线、是否命中根因、是否敢于拒绝 incremental 误区，以及 retry 是否真的改变策略且没有浪费用户心智。
-17. judge 审查必须明确指出任何跳 goal、忽略约束、把冻结后的执行细节重新推给用户、证据不足、Review 只等同跑测试/表单核对、被 PlanExec 牵着走、机械重跑或 blocker 不可理解的问题。
-18. 最终验收标准：后台 agent 不只是运行命令，而是在 frozen contract 约束下推进；Review 作为独立纠偏 intelligence 让失败后的下一轮走向更正确的方法，而不是留下字段完整的伪证据。
+1. A `thoth.loop` skill/prompt contract exists.
+2. A PlanExec behavior rubric exists.
+3. A Review behavior rubric exists.
+4. A retry/non-repetition rubric exists.
+5. A Loop golden dataset exists, recording frozen contracts, expected behavior, prohibited strategies, and evidence requirements for single-goal, multi-goal, permission, review, retry, blocked, and done scenarios.
+6. A deterministic or fixture harness covers successful single-goal execution.
+7. The harness covers multiple goals advancing only the current goal.
+8. The harness covers PlanExec stopping and requesting permission when it encounters a permissioned action.
+9. The harness covers PlanExec using the frozen contract or recommended defaults for omitted execution details without repeatedly asking the user.
+10. The harness covers Review pass producing an independent, explainable completion judgment rather than repeating the executor's report.
+11. The harness covers Review fail identifying the true crux, clearly naming the path to abandon, and specifying the change for the next round.
+12. The harness covers retry changing strategy through directional judgment rather than mechanically patching or repeating commands on the same approach.
+13. The harness covers the Review session being unable to modify the workspace.
+14. The harness covers a user-understandable blocker when a task is blocked.
+15. The harness covers an evidence summary when a task is done.
+16. An independent `codex exec` judge reviews golden Loop transcripts to determine whether PlanExec follows the frozen contract, whether Review independently challenges the current path, whether it reaches the root cause, whether it dares to reject incremental traps, and whether retry truly changes strategy without wasting user cognitive effort.
+17. The judge review must explicitly identify skipping goals, ignoring constraints, pushing frozen execution details back to the user, insufficient evidence, Review being reduced to test-running/form checking, being led by PlanExec, mechanical reruns, or unintelligible blockers.
+18. Final acceptance criterion: the background agent does more than run commands; it advances under the frozen contract, while Review acts as independent corrective intelligence that directs the next round toward a more correct method after failure rather than leaving behind field-complete fake evidence.
 
 ## 8. Loop Goal 6: Frontend Loop/Task Dogfood Mapping
 
 Milestone：`NTH-MS-017`
 TODO：`NTH-TD-020`
-顺序：第 6 个，前端。
+Order: sixth, frontend.
 
-目标：
+Goal:
 
-把 Clarify、Contract、Loop、Review 的 agent harness 产物整合成用户可感知的 MVP 闭环。前端继续以 restored Paseo session/workspace/task/detail view system 为 substrate：Settings 配置能力，session/workspace transcript 承载 Clarify 和合同卡，task/detail surface 展示后台执行、证据、权限、review、retry、完成或 blocked。
+Integrate the Clarify, Contract, Loop, and Review agent-harness outputs into a user-perceivable MVP closed loop. The frontend continues to use the restored Paseo session/workspace/task/detail view system as its substrate: Settings provides configuration, the session/workspace transcript carries Clarify and contract cards, and the task/detail surface shows background execution, evidence, permissions, review, retry, completion, or blocked state.
 
-这个 loop 的核心是：让用户感觉 Thoth 真的是一个会接任务、会后台推进、会汇报进度的秘书系统。
+The core of this loop is to make users feel that Thoth is genuinely a secretary system that accepts tasks, advances them in the background, and reports progress.
 
-约束：
+Constraints:
 
-1. 不新建独立 Background Tasks toy main view。
-2. 默认只显示 CEO 可理解的信息：任务目标、约束、验收、当前 goal、当前 round、是否需要用户处理。
-3. provider stream 可以展开，但不能成为主界面。
-4. Review verdict 要转成用户能理解的状态。
-5. Permission request 要突出风险和决策，而不是技术日志。
-6. done 必须有 evidence summary。
-7. blocked 必须说明需要用户做什么判断。
-8. Web/Desktop 是同一个 APP 体验的不同打包，不做单独 mock 审核页。
-9. TUI 不纳入这个 APP MVP loop。
-10. 不能泄漏 relay token、raw offer、credential、`6767` fallback。
+1. Do not create an independent Background Tasks toy main view.
+2. By default, show only information a CEO can understand: task goal, constraints, acceptance, current goal, current round, and whether user action is needed.
+3. The provider stream may be expanded but must not become the main interface.
+4. Translate the Review verdict into a user-understandable state.
+5. A permission request must emphasize risk and decision, not technical logs.
+6. done must have an evidence summary.
+7. blocked must explain what judgment the user needs to make.
+8. Web/Desktop are different packaging of the same APP experience; do not create a separate mock review page.
+9. TUI is not included in this APP MVP loop.
+10. Do not leak relay tokens, raw offers, credentials, or the `6767` fallback.
 
-验收：
+Acceptance:
 
-1. 端到端 dogfood smoke 覆盖 Settings 显示 provider、daemon、runtime skill 状态。
-2. dogfood smoke 覆盖 restored session/workspace transcript 完成 Clarify。
-3. dogfood smoke 覆盖用户审批 Task Card。
-4. dogfood smoke 覆盖用户审批 Pyramid Plan Card。
-5. dogfood smoke 覆盖 restored task/detail surface 出现 registered task。
-6. dogfood smoke 覆盖当前 goal 显示 running。
-7. dogfood smoke 覆盖 stream 可展开查看。
-8. dogfood smoke 覆盖 permission request 能被用户处理。
-9. dogfood smoke 覆盖 Review 状态能显示。
-10. dogfood smoke 覆盖 failed review 后能显示 retry round。
-11. dogfood smoke 覆盖 passed goal 变绿。
-12. dogfood smoke 覆盖 task done 显示 evidence summary，或 blocked 显示用户下一步。
-13. Web static export 有真实 smoke/screenshot。
-14. Desktop dev/review entry 有真实 smoke/screenshot。
-15. UI 不暴露 packet、skill、provider role 等内部概念。
-16. 最终验收标准：用户能从一个模糊意图开始，经过秘书澄清、合同审批、后台执行、review 汇报，看到一个完整任务闭环。
+1. End-to-end dogfood smoke covers Settings displaying provider, daemon, and runtime skill status.
+2. Dogfood smoke covers completing Clarify in the restored session/workspace transcript.
+3. Dogfood smoke covers user approval of the Task Card.
+4. Dogfood smoke covers user approval of the Pyramid Plan Card.
+5. Dogfood smoke covers a registered task appearing in the restored task/detail surface.
+6. Dogfood smoke covers the current goal displaying running.
+7. Dogfood smoke covers expanding the stream for inspection.
+8. Dogfood smoke covers the user handling a permission request.
+9. Dogfood smoke covers displaying Review status.
+10. Dogfood smoke covers displaying a retry round after a failed Review.
+11. Dogfood smoke covers a passed goal turning green.
+12. Dogfood smoke covers task done displaying an evidence summary, or blocked displaying the user's next step.
+13. Web static export has a real smoke test/screenshot.
+14. Desktop dev/review entry has a real smoke test/screenshot.
+15. The UI does not expose internal concepts such as packets, skills, or provider roles.
+16. Final acceptance criterion: users can begin with a vague intent, pass through secretary clarification, contract approval, background execution, and Review reporting, and see a complete task loop.

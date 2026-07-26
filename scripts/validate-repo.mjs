@@ -36,6 +36,15 @@ function git(args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 }
 
+function gitPaths(args) {
+  return execFileSync("git", ["-c", "core.quotePath=false", ...args, "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter(Boolean);
+}
+
 function fileExists(path) {
   try {
     statSync(path);
@@ -128,6 +137,30 @@ function checkDocs() {
     if (!fileExists(join(root, path))) fail(`${path} missing`);
   }
   ok("developer docs and agent-os state docs exist");
+}
+
+function checkDocumentationLanguage() {
+  const documentPath = /\.(?:md|mdx|rst|txt)$/i;
+  const localizedFilename = /(?:^|[._-])zh(?:[._-](?:cn|hans|hant))?(?:[._-]|$)/i;
+  const hanText = /\p{Script=Han}/u;
+  const paths = gitPaths(["ls-files", "--cached", "--others", "--exclude-standard"]);
+  let invalid = false;
+
+  for (const path of paths) {
+    if (!documentPath.test(path) || !fileExists(join(root, path))) continue;
+    if (/[^\x00-\x7f]/.test(path) || localizedFilename.test(path)) {
+      fail(`documentation filename must be English-only: ${path}`);
+      invalid = true;
+      continue;
+    }
+    const content = readFileSync(join(root, path), "utf8");
+    if (hanText.test(content)) {
+      fail(`documentation must use English: ${path}`);
+      invalid = true;
+    }
+  }
+
+  if (!invalid) ok("documentation language and filenames are English-only");
 }
 
 function checkInstallPolicy() {
@@ -284,6 +317,7 @@ checkPackageBoundary();
 checkPackageMetadata();
 checkAgentDocs();
 checkDocs();
+checkDocumentationLanguage();
 checkInstallPolicy();
 checkTrackedPaths();
 checkPackageConfigVoiceResidue();

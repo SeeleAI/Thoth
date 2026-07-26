@@ -1191,7 +1191,7 @@ Scope:
 
 1. Extend the canonical `thoth.clarify` `SKILL.md` with clarify strength strategy, assumption
    owner classification, decision-tree frontier handling, multi-question `C_ASK` card rules,
-   hidden output meta and stop conditions such as "够了/不要再问".
+   hidden output meta and stop conditions such as "enough/ask no more".
 2. Extend protocol and driver contracts so inner Clarify input packets carry controls /
    `clarify_strength` / `effective_clarify_strength`, transcript refs, assumption ledger refs and
    decision-tree frontier refs without repeating Skill rules.
@@ -1301,7 +1301,7 @@ Evidence:
 7. Added `packages/app/src/thoth-app/thoth-app-shell.tsx` and changed
    `packages/app/src/app/index.tsx` so `/` renders Thoth Workspace Secretary by default. The shell
    exposes exactly Workspace Secretary, Background Tasks and Settings; `New Agent` is replaced by
-   `新秘书话题` and submitted through daemon authority.
+   `New Secretary Topic` and submitted through daemon authority.
 8. Clarify card behavior covers title, why-now, 2 tightly related questions, 3 choices per question,
    short labels/explanations, per-option notes, per-question notes, note-only submission, recommend,
    decide, stop, readonly submitted summaries, multi-round append without replacing history and
@@ -1415,7 +1415,7 @@ Evidence:
     foundation tests. Foundation tests passed with highlight `66`, relay `29`, protocol `312` and
     client `110` tests.
 36. Public web review entry recovery was repaired after a real browser report still showed
-    `本机 Thoth host 未连接` at `http://180.76.242.105:8148/`. The app runtime now always probes and
+    `Local Thoth host is not connected` at `http://180.76.242.105:8148/`. The app runtime now always probes and
     upserts the explicit injected initial daemon connection hint instead of short-circuiting when
     the same connection already exists in the persisted host registry. This refreshes stale daemon
     `serverId` values after daemon restarts while still using the real same-origin `/ws` daemon
@@ -1426,7 +1426,7 @@ host-runtime.test.ts` passed with `1` file and `46` tests; `npm run build:web` p
     restarted with `THOTH_DAEMON_PROXY_TARGET=127.0.0.1:6689`; `curl
 http://180.76.242.105:8148/` showed the injected `__THOTH_INITIAL_DAEMON_CONNECTION__` and the
     new bundle; Playwright verified fresh desktop, stale-registry desktop and stale-registry mobile
-    public URL journeys all had `本机 Thoth host 未连接 = false`, `Clarify card count after hi = 0`,
+    public URL journeys all had `Local Thoth host is not connected = false`, `Clarify card count after hi = 0`,
     and local storage rewritten from stale `srv_stale_public_review` to current real daemon
     `srv_0Ryud1K1J1zRYj7eylwnsg`.
 38. Public review screenshots were captured and manually reviewed with `view_image`:
@@ -1457,7 +1457,7 @@ host-runtime.test.ts` passed with `3` files and `58` tests; `npm run build:web` 
     exported `index-2435eae53f002855c8ae5143a30e36b4.js`; 8082 was restarted with the new bundle;
     Playwright reproduced a dark-theme public browser with three persisted hosts where the stale
     hosts remain and fail WebSocket probes, while the visible Workspace Secretary selects the real
-    public same-origin daemon, shows `前台 Quick 可用`, answers `hi` in Quick and keeps Clarify card
+    public same-origin daemon, shows `Foreground Quick available`, answers `hi` in Quick and keeps Clarify card
     count at `0`. Screenshot: `public-web-multihost-dark-ready.png`.
 
 Current result:
@@ -1535,8 +1535,8 @@ Evidence so far:
 9. Follow-up public Playwright verification against `http://180.76.242.105:8148/` passed after
    restarting the Thoth daemon on `127.0.0.1:6688`: `hi` produced a real provider-backed secretary
    reply, no Clarify card, no repair loop, no provider failure, no stale "waiting" flood, no
-   raw/schema leakage, and visible clean events `真实 provider 回合已开始` /
-   `真实 provider 回合完成`. Screenshot:
+   raw/schema leakage, and visible clean events `Real provider turn started` /
+   `Real provider turn completed`. Screenshot:
    `/mnt/cfs/5vr0p6/yzy/thoth/.dev/ui-review-captures/loop2-workspace-secretary/public-test-hi-final-fixed.png`.
 10. Additional gates for the public test bugfix passed on 2026-07-05:
     `npm --workspace=@thoth/daemon exec vitest run src/server/session/workspace-secretary/workspace-secretary-session.test.ts`
@@ -1684,7 +1684,7 @@ Repair implementation status:
    `frontier_ledger`. Below the soft target, `balanced < 5` or `dive < 10`, the model must provide
    `below_soft_target_rationale`.
 3. Daemon authority tooling now persists `publicBadgeSummary`, `frontierLedger` and
-   `convergenceReview`, labels Clarify tool badges as `需求拆解`, derives card labels as
+   `convergenceReview`, labels Clarify tool badges as `Requirement Breakdown`, derives card labels as
    `Clarify 1`, `Clarify 2`, and rejects Task reviews that downgrade the latest Clarify strength.
 4. App stream reducers and AgentStream layout now treat unresolved Clarify / Task / Pyramid authority
    cards or running Thoth authority tool calls as pending decisions, suppressing premature
@@ -1744,7 +1744,7 @@ Evidence:
 9. Quick+Dive runtime-tool evidence passed on public `http://180.76.242.105:8148/` in
    `/tmp/thoth-loop2-runtime-tools-6eO72B`: report
    `/mnt/cfs/5vr0p6/yzy/thoth/.dev/ui-review-captures/loop2-runtime-tool-bridge/1783416763028-report.json` records prompt
-   `实现一个高性能快速排序`, Provider=Codex, Mode=Quick, Clarify=Dive, three Clarify rounds, Task
+   `Implement a high-performance quicksort`, Provider=Codex, Mode=Quick, Clarify=Dive, three Clarify rounds, Task
    approval `accept_quick`, Pyramid approval `accept_quick`, same-session quick_exec and generated
    files `bench/bench_fast_quicksort.cpp`, `include/fast_quicksort.hpp` and
    `tests/test_fast_quicksort.cpp`.
@@ -1805,36 +1805,36 @@ src/composer/draft/workspace-tab-core.test.ts` passed 5 files / 131 tests;
     `npm --workspace=@thoth/app run test` passed 317 files / 2628 tests; `npm run build:web` passed;
     `npm run check:foundation` passed with highlight 66, relay 29, protocol 323 and client 112 tests;
     `git diff --check` passed.
-20. Local `8082` Quick + Balanced prompt `实现一个高性能快速排序` passed the strengthened soft-range
+20. Local `8082` Quick + Balanced prompt `Implement a high-performance quicksort` passed the strengthened soft-range
     behavior: report
     `/mnt/cfs/5vr0p6/yzy/thoth/.dev/ui-review-captures/loop2-runtime-tool-bridge/1783447093160-report.json` records 5 Clarify
     rounds, Task approval, Pyramid approval, same-session quick_exec and generated files
     `quicksort.py` / `test_quicksort.py`. Screenshot
-    `1783446788953-clarify-round-5.png` shows `Clarify 5` with intelligent `需求拆解` badge text and
+    `1783446788953-clarify-round-5.png` shows `Clarify 5` with intelligent `Requirement Breakdown` badge text and
     no raw packet/schema text; screenshot `1783447093090-quick-exec.png` shows Shell/Edit timeline
     rows during foreground execution.
-21. Public `8148` Quick + Balanced prompt `实现一个高性能快速排序` passed the same path: report
+21. Public `8148` Quick + Balanced prompt `Implement a high-performance quicksort` passed the same path: report
     `/mnt/cfs/5vr0p6/yzy/thoth/.dev/ui-review-captures/loop2-runtime-tool-bridge/1783447426182-report.json` records 5 Clarify
     rounds and generated C++ files `CMakeLists.txt`,
     `include/sorting/high_performance_quicksort.hpp`, `src/high_performance_quicksort.cpp` and
     `tests/high_performance_quicksort_tests.cpp`.
-22. Local `8082` Quick + Dive prompt `实现一个高性能快速排序` passed the Dive soft range: report
+22. Local `8082` Quick + Dive prompt `Implement a high-performance quicksort` passed the Dive soft range: report
     `/mnt/cfs/5vr0p6/yzy/thoth/.dev/ui-review-captures/loop2-runtime-tool-bridge/1783447971613-report.json` records 12 Clarify
     rounds, Task/Pyramid approvals, quick_exec and generated files `Makefile`,
     `benchmarks/benchmark_fast_quicksort.cpp`, `include/fast_quicksort.hpp` and
     `tests/test_fast_quicksort.cpp`. Screenshot `1783447727999-clarify-round-12.png` shows
     `Clarify 12`; screenshot `1783447971544-quick-exec.png` shows Shell/Edit execution timeline.
-23. Local `8082` Quick + Balanced prompt `帮我实现一个实时 PathTracing 系统` passed after extending the
+23. Local `8082` Quick + Balanced prompt `Help me implement a real-time PathTracing system` passed after extending the
     guarded e2e wait for slower file generation: report
     `/mnt/cfs/5vr0p6/yzy/thoth/.dev/ui-review-captures/loop2-runtime-tool-bridge/1783449102697-report.json` records 5 Clarify
     rounds and generated files `index.html`, `src/main.js` and `src/styles.css`.
-24. Local `8082` Quick + Dive prompt `帮我实现一个实时 PathTracing 系统` passed the Dive soft-range
+24. Local `8082` Quick + Dive prompt `Help me implement a real-time PathTracing system` passed the Dive soft-range
     clarification behavior but not full quick_exec quality: report
     `/mnt/cfs/5vr0p6/yzy/thoth/.dev/ui-review-captures/loop2-runtime-tool-bridge/1783449724169-report.json` records 10 Clarify
     rounds and quick_exec, but generated only `index.html` and `src/styles.css` while `index.html`
     references missing `src/main.js`. This is recorded as a residual execution-quality regression, not
     as acceptance pass evidence.
-25. Local `8082` Loop + Balanced prompt `实现一个高性能快速排序` passed honest Loop registration: report
+25. Local `8082` Loop + Balanced prompt `Implement a high-performance quicksort` passed honest Loop registration: report
     `/mnt/cfs/5vr0p6/yzy/thoth/.dev/ui-review-captures/loop2-runtime-tool-bridge/1783449979213-report.json` records 5 Clarify
     rounds, Task approval `accept_loop`, Pyramid approval `accept_loop` and
     `registeredTaskVisible: true`; screenshot `1783449979146-registered-pending.png` captures the
@@ -2035,9 +2035,9 @@ Follow-up repair evidence recorded on `2026-07-14`:
 
 1. Archived Workspace Secretary agents are now excluded from automatic foreground restore regardless of
    pin/layout retention. Old persisted layouts cannot recreate an archived agent tab; History remains the
-   explicit access path. This fixes the observed archived "今天天气怎么样？" topic reappearing after reload.
+   explicit access path. This fixes the observed archived "How is the weather today?" topic reappearing after reload.
 2. A successful Loop Goals Card registration now persists `foregroundTurnState: "background_handoff"`.
-   The Secretary immediately reports `ready` with "该工作已交由后台流程继续处理。" Late terminal
+   The Secretary immediately reports `ready` with "This work has been handed off to the background process to continue." Late terminal
    events remain timeline evidence and cannot restore a foreground spinner or error. A live snapshot for
    `topic-5883ef61-a526-492f-9a5f-16de3e84c345` confirmed that exact state.
 3. Non-git evidence baselines now use bounded iterative metadata capture, exclude runtime/build caches and
@@ -2161,7 +2161,7 @@ Evidence recorded on `2026-07-16`:
    restart handoff. A later composer switch remains available for the next send and cannot rewrite the pending
    Card.
 3. App approval cards prefer their own frozen controls over the live composer. Tests cover a Loop Card while the
-   composer is Quick and a Quick Card while the composer is Loop, so only `确认注册` or `前台执行` respectively is
+   composer is Quick and a Quick Card while the composer is Loop, so only `Confirm registration` or `Execute in foreground` respectively is
    exposed.
 4. Daemon integration covers an existing Quick topic hot-switching to `Loop + Balanced + Light`, both authority
    cards retaining the Loop snapshot, another switch back to Quick while Goals approval is pending, successful
@@ -2373,9 +2373,9 @@ Evidence recorded on `2026-07-18`:
    timeline Cards omitted the frozen turn controls, hiding Quick/Loop approval actions. Both were corrected and
    locked by component/runtime-tool tests.
 8. The ninth empty-state AppImage UI run selected Codex/GPT-5.4 from an unconfigured draft, enabled Thoth, rendered
-   and submitted two real Clarify Cards, displayed `确认继续` on Task and `前台执行` on Quick Goals, and completed
+   and submitted two real Clarify Cards, displayed `Confirm continuation` on Task and `Execute in foreground` on Quick Goals, and completed
    the same visible session with `FOREGROUND_EXEC_DONE`. It then consumed frozen Loop/Single controls, displayed
-   `确认注册`, reached foreground `background_handoff` with an editable Composer and no Interrupt spinner, and
+   `Confirm registration`, reached foreground `background_handoff` with an editable Composer and no Interrupt spinner, and
    completed background task `loop-task-25ccf47f-368b-4cdd-8339-f80f5530fff3` with both goals passed. Ignored UI
    evidence is under `.dev/real-appimage/ui-canary-ninth/`.
 9. Final local promotion gates passed full App (`324` files / `2673` tests), daemon (`230` passed files / `3123`
@@ -3006,57 +3006,58 @@ Status: verified.
 
 Evidence on `2026-07-24`:
 
-1. Protocol 中的 `rpcRegistry` 是 JSON Session message 的唯一声明源：共 `131` 个 inbound operation、`139`
-   个 outbound response/event schema，统一声明 `unary | subscription | serverEvent`、handler key、公共
-   `rpc_error`、协议版本和 session permission。原先两份手写 `SessionInboundMessageSchema` /
-   `SessionOutboundMessageSchema` discriminated union 已删除，两个 union 均从 Registry schema 集合派生。
-2. `packages/protocol/src/rpc-registry.ts` 是正式公开入口；过度泛化的额外 Registry core 层已删除。Protocol
-   typecheck/build 通过，`42` 个文件、`351/351` 个测试通过。Registry coverage 精确验证 `131/139`、每个
-   request 唯一 handler、公共 error/version contract，以及 `file_begin`、`file_chunk`、`file_end`、
-   `terminal_frame` 不进入 JSON RPC。
-3. Client 的 `112` 个声明式方法统一进入一个 symbol-owned typed RPC broker。request schema、wire type、
-   response type、requestId correlation、timeout 和 `rpc_error -> DaemonRpcError` 不再由每个方法重复维护；
-   `sendCorrelatedRequest`、`sendCorrelatedSessionRequest`、
-   `sendNamespacedCorrelatedSessionRequest` 和逐方法 `responseType` 字符串全部归零。复杂 binary、连接、
-   subscription/reconnect 和事件 projection 生命周期仍由 Client 正式边界拥有，没有被塞进 Registry。
-4. Client 的 typed constructor/facade 保留所有公开方法与构造签名，同时避免 class/interface unsafe
-   declaration merging；Foundation lint 最终为 `0 warnings / 0 errors`。Client typecheck/build 通过，`4`
-   个文件、`119/119` 个测试通过，其中新增证据证明错误 requestId 不唤醒 waiter、公共 `rpc_error`
-   生成 `DaemonRpcError`、transport 断开清空 pending waiter，binary file/terminal frame 仍走独立 codec。
-5. Daemon `Session` 使用一个 mapped `SessionRpcHandlers` table 覆盖全部 `131` 个 request；编译期漏掉任意
-   handler 即失败。Runtime dispatch 只执行 request type -> Registry entry -> handler key -> handler，原有
-   `13` 组 control/lifecycle/config/task/VCS/workspace/provider/terminal/chat/schedule/misc switch 全部删除，
-   `session.ts` 中不存在 `switch (msg.type)`。
-6. 聚焦 Daemon 验证通过：Session/Wire `133/133`、WebSocket protocol/reconnect/binary lifecycle `17/17`、
-   public foreground API `12/12`。协议版本不匹配在创建 Session 前以 `4003` 明确拒绝；相同版本的
-   Create/Get/Update/Send、Task、Provider、VCS、Terminal、Chat、Schedule 和 reconnect 路径继续经过正式
-   Client/Daemon 主链。测试 Session 也恢复为真实 ToolGateway 边界，WebSocket 测试使用独立且正式初始化的
-   SQLite home，不再依赖共享 schema-0 `/tmp` 文件。
-7. Stage 3 architecture guard 要求 Registry、derived unions、`clientRpcBindings`、唯一 `RPC_INVOKE`、typed
-   handler table、`131/139` coverage 和四类 binary isolation；同时禁止额外 Registry core、三类旧 Client
-   waiter helper、手写 response type、手写 Daemon request switch 和旧 grouped dispatch。Guard 与
-   `git diff --check` 均通过。
-8. 最终 production metrics 为 `1,234` files、`306,055` physical LOC、`1,289,741` scanner tokens、
-   `1,338,845` AST nodes、`5,034` non-type static imports、`164` runtime dependency edges。相对 clean
-   baseline 分别为 `0 / -2,476 / -8,823 / -7,814 / -23 / -1`；Cut 3 独立净减 `1,484` LOC、`2,487`
-   tokens、`3,039` AST nodes 和 `1` static import edge，runtime dependency 不增加。
-9. 初始 Registry 泛型层造成 tokens/imports 相对 Cut 2 回升、测试装配缺口、共享 SQLite 污染，以及首个完整
-   gate 虽在 `239.673s` 通过但仍有 unsafe declaration-merging warning，均未作为完成证据。相关失败、
-   被拒绝的捷径和最终修正记录在 `NTH-EXP-042`；没有改统计口径、降低断言、更新 golden 或隐藏失败。
-10. 最终无 warning 的 `npm run accept:refactor:fast` 在共享 `300s` deadline 内以 `240.108s` 通过。
-    它再次覆盖 Release migration digest、Foundation、Core/Drivers/TUI/Daemon build、真实 `4416`-module Web
-    export、public Thoth/Provider/interaction behavior、Playwright screenshot/a11y/keyboard/focus/responsive、
-    TUI frame、App 与七个独立 daemon/response samples。
-11. 最终中位数：App interactive `1613.17ms`、heap `49,437,824` bytes、Settings `210.29ms`；Daemon
-    ready `1813.53ms`、idle RSS `408,375,296` bytes、idle CPU `0ms`、health p50/p95
-    `0.1235/0.1660ms`；Client-to-adapter `7.2252ms`、adapter-event-to-Client `7.5547ms`、local response
-    overhead `14.7321ms`。七个样本全部保留，统计阈值和 Mann-Whitney/MAD 规则未改变。
+1. Protocol's `rpcRegistry` is the sole declaration source for JSON Session messages: it contains `131` inbound operations and `139`
+   outbound response/event schemas, uniformly declaring `unary | subscription | serverEvent`, handler keys, the shared
+   `rpc_error`, protocol version and session permission. The two handwritten `SessionInboundMessageSchema` /
+   `SessionOutboundMessageSchema` discriminated unions were removed; both unions are derived from the Registry schema set.
+2. `packages/protocol/src/rpc-registry.ts` is the formal public entry point; the over-generalized extra Registry core layer was removed. Protocol
+   typecheck/build passed, with `42` files and `351/351` tests passing. Registry coverage precisely verifies `131/139`, one unique handler per
+   request, the shared error/version contract, and that `file_begin`, `file_chunk`, `file_end`,
+   `terminal_frame` do not enter JSON RPC.
+3. Client's `112` declarative methods now uniformly enter one symbol-owned typed RPC broker. request schema, wire type,
+   response type, requestId correlation, timeout and `rpc_error -> DaemonRpcError` are no longer maintained redundantly by each method;
+   `sendCorrelatedRequest`, `sendCorrelatedSessionRequest`,
+   `sendNamespacedCorrelatedSessionRequest` and per-method `responseType` strings were all eliminated. Complex binary, connection,
+   subscription/reconnect and event projection lifecycles remain owned by the formal Client boundary and were not put into the Registry.
+4. Client's typed constructor/facade preserves all public methods and constructor signatures while avoiding class/interface unsafe
+   declaration merging; Foundation lint ultimately reported `0 warnings / 0 errors`. Client typecheck/build passed, with `4`
+   files and `119/119` tests passing. New evidence shows that an incorrect requestId does not wake a waiter, the shared `rpc_error`
+   produces `DaemonRpcError`, transport disconnection clears pending waiters, and binary file/terminal frames still use an independent codec.
+5. Daemon `Session` uses one mapped `SessionRpcHandlers` table covering all `131` requests; compilation fails if any
+   handler is omitted. Runtime dispatch performs only request type -> Registry entry -> handler key -> handler; the original
+   `13` control/lifecycle/config/task/VCS/workspace/provider/terminal/chat/schedule/misc switch groups were all removed,
+   and `session.ts` contains no `switch (msg.type)`.
+6. Focused Daemon verification passed: Session/Wire `133/133`, WebSocket protocol/reconnect/binary lifecycle `17/17`,
+   public foreground API `12/12`. Protocol-version mismatches are explicitly rejected with `4003` before Session creation; for matching versions,
+   Create/Get/Update/Send, Task, Provider, VCS, Terminal, Chat, Schedule and reconnect paths continue through the formal
+   the Create/Get/Update/Send, Task, Provider, VCS, Terminal, Chat, Schedule and reconnect paths continue through the formal
+   Client/Daemon main chain. Test Sessions also use the real ToolGateway boundary again, and WebSocket tests use an independently and formally initialized
+   SQLite home rather than a shared schema-0 `/tmp` file.
+7. Stage 3 architecture guard requires Registry, derived unions, `clientRpcBindings`, the sole `RPC_INVOKE`, typed
+   handler table, `131/139` coverage and four categories of binary isolation; it also prohibits an extra Registry core, three old Client
+   waiter helpers, handwritten response types, a handwritten Daemon request switch and old grouped dispatch. The guard and
+   `git diff --check` both passed.
+8. Final production metrics were `1,234` files, `306,055` physical LOC, `1,289,741` scanner tokens,
+   `1,338,845` AST nodes, `5,034` non-type static imports and `164` runtime dependency edges. Relative to the clean
+   baseline, these were `0 / -2,476 / -8,823 / -7,814 / -23 / -1`; Cut 3 independently reduced `1,484` LOC, `2,487`
+   tokens, `3,039` AST nodes and `1` static import edge, with no increase in runtime dependencies.
+9. The initial Registry generic layer caused tokens/imports to rise relative to Cut 2, test-assembly gaps, shared SQLite contamination,
+   and an unsafe declaration-merging warning even though the first full gate passed in `239.673s`; none was used as completion evidence. The related failures,
+   rejected shortcuts and final corrections are recorded in `NTH-EXP-042`; metrics were not redefined, assertions were not lowered, golden data was not updated and failures were not hidden.
+10. The final warning-free `npm run accept:refactor:fast` passed within the shared `300s` deadline in `240.108s`.
+    It again covered the Release migration digest, Foundation, Core/Drivers/TUI/Daemon build, real `4416`-module Web
+    export, public Thoth/Provider/interaction behavior, Playwright screenshot/a11y/keyboard/focus/responsive,
+    the TUI frame, the App and seven independent daemon/response samples.
+11. Final medians: App interactive `1613.17ms`, heap `49,437,824` bytes, Settings `210.29ms`; Daemon
+    ready `1813.53ms`, idle RSS `408,375,296` bytes, idle CPU `0ms`, health p50/p95
+    `0.1235/0.1660ms`; Client-to-adapter `7.2252ms`, adapter-event-to-Client `7.5547ms`, local response
+    overhead `14.7321ms`. All seven samples were retained, and the statistical thresholds and Mann-Whitney/MAD rules were unchanged.
 
 Boundary:
 
-本刀未运行 AppImage、Android/iOS/native package、真实 Provider、hosted Relay journey、GitHub Action、push、
-tag、Release 或 publication；未探测、停止、重启或复用 Paseo `127.0.0.1:6767`。最终 `50,000` LOC 与
-四项 hard end-state performance 目标仍由 `NTH-TD-035` 至 `NTH-TD-039` 继续完成。
+This change did not run AppImage, Android/iOS/native package, real Provider, hosted Relay journey, GitHub Action, push,
+tag, Release or publication; it did not probe, stop, restart or reuse Paseo `127.0.0.1:6767`. The final `50,000` LOC and
+four hard end-state performance targets remain to be completed under `NTH-TD-035` through `NTH-TD-039`.
 
 ### `NTH-EV-056` App Authority Projection Cutover
 
@@ -3740,3 +3741,79 @@ Publication evidence:
 
 Conclusion: `NTH-AC-024` is satisfied, `NTH-TD-045` is verified and the sole top next action returns to
 `NTH-TD-036`. The publication does not close or weaken Cut B's remaining `15,506`-LOC target.
+
+### `NTH-EV-068` English Documentation And Filename Convergence
+
+Status: verified.
+
+Evidence on `2026-07-26`:
+
+1. `NTH-CD-072` makes English the only natural language and filename language for tracked Thoth project
+   documentation. Stable IDs, code, commands, schemas, hashes, URLs and protocol sentinels retain their literal
+   meaning; ignored upstream caches and third-party dependencies remain outside project-document authority.
+2. All repository guidance, `.agent-os` authority/evidence/design/source notes, `docs/` research and development
+   handbooks, package documentation, README content and runtime Markdown artifacts were audited. The final inventory
+   contains `72` existing document paths backed by `61` physical non-symlink files; every physical file has zero Han
+   characters.
+3. The canonical core-principles document moved to
+   `.agent-os/designs/core-design-principles.md`, every live reference resolves to that English path, and the stale
+   localized README was removed instead of preserving a second obsolete product-state copy. Existing documentation
+   paths contain no non-ASCII or localized `zh-*` filenames.
+4. `scripts/validate-repo.mjs` now scans tracked and non-ignored untracked Markdown, MDX, RST and TXT files. A
+   temporary document containing Han text made `npm run validate:repo` fail with exit code `1`; a separate temporary
+   document with a non-English filename also failed with exit code `1`. Both probes were removed, and the final
+   positive validation reports `OK documentation language and filenames are English-only`.
+5. An independent local Markdown-link traversal checked all `61` physical documents and reported
+   `DOCUMENT_LINKS_OK files=61`. Stale-path scans found no old core-principles filename, encoded old path, localized
+   README filename or superseded Chinese-language policy. Structural comparison found no lost `NTH-*` IDs and no
+   unexpected heading/code-fence loss in language-only files.
+6. `npm run format`, `npm run format:check`, `npm run validate:repo`, `git diff --check` and the complete
+   `npm run check:foundation` passed. Foundation lint/build/typecheck passed and all `565/565` tests passed:
+   Highlight `66`, Protocol `351`, Relay `29` and Client `119`.
+7. This documentation convergence did not change Product runtime behavior, `NTH-TD-036`, Release assets, Relay,
+   Provider sessions or Paseo `127.0.0.1:6767`; no commit, push, tag, Release or deployment was performed.
+
+Conclusion: `NTH-CD-072` is implemented and verified for the current repository. The sole top next action remains
+`NTH-TD-036`.
+
+### `NTH-EV-069` Repository-Local Paseo Synchronization Skill
+
+Status: verified.
+
+Evidence on `2026-07-26`:
+
+1. `NTH-CD-073` establishes `.agent-os/skills/` as the canonical repository-owned development-skill source and
+   keeps it separate from `packages/drivers/src/runtime-skills/`. The implemented
+   `.agent-os/skills/sync-paseo-into-thoth/SKILL.md` has only the required `name` and comprehensive trigger
+   description in frontmatter, a `175`-line body, and exactly five user-visible stages: Recover and Pin, Assess and
+   Plan, Integrate, Verify and Record, and Publish and Reverify.
+2. The skill includes focused authority routing, change classification, verification and Release references plus
+   Provider-facing `agents/openai.yaml`. The tracked `.codex/skills/sync-paseo-into-thoth` symlink resolves to the
+   canonical `.agent-os` source, so no second `SKILL.md` copy or user-global installation exists.
+3. Root commands `paseo:inspect`, `paseo:check-boundaries`, `paseo:verify-provenance` and
+   `test:skill:paseo-sync` are the formal entry points. The range helper verifies ancestor commits and emits exact
+   commit/path/category manifests; the boundary helper scans only changed production paths and guards excluded
+   capabilities, legacy namespaces/home/port, hidden model endpoints, direct UI SQLite and Provider SDK ownership;
+   the provenance helper requires every manifest commit to be adopted, adapted, rejected, deferred or explicitly
+   ignored with the necessary ownership and acceptance fields.
+4. `npm run test:skill:paseo-sync` passed. Its temporary Git fixture proved a two-commit range with accepted
+   Timeline/Terminal work and a mixed prohibited Voice change; the range inventory detected the Voice path, the
+   boundary check exited `1` with `excluded-capability-path`, `legacy-package-namespace`, `hidden-model-api` and
+   `provider-sdk-outside-drivers`, complete provenance passed, and deliberately missing classifications exited `1`
+   for both unclassified commits.
+5. The official Skill Creator `quick_validate.py` reported `Skill is valid!`. All four helper scripts passed Node
+   syntax checks. `npm run paseo:check-boundaries -- --repo . --base HEAD` scanned the real `43`-path dirty worktree
+   without treating ignored upstream/reference documents as production violations and reported `ok=true`, zero
+   blocking findings and zero review findings.
+6. The first full `npm run format:check` identified only seven new reference/helper files. A debug-only targeted
+   `oxfmt --write` repaired those files without touching unrelated user changes; the subsequent formal root format
+   check passed all `2,451` files. `npm run validate:repo` and `git diff --check` passed.
+7. The complete fresh `npm run check:foundation` passed repository validation, formatting, lint, build, typecheck
+   and all `565/565` tests: Highlight `66`, Protocol `351`, Relay `29` and Client `119`. This tooling change did not
+   run `accept:refactor:fast` because it changes no production package, product behavior, UX, authority, source
+   metric or current Cut B path.
+8. No new Paseo commit range was synchronized. No product source, daemon, Provider session, independent Paseo
+   service, Relay deployment, Git commit, push, merge, tag, Release, npm publication or store artifact was changed.
+
+Conclusion: `NTH-TD-046` is verified. The skill can reproducibly analyze and guard future exact-SHA Paseo
+transplants, while `NTH-TD-036` remains the sole product top next action.

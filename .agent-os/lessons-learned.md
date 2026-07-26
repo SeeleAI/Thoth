@@ -1158,99 +1158,119 @@ When a screenshot or a11y tree intermittently misses an existing projection, ins
 lifecycle for that exact region. Wait on its public test id or user-visible state; do not add sleeps, increase image
 thresholds, update snapshots, mock the authority response or change product UI to satisfy the verifier.
 
-## `NTH-EXP-042` RPC 收敛必须同时删除泛型层，并让测试装配跟随正式边界
+## `NTH-EXP-042` RPC convergence must remove the generic layer and make test assembly follow the production boundary
 
 Observed on `2026-07-24` during `NTH-TD-034`:
 
-1. 第一版 Registry 已经删除大量 Client/Daemon switch 与 waiter boilerplate，但新增的独立
-   `rpc-registry-core.ts` 和条件泛型使 scanner tokens 达到 `1,293,756`、static imports 达到 `5,042`；
-   相对已验证 Cut 2 分别回升 `1,528` 和 `7`。只有 LOC/AST 下降不满足每刀全部复杂度指标继续下降的合同，
-   因而该形态没有切 stage、没有提交。
-2. 将 Registry core 内聚到既有 Protocol schema authority、删除额外文件与重复跨包 imports 后，所有
-   `131/139` schema 和 mapped types 仍保留，但最终 tokens/imports 降至 `1,289,741 / 5,034`。简单不是把
-   声明能力删掉，而是让声明源与已经拥有 Zod schema 的模块共址。
-3. Session/Wire 聚焦测试第一次运行时，`session.test.ts` 的 `126/126` 项都在构造前失败：Cut 2 后测试
-   helper 没有配置正式 `ToolGateway`。给 helper 装配同一个真实 ToolGateway 边界后，Session/Wire
-   `133/133` 通过；没有在 Session 中加入 nullable gateway、fallback 或 test-only production branch。
-4. WebSocket suite 的 `17/17` 项第一次都因共享 `/tmp/thoth-test/catalog.sqlite` 仍是 schema 0 而失败。
-   测试改为每项拥有独立临时 Thoth home，并由正式 storage schema 初始化/校验；最终 `17/17` 通过，避免
-   测试顺序和机器残留状态成为 authority。
-5. 第一个完整 stage 3 gate 在 `239.673s` 通过，但 Foundation lint 报告 class/interface unsafe
-   declaration merging。该 run 未用于关闭 TODO。直接改成 export alias 产生 `TS2300`，匿名 class facade
-   又产生 private-member `TS4094`；最终使用 named `DaemonClientRuntime` + typed constructor/facade，保留
-   构造和实例类型、动态方法覆盖与 runtime duplicate guard，lint 达到 `0 warnings / 0 errors`。
-6. 最终完整 gate 在 `240.108s` 通过。所有失败输出都保留，没有通过 suppress lint、降低测试、修改
-   public surface manifest、隐藏 schema-0 文件或接受 tokens/imports 回升来制造绿色结果。
+1. The first Registry had already removed substantial Client/Daemon switch and waiter boilerplate, but the new independent
+   `rpc-registry-core.ts` and conditional generics raised scanner tokens to `1,293,756` and static imports to `5,042`;
+   relative to the verified Cut 2, these increased by `1,528` and `7`, respectively. A reduction in LOC/AST alone did not
+   satisfy the contract that every cut must reduce all complexity metrics, so this form was not staged or committed.
+2. After co-locating the Registry core with the existing Protocol schema authority and removing the extra file and duplicate
+   cross-package imports, all `131/139` schemas and mapped types remained, while final tokens/imports fell to
+   `1,289,741 / 5,034`. Simplicity does not mean deleting declarative capability; it means co-locating the declaration source
+   with the module that already owns the Zod schema.
+3. On the first run of the focused Session/Wire tests, all `126/126` cases in `session.test.ts` failed before construction:
+   after Cut 2, the test helper had not configured the formal `ToolGateway`. After assembling the same real ToolGateway
+   boundary into the helper, Session/Wire passed `133/133`; no nullable gateway, fallback or test-only production branch was
+   added to Session.
+4. All `17/17` WebSocket suite cases initially failed because the shared `/tmp/thoth-test/catalog.sqlite` was still at
+   schema 0. The tests were changed so each case owns an independent temporary Thoth home and initializes/validates it
+   through the formal storage schema; `17/17` ultimately passed, preventing test order and machine residue from becoming
+   authority.
+5. The first complete stage 3 gate passed in `239.673s`, but Foundation lint reported unsafe class/interface declaration
+   merging. That run was not used to close the TODO. Changing directly to an export alias produced `TS2300`, while an
+   anonymous class facade produced private-member `TS4094`; the final solution used a named `DaemonClientRuntime` plus a
+   typed constructor/facade, retaining constructor and instance types, dynamic method overrides and the runtime duplicate
+   guard, with lint reaching `0 warnings / 0 errors`.
+6. The final complete gate passed in `240.108s`. All failure output was retained; no green result was manufactured by
+   suppressing lint, reducing tests, modifying the public surface manifest, hiding schema-0 files or accepting a rise in
+   tokens/imports.
 
 Conclusion:
 
-声明式 Registry 只有在删除三份同步 boilerplate 的同时不制造第四层泛型框架时才是真正收敛。测试 fixture
-也必须装配最终 production boundary；如果 fixture 依赖旧构造习惯或共享持久状态，它不能证明新主链。
+A declarative Registry is truly convergent only when it removes three copies of synchronized boilerplate without creating
+a fourth generic framework layer. Test fixtures must also assemble the final production boundary; if a fixture depends on
+old construction habits or shared persistent state, it cannot prove the new main chain.
 
 Retry condition:
 
-后续 Registry/Facade 重构若出现 LOC 下降但 token/import 回升，先删除泛型中间层和重复 module edge；若
-Session/transport 测试在构造期统一失败，先核对最终 composition boundary 与独立 storage home。不得把正式
-依赖改成 optional、给 Runtime 增加测试 fallback、放宽 lint，或修改 public-surface 统计集合来绕过失败。
+If a subsequent Registry/Facade refactor reduces LOC but increases tokens/imports, first remove the generic intermediate
+layer and duplicate module edges; if Session/transport tests all fail during construction, first check the final composition
+boundary and the independent storage home. Do not make a formal dependency optional, add a test fallback to Runtime,
+relax lint, or modify the public-surface measurement set to bypass the failure.
 
-## `NTH-EXP-043` Session Store 删除后测试装配必须迁移到最终 Owner
+## `NTH-EXP-043` After deleting Session Store, test assembly must migrate to the final owner
 
 Observed on `2026-07-24` during `NTH-TD-035`:
 
-1. 旧测试第一次完整迁移前，App suite 为 `330` files、`310` passed / `20` failed，`2,451` passed /
-   `106` failed。失败集中于测试仍装配已删除的 Session Store；恢复兼容 Store 会制造第二套 authority，
-   因而选择把 fixture 和断言迁入 Projection、HostRuntime、QueryClient 和 UiPreferences 的正式边界。
-2. 第二次完整 App suite 为 `328/330` files、`2,569/2,573` tests，剩余四项失败来自 Timeline gap reset
-   会先创建正式 `loadingTail` placeholder，以及 fake Client 缺少正式
-   `subscribeAgentThothStateUpdates()`。测试跟随最终 loading/subscription contract 后通过，没有放宽生产语义。
-3. Archive query suite 最初 `5/5` 失败，因为旧 `beforeEach` 仍调用 `useSessionStore`。测试改为重置并断言
-   QueryClient pending cache；没有恢复 Store proxy。HostRuntime ServerInfo event 新测试最初因 fixture 缺
-   Protocol `status: "server_info"` 失败，补齐正式 wire shape 后通过，没有放宽 parser。
-4. DaemonProjectionService stale-Agent 测试最初 deep-equal 失败，因为 canonical Agent 保留正式
-   `projectPlacement`。最终改为验证 stale event 不替换对象 identity，没有删除字段或弱化快照语义。
-5. WIP 中曾运行不受支持的 `npm run metrics:refactor -- --json` 并明确失败；最终指标只来自标准根命令
-   `npm run metrics:refactor`。
+1. Before the first complete migration of the old tests, the App suite had `330` files, with `310` passed / `20` failed,
+   and `2,451` passed / `106` failed. The failures were concentrated in tests that still assembled the deleted Session Store;
+   restoring a compatible Store would create a second authority, so fixtures and assertions were moved into the formal
+   boundaries of Projection, HostRuntime, QueryClient and UiPreferences.
+2. The second complete App suite had `328/330` files and `2,569/2,573` tests; the remaining four failures came from the
+   Timeline gap reset creating the formal `loadingTail` placeholder first, and from the fake Client lacking the formal
+   `subscribeAgentThothStateUpdates()`. The tests passed after following the final loading/subscription contract, without
+   weakening production semantics.
+3. The Archive query suite initially failed `5/5` because the old `beforeEach` still called `useSessionStore`. The tests
+   were changed to reset and assert the QueryClient pending cache; no Store proxy was restored. A new HostRuntime ServerInfo
+   event test initially failed because the fixture lacked Protocol `status: "server_info"`; it passed after the formal wire
+   shape was completed, without weakening the parser.
+4. The DaemonProjectionService stale-Agent test initially failed deep-equal because the canonical Agent retained the formal
+   `projectPlacement`. It was ultimately changed to verify that a stale event does not replace object identity, without
+   deleting the field or weakening snapshot semantics.
+5. During WIP, the unsupported `npm run metrics:refactor -- --json` was run and explicitly failed; the final metrics came
+   only from the standard root command `npm run metrics:refactor`.
 
 Conclusion:
 
-删除旧 authority 后，批量测试失败首先说明 fixture 仍依赖旧 ownership，并不证明需要兼容层。测试必须
-装配最终 Store/Service/Query 边界；Protocol fixture 必须满足正式 wire schema，canonical entity 字段不能为
-旧 deep-equal 断言而裁掉。这样才能证明单主链，而不是让测试迫使生产代码恢复双轨。
+After the old authority is deleted, broad test failures first indicate that fixtures still depend on the old ownership;
+they do not prove that a compatibility layer is needed. Tests must assemble the final Store/Service/Query boundaries;
+Protocol fixtures must satisfy the formal wire schema, and canonical entity fields must not be cut merely to satisfy old
+deep-equal assertions. Only then can they prove a single main chain instead of forcing production code to restore dual tracks.
 
 Retry condition:
 
-后续 Cut 若在删除旧 Store/Controller 后出现大面积 fixture 失败，先按 owner mapping 迁移 setup、fake Client
-和断言，再检查最终 service lifecycle。不得新增兼容 facade、nullable production dependency、test-only
-authority writer、放宽 parser 或删除 canonical 字段来让旧测试继续通过。
+If a subsequent Cut produces widespread fixture failures after deleting an old Store/Controller, first migrate setup, the
+fake Client and assertions according to the owner mapping, then inspect the final service lifecycle. Do not add a compatibility
+facade, nullable production dependency or test-only authority writer, and do not relax the parser or delete canonical fields
+to keep old tests passing.
 
-## `NTH-EXP-044` UI 组合复用不能凭预算假设制造两万行重复
+## `NTH-EXP-044` UI composition reuse must not manufacture twenty thousand lines of duplication from a budget assumption
 
 Observed on `2026-07-24` during `NTH-TD-036`:
 
-1. 规划把 shared UI 单刀估算为 `-20,000` LOC，但完成 canonical Timeline Registry、统一 Sidebar row、
-   ContextMenu/Dropdown substrate、Agent controls、Markdown renderer、Workspace tab menu/descriptor、Sheet
-   background、死文件和死样式后，真实 production delta 只有 `-4,578` LOC。
-2. SettingsRouteRegistry 试验只减少 `4` LOC，却增加 `490` scanner tokens；它只改变代码形状，没有消除
-   真实复杂度，因此被撤回，没有为了满足“Registry”名义保留无收益抽象。
-3. 保守入口图扫描得到 `754` 个 production candidates、`721` 个可达文件和 `33 / 1,777 LOC` 个不可达
-   文件。剩余不可达项由现有行为测试、平台声明/stub 或 test adapter 直接拥有，不能在“功能和测试零损失”
-   合同下当作自由删除预算。
-4. 归一化函数结构扫描把 `>=80` tokens 的跨文件 clone 从 `9` 组收敛到 `1` 组；最后一组只有 `94`
-   tokens，而且是 Plan Markdown 与普通 Markdown 明确不同的 paragraph/code/list presentation 边界。
-5. 最终指标为 `296,353 / 1,271,951 / 1,300,201 / 4,991 / 164`，LOC 仍比本刀 ceiling 高
-   `15,422`。没有删 feature、删测试、压行、移动生产逻辑、越界修改 VCS/Provider/RPC 或虚假切 Stage。
+1. The plan estimated a single shared-UI cut at `-20,000` LOC, but after completing the canonical Timeline Registry,
+   unified Sidebar row, ContextMenu/Dropdown substrate, Agent controls, Markdown renderer, Workspace tab
+   menu/descriptor, Sheet background, dead files and dead styles, the actual production delta was only `-4,578` LOC.
+2. The SettingsRouteRegistry experiment reduced only `4` LOC while adding `490` scanner tokens; it changed code shape
+   without removing real complexity, so it was withdrawn rather than retaining a no-benefit abstraction to satisfy the name
+   “Registry”.
+3. A conservative entry-graph scan found `754` production candidates, `721` reachable files and `33 / 1,777 LOC` of
+   unreachable files. The remaining unreachable items are directly owned by existing behavior tests, platform declarations/
+   stubs or test adapters, so under the “zero feature and test loss” contract they cannot be treated as freely deletable
+   budget.
+4. The normalized-function-structure scan reduced cross-file clones of `>=80` tokens from `9` groups to `1`; the final
+   group contained only `94` tokens and represented the explicitly different paragraph/code/list presentation boundary
+   between Plan Markdown and ordinary Markdown.
+5. The final metrics were `296,353 / 1,271,951 / 1,300,201 / 4,991 / 164`, with LOC still `15,422` above this cut's
+   ceiling. No feature or test was deleted, no lines were compressed, no production logic was moved, no VCS/Provider/RPC
+   boundary was crossed, and no Stage was falsely cut.
 
 Conclusion:
 
-“大文件很多”不等于“UI 有两万行重复”。共享抽象只有在同时删除两套真实实现时才是裁剪；把不同业务
-组件塞进 Registry、PanelFrame 或巨型基类会增加 token/import 和耦合。预算若与 reachability/clone/consumer
-事实冲突，必须暴露估算失败，而不是让数值反向驱动功能删除。
+“Many large files” does not mean “the UI has twenty thousand lines of duplication.” A shared abstraction is a reduction
+only when it deletes two real implementations at the same time; forcing components with different business semantics into
+a Registry, PanelFrame or giant base class increases tokens/imports and coupling. If the budget conflicts with reachability,
+clone or consumer facts, expose the failed estimate instead of letting the number drive feature deletion in reverse.
 
 Retry condition:
 
-只有用户批准扩大原子范围到相邻的 VCS、Provider、Shell/Terminal 或 transport 最终模块后，才继续寻找
-剩余 `15,422` 行；仍需逐模块执行最终实现、全部消费者切换、旧路径删除和行为验收。若坚持 UI-only，必须
-先给出新的、可定位到具体重复 owner 的删除清单；不得重复 Settings Registry 试验或抽象不同语义组件凑数。
+Continue looking for the remaining `15,422` lines only after the user approves expanding the atomic scope to adjacent
+VCS, Provider, Shell/Terminal or transport final modules; the final implementation, all-consumer cutover, old-path deletion
+and behavioral acceptance must still be completed module by module. If the scope remains UI-only, first provide a new deletion
+list that identifies specific duplicate owners; do not repeat the Settings Registry experiment or abstract components with
+different semantics merely to make up the numbers.
 
 ## `NTH-EXP-045` Architecture guards must move with the final owner they enforce
 

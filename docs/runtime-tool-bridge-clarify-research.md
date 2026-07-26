@@ -2,31 +2,31 @@
 
 ## Status
 
-1. 日期：`2026-07-09`
-2. 性质：Claude Code、Codex app-server、OpenCode runtime tool / native question 能力调研与 Thoth Clarify 迁移方向
-3. 目的：把 Thoth Clarify 从 prompt packet / assistant JSON 输出迁移为 provider runtime tool bridge
-4. 范围：Claude Agent SDK custom tools / `AskUserQuestion`、Codex app-server `dynamicTools` / MCP / `request_user_input`、OpenCode custom tools / MCP / `question`
-5. 当前实测状态：Codex app-server `dynamicTools` 已在 Loop-2 Clarify 主路径实现。原
-   `NTH-EV-029` 真实 provider evidence 因 2026-07-07 Quick+Clarify pending lifecycle 和
-   strength/frontier 行为回归已降级为 reopened regression；新的 contract v2 修复正在重验。
-   `NTH-CD-045` 进一步把 Loop background 从 registered-pending handoff 升级为 Goals Card ->
-   durable Loop task -> PlanExec / Review phases。Claude/OpenCode 仍是后续 adapter 方向。
-6. 非目标：不替代 `.agent-os/designs/*` canonical authority，不声称非 Codex provider adapters 已完成。
+1. Date: `2026-07-09`
+2. Nature: Research into Claude Code, Codex app-server, and OpenCode runtime tool / native question capabilities and the Thoth Clarify migration direction
+3. Purpose: Migrate Thoth Clarify from prompt packet / assistant JSON output to a provider runtime tool bridge
+4. Scope: Claude Agent SDK custom tools / `AskUserQuestion`, Codex app-server `dynamicTools` / MCP / `request_user_input`, and OpenCode custom tools / MCP / `question`
+5. Current tested status: Codex app-server `dynamicTools` has been implemented in the primary Loop-2 Clarify path. The original
+   `NTH-EV-029` real-provider evidence was downgraded to a reopened regression because of the 2026-07-07 Quick+Clarify pending lifecycle and
+   strength/frontier behavior regressions; the new contract v2 fix is being reverified.
+   `NTH-CD-045` further upgraded the Loop background path from registered-pending handoff to Goals Card ->
+   durable Loop task -> PlanExec / Review phases. Claude/OpenCode remain subsequent adapter directions.
+6. Non-goal: Do not replace `.agent-os/designs/*` canonical authority or claim that non-Codex provider adapters are complete.
 
 ## 1. Verdict
 
-Thoth 当前 `thoth.clarify` 方向应从“prompt 要求 provider 输出 Clarify packet”升级为“session-scoped runtime tool bridge”。
+The current direction for Thoth `thoth.clarify` should be upgraded from “prompt asks the provider to output a Clarify packet” to a “session-scoped runtime tool bridge.”
 
-`SKILL.md` 仍然可以是行为规则 authority，但不应继续让模型主要承担内部 packet 序列化职责。更合理的结构是：
+`SKILL.md` can remain the authority for behavior rules, but the model should no longer primarily be responsible for serializing internal packets. A more appropriate structure is:
 
-1. provider session 启动或 phase 进入时，Thoth driver 注册 / 启用 Thoth runtime tools。
-2. 模型通过真实 tool call 提交 Clarify Card、Task Card、Goal Card 或 blocked state。
-3. Thoth daemon 接收 tool call input，做 schema、ask gate、authority、provenance、permission 和 evidence 校验。
-4. Thoth frontend 渲染用户可见 card。
-5. 用户回答后，Thoth daemon 把 tool result 按 provider-specific 协议返回 runtime。
-6. provider 继续同一 turn / session。
+1. When a provider session starts or enters a phase, the Thoth driver registers / enables Thoth runtime tools.
+2. The model submits a Clarify Card, Task Card, Goal Card, or blocked state through a real tool call.
+3. The Thoth daemon receives the tool call input and validates its schema, ask gate, authority, provenance, permission, and evidence.
+4. The Thoth frontend renders the user-visible card.
+5. After the user answers, the Thoth daemon returns the tool result to the runtime according to the provider-specific protocol.
+6. The provider continues in the same turn / session.
 
-一句话：Thoth 可以借 MCP，但不应把 MCP 当产品答案。正确抽象是 `RuntimeToolBridge`；MCP、Codex `dynamicTools`、Claude SDK in-process MCP tools、OpenCode custom tools、provider-native question events 都只是 bridge 的不同 adapter。
+In short: Thoth may use MCP, but should not treat MCP as the product answer. The correct abstraction is `RuntimeToolBridge`; MCP, Codex `dynamicTools`, Claude SDK in-process MCP tools, OpenCode custom tools, and provider-native question events are merely different adapters for the bridge.
 
 ## 1.1 Loop-2 Implementation Result
 
@@ -55,7 +55,7 @@ The updated Codex dynamicTools contract keeps runtime tools as the product bound
 pieces of model-owned evidence that the daemon can persist and audit without judging question quality:
 
 1. `thoth_submit_clarify_card` now requires `public_badge_summary`. This is the user-visible
-   AgentTimeline badge body, for example "正在拆解排序需求：先确认语言、交付形态和性能验收的材料分支。"
+   AgentTimeline badge body, for example "Breaking down the sorting requirement: first confirm the language, delivery form, and material branch for performance acceptance."
    It replaces neutral waiting copy and no longer uses legacy `decision_it_changes`.
 2. `thoth_submit_clarify_card` now requires `frontier_ledger`: current strength, grounded user
    decisions, remaining material user-owned assumptions, agent-owned assumptions, discoverable
@@ -76,16 +76,16 @@ pieces of model-owned evidence that the daemon can persist and audit without jud
 
 ## 2. Current Problem With Prompt Packets
 
-当前 `thoth.clarify` 已经把行为规则集中到 `packages/drivers/src/runtime-skills/thoth-clarify/SKILL.md`，并通过 `submit_clarify_packet` / packet schema 让 daemon 做机械校验。这比裸 prompt JSON 更好，但仍有根本问题：
+Current `thoth.clarify` has already centralized its behavior rules in `packages/drivers/src/runtime-skills/thoth-clarify/SKILL.md` and uses `submit_clarify_packet` / packet schema for mechanical daemon validation. This is better than raw prompt JSON, but fundamental problems remain:
 
-1. 模型要同时做语义判断和内部协议序列化。
-2. `C_ASK` / `C_TASK_CARD` / `next` / `errors` / provenance 等内部状态过多暴露给 provider。
-3. assistant text、markdown JSON、structured output、runtime packet 的边界容易混。
-4. repair 仍围绕“packet shape”而不是“tool call contract”展开。
-5. card atomicity 依赖输出解析，而不是 runtime tool call boundary。
-6. `submit_clarify_packet` 名字本身仍然把模型心智拉向“提交内部 packet”，不是“提交一个用户决策 card”。
+1. The model must perform both semantic judgment and internal protocol serialization.
+2. Too much internal state, such as `C_ASK` / `C_TASK_CARD` / `next` / `errors` / provenance, is exposed to the provider.
+3. The boundaries among assistant text, markdown JSON, structured output, and runtime packets are easy to blur.
+4. Repair still centers on “packet shape” rather than the “tool call contract.”
+5. Card atomicity depends on output parsing rather than the runtime tool call boundary.
+6. The name `submit_clarify_packet` itself still directs the model's mental model toward “submitting an internal packet,” rather than “submitting a user-decision card.”
 
-目标不是删除 packet schema，而是降低它在模型接口中的位置：
+The goal is not to remove the packet schema, but to reduce its prominence in the model interface:
 
 ```text
 Current:
@@ -331,23 +331,23 @@ Example high-level tool input:
 
 ```json
 {
-  "title": "确认交付边界",
-  "why_now": "不同选择会改变执行路线和验收证据",
-  "decision_it_changes": "是否按可发布实现、研究验证或文档方案推进",
+  "title": "Confirm the delivery boundary",
+  "why_now": "Different choices will change the execution route and acceptance evidence",
+  "decision_it_changes": "Whether to proceed with a releasable implementation, research validation, or a documentation proposal",
   "questions": [
     {
       "id": "delivery_boundary",
-      "question": "这次最重要的交付形态是哪一种？",
+      "question": "Which delivery form matters most this time?",
       "choices": [
         {
           "id": "production",
-          "label": "可发布实现",
-          "description": "按真实可运行链路验收"
+          "label": "Releasable implementation",
+          "description": "Validate against a real runnable path"
         },
         {
           "id": "research",
-          "label": "研究验证",
-          "description": "重点证明技术路线"
+          "label": "Research validation",
+          "description": "Focus on proving the technical approach"
         }
       ]
     }
@@ -367,7 +367,7 @@ Example tool result:
     {
       "question_id": "delivery_boundary",
       "choice_id": "production",
-      "note": "需要真实可发布，不要 demo"
+      "note": "A genuinely releasable result is required; no demo"
     }
   ],
   "next_instruction": "Continue Clarify only if another high-impact user-owned decision remains; otherwise submit a Task Card."

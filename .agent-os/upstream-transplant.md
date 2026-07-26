@@ -1,6 +1,6 @@
 # Upstream Transplant Ledger
 
-本文件记录 Thoth 当前 upstream-derived implementation substrate 的来源、边界和预期状态。它是迁移账本，不是产品设计文档。
+This file records the provenance, boundaries, and expected state of Thoth's current upstream-derived implementation substrate. It is a migration ledger, not a product design document.
 
 ## Current Import
 

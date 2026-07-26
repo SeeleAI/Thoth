@@ -2,7 +2,7 @@
 
 ## Purpose
 
-本文件不是官方来源本身，而是基于官方来源的 cross-platform 对照层。它只用于帮助 `Thoth` 明确两类宿主/平台能力的差异与设计含义。
+This file is not itself an official source; it is a cross-platform comparison layer based on official sources. It is intended only to help `Thoth` clarify the differences and design implications of the capabilities provided by the two host/platform ecosystems.
 
 ## Verification Snapshot
 
@@ -14,34 +14,34 @@
 
 ## Comparison Matrix
 
-| Dimension                 | OpenAI Codex 官方事实                                                                                    | Claude Code 官方事实                                                                   | 对 Thoth 的设计含义                                                                                                  |
-| ------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| 控制平面                  | Codex 提供自己的 cloud/web/app/automation 宿主面，同时也有 API primitive 可配合异步执行                  | Claude Code 提供本地/远程/web/CI 宿主面与 agentic tool loop                            | 两者都能做宿主，但都不等于 `.thoth` 的 repo-native authority                                                         |
-| 后台长任务                | OpenAI 一边有 API `background + webhook/polling` 原语，另一边 Codex automations 会在后台 worktree 跑任务 | Claude Code Agent SDK 提供长期 session、persistent shell、`Monitor` 和 session storage | 若 Thoth 接 OpenAI API，后台更像外部作业系统；若跑在 Claude 上，可更深利用宿主持续会话，但 authority 仍应在 `.thoth` |
-| 子代理                    | Codex 有 subagents 与 concepts 文档，强调任务拆分与专门化                                                | Claude Code 有 sub-agents，且官方明确区分 foreground/background subagent               | 两边都支持子任务/子代理，但子代理都不应被当成 authority                                                              |
-| Hooks                     | Codex hooks 当前页面不再带 `Experimental` 标记，但仍需 feature flag，且支持矩阵高波动                    | Claude hooks 已有丰富事件模型、结构化 JSON、以及 session/subagent/tool 生命周期事件    | 短中期更值得依赖的是 Claude hooks；Codex hooks 可接入但不应承担 durability 或 authority                              |
-| Shell / Monitor           | Codex 官方更强调 CLI shell 交互与 approval 模式，没有官方 durable monitor substrate                      | Claude Agent SDK 官方明确提供 persistent shell 和 `Monitor` 工具观察长 bash            | 长时运行监控优先利用 Claude 宿主面；Codex 更适合作为交互式 worker 与补充执行面                                       |
-| Web 交互面                | Codex 有 cloud/web 产品面                                                                                | Claude Code on the web 当前是 `research preview`                                       | 两边都有 web 面，但都属高波动产品层                                                                                  |
-| Local/Remote environments | Codex 公开 local environments 概念，强调接近真实本地环境                                                 | Claude Code 有 remote control 与终端/浏览器衔接                                        | 两边都在缩短 agent 与真实开发环境的距离，但 authority 仍应放 repo 内                                                 |
-| 自动化                    | Codex app 有 automations                                                                                 | Claude Code 有 GitHub Actions 路线                                                     | 两边都可作为自动化执行面，但不应直接替代项目状态治理                                                                 |
-| Authority                 | OpenAI API background/webhook 不提供 repo ledger                                                         | Claude Code 宿主能力也不提供 repo-native ledger                                        | `.thoth` 仍应是项目级 authority 层                                                                                   |
-| 事实波动性                | Codex 产品面近期变化快，hooks 更高波动                                                                   | Claude web/remote/hooks/GitHub Actions 同样高波动                                      | 必须强制 freshness policy，不能只信旧总结                                                                            |
+| Dimension                     | OpenAI Codex Official Facts                                                                                                                           | Claude Code Official Facts                                                                                                          | Design Implications for Thoth                                                                                                                                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Control plane                 | Codex provides its own cloud/web/app/automation host surfaces, and also has API primitives that can support asynchronous execution                    | Claude Code provides local/remote/web/CI host surfaces and an agentic tool loop                                                     | Both can serve as hosts, but neither is equivalent to `.thoth`'s repo-native authority                                                                                                                                      |
+| Long-running background tasks | OpenAI has API `background + webhook/polling` primitives on one side, while Codex automations run tasks in a background worktree on the other         | Claude Code Agent SDK provides long-lived sessions, a persistent shell, `Monitor`, and session storage                              | If Thoth connects to the OpenAI API, the background behaves more like an external job system; if it runs on Claude, it can make deeper use of the host's persistent sessions, but authority should still reside in `.thoth` |
+| Subagents                     | Codex has subagents and concepts documentation, emphasizing task decomposition and specialization                                                     | Claude Code has sub-agents, and the official documentation explicitly distinguishes foreground/background subagents                 | Both support subtasks/subagents, but neither should be treated as authority                                                                                                                                                 |
+| Hooks                         | The current Codex hooks page no longer carries the `Experimental` label, but still requires a feature flag, and its support matrix is highly volatile | Claude hooks already have a rich event model, structured JSON, and session/subagent/tool lifecycle events                           | Claude hooks are more worth relying on in the short to medium term; Codex hooks can be integrated but should not bear durability or authority                                                                               |
+| Shell / Monitor               | Official Codex materials place greater emphasis on CLI shell interaction and approval modes, without an official durable monitor substrate            | The official Claude Agent SDK explicitly provides a persistent shell and a `Monitor` tool for observing long-running bash processes | Long-running monitoring should preferentially use the Claude host surface; Codex is better suited as an interactive worker and supplementary execution surface                                                              |
+| Web interaction surface       | Codex has a cloud/web product surface                                                                                                                 | Claude Code on the web is currently a `research preview`                                                                            | Both have web surfaces, but both belong to a highly volatile product layer                                                                                                                                                  |
+| Local/Remote environments     | Codex publicly presents the concept of local environments, emphasizing proximity to a real local environment                                          | Claude Code provides remote control and integration with the terminal/browser                                                       | Both are narrowing the distance between the agent and the real development environment, but authority should still be placed in the repository                                                                              |
+| Automation                    | The Codex app has automations                                                                                                                         | Claude Code has a GitHub Actions path                                                                                               | Both can serve as automation execution surfaces, but neither should directly replace project-state governance                                                                                                               |
+| Authority                     | OpenAI API background/webhook does not provide a repo ledger                                                                                          | Claude Code host capabilities likewise do not provide a repo-native ledger                                                          | `.thoth` should remain the project-level authority layer                                                                                                                                                                    |
+| Volatility of facts           | The Codex product surface has been changing rapidly recently, with hooks being even more volatile                                                     | Claude web/remote/hooks/GitHub Actions are likewise highly volatile                                                                 | A freshness policy must be enforced; old summaries cannot be trusted on their own                                                                                                                                           |
 
 ## Main Conclusions
 
 ### 1. OpenAI API primitives and host products are separate layers
 
-- `Background mode` / `Webhooks` 是 API primitive
-- `Codex cloud/web/subagents/hooks/automations/local environments` 是产品宿主层
+- `Background mode` / `Webhooks` are API primitives
+- `Codex cloud/web/subagents/hooks/automations/local environments` are product host surfaces
 
 ### 2. Claude Code is a stronger live-session host, not a durable truth layer
 
-- Claude Code 的宿主扩展点很强，特别是 hooks/sub-agents/remote 以及 Agent SDK 的 session/storage/monitor
-- 但项目级 durable truth 仍然应该由 Thoth 自己维护
+- Claude Code has very strong host extension points, especially hooks/sub-agents/remote and the Agent SDK's session/storage/monitor
+- But project-level durable truth should still be maintained by Thoth itself
 
 ### 3. Thoth should treat both ecosystems as host/execution surfaces
 
-更稳妥的心智模型是：
+The safer mental model is:
 
 - OpenAI Codex: worker / execution surface / optional hosted workflow surface / external async primitive bridge
 - Claude Code: current host shell / monitor / session surface / execution surface
@@ -49,6 +49,6 @@
 
 ## Guardrails
 
-- 不允许写成“Codex 或 Claude Code 已经天然提供 `.thoth` 所需全部 runtime contract”
-- 不允许写成“某平台当前 preview 行为是长期稳定承诺”
-- 一切具体能力与限制都要回 `platform-index.md` 查 freshness，再决定是否 live-check
+- Do not write that “Codex or Claude Code already natively provides the entire runtime contract required by `.thoth`.”
+- Do not write that “a platform's current preview behavior is a long-term stable commitment.”
+- For every specific capability and limitation, check freshness in `platform-index.md` before deciding whether a live check is needed.

@@ -2,514 +2,514 @@
 
 ## Status
 
-1. 日期：`2026-06-29`
-2. 性质：全新版本 Thoth 的 MVP 用户视角使用文档
-3. 范围：只描述用户在桌面 app、手机 app、TUI、CLI、relay、Claude、Codex、ACP 入口中看到什么、输入什么、点击什么、得到什么结果
-4. 边界：不解释架构原因，不写代码、工程接口、目录、数据结构、对象类型、适配层或参考项目文件路径
-5. 原始归档：`.agent-os/designs/thoth-migration-architecture-20260625.md`
+1. Date: `2026-06-29`
+2. Nature: User-perspective usage document for the entirely new version of Thoth's MVP
+3. Scope: Describes only what users see, enter, click, and receive in the desktop app, mobile app, TUI, CLI, relay, Claude, Codex, and ACP entry points
+4. Boundary: Does not explain architectural reasons, and does not describe code, engineering interfaces, directories, data structures, object types, adapter layers, or reference-project file paths
+5. Original archive: `.agent-os/designs/thoth-migration-architecture-20260625.md`
 
-## 1. 第一次打开桌面 app
+## 1. Opening the desktop app for the first time
 
-1. 用户第一次打开桌面 app。
-2. 应用展示一个简洁的全局 home。
-3. 全局 home 里能看到：
-   - 当前本机 Thoth 服务状态
-   - 已添加的 workspace 列表
-   - 全局 chat 输入框
-   - provider 配置状态
-   - 待用户处理的卡片数量
-4. 如果本机 Thoth 服务没有运行，桌面 app 自动检测并启动。
-5. 如果 provider 尚未配置，应用进入 setup wizard。
-6. setup wizard 只要求用户完成必要配置，不把 provider 内部差异摊给用户。
-7. 完成设置后，用户回到全局 home。
+1. The user opens the desktop app for the first time.
+2. The app displays a concise global home.
+3. The global home shows:
+   - the current local Thoth service status
+   - the list of added workspaces
+   - a global chat input box
+   - the provider configuration status
+   - the number of cards awaiting user action
+4. If the local Thoth service is not running, the desktop app automatically detects and starts it.
+5. If no provider has been configured, the app enters the setup wizard.
+6. The setup wizard asks the user to complete only the necessary configuration and does not expose internal provider differences.
+7. After setup is complete, the user returns to the global home.
 
-## 2. 添加 workspace
+## 2. Adding a workspace
 
-1. 用户点击添加 workspace。
-2. 应用打开文件夹选择。
-3. 用户选择一个本地项目目录。
-4. Thoth 显示确认卡：
-   - workspace 名称
-   - 本地路径
-   - 当前 git 分支
-   - 是否存在未提交改动
-   - 将用于执行任务的默认策略
-5. 用户确认后，该目录出现在 workspace 列表。
-6. 如果目录已有未提交改动，Thoth 不阻止添加，但会标记该 workspace 有 dirty state。
-7. 添加完成后，用户可以进入该 workspace 页面。
+1. The user clicks Add workspace.
+2. The app opens a folder picker.
+3. The user selects a local project directory.
+4. Thoth displays a confirmation card containing:
+   - the workspace name
+   - the local path
+   - the current git branch
+   - whether there are uncommitted changes
+   - the default policy to be used for task execution
+5. After the user confirms, the directory appears in the workspace list.
+6. If the directory already has uncommitted changes, Thoth does not prevent it from being added, but marks the workspace as having dirty state.
+7. After the workspace is added, the user can enter its workspace page.
 
-## 3. 桌面 app 的全局 home / global chat
+## 3. The desktop app's global home / global chat
 
-1. 全局 home 是跨 workspace 的入口。
-2. 用户可以在 global chat 里和 Thoth 交流。
-3. global chat 可用于：
-   - 询问总体状态
-   - 询问多个 workspace 的进展
-   - 记录跨项目想法
-   - 直接提问并获得回答
-   - 通过显式 `@workspace` 给某个 workspace 派发任务
-   - 在 provider-backed 上下文判断高置信时自然对应最近讨论过的 workspace
-4. global chat 不要求用户每次都显式 `@workspace`。
-5. Thoth 会通过已配置 provider 根据最近对话、活跃项目、用户习惯、workspace 状态和历史任务判断用户可能指的是哪个 workspace。
-6. 如果只有一个高置信候选，Thoth 可以自然绑定该 workspace。
-7. 如果有多个候选或置信度不足，Thoth 用一张简短卡片让用户选择。
-8. 在低置信时，Thoth 不把全局意图擅自写入某个 workspace。
+1. The global home is the cross-workspace entry point.
+2. The user can communicate with Thoth in global chat.
+3. Global chat can be used to:
+   - ask about overall status
+   - ask about progress across multiple workspaces
+   - record cross-project ideas
+   - ask a direct question and receive an answer
+   - dispatch a task to a specific workspace through an explicit `@workspace`
+   - naturally resolve to the workspace discussed most recently when provider-backed context makes that judgment with high confidence
+4. Global chat does not require the user to explicitly enter `@workspace` every time.
+5. Based on recent conversation, active projects, user habits, workspace status, and historical tasks, Thoth uses the configured provider to determine which workspace the user may be referring to.
+6. If there is only one high-confidence candidate, Thoth can naturally bind the conversation to that workspace.
+7. If there are multiple candidates or confidence is insufficient, Thoth uses a short card to let the user choose.
+8. When confidence is low, Thoth does not arbitrarily write the global intent into a workspace.
 
-## 4. 显式或自然绑定 workspace
+## 4. Explicitly or naturally binding a workspace
 
-1. 用户可以显式输入：
-
-   ```text
-   @my-app 帮我检查登录流程最近的改动有没有破坏移动端体验
-   ```
-
-2. Thoth 识别出 `@my-app` 是目标 workspace。
-3. Thoth 把这条输入绑定到该 workspace。
-4. 用户也可以说：
+1. The user can explicitly enter:
 
    ```text
-   昨天说的那个登录项目怎么样了？
+   @my-app Help me check whether the recent changes to the login flow have broken the mobile experience.
    ```
 
-5. 如果 provider-backed 上下文判断能高置信对应到唯一 workspace，Thoth 就直接回答或展示该 workspace 的状态。
-6. 如果 provider-backed 上下文判断不能确定，Thoth 会问：
-   - 你是指 `my-app`，还是 `admin-console`？
-7. 绑定 workspace 后，用户在 composer 中选择 `Quick` 或 `Loop`。
-8. 如果选择 `Loop`，Thoth 创建任务草稿，并进入澄清与合同冻结流程。
-9. 用户在 global chat 中也能继续完成该任务的澄清卡和确认卡。
-10. 任务进入执行后，它会出现在对应 workspace 的任务列表中，也会在 global home 聚合显示。
-
-## 5. 不确定 workspace 时的全局对话行为
-
-1. 用户在 global chat 里直接说：
+2. Thoth recognizes `@my-app` as the target workspace.
+3. Thoth binds this input to that workspace.
+4. The user can also say:
 
    ```text
-   帮我把最近这些想法整理成下一步计划
+   How is that login project we discussed yesterday going?
    ```
 
-2. 如果是否需要绑定 workspace 本身不明确，Thoth 通过 provider-backed 上下文判断来处理。
-3. 如果 provider-backed 判断认为它只是全局想法整理，Thoth 直接作为全局讨论处理。
-4. 如果 provider-backed 判断认为它需要落到某个 workspace，但没有高置信候选，Thoth 只问一个关键问题：
-   - 这个计划要落到哪个 workspace？
-5. 在用户明确选择或 Thoth 高置信解析前，不创建 workspace 正式任务。
-6. 这样既保留秘书式上下文理解，也避免把全局想法误派到错误项目。
+5. If provider-backed context can confidently resolve this to a unique workspace, Thoth answers directly or displays that workspace's status.
+6. If provider-backed context cannot determine the workspace, Thoth asks:
+   - Do you mean `my-app` or `admin-console`?
+7. After the workspace is bound, the user selects `Quick` or `Loop` in the composer.
+8. If the user selects `Loop`, Thoth creates a task draft and enters the clarification and contract-freezing process.
+9. The user can also continue completing clarification cards and confirmation cards for the task in global chat.
+10. After the task enters execution, it appears in the task list of the corresponding workspace and is also shown in the global home aggregation.
 
-## 6. Workspace 页面
+## 5. Global conversation behavior when the workspace is uncertain
 
-1. 用户点击某个 workspace。
-2. 页面展示该 workspace 的工作区视图。
-3. 默认区域包括：
+1. The user says directly in global chat:
+
+   ```text
+   Help me organize these recent ideas into a plan for what to do next.
+   ```
+
+2. If it is itself unclear whether a workspace needs to be bound, Thoth handles the situation through provider-backed context judgment.
+3. If the provider-backed judgment determines that this is only global idea organization, Thoth handles it as a global discussion directly.
+4. If the provider-backed judgment determines that it must land in a workspace but there is no high-confidence candidate, Thoth asks only one key question:
+   - Which workspace should this plan be applied to?
+5. No formal workspace task is created until the user makes an explicit selection or Thoth reaches a high-confidence resolution.
+6. This preserves secretary-like contextual understanding while avoiding dispatching a global idea to the wrong project.
+
+## 6. Workspace page
+
+1. The user clicks a workspace.
+2. The page displays the workspace view for that workspace.
+3. The default areas include:
    - workspace chat
-   - 当前任务队列
-   - 正在运行的任务
-   - 待确认卡片
-   - 最近报告
-   - provider 健康状态
-4. workspace chat 的输入天然绑定当前 workspace。
-5. 用户在 workspace chat 中输入需求时，不需要再 `@workspace`。
-6. workspace 页面不展示全局其他项目的细节，除非用户返回全局 home。
+   - the current task queue
+   - running tasks
+   - cards awaiting confirmation
+   - recent reports
+   - provider health status
+4. Input in workspace chat is naturally bound to the current workspace.
+5. When entering a request in workspace chat, the user does not need to enter `@workspace` again.
+6. The workspace page does not display details of other global projects unless the user returns to the global home.
 
-## 7. 用户输入自然语言需求
+## 7. The user enters a natural-language request
 
-1. 用户可以一口气输入背景、目标、顾虑、限制和期望。
-2. 示例：
+1. The user can enter the context, goal, concerns, constraints, and expectations all at once.
+2. Example:
 
    ```text
-   我想把设置页里的账号安全区域重新整理一下。
-   现在入口太散，用户找修改密码和二步验证很麻烦。
-   但不要大改整个设置页，最好只动安全相关区域。
-   做完后要确认桌面和手机宽度下都不崩。
+   I want to reorganize the account security area on the settings page.
+   The current entry points are too scattered, and it is difficult for users to find where to change their password and configure two-factor authentication.
+   But do not overhaul the entire settings page; ideally, change only the security-related area.
+   Afterward, confirm that nothing breaks at desktop and mobile widths.
    ```
 
-3. 用户不需要提前写成固定模板。
-4. 用户不需要指定内部角色。
-5. 用户不需要选择模型或执行 harness。
-6. 用户在输入框附近看到五个 composer 控件：
+3. The user does not need to write the request in a fixed template in advance.
+4. The user does not need to specify internal roles.
+5. The user does not need to choose a model or execution harness.
+6. The user sees five composer controls near the input box:
    - `+`
    - Provider
    - Mode
    - Clarify
    - Loop
-7. `+` 在 MVP 只支持添加图片和上传文件，单个附件必须小于 `10MB`。
-8. 不设置单独 Scope 按钮；用户通过 `@workspace`、`@file` 或其他 `@` 引用表达作用域。
-9. Provider 控件打开 provider/runtime 设置，包括 provider、model id、thinking strength、permission mode 和 fast mode。
-10. Mode 只有两种：
+7. In the MVP, `+` supports only adding images and uploading files; each individual attachment must be smaller than `10MB`.
+8. There is no separate Scope button; the user expresses scope through `@workspace`, `@file`, or other `@` references.
+9. The Provider control opens provider/runtime settings, including provider, model id, thinking strength, permission mode, and fast mode.
+10. There are only two Modes:
 
-- `Quick`: 回答和快速动作，不进入合同冻结、Plan+Exec、Review 或 Loop。
-- `Loop`: 正式任务，进入澄清、合同冻结、异步执行、审查和 loop。
+- `Quick`: Answers and quick actions; does not enter contract freeze, Plan+Exec, Review, or Loop.
+- `Loop`: Formal tasks; enters clarification, contract freeze, asynchronous execution, review, and the loop.
 
-11. Clarify 控制澄清强度，对 `Quick` 和 `Loop` 都生效。
-12. Loop 控制循环强度，只在 Mode = `Loop` 时生效；Mode = `Quick` 时灰色不可用。
-13. 如果用户不确定该选哪个模式，后续可以提供“推荐模式”能力；推荐必须来自 provider session，而不是本地规则猜测。
+11. Clarify controls clarification intensity and applies to both `Quick` and `Loop`.
+12. Loop controls loop intensity and applies only when Mode = `Loop`; it is grayed out and unavailable when Mode = `Quick`.
+13. If the user is unsure which mode to choose, a Recommended Mode capability may be provided later; the recommendation must come from a provider session, not from guesses based on local rules.
 
-## 8. 两种任务模式的体验
+## 8. Experience of the two task modes
 
-1. `Quick`：
-   - 包含问答和快速动作。
-   - 不进入合同冻结、Plan+Exec 或 Review。
-   - 不进入正式 task loop。
-   - 不展示合同冻结卡。
-   - 可以回答 `hi`、解释状态、总结报告、生成 commit message、做 git commit/git push、小范围编辑或一次性搜索。
-   - 如果需要写操作或高风险操作，权限由 Provider 中的 permission mode 和权限卡控制。
-   - 对 `hi` 这类轻量输入，用户感知等待不应超过 `10s`。
-   - 如果 Clarify 选择 `Don't Bother Me`，体验应尽量等价于裸 provider harness runtime。
-2. `Loop`：
-   - 用于正式任务。
-   - 创建 task draft。
-   - 进入 Clarify -> Contract Freeze -> Plan+Exec -> Review。
-   - Review 失败后按 Loop 强度进入下一轮。
-   - 适合从零实现功能、大范围重构、多阶段开发、高风险改动和需要验收证据的任务。
-3. 语义判断必须发生在 provider session 中。
-4. 本地 Thoth 只尊重用户显式选择、维护状态、执行权限检查和记录证据。
-5. 本地 Thoth 不用自然语言启发式规则偷偷把输入分类成任务模式。
-6. 如果用户选择的模式和 provider 判断明显冲突，Thoth 用卡片建议切换模式，并解释原因。
+1. `Quick`:
+   - Includes questions and answers and quick actions.
+   - Does not enter contract freeze, Plan+Exec, or Review.
+   - Does not enter the formal task loop.
+   - Does not display a contract-freeze card.
+   - Can answer `hi`, explain status, summarize reports, generate a commit message, perform git commit/git push, make a small-scope edit, or perform a one-time search.
+   - If a write operation or high-risk operation is needed, permissions are governed by the Provider's permission mode and permission cards.
+   - For lightweight input such as `hi`, perceived user wait should not exceed `10s`.
+   - If Clarify is set to `Don't Bother Me`, the experience should be as close as possible to a bare provider harness runtime.
+2. `Loop`:
+   - Is used for formal tasks.
+   - Creates a task draft.
+   - Enters Clarify -> Contract Freeze -> Plan+Exec -> Review.
+   - After Review fails, enters the next round according to Loop intensity.
+   - Is suitable for implementing features from scratch, broad refactoring, multi-stage development, high-risk changes, and tasks requiring acceptance evidence.
+3. Semantic judgment must occur within the provider session.
+4. Local Thoth only respects the user's explicit selection, maintains state, performs permission checks, and records evidence.
+5. Local Thoth does not secretly classify input into task modes using natural-language heuristic rules.
+6. If the mode selected by the user is clearly inconsistent with the provider's judgment, Thoth uses a card to suggest switching modes and explains why.
 
-## 9. Quick 的典型体验
+## 9. Typical `Quick` experience
 
-1. 用户把 Mode 设为 `Quick`，Clarify 设为 `Don't Bother Me`，然后输入：
+1. The user sets Mode to `Quick`, sets Clarify to `Don't Bother Me`, and then enters:
 
    ```text
    hi
    ```
 
-2. Thoth 直接把输入交给 provider harness runtime。
-3. 用户看到 provider 的输出实时流式出现。
-4. Thoth 不创建任务、不展示澄清卡、不展示合同冻结卡、不进入 Review。
-5. 这个路径的体验应和 Paseo 式裸 provider session 基本一致。
-6. 用户输入：
+2. Thoth passes the input directly to the provider harness runtime.
+3. The user sees the provider's output appear in real-time streaming.
+4. Thoth does not create a task, display a clarification card, display a contract-freeze card, or enter Review.
+5. This path should feel essentially the same as a Paseo-style bare provider session.
+6. The user enters:
 
    ```text
-   帮我整理一下这周的周报
+   Help me organize this week's weekly report.
    ```
 
-7. 如果 Clarify 不是 `Don't Bother Me`，Thoth 可以先用 Clarify provider session 问一个关键问题。
-8. 如果 Thoth 能找到足够来源，直接整理并输出周报、来源和未覆盖事项。
-9. 如果缺少关键来源，只问一个问题，例如“这周周报以哪个 workspace 为主？”。
-10. 用户输入：
+7. If Clarify is not `Don't Bother Me`, Thoth may first use a Clarify provider session to ask one key question.
+8. If Thoth can find sufficient sources, it directly organizes and outputs the weekly report, sources, and uncovered items.
+9. If a key source is missing, it asks only one question, such as “Which workspace should be the primary basis for this week's report?”
+10. The user enters:
 
 ```text
-帮我去网上搜一下关于某个技术方向的最新新闻
+Please search online for the latest news about a certain technical direction.
 ```
 
-11. Thoth 直接搜索、引用来源、标明日期、给出摘要和不确定性，不创建正式任务。
-12. 用户输入：
+11. Thoth searches directly, cites sources, indicates dates, and provides a summary and uncertainties without creating a formal task.
+12. The user enters:
 
 ```text
-帮我 git push 一下
+Please run git push for me.
 ```
 
-13. Thoth 先检查当前 workspace、branch、remote、dirty state、待 push commit 和目标远端。
-14. 如果不是 full access / 信任模式，Thoth 弹出权限卡请求批准。
-15. 如果是 full access / 信任模式，Thoth 直接执行，但仍记录检查结果和 push 证据。
-16. 用户输入：
+13. Thoth first checks the current workspace, branch, remote, dirty state, commits awaiting push, and target remote.
+14. If the mode is not full access / trusted mode, Thoth displays a permission card requesting approval.
+15. If the mode is full access / trusted mode, Thoth executes directly while still recording the check results and push evidence.
+16. The user enters:
 
 ```text
-把这个小文案改顺一点
+Please smooth out the wording of this small piece of copy.
 ```
 
-17. Thoth 可以做小范围编辑并展示 diff 或修改摘要，不进入正式任务循环。
-18. 如果短动作失败原因变复杂，Thoth 不假装还在忙，而是建议切换为 `Loop`。
+17. Thoth can make a small-scope edit and display a diff or modification summary without entering the formal task loop.
+18. If the cause of a short action's failure becomes complicated, Thoth does not pretend that it is still working; it suggests switching to `Loop`.
 
-## 10. 默认澄清体验
+## 10. Default clarification experience
 
-1. 默认 Clarify 设置为 `auto`。
-2. Thoth 不会把所有可能问题一次性倾倒给用户。
-3. Thoth 会先自己整理：
-   - 目标
-   - 不做什么
-   - 约束
-   - 验收方式
-   - 风险
-   - 需要用户拍板的点
-4. 然后展示一张或多张澄清卡。
-5. 每张卡只包含少量关键问题。
-6. 问题必须是会影响执行或验收的问题。
-7. 能由 Thoth 自己从 workspace 调查出来的信息，不要求用户回答。
-8. 用户可以逐项选择、输入补充，或要求 Thoth 解释为什么需要问。
-9. `Quick` 不进入合同冻结流程，但 Clarify 仍然影响它是否先问一个必要问题。
-10. 澄清卡的目标不是穷举边界，而是让 Thoth 提出少量真正影响方向、风险或验收的黄金问题。
-11. Clarify 选项：
+1. The default Clarify setting is `auto`.
+2. Thoth does not dump every possible question on the user at once.
+3. Thoth first organizes on its own:
+   - the goal
+   - what not to do
+   - constraints
+   - the acceptance method
+   - risks
+   - points requiring the user's decision
+4. It then displays one or more clarification cards.
+5. Each card contains only a small number of key questions.
+6. Questions must concern matters that affect execution or acceptance.
+7. Thoth does not ask the user for information it can investigate from the workspace on its own.
+8. The user can make selections item by item, enter additional information, or ask Thoth to explain why a question is needed.
+9. `Quick` does not enter the contract-freeze process, but Clarify still affects whether it first asks one necessary question.
+10. The goal of clarification cards is not to enumerate every boundary, but to have Thoth ask a small number of golden questions that truly affect direction, risk, or acceptance.
+11. Clarify options:
 
-- `auto`: 由 provider-backed session 根据输入、workspace、风险和用户历史偏好选择澄清力度。
-- `Don't Bother Me`: 不主动追问；技术细节由 agent 自行判断并记录假设；遇到必须由用户拍板的高影响分叉时必须停下汇报。
-- `light`: 少问，只问会明显改变方向、权限或验收的问题。
-- `Balanced`: 平衡模式，问少数黄金问题。
-- `deep`: 深度澄清，适合高成本、高风险、验收复杂或用户想先设计清楚的任务。
+- `auto`: A provider-backed session selects the clarification intensity based on the input, workspace, risk, and the user's historical preferences.
+- `Don't Bother Me`: Do not ask follow-up questions proactively; the agent determines technical details independently and records assumptions; when it encounters a high-impact fork that must be decided by the user, it must stop and report.
+- `light`: Ask few questions, limited to those that would clearly change direction, permissions, or acceptance.
+- `Balanced`: A balanced mode that asks a small number of golden questions.
+- `deep`: In-depth clarification, suitable for high-cost, high-risk, acceptance-complex, or design-first tasks.
 
-12. Clarify 对 `Quick` 和 `Loop` 都生效。
-13. Clarify 只影响 Thoth 如何组织 provider session，不是模型或 thinking strength 选择。
-14. Clarify provider session 的权限是只读。
-15. Clarify 可以读取文件、查看 git 状态、搜索代码、查看日志、联网查资料和整理资料。
-16. Clarify 不能修改文件、安装依赖、提交代码、删除文件或启动会改变 workspace 的动作。
-17. Clarify 中途的用户讨论、关键回答、agent 假设和用户决策点都会被记录。
-18. 最新 Loop 1/2 口径见 `NTH-CD-033` 和 `NTH-CD-034`：Clarify 不主动提供默认推荐，不问目标降级式兜底问题，问题卡使用标题、2-4 个行为树分支选择和 note 回答；`thoth.clarify` 规则住在标准 `SKILL.md` 中，普通 packet 不重复 Skill 规则。
-19. 对 `Loop`，这些记录会被整理成一份执行前 handoff packet，后续 Plan+Exec 一次性读取它。
+12. Clarify applies to both `Quick` and `Loop`.
+13. Clarify affects only how Thoth organizes the provider session, not model or thinking-strength selection.
+14. The Clarify provider session has read-only permissions.
+15. Clarify can read files, inspect git status, search code, inspect logs, browse online for information, and organize information.
+16. Clarify cannot modify files, install dependencies, commit code, delete files, or start actions that would change the workspace.
+17. User discussion during Clarify, key answers, agent assumptions, and user decision points are all recorded.
+18. The latest Loop 1/2 definition is in `NTH-CD-033` and `NTH-CD-034`: Clarify does not proactively provide a default recommendation or ask goal-degrading fallback questions; question cards use a title, 2-4 behavior-tree branch choices, and a note response; the `thoth.clarify` rules live in the standard `SKILL.md`, and ordinary packets do not repeat the Skill rules.
+19. For `Loop`, these records are organized into an execution-preparation handoff packet, which Plan+Exec reads once afterward.
 
-## 11. 合同冻结卡
+## 11. Contract-freeze card
 
-1. 当 Clarify provider session 给出足够清楚的任务合同草案时，Thoth 展示合同冻结卡。
-2. 合同冻结卡是正式任务进入执行前的必经确认。
-3. 合同冻结卡不要求用户填完整表单。
-4. 它只确认目标、边界、验收、风险和关键默认策略。
-5. 卡片包含：
-   - 我理解的目标
-   - 明确不做的内容
-   - 关键约束
-   - 验收方式
-   - 主要风险
-   - Thoth 将默认采用的处理方式
-   - 是否存在人工验收
-6. 用户可以点击确认。
-7. 用户也可以点击修改，让 Thoth 回到澄清。
-8. 用户确认后，任务草稿变成就绪任务。
-9. 就绪任务进入队列，等待执行。
-10. 用户确认合同后，Thoth 不再把普通澄清问题反复推给用户。
-11. 如果后续 provider 在 Plan+Exec 中再次提出澄清类问题，Thoth 默认按合同和推荐首选项自动回答，并在任务记录里标注。
-12. 如果后续 provider 请求高风险权限，Thoth 仍然展示权限卡，不能用自动回答绕过。
+1. When the Clarify provider session produces a sufficiently clear task-contract draft, Thoth displays a contract-freeze card.
+2. The contract-freeze card is a mandatory confirmation before a formal task enters execution.
+3. The contract-freeze card does not require the user to complete a full form.
+4. It confirms only the goal, boundaries, acceptance, risks, and key default policies.
+5. The card contains:
+   - the goal as understood by Thoth
+   - what is explicitly not to be done
+   - key constraints
+   - the acceptance method
+   - major risks
+   - the handling approach Thoth will use by default
+   - whether human acceptance is involved
+6. The user can click Confirm.
+7. The user can also click Edit to have Thoth return to clarification.
+8. After the user confirms, the task draft becomes a ready task.
+9. The ready task enters the queue and waits for execution.
+10. After the user confirms the contract, Thoth no longer repeatedly pushes ordinary clarification questions to the user.
+11. If the provider later raises another clarification-type question during Plan+Exec, Thoth answers it automatically by default according to the contract and recommended preferences, and marks this in the task record.
+12. If the provider later requests high-risk permission, Thoth still displays a permission card and cannot bypass it with an automatic answer.
 
-## 12. 任务进入异步执行
+## 12. The task enters asynchronous execution
 
-1. 用户确认合同冻结卡后，不需要盯着任务。
-2. Thoth 将任务放入该 workspace 的执行队列。
-3. 如果当前没有正在写 workspace 的执行任务，Thoth 开始执行。
-4. 如果已有写执行任务在运行，新任务排队。
-5. 进入执行后，用户能实时看到 provider 的输出、工具事件、计划进度、执行进度和权限请求。
-6. Plan 和 Execute 对用户表现为同一个连续执行过程。
-7. 如果 provider 支持原生 plan mode，用户看到 provider 自己的 plan mode 流程，而不是 Thoth 自己伪造的计划器。
-8. 用户可以关闭窗口。
-9. 用户可以去手机端查看进展。
-10. 用户可以继续在同一个 workspace 澄清下一个任务。
-11. 用户可以随时打开任务详情查看当前状态。
-12. Loop 强度只在 Mode = `Loop` 时生效；Mode = `Quick` 时显示为灰色不可用。
-13. Loop 选项：
+1. After confirming the contract-freeze card, the user does not need to watch the task.
+2. Thoth places the task in the execution queue for that workspace.
+3. If no execution task is currently writing to the workspace, Thoth starts execution.
+4. If a write execution task is already running, the new task waits in the queue.
+5. Once execution begins, the user can see the provider's output, tool events, plan progress, execution progress, and permission requests in real time.
+6. Plan and Execute appear to the user as one continuous execution process.
+7. If the provider supports native plan mode, the user sees the provider's own plan-mode flow rather than a planner fabricated by Thoth.
+8. The user can close the window.
+9. The user can check progress on the mobile app.
+10. The user can continue clarifying the next task in the same workspace.
+11. The user can open task details at any time to view the current status.
+12. Loop intensity applies only when Mode = `Loop`; when Mode = `Quick`, it is displayed as grayed out and unavailable.
+13. Loop options:
 
-- `auto`: 由 provider-backed session 根据任务风险、失败模式和成本判断 loop 策略。
-- `One Plan, One Do`: 只做一次 Plan+Exec 和一次 Review，失败后直接阻塞并汇报。
-- `light`: 少量自动推进，更快阻塞并汇报，减少自动消耗。
-- `balanced`: 默认有限重试，要求每轮解决上一轮未解决的问题。
-- `Run Until Stopped`: 红色高消耗模式，会持续推进直到用户手动停止。
+- `auto`: A provider-backed session determines the loop strategy based on task risk, failure mode, and cost.
+- `One Plan, One Do`: Perform only one Plan+Exec and one Review; block and report directly if it fails.
+- `light`: Make a small amount of automatic progress, block and report sooner, and reduce automatic consumption.
+- `balanced`: The default limited-retry mode; each round must address the issues left unresolved by the previous round.
+- `Run Until Stopped`: A red, high-consumption mode that continues progressing until the user manually stops it.
 
-14. `Run Until Stopped` 不是无限放权；它仍受 provider availability、权限策略、安全硬停、资源上限和用户手动停止控制。
-15. 无论 loop 强度如何，每轮 loop 都必须说明上一轮没有解决什么，以及本轮如何针对该问题推进。
+14. `Run Until Stopped` is not unlimited authorization; it remains controlled by provider availability, permission policy, safety hard stops, resource limits, and manual user termination.
+15. Regardless of loop intensity, every loop round must explain what the previous round did not resolve and how the current round is advancing specifically against that issue.
 
-## 13. 任务列表和队列
+## 13. Task list and queue
 
-1. 每个 workspace 有自己的任务列表。
-2. 任务状态用人话展示，例如：
-   - 待你确认
-   - 排队中
-   - 正在处理
-   - 正在检查
-   - 需要你批准
-   - 未通过，等待决定
-   - 已完成
-3. 默认视图显示摘要：
-   - 任务标题
-   - 当前状态
-   - 下一步
-   - 是否需要用户处理
-   - 最近更新时间
-4. 用户可以展开任务详情。
-5. 展开后可看到：
-   - 阶段进展
-   - 关键证据
-   - diff 摘要
-   - 验收结果
-   - 日志入口
-   - 最终报告
-6. 用户可以手动调整队列顺序。
+1. Each workspace has its own task list.
+2. Task status is displayed in plain language, for example:
+   - Awaiting your confirmation
+   - Queued
+   - Processing
+   - Checking
+   - Your approval is needed
+   - Not passed; awaiting a decision
+   - Completed
+3. The default view displays a summary:
+   - task title
+   - current status
+   - next step
+   - whether user action is needed
+   - most recent update time
+4. The user can expand task details.
+5. After expansion, the user can see:
+   - phase progress
+   - key evidence
+   - diff summary
+   - acceptance result
+   - log entry point
+   - final report
+6. The user can manually adjust the queue order.
 
-## 14. 同 workspace 写执行串行、其他阶段可并行
+## 14. Write execution is serialized within a workspace; other stages can run in parallel
 
-1. 同一个 workspace 同一时间只允许一个会写入项目文件的执行任务运行。
-2. 这样避免多个任务同时修改同一项目导致冲突。
-3. 用户仍然可以同时：
-   - 继续澄清其他任务草稿
-   - 查看已有任务状态
-   - 阅读报告
-   - 回答权限卡
-   - 在 global chat 问状态
-4. 如果另一个任务排队中，用户可以调整优先级。
-5. 如果用户打开另一个 git worktree 作为独立目录，它在 Thoth 中被视作另一个 workspace。
+1. At any given time, only one execution task that can write project files may run in the same workspace.
+2. This avoids conflicts caused by multiple tasks modifying the same project simultaneously.
+3. The user can still simultaneously:
+   - continue clarifying other task drafts
+   - view existing task status
+   - read reports
+   - answer permission cards
+   - ask about status in global chat
+4. If another task is queued, the user can adjust its priority.
+5. If the user opens another git worktree as an independent directory, Thoth treats it as another workspace.
 
-## 15. 权限/批准卡片
+## 15. Permission / approval cards
 
-1. 低风险、workspace 内、边界清楚的读取、编辑和验证可以自动进行。
-2. 高风险操作必须打断并让用户确认。
-3. 需要确认的操作包括：
-   - 写出 workspace 外
-   - 删除或覆盖重要文件
-   - 大规模移动文件
-   - 安装依赖
-   - 联网发布
-   - 读取或写入密钥
+1. Low-risk, in-workspace, clearly bounded reads, edits, and verification can proceed automatically.
+2. High-risk operations must interrupt and ask the user to confirm.
+3. Operations requiring confirmation include:
+   - writing outside the workspace
+   - deleting or overwriting important files
+   - moving files at large scale
+   - installing dependencies
+   - publishing online
+   - reading or writing secrets
    - git push
-   - 长时间或高成本任务
-4. 权限卡片必须说明：
-   - Thoth 想做什么
-   - 为什么需要
-   - 影响范围
-   - 不批准会怎样
-5. 默认模式下，用户每次只对当前风险点拍板。
-6. MVP 不记住“永远允许”。
-7. 用户可以在 App 或 CLI 中开启 full access / 信任模式。
-8. 在 full access / 信任模式下，高风险操作不弹审批卡。
-9. 即使跳过审批，Thoth 仍然记录操作、范围、证据和结果。
-10. 如果用户关闭 full access，后续高风险操作恢复审批卡。
+   - long-running or high-cost tasks
+4. A permission card must explain:
+   - what Thoth wants to do
+   - why it is needed
+   - the scope of impact
+   - what will happen if it is not approved
+5. In the default mode, the user decides only on the current risk point each time.
+6. The MVP does not remember “always allow.”
+7. The user can enable full access / trusted mode in the App or CLI.
+8. In full access / trusted mode, high-risk operations do not display approval cards.
+9. Even when approval is skipped, Thoth still records the operation, scope, evidence, and result.
+10. If the user turns off full access, subsequent high-risk operations return to displaying approval cards.
 
-## 16. 检查通过后的自动 commit
+## 16. Automatic commit after checks pass
 
-1. 执行完成后，Thoth 进入检查阶段。
-2. 检查通过后，Thoth 默认自动 commit。
-3. commit 只包含 Thoth 为该任务生成的 diff。
-4. 正式任务的写执行默认在 Thoth-created branch 或 worktree 中进行。
-5. commit 发生在任务分支或任务 worktree 中。
-6. Thoth 不自动 push。
-7. git push 是高风险直接处理，需要审批或 full access / 信任模式。
-8. 如果 workspace 在任务开始前已有用户未提交改动，Thoth 会保留基线记录。
-9. 如果 Thoth 生成的 diff 与用户原有改动没有冲突，Thoth 只提交自己生成的部分。
-10. 如果出现同文件或同 hunk 冲突，Thoth 暂停并显示卡片，请用户决定怎么处理。
-11. 完成后，任务报告中显示 commit 摘要和验收结果。
+1. After execution finishes, Thoth enters the checking stage.
+2. After checks pass, Thoth automatically commits by default.
+3. The commit contains only the diff generated by Thoth for that task.
+4. Write execution for formal tasks takes place by default in a Thoth-created branch or worktree.
+5. The commit occurs in the task branch or task worktree.
+6. Thoth does not push automatically.
+7. git push is a high-risk operation that requires approval or full access / trusted mode.
+8. If the workspace already had the user's uncommitted changes before the task began, Thoth records the baseline.
+9. If the diff generated by Thoth does not conflict with the user's original changes, Thoth commits only the portion it generated.
+10. If a same-file or same-hunk conflict occurs, Thoth pauses and displays a card asking the user to decide how to handle it.
+11. After completion, the task report displays the commit summary and acceptance result.
 
-## 17. Review 失败后的有限轮自动修正与最终阻塞汇报
+## 17. Limited automatic correction after Review failure and final blocking report
 
-1. 检查发现问题时，不直接让审查者修改代码。
-2. 独立 Review 不只检查“有没有通过”，还会主动挑战本轮执行是否在解决正确的问题。
-3. 如果当前路线局部有进展但从根上错误，Review 会要求下一轮放弃该路线、重新规划或在必要时回到 Clarify；它不会为了保持连续性而继续堆小修。
-4. Thoth 把 Review 的方向性判断整理成下一轮 Plan+Exec 的工作方向：真正症结、应停止的动作、应改变的理解和下一步最高杠杆。
-5. 用户看到的是这一份可理解的审查结论和下一步，不需要管理 phase、round、失败计数、预算、receipt 或 manifest。
-6. daemon 在后台决定是否仍允许继续下一轮；它的循环强度和资源边界不改变 Review 的判断，也不要求 Review 为了节省一轮而放宽结论。
-7. 如果下一轮没有新的方向或方法变化，Thoth 不机械 retry。
-8. 如果 Review 判断证据不足，下一轮优先获得能改变结论的现实证据；如果判断方向错误，下一轮重新理解问题，而不是继续堆小修；如果判断实现质量是核心障碍，下一轮集中改变关键路径。
-9. 当 daemon 的控制边界不允许继续，或存在真实外部阻塞时，任务进入阻塞/等待状态。
-10. Thoth 向用户汇报：
+1. When checks find a problem, the reviewer does not modify the code directly.
+2. Independent Review does not merely check “whether it passed”; it also proactively challenges whether this round of execution is solving the right problem.
+3. If the current route is making local progress but is fundamentally wrong, Review requires the next round to abandon that route, replan, or return to Clarify when necessary; it does not continue piling on small fixes merely to preserve continuity.
+4. Thoth organizes Review's directional judgment into the working direction for the next Plan+Exec: the true crux, actions that should stop, understandings that should change, and the next highest-leverage step.
+5. The user sees this understandable review conclusion and next step, without needing to manage phases, rounds, failure counts, budgets, receipts, or manifests.
+6. The daemon decides in the background whether another round is still allowed; its loop intensity and resource boundaries do not change Review's judgment and do not require Review to relax its conclusion to save a round.
+7. If the next round has no new direction or methodological change, Thoth does not retry mechanically.
+8. If Review determines that the evidence is insufficient, the next round first obtains real-world evidence capable of changing the conclusion; if it determines that the direction is wrong, the next round re-understands the problem instead of continuing to pile on small fixes; if it determines that implementation quality is the core obstacle, the next round focuses on changing the critical path.
+9. When the daemon's control boundary does not allow continuation, or a genuine external blocker exists, the task enters a blocked/waiting state.
+10. Thoth reports to the user:
 
-- 目标是否部分完成
-- 未通过的具体原因
-- 已保留的 diff 和证据
-- 建议下一步
-- 是否需要用户继续授权
+- whether the goal was partially completed
+- the specific reason it did not pass
+- the retained diff and evidence
+- the recommended next step
+- whether the user needs to grant further authorization
 
-## 18. 没有自动验收器时的人工验收体验
+## 18. Manual acceptance experience when there is no automatic acceptance checker
 
-1. 有些任务无法用自动命令完整判断是否成功。
-2. 例如产品文案、视觉体验、策略设计、用户感受类任务。
-3. 这类任务仍然可以注册成正式任务。
-4. 合同冻结卡会明确标记人工验收项。
-5. 检查阶段会检查：
-   - 是否完成约定 artifact
-   - 是否遵守约束
-   - 是否提供足够说明和风险
-   - 是否需要用户最终确认
-6. 任务不会因为 AI 自评满意就自动宣告人工验收通过。
-7. 用户会看到人工验收卡。
-8. 用户可以选择通过、要求修改或终止。
+1. Some tasks cannot be fully judged as successful using automatic commands.
+2. Examples include product copy, visual experience, strategy design, and user-perception tasks.
+3. These tasks can still be registered as formal tasks.
+4. The contract-freeze card explicitly marks manual acceptance items.
+5. The checking stage checks:
+   - whether the agreed artifact was completed
+   - whether the constraints were followed
+   - whether sufficient explanation and risks were provided
+   - whether final user confirmation is needed
+6. A task is not automatically declared to have passed manual acceptance merely because the AI considers itself satisfied.
+7. The user sees a manual acceptance card.
+8. The user can choose to pass it, request changes, or terminate it.
 
-## 19. TUI 的单 workspace 使用体验
+## 19. Single-workspace TUI experience
 
-1. 用户在某个项目目录中启动 TUI。
-2. TUI 只面向当前 workspace。
-3. TUI 没有全局 home。
-4. 如果当前目录还不是 Thoth workspace，TUI 显示确认卡：
-   - 是否将当前目录添加为 workspace
-   - 当前路径
-   - 当前 git 状态
-5. 用户确认后进入该 workspace 控制台。
-6. TUI 中可以完成：
+1. The user starts the TUI in a project directory.
+2. The TUI is limited to the current workspace.
+3. The TUI has no global home.
+4. If the current directory is not yet a Thoth workspace, the TUI displays a confirmation card containing:
+   - whether to add the current directory as a workspace
+   - the current path
+   - the current git status
+5. After confirmation, the user enters the workspace console.
+6. The TUI supports:
    - workspace chat
-   - 发起 `Quick`
-   - 创建 `Loop` 任务
-   - 回答澄清卡
-   - 确认合同冻结卡
-   - 查看任务队列
-   - 查看执行进度
-   - 批准权限卡
-   - 阅读报告
-   - 查看 provider 健康状态
-7. TUI 的状态和桌面 app 中同一 workspace 的状态一致。
-8. 用户在 TUI 中不需要关心全局其他 workspace。
+   - starting `Quick`
+   - creating a `Loop` task
+   - answering clarification cards
+   - confirming contract-freeze cards
+   - viewing the task queue
+   - viewing execution progress
+   - approving permission cards
+   - reading reports
+   - viewing provider health status
+7. The TUI's state is consistent with the state of the same workspace in the desktop app.
+8. The user does not need to care about other global workspaces in the TUI.
 
-## 20. 手机 app 的远程同步体验
+## 20. Remote synchronization experience in the mobile app
 
-1. 用户在桌面 app 中打开配对入口。
-2. 桌面 app 显示二维码。
-3. 用户用手机 app 扫码。
-4. 配对成功后，手机端显示已连接的本机 Thoth 服务。
-5. 手机端可看到：
-   - workspace 列表
-   - 任务列表
-   - 当前状态
-   - 待确认卡片
-   - 最近报告
-6. 手机端可以对已有 workspace 发起 `Quick` 或 `Loop`。
-7. 手机端可以回答澄清问题。
-8. 手机端可以批准权限和决策卡。
-9. 手机端可以查看最终报告。
-10. 手机端不提供直接选择本机文件夹的能力。
-11. 手机端不做重型代码 diff 编辑。
-12. 手机端不承担完整 IDE 体验。
+1. The user opens the pairing entry point in the desktop app.
+2. The desktop app displays a QR code.
+3. The user scans the code with the mobile app.
+4. After pairing succeeds, the mobile side displays the connected local Thoth service.
+5. The mobile side can display:
+   - the workspace list
+   - the task list
+   - current status
+   - cards awaiting confirmation
+   - recent reports
+6. The mobile side can start `Quick` or `Loop` for an existing workspace.
+7. The mobile side can answer clarification questions.
+8. The mobile side can approve permissions and decision cards.
+9. The mobile side can view the final report.
+10. The mobile side does not provide the ability to select a local folder directly.
+11. The mobile side does not perform heavy code-diff editing.
+12. The mobile side does not provide a full IDE experience.
 
-## 21. 离线状态
+## 21. Offline state
 
-1. 如果手机端无法连接本机 Thoth 服务，显示 offline marker。
-2. 离线时手机端展示最近缓存的只读状态。
-3. 离线时用户不能发送新任务。
-4. 离线时用户不能批准权限卡。
-5. 离线时用户不能确认合同冻结卡。
-6. 重新连接后，手机端自动补齐历史。
-7. 补齐后，用户看到最新任务状态和待处理卡片。
+1. If the mobile side cannot connect to the local Thoth service, it displays an offline marker.
+2. While offline, the mobile side displays the most recently cached read-only state.
+3. While offline, the user cannot send new tasks.
+4. While offline, the user cannot approve permission cards.
+5. While offline, the user cannot confirm contract-freeze cards.
+6. After reconnecting, the mobile side automatically fills in the history.
+7. After synchronization, the user sees the latest task status and pending cards.
 
-## 22. CLI、Claude、Codex、ACP 入口
+## 22. CLI, Claude, Codex, and ACP entry points
 
-1. CLI 是高级入口，可用于当前 workspace 的状态、`Quick`、`Loop` 和 diagnostics。
-2. Claude 入口可以把用户消息交给同一 Thoth authority。
-3. Codex 入口可以把用户消息交给同一 Thoth authority。
-4. ACP 入口用于支持 ACP-compatible harness。
-5. 这些入口不拥有独立任务语义。
-6. 同一条 `Quick` 或 `Loop` 在这些入口、桌面 app、手机 app 和 TUI 中看到的是同一份状态。
-7. Relay 只负责远程加密连接和同步，不改变任务生命周期。
+1. The CLI is an advanced entry point for the current workspace's status, `Quick`, `Loop`, and diagnostics.
+2. The Claude entry point can pass user messages to the same Thoth authority.
+3. The Codex entry point can pass user messages to the same Thoth authority.
+4. The ACP entry point supports ACP-compatible harnesses.
+5. These entry points do not own independent task semantics.
+6. The same `Quick` or `Loop` has the same state in these entry points, the desktop app, the mobile app, and the TUI.
+7. Relay is responsible only for remote encrypted connections and synchronization; it does not change the task lifecycle.
 
-## 23. 最小 Quick 使用路径
+## 23. Minimal Quick usage path
 
-1. 用户打开桌面 app、手机 app、TUI、CLI、Claude、Codex 或 ACP 入口。
-2. 用户输入一个清晰短动作，例如：
+1. The user opens the desktop app, mobile app, TUI, CLI, Claude, Codex, or ACP entry point.
+2. The user enters a clear short action, for example:
 
    ```text
-   帮我 git commit 一下
+   Please run git commit for me.
    ```
 
-3. 用户在 composer 中选择 `Quick`；如果来自非桌面入口，则等价参数为 `quick`。
-4. 如果 Clarify 是 `Don't Bother Me`，Thoth 直接进入 provider harness runtime passthrough。
-5. 如果 Clarify 不是 `Don't Bother Me`，Thoth 先用只读 Clarify provider session 处理必要上下文。
-6. Thoth 做 workspace 和 git preflight。
-7. 如果需要审批且未启用 full access / 信任模式，Thoth 展示权限卡。
-8. 用户批准后，Thoth 执行操作。
-9. 如果启用 full access / 信任模式，Thoth 直接执行操作。
-10. 用户看到 provider 输出实时流式显示。
-11. Thoth 记录 timeline、证据和最终结果。
-12. 用户在任一入口看到同一结果。
+3. The user selects `Quick` in the composer; from a non-desktop entry point, the equivalent parameter is `quick`.
+4. If Clarify is `Don't Bother Me`, Thoth enters provider harness runtime passthrough directly.
+5. If Clarify is not `Don't Bother Me`, Thoth first uses a read-only Clarify provider session to handle necessary context.
+6. Thoth performs workspace and git preflight.
+7. If approval is needed and full access / trusted mode is not enabled, Thoth displays a permission card.
+8. After the user approves, Thoth performs the operation.
+9. If full access / trusted mode is enabled, Thoth performs the operation directly.
+10. The user sees the provider output displayed in real-time streaming.
+11. Thoth records the timeline, evidence, and final result.
+12. The user sees the same result from any entry point.
 
-## 24. 最小 Loop 使用路径
+## 24. Minimal Loop usage path
 
-1. 用户打开桌面 app。
-2. 用户完成 provider setup。
-3. 用户添加一个 workspace。
-4. 用户进入 workspace 页面。
-5. 用户把任务模式设为 `Loop`，然后输入一段自然语言需求。
-6. Thoth 按正式任务路径处理该输入。
-7. Thoth 创建任务草稿。
-8. Thoth 用均衡澄清卡询问关键问题。
-9. 用户回答。
-10. Thoth 展示合同冻结卡。
-11. 用户确认。
-12. 任务进入队列。
-13. Thoth 创建 Plan+Exec provider session，并把冻结合同和澄清 handoff packet 一次性喂给它。
-14. Provider 使用自己的 plan mode 完成计划和执行，输出实时流式显示。
-15. 如果 Plan+Exec 中出现普通澄清问题，Thoth 自动按合同或推荐首选项回答并记录。
-16. 如果 Plan+Exec 遇到高风险权限请求，Thoth 请求批准。
-17. 用户在桌面或手机端批准。
-18. Thoth 完成 Plan+Exec 后启动独立 Review session。
-19. Review 独立挑战当前路线；确认目标真正完成后才通过，若发现方向问题则给出下一步最高杠杆方向。
-20. Thoth 在任务分支或任务 worktree 中自动 commit 当前任务生成的 diff。
-21. Thoth 输出最终报告。
-22. 用户在桌面、手机或 TUI 中看到同一任务已完成。
+1. The user opens the desktop app.
+2. The user completes provider setup.
+3. The user adds a workspace.
+4. The user enters the workspace page.
+5. The user sets the task mode to `Loop` and enters a natural-language request.
+6. Thoth handles the input through the formal task path.
+7. Thoth creates a task draft.
+8. Thoth uses balanced clarification cards to ask key questions.
+9. The user answers.
+10. Thoth displays a contract-freeze card.
+11. The user confirms.
+12. The task enters the queue.
+13. Thoth creates a Plan+Exec provider session and feeds it the frozen contract and clarification handoff packet once.
+14. The Provider completes planning and execution using its own plan mode, with output displayed in real-time streaming.
+15. If an ordinary clarification question occurs during Plan+Exec, Thoth answers and records it automatically according to the contract or recommended preferences.
+16. If Plan+Exec encounters a high-risk permission request, Thoth requests approval.
+17. The user approves it on the desktop or mobile side.
+18. After Thoth completes Plan+Exec, it starts an independent Review session.
+19. Review independently challenges the current route; it passes only after confirming that the goal has genuinely been completed, and gives the next highest-leverage direction if it finds a direction problem.
+20. Thoth automatically commits the diff generated by the current task in the task branch or task worktree.
+21. Thoth outputs the final report.
+22. The user sees the same task completed in the desktop app, mobile app, or TUI.

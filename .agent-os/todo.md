@@ -206,6 +206,12 @@ None.
 - Related: `NTH-WS-005`, `NTH-CD-071`, `NTH-AC-024`, `NTH-TD-036`, `NTH-TD-044`, `NTH-EV-066`, `NTH-EV-067`, `NTH-EXP-064`
 - Verification: See `NTH-EV-067`. Source commit `30528b81`, workflow `30182942323`, Windows CLI/Desktop, hosted Relay, packaged Linux and publish passed; the fixed prerelease exposes exactly 26 desktop-only assets, and the checksum-verified downloaded AppImage passed the complete public API journey.
 
+23. `NTH-TD-046` `[verified]`: Establish one repository-local skill for exact-SHA Paseo-to-Thoth synchronization, evidence, and authorized publication.
+
+- Scope: keep one canonical skill source under `.agent-os/skills/sync-paseo-into-thoth`, expose it to repo-local Codex through a symlink, implement the five-stage workflow, and add deterministic range, boundary and provenance helpers plus formal root command entry points.
+- Related: `NTH-WS-001`, `NTH-WS-004`, `NTH-WS-006`, `NTH-CD-041`, `NTH-CD-060`, `NTH-CD-073`, `NTH-EV-069`
+- Verification: See `NTH-EV-069`. Skill validation, deterministic positive/negative fixture coverage, real-worktree boundary scanning, repository validation, format/diff hygiene and the complete Foundation gate passed with `565/565` tests. No Paseo range, product source, commit, push, tag, Release or deployment was changed.
+
 ## Abandoned
 
 1. `NTH-TD-013` `[abandoned]`: Deploy Thoth relay preview through Code4Agent feature workflow and validate a hosted `.seele.chat` relay URL.
