@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { AgentProvider, ProviderSnapshotEntry } from "@thoth/protocol/agent-types";
@@ -102,6 +102,21 @@ export function selectorOpenRefetchDecision(input: {
   return "refetch-stale";
 }
 
+export function loadingProvidersSnapshotRefreshKey(input: {
+  entries: ProviderSnapshotEntry[] | undefined;
+  scopeKey: string;
+}): string | null {
+  const loadingProviders =
+    input.entries
+      ?.filter((entry) => entry.enabled && entry.status === "loading")
+      .map((entry) => entry.provider)
+      .sort() ?? [];
+  if (loadingProviders.length === 0) {
+    return null;
+  }
+  return `${input.scopeKey}:${loadingProviders.join(",")}`;
+}
+
 interface UseProvidersSnapshotResult {
   entries: ProviderSnapshotEntry[] | undefined;
   isLoading: boolean;
@@ -131,6 +146,8 @@ export function useProvidersSnapshot(
   const supportsSnapshot = useHostFeature(serverId, "providersSnapshot");
 
   const queryKey = useMemo(() => providersSnapshotQueryKey(serverId, cwd), [cwd, serverId]);
+  const scopeKey = useMemo(() => queryKey.join("\u0000"), [queryKey]);
+  const lastLoadingRefreshKey = useRef<string | null>(null);
 
   const snapshotQuery = useQuery({
     queryKey,
@@ -172,6 +189,36 @@ export function useProvidersSnapshot(
       applyProvidersSnapshotUpdate({ serverId, queryClient, message });
     });
   }, [client, enabled, isConnected, queryClient, serverId, supportsSnapshot]);
+
+  useEffect(() => {
+    if (!enabled || !supportsSnapshot || !client || !isConnected || !serverId || isRefreshing) {
+      return;
+    }
+    const refreshKey = loadingProvidersSnapshotRefreshKey({
+      entries: snapshotQuery.data?.entries,
+      scopeKey,
+    });
+    if (!refreshKey) {
+      lastLoadingRefreshKey.current = null;
+      return;
+    }
+    if (lastLoadingRefreshKey.current === refreshKey) {
+      return;
+    }
+
+    lastLoadingRefreshKey.current = refreshKey;
+    void refreshSnapshot(undefined);
+  }, [
+    client,
+    enabled,
+    isConnected,
+    isRefreshing,
+    refreshSnapshot,
+    scopeKey,
+    serverId,
+    snapshotQuery.data?.entries,
+    supportsSnapshot,
+  ]);
 
   const refresh = useCallback(
     async (providers?: AgentProvider[]) => {
