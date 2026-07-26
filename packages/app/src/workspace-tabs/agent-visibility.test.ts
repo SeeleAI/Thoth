@@ -3,10 +3,11 @@ import type { Agent } from "@/projection/authority-model";
 import {
   buildWorkspaceTabSnapshot,
   deriveWorkspaceAgentVisibility,
-  shouldPruneWorkspaceAgentTab,
+  selectAuthorityBackedWorkspaceTabs,
   workspaceAgentVisibilityEqual,
 } from "@/workspace-tabs/agent-visibility";
 import { deriveProjectPlacementFromCwd } from "@/utils/project-placement";
+import type { WorkspaceTab } from "@/stores/workspace-tabs-store";
 
 function makeAgent(input: {
   id: string;
@@ -219,59 +220,84 @@ describe("workspace agent visibility", () => {
     expect(result.restorableAgentIds).toEqual(new Set<string>());
   });
 
-  it("prunes archived agent tabs so archiving on one client closes tabs on all clients", () => {
-    const activeAgentIds = new Set<string>();
+  it("exposes only current authority-backed entity tabs", () => {
+    const tabs: WorkspaceTab[] = [
+      { tabId: "agent_active", target: { kind: "agent", agentId: "active" }, createdAt: 1 },
+      {
+        tabId: "agent_historical",
+        target: { kind: "agent", agentId: "historical" },
+        createdAt: 2,
+      },
+      {
+        tabId: "agent_archived",
+        target: { kind: "agent", agentId: "archived" },
+        createdAt: 3,
+      },
+      { tabId: "agent_missing", target: { kind: "agent", agentId: "missing" }, createdAt: 4 },
+      {
+        tabId: "terminal_live",
+        target: { kind: "terminal", terminalId: "terminal-live" },
+        createdAt: 5,
+      },
+      {
+        tabId: "terminal_missing",
+        target: { kind: "terminal", terminalId: "terminal-missing" },
+        createdAt: 6,
+      },
+      {
+        tabId: "file_readme",
+        target: { kind: "file", path: "/repo/README.md" },
+        createdAt: 7,
+      },
+      { tabId: "draft_new", target: { kind: "draft", draftId: "new" }, createdAt: 8 },
+      {
+        tabId: "browser_docs",
+        target: { kind: "browser", browserId: "docs" },
+        createdAt: 9,
+      },
+      {
+        tabId: "setup_workspace",
+        target: { kind: "setup", workspaceId: "workspace-1" },
+        createdAt: 10,
+      },
+    ];
 
     expect(
-      shouldPruneWorkspaceAgentTab({
-        agentId: "archived-agent",
-        agentsHydrated: true,
-        activeAgentIds,
-      }),
-    ).toBe(true);
+      selectAuthorityBackedWorkspaceTabs({
+        tabs,
+        knownAgentIds: new Set(["active", "historical", "archived"]),
+        archivedAgentIds: new Set(["archived"]),
+        knownTerminalIds: new Set(["terminal-live"]),
+      }).map((tab) => tab.tabId),
+    ).toEqual([
+      "agent_active",
+      "agent_historical",
+      "terminal_live",
+      "file_readme",
+      "draft_new",
+      "browser_docs",
+      "setup_workspace",
+    ]);
   });
 
-  it("prunes pinned archived agent tabs because archive state is authoritative", () => {
-    expect(
-      shouldPruneWorkspaceAgentTab({
-        agentId: "archived-agent",
-        agentsHydrated: true,
-        activeAgentIds: new Set<string>(),
-      }),
-    ).toBe(true);
-  });
-
-  it("does not prune active agent tabs", () => {
-    const activeAgentIds = new Set(["active-agent"]);
+  it("returns the original tab array when every entity has current authority", () => {
+    const tabs: WorkspaceTab[] = [
+      { tabId: "agent_active", target: { kind: "agent", agentId: "active" }, createdAt: 1 },
+      {
+        tabId: "terminal_live",
+        target: { kind: "terminal", terminalId: "terminal-live" },
+        createdAt: 2,
+      },
+    ];
 
     expect(
-      shouldPruneWorkspaceAgentTab({
-        agentId: "active-agent",
-        agentsHydrated: true,
-        activeAgentIds,
+      selectAuthorityBackedWorkspaceTabs({
+        tabs,
+        knownAgentIds: new Set(["active"]),
+        archivedAgentIds: new Set(),
+        knownTerminalIds: new Set(["terminal-live"]),
       }),
-    ).toBe(false);
-  });
-
-  it("does not prune explicitly restored historical agent tabs", () => {
-    expect(
-      shouldPruneWorkspaceAgentTab({
-        agentId: "historical-agent",
-        agentsHydrated: true,
-        activeAgentIds: new Set<string>(),
-        restorableAgentIds: new Set(["historical-agent"]),
-      }),
-    ).toBe(false);
-  });
-
-  it("prunes agent tabs once agents are hydrated and the agent is missing from activeAgentIds", () => {
-    expect(
-      shouldPruneWorkspaceAgentTab({
-        agentId: "missing-agent",
-        agentsHydrated: true,
-        activeAgentIds: new Set<string>(),
-      }),
-    ).toBe(true);
+    ).toBe(tabs);
   });
 
   it("matches agents by workspaceId regardless of cwd", () => {

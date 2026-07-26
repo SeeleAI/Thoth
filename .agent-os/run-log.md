@@ -4187,3 +4187,48 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   failed before remote mutation because of a stale VS Code credential socket; the explicit repository-local
   isolated helper then completed the normal fast-forward. `NTH-EXP-062` preserves that operational trap, and the
   Release branch was not pushed again.
+
+## 2026-07-25 [Installed App stale Agent tab regression diagnosed]
+
+- The user supplied two installed-App screenshots where previously closed/archived sessions reappeared as tabs and
+  clicking close emitted `Unknown agent ... requestType=archive_agent_request code=handler_error`.
+- Source diagnosis found one shared class: persisted Workspace layout is rendered before current entity authority
+  reconciliation, while the missing-Agent close policy explicitly falls back to destructive archive. The daemon is
+  correct to reject the IDs; UI presentation state must not manufacture their authority.
+- Created `NTH-REQ-027`, `NTH-AC-023`, `NTH-TD-044` and WIP `NTH-EV-066`; the sole top next action is temporarily
+  `NTH-TD-044`. The final slice will authority-filter Agent/Terminal tabs, prune stale persistence and keep archive-
+  before-layout only for known active top-level Agents before returning to `NTH-TD-036`.
+
+## 2026-07-25 [Persisted entity tab regression locally closed]
+
+- Added one authority-backed Workspace tab selector before all pane/tab/action derivation. Persisted missing,
+  archived or cross-device-removed Agent tabs and stale Terminal tabs no longer render as actionable entities;
+  existing reconciliation removes them from layout persistence and restores surviving split-pane focus.
+- Unified close semantics through `executeCloseAgentTab` and authority-aware bulk classification. Missing,
+  archived and subagent Agent targets plus stale Terminals clean layout only; a current unarchived root Agent still
+  archives before cleanup, and cancel or a real archive failure retains the tab. Protocol and daemon semantics did
+  not change.
+- The initial red run failed `3/21` as expected. Focused tests passed `86/86`; complete App passed `2,591/2,591`;
+  Foundation, real `4,423`-module Web export, interaction `23.337s` and Provider Control `35.272s` passed.
+- The first shared gate exposed a stale inline-code static check after `113.948s`. `NTH-EXP-063` records the failure;
+  the guard now verifies the final action owner, consumer delegation, authority-backed presentation and action-time
+  bulk validation. The strengthened Plan/tab contract passed in `15.212s`, then the final fresh
+  `accept:refactor:fast` passed every phase in `138.424s`.
+- `NTH-TD-044` / `NTH-EV-066` are verified locally. Stage remains 4; source is `296,437` LOC and the independent
+  Cut B gap is `15,506`. The sole top next action returns to `NTH-TD-036`. No commit, push, Release, Relay or Paseo
+  mutation occurred.
+
+## 2026-07-26 [Persisted entity-tab fixed Beta publication started]
+
+- The user explicitly authorized committing and normally pushing the verified stale Agent/Terminal tab repair,
+  fast-forwarding the Release automation branch to the same source and replacing `v0.0.0-mvp-beta` through the
+  existing workflow. Recorded `NTH-CD-071`, `NTH-AC-024`, `NTH-TD-045` and WIP `NTH-EV-067`; the sole top next
+  action is temporarily `NTH-TD-045`, while `NTH-TD-036` remains doing with its `15,506`-LOC gap unchanged.
+- A fresh fetch found no remote drift: development remains `91eece5b`, Release remains `19856229` and `main`
+  remains `e74c6e0d`. The Release branch is an ancestor of the current development HEAD, and the repository-local
+  GitHub identity is `Royalvice`.
+- Next action: rerun the focused stale-tab tests, strengthened provider-plan/tab contract, format and diff gates,
+  then create one atomic source commit before any normal branch push or Release mutation.
+- Fresh pre-commit verification passed: focused stale-tab coverage passed `86/86`; the strengthened Provider
+  Plan/tab/desktop Release contract passed in `15.383s`; the Agent Project System validator, root format check and
+  `git diff --check` passed. The candidate is ready for its atomic source commit.

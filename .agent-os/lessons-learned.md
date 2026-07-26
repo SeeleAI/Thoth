@@ -1634,3 +1634,24 @@ Observed on `2026-07-25` after the Release evidence commit:
 
 Conclusion: headless authenticated Git writes in this workspace must explicitly clear inherited editor helpers and
 select the repository-local isolated helper. A failed credential negotiation is not evidence of remote mutation.
+
+## `NTH-EXP-063` Static archive-order guard followed a former consumer instead of the final action owner
+
+Observed on `2026-07-25` while closing `NTH-TD-044`:
+
+1. Focused `86/86`, complete App `2,591/2,591`, Foundation, real Web, interaction regression and Provider Control
+   all passed after single-Agent close moved into `executeCloseAgentTab`.
+2. The first complete `accept:refactor:fast` nevertheless failed after `113.948s`. The Plan/tab contract searched
+   only `workspace-screen.tsx` for inline `await archiveAgent(...)` followed by inline layout cleanup. The final
+   action still archived before cleanup, but the guard did not follow ownership into `close-tab-policy.ts`.
+3. Copying archive/cleanup code back into the Screen, retaining a second inline path or deleting the order check
+   would respectively break single ownership or weaken the contract. The guard was instead moved to the same final
+   boundary as the behavior tests: it requires Screen delegation, the missing/archived/subagent layout-only policy
+   and literal awaited archive before layout cleanup in `executeCloseAgentTab`.
+4. The focused Plan/tab gate then passed in `16.246s`, and a wholly fresh shared gate passed every phase in
+   `142.211s`. After the guard additionally required authority-backed presentation and bulk-action revalidation, the
+   strengthened focused gate passed in `15.212s` and the final wholly fresh shared gate passed in `138.424s`.
+
+Conclusion: static architecture guards must validate the canonical owner plus its consumer delegation, not a
+former caller's code shape. When ownership moves, preserve the semantic assertion at the new boundary and rerun the
+entire gate; do not duplicate production logic to satisfy a stale string search.

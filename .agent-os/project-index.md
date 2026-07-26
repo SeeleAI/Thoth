@@ -3,19 +3,21 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-036`
+2. Top next action: `NTH-TD-045`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. The Cut 1 Windows durability regression is closed by `NTH-EV-065`; native Windows Server
-   CLI and Desktop, every other required job, publish and the downloaded public AppImage journey all passed.
-5. Current branch: `agent/dev/mvp`. Published source, `release/mvp-actions` and fixed tag
-   `v0.0.0-mvp-beta` resolve to `198562296fadb0539b217f0eb5170d0b439ad385`; this closeout advances only the
-   development branch with documentation. Remote `main` remains unchanged at
+4. Active blockers: none. `NTH-TD-045` is publishing the locally verified `NTH-TD-044` repair under the user's
+   renewed fixed-Beta authorization; fresh remote refs and the isolated `Royalvice` identity were revalidated before
+   mutation.
+5. Current branch: `agent/dev/mvp`; local HEAD and `origin/agent/dev/mvp` are
+   `91eece5b28513ac46ffcfe5793f7cad8aaeeb385`. `release/mvp-actions` and fixed tag `v0.0.0-mvp-beta` remain at
+   `198562296fadb0539b217f0eb5170d0b439ad385`. Remote `main` remains unchanged at
    `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-031` through `NTH-TD-035`
-   are verified; `NTH-TD-036` remains doing at Stage 4 with `296,374` production LOC and `15,443` lines still
+   are verified; `NTH-TD-036` remains doing at Stage 4 with `296,437` production LOC and `15,506` lines still
    required for its independent Cut B target. `NTH-TD-043` is verified: the intermediate source is released without
-   claiming Cut B or the final 50k reduction complete. Current metrics are `1,272,064` scanner tokens, `1,300,264`
-   AST nodes, `4,991` non-type static imports and `164` runtime dependency edges.
+   claiming Cut B or the final 50k reduction complete. Current local metrics are `1,272,435` scanner tokens,
+   `1,300,610` AST nodes, `4,992` non-type static imports and `164` runtime dependency edges. `NTH-TD-044` is
+   verified under `NTH-EV-066`, so the main refactor resumes without a Stage switch.
 
 ## Objective Summary
 
@@ -32,15 +34,15 @@
 
 ## Top Next Action
 
-`NTH-TD-036` `[doing]`: Continue the feature-zero-loss shared UI convergence from the published Stage 4
-intermediate state. Remove the remaining duplicated presentation paths until the independent Cut B ceiling of
-`280,931` production LOC is reached, without changing AgentTimeline, public behavior or UX.
+`NTH-TD-045` `[doing]`: Commit the authority-backed stale Agent/Terminal tab repair, normally fast-forward both
+authorized branches to one source commit, require the exact-SHA native workflow to pass, and verify the fixed
+desktop-only Beta Release plus a downloaded public AppImage journey before restoring `NTH-TD-036`.
 
 ## Active Blockers
 
-None. `NTH-TD-036` remains open by design: the published intermediate source is `15,443` LOC above its independent
-Cut B ceiling. `NTH-CD-068` and `NTH-EV-065` explicitly prevent this release from being misreported as Cut B or
-the final 50k reduction.
+None. The stale persisted entity-tab regression is locally closed by `NTH-EV-066`; `NTH-CD-071` now authorizes its
+commit, two normal branch pushes and fixed-Beta replacement. `NTH-TD-036` remains open by design with a
+`15,506`-LOC Cut B gap and is not verified or waived by this publication.
 
 ## Recent Important Changes
 
@@ -127,6 +129,7 @@ the final 50k reduction.
 81. `NTH-EV-055`: Cut 3 is verified. Protocol now has one 131-operation Registry and 139 derived outbound schemas; 112 Client methods share one typed broker, Daemon requests share one 131-handler table, and binary frames remain independent. Protocol `351/351`, Client `119/119`, Session/Wire `133/133`, WebSocket lifecycle `17/17` and public foreground `12/12` passed. The final no-warning shared gate passed in `240.108s`; cumulative source is `2,476` LOC, `8,823` scanner tokens, `7,814` AST nodes, `23` static imports and `1` runtime dependency edge below baseline.
 82. `NTH-EV-064`: The feature-zero-loss 50k gate rebaseline is verified. `NTH-CD-067` moves performance sampling intact to deferred `NTH-MS-019`; the sole functional gate still covers architecture/source/storage, Foundation, builds, public behavior, real Web visual/interaction and TUI, and passed in `140.770s`. Production metrics remain unchanged at `306,055` LOC and `NTH-TD-035` remains the sole top next action.
 83. `NTH-EV-056`: Cut 4 is verified. App authority now has one normalized `AuthorityProjectionStore` written only by `DaemonProjectionService`; HostRuntime owns Client/ServerInfo, QueryClient owns server query and pending overlay state, and UiPreferences owns local focus. Session Store/Context, duplicate Timeline reducers and the third Timeline model are absent. App `331/331` files and `2,582/2,582` tests, Foundation, real Web, Provider Control, interaction regressions and the complete Stage 4 gate passed; `npm run accept:refactor:fast` completed in `144.145s`. Cumulative production source is `7,600` LOC, `19,596` scanner tokens, `27,364` AST nodes, `25` static imports and `1` runtime dependency edge below baseline. The sole top next action advances to `NTH-TD-036`.
+84. `NTH-EV-066`: Persisted Workspace layout is now presentation intent only. Agent/Terminal tabs require current authority before render or action; stale entities reconcile locally in single and bulk close; known root Agents still archive before layout; real archive errors retain the tab. Focused `86/86`, complete App `2,591/2,591`, real Web, interaction, Provider Control and the final fresh `138.424s` shared Stage 4 gate passed without Protocol/daemon changes or Release mutation.
 
 ## Read Next
 

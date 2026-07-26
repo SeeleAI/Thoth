@@ -1382,6 +1382,45 @@ describe("workspace-layout-store actions", () => {
     expect(findPaneById(layout.root, "main")?.focusedTabId).toBe("agent_agent-1");
   });
 
+  it("reconcileTabs removes stale entity persistence and restores focus after their pane collapses", () => {
+    const workspaceKey = createWorkspaceKey();
+    const store = workspaceLayoutStore.getState();
+    const draftTabId = store.openTabFocused(workspaceKey, {
+      kind: "draft",
+      draftId: "surviving-draft",
+    });
+    const missingAgentTabId = store.openTabFocused(workspaceKey, {
+      kind: "agent",
+      agentId: "missing-agent",
+    });
+    const stalePaneId = store.splitPane(workspaceKey, {
+      tabId: missingAgentTabId!,
+      targetPaneId: "main",
+      position: "right",
+    });
+    store.openTabFocused(workspaceKey, {
+      kind: "terminal",
+      terminalId: "stale-terminal",
+    });
+
+    store.reconcileTabs(workspaceKey, {
+      agentsHydrated: true,
+      terminalsHydrated: true,
+      activeAgentIds: [],
+      autoOpenAgentIds: [],
+      knownAgentIds: [],
+      knownTerminalIds: [],
+      standaloneTerminalIds: [],
+      hasActivePendingDraftCreate: false,
+    });
+
+    const layout = workspaceLayoutStore.getState().layoutByWorkspace[workspaceKey];
+    expect(collectAllTabs(layout.root).map((tab) => tab.tabId)).toEqual([draftTabId]);
+    expect(findPaneById(layout.root, stalePaneId!)).toBeNull();
+    expect(layout.focusedPaneId).toBe("main");
+    expect(findPaneById(layout.root, "main")?.focusedTabId).toBe(draftTabId);
+  });
+
   it("reconcileTabs preserves a draft-origin agent tab id when there is no duplicate", () => {
     const workspaceKey = createWorkspaceKey();
 

@@ -3643,3 +3643,76 @@ Retry preparation:
    Stop, six attachments, five PlanExec and five Review calls without credential leakage.
 4. These are preparation receipts only. The seventh attempt remains failed and a wholly new complete `3600s`
    attempt is required.
+
+### `NTH-EV-066` Installed App Persisted Entity Tab Reconciliation
+
+Status: verified.
+
+Root cause and implementation on `2026-07-25`:
+
+1. The supplied installed-App failures were reproduced at source level: persisted `workspace-layout-state` was
+   exposed before daemon/query hydration, and `resolveCloseAgentTabPolicy(null)` selected destructive archive. The
+   daemon correctly rejected two nonexistent UUIDs; this was an App presentation-authority regression, not an
+   archive-daemon defect.
+2. `WorkspaceScreen` now derives all pane/tab descriptors and single, bulk and keyboard actions from one
+   `selectAuthorityBackedWorkspaceTabs` result. Agent tabs require current Workspace-scoped authority and a
+   non-archived record; Terminal tabs require current query authority. Draft, file, browser and setup tabs remain
+   local presentation state. Existing post-hydration reconciliation permanently removes stale entity tabs from
+   persisted layout and restores surviving pane focus.
+3. `executeCloseAgentTab` is the sole single-Agent close action. Missing, archived and subagent tabs are layout-only;
+   a known unarchived root Agent archives before layout cleanup; cancel keeps a running tab; a real archive/transport
+   failure rejects before cleanup and remains user-visible. Bulk close applies the same policy plus live Terminal
+   membership immediately before `closeItems`, so stale entities cannot enter a destructive batch even across a
+   render/action race. A stale single Terminal is also layout-only.
+4. Protocol, Client RPC and daemon archive semantics are unchanged. No error-string special case, swallowed active-
+   Agent failure, compatibility route, fallback, dual authority, push or Release mutation was introduced.
+
+Verification:
+
+1. The initial focused red run failed exactly `3/21`: archived/missing close returned `archive-on-close`, and the
+   authority-backed selector did not exist. After the repair, the focused Agent/Terminal/persistence/bulk suite
+   passed `4/4` files and `86/86` tests, including split-pane collapse/focus recovery, action ordering, failure
+   retention and local-only stale bulk cleanup.
+2. The complete App suite passed `332/332` files and `2,591/2,591` tests. The real `npm run build:web` export bundled
+   `4,423` modules successfully. `npm run check:foundation` passed repository/format/lint/build/type/test gates;
+   Foundation tests were Highlight `66`, Protocol `351`, Relay `29` and Client `119`.
+3. `npm run accept:interaction-regressions:fast` passed in `23.337s`; `npm run accept:provider-control:fast` passed
+   in `35.272s`; the corrected `npm run accept:provider-plan-tabs:fast` passed in `16.246s`, then its strengthened
+   authority-selector/bulk-action contract passed in `15.212s`.
+4. The first complete refactor run failed after `113.948s` because the pre-existing Plan/tab static guard searched
+   for inline archive/cleanup text in `workspace-screen.tsx` after ownership moved to `executeCloseAgentTab`. The
+   guard was updated to require the Screen delegation, missing/archived/subagent layout-only condition, authority-
+   backed Agent/Terminal presentation and action-time bulk validation, plus literal `await archive` before
+   `closeLayout` in the final owner. The final wholly fresh `npm run accept:refactor:fast` passed every Stage 4
+   source/storage/Foundation/build/public behavior/real Web/visual/TUI phase in `138.424s`.
+5. Final source metrics are `296,437` production LOC, `1,272,435` scanner tokens, `1,300,610` AST nodes, `4,992`
+   non-type static imports and `164` runtime dependency edges. They remain below the clean baseline, while
+   `NTH-TD-036` stays open with a `15,506`-LOC independent Cut B gap.
+6. Direct App `tsgo --noEmit` remains a non-gate known debt with `88` unrelated errors; a diagnostic rerun reports
+   no error in the new selector/policy/bulk modules or the modified Screen line ranges. Foundation, real Web and the
+   shared refactor gate are green.
+
+Conclusion: `NTH-AC-023` is satisfied locally and `NTH-TD-044` is verified. The sole top next action returns to
+`NTH-TD-036`. This source repair is not committed, pushed or included in the currently published fixed Beta.
+
+### `NTH-EV-067` Persisted Entity Tab Repair Fixed Beta Publication
+
+Status: work in progress.
+
+Pre-publication state on `2026-07-26`:
+
+1. The user explicitly authorized the source commit, normal `agent/dev/mvp` push, normal `release/mvp-actions`
+   fast-forward push, exact-SHA workflow and in-place `v0.0.0-mvp-beta` replacement under `NTH-CD-071`.
+2. Fresh `git fetch origin --prune` preserved `origin/agent/dev/mvp` at `91eece5b28513ac46ffcfe5793f7cad8aaeeb385`,
+   `origin/release/mvp-actions` at `198562296fadb0539b217f0eb5170d0b439ad385` and `origin/main` at
+   `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`. The Release branch is an ancestor of the local development HEAD;
+   no concurrent remote update was found.
+3. The repository-isolated GitHub configuration authenticated as `Royalvice`. The repair remains exactly the
+   locally verified `NTH-EV-066` source/test/guard change; no Release mutation has occurred yet.
+4. Fresh pre-commit verification passed: focused stale Agent/Terminal/persistence/bulk coverage passed `86/86`;
+   the strengthened Provider Plan/tab/desktop Release contract passed in `15.383s`; the Agent Project System
+   validator, root format check and `git diff --check` passed.
+
+Completion requires the source commit and both normal branch pushes, a fully green exact-SHA workflow, an exact
+26-asset desktop-only fixed Release whose public metadata identifies that source, matching downloaded checksums and
+build identity, and a complete packaged journey against the downloaded public AppImage.

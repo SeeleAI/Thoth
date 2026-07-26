@@ -1,6 +1,8 @@
 import type { DaemonClient } from "@thoth/client/internal/daemon-client";
+import type { Agent } from "@/projection/authority-model";
 import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
 import { i18n } from "@/i18n/i18next";
+import { resolveCloseAgentTabPolicy } from "@/subagents/close-tab-policy";
 
 export interface BulkClosableTabGroups {
   agentTabs: Array<{ tabId: string; agentId: string }>;
@@ -47,20 +49,33 @@ interface CloseBulkWorkspaceTabsInput {
   warn?: (message: string, payload: object) => void;
 }
 
-export function classifyBulkClosableTabs(tabs: WorkspaceTabDescriptor[]): BulkClosableTabGroups {
+export function classifyBulkClosableTabs(input: {
+  tabs: WorkspaceTabDescriptor[];
+  agents: ReadonlyMap<string, Pick<Agent, "archivedAt" | "parentAgentId">>;
+  knownTerminalIds: ReadonlySet<string>;
+}): BulkClosableTabGroups {
   const groups: BulkClosableTabGroups = {
     agentTabs: [],
     terminalTabs: [],
     otherTabs: [],
   };
 
-  for (const tab of tabs) {
+  for (const tab of input.tabs) {
     if (tab.target.kind === "agent") {
-      groups.agentTabs.push({ tabId: tab.tabId, agentId: tab.target.agentId });
+      const agent = input.agents.get(tab.target.agentId);
+      if (resolveCloseAgentTabPolicy(agent).kind === "archive-on-close") {
+        groups.agentTabs.push({ tabId: tab.tabId, agentId: tab.target.agentId });
+      } else {
+        groups.otherTabs.push({ tabId: tab.tabId, target: tab.target });
+      }
       continue;
     }
     if (tab.target.kind === "terminal") {
-      groups.terminalTabs.push({ tabId: tab.tabId, terminalId: tab.target.terminalId });
+      if (input.knownTerminalIds.has(tab.target.terminalId)) {
+        groups.terminalTabs.push({ tabId: tab.tabId, terminalId: tab.target.terminalId });
+      } else {
+        groups.otherTabs.push({ tabId: tab.tabId, target: tab.target });
+      }
       continue;
     }
     groups.otherTabs.push({ tabId: tab.tabId, target: tab.target });

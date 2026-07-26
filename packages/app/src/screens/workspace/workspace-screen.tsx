@@ -151,6 +151,7 @@ import { renderWorkspaceRouteGate } from "@/screens/workspace/workspace-route-st
 import {
   buildWorkspaceTabSnapshot,
   deriveWorkspaceAgentVisibility,
+  selectAuthorityBackedWorkspaceTabs,
   workspaceAgentVisibilityEqual,
 } from "@/workspace-tabs/agent-visibility";
 import {
@@ -171,7 +172,7 @@ import {
   classifyBulkClosableTabs,
   closeBulkWorkspaceTabs,
 } from "@/screens/workspace/workspace-bulk-close";
-import { resolveCloseAgentTabPolicy } from "@/subagents";
+import { executeCloseAgentTab } from "@/subagents";
 import { findAdjacentPane } from "@/utils/split-navigation";
 import { useIsCompactFormFactor, supportsDesktopPaneSplits } from "@/constants/layout";
 import { getIsElectron, isNative, isWeb } from "@/constants/platform";
@@ -1758,6 +1759,7 @@ function WorkspaceScreenContent({
     onTerminalCreateQueued: handleTerminalCreateQueued,
     onTerminalCreateFailed: handleTerminalCreateFailed,
   });
+  const knownTerminalIdSet = useMemo(() => new Set(knownTerminalIds), [knownTerminalIds]);
   const { archiveAgent } = useArchiveAgent();
 
   const { checkoutQuery, isCheckoutStatusLoading } = useWorkspaceCheckoutStatus({
@@ -1860,9 +1862,19 @@ function WorkspaceScreenContent({
   );
   const ensureWorkspaceSetupStatus = useWorkspaceSetupStore((state) => state.ensureSetupStatus);
   const showWorkspaceSetup = shouldShowWorkspaceSetup(workspaceSetupSnapshot);
-  const uiTabs = useMemo(
+  const persistedUiTabs = useMemo(
     () => (workspaceLayout ? collectAllTabs(workspaceLayout.root) : EMPTY_UI_TABS),
     [workspaceLayout],
+  );
+  const uiTabs = useMemo(
+    () =>
+      selectAuthorityBackedWorkspaceTabs({
+        tabs: persistedUiTabs,
+        knownAgentIds: workspaceAgentVisibility.knownAgentIds,
+        archivedAgentIds: workspaceAgentVisibility.archivedAgentIds ?? EMPTY_SET,
+        knownTerminalIds: knownTerminalIdSet,
+      }),
+    [knownTerminalIdSet, persistedUiTabs, workspaceAgentVisibility],
   );
   useSyncWorkspaceActiveBrowser({ workspaceLayout, isRouteFocused });
   const [workspaceHistoryRestoreState, setWorkspaceHistoryRestoreState] = useState<{
@@ -2563,6 +2575,17 @@ function WorkspaceScreenContent({
     async (input: { tabId: string; terminalId: string }) => {
       const { tabId, terminalId } = input;
       await closeTab(tabId, async () => {
+        if (!knownTerminalIdSet.has(terminalId)) {
+          setHoveredCloseTabKey((current) => (current === tabId ? null : current));
+          if (persistenceKey) {
+            closeWorkspaceTabWithCleanup({
+              tabId,
+              target: { kind: "terminal", terminalId },
+            });
+          }
+          return;
+        }
+
         const confirmed = await confirmDialog({
           title: t("workspace.tabs.confirmations.closeTerminalTitle"),
           message: t("workspace.tabs.confirmations.closeTerminalMessage"),
@@ -2591,6 +2614,7 @@ function WorkspaceScreenContent({
       closeWorkspaceTabWithCleanup,
       invalidateTerminals,
       killTerminalAsync,
+      knownTerminalIdSet,
       persistenceKey,
       removeTerminalFromCache,
       t,
@@ -2607,46 +2631,31 @@ function WorkspaceScreenContent({
 
         const agent =
           projectionRuntime.store.getSnapshot(normalizedServerId).agents.get(agentId) ?? null;
-        const closePolicy = resolveCloseAgentTabPolicy(agent);
-        const isRunning = agent?.status === "running";
-
-        if (isRunning && closePolicy.kind === "archive-on-close") {
-          const confirmed = await confirmDialog({
-            title: t("workspace.tabs.confirmations.archiveRunningAgentTitle"),
-            message: t("workspace.tabs.confirmations.archiveRunningAgentMessage"),
-            confirmLabel: t("workspace.tabs.confirmations.archive"),
-            cancelLabel: t("workspace.tabs.confirmations.cancel"),
-            destructive: true,
-          });
-          if (!confirmed) {
-            return;
-          }
-        }
-
-        if (closePolicy.kind === "layout-only") {
-          setHoveredCloseTabKey((current) => (current === tabId ? null : current));
-          if (persistenceKey) {
-            closeWorkspaceTabWithCleanup({
-              tabId,
-              target: { kind: "agent", agentId },
-            });
-          }
-          return;
-        }
 
         try {
-          await archiveAgent({ serverId: normalizedServerId, agentId });
+          await executeCloseAgentTab({
+            agent,
+            confirmRunningArchive: () =>
+              confirmDialog({
+                title: t("workspace.tabs.confirmations.archiveRunningAgentTitle"),
+                message: t("workspace.tabs.confirmations.archiveRunningAgentMessage"),
+                confirmLabel: t("workspace.tabs.confirmations.archive"),
+                cancelLabel: t("workspace.tabs.confirmations.cancel"),
+                destructive: true,
+              }),
+            archive: () => archiveAgent({ serverId: normalizedServerId, agentId }),
+            closeLayout: () => {
+              setHoveredCloseTabKey((current) => (current === tabId ? null : current));
+              if (persistenceKey) {
+                closeWorkspaceTabWithCleanup({
+                  tabId,
+                  target: { kind: "agent", agentId },
+                });
+              }
+            },
+          });
         } catch (error) {
           toast.error(toErrorMessage(error));
-          return;
-        }
-
-        setHoveredCloseTabKey((current) => (current === tabId ? null : current));
-        if (persistenceKey) {
-          closeWorkspaceTabWithCleanup({
-            tabId,
-            target: { kind: "agent", agentId },
-          });
         }
       });
     },
@@ -2833,7 +2842,12 @@ function WorkspaceScreenContent({
         return;
       }
 
-      const groups = classifyBulkClosableTabs(tabsToClose);
+      const agents = projectionRuntime.store.getSnapshot(normalizedServerId).agents;
+      const groups = classifyBulkClosableTabs({
+        tabs: tabsToClose,
+        agents,
+        knownTerminalIds: knownTerminalIdSet,
+      });
       const confirmed = await confirmDialog({
         title,
         message: buildBulkCloseConfirmationMessage(groups, bulkCloseConfirmationLabels),
@@ -2869,7 +2883,10 @@ function WorkspaceScreenContent({
       client,
       closeTab,
       closeWorkspaceTabWithCleanup,
+      knownTerminalIdSet,
+      normalizedServerId,
       persistenceKey,
+      projectionRuntime,
       t,
     ],
   );

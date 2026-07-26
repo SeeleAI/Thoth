@@ -53,15 +53,45 @@ if (composer.includes("daemonConfig?.providerControl")) {
 }
 
 const workspaceScreen = read("packages/app/src/screens/workspace/workspace-screen.tsx");
-const archiveIndex = workspaceScreen.indexOf(
-  "await archiveAgent({ serverId: normalizedServerId, agentId })",
-);
-const cleanupIndex = workspaceScreen.indexOf(
-  'closeWorkspaceTabWithCleanup({\n            tabId,\n            target: { kind: "agent", agentId },',
-  archiveIndex,
-);
-if (archiveIndex < 0 || cleanupIndex <= archiveIndex) {
+const closeTabPolicy = read("packages/app/src/subagents/close-tab-policy.ts");
+const agentVisibility = read("packages/app/src/workspace-tabs/agent-visibility.ts");
+const bulkClose = read("packages/app/src/screens/workspace/workspace-bulk-close.ts");
+const archiveIndex = closeTabPolicy.indexOf("await input.archive();");
+const cleanupIndex = closeTabPolicy.indexOf("input.closeLayout();", archiveIndex);
+if (
+  !workspaceScreen.includes("await executeCloseAgentTab({") ||
+  !workspaceScreen.includes(
+    "archive: () => archiveAgent({ serverId: normalizedServerId, agentId })",
+  ) ||
+  !closeTabPolicy.includes("if (!agent || agent.archivedAt || agent.parentAgentId)") ||
+  archiveIndex < 0 ||
+  cleanupIndex <= archiveIndex
+) {
   failures.push("Top-level Agent tab is not archived before layout cleanup");
+}
+for (const required of [
+  "tabs: persistedUiTabs",
+  "knownAgentIds: workspaceAgentVisibility.knownAgentIds",
+  "archivedAgentIds: workspaceAgentVisibility.archivedAgentIds",
+  "knownTerminalIds: knownTerminalIdSet",
+]) {
+  if (!workspaceScreen.includes(required)) {
+    failures.push(`Workspace tab presentation is missing authority input: ${required}`);
+  }
+}
+for (const required of [
+  "knownAgentIds.has(tab.target.agentId) && !archivedAgentIds.has(tab.target.agentId)",
+  "knownTerminalIds.has(tab.target.terminalId)",
+]) {
+  if (!agentVisibility.includes(required)) {
+    failures.push(`Workspace entity tab selector is missing ${required}`);
+  }
+}
+if (
+  !bulkClose.includes("resolveCloseAgentTabPolicy(agent)") ||
+  !bulkClose.includes("input.knownTerminalIds.has(tab.target.terminalId)")
+) {
+  failures.push("Bulk tab close does not revalidate current Agent and Terminal authority");
 }
 
 const workflow = read(".github/workflows/mvp-beta-release.yml");

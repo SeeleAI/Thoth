@@ -1,5 +1,6 @@
 import type { Agent } from "@/projection/authority-model";
 import type { WorkspaceTabSnapshot } from "@/stores/workspace-layout-actions";
+import type { WorkspaceTab } from "@/stores/workspace-tabs-store";
 import { shouldAutoOpenAgentTab } from "@/subagents/policies";
 import { normalizeWorkspaceOpaqueId } from "@/utils/workspace-identity";
 
@@ -104,20 +105,22 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
   return true;
 }
 
-// Prune agent tabs that are no longer active once agents are hydrated.
-// Lazy restored history tabs are preserved, while archived session-directory agents
-// still get pruned so archiving on one client closes the tab on all clients.
-export function shouldPruneWorkspaceAgentTab(input: {
-  agentId: string;
-  agentsHydrated: boolean;
-  activeAgentIds: Set<string>;
-  restorableAgentIds?: Set<string>;
-}): boolean {
-  if (!input.agentId.trim()) {
-    return false;
-  }
-  if (!input.agentsHydrated) {
-    return false;
-  }
-  return !input.activeAgentIds.has(input.agentId) && !input.restorableAgentIds?.has(input.agentId);
+export function selectAuthorityBackedWorkspaceTabs(input: {
+  tabs: WorkspaceTab[];
+  knownAgentIds: ReadonlySet<string>;
+  archivedAgentIds: ReadonlySet<string>;
+  knownTerminalIds: ReadonlySet<string>;
+}): WorkspaceTab[] {
+  const { tabs, knownAgentIds, archivedAgentIds, knownTerminalIds } = input;
+  const tabsBackedByAuthority = tabs.filter((tab) => {
+    if (tab.target.kind === "agent") {
+      return knownAgentIds.has(tab.target.agentId) && !archivedAgentIds.has(tab.target.agentId);
+    }
+    if (tab.target.kind === "terminal") {
+      return knownTerminalIds.has(tab.target.terminalId);
+    }
+    return true;
+  });
+
+  return tabsBackedByAuthority.length === tabs.length ? tabs : tabsBackedByAuthority;
 }
