@@ -3697,7 +3697,7 @@ Conclusion: `NTH-AC-023` is satisfied locally and `NTH-TD-044` is verified. The 
 
 ### `NTH-EV-067` Persisted Entity Tab Repair Fixed Beta Publication
 
-Status: work in progress.
+Status: verified.
 
 Pre-publication state on `2026-07-26`:
 
@@ -3713,6 +3713,30 @@ Pre-publication state on `2026-07-26`:
    the strengthened Provider Plan/tab/desktop Release contract passed in `15.383s`; the Agent Project System
    validator, root format check and `git diff --check` passed.
 
-Completion requires the source commit and both normal branch pushes, a fully green exact-SHA workflow, an exact
-26-asset desktop-only fixed Release whose public metadata identifies that source, matching downloaded checksums and
-build identity, and a complete packaged journey against the downloaded public AppImage.
+Publication evidence:
+
+1. Atomic source commit `30528b814eff68eb63e2379e133aac6ee36d5fb4` was normally fast-forwarded to
+   `agent/dev/mvp` and `release/mvp-actions`. There was no force push. The first direct Git HTTPS attempt timed out
+   before remote mutation; the same normal push succeeded through the environment proxy and repository-isolated
+   Royalvice credential helper. `NTH-EXP-064` preserves this operational failure.
+2. Exact-SHA workflow `30182942323` completed with conclusion `success`. Preflight job `89742558816`, Server CLI
+   package `89743267990`, Windows CLI `89743435398`, Windows Desktop `89743267999`, Linux Desktop/package journey
+   `89743267984`, macOS x64 `89743267988`, macOS arm64 `89743268005`, hosted Relay `89743435360` and publish
+   `89744032659` all passed. Ubuntu and macOS CLI smoke jobs also passed.
+3. Fixed prerelease `v0.0.0-mvp-beta` has Release id `359902667`, is public, draft `false`, prerelease `true`, and
+   both its target plus direct tag object identify `30528b814eff68eb63e2379e133aac6ee36d5fb4`. The public manifest is
+   exactly 26 desktop-only assets and contains no APK, iOS package, Server CLI archive or public tgz.
+4. Downloaded `BUILD-SOURCE.txt` and `MVP-UPDATE.json` identify source `30528b814eff68eb63e2379e133aac6ee36d5fb4`
+   and workflow `30182942323`. Downloaded `Thoth-x86_64.AppImage` is `137,695,255` bytes with SHA-256
+   `bf529e760c009a2bc11cb9041e284b8c3b4ed065113b8b757116487c64e3bdfa`; API metadata, `MVP-UPDATE.json`,
+   `SHA256SUMS` and the local digest agree. Extracted `resources/build-identity.json` contains the same source commit.
+5. After restoring only its executable mode, the checksum-verified public AppImage passed the complete packaged
+   public API journey on isolated `127.0.0.1:36455`: 13 hot-switch turns, six visible sessions, Quick/Clarify,
+   Loop, one failed Review retry, Stop, 22 migrated Agents, 17 migrated Timeline rows, three PlanExec calls, three
+   Review calls, both mounted RuntimeBundles and six durable Loop attachments.
+6. Remote `main` remains `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`; independent `SeeleAI/Thoth-Relay`
+   remains `317bcda46571ae0ae508f4d892759eff779d9d73`; Paseo remains PID `3597831` listening on
+   `127.0.0.1:6767`. This flow did not deploy Relay, modify `main`, publish npm/mobile assets or touch Paseo.
+
+Conclusion: `NTH-AC-024` is satisfied, `NTH-TD-045` is verified and the sole top next action returns to
+`NTH-TD-036`. The publication does not close or weaken Cut B's remaining `15,506`-LOC target.

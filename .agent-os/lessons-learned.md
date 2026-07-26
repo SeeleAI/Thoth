@@ -1655,3 +1655,20 @@ Observed on `2026-07-25` while closing `NTH-TD-044`:
 Conclusion: static architecture guards must validate the canonical owner plus its consumer delegation, not a
 former caller's code shape. When ownership moves, preserve the semantic assertion at the new boundary and rerun the
 entire gate; do not duplicate production logic to satisfy a stale string search.
+
+## `NTH-EXP-064` Direct Git HTTPS may require the environment proxy even when GitHub API works
+
+Observed on `2026-07-26` while publishing source `30528b81`:
+
+1. The repository-local Royalvice credential helper was valid and GitHub API calls succeeded, but the first normal
+   development-branch push could not connect directly to `github.com:443` and exited `128` after `129,961ms`.
+   GitHub confirmed the remote branch was still on its audited old SHA, so no partial remote mutation occurred.
+2. A read-only GitHub probe through `http://10.0.3.5:7899` succeeded. Retrying the exact same normal fast-forward
+   with inherited askpass disabled, the isolated helper selected and `http_proxy` / `https_proxy` set to that
+   environment proxy completed immediately. The Release-branch normal fast-forward used the same route.
+3. No token was printed, no force push was used and the exact source commit on both branches was verified through
+   the GitHub API before the workflow was trusted.
+
+Conclusion: distinguish credential routing from network routing. After a direct connection timeout with verified
+repository-local credentials and unchanged remote refs, use the known environment proxy for the same guarded normal
+push; never reinterpret a timeout as success or retry with force.

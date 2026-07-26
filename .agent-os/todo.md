@@ -47,14 +47,11 @@
 
 ## Doing
 
-1. `NTH-TD-045` `[doing]`: Publish the verified persisted Agent/Terminal tab reconciliation through the fixed desktop-only MVP Beta flow.
-   - Acceptance: commit the final repair and tests; normally fast-forward both authorized branches to one source commit; require exact-SHA native Actions and publish to pass; verify the fixed tag/Release, exact 26-asset desktop-only manifest, checksums/build identity and the downloaded public AppImage journey; leave `main`, Relay deployment and Paseo unchanged.
-   - Related: `NTH-WS-005`, `NTH-CD-071`, `NTH-AC-024`, `NTH-TD-036`, `NTH-TD-044`, `NTH-EV-066`, `NTH-EV-067`
-2. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
+1. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
    - Acceptance: no public semantic or UX change; no VCS/Provider/RPC/authority/performance work; App suite remains at least `331 files / 2,582 tests`; Stage 5 source is at most `280,931` production LOC with tokens/AST/imports below Stage 4 and dependencies no higher; the shared `300s` gate passes.
    - Current result: after the verified stale-entity-tab repair, the local candidate is `296,437` LOC (`-4,494` from the Cut B start), `1,272,435` tokens, `1,300,610` AST nodes, `4,992` imports and `164` runtime dependency edges. The remaining independent gap is `15,506` LOC; Stage stays 4 and `NTH-TD-036` remains open despite the verified intermediate Release.
    - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-057`
-3. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
+2. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
    - Goal: Keep restored Paseo surface and Codex dynamicTools path, but make Clarify behave like a pending authority decision lifecycle with intelligent timeline badges and model-submitted frontier ledger.
    - Scope: `thoth_submit_clarify_card` carries `public_badge_summary` and `frontier_ledger`; `thoth_submit_task_card` carries convergence review; `balanced` has a 5-10 card soft range and `dive` has a 10-20 card soft range; cards must not show completed/idle footer before user submission; `decision_it_changes` is legacy optional input only. Under `NTH-CD-052`, raw Provider conversation is an explicit Thoth-off state rather than an ambiguous `Quick + Direct` sub-selection; only Thoth-on exposes structured Clarify and Loop controls. Under `NTH-CD-053`, that off/on choice is strictly per turn: one Workspace Secretary topic reuses one foreground provider session, and a daemon authority fence blocks remembered runtime tools during raw turns instead of using historical `bare` / `structured` sessions.
    - Verification: Reopened under `NTH-EV-029`; unit/build/foundation gates and most real Codex web paths now pass after the frontier-ledger repair, including local/public Balanced sort, local Dive sort, local Balanced PathTracing and local Loop `registered_pending`. Under `NTH-CD-057` / `NTH-EV-038`, ordinary Agent sends now reuse the visible provider session for Thoth Clarify/Quick, remote workspace identity overrides client cwd, and packaged Clarify/Loop skills were confirmed in the public Linux `app.asar`. Do not return this TODO to verified until installed/Relay real-provider behavior is exercised from the replacement build.
@@ -202,6 +199,12 @@ None.
 - Scope: authority-filter every restored entity tab before pane/tab/action derivation; retain valid local tabs; permanently prune stale persistence after hydration; unify single and bulk close policy so missing/archived/subagent Agent and stale Terminal targets are layout-only while known root Agents remain archive-before-layout.
 - Related: `NTH-REQ-021`, `NTH-REQ-024`, `NTH-REQ-027`, `NTH-AC-019`, `NTH-AC-023`, `NTH-EV-066`, `NTH-EXP-063`
 - Verification: See `NTH-EV-066`. Focused tests passed `86/86`, the complete App passed `2,591/2,591`, real Web bundled `4,423` modules and the final fresh shared Stage 4 gate passed every phase in `138.424s`. No Protocol/daemon semantic change, swallowed real archive failure, push or Release mutation occurred.
+
+22. `NTH-TD-045` `[verified]`: Publish the verified persisted Agent/Terminal tab reconciliation through the fixed desktop-only MVP Beta flow.
+
+- Scope: commit the final repair and tests; normally fast-forward both authorized branches to one source commit; require exact-SHA native Actions and publish to pass; verify the fixed tag/Release, exact 26-asset desktop-only manifest, checksums/build identity and the downloaded public AppImage journey; leave `main`, Relay deployment and Paseo unchanged.
+- Related: `NTH-WS-005`, `NTH-CD-071`, `NTH-AC-024`, `NTH-TD-036`, `NTH-TD-044`, `NTH-EV-066`, `NTH-EV-067`, `NTH-EXP-064`
+- Verification: See `NTH-EV-067`. Source commit `30528b81`, workflow `30182942323`, Windows CLI/Desktop, hosted Relay, packaged Linux and publish passed; the fixed prerelease exposes exactly 26 desktop-only assets, and the checksum-verified downloaded AppImage passed the complete public API journey.
 
 ## Abandoned
 

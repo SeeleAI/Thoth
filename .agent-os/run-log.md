@@ -4232,3 +4232,22 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - Fresh pre-commit verification passed: focused stale-tab coverage passed `86/86`; the strengthened Provider
   Plan/tab/desktop Release contract passed in `15.383s`; the Agent Project System validator, root format check and
   `git diff --check` passed. The candidate is ready for its atomic source commit.
+
+## 2026-07-26 [Persisted entity-tab repair published and independently revalidated]
+
+- Committed source `30528b814eff68eb63e2379e133aac6ee36d5fb4` and normally fast-forwarded both authorized
+  branches. The first direct HTTPS push timed out without remote mutation; the repository-isolated Royalvice helper
+  plus the known environment proxy completed the same normal pushes. `NTH-EXP-064` records the distinction between
+  credential and network routing; no force push occurred.
+- Exact-SHA workflow `30182942323` passed every job. Windows Server CLI `89743435398` and Windows Desktop
+  `89743267999` passed, as did preflight, Linux/macOS CLI, Linux/macOS/Windows Desktop, packaged Linux product,
+  hosted Relay and publish `89744032659`.
+- The fixed prerelease and tag now target `30528b81` and expose exactly 26 desktop-only assets. Downloaded
+  `BUILD-SOURCE.txt`, `MVP-UPDATE.json`, `SHA256SUMS` and the `137,695,255`-byte AppImage agree on the source and
+  AppImage digest `bf529e760c009a2bc11cb9041e284b8c3b4ed065113b8b757116487c64e3bdfa`; extracted build identity matches.
+- The checksum-verified public AppImage passed the complete packaged public API journey with Quick/Clarify,
+  Loop/Review retry, Stop, Release migration, canonical Timeline and mounted Clarify/Loop RuntimeBundles. Remote
+  `main`, independent Relay source/deployment and Paseo PID `3597831` on `127.0.0.1:6767` remain unchanged.
+- `NTH-TD-045` / `NTH-EV-067` are verified. Stage remains 4; `NTH-TD-036` returns as the sole top next action with
+  its `15,506`-LOC Cut B gap unchanged. This closeout will be pushed only to `agent/dev/mvp`; the Release branch
+  stays on the published source commit to avoid a second release.
