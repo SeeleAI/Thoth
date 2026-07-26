@@ -4355,3 +4355,27 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   A fresh complete Foundation gate then passed lint/build/typecheck and all `565/565` tests
   (`66 + 351 + 29 + 119`). The closeout is ready for one normal fast-forward of `agent/dev/mvp`; all Release and
   independent-service boundaries remain unchanged.
+
+## 2026-07-26 [Provider settings loading recovery fixed]
+
+- Investigated the Providers settings page hanging on `Claude`, `Codex` and `OpenCode` as `loading`. The daemon-side
+  provider snapshot and manual refresh path were healthy: the live daemon on `127.0.0.1:6688` reported Claude and
+  Codex as ready with models and OpenCode as unavailable, so the failure was isolated to the App query/subscription
+  path.
+- Fixed `useProvidersSnapshot` to recover a first `loading` snapshot through the formal daemon
+  `refreshProvidersSnapshot -> getProvidersSnapshot` path. The recovery is scoped to enabled loading providers,
+  avoids missed push-event races, resets after non-loading snapshots and does not loop on changing snapshot
+  timestamps.
+- Added focused coverage for the loading-provider refresh key plus a hook-level race test where the first snapshot
+  returns `loading`, no websocket update arrives and the hook must refresh then fetch a resolved snapshot.
+  Verification passed:
+  `npm --workspace=@thoth/app run test -- src/hooks/use-providers-snapshot.hook.test.tsx src/hooks/use-providers-snapshot.test.ts src/hooks/providers-snapshot-query.test.ts`,
+  `git diff --check`, targeted `oxfmt --check` on the two changed files and `npm run build:web`.
+- Rebuilt the Web export and verified the live `http://127.0.0.1:8082/settings/hosts/srv_jwDukZXM1TnznKQAg7nwkg/providers`
+  page in the in-app browser: Claude and Codex display `available`, OpenCode displays `not installed`, and
+  `loading` is absent. The existing static web server and daemon remained running; reserved Paseo/legacy
+  `127.0.0.1:6767` was not touched.
+- Full `npm --workspace=@thoth/app run typecheck` remains blocked by unrelated existing App errors across
+  `react-dom` declarations, workspace/project tests, terminal/native styling and other files. Full
+  `npm run format:check` remains blocked by existing formatting findings in tracked `CLAUDE.md` link targets. No
+  top-next-action, Release, Relay, Provider installation or external service boundary changed.

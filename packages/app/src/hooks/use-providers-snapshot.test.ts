@@ -7,6 +7,7 @@ import { draftAgentCommandsQueryKey } from "@/hooks/agent-commands-query";
 import {
   applyProvidersSnapshotUpdate,
   fetchProvidersSnapshot,
+  loadingProvidersSnapshotRefreshKey,
   providersSnapshotQueryKey,
   refreshAndApplyProvidersSnapshot,
   selectorOpenRefetchDecision,
@@ -74,6 +75,18 @@ function codexEntry(
     status,
     enabled: true,
     ...(models ? { models } : {}),
+  };
+}
+
+function providerEntry(
+  provider: string,
+  status: ProviderSnapshotEntry["status"],
+  enabled = true,
+): ProviderSnapshotEntry {
+  return {
+    provider,
+    status,
+    enabled,
   };
 }
 
@@ -349,5 +362,38 @@ describe("selectorOpenRefetchDecision", () => {
         selectedProvider: "codex",
       }),
     ).toBe("refetch-stale");
+  });
+});
+
+describe("loadingProvidersSnapshotRefreshKey", () => {
+  it("returns null when there are no loading entries", () => {
+    expect(
+      loadingProvidersSnapshotRefreshKey({
+        entries: [providerEntry("codex", "ready"), providerEntry("claude", "unavailable")],
+        scopeKey: "server-1/home",
+      }),
+    ).toBeNull();
+  });
+
+  it("ignores disabled loading entries", () => {
+    expect(
+      loadingProvidersSnapshotRefreshKey({
+        entries: [providerEntry("codex", "loading", false)],
+        scopeKey: "server-1/home",
+      }),
+    ).toBeNull();
+  });
+
+  it("builds a stable key from enabled loading providers and scope", () => {
+    expect(
+      loadingProvidersSnapshotRefreshKey({
+        entries: [
+          providerEntry("opencode", "loading"),
+          providerEntry("codex", "ready"),
+          providerEntry("claude", "loading"),
+        ],
+        scopeKey: "server-1/home",
+      }),
+    ).toBe("server-1/home:claude,opencode");
   });
 });
