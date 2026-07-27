@@ -2,11 +2,11 @@
 
 ## Status
 
-1. Date: `2026-07-07`
+1. Date: `2026-07-27`
 2. Nature: Thoth APP information architecture, runtime skill, runtime tool bridge, AgentTimeline, and authority card contract
 3. Scope: `packages/app`, `packages/desktop`, `packages/daemon`, `packages/drivers`, `packages/protocol`, `packages/client`
 4. Code contract: `packages/protocol/src/thoth-runtime-contract.ts`, `packages/protocol/src/agent-types.ts`, `packages/protocol/src/messages.ts`
-5. Status: canonical design authority; `NTH-CD-041` locks the restored Paseo production app surface, `NTH-CD-042` locks the Quick / Clarify / Loop phase split, `NTH-CD-045` locks the Loop background main path as Goals Card -> durable Task -> PlanExec / Review phases, `NTH-CD-053` locks one continuous foreground provider thread for each visible Agent, `NTH-CD-054` locks a frozen control snapshot for each send, with existing Cards not following hot composer changes, and `NTH-CD-060` upgrades the Runtime Tool Bridge to a shared HarnessAdapter + RuntimeBundle + ToolGateway for all providers/ACP, while making Workspace / Task / Execution the sole authority.
+5. Status: canonical design authority; `NTH-CD-041` locks the restored Paseo production app surface, `NTH-CD-042` locks the Quick / Clarify / Loop phase split, `NTH-CD-045` locks the Loop background main path as Goals Card -> durable Task -> PlanExec / Review phases, `NTH-CD-053` locks one continuous foreground provider thread for each visible Agent, `NTH-CD-054` locks a frozen control snapshot for each send, `NTH-CD-060` upgrades the Runtime Tool Bridge to a shared HarnessAdapter + RuntimeBundle + ToolGateway for all providers/ACP, and `NTH-CD-077` through `NTH-CD-085` add Forge, scoped Browser automation, Workspace Schedule, bounded Timeline, Provider portfolio, read-only Files/Changes, Desktop lifecycle and durable Host resource leases without changing Workspace / Task / Execution authority.
 6. Replaced scope: this document supersedes the former three-view toy shell, assistant JSON/outputSchema packet, `submit_clarify_packet` main path, Workspace Secretary `liveEvents` summary stream, fake background running/review semantics, and the former Pyramid Plan / `registered_pending` semantics as the Loop main path. Old packet / state-code / golden materials may serve only as legacy/internal evidence or Loop-1 history and do not drive current Loop acceptance.
 
 ## 0. Current Highest-Level Contract
@@ -51,6 +51,21 @@
 5. After the user answers a Card, the daemon first appends the Human Decision, then starts a new continuation ExecutionAttempt in the same ProviderThread; it must not resume an old tool-call Promise or depend on an old call stack remaining alive.
 6. `submit_clarify_packet` / `submit_runtime_packet` may exist only as legacy/internal/test-isolated compatibility terms; they must not be the Loop-2 acceptance main path or appear in user-visible UI.
 7. The current Codex, Claude Code, OpenCode, Pi, and ACP adapters must implement and pass complete bridge conformance; if a future provider lacks a declared required capability, it must honestly report unsupported and must not fall back to outputSchema/assistant markdown JSON as a substitute for passing.
+
+### 0.4 Operational Product Surfaces
+
+1. Forge clone, PR/MR creation, archive/restore/import, and open-in-agent actions enter through semantic Client RPCs;
+   App does not own Git or Workspace lifecycle. Import binds an existing Workspace and cannot mint one.
+2. Files and Changes are read-only projections over daemon file/Git use cases: file tree, line navigation, commit
+   history, commit diff, and adding a Workspace file to Composer. Editor/save/conflict/BOM/line-ending write paths
+   remain deferred.
+3. Browser tools are Provider capabilities translated by Drivers and fenced by ToolGateway. Desktop owns trusted
+   Chromium execution with one Host-wide persistent profile; every tab-scoped operation carries `browserId`, while
+   App coordinates duplicate/replayed request IDs without becoming durable authority.
+4. Schedule belongs to Workspace authority. Every run exposes real `taskId` and `executionId`, and the App renders
+   the canonical Background Tasks/Timeline result rather than an optimistic local run.
+5. Pin is a device-local presentation preference. Provider-suggested initial titles may be accepted, but a user
+   rename is permanently authoritative over later suggestions.
 
 ## 1. Core Judgment
 
@@ -179,6 +194,8 @@ Workspace Secretary may retain snapshot/model fields for recovery and compatibil
 3. The canonical `messageId` belongs to the Thoth Timeline. HarnessAdapter binds it to a versioned opaque provider anchor receipt; the daemon and App do not interpret the provider-native id.
 4. Conversation/both rewind truncates from the target canonical user row and creates a new Timeline epoch; the App clears the old cursor/head/tail and fully reads the new epoch. An old anchor whose identity cannot be determined is explicitly non-rewindable.
 5. Workspace images are always read by the current daemon/Relay binary. Previews use only temporary Blob/data URI values and release them when switching, closing, or unmounting; they must not be copied into the attachment persistence directory.
+6. Timeline reads are bounded and cursor/epoch ordered. Text enters live and durable Timeline through one UTF-8-safe
+   64 KiB truncation object with explicit byte metadata; Provider subagents render only as nested read-only traces.
 
 ## 5. Cards And Contracts
 
@@ -332,6 +349,9 @@ The frontend may:
 3. Collect user selections, annotations, acceptance, cancellation, and modification requests.
 4. Send structured answers back to the daemon.
 5. Immediately collapse a card into readonly/submitted status after submission.
+6. Render read-only Files/Changes/commit history, scoped Browser tabs, and Workspace Schedule receipts returned by
+   the semantic Client.
+7. Keep device-local pin, layout, draft checkpoint, focus, and scroll preferences that cannot alter daemon truth.
 
 The frontend must not:
 
@@ -342,12 +362,18 @@ The frontend must not:
 5. Choose a default item on the user's behalf.
 6. Wrap `Quick + none` as Clarify.
 7. Display `submit_clarify_packet`, `dynamicTools`, MCP tools, raw JSON, schema errors, repair prompts, skill names, provider roles, or state codes.
+8. Access SQLite, Git, Provider SDKs, or Browser process state directly, or create a SessionContext/directory replica
+   authority for Files, Schedule, Browser, or Timeline.
 
 ## 9. Verification Boundary
 
 `NTH-EV-029` verifies the strengthened Loop-2 Clarify path, with known remaining gaps.
 `NTH-EV-030` code-verifies the merged Loop background implementation, but real-provider local/public
 acceptance is still pending.
+
+`NTH-EV-071` locally verifies the accepted operational surfaces through focused owner tests, all five root gates,
+real Web, Android Debug APK, real Codex runtime smoke, and one rebuilt AppImage real-window journey. Fixed-Beta
+workflow and downloaded-public-asset verification remain the publication boundary until that evidence is appended.
 
 1. The restored Paseo surface is the main path.
 2. Quick+none `hi` is a bare provider stream with no Clarify Card.
@@ -367,8 +393,7 @@ Not fully verified yet:
 1. Real Codex local/public Loop background acceptance for PlanExec / Review execution.
 2. Golden/judge evidence for `thoth.loop` PlanExec / Review quality.
 3. Non-Codex provider runtime-tool adapters.
-4. Release build or store distribution.
-5. Release build or store distribution.
+4. Fixed-Beta exact-SHA workflow and downloaded public asset verification for the Paseo v0.2.2 integration.
 
 ## 10. Minimal Next Implementation Order
 

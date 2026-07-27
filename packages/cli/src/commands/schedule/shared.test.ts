@@ -34,6 +34,22 @@ describe("parseScheduleCreateInput new-agent target", () => {
       config: { provider: "codex", model: "gpt-5", modeId: "full-access" },
     });
   });
+
+  test("requests worktree isolation only when the user passes the explicit flag", () => {
+    expect(parseScheduleCreateInput(baseOptions).target).toEqual({
+      type: "new-agent",
+      config: { provider: "claude" },
+    });
+    expect(
+      parseScheduleCreateInput({
+        ...baseOptions,
+        worktree: true,
+      }).target,
+    ).toEqual({
+      type: "new-agent",
+      config: { provider: "claude", isolation: "worktree" },
+    });
+  });
 });
 
 describe("parseScheduleCreateInput first-run timing", () => {
@@ -189,6 +205,20 @@ describe("parseScheduleUpdateInput", () => {
       id: "abc",
       newAgentConfig: { modeId: null },
     });
+  });
+
+  test("updates worktree isolation explicitly and rejects conflicting isolation flags", () => {
+    expect(parseScheduleUpdateInput({ id: "abc", worktree: true })).toEqual({
+      id: "abc",
+      newAgentConfig: { isolation: "worktree" },
+    });
+    expect(parseScheduleUpdateInput({ id: "abc", sameWorkspace: true })).toEqual({
+      id: "abc",
+      newAgentConfig: { isolation: "same-workspace" },
+    });
+    expect(() =>
+      parseScheduleUpdateInput({ id: "abc", worktree: true, sameWorkspace: true }),
+    ).toThrow(expect.objectContaining({ code: "CONFLICTING_ISOLATION" }));
   });
 
   test("--max-runs sets a positive integer; --no-max-runs clears", () => {

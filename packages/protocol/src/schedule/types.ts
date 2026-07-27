@@ -26,6 +26,7 @@ export const ScheduleTargetSchema = z.discriminatedUnion("type", [
     type: z.literal("new-agent"),
     config: z.object({
       provider: AgentProviderSchema,
+      isolation: z.enum(["same-workspace", "worktree"]).optional(),
       modeId: z.string().trim().min(1).optional(),
       model: z.string().trim().min(1).optional(),
       thinkingOptionId: z.string().trim().min(1).optional(),
@@ -51,6 +52,8 @@ export type ScheduleTarget = z.infer<typeof ScheduleTargetSchema>;
 
 export const ScheduleRunSchema = z.object({
   id: z.string(),
+  taskId: z.string().min(1).nullable().default(null),
+  executionId: z.string().min(1).nullable().default(null),
   scheduledFor: z.string(),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
@@ -98,6 +101,7 @@ export interface UpdateScheduleNewAgentConfig {
   provider?: string;
   model?: string | null;
   modeId?: string | null;
+  isolation?: "same-workspace" | "worktree";
 }
 
 export interface UpdateScheduleInput {

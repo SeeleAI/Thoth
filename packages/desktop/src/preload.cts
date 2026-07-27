@@ -1,6 +1,17 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
+// This preload is tsc-compiled for Electron's sandbox and must not load local
+// runtime modules. Keep this literal synchronized with browser-profile.ts;
+// preload-sandbox.test.ts guards the shared-profile value and import boundary.
+const THOTH_BROWSER_PROFILE_PARTITION = "persist:thoth-browser";
+
 type EventHandler = (payload: unknown) => void;
+
+interface AttachedBrowserRegistration {
+  browserId: string;
+  workspaceId: string;
+  webContentsId: number;
+}
 
 contextBridge.exposeInMainWorld("thothDesktop", {
   platform: process.platform,
@@ -74,11 +85,18 @@ contextBridge.exposeInMainWorld("thothDesktop", {
       ipcRenderer.invoke("thoth:menu:showContextMenu", input),
   },
   browser: {
-    setWorkspaceActiveBrowser: (browserId: string | null) =>
-      ipcRenderer.invoke("thoth:browser:set-workspace-active-browser", browserId),
+    profilePartition: THOTH_BROWSER_PROFILE_PARTITION,
+    registerAttachedBrowser: (input: AttachedBrowserRegistration) =>
+      ipcRenderer.invoke("thoth:browser:register-attached", input),
+    unregisterWorkspaceBrowser: (browserId: string) =>
+      ipcRenderer.invoke("thoth:browser:unregister-workspace-browser", browserId),
+    setWorkspaceActiveBrowser: (input: { workspaceId: string; browserId: string | null }) =>
+      ipcRenderer.invoke("thoth:browser:set-workspace-active-browser", input),
     openDevTools: (browserId: string) =>
       ipcRenderer.invoke("thoth:browser:open-devtools", browserId),
-    clearPartition: (browserId: string) =>
-      ipcRenderer.invoke("thoth:browser:clear-partition", browserId),
+    clearProfile: (legacyBrowserIds: string[]) =>
+      ipcRenderer.invoke("thoth:browser:clear-profile", legacyBrowserIds),
+    executeAutomationCommand: (request: Record<string, unknown>) =>
+      ipcRenderer.invoke("thoth:browser:execute-automation-command", request),
   },
 });

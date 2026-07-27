@@ -123,6 +123,70 @@ describe("transitionAuthority", () => {
     expect(mutation.phaseRunStatus).toBe("succeeded");
   });
 
+  it("settles a Quick execution and its Task through one authority transition", () => {
+    const state = authorityState({
+      task: taskProjection({ mode: "quick" }),
+      execution: executionProjection({ phase: "quick_exec", attachment: null }),
+    });
+    const succeeded = transitionAuthority(
+      state,
+      {
+        type: "execution.quick.settled",
+        generation: "generation-1",
+        status: "succeeded",
+        summary: "Scheduled work completed",
+      },
+      deterministic,
+    );
+
+    expect(succeeded.task).toMatchObject({
+      status: "completed",
+      currentGoalId: null,
+      currentExecutionId: null,
+      summary: "Scheduled work completed",
+    });
+    expect(succeeded.task.goals[0]).toMatchObject({ status: "passed", revision: 2 });
+    expect(succeeded.execution).toMatchObject({
+      status: "succeeded",
+      completedAt: now,
+      summary: "Scheduled work completed",
+    });
+    expect(succeeded.blackboard).toEqual([
+      expect.objectContaining({ kind: "evidence_summary", producer: "daemon" }),
+    ]);
+    expect(succeeded.phaseRunStatus).toBe("succeeded");
+    expect(succeeded.effects).toEqual([{ type: "release_task_runtime", taskId: "task-1" }]);
+  });
+
+  it("keeps failed Quick execution authority terminal and recoverable", () => {
+    const state = authorityState({
+      task: taskProjection({ mode: "quick" }),
+      execution: executionProjection({ phase: "quick_exec", attachment: null }),
+    });
+    const failed = transitionAuthority(
+      state,
+      {
+        type: "execution.quick.settled",
+        generation: "generation-1",
+        status: "failed",
+        summary: "Provider unavailable",
+      },
+      deterministic,
+    );
+
+    expect(failed.task).toMatchObject({
+      status: "interrupted",
+      currentExecutionId: null,
+      summary: "Provider unavailable",
+    });
+    expect(failed.task.goals[0]).toMatchObject({ status: "interrupted" });
+    expect(failed.execution).toMatchObject({ status: "failed", completedAt: now });
+    expect(failed.blackboard).toEqual([
+      expect.objectContaining({ kind: "blocker", producer: "daemon" }),
+    ]);
+    expect(failed.phaseRunStatus).toBe("interrupted");
+  });
+
   it("applies Review retry budget and direction in one pure transition", () => {
     const state = authorityState({ execution: reviewExecution() });
     const mutation = transitionAuthority(

@@ -15,6 +15,7 @@ import type {
 } from "../agent/provider-snapshot-manager.js";
 import { ProviderSnapshotManager } from "../agent/provider-snapshot-manager.js";
 import { Session, type SessionOptions } from "../session.js";
+import type { WorkspaceServicePortRegistry } from "../workspace-service-port-registry.js";
 import { ToolGateway, type ToolResultSink } from "../workspace-authority/tool-gateway.js";
 import type { SessionOutboundMessage } from "@thoth/protocol/messages";
 import { asInternals, createStub } from "./class-mocks.js";
@@ -132,10 +133,22 @@ export function createSessionAuthorityStubs(): Pick<
 }
 
 export function createSessionWithAuthority(
-  options: Omit<SessionOptions, "workspaceAuthorityManager" | "workspaceTaskCoordinator"> &
-    Partial<Pick<SessionOptions, "workspaceAuthorityManager" | "workspaceTaskCoordinator">>,
+  options: Omit<
+    SessionOptions,
+    "workspaceAuthorityManager" | "workspaceTaskCoordinator" | "workspaceServicePortRegistry"
+  > &
+    Partial<
+      Pick<
+        SessionOptions,
+        "workspaceAuthorityManager" | "workspaceTaskCoordinator" | "workspaceServicePortRegistry"
+      >
+    >,
 ): Session {
-  return new Session({ ...createSessionAuthorityStubs(), ...options } as SessionOptions);
+  return new Session({
+    ...createSessionAuthorityStubs(),
+    workspaceServicePortRegistry: createStub<WorkspaceServicePortRegistry>({}),
+    ...options,
+  } as SessionOptions);
 }
 
 // ---------------------------------------------------------------------------

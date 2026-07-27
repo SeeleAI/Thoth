@@ -55,6 +55,8 @@ interface GitActionRuntimeState {
 export interface BuildGitActionsInput {
   isGit: boolean;
   githubFeaturesEnabled: boolean;
+  changeRequestFeaturesEnabled?: boolean;
+  changeRequestAbbrev?: string;
   githubAutoMergeActionsEnabled: boolean;
   hasPullRequest: boolean;
   pullRequestUrl: string | null;
@@ -409,9 +411,9 @@ function buildPrAction(input: BuildGitActionsInput): GitAction {
 
   return {
     id: "pr",
-    label: i18n.t("workspace.git.actions.createPr.label"),
-    pendingLabel: i18n.t("workspace.git.actions.createPr.pending"),
-    successLabel: i18n.t("workspace.git.actions.createPr.success"),
+    label: changeRequestLabel(i18n.t("workspace.git.actions.createPr.label"), input),
+    pendingLabel: changeRequestLabel(i18n.t("workspace.git.actions.createPr.pending"), input),
+    successLabel: changeRequestLabel(i18n.t("workspace.git.actions.createPr.success"), input),
     disabled: input.runtime.pr.disabled,
     status: input.runtime.pr.status,
     unavailableMessage: input.runtime.pr.disabled
@@ -530,7 +532,7 @@ function canMergeFromBase(input: BuildGitActionsInput): boolean {
 }
 
 function canUsePullRequestActionAsShipDefault(input: BuildGitActionsInput): boolean {
-  if (input.isOnBaseBranch || !input.githubFeaturesEnabled) {
+  if (input.isOnBaseBranch || !hasChangeRequestFeatures(input)) {
     return false;
   }
   if (input.hasPullRequest) {
@@ -656,13 +658,22 @@ function getPullAndPushUnavailableMessage(input: BuildGitActionsInput): string |
 }
 
 function getCreatePrUnavailableMessage(input: BuildGitActionsInput): string | undefined {
-  if (!input.githubFeaturesEnabled) {
+  if (!hasChangeRequestFeatures(input)) {
     return i18n.t("workspace.git.actions.unavailable.createPrNoGithub");
   }
   if (input.aheadCount === 0) {
     return i18n.t("workspace.git.actions.unavailable.createPrNoCommits");
   }
   return undefined;
+}
+
+function hasChangeRequestFeatures(input: BuildGitActionsInput): boolean {
+  return input.changeRequestFeaturesEnabled ?? input.githubFeaturesEnabled;
+}
+
+function changeRequestLabel(label: string, input: BuildGitActionsInput): string {
+  const abbreviation = input.changeRequestAbbrev?.trim() || "PR";
+  return abbreviation === "PR" ? label : label.replace(/\bPR\b/gu, abbreviation);
 }
 
 function getMergeBranchUnavailableMessage(input: BuildGitActionsInput): string | undefined {

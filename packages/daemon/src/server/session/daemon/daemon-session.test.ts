@@ -324,6 +324,9 @@ describe("DaemonSession", () => {
           peakInflightRequests: 3,
           terminalSubscriptionCount: 4,
           terminalDirectorySubscriptionCount: 5,
+          workspaceGitWatchedDirectoryCount: 10,
+          workspaceGitWorkspaceRecordCount: 11,
+          workspaceGitSubscriptionCount: 12,
           checkoutDiffTargetCount: 6,
           checkoutDiffSubscriptionCount: 7,
           checkoutDiffWatcherCount: 8,
@@ -349,6 +352,41 @@ describe("DaemonSession", () => {
           timelineStats: {
             totalItems: 42,
             maxItemsPerAgent: 12,
+          },
+        },
+        git: {
+          commands: {
+            concurrencyLimit: 8,
+            active: 1,
+            pending: 2,
+            peakActive: 4,
+            peakPending: 3,
+            oldestPendingMs: 25,
+            submitted: 9,
+            started: 7,
+            completed: 6,
+            failed: 1,
+            timedOut: 1,
+            queueWaitMs: { count: 7, p50Ms: 2, p95Ms: 8, maxMs: 10 },
+            executionMs: { count: 6, p50Ms: 12, p95Ms: 30, maxMs: 45 },
+            operationsTop: [
+              ["status", 5],
+              ["fetch", 2],
+            ],
+          },
+          workspaceService: {
+            workspaceTargetCount: 3,
+            workspaceListenerCount: 4,
+            repositoryTargetCount: 2,
+            repositoryWorkspaceLinkCount: 3,
+            workingTreeWatchTargetCount: 1,
+            workingTreeWatchListenerCount: 2,
+            workspaceObservationSetupInFlightCount: 0,
+            workingTreeWatchSetupInFlightCount: 0,
+            workspaceRefreshInFlightCount: 1,
+            workspaceRefreshQueuedCount: 1,
+            fetchInFlightCount: 1,
+            snapshotUpdatedListenerCount: 1,
           },
         },
       }),
@@ -377,6 +415,18 @@ describe("DaemonSession", () => {
     expect(message.payload.diagnostic).toContain("Inbound session requests: diagnostics.request=2");
     expect(message.payload.diagnostic).toContain(
       "Checkout diff: targets=6, subscriptions=7, watchers=8, fallbackRefreshTargets=9",
+    );
+    expect(message.payload.diagnostic).toContain(
+      "Workspace Git observers: directories=10, workspaces=11, subscriptions=12",
+    );
+    expect(message.payload.diagnostic).toContain(
+      "Git commands: submitted=9, completed=6, failed=1, timedOut=1, active=1, pending=2",
+    );
+    expect(message.payload.diagnostic).toContain(
+      "Git command latency: queueP95=8ms, executionP95=30ms, oldestPending=25ms, operations=status=5, fetch=2",
+    );
+    expect(message.payload.diagnostic).toContain(
+      "Workspace Git service: workspaceTargets=3, workspaceListeners=4, repositoryTargets=2, workingTreeWatchTargets=1, refreshInFlight=1",
     );
     expect(message.payload.diagnostic).toContain("Agent lifecycle: idle=8, running=2");
   });

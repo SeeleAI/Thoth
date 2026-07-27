@@ -37,7 +37,7 @@ const NON_AUTHORITY_HOME_ENTRIES = new Set([
   "relay-credentials.json",
   "server-id",
 ]);
-const CATALOG_REQUIRED_TABLES = [
+const CATALOG_V2_REQUIRED_TABLES = [
   "catalog_agent_locator",
   "catalog_card_locator",
   "catalog_projects",
@@ -47,6 +47,10 @@ const CATALOG_REQUIRED_TABLES = [
   "catalog_turn_locator",
   "catalog_workspaces",
   "catalog_schema_migrations",
+] as const;
+const CATALOG_REQUIRED_TABLES = [
+  ...CATALOG_V2_REQUIRED_TABLES,
+  "catalog_runtime_resource_leases",
 ] as const;
 const AUTHORITY_REQUIRED_TABLES = [
   "agent_timeline_meta",
@@ -111,7 +115,7 @@ export async function ensureThothStorageLayout(
   if (marker?.version === STORAGE_LAYOUT_VERSION) {
     return { requiresProviderThreadFinalization: false };
   }
-  if (marker && marker.version !== 1) {
+  if (marker && marker.version !== 1 && marker.version !== 2) {
     throw new Error(`Unsupported Thoth storage layout version: ${String(marker.version)}`);
   }
 
@@ -143,7 +147,7 @@ export async function ensureThothStorageLayout(
     writeMarker(markerPath, { migrated: true, workspaceCount: workspaceIds.length });
     logger.info(
       { sourceRelease: RELEASE_SOURCE, workspaceCount: workspaceIds.length },
-      "Migrated Thoth storage to normalized authority schema v2",
+      "Migrated Thoth storage to normalized authority schema v3",
     );
     return { requiresProviderThreadFinalization: false };
   } finally {
@@ -156,52 +160,82 @@ function migrateDatabase(
   kind: "catalog" | "authority",
   options: StorageMigrationOptions,
 ): void {
+  let sourceVersion = -1;
   const current = new DatabaseSync(filePath);
   try {
     const version = schemaVersion(current);
+    sourceVersion = version;
     if (version === SQLITE_SCHEMA_VERSION) {
       validateDatabase(current, kind);
       return;
     }
-    if (version !== 0) {
+    if (version !== 0 && version !== 2) {
       throw new Error(`Unsupported SQLite schema ${version} at ${filePath}`);
     }
-    requireTables(current, kind);
-    requireReleaseLedger(current, kind);
-    current.exec("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode = DELETE;");
+    if (version === 0) {
+      requireTables(current, kind, 0);
+      requireReleaseLedger(current, kind);
+    } else {
+      requireTables(current, kind, 2);
+      requireNormalizedV2Ledger(current, kind);
+    }
+    if (existsSync(`${filePath}-wal`)) current.exec("PRAGMA wal_checkpoint(TRUNCATE);");
   } finally {
     current.close();
   }
 
   const temporary = `${filePath}.v${SQLITE_SCHEMA_VERSION}.tmp-${process.pid}`;
-  const backup = `${filePath}.release-${RELEASE_SOURCE}.bak`;
+  const backup =
+    sourceVersion === 0
+      ? `${filePath}.release-${RELEASE_SOURCE}.bak`
+      : `${filePath}.schema-v${sourceVersion}.bak`;
   rmSync(temporary, { force: true });
   copyFileSync(filePath, temporary);
   try {
     options.onPhase?.("copied", filePath);
-    const beforeDigest = semanticDigest(filePath, kind);
+    const beforeDigest = semanticDigest(filePath, kind, 2);
     const candidate = new DatabaseSync(temporary, { enableForeignKeyConstraints: true });
     try {
-      candidate.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE;");
-      if (kind === "authority") candidate.exec("DROP TABLE authority_events");
-      const migrationTable =
-        kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations";
-      const migrationVersion =
-        kind === "catalog" ? CATALOG_MIGRATION_VERSION : AUTHORITY_MIGRATION_VERSION;
-      candidate
-        .prepare(
-          `INSERT INTO ${migrationTable}(version, checksum, applied_at)
-           VALUES (?, ?, ?)`,
-        )
-        .run(
-          migrationVersion,
-          kind === "catalog" ? "normalized-catalog-v2" : "normalized-authority-v2",
-          new Date().toISOString(),
-        );
-      candidate.exec(`PRAGMA user_version = ${SQLITE_SCHEMA_VERSION}`);
+      candidate.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; BEGIN IMMEDIATE;");
+      try {
+        if (sourceVersion === 0 && kind === "authority") {
+          candidate.exec("DROP TABLE authority_events");
+        }
+        applySchemaV3(candidate, kind);
+        const migrationTable =
+          kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations";
+        const migrationVersion =
+          kind === "catalog" ? CATALOG_MIGRATION_VERSION : AUTHORITY_MIGRATION_VERSION;
+        if (sourceVersion === 0) {
+          candidate
+            .prepare(
+              `INSERT INTO ${migrationTable}(version, checksum, applied_at)
+               VALUES (?, ?, ?)`,
+            )
+            .run(
+              kind === "catalog" ? 2 : 5,
+              kind === "catalog" ? "normalized-catalog-v2" : "normalized-authority-v2",
+              new Date().toISOString(),
+            );
+        }
+        candidate
+          .prepare(
+            `INSERT INTO ${migrationTable}(version, checksum, applied_at)
+             VALUES (?, ?, ?)`,
+          )
+          .run(
+            migrationVersion,
+            kind === "catalog" ? "host-runtime-resources-v3" : "schedule-task-execution-v3",
+            new Date().toISOString(),
+          );
+        candidate.exec(`PRAGMA user_version = ${SQLITE_SCHEMA_VERSION}; COMMIT;`);
+      } catch (error) {
+        candidate.exec("ROLLBACK;");
+        throw error;
+      }
       options.onPhase?.("transformed", filePath);
       validateDatabase(candidate, kind);
-      const afterDigest = semanticDigest(temporary, kind);
+      const afterDigest = semanticDigest(temporary, kind, 2);
       if (afterDigest !== beforeDigest) {
         throw new Error(`Semantic digest changed while migrating ${filePath}`);
       }
@@ -233,6 +267,47 @@ function migrateDatabase(
   }
 }
 
+function applySchemaV3(database: DatabaseSync, kind: "catalog" | "authority"): void {
+  if (kind === "catalog") {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS catalog_runtime_resource_leases (
+        resource_kind TEXT NOT NULL,
+        resource_key TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        owner_key TEXT NOT NULL,
+        holder_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('reserved', 'active')),
+        generation TEXT NOT NULL,
+        value_json TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(resource_kind, resource_key),
+        UNIQUE(resource_kind, workspace_id, owner_key)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS catalog_runtime_resource_leases_expiry
+        ON catalog_runtime_resource_leases(resource_kind, expires_at);
+    `);
+    return;
+  }
+
+  const columns = new Set(
+    (database.prepare("PRAGMA table_info(schedule_runs)").all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    ),
+  );
+  if (!columns.has("task_id")) {
+    database.exec("ALTER TABLE schedule_runs ADD COLUMN task_id TEXT;");
+  }
+  if (!columns.has("execution_id")) {
+    database.exec("ALTER TABLE schedule_runs ADD COLUMN execution_id TEXT;");
+  }
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS schedule_runs_task_execution
+      ON schedule_runs(task_id, execution_id);
+  `);
+}
+
 function requireReleaseLedger(database: DatabaseSync, kind: "catalog" | "authority"): void {
   const table = kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations";
   const expected = kind === "catalog" ? RELEASE_CATALOG_MIGRATIONS : RELEASE_AUTHORITY_MIGRATIONS;
@@ -245,6 +320,26 @@ function requireReleaseLedger(database: DatabaseSync, kind: "catalog" | "authori
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(
       `Unsupported ${kind} migration ledger before Release ${RELEASE_SOURCE}; the original database was preserved`,
+    );
+  }
+}
+
+function requireNormalizedV2Ledger(database: DatabaseSync, kind: "catalog" | "authority"): void {
+  const table = kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations";
+  const expectedVersion = kind === "catalog" ? 2 : 5;
+  const expectedChecksum = kind === "catalog" ? "normalized-catalog-v2" : "normalized-authority-v2";
+  const rows = database
+    .prepare(`SELECT version, checksum FROM ${table} ORDER BY version`)
+    .all() as Array<{ version: number; checksum: string }>;
+  const latest = rows.at(-1);
+  if (
+    !latest ||
+    latest.version !== expectedVersion ||
+    latest.checksum !== expectedChecksum ||
+    rows.some((row) => row.version > expectedVersion)
+  ) {
+    throw new Error(
+      `Unsupported ${kind} normalized-v2 migration ledger; the original database was preserved`,
     );
   }
 }
@@ -265,14 +360,19 @@ function validateDatabase(database: DatabaseSync, kind: "catalog" | "authority")
   }
 }
 
-function requireTables(database: DatabaseSync, kind: "catalog" | "authority"): void {
-  const required = kind === "catalog" ? CATALOG_REQUIRED_TABLES : AUTHORITY_REQUIRED_TABLES;
+function requireTables(
+  database: DatabaseSync,
+  kind: "catalog" | "authority",
+  sourceVersion: 0 | 2 | 3 = 3,
+): void {
+  const required =
+    kind === "catalog" && sourceVersion !== 3
+      ? CATALOG_V2_REQUIRED_TABLES
+      : kind === "catalog"
+        ? CATALOG_REQUIRED_TABLES
+        : AUTHORITY_REQUIRED_TABLES;
   const missing: string[] = required.filter((table) => !hasTable(database, table));
-  if (
-    kind === "authority" &&
-    schemaVersion(database) === 0 &&
-    !hasTable(database, "authority_events")
-  ) {
+  if (kind === "authority" && sourceVersion === 0 && !hasTable(database, "authority_events")) {
     missing.push("authority_events");
   }
   if (missing.length > 0) {
@@ -282,12 +382,19 @@ function requireTables(database: DatabaseSync, kind: "catalog" | "authority"): v
   }
 }
 
-function semanticDigest(filePath: string, kind: "catalog" | "authority"): string {
+function semanticDigest(
+  filePath: string,
+  kind: "catalog" | "authority",
+  compatibilityVersion?: 2,
+): string {
   const database = new DatabaseSync(filePath, { readOnly: true });
   try {
     const excluded = new Set([
       "authority_events",
       kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations",
+      ...(compatibilityVersion === 2 && kind === "catalog"
+        ? ["catalog_runtime_resource_leases"]
+        : []),
     ]);
     const tables = (
       database
@@ -302,9 +409,17 @@ function semanticDigest(filePath: string, kind: "catalog" | "authority"): string
         name: string;
         pk: number;
       }>;
-      const names = columns.map((column) => column.name);
+      const names = columns
+        .map((column) => column.name)
+        .filter(
+          (column) =>
+            compatibilityVersion !== 2 ||
+            kind !== "authority" ||
+            name !== "schedule_runs" ||
+            (column !== "task_id" && column !== "execution_id"),
+        );
       const primary = columns
-        .filter((column) => column.pk > 0)
+        .filter((column) => column.pk > 0 && names.includes(column.name))
         .sort((left, right) => left.pk - right.pk)
         .map((column) => column.name);
       const order = primary.length > 0 ? primary : names;

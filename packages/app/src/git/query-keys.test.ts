@@ -2,6 +2,8 @@ import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
   checkoutDiffQueryKey,
+  checkoutCommitFileDiffQueryKey,
+  checkoutCommitsQueryKey,
   checkoutPrStatusQueryKey,
   checkoutStatusQueryKey,
   invalidateCheckoutGitQueriesForClient,
@@ -21,6 +23,11 @@ describe("checkout query keys", () => {
       files: [],
     });
     queryClient.setQueryData(checkoutPrStatusQueryKey(serverId, cwd), { status: { number: 12 } });
+    queryClient.setQueryData(checkoutCommitsQueryKey(serverId, cwd), { commits: [] });
+    queryClient.setQueryData(
+      checkoutCommitFileDiffQueryKey(serverId, cwd, "a".repeat(40), "src/a.ts"),
+      { file: null },
+    );
     queryClient.setQueryData(prPaneTimelineQueryKey({ serverId, cwd, prNumber: 12 }), {
       items: [],
     });
@@ -44,6 +51,15 @@ describe("checkout query keys", () => {
     expect(queryClient.getQueryState(checkoutPrStatusQueryKey(serverId, cwd))?.isInvalidated).toBe(
       true,
     );
+    expect(queryClient.getQueryState(checkoutCommitsQueryKey(serverId, cwd))?.isInvalidated).toBe(
+      true,
+    );
+    // Immutable SHA-addressed file diffs remain cached.
+    expect(
+      queryClient.getQueryState(
+        checkoutCommitFileDiffQueryKey(serverId, cwd, "a".repeat(40), "src/a.ts"),
+      )?.isInvalidated,
+    ).toBe(false);
     expect(
       queryClient.getQueryState(prPaneTimelineQueryKey({ serverId, cwd, prNumber: 12 }))
         ?.isInvalidated,
@@ -69,6 +85,7 @@ describe("checkout query keys", () => {
     queryClient.setQueryData(checkoutStatusQueryKey(serverId, cwd), { isGit: true });
     queryClient.setQueryData(checkoutStatusQueryKey(serverId, otherCwd), { isGit: true });
     queryClient.setQueryData(checkoutPrStatusQueryKey(serverId, cwd), { status: { number: 12 } });
+    queryClient.setQueryData(checkoutCommitsQueryKey(serverId, cwd), { commits: [] });
     queryClient.setQueryData(prPaneTimelineQueryKey({ serverId, cwd, prNumber: 12 }), {
       items: [],
     });
@@ -87,6 +104,9 @@ describe("checkout query keys", () => {
       queryClient.getQueryState(checkoutStatusQueryKey(serverId, otherCwd))?.isInvalidated,
     ).toBe(true);
     expect(queryClient.getQueryState(checkoutPrStatusQueryKey(serverId, cwd))?.isInvalidated).toBe(
+      true,
+    );
+    expect(queryClient.getQueryState(checkoutCommitsQueryKey(serverId, cwd))?.isInvalidated).toBe(
       true,
     );
     expect(

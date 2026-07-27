@@ -232,6 +232,63 @@ describe("CheckoutSession", () => {
     });
   });
 
+  describe("read-only commit file diff fencing", () => {
+    it.each(["../secret.txt", "/etc/passwd", "src/../../secret.txt", ""])(
+      "rejects an unsafe workspace-relative path: %s",
+      async (path) => {
+        const { checkout, emitted } = makeCheckoutSession();
+
+        await checkout.handleCommitFileDiffRequest({
+          type: "checkout.commits.file_diff.request",
+          cwd: "/repo",
+          sha: "1".repeat(40),
+          path,
+          requestId: "unsafe-path",
+        });
+
+        expect(emitted).toEqual([
+          {
+            type: "checkout.commits.file_diff.response",
+            payload: {
+              cwd: "/repo",
+              sha: "1".repeat(40),
+              path,
+              file: null,
+              error: { code: "UNKNOWN", message: `Invalid path: ${path}` },
+              requestId: "unsafe-path",
+            },
+          },
+        ]);
+      },
+    );
+
+    it("rejects an unsafe commit ref before invoking Git", async () => {
+      const { checkout, emitted } = makeCheckoutSession();
+
+      await checkout.handleCommitFileDiffRequest({
+        type: "checkout.commits.file_diff.request",
+        cwd: "/repo",
+        sha: "--output=/tmp/leak",
+        path: "src/a.ts",
+        requestId: "unsafe-ref",
+      });
+
+      expect(emitted).toEqual([
+        {
+          type: "checkout.commits.file_diff.response",
+          payload: expect.objectContaining({
+            cwd: "/repo",
+            sha: "--output=/tmp/leak",
+            path: "src/a.ts",
+            file: null,
+            error: expect.objectContaining({ code: "UNKNOWN" }),
+            requestId: "unsafe-ref",
+          }),
+        },
+      ]);
+    });
+  });
+
   describe("validate branch", () => {
     it("validates an existing local branch", async () => {
       const { checkout, emitted } = makeCheckoutSession({

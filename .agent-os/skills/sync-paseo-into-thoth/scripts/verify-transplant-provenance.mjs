@@ -5,6 +5,8 @@ import path from "node:path";
 
 const DISPOSITIONS = new Set(["adopt", "adapt", "reject", "defer"]);
 const RELEASE_INTENTS = new Set(["analyze", "integrate", "release-ready", "publish"]);
+const ARCHITECTURE_IMPACTS = new Set(["local", "cross-layer", "architectural"]);
+const ARCHITECTURE_REVIEW_STATUSES = new Set(["pending", "approved", "rejected"]);
 
 function parseArgs(argv) {
   const out = {};
@@ -49,6 +51,69 @@ function addFailure(failures, code, location, message) {
   failures.push({ code, location, message });
 }
 
+function validDecisionId(value) {
+  return typeof value === "string" && /^NTH-CD-\d{3,}$/.test(value);
+}
+
+function validateArchitectureReview(failures, review, location) {
+  if (!review || typeof review !== "object" || Array.isArray(review)) {
+    addFailure(
+      failures,
+      "missing-architecture-review",
+      location,
+      "Architecture-level changes require a structured review",
+    );
+    return null;
+  }
+  if (!ARCHITECTURE_REVIEW_STATUSES.has(review.status)) {
+    addFailure(
+      failures,
+      "invalid-architecture-review-status",
+      `${location}.status`,
+      `Expected one of: ${[...ARCHITECTURE_REVIEW_STATUSES].join(", ")}`,
+    );
+  }
+  const discussion = review.discussion;
+  if (!discussion || typeof discussion !== "object" || Array.isArray(discussion)) {
+    addFailure(
+      failures,
+      "missing-architecture-discussion",
+      `${location}.discussion`,
+      "Architecture review requires a discussion packet",
+    );
+  } else {
+    for (const field of [
+      "upstream_change",
+      "thoth_impact",
+      "authority_assessment",
+      "recommendation",
+      "decision_question",
+    ]) {
+      if (!nonEmptyString(discussion[field])) {
+        addFailure(
+          failures,
+          "incomplete-architecture-discussion",
+          `${location}.discussion.${field}`,
+          `${field} is required`,
+        );
+      }
+    }
+    if (
+      !Array.isArray(discussion.options) ||
+      discussion.options.length < 2 ||
+      !discussion.options.every(nonEmptyString)
+    ) {
+      addFailure(
+        failures,
+        "incomplete-architecture-options",
+        `${location}.discussion.options`,
+        "At least two concrete architecture options are required",
+      );
+    }
+  }
+  return review.status;
+}
+
 function writeJson(outputPath, value) {
   const serialized = `${JSON.stringify(value, null, 2)}\n`;
   if (!outputPath) process.stdout.write(serialized);
@@ -74,11 +139,11 @@ try {
   const classification = loadJson(args.classification, "Classification");
   const failures = [];
 
-  if (manifest.schema_version !== 1) {
-    addFailure(failures, "manifest-schema", "manifest", "schema_version must be 1");
+  if (manifest.schema_version !== 2) {
+    addFailure(failures, "manifest-schema", "manifest", "schema_version must be 2");
   }
-  if (classification.schema_version !== 1) {
-    addFailure(failures, "classification-schema", "classification", "schema_version must be 1");
+  if (classification.schema_version !== 2) {
+    addFailure(failures, "classification-schema", "classification", "schema_version must be 2");
   }
 
   const manifestBase = manifest.upstream?.base_sha;
@@ -117,7 +182,44 @@ try {
   }
 
   const manifestCommits = new Set((manifest.commits ?? []).map((commit) => commit.sha));
+  const architectureCandidates = Array.isArray(manifest.architecture_candidates)
+    ? manifest.architecture_candidates
+    : [];
+  if (!Array.isArray(manifest.architecture_candidates)) {
+    addFailure(
+      failures,
+      "missing-architecture-candidates",
+      "manifest.architecture_candidates",
+      "Manifest must contain the architecture candidate inventory",
+    );
+  }
+  const candidateByCommit = new Map();
+  for (const [index, candidate] of architectureCandidates.entries()) {
+    const location = `manifest.architecture_candidates[${index}]`;
+    if (!manifestCommits.has(candidate.commit_sha)) {
+      addFailure(
+        failures,
+        "unknown-architecture-candidate",
+        `${location}.commit_sha`,
+        `Candidate commit is not in manifest: ${candidate.commit_sha}`,
+      );
+      continue;
+    }
+    if (candidate.review_level !== "review" && candidate.review_level !== "required") {
+      addFailure(
+        failures,
+        "invalid-architecture-review-level",
+        `${location}.review_level`,
+        "Expected review or required",
+      );
+    }
+    candidateByCommit.set(candidate.commit_sha, candidate);
+  }
   const coveredCommits = new Set();
+  const assessedCandidateCommits = new Set();
+  const architecturalCandidateCommits = new Set();
+  let architecturalChangeCount = 0;
+  let pendingArchitectureReviewCount = 0;
   const changes = Array.isArray(classification.changes) ? classification.changes : [];
   if (!Array.isArray(classification.changes)) {
     addFailure(failures, "missing-changes", "classification.changes", "changes must be an array");
@@ -142,6 +244,22 @@ try {
     }
     if (!nonEmptyString(change.reason))
       addFailure(failures, "missing-reason", `${location}.reason`, "A concrete reason is required");
+    if (!ARCHITECTURE_IMPACTS.has(change.architecture_impact)) {
+      addFailure(
+        failures,
+        "invalid-architecture-impact",
+        `${location}.architecture_impact`,
+        `Expected one of: ${[...ARCHITECTURE_IMPACTS].join(", ")}`,
+      );
+    }
+    if (!nonEmptyString(change.architecture_assessment)) {
+      addFailure(
+        failures,
+        "missing-architecture-assessment",
+        `${location}.architecture_assessment`,
+        "Every coherent change requires an explicit Thoth architecture assessment",
+      );
+    }
     if (!nonEmptyStrings(change.upstream_paths)) {
       addFailure(
         failures,
@@ -166,8 +284,83 @@ try {
             `${location}.upstream_commits`,
             `Commit is not in manifest: ${sha}`,
           );
-        } else coveredCommits.add(sha);
+        } else {
+          coveredCommits.add(sha);
+          if (candidateByCommit.has(sha)) assessedCandidateCommits.add(sha);
+          if (change.architecture_impact === "architectural") {
+            architecturalCandidateCommits.add(sha);
+          }
+        }
       }
+    }
+
+    if (change.architecture_impact === "architectural") {
+      architecturalChangeCount += 1;
+      const reviewStatus = validateArchitectureReview(
+        failures,
+        change.architecture_review,
+        `${location}.architecture_review`,
+      );
+      if (reviewStatus === "pending") {
+        pendingArchitectureReviewCount += 1;
+        if (classification.release_intent !== "analyze") {
+          addFailure(
+            failures,
+            "architecture-review-pending",
+            `${location}.architecture_review.status`,
+            "Pending architecture review is allowed only in analyze mode",
+          );
+        }
+        if (change.disposition !== "defer") {
+          addFailure(
+            failures,
+            "pending-architecture-must-defer",
+            `${location}.disposition`,
+            "A pending architecture decision must remain deferred",
+          );
+        }
+      } else if (reviewStatus === "approved") {
+        if (!validDecisionId(change.architecture_review?.decision_id)) {
+          addFailure(
+            failures,
+            "missing-architecture-decision",
+            `${location}.architecture_review.decision_id`,
+            "Approved architecture review requires a concrete NTH-CD decision",
+          );
+        }
+        if (change.disposition === "reject") {
+          addFailure(
+            failures,
+            "approved-architecture-rejected",
+            `${location}.disposition`,
+            "Approved architecture review cannot use reject disposition",
+          );
+        }
+      } else if (reviewStatus === "rejected") {
+        if (!validDecisionId(change.architecture_review?.decision_id)) {
+          addFailure(
+            failures,
+            "missing-architecture-decision",
+            `${location}.architecture_review.decision_id`,
+            "Rejected architecture review requires a concrete NTH-CD decision",
+          );
+        }
+        if (change.disposition !== "reject") {
+          addFailure(
+            failures,
+            "rejected-architecture-not-rejected",
+            `${location}.disposition`,
+            "A rejected architecture direction must use reject disposition",
+          );
+        }
+      }
+    } else if (change.architecture_review !== undefined) {
+      addFailure(
+        failures,
+        "unexpected-architecture-review",
+        `${location}.architecture_review`,
+        "Only architecture-level changes may carry architecture_review",
+      );
     }
 
     if (change.disposition === "adopt" || change.disposition === "adapt") {
@@ -226,7 +419,17 @@ try {
         `${location}.sha`,
         `Commit is not in manifest: ${entry.sha}`,
       );
-    } else coveredCommits.add(entry.sha);
+    } else {
+      coveredCommits.add(entry.sha);
+      if (candidateByCommit.has(entry.sha)) {
+        addFailure(
+          failures,
+          "architecture-candidate-ignored",
+          `${location}.sha`,
+          "Architecture candidate commits require an explicit coherent-change assessment",
+        );
+      }
+    }
     if (!nonEmptyString(entry.reason)) {
       addFailure(
         failures,
@@ -247,6 +450,24 @@ try {
       );
     }
   }
+  for (const [sha, candidate] of candidateByCommit) {
+    if (!assessedCandidateCommits.has(sha)) {
+      addFailure(
+        failures,
+        "unresolved-architecture-candidate",
+        "classification",
+        `Architecture candidate has no explicit change assessment: ${sha}`,
+      );
+    }
+    if (candidate.review_level === "required" && !architecturalCandidateCommits.has(sha)) {
+      addFailure(
+        failures,
+        "required-architecture-review-missing",
+        "classification",
+        `Required architecture candidate is not classified as architectural: ${sha}`,
+      );
+    }
+  }
 
   const report = {
     schema_version: 1,
@@ -259,6 +480,10 @@ try {
       manifest_commit_count: manifestCommits.size,
       covered_commit_count: coveredCommits.size,
       classified_change_count: changes.length,
+      architecture_candidate_count: candidateByCommit.size,
+      architectural_change_count: architecturalChangeCount,
+      pending_architecture_review_count: pendingArchitectureReviewCount,
+      architecture_review_required: pendingArchitectureReviewCount > 0,
       failure_count: failures.length,
     },
     failures,

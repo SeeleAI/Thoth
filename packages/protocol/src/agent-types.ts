@@ -116,6 +116,8 @@ export interface ProviderSnapshotEntry {
   label?: string;
   description?: string;
   defaultModeId?: string | null;
+  source?: "builtin" | "custom";
+  deletable?: boolean;
   planCapability?: import("./provider-control.js").ProviderPlanCapability;
 }
 
@@ -299,13 +301,24 @@ export type ToolCallDetail =
       output: unknown;
     };
 
+export interface AgentTimelineContentTruncationReceipt {
+  truncated: true;
+  encoding: "utf-8";
+  strategy: "prefix";
+  originalBytes: number;
+  retainedBytes: number;
+  limitBytes: number;
+}
+
 interface ToolCallBase {
   [key: string]: unknown;
   type: "tool_call";
   callId: string;
   name: string;
   detail: ToolCallDetail;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & {
+    contentTruncation?: AgentTimelineContentTruncationReceipt;
+  };
 }
 
 type ToolCallRunningTimelineItem = ToolCallBase & {

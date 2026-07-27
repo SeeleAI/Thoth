@@ -60,6 +60,8 @@ export const ja: TranslationResources = {
       newAgent: "新しいエージェント",
       openProject: "プロジェクトを開く",
       home: "ホーム",
+      modelGroupLabel: "モデル",
+      modelSearchKeywords: "モデルを切り替え モデルを変更 モデルを設定 モデルを選択",
     },
   },
   composer: {
@@ -102,6 +104,8 @@ export const ja: TranslationResources = {
       removeBrowserElement: "ブラウザ要素の添付ファイルを削除",
       openReview: "レビュー添付ファイルを開く",
       removeReview: "レビュー添付ファイルを削除",
+      openWorkspaceFile: "ワークスペースファイルの添付を開く",
+      removeWorkspaceFile: "ワークスペースファイルの添付を削除",
     },
     errors: {
       failedToSend: "メッセージの送信に失敗しました",
@@ -360,6 +364,11 @@ export const ja: TranslationResources = {
         modified: "更新日時",
         copyPath: "パスをコピー",
         download: "ダウンロード",
+        attachToComposer: "メッセージに追加",
+        attachedToComposer: "ファイルをメッセージに追加しました",
+        attachTextOnly: "追加できるのはテキストファイルのみです",
+        attachTooLarge: "ファイルが大きすぎます（最大 10 MB）",
+        attachFailed: "ファイルをメッセージに追加できませんでした",
       },
       actions: {
         back: "戻る",
@@ -722,6 +731,14 @@ export const ja: TranslationResources = {
         base: "ベース",
         newFile: "新規",
         deletedFile: "削除済み",
+        commits: {
+          title: "コミット",
+          loading: "コミット履歴を読み込み中...",
+          loadError: "コミット履歴を読み込めません",
+          noneAhead: "{{baseRef}} より先のコミットはまだありません",
+          countLabel: "{{count}} 件のコミット",
+          noTextualChanges: "このコミットにテキスト変更はありません",
+        },
       },
       openInEditor: {
         open: "開く",
@@ -819,6 +836,8 @@ export const ja: TranslationResources = {
       actions: {
         menu: "ワークスペースアクション",
         newWorkspace: "新しいワークスペース",
+        showMore: "さらに表示",
+        showLess: "表示を減らす",
         createWorkspaceFor: "{{projectName}}の新しいワークスペースを作成",
         copyPath: "パスをコピー",
         copyBranchName: "ブランチ名をコピー",
@@ -1400,6 +1419,17 @@ export const ja: TranslationResources = {
     },
     general: {
       title: "一般",
+      browserData: {
+        title: "ブラウザーデータ",
+        siteData: "Cookie とサイトデータ",
+        description: "ブラウザータブ間でログイン情報とサイトデータが共有されます。",
+        clear: "ブラウザーデータを消去",
+        clearing: "消去中...",
+        confirmTitle: "ブラウザーデータを消去しますか？",
+        confirmMessage: "サイトからログアウトし、開いているブラウザータブを再読み込みします。",
+        success: "ブラウザーデータを消去しました。",
+        error: "ブラウザーデータを消去できませんでした。",
+      },
       defaultSend: {
         label: "デフォルトの送信",
         descriptions: {
@@ -1528,6 +1558,7 @@ export const ja: TranslationResources = {
     },
     shortcuts: {
       dialogTitle: "ショートカット",
+      searchPlaceholder: "ショートカットを検索",
       unavailableOnMobile: "キーボードショートカットはデスクトップでのみ利用できます",
       capturePrompt: "ショートカットを押してください...",
       actions: {
@@ -1789,6 +1820,12 @@ export const ja: TranslationResources = {
       loading: "読み込み中...",
       addErrorTitle: "プロバイダーを追加できません",
       updateErrorTitle: "プロバイダーを更新できません",
+      deleteProvider: "{{name}} を削除",
+      deleteConfirmTitle: "{{name}} を削除しますか？",
+      deleteConfirmMessage:
+        "このホストからカスタムプロバイダーを削除します。実行中のセッションは継続しますが、新規セッションや再開するセッションでは使用できなくなります。",
+      deleteAction: "プロバイダーを削除",
+      deleteErrorTitle: "プロバイダーを削除できません",
       statuses: {
         disabled: "無効",
         loading: "読み込み中",

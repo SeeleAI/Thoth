@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import type { WorkspaceDescriptor } from "@/projection/authority-model";
+import { estimateTerminalViewportSize } from "@/terminal/runtime/terminal-size-cache";
 import { useTranslation } from "react-i18next";
 import {
   buildTerminalsQueryKey,
@@ -124,14 +125,22 @@ export function useWorkspaceTerminals(input: UseWorkspaceTerminalsInput) {
       if (!client || !workspaceDirectory) {
         throw new Error(t("workspace.terminal.hostDisconnected"));
       }
+      const size =
+        estimateTerminalViewportSize({
+          serverId: normalizedServerId,
+          workspaceId: normalizedWorkspaceId,
+          cwd: workspaceDirectory,
+        }) ?? undefined;
       const payload = _input?.profile
         ? await client.createTerminal(workspaceDirectory, _input.profile.name, undefined, {
             command: _input.profile.command,
             args: _input.profile.args,
             workspaceId: normalizedWorkspaceId || undefined,
+            size,
           })
         : await client.createTerminal(workspaceDirectory, undefined, undefined, {
             workspaceId: normalizedWorkspaceId || undefined,
+            size,
           });
       // The daemon reports a failed spawn (e.g. a profile command that isn't
       // installed) via payload.error with a null terminal. Surface it instead

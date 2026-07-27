@@ -1710,3 +1710,73 @@ Observed on `2026-07-26` after committing the repository-local Paseo synchroniza
 Conclusion: file-content scanners over Git path inventories must classify filesystem entries without following
 directory symlinks. A green pre-commit scan does not prove the tracked-index state when the scanner intentionally
 excludes untracked paths; rerun the formal gate after the link enters Git.
+
+## `NTH-EXP-066` Architecture-gate forward-tests must isolate Stage 2 from live recovery work
+
+Observed on `2026-07-26` while forward-testing the revised Paseo synchronization skill:
+
+1. The first independent prompt asked a fresh agent to use the complete skill on a hypothetical mixed range. It did
+   not return within repeated bounded waits and was interrupted without modifying files. It was not counted as a
+   passing result.
+2. The retry explicitly limited the evaluation to the skill and its direct Stage 2 references, forbade Stage 1 live
+   recovery, network and writes, and supplied the same hypothetical local terminal fix plus cross-boundary protocol/
+   client/session refactor.
+3. The independent result classified the terminal fix as `adopt + local`, the refactor as
+   `defer + architectural + pending`, produced the required architecture discussion structure and correctly refused
+   Stage 3 until a concrete user decision exists.
+
+Conclusion: forward-tests for one skill stage should isolate that stage's raw scenario and permitted resources.
+An unrestricted full-workflow prompt can measure repository-recovery cost instead of the decision rule under test;
+an interrupted evaluation is inconclusive and must remain visible rather than being replaced by the later pass.
+
+## `NTH-EXP-067` Shared build outputs make output-cleaning root scripts unsafe to run concurrently
+
+Observed on `2026-07-27` during Paseo v0.2.2 owner verification:
+
+1. Parallel package test/typecheck work overlapped root commands that clean and rebuild
+   `packages/protocol/dist`. A consumer temporarily resolved `@thoth/protocol` while that directory was absent and
+   reported package-not-found even though the source and the same command were otherwise valid.
+2. Retrying arbitrary failed tests in parallel would hide the causal build-output race and could create different
+   missing-package symptoms. The verification sequence was instead made strictly serial across commands that clean
+   shared workspace outputs.
+3. The affected owner suites and every formal root gate subsequently passed from current source. No compatibility
+   copy, duplicate build output, or relaxed test was introduced.
+
+Conclusion: commands that clean shared workspace `dist` directories are not independent even when their logical
+test scopes differ. Parallelize only commands with isolated outputs; formal promotion gates remain serial unless
+their own runner explicitly owns safe concurrency.
+
+## `NTH-EXP-068` A stale idle snapshot cannot settle a newly submitted packaged Browser turn
+
+Observed on `2026-07-27` during the real-window AppImage Browser/Schedule journey:
+
+1. After `sendAgentMessage(PACKAGED_BROWSER_AUTOMATION)` returned, the old Agent projection could still be `idle`
+   before the new turn entered `running`. The smoke's immediate `waitForAgentIdle()` therefore returned against the
+   previous turn.
+2. Schedule acceptance then navigated the main frame to Background Tasks, destroying the App WebSocket while the
+   Browser turn was actually executing. Whichever Browser command happened to be in flight then failed near the
+   same time, making `new_tab`, `snapshot`, or `navigate` appear independently flaky.
+3. Renderer navigation/console evidence proved the ordering. The smoke now first observes the Agent leave `idle`,
+   then return to `idle`, captures and validates the complete Browser flow with no `turn_error`, and only afterward
+   navigates to Schedule. It adds no command retry, timeout increase, or weaker assertion.
+
+Conclusion: a terminal state sampled before a new asynchronous lifecycle starts is not completion evidence for
+that lifecycle. Product-surface navigation that replaces a renderer or socket must be sequenced after positive
+start-and-finish observation, not after a stale terminal snapshot.
+
+## `NTH-EXP-069` Provider catalog e2e fixtures must distinguish curated support from installed version gates
+
+Observed on `2026-07-27` during the complete CLI local/e2e run:
+
+1. Local Claude Code `2.1.159` is available, but the correct Fable 5 minimum is `2.1.169`; the Driver therefore
+   omitted Fable as designed. The CLI e2e incorrectly interpreted any available Claude binary as proof that the
+   complete newest built-in catalog must be visible and failed after `39/40` files passed.
+2. Removing Fable assertions or making the test conditional would weaken the accepted catalog contract. The test
+   now uses the persisted Provider command override to run a deterministic `2.1.219` version probe through the real
+   daemon/Driver path and requires Opus 5, Fable 5, and Sonnet 5 200K/1M entries plus legacy models.
+3. A debug-only single-file rerun passed, followed by the formal complete CLI package result: `30/30` unit tests and
+   `40/40` local/e2e files. The local installed-version fact remains separate runtime evidence.
+
+Conclusion: test the curated catalog with a deterministic capability/version fixture and test the actual installed
+Provider as an opt-in runtime probe. Do not make a machine's older valid version look like a product failure, and do
+not weaken catalog coverage to accommodate it.

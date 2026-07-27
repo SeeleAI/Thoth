@@ -10,6 +10,7 @@ import type {
   AgentModelDefinition,
   AgentProvider,
   FetchCatalogOptions,
+  ProviderSnapshotEntry,
   ResolveAgentCreateConfigInput,
 } from "@thoth/drivers/agent-runtime";
 import type { ManagedAgent } from "./execution-service.js";
@@ -172,7 +173,97 @@ describe("ProviderSnapshotManager public surface", () => {
       const claude = snapshot.find((entry) => entry.provider === "claude");
       expect(claude?.status).toBe("loading");
       expect(claude?.label).toBe("Claude");
-      expect(claude?.defaultModeId).toBe("default");
+      expect(claude?.defaultModeId).toBe("auto");
+      expect(claude?.source).toBe("builtin");
+      expect(claude?.deletable).toBe(false);
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("marks derived Provider profiles as custom and deletable", () => {
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      providerOverrides: {
+        "custom-claude": { extends: "claude", label: "Custom Claude" },
+      },
+    });
+    try {
+      const entry = manager
+        .getSnapshot("/tmp/project")
+        .find((candidate) => candidate.provider === "custom-claude");
+      expect(entry).toMatchObject({
+        provider: "custom-claude",
+        source: "custom",
+        deletable: true,
+      });
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("removes a deleted custom Provider from snapshots and execution registration immediately", () => {
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      providerOverrides: {
+        "custom-claude": { extends: "claude", label: "Custom Claude" },
+      },
+    });
+    const changes: ProviderSnapshotEntry[][] = [];
+    manager.on("change", (entries) => changes.push(entries));
+    try {
+      expect(manager.hasProvider("custom-claude")).toBe(true);
+      expect(manager.getSnapshot().some((entry) => entry.provider === "custom-claude")).toBe(true);
+
+      const executionState = manager.applyMutableProviderConfig({});
+
+      expect(manager.hasProvider("custom-claude")).toBe(false);
+      expect(manager.getSnapshot().some((entry) => entry.provider === "custom-claude")).toBe(false);
+      expect(executionState.providerDefinitions["custom-claude"]).toBeUndefined();
+      expect(changes.at(-1)?.some((entry) => entry.provider === "custom-claude")).toBe(false);
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("uses the Driver catalog default only when no explicit mode was selected", async () => {
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      extraAdapters: {
+        codex: createExtraClient("codex", {
+          isAvailable: async () => true,
+          fetchCatalog: async () => ({
+            models: [],
+            modes: [
+              { id: "auto", label: "Auto" },
+              { id: "auto-review", label: "Auto-review" },
+            ],
+            defaultModeId: "auto-review",
+          }),
+        }),
+      },
+    });
+    try {
+      await expect(
+        manager.resolveCreateConfig({
+          provider: "codex",
+          cwd: "/tmp/project",
+          requestedMode: undefined,
+          featureValues: undefined,
+          parent: null,
+          unattended: false,
+        }),
+      ).resolves.toMatchObject({ modeId: "auto-review" });
+      await expect(
+        manager.resolveCreateConfig({
+          provider: "codex",
+          cwd: "/tmp/project",
+          requestedMode: "auto",
+          featureValues: undefined,
+          parent: null,
+          unattended: false,
+        }),
+      ).resolves.toMatchObject({ modeId: "auto" });
     } finally {
       manager.destroy();
     }
@@ -736,6 +827,16 @@ describe("ProviderSnapshotManager public surface", () => {
         logger: createTestLogger(),
         isDev: true,
         refreshTimeoutMs: TEST_REFRESH_TIMEOUT_MS,
+        extraAdapters: {
+          "mock-slow": createExtraClient("mock-slow", {
+            isAvailable: async () => true,
+            fetchCatalog: async () => new Promise(() => {}),
+            getDiagnostic: async () => ({
+              diagnostic:
+                "Mock slow provider: dev-only. fetchCatalog() never resolves so the snapshot manager will time out.",
+            }),
+          }),
+        },
       });
       try {
         const diagnosticRequest = manager.getProviderDiagnostic("mock-slow");
@@ -865,6 +966,7 @@ describe("ProviderSnapshotManager public surface", () => {
           },
           unattended: true,
           availableModes: childModes,
+          defaultModeId: "auto",
         },
       ]);
     } finally {
@@ -920,6 +1022,7 @@ describe("ProviderSnapshotManager public surface", () => {
           parent: null,
           unattended: true,
           availableModes: modes,
+          defaultModeId: "auto",
         },
       ]);
     } finally {

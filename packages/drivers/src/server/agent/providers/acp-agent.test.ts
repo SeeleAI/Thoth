@@ -2477,6 +2477,79 @@ describe("ACPHarnessThread close() tree-kill", () => {
   });
 });
 
+describe("ACPHarnessThread initialization cleanup", () => {
+  function createFailingSession(args: {
+    terminator: FakeTerminator;
+    child: ChildProcessWithoutNullStreams;
+    handle?: AgentPersistenceHandle;
+    connection: Partial<ClientSideConnection>;
+    agentCapabilities?: Record<string, unknown>;
+  }): ACPHarnessThread {
+    class FailingSession extends ACPHarnessThread {
+      protected override async spawnProcess(): Promise<SpawnedACPProcess> {
+        return {
+          child: args.child,
+          connection: args.connection as ClientSideConnection,
+          initialize: { agentCapabilities: args.agentCapabilities ?? {} },
+        } as SpawnedACPProcess;
+      }
+    }
+
+    return new FailingSession(
+      { provider: "copilot", cwd: "/tmp/thoth-acp-test" },
+      {
+        provider: "copilot",
+        logger: createTestLogger(),
+        defaultCommand: ["copilot", "--acp"],
+        defaultModes: [],
+        capabilities: {
+          supportsStreaming: true,
+          supportsSessionPersistence: true,
+          supportsSessionListing: true,
+          supportsDynamicModes: true,
+          supportsMcpServers: true,
+          supportsReasoningStream: true,
+          supportsToolInvocations: true,
+        },
+        terminateProcess: args.terminator.terminate,
+        ...(args.handle ? { handle: args.handle } : {}),
+      },
+    );
+  }
+
+  test("terminates the ACP process when session/new fails", async () => {
+    const terminator = new FakeTerminator();
+    const child = createProbeChildStub();
+    const session = createFailingSession({
+      terminator,
+      child,
+      connection: {
+        newSession: vi.fn().mockRejectedValue(new Error("session/new failed")),
+      },
+    });
+
+    await expect(session.initializeNewSession()).rejects.toThrow("session/new failed");
+    expect(terminator.terminated).toContain(child);
+  });
+
+  test("terminates the ACP process when session/load fails", async () => {
+    const terminator = new FakeTerminator();
+    const child = createProbeChildStub();
+    const session = createFailingSession({
+      terminator,
+      child,
+      handle: { provider: "copilot", sessionId: "session-1" },
+      connection: {
+        loadSession: vi.fn().mockRejectedValue(new Error("session/load failed")),
+      },
+      agentCapabilities: { loadSession: true },
+    });
+
+    await expect(session.initializeResumedSession()).rejects.toThrow("session/load failed");
+    expect(terminator.terminated).toContain(child);
+  });
+});
+
 describe("ACPHarnessAdapter probe cleanup", () => {
   afterEach(() => {
     vi.restoreAllMocks();

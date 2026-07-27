@@ -69,6 +69,11 @@ try {
   write(fixture, "packages/app/src/terminal-pane.ts", 'export const label = "Terminal";\n');
   const acceptedSha = commit(fixture, "feat: improve timeline and terminal");
 
+  write(fixture, "packages/protocol/src/rpc-registry.ts", "export const rpcVersion = 2;\n");
+  write(fixture, "packages/client/src/transport.ts", "export const transport = 'registry';\n");
+  write(fixture, "packages/server/src/session/runtime.ts", "export const lifecycle = 'durable';\n");
+  const architectureSha = commit(fixture, "refactor: rewrite protocol session transport");
+
   write(
     fixture,
     "packages/app/src/voice-mode.ts",
@@ -95,10 +100,19 @@ try {
     manifestPath,
   ]);
   const manifest = loadJson(manifestPath);
-  assert(manifest.summary.commit_count === 2, "Range inspection must report two commits");
+  assert(manifest.schema_version === 2, "Range inspection must emit schema version 2");
+  assert(manifest.summary.commit_count === 3, "Range inspection must report three commits");
   assert(
     manifest.summary.excluded_capability_paths.includes("packages/app/src/voice-mode.ts"),
     "Range inspection must identify the excluded voice path",
+  );
+  const architectureCandidate = manifest.architecture_candidates.find(
+    (candidate) => candidate.commit_sha === architectureSha,
+  );
+  assert(architectureCandidate, "Range inspection must identify the architecture candidate");
+  assert(
+    architectureCandidate.review_level === "required",
+    "Cross-boundary architecture work must require review",
   );
 
   const boundaryPath = path.join(fixture, "boundary.json");
@@ -138,11 +152,11 @@ try {
     classificationPath,
     `${JSON.stringify(
       {
-        schema_version: 1,
+        schema_version: 2,
         paseo_base_sha: baseSha,
         paseo_target_sha: targetSha,
         thoth_base_sha: baseSha,
-        release_intent: "integrate",
+        release_intent: "analyze",
         changes: [
           {
             id: "timeline-terminal",
@@ -150,10 +164,47 @@ try {
             upstream_paths: ["packages/app/src/timeline.ts", "packages/app/src/terminal-pane.ts"],
             disposition: "adapt",
             reason: "Retain presentation improvements behind Thoth authority.",
+            architecture_impact: "local",
+            architecture_assessment:
+              "The change is limited to App presentation and does not change a Thoth ownership boundary.",
             thoth_modules: ["packages/app"],
             formal_interface: "Canonical AgentTimeline projection",
             state_owner: "Daemon Workspace authority",
             acceptance: ["Focused App behavior tests"],
+          },
+          {
+            id: "protocol-session-transport",
+            upstream_commits: [architectureSha],
+            upstream_paths: [
+              "packages/protocol/src/rpc-registry.ts",
+              "packages/client/src/transport.ts",
+              "packages/server/src/session/runtime.ts",
+            ],
+            disposition: "defer",
+            reason: "The upstream rewrite requires an explicit Thoth architecture decision.",
+            architecture_impact: "architectural",
+            architecture_assessment:
+              "The commit changes Protocol, Client transport, and server session lifecycle together.",
+            architecture_review: {
+              status: "pending",
+              discussion: {
+                upstream_change:
+                  "Paseo rewrites RPC, transport, and session lifecycle as one subsystem.",
+                thoth_impact:
+                  "A direct port would affect the Protocol Registry, semantic Client, Daemon runtime, and HarnessAdapter boundary.",
+                authority_assessment:
+                  "Paseo session ownership cannot replace Workspace and Task authority or ProviderThread opacity.",
+                options: [
+                  "Reject the upstream architecture and port no code.",
+                  "Adapt selected transport mechanics inside Thoth's existing ownership model.",
+                  "Revise the canonical Thoth architecture through a new user decision.",
+                ],
+                recommendation:
+                  "Adapt only independently valuable mechanics after preserving the current Thoth ownership chain.",
+                decision_question:
+                  "Should Thoth adapt selected mechanics or reopen its canonical transport and session architecture?",
+              },
+            },
           },
           {
             id: "voice-mode",
@@ -161,6 +212,9 @@ try {
             upstream_paths: ["packages/app/src/voice-mode.ts"],
             disposition: "reject",
             reason: "Voice and direct model API paths are outside the Thoth boundary.",
+            architecture_impact: "local",
+            architecture_assessment:
+              "The prohibited feature is local to the App and is rejected without changing Thoth architecture.",
           },
         ],
         ignored_commits: [],
@@ -181,13 +235,117 @@ try {
   ]);
   const provenance = loadJson(provenancePath);
   assert(provenance.summary.ok === true, "Complete provenance classification must pass");
-  assert(provenance.summary.covered_commit_count === 2, "Every manifest commit must be covered");
+  assert(provenance.summary.covered_commit_count === 3, "Every manifest commit must be covered");
+  assert(
+    provenance.summary.architecture_review_required === true,
+    "Analyze mode must surface the pending architecture decision",
+  );
+
+  const pendingClassification = loadJson(classificationPath);
+  pendingClassification.release_intent = "integrate";
+  writeFileSync(classificationPath, `${JSON.stringify(pendingClassification, null, 2)}\n`);
+  const pendingIntegrateRun = spawnSync(
+    process.execPath,
+    [provenanceScript, "--manifest", manifestPath, "--classification", classificationPath],
+    { encoding: "utf8" },
+  );
+  assert(
+    pendingIntegrateRun.status === 1,
+    "Integrate mode must fail while architecture review is pending",
+  );
+  const pendingIntegrateReport = JSON.parse(pendingIntegrateRun.stdout);
+  assert(
+    pendingIntegrateReport.failures.some(
+      (failure) => failure.code === "architecture-review-pending",
+    ),
+    "Pending integrate failure must identify the architecture review gate",
+  );
+
+  const approvedClassification = loadJson(classificationPath);
+  const architectureChange = approvedClassification.changes.find(
+    (change) => change.id === "protocol-session-transport",
+  );
+  architectureChange.disposition = "adapt";
+  architectureChange.thoth_modules = ["packages/protocol", "packages/client", "packages/daemon"];
+  architectureChange.formal_interface = "Protocol Registry -> semantic Client -> Daemon use case";
+  architectureChange.state_owner = "Daemon Workspace authority";
+  architectureChange.acceptance = ["Protocol/Client transport contract", "Daemon lifecycle test"];
+  architectureChange.architecture_review.status = "approved";
+  architectureChange.architecture_review.decision_id = "NTH-CD-999";
+  writeFileSync(classificationPath, `${JSON.stringify(approvedClassification, null, 2)}\n`);
+  run(process.execPath, [
+    provenanceScript,
+    "--manifest",
+    manifestPath,
+    "--classification",
+    classificationPath,
+    "--out",
+    provenancePath,
+  ]);
+  const approvedProvenance = loadJson(provenancePath);
+  assert(approvedProvenance.summary.ok === true, "Approved architecture review must pass");
+  assert(
+    approvedProvenance.summary.architecture_review_required === false,
+    "Approved architecture review must clear the discussion gate",
+  );
+
+  const downclassified = structuredClone(approvedClassification);
+  const downclassifiedChange = downclassified.changes.find(
+    (change) => change.id === "protocol-session-transport",
+  );
+  downclassifiedChange.architecture_impact = "cross-layer";
+  delete downclassifiedChange.architecture_review;
+  writeFileSync(classificationPath, `${JSON.stringify(downclassified, null, 2)}\n`);
+  const downclassifiedRun = spawnSync(
+    process.execPath,
+    [provenanceScript, "--manifest", manifestPath, "--classification", classificationPath],
+    { encoding: "utf8" },
+  );
+  assert(
+    downclassifiedRun.status === 1,
+    "A required architecture candidate must not be silently downclassified",
+  );
+  const downclassifiedReport = JSON.parse(downclassifiedRun.stdout);
+  assert(
+    downclassifiedReport.failures.some(
+      (failure) => failure.code === "required-architecture-review-missing",
+    ),
+    "Downclassification failure must identify the missing required architecture review",
+  );
+
+  const ignoredArchitecture = structuredClone(approvedClassification);
+  ignoredArchitecture.changes = ignoredArchitecture.changes.filter(
+    (change) => change.id !== "protocol-session-transport",
+  );
+  ignoredArchitecture.ignored_commits = [
+    {
+      sha: architectureSha,
+      reason: "Attempt to hide an architecture candidate as an ignored commit.",
+    },
+  ];
+  writeFileSync(classificationPath, `${JSON.stringify(ignoredArchitecture, null, 2)}\n`);
+  const ignoredArchitectureRun = spawnSync(
+    process.execPath,
+    [provenanceScript, "--manifest", manifestPath, "--classification", classificationPath],
+    { encoding: "utf8" },
+  );
+  assert(
+    ignoredArchitectureRun.status === 1,
+    "An architecture candidate must not be hidden in ignored commits",
+  );
+  const ignoredArchitectureReport = JSON.parse(ignoredArchitectureRun.stdout);
+  assert(
+    ignoredArchitectureReport.failures.some(
+      (failure) => failure.code === "architecture-candidate-ignored",
+    ),
+    "Ignored candidate failure must identify the architecture discussion gate",
+  );
 
   writeFileSync(
     classificationPath,
     `${JSON.stringify(
       {
-        schema_version: 1,
+        schema_version: 2,
         paseo_base_sha: baseSha,
         paseo_target_sha: targetSha,
         thoth_base_sha: baseSha,
@@ -207,7 +365,7 @@ try {
   assert(incompleteRun.status === 1, "Incomplete provenance classification must fail");
 
   console.log(
-    "Paseo sync skill tools passed: range inventory, boundary blocking, and provenance coverage.",
+    "Paseo sync skill tools passed: range inventory, architecture discussion gating, boundary blocking, and provenance coverage.",
   );
 } finally {
   rmSync(fixture, { recursive: true, force: true });

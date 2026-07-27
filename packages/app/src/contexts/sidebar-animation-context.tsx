@@ -52,7 +52,6 @@ interface SidebarAnimationContextValue {
   isGesturing: SharedValue<boolean>;
   mobileVisualPanel: SharedValue<number>;
   mobilePanelState: SharedValue<number>;
-  gestureAnimatingRef: React.MutableRefObject<boolean>;
   openGestureRef: React.MutableRefObject<GestureType | undefined>;
   closeGestureRef: React.MutableRefObject<GestureType | undefined>;
 }
@@ -95,7 +94,6 @@ export function SidebarAnimationProvider({ children }: { children: ReactNode }) 
   const mobileVisualPanel = useSharedValue(getMobileVisualPanel(mobileView));
   const mobilePanelState = useSharedValue(getSettledMobilePanelState(mobileView));
   const mobilePanelTarget = useSharedValue(getMobileVisualPanel(mobileView));
-  const gestureAnimatingRef = useRef(false);
   const openGestureRef = useRef<GestureType | undefined>(undefined);
   const closeGestureRef = useRef<GestureType | undefined>(undefined);
 
@@ -216,15 +214,9 @@ export function SidebarAnimationProvider({ children }: { children: ReactNode }) 
       Keyboard.dismiss();
     }
 
-    // Gesture onEnd already started the animation on the UI thread — skip to avoid
-    // a second competing withTiming that can desync translateX and backdropOpacity
-    // after a provider remount (e.g. theme change).
-    if (gestureAnimatingRef.current) {
-      gestureAnimatingRef.current = false;
-      return;
-    }
-
-    // Don't animate if we're in the middle of a gesture - the gesture handler will handle it
+    // A live gesture owns the values until it ends. Once its store command commits, always
+    // reconcile to that store target; a one-shot skip flag could swallow the only update after
+    // an interrupted or no-op gesture and leave React state and shared values out of sync.
     if (isGesturing.value) {
       return;
     }
@@ -352,7 +344,6 @@ export function SidebarAnimationProvider({ children }: { children: ReactNode }) 
       isGesturing,
       mobileVisualPanel,
       mobilePanelState,
-      gestureAnimatingRef,
       openGestureRef,
       closeGestureRef,
     }),
@@ -368,7 +359,6 @@ export function SidebarAnimationProvider({ children }: { children: ReactNode }) 
       isGesturing,
       mobileVisualPanel,
       mobilePanelState,
-      gestureAnimatingRef,
       openGestureRef,
       closeGestureRef,
     ],

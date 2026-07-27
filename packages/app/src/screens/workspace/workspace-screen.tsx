@@ -102,6 +102,7 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { createWorkspaceBrowser, useBrowserStore } from "@/stores/browser-store";
+import { removeResidentBrowserWebview } from "@/components/browser-webview-resident";
 import { getDesktopHost } from "@/desktop/host";
 import { buildProviderCommand } from "@/utils/provider-command-templates";
 import { generateDraftId } from "@/stores/draft-keys";
@@ -304,6 +305,7 @@ function decodeSegment(value: string): string {
 }
 
 function useSyncWorkspaceActiveBrowser(input: {
+  workspaceId: string;
   workspaceLayout: WorkspaceLayout | null;
   isRouteFocused: boolean;
 }) {
@@ -317,8 +319,11 @@ function useSyncWorkspaceActiveBrowser(input: {
     if (!getIsElectron()) {
       return;
     }
-    void getDesktopHost()?.browser?.setWorkspaceActiveBrowser?.(desktopActiveBrowserId);
-  }, [desktopActiveBrowserId]);
+    void getDesktopHost()?.browser?.setWorkspaceActiveBrowser?.({
+      workspaceId: input.workspaceId,
+      browserId: desktopActiveBrowserId,
+    });
+  }, [desktopActiveBrowserId, input.workspaceId]);
 }
 
 function getFallbackTabOptionLabel(
@@ -558,6 +563,7 @@ function MobileWorkspaceTabOption({
   onCloseTabsBelow: (tabId: string) => Promise<void> | void;
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
 }) {
+  const { t } = useTranslation();
   const tabMenuLabels = useWorkspaceTabMenuLabels();
   const menuTestIDBase = `workspace-tab-menu-${buildDeterministicWorkspaceTabId(tab.target)}`;
   const menuEntries = buildWorkspaceTabMenuEntries({
@@ -1876,7 +1882,7 @@ function WorkspaceScreenContent({
       }),
     [knownTerminalIdSet, persistedUiTabs, workspaceAgentVisibility],
   );
-  useSyncWorkspaceActiveBrowser({ workspaceLayout, isRouteFocused });
+  useSyncWorkspaceActiveBrowser({ workspaceId, workspaceLayout, isRouteFocused });
   const [workspaceHistoryRestoreState, setWorkspaceHistoryRestoreState] = useState<{
     workspaceKey: string | null;
     status: "idle" | "pending" | "checked";
@@ -1989,7 +1995,8 @@ function WorkspaceScreenContent({
       if (input.target?.kind === "browser") {
         const { browserId } = input.target;
         useBrowserStore.getState().removeBrowser(browserId);
-        void getDesktopHost()?.browser?.clearPartition?.(browserId);
+        removeResidentBrowserWebview(browserId);
+        void getDesktopHost()?.browser?.unregisterWorkspaceBrowser?.(browserId);
       }
       closeWorkspaceTab(persistenceKey, normalizedTabId);
     },
@@ -3815,6 +3822,7 @@ function WorkspaceScreenContent({
               visible={isImportSheetVisible}
               client={client}
               serverId={normalizedServerId}
+              workspaceId={normalizedWorkspaceId}
               cwd={workspaceDirectory}
               onClose={closeImportSheet}
               onImportedAgent={handleImportedAgent}

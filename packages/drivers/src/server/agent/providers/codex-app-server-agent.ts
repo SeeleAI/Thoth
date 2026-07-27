@@ -37,6 +37,7 @@ import {
   type ProviderMessageAnchorReceipt,
 } from "../harness-contract.js";
 import { THOTH_RUNTIME_TOOL_NAMES } from "@thoth/protocol/thoth-runtime-contract";
+import { BROWSER_AUTOMATION_TOOL_NAMES } from "@thoth/protocol/browser-automation/rpc-schemas";
 import type { ThothToolCatalog, ThothToolDefinition, ThothToolResult } from "../tools/types.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import type { Logger } from "pino";
@@ -1011,7 +1012,11 @@ type CodexDynamicToolCallResponse = {
   contentItems: Array<{ type: "inputText"; text: string }>;
 };
 
-const THOTH_DYNAMIC_TOOL_NAME_SET = new Set<string>(THOTH_RUNTIME_TOOL_NAMES);
+const THOTH_DYNAMIC_TOOL_NAMES = [
+  ...THOTH_RUNTIME_TOOL_NAMES,
+  ...BROWSER_AUTOMATION_TOOL_NAMES,
+] as const;
+const THOTH_DYNAMIC_TOOL_NAME_SET = new Set<string>(THOTH_DYNAMIC_TOOL_NAMES);
 
 function toCodexDynamicToolInputSchema(tool: ThothToolDefinition): Record<string, unknown> {
   const inputSchema = tool.inputSchema;
@@ -1021,10 +1026,9 @@ function toCodexDynamicToolInputSchema(tool: ThothToolDefinition): Record<string
     typeof (inputSchema as { safeParseAsync?: unknown }).safeParseAsync === "function"
       ? (inputSchema as z.ZodType)
       : z.object((inputSchema ?? {}) as z.ZodRawShape).passthrough();
-  const { $schema: _schemaDialect, ...jsonSchema } = z.toJSONSchema(schema) as Record<
-    string,
-    unknown
-  >;
+  const { $schema: _schemaDialect, ...jsonSchema } = z.toJSONSchema(schema, {
+    io: "input",
+  }) as Record<string, unknown>;
   return jsonSchema;
 }
 
@@ -1082,7 +1086,7 @@ function buildThothDynamicToolSpecs(tools: ThothToolCatalog | undefined): CodexD
   if (!tools) {
     return [];
   }
-  return THOTH_RUNTIME_TOOL_NAMES.flatMap((name) => {
+  return THOTH_DYNAMIC_TOOL_NAMES.flatMap((name) => {
     const tool = tools.getTool(name);
     if (!tool) {
       return [];
@@ -3057,20 +3061,32 @@ export class CodexHarnessThread implements HarnessThread {
     this.client.setNotificationHandler((method, params) => this.handleNotification(method, params));
     this.registerRequestHandlers();
 
-    await this.client.request("initialize", buildCodexAppServerInitializeParams());
-    this.client.notify("initialized", {});
+    try {
+      await this.client.request("initialize", buildCodexAppServerInitializeParams());
+      this.client.notify("initialized", {});
 
-    await this.loadCollaborationModes();
-    await this.loadSkills();
+      await this.loadCollaborationModes();
+      await this.loadSkills();
 
-    if (this.currentThreadId) {
-      if (!this.historyOnly) {
-        await this.ensureThreadLoaded();
+      if (this.currentThreadId) {
+        if (!this.historyOnly) {
+          await this.ensureThreadLoaded();
+        }
+        await this.loadPersistedHistory();
       }
-      await this.loadPersistedHistory();
-    }
 
-    this.connected = true;
+      this.connected = true;
+    } catch (error) {
+      try {
+        await this.close();
+      } catch (closeError) {
+        this.logger.warn(
+          { err: closeError, connectError: error },
+          "Failed to close Codex app-server after connection failure",
+        );
+      }
+      throw error;
+    }
   }
 
   private traceContext(): CodexAppServerTraceContext {
@@ -5763,11 +5779,13 @@ export class CodexHarnessAdapter implements HarnessAdapter {
   }
 
   async fetchCatalog(options: FetchCatalogOptions): Promise<ProviderCatalog> {
-    return this.fetchCatalogFromAppServer(options.launchContext?.env);
+    const autoReviewEnabled = await this.resolveAutoReviewEnabled();
+    return this.fetchCatalogFromAppServer(options.launchContext?.env, autoReviewEnabled);
   }
 
   private async fetchCatalogFromAppServer(
     launchEnv?: Record<string, string>,
+    autoReviewEnabled = false,
   ): Promise<ProviderCatalog> {
     // Codex model/list is global to the app server in this flow; cwd/force are intentionally ignored.
     const child = await this.spawnAppServer(launchEnv);
@@ -5814,7 +5832,14 @@ export class CodexHarnessAdapter implements HarnessAdapter {
           reason: `Codex Plan capability probe failed: ${error instanceof Error ? error.message : String(error)}`,
         };
       }
-      return { models: mappedModels, modes: CODEX_MODES, planCapability };
+      return {
+        models: mappedModels,
+        modes: autoReviewEnabled
+          ? CODEX_MODES
+          : CODEX_MODES.filter((mode) => mode.id !== "auto-review"),
+        defaultModeId: autoReviewEnabled ? "auto-review" : DEFAULT_CODEX_MODE_ID,
+        planCapability,
+      };
     } finally {
       await client.dispose();
     }

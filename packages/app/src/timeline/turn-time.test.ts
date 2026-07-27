@@ -17,7 +17,41 @@ function assistant(id: string, timestamp: Date): TimelineRenderItem {
   return entryAt({ type: "assistant_message", messageId: id, text: id }, timestamp);
 }
 
+function pendingUser(id: string, timestamp: Date): TimelineRenderItem {
+  return {
+    source: "pending",
+    message: {
+      messageId: id,
+      text: id,
+      timestamp,
+      images: [],
+      attachments: [],
+      status: "pending",
+    },
+  };
+}
+
 describe("deriveStreamTurnTiming", () => {
+  it("shows active feedback for a pending projection before daemon acknowledgement", () => {
+    const timing = deriveStreamTurnTiming({
+      agentStatus: "idle",
+      tail: [],
+      head: [pendingUser("pending", new Date("2026-05-15T00:00:00.000Z"))],
+    });
+
+    assert.equal(timing.isActive, true);
+  });
+
+  it("does not start authoritative elapsed time from a pending projection", () => {
+    const timing = deriveStreamTurnTiming({
+      agentStatus: "running",
+      tail: [],
+      head: [pendingUser("pending", new Date("2026-05-15T00:00:00.000Z"))],
+    });
+
+    assert.equal(timing.runningStartedAt, null);
+  });
+
   it("uses the last user message as the running turn start", () => {
     const firstUserAt = new Date("2026-05-15T00:00:00.000Z");
     const secondUserAt = new Date("2026-05-15T00:01:00.000Z");
@@ -33,6 +67,7 @@ describe("deriveStreamTurnTiming", () => {
     });
 
     assert.deepEqual(timing.runningStartedAt, secondUserAt);
+    assert.equal(timing.isActive, true);
     assert.equal(timing.byAssistantId.has("a2"), false);
   });
 

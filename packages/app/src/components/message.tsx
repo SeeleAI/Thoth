@@ -108,6 +108,7 @@ import type { AgentCapabilityFlags } from "@thoth/protocol/agent-types";
 import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
 import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
+import { computeToolCallShimmerMetrics } from "@/components/tool-call-shimmer-metrics";
 export type { InlinePathTarget } from "@/assistant-file-links";
 export type { AssistantForkTarget };
 
@@ -2255,53 +2256,6 @@ function renderExpandableBadgeIconSlot({
   return iconNode;
 }
 
-function computeShimmerMetrics(input: {
-  label: string;
-  secondaryLabel: string | undefined;
-  isLoading: boolean;
-  labelRowWidth: number;
-  labelRowHeight: number;
-  labelOffsetX: number;
-  labelWidth: number;
-  secondaryOffsetX: number;
-  secondaryWidth: number;
-}) {
-  const totalShimmerChars = input.label.trim().length + (input.secondaryLabel?.trim().length ?? 0);
-  const shortTextDurationAdjustment = totalShimmerChars <= 12 ? 0.25 : 0;
-  const shimmerDuration = Math.max(
-    1,
-    Math.min(2.3, 1.25 + totalShimmerChars * 0.008 - shortTextDurationAdjustment),
-  );
-  const nativeShimmerPeakWidth = Math.max(
-    32,
-    Math.min(120, input.labelRowWidth > 0 ? input.labelRowWidth * 0.28 : 0),
-  );
-  const isWebShimmer = input.isLoading && isWeb;
-  const shouldMeasureWebShimmer = isWebShimmer;
-  const shouldMeasureNativeShimmer = input.isLoading && isNative;
-  const isNativeShimmer =
-    shouldMeasureNativeShimmer && input.labelRowWidth > 0 && input.labelRowHeight > 0;
-  const webShimmerSpanStartX = input.labelOffsetX;
-  const webShimmerSpanEndX = input.secondaryLabel
-    ? input.secondaryOffsetX + input.secondaryWidth
-    : input.labelOffsetX + input.labelWidth;
-  const webShimmerSpanWidth = Math.max(1, webShimmerSpanEndX - webShimmerSpanStartX);
-  const webShimmerPeakWidth = Math.max(42, Math.min(120, webShimmerSpanWidth * 0.22));
-  const webShimmerTrackStart = webShimmerSpanStartX - webShimmerPeakWidth;
-  const webShimmerTrackEnd = webShimmerSpanEndX;
-  return {
-    shimmerDuration,
-    nativeShimmerPeakWidth,
-    isWebShimmer,
-    shouldMeasureWebShimmer,
-    shouldMeasureNativeShimmer,
-    isNativeShimmer,
-    webShimmerPeakWidth,
-    webShimmerTrackStart,
-    webShimmerTrackEnd,
-  };
-}
-
 function useDetailWheelPropagationBlocker(input: {
   detailWrapperRef: React.RefObject<View | null>;
   enabled: boolean;
@@ -2422,10 +2376,12 @@ const ExpandableBadge = memo(function ExpandableBadge({
     webShimmerPeakWidth,
     webShimmerTrackStart,
     webShimmerTrackEnd,
-  } = computeShimmerMetrics({
+  } = computeToolCallShimmerMetrics({
     label,
     secondaryLabel,
     isLoading,
+    isWeb,
+    isNative,
     labelRowWidth,
     labelRowHeight,
     labelOffsetX,

@@ -16,6 +16,8 @@ import { tmpdir } from "os";
 import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import { runAsyncWorktreeBootstrap, spawnWorkspaceScript } from "./worktree-bootstrap.js";
 import { ScriptRouteStore } from "./script-proxy.js";
+import { WorkspaceAuthorityManager } from "./workspace-authority/index.js";
+import { WorkspaceServicePortRegistry } from "./workspace-service-port-registry.js";
 import { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
 import { isPlatform } from "../test-utils/platform.js";
 import {
@@ -77,6 +79,8 @@ describe.skipIf(isPlatform("win32"))("worktree-bootstrap POSIX-only", () => {
     let repoDir: string;
     let thothHome: string;
     let realTerminalManagers: TerminalManager[];
+    let authorityManager: WorkspaceAuthorityManager;
+    let servicePortRegistry: WorkspaceServicePortRegistry;
 
     async function waitForPathExists(targetPath: string, timeoutMs = 10000): Promise<void> {
       const startedAt = Date.now();
@@ -109,6 +113,11 @@ describe.skipIf(isPlatform("win32"))("worktree-bootstrap POSIX-only", () => {
       tempDir = realpathSync(mkdtempSync(join(tmpdir(), "worktree-bootstrap-test-")));
       repoDir = join(tempDir, "repo");
       thothHome = join(tempDir, "thoth-home");
+      authorityManager = new WorkspaceAuthorityManager(thothHome);
+      servicePortRegistry = new WorkspaceServicePortRegistry({
+        catalog: authorityManager.catalog,
+        heartbeatIntervalMs: 24 * 60 * 60_000,
+      });
 
       mkdirSync(repoDir, { recursive: true });
       execFileSync("git", ["init", "-b", "main"], { cwd: repoDir, stdio: "pipe" });
@@ -127,6 +136,7 @@ describe.skipIf(isPlatform("win32"))("worktree-bootstrap POSIX-only", () => {
 
     afterEach(async () => {
       await Promise.all(realTerminalManagers.map(cleanupTerminalManager));
+      authorityManager.close();
       rmSync(tempDir, { recursive: true, force: true });
     });
     it("streams running setup updates live and persists only a final setup timeline row", async () => {
@@ -458,6 +468,7 @@ describe.skipIf(isPlatform("win32"))("worktree-bootstrap POSIX-only", () => {
             daemonPort: 6767,
             serviceProxy: routeStore,
             runtimeStore,
+            servicePortRegistry,
             terminalManager,
           }),
         ),

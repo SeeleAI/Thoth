@@ -6,6 +6,7 @@ import {
   acquirePidLock,
   PidLockError,
   releasePidLock,
+  startPidLockHeartbeat,
   updatePidLock,
 } from "../src/server/pid-lock.js";
 import { resolveThothHome } from "../src/server/thoth-home.js";
@@ -17,11 +18,13 @@ process.title = "Thoth Supervisor";
 
 interface DaemonRunnerConfig {
   devMode: boolean;
+  reclaimStalePidLock: boolean;
   workerArgs: string[];
 }
 
 function parseConfig(argv: string[]): DaemonRunnerConfig {
   let devMode = false;
+  let reclaimStalePidLock = false;
   const workerArgs: string[] = [];
 
   for (const arg of argv) {
@@ -29,10 +32,14 @@ function parseConfig(argv: string[]): DaemonRunnerConfig {
       devMode = true;
       continue;
     }
+    if (arg === "--reclaim-stale-pid-lock") {
+      reclaimStalePidLock = true;
+      continue;
+    }
     workerArgs.push(arg);
   }
 
-  return { devMode, workerArgs };
+  return { devMode, reclaimStalePidLock, workerArgs };
 }
 
 function resolveWorkerEntry(): string {
@@ -121,9 +128,11 @@ async function main(): Promise<void> {
   const persistedConfig = loadPersistedConfig(thothHome);
   const supervisorLogFile = resolveSupervisorLogFile(thothHome, persistedConfig, workerEnv);
 
+  let lockOwnership: Awaited<ReturnType<typeof acquirePidLock>>;
   try {
-    await acquirePidLock(thothHome, null, {
+    lockOwnership = await acquirePidLock(thothHome, null, {
       ownerPid: process.pid,
+      reclaimStaleDesktopLock: config.reclaimStalePidLock,
     });
   } catch (error) {
     if (error instanceof PidLockError) {
@@ -135,17 +144,27 @@ async function main(): Promise<void> {
   }
 
   let lockReleased = false;
+  let requestSupervisorShutdown: ((reason: string) => void) | null = null;
+  const stopLockHeartbeat = startPidLockHeartbeat(thothHome, {
+    ...lockOwnership,
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`PID lock heartbeat failed: ${message}\n`);
+      if (error instanceof PidLockError) {
+        requestSupervisorShutdown?.("pid_lock_ownership_lost");
+      }
+    },
+  });
   const releaseLock = async (): Promise<void> => {
     if (lockReleased) {
       return;
     }
     lockReleased = true;
-    await releasePidLock(thothHome, {
-      ownerPid: process.pid,
-    });
+    await stopLockHeartbeat();
+    await releasePidLock(thothHome, lockOwnership);
   };
 
-  runSupervisor({
+  const supervisor = runSupervisor({
     name: "DaemonRunner",
     startupMessage: "Starting daemon worker (IPC restart and crash restart enabled)",
     resolveWorkerEntry: () => workerEntry,
@@ -170,10 +189,11 @@ async function main(): Promise<void> {
     restartOnCrash: true,
     logFile: supervisorLogFile,
     onWorkerReady: async ({ listen }) => {
-      await updatePidLock(thothHome, { listen }, { ownerPid: process.pid });
+      await updatePidLock(thothHome, { listen }, lockOwnership);
     },
     onSupervisorExit: releaseLock,
   });
+  requestSupervisorShutdown = supervisor.requestShutdown;
 }
 
 function reportStartupFailure(error: unknown): void {

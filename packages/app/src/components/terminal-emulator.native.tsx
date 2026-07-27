@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentProps,
   type Ref,
 } from "react";
 import {
@@ -16,7 +15,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { WebView, type WebViewMessageEvent } from "react-native-webview";
+import { WebView, type WebViewMessageEvent, type WebViewProps } from "react-native-webview";
 import type { ITheme } from "@xterm/xterm";
 import type { TerminalState } from "@thoth/protocol/messages";
 import type { TerminalInputModeState } from "@thoth/protocol/terminal-input-mode";
@@ -145,7 +144,7 @@ const TERMINAL_WEBVIEW_ORIGIN_WHITELIST = ["*"];
 const BRIDGE_READY_TIMEOUT_MS = 2_500;
 const RENDERER_READY_TIMEOUT_MS = 2_500;
 const TERMINAL_TAP_MOVE_TOLERANCE_PX = 8;
-type WebViewProps = ComponentProps<typeof WebView>;
+type TerminalWebViewInstance = WebView<Record<never, never>>;
 interface PendingTerminalTap {
   startX: number;
   startY: number;
@@ -212,7 +211,7 @@ export default function TerminalEmulator({
   focusRequestToken = 0,
   resizeRequestToken = 0,
 }: TerminalEmulatorProps) {
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<TerminalWebViewInstance>(null);
   const [webViewEpoch, setWebViewEpoch] = useState(0);
   const [bridgeReadyVersion, setBridgeReadyVersion] = useState(0);
   const bridgeReadyRef = useRef(false);
@@ -644,7 +643,7 @@ export default function TerminalEmulator({
 
   return (
     <View style={rootStyle} testID={testId}>
-      <WebView
+      <WebView<Record<never, never>>
         key={webViewEpoch}
         ref={webViewRef}
         source={TERMINAL_WEBVIEW_SOURCE}

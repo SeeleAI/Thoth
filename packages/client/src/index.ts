@@ -19,6 +19,7 @@ import type {
   WorkspaceDescriptorPayload,
 } from "@thoth/protocol/messages";
 import { DaemonClient } from "./daemon-client.js";
+import type { ForgeId, ForgeRepository } from "@thoth/protocol/forge";
 import type {
   FetchAgentTimelineCursor,
   FetchAgentTimelineDirection,
@@ -105,6 +106,48 @@ export interface ThothWorkspaceArchiveResult {
   error: string | null;
 }
 
+export type ThothForgeRepository = ForgeRepository;
+
+export interface ThothForgeResolveOptions {
+  remoteUrl: string;
+  forgeHint?: ForgeId;
+  requestId?: string;
+}
+
+export interface ThothForgeResolveResult {
+  requestId: string;
+  repository: ThothForgeRepository | null;
+  error: string | null;
+  errorCode: "invalid_remote" | "unsupported_forge" | null;
+}
+
+export interface ThothWorkspaceCloneOptions extends ThothForgeResolveOptions {
+  destinationPath: string;
+  title?: string;
+}
+
+export interface ThothWorkspaceCloneResult {
+  requestId: string;
+  workspace: ThothWorkspaceHandle | null;
+  repository: ThothForgeRepository | null;
+  error: string | null;
+  errorCode:
+    | "invalid_remote"
+    | "unsupported_forge"
+    | "destination_exists"
+    | "duplicate_workspace"
+    | "authentication_failed"
+    | "clone_failed"
+    | null;
+}
+
+export interface ThothWorkspaceRestoreResult {
+  requestId: string;
+  workspace: ThothWorkspaceHandle | null;
+  error: string | null;
+  errorCode: "workspace_not_found" | "directory_not_found" | null;
+}
+
 export type ThothWorkspaceUpdate = Extract<
   SessionOutboundMessage,
   { type: "workspace_update" }
@@ -126,6 +169,7 @@ export interface ThothWorkspaceHandle {
    */
   refetch(options?: { requestId?: string }): Promise<ThothWorkspace | null>;
   archive(requestId?: string): Promise<ThothWorkspaceArchiveResult>;
+  restore(requestId?: string): Promise<ThothWorkspaceRestoreResult>;
   /**
    * Subscribes to already-emitted daemon workspace_update events for this id.
    * This returns a local unsubscribe function; it does not own app cache state or
@@ -150,6 +194,12 @@ export interface ThothWorkspaceActions {
     workspace: string | ThothWorkspaceHandle,
     requestId?: string,
   ): Promise<ThothWorkspaceArchiveResult>;
+  resolveForge(input: ThothForgeResolveOptions): Promise<ThothForgeResolveResult>;
+  clone(input: ThothWorkspaceCloneOptions): Promise<ThothWorkspaceCloneResult>;
+  restore(
+    workspace: string | ThothWorkspaceHandle,
+    requestId?: string,
+  ): Promise<ThothWorkspaceRestoreResult>;
   /**
    * Local event subscription over the low-level driver's workspace_update stream.
    * The returned function only removes this SDK listener.
@@ -358,6 +408,24 @@ export function createThothClient(config: ThothClientConfig): ThothClient {
         openWorkspace(daemonClient, createWorkspaceHandle, input, requestId),
       archive: (workspace, requestId) =>
         daemonClient.archiveWorkspace(resolveWorkspaceId(workspace), requestId),
+      resolveForge: (input) => daemonClient.resolveForge(input),
+      clone: async (input) => {
+        const result = await daemonClient.cloneWorkspace(input);
+        return {
+          ...result,
+          workspace: result.workspace ? createWorkspaceHandle(result.workspace) : null,
+        };
+      },
+      restore: async (workspace, requestId) => {
+        const result = await daemonClient.restoreWorkspace(
+          resolveWorkspaceId(workspace),
+          requestId,
+        );
+        return {
+          ...result,
+          workspace: result.workspace ? createWorkspaceHandle(result.workspace) : null,
+        };
+      },
       subscribe: (handler) =>
         daemonClient.on("workspace_update", (message) => {
           handler(message.payload);
@@ -432,6 +500,18 @@ function createWorkspaceHandleFactory(daemonClient: DaemonClient): WorkspaceHand
           latest = { ...latest, archivingAt: result.archivedAt };
         }
         return result;
+      },
+      restore: async (requestId) => {
+        const result = await daemonClient.restoreWorkspace(id, requestId);
+        if (result.workspace) {
+          latest = result.workspace;
+        }
+        return {
+          ...result,
+          workspace: result.workspace
+            ? createWorkspaceHandleFactory(daemonClient)(result.workspace)
+            : null,
+        };
       },
       subscribe: (handler) =>
         daemonClient.on("workspace_update", (message) => {

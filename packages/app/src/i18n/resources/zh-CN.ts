@@ -60,6 +60,8 @@ export const zhCN: TranslationResources = {
       newAgent: "新建 Agent",
       openProject: "打开项目",
       home: "首页",
+      modelGroupLabel: "模型",
+      modelSearchKeywords: "切换模型 更改模型 设置模型 选择模型",
     },
   },
   composer: {
@@ -102,6 +104,8 @@ export const zhCN: TranslationResources = {
       removeBrowserElement: "移除浏览器元素附件",
       openReview: "打开 review 附件",
       removeReview: "移除 review 附件",
+      openWorkspaceFile: "打开 Workspace 文件附件",
+      removeWorkspaceFile: "移除 Workspace 文件附件",
     },
     errors: {
       failedToSend: "发送消息失败",
@@ -355,6 +359,11 @@ export const zhCN: TranslationResources = {
         modified: "修改时间",
         copyPath: "复制路径",
         download: "下载",
+        attachToComposer: "添加到消息",
+        attachedToComposer: "已将文件添加到消息",
+        attachTextOnly: "只能将文本文件添加到消息",
+        attachTooLarge: "文件过大（最大 10 MB）",
+        attachFailed: "无法将文件添加到消息",
       },
       actions: {
         back: "返回",
@@ -703,6 +712,14 @@ export const zhCN: TranslationResources = {
         base: "base",
         newFile: "新增",
         deletedFile: "已删除",
+        commits: {
+          title: "提交历史",
+          loading: "正在加载提交历史...",
+          loadError: "无法加载提交历史",
+          noneAhead: "尚无领先于 {{baseRef}} 的提交",
+          countLabel: "{{count}} 个提交",
+          noTextualChanges: "此提交没有文本变更",
+        },
       },
       openInEditor: {
         open: "打开",
@@ -798,6 +815,8 @@ export const zhCN: TranslationResources = {
       actions: {
         menu: "Workspace 操作",
         newWorkspace: "新建 workspace",
+        showMore: "显示更多",
+        showLess: "收起",
         createWorkspaceFor: "为 {{projectName}} 新建 workspace",
         copyPath: "复制路径",
         copyBranchName: "复制分支名称",
@@ -1367,6 +1386,17 @@ export const zhCN: TranslationResources = {
     },
     general: {
       title: "通用",
+      browserData: {
+        title: "浏览器数据",
+        siteData: "Cookie 和网站数据",
+        description: "浏览器标签页在 Thoth 中共享登录状态和网站数据。",
+        clear: "清除浏览器数据",
+        clearing: "正在清除...",
+        confirmTitle: "清除浏览器数据？",
+        confirmMessage: "网站帐号将退出登录，打开的浏览器标签页将重新加载。",
+        success: "浏览器数据已清除。",
+        error: "无法清除浏览器数据。",
+      },
       defaultSend: {
         label: "默认发送",
         descriptions: {
@@ -1493,6 +1523,7 @@ export const zhCN: TranslationResources = {
     },
     shortcuts: {
       dialogTitle: "快捷键",
+      searchPlaceholder: "搜索快捷键",
       unavailableOnMobile: "键盘快捷键仅在桌面端可用",
       capturePrompt: "按下快捷键...",
       actions: {
@@ -1745,6 +1776,12 @@ export const zhCN: TranslationResources = {
       loading: "正在加载...",
       addErrorTitle: "无法添加 Provider",
       updateErrorTitle: "无法更新 Provider",
+      deleteProvider: "删除 {{name}}",
+      deleteConfirmTitle: "删除 {{name}}？",
+      deleteConfirmMessage:
+        "这会从当前 Host 移除该自定义 Provider。已经运行的 Session 会继续，但新建或恢复的 Session 将无法再使用它。",
+      deleteAction: "删除 Provider",
+      deleteErrorTitle: "无法删除 Provider",
       statuses: {
         disabled: "已禁用",
         loading: "正在加载",

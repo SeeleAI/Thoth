@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "decision": "NTH-CD-087",
+  "thothBase": "265c4af9a45d6272ce4d3a107546b90541779983",
+  "paseoRange": "5fc53c576ef0d4dee55455ccc95660703f71b892..b589599a8f21bcc9e4c911603082566ce320a3c8",
+  "definition": {
+    "productionOnly": true,
+    "excluded": ["tests", "docs", "generated files"],
+    "preservedCutBGap": 15506
+  },
+  "preSync": {
+    "physicalLines": 296437,
+    "scannerTokens": 1272435,
+    "astNodes": 1300610,
+    "staticImportEdges": 4992,
+    "runtimeDependencyEdges": 164
+  },
+  "postSync": {
+    "physicalLines": 310932,
+    "scannerTokens": 1343083,
+    "astNodes": 1362658,
+    "staticImportEdges": 5137,
+    "runtimeDependencyEdges": 164
+  },
+  "metrics": {
+    "physicalLines": 14495,
+    "scannerTokens": 70648,
+    "astNodes": 62048,
+    "staticImportEdges": 145,
+    "runtimeDependencyEdges": 0
+  },
+  "translatedTargets": {
+    "cutBCeilingPhysicalLines": 295426,
+    "finalCeilingPhysicalLines": 273026
+  }
+}

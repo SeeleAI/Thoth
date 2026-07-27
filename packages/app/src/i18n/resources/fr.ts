@@ -60,6 +60,9 @@ export const fr: TranslationResources = {
       newAgent: "Nouvel agent",
       openProject: "Projet ouvert",
       home: "Maison",
+      modelGroupLabel: "Modèle",
+      modelSearchKeywords:
+        "changer de modèle modifier le modèle définir le modèle sélectionner le modèle",
     },
   },
   composer: {
@@ -102,6 +105,8 @@ export const fr: TranslationResources = {
       removeBrowserElement: "Supprimer la pièce jointe d'un élément de navigateur",
       openReview: "Ouvrir la pièce jointe de l'avis",
       removeReview: "Supprimer la pièce jointe de l'avis",
+      openWorkspaceFile: "Ouvrir le fichier joint de l’espace de travail",
+      removeWorkspaceFile: "Retirer le fichier joint de l’espace de travail",
     },
     errors: {
       failedToSend: "Échec de l'envoi du message",
@@ -359,6 +364,11 @@ export const fr: TranslationResources = {
         modified: "Modifié",
         copyPath: "Copier le chemin",
         download: "Télécharger",
+        attachToComposer: "Ajouter au message",
+        attachedToComposer: "Fichier ajouté au message",
+        attachTextOnly: "Seuls les fichiers texte peuvent être ajoutés",
+        attachTooLarge: "Ce fichier est trop volumineux (10 Mo maximum)",
+        attachFailed: "Impossible d’ajouter le fichier au message",
       },
       actions: {
         back: "Dos",
@@ -735,6 +745,14 @@ export const fr: TranslationResources = {
         base: "base",
         newFile: "Nouveau",
         deletedFile: "Supprimé",
+        commits: {
+          title: "Commits",
+          loading: "Chargement de l’historique des commits...",
+          loadError: "Impossible de charger l’historique des commits",
+          noneAhead: "Aucun commit en avance sur {{baseRef}}",
+          countLabel: "{{count}} commits",
+          noTextualChanges: "Aucune modification textuelle dans ce commit",
+        },
       },
       openInEditor: {
         open: "Ouvrir",
@@ -832,6 +850,8 @@ export const fr: TranslationResources = {
       actions: {
         menu: "ActionsWorkspace",
         newWorkspace: "Nouvel espace de travail",
+        showMore: "Afficher plus",
+        showLess: "Afficher moins",
         createWorkspaceFor: "Créer un nouvel espace de travail pour{{projectName}}",
         copyPath: "Copier le chemin",
         copyBranchName: "Copier le nom de la branche",
@@ -1420,6 +1440,18 @@ export const fr: TranslationResources = {
     },
     general: {
       title: "Général",
+      browserData: {
+        title: "Données du navigateur",
+        siteData: "Cookies et données des sites",
+        description:
+          "Les onglets du navigateur partagent les connexions et les données des sites dans Thoth.",
+        clear: "Effacer les données du navigateur",
+        clearing: "Effacement...",
+        confirmTitle: "Effacer les données du navigateur ?",
+        confirmMessage: "Vous serez déconnecté des sites et les onglets ouverts seront rechargés.",
+        success: "Données du navigateur effacées.",
+        error: "Impossible d'effacer les données du navigateur.",
+      },
       defaultSend: {
         label: "Envoi par défaut",
         descriptions: {
@@ -1551,6 +1583,7 @@ export const fr: TranslationResources = {
     },
     shortcuts: {
       dialogTitle: "Raccourcis",
+      searchPlaceholder: "Rechercher des raccourcis",
       unavailableOnMobile: "Les raccourcis clavier ne sont disponibles que sur le bureau",
       capturePrompt: "Appuyez sur le raccourci...",
       actions: {
@@ -1811,6 +1844,12 @@ export const fr: TranslationResources = {
       loading: "Chargement...",
       addErrorTitle: "Unable to add provider",
       updateErrorTitle: "Impossible de mettre à jour le fournisseur",
+      deleteProvider: "Supprimer {{name}}",
+      deleteConfirmTitle: "Supprimer {{name}} ?",
+      deleteConfirmMessage:
+        "Cette action supprime le fournisseur personnalisé de cet hôte. Les sessions en cours continueront, mais les sessions nouvelles ou reprises ne pourront plus l’utiliser.",
+      deleteAction: "Supprimer le fournisseur",
+      deleteErrorTitle: "Impossible de supprimer le fournisseur",
       statuses: {
         disabled: "Désactivé",
         loading: "Chargement",

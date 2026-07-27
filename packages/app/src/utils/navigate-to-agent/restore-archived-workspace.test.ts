@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostRuntimeSnapshot } from "@/runtime/host-runtime";
 import type { HostServerInfo } from "@/runtime/host-runtime";
 
-const refreshAgent = vi.fn<(agentId: string) => Promise<unknown>>();
+const restoreWorkspace = vi.fn<(workspaceId: string) => Promise<{ error: string | null }>>();
 let connected = true;
 let serverInfo: HostServerInfo;
 
@@ -16,7 +16,8 @@ vi.mock("@/utils/workspace-navigation", () => ({
 
 vi.mock("@/runtime/host-runtime", () => ({
   getHostRuntimeStore: () => ({
-    getSnapshot: () => ({ client: { refreshAgent }, serverInfo }) as unknown as HostRuntimeSnapshot,
+    getSnapshot: () =>
+      ({ client: { restoreWorkspace }, serverInfo }) as unknown as HostRuntimeSnapshot,
   }),
   isHostRuntimeConnected: () => connected,
 }));
@@ -64,7 +65,7 @@ function seedArchivedAgent(options?: { worktreeRestore?: boolean }): void {
 describe("restoreArchivedWorkspace via navigateToAgent", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    refreshAgent.mockReset();
+    restoreWorkspace.mockReset();
     connected = true;
     queryClient.clear();
     seedArchivedAgent();
@@ -81,24 +82,24 @@ describe("restoreArchivedWorkspace via navigateToAgent", () => {
     navigateToAgent({ serverId: SERVER_ID, agentId: AGENT_ID });
   }
 
-  it("calls refreshAgent once and marks the workspace restoring", () => {
-    refreshAgent.mockImplementation(() => new Promise(() => {}));
+  it("calls restoreWorkspace once and marks the workspace restoring", () => {
+    restoreWorkspace.mockImplementation(() => new Promise(() => {}));
 
     trigger();
 
-    expect(refreshAgent).toHaveBeenCalledTimes(1);
-    expect(refreshAgent).toHaveBeenCalledWith(AGENT_ID);
+    expect(restoreWorkspace).toHaveBeenCalledTimes(1);
+    expect(restoreWorkspace).toHaveBeenCalledWith(WORKSPACE_ID);
     expect(status()).toBe("restoring");
   });
 
   it("does not re-fire while a restore for the same workspace is in flight", () => {
-    refreshAgent.mockImplementation(() => new Promise(() => {}));
+    restoreWorkspace.mockImplementation(() => new Promise(() => {}));
 
     trigger();
     trigger();
     trigger();
 
-    expect(refreshAgent).toHaveBeenCalledTimes(1);
+    expect(restoreWorkspace).toHaveBeenCalledTimes(1);
   });
 
   it("does not fire for a non-archived agent", () => {
@@ -114,26 +115,26 @@ describe("restoreArchivedWorkspace via navigateToAgent", () => {
         ],
       ]),
     });
-    refreshAgent.mockImplementation(() => new Promise(() => {}));
+    restoreWorkspace.mockImplementation(() => new Promise(() => {}));
 
     trigger();
 
-    expect(refreshAgent).not.toHaveBeenCalled();
+    expect(restoreWorkspace).not.toHaveBeenCalled();
     expect(status()).toBeNull();
   });
 
   it("does not fire while disconnected", () => {
     connected = false;
-    refreshAgent.mockImplementation(() => new Promise(() => {}));
+    restoreWorkspace.mockImplementation(() => new Promise(() => {}));
 
     trigger();
 
-    expect(refreshAgent).not.toHaveBeenCalled();
+    expect(restoreWorkspace).not.toHaveBeenCalled();
     expect(status()).toBeNull();
   });
 
-  it("flips to failed when refreshAgent rejects", async () => {
-    refreshAgent.mockImplementation(() => Promise.reject(new Error("dir gone")));
+  it("flips to failed when restoreWorkspace rejects", async () => {
+    restoreWorkspace.mockImplementation(() => Promise.reject(new Error("dir gone")));
 
     trigger();
     expect(status()).toBe("restoring");
@@ -144,8 +145,16 @@ describe("restoreArchivedWorkspace via navigateToAgent", () => {
     expect(status()).toBe("failed");
   });
 
-  it("flips to failed via the timeout when refreshAgent resolves without a workspace update", async () => {
-    refreshAgent.mockImplementation(() => Promise.resolve({}));
+  it("flips to failed when restoreWorkspace returns a typed error", async () => {
+    restoreWorkspace.mockImplementation(() => Promise.resolve({ error: "dir gone" }));
+
+    trigger();
+    await Promise.resolve();
+    expect(status()).toBe("failed");
+  });
+
+  it("flips to failed via the timeout when restoreWorkspace resolves without a workspace update", async () => {
+    restoreWorkspace.mockImplementation(() => Promise.resolve({ error: null }));
 
     trigger();
     await Promise.resolve();
@@ -157,16 +166,16 @@ describe("restoreArchivedWorkspace via navigateToAgent", () => {
 
   it("marks the workspace needs-host-upgrade without refreshing when the daemon lacks worktreeRestore", () => {
     seedArchivedAgent({ worktreeRestore: false });
-    refreshAgent.mockImplementation(() => new Promise(() => {}));
+    restoreWorkspace.mockImplementation(() => new Promise(() => {}));
 
     trigger();
 
-    expect(refreshAgent).not.toHaveBeenCalled();
+    expect(restoreWorkspace).not.toHaveBeenCalled();
     expect(status()).toBe("needs-host-upgrade");
   });
 
   it("is a no-op when the workspace descriptor is already present", () => {
-    refreshAgent.mockImplementation(() => new Promise(() => {}));
+    restoreWorkspace.mockImplementation(() => new Promise(() => {}));
     patchTestProjection(SERVER_ID, {
       workspaces: new Map<string, WorkspaceDescriptor>([
         [
@@ -192,6 +201,6 @@ describe("restoreArchivedWorkspace via navigateToAgent", () => {
 
     trigger();
 
-    expect(refreshAgent).not.toHaveBeenCalled();
+    expect(restoreWorkspace).not.toHaveBeenCalled();
   });
 });

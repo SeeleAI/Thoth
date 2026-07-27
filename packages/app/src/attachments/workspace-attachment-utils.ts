@@ -23,6 +23,7 @@ export function isWorkspaceAttachment(
     attachment?.kind === "review" ||
     attachment?.kind === "browser_element" ||
     attachment?.kind === "chat_history" ||
+    attachment?.kind === "workspace_file" ||
     isPullRequestContextAttachment(attachment)
   );
 }
@@ -35,6 +36,7 @@ export function userAttachmentsOnly(
       attachment.kind !== "review" &&
       attachment.kind !== "browser_element" &&
       attachment.kind !== "chat_history" &&
+      attachment.kind !== "workspace_file" &&
       !isPullRequestContextAttachment(attachment),
   );
 }
@@ -59,6 +61,9 @@ export function workspaceAttachmentToSubmitAttachment(
     };
   }
   if (attachment.kind === "chat_history") {
+    return attachment.attachment;
+  }
+  if (attachment.kind === "workspace_file") {
     return attachment.attachment;
   }
   return attachment.kind === "review" ? attachment.attachment : null;

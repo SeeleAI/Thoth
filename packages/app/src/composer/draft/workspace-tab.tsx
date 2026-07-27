@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { Keyboard, ScrollView, Text, View } from "react-native";
+import { Keyboard, ScrollView, StyleSheet as RNStyleSheet, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import ReanimatedAnimated from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
@@ -27,6 +27,7 @@ import { useWorkspaceFields } from "@/projection/hooks";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import { encodeImages } from "@/utils/encode-images";
 import type { WorkspaceFileOpenRequest } from "@/workspace/file-open";
+import { workspaceFileAttachmentOpenRequest } from "@/attachments/workspace-file-attachment";
 import { shouldAutoFocusWorkspaceDraftComposer } from "@/screens/workspace/workspace-draft-pane-focus";
 import {
   shouldAllowEmptyDraftText,
@@ -442,6 +443,10 @@ export function WorkspaceDraftAgentTab({
   const setExplorerTabForCheckout = usePanelStore((state) => state.setExplorerTabForCheckout);
   const handleOpenWorkspaceAttachment = useCallback(
     (attachment: WorkspaceComposerAttachment) => {
+      if (attachment.kind === "workspace_file") {
+        onOpenWorkspaceFile(workspaceFileAttachmentOpenRequest(attachment));
+        return;
+      }
       if (attachment.kind !== "review") {
         return;
       }
@@ -459,7 +464,13 @@ export function WorkspaceDraftAgentTab({
         tab: "changes",
       });
     },
-    [isCompactFormFactor, openFileExplorerForCheckout, serverId, setExplorerTabForCheckout],
+    [
+      isCompactFormFactor,
+      onOpenWorkspaceFile,
+      openFileExplorerForCheckout,
+      serverId,
+      setExplorerTabForCheckout,
+    ],
   );
 
   const {
@@ -647,7 +658,11 @@ export function WorkspaceDraftAgentTab({
   });
 
   const inputAreaWrapperStyle = useMemo(
-    () => [styles.inputAreaWrapper, { paddingBottom: insets.bottom }, composerKeyboardStyle],
+    () => [
+      animatedStaticStyles.inputAreaWrapper,
+      { paddingBottom: insets.bottom },
+      composerKeyboardStyle,
+    ],
     [insets.bottom, composerKeyboardStyle],
   );
 
@@ -746,6 +761,12 @@ export function WorkspaceDraftAgentTab({
   );
 }
 
+const animatedStaticStyles = RNStyleSheet.create({
+  inputAreaWrapper: {
+    width: "100%",
+  },
+});
+
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
@@ -768,10 +789,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   configSection: {
     gap: theme.spacing[3],
-  },
-  inputAreaWrapper: {
-    width: "100%",
-    backgroundColor: theme.colors.surface0,
   },
   importPillRow: {
     width: "100%",

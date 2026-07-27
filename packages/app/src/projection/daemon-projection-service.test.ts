@@ -104,8 +104,11 @@ describe("DaemonProjectionService events", () => {
     const fetchWorkspaces = vi.fn(
       async () =>
         ({
+          requestId: "workspaces-concurrent",
           entries: [],
           emptyProjects: [],
+          workspaceRedirects: [],
+          dedupeNotice: null,
           pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
         }) satisfies WorkspacePage,
     );

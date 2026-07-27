@@ -2,10 +2,10 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const STORAGE_LAYOUT_VERSION = 2;
-export const SQLITE_SCHEMA_VERSION = 2;
-export const CATALOG_MIGRATION_VERSION = 2;
-export const AUTHORITY_MIGRATION_VERSION = 5;
+export const STORAGE_LAYOUT_VERSION = 3;
+export const SQLITE_SCHEMA_VERSION = 3;
+export const CATALOG_MIGRATION_VERSION = 3;
+export const AUTHORITY_MIGRATION_VERSION = 6;
 export const STORAGE_LAYOUT_MARKER = "storage-layout.json";
 
 export function catalogDatabasePath(thothHome: string): string {
@@ -40,7 +40,7 @@ export function createCatalogDatabase(filePath: string): void {
     database
       .prepare(
         `INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
-         VALUES (?, 'normalized-catalog-v2', ?)`,
+         VALUES (?, 'host-runtime-resources-v3', ?)`,
       )
       .run(CATALOG_MIGRATION_VERSION, new Date().toISOString());
     database.exec("PRAGMA user_version = " + String(SQLITE_SCHEMA_VERSION));
@@ -58,7 +58,7 @@ export function createWorkspaceDatabase(filePath: string, workspaceId: string): 
     database
       .prepare(
         `INSERT INTO authority_schema_migrations(version, checksum, applied_at)
-         VALUES (?, 'normalized-authority-v2', ?)`,
+         VALUES (?, 'schedule-task-execution-v3', ?)`,
       )
       .run(AUTHORITY_MIGRATION_VERSION, now);
     database
@@ -141,6 +141,21 @@ const CATALOG_SCHEMA = `
     revision INTEGER NOT NULL,
     updated_at TEXT NOT NULL
   ) STRICT;
+  CREATE TABLE catalog_runtime_resource_leases (
+    resource_kind TEXT NOT NULL,
+    resource_key TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    owner_key TEXT NOT NULL,
+    holder_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('reserved', 'active')),
+    generation TEXT NOT NULL,
+    value_json TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(resource_kind, resource_key),
+    UNIQUE(resource_kind, workspace_id, owner_key)
+  ) STRICT;
   CREATE TABLE catalog_task_locator (
     task_id TEXT PRIMARY KEY NOT NULL,
     workspace_id TEXT NOT NULL,
@@ -173,6 +188,8 @@ const CATALOG_SCHEMA = `
   ) STRICT;
   CREATE INDEX catalog_task_locator_workspace_updated
     ON catalog_task_locator(workspace_id, updated_at DESC);
+  CREATE INDEX catalog_runtime_resource_leases_expiry
+    ON catalog_runtime_resource_leases(resource_kind, expires_at);
 `;
 
 const WORKSPACE_SCHEMA = `
@@ -545,6 +562,8 @@ const WORKSPACE_SCHEMA = `
     started_at TEXT NOT NULL,
     ended_at TEXT,
     status TEXT NOT NULL CHECK(status IN ('running', 'succeeded', 'failed')),
+    task_id TEXT,
+    execution_id TEXT,
     agent_id TEXT,
     output TEXT,
     error TEXT,
@@ -572,5 +591,7 @@ const WORKSPACE_SCHEMA = `
     ON chat_messages(room_id, created_at, message_id);
   CREATE INDEX schedule_runs_schedule_started
     ON schedule_runs(schedule_id, started_at, run_id);
+  CREATE INDEX schedule_runs_task_execution
+    ON schedule_runs(task_id, execution_id);
   CREATE INDEX schedules_status_next_run ON schedules(status, next_run_at);
 `;

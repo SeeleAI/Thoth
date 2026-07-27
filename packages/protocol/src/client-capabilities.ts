@@ -11,6 +11,10 @@ export const CLIENT_CAPS = {
   // Old clients use a strict TerminalState schema and would reject the extra fields.
   // Drop the gate (always send the flags) when floor >= v0.1.88.
   terminalReflowableSnapshot: "terminal_reflowable_snapshot",
+  // Desktop/App browser hosts advertise the exact automation portfolio they
+  // can execute. The daemon never assumes that an arbitrary client can drive
+  // Chromium and routes only to an explicitly registered host.
+  browserHost: "browser_host",
 } as const;
 
 export type ClientCapability = (typeof CLIENT_CAPS)[keyof typeof CLIENT_CAPS];

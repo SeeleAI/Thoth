@@ -36,6 +36,8 @@ function resolveBoundListenTarget(
 
 // Matches a Windows drive-letter path like C:\ or D:\
 const WINDOWS_DRIVE_RE = /^[A-Za-z]:\\/;
+const AGENT_IDLE_RUNTIME_TTL_MS = 2 * 60 * 1000;
+const AGENT_IDLE_RUNTIME_SWEEP_INTERVAL_MS = 15 * 1000;
 
 export function parseListenString(listen: string): ListenTarget {
   // 1. Windows named pipes: \\.\pipe\... or pipe://...
@@ -107,6 +109,7 @@ import {
 } from "./agent/tools/thoth-tools.js";
 import type { ThothToolRuntimeContext } from "@thoth/drivers/agent-runtime";
 import { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
+import { BrowserToolsBroker } from "./browser-tools/broker.js";
 import { bootstrapWorkspaceRegistries } from "./workspace-registry-bootstrap.js";
 import { WorkspaceReconciliationService } from "./workspace-reconciliation-service.js";
 import {
@@ -116,7 +119,7 @@ import {
 } from "./workspace-registry.js";
 import { WorkspaceChatService } from "./chat/chat-service.js";
 import { CheckoutDiffManager } from "./checkout-diff-manager.js";
-import { ScheduleService } from "./schedule/service.js";
+import { ScheduleService, type CreateScheduleWorktreeWorkspace } from "./schedule/service.js";
 import { DaemonConfigStore } from "./daemon-config-store.js";
 import { ensureThothStorageLayout } from "./storage-layout-migration.js";
 import { WorkspaceGitServiceImpl } from "./workspace-git-service.js";
@@ -754,6 +757,7 @@ export async function createThothDaemon(
     workspaceAuthorityManager,
     logger.child({ module: "workspace-task-coordinator" }),
   );
+  const browserToolsBroker = new BrowserToolsBroker({});
   const workspaceTaskOrchestrator = new WorkspaceTaskOrchestrator(
     workspaceAuthorityManager,
     workspaceTaskCoordinator,
@@ -810,14 +814,50 @@ export async function createThothDaemon(
   const emitExternalSessionMessage = (message: SessionOutboundMessage) => {
     wsServer?.broadcast(wrapSessionMessage(message));
   };
+  let createScheduleWorktreeWorkspace: CreateScheduleWorktreeWorkspace | null = null;
   const scheduleService = new ScheduleService({
     authority: workspaceAuthorityManager,
     logger,
     executionService,
     agentStorage,
     providerSnapshotManager,
+    createWorktreeWorkspace: async (input) => {
+      if (!createScheduleWorktreeWorkspace) {
+        throw new Error("Schedule worktree isolation is not initialized");
+      }
+      return createScheduleWorktreeWorkspace(input);
+    },
   });
-  await scheduleService.start();
+  let idleRuntimeSweepInFlight: Promise<void> | null = null;
+  const sweepIdleAgentRuntimes = async (): Promise<void> => {
+    const result = await executionService.collectIdleAgentRuntimes({
+      cutoff: new Date(Date.now() - AGENT_IDLE_RUNTIME_TTL_MS),
+      protectedAgentIds: scheduleService.listRuntimeProtectedAgentIds(),
+    });
+    if (result.releasedAgentIds.length > 0) {
+      logger.info(
+        {
+          releasedAgentIds: result.releasedAgentIds,
+          examinedAgentCount: result.examinedAgentCount,
+          eligibleAgentCount: result.eligibleAgentCount,
+        },
+        "Released idle Provider runtimes while retaining durable Agent authority",
+      );
+    }
+  };
+  const idleRuntimeSweepTimer = setInterval(() => {
+    if (idleRuntimeSweepInFlight) {
+      return;
+    }
+    idleRuntimeSweepInFlight = sweepIdleAgentRuntimes()
+      .catch((error) => {
+        logger.warn({ err: error }, "Idle Provider runtime sweep failed");
+      })
+      .finally(() => {
+        idleRuntimeSweepInFlight = null;
+      });
+  }, AGENT_IDLE_RUNTIME_SWEEP_INTERVAL_MS);
+  idleRuntimeSweepTimer.unref();
   executionService.setAgentArchivedCallback(async (agentId) => {
     try {
       const record = await agentStorage.get(agentId);
@@ -828,7 +868,6 @@ export async function createThothDaemon(
       logger.warn({ err: error, agentId }, "Failed to delete schedules for archived agent");
     }
   });
-  logger.info({ elapsed: elapsed() }, "Schedule service initialized");
   logger.info({ elapsed: elapsed() }, "Loading persisted agent registry");
   const persistedRecords = await agentStorage.list();
   logger.info(
@@ -958,6 +997,15 @@ export async function createThothDaemon(
       serviceOptions,
     );
   };
+  createScheduleWorktreeWorkspace = async (input) =>
+    (
+      await createThothWorktreeForTools({
+        cwd: input.cwd,
+        firstAgentContext: { prompt: input.prompt },
+      })
+    ).workspace;
+  await scheduleService.start();
+  logger.info({ elapsed: elapsed() }, "Schedule service initialized");
 
   const createAgentToolHostDependencies = (
     runtime: ThothToolRuntimeContext,
@@ -984,6 +1032,7 @@ export async function createThothDaemon(
     callerAgentConfig: runtime.callerAgentConfig,
     workspaceAuthorityManager,
     toolGateway: workspaceTaskCoordinator.toolGateway,
+    browserToolsBroker,
     logger,
   });
   const createAgentToolCatalog = (runtime: ThothToolRuntimeContext) =>
@@ -1248,6 +1297,7 @@ export async function createThothDaemon(
                 manager: workspaceAuthorityManager,
                 coordinator: workspaceTaskCoordinator,
               },
+              browserToolsBroker,
             );
 
             if (relayEnabled) {
@@ -1299,14 +1349,19 @@ export async function createThothDaemon(
 
   const stop = async () => {
     scriptHealthMonitor.stop();
+    // Fence network ingress and provider registration before taking the closure snapshot.
+    wsServer?.prepareForShutdown();
+    executionService.prepareForShutdown();
+    clearInterval(idleRuntimeSweepTimer);
+    await idleRuntimeSweepInFlight?.catch(() => undefined);
+    await scheduleService.stop().catch(() => undefined);
     await closeAllAgents(logger, executionService);
-    await executionService.flush().catch(() => undefined);
+    await executionService.flushForShutdown().catch(() => undefined);
     detachAgentStoragePersistence();
     await agentStorage.flush().catch(() => undefined);
     durableTimelineStore.close();
     await providerSnapshotManager.shutdown();
     terminalManager.killAll();
-    await scheduleService.stop().catch(() => undefined);
     await relayTransport?.stop().catch(() => undefined);
     if (wsServer) {
       await wsServer.close();
@@ -1346,7 +1401,7 @@ export async function createThothDaemon(
 }
 
 async function closeAllAgents(logger: Logger, executionService: ExecutionService): Promise<void> {
-  const agents = executionService.listAgents();
+  const agents = executionService.listAgents().filter((agent) => agent.lifecycle !== "closed");
   await Promise.all(
     agents.map(async (agent) => {
       try {

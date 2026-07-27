@@ -16,7 +16,7 @@ import {
   type WorktreeSetupCommandResult,
   type WorktreeRuntimeEnv,
 } from "../utils/worktree.js";
-import { findFreePort, type ServiceProxySubsystem } from "./service-proxy.js";
+import type { ServiceProxySubsystem } from "./service-proxy.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
 import type { AgentTimelineItem, ToolCallDetail } from "@thoth/drivers/agent-runtime";
 import {
@@ -25,9 +25,9 @@ import {
   type WorkspaceServicePeer,
 } from "./workspace-service-env.js";
 import {
-  ensureWorkspaceServicePortPlan,
   requirePlannedWorkspaceServicePort,
-  refreshWorkspaceServicePort,
+  type WorkspaceServicePortLease,
+  type WorkspaceServicePortRegistry,
 } from "./workspace-service-port-registry.js";
 
 export interface WorktreeBootstrapTerminalResult {
@@ -705,6 +705,7 @@ export interface SpawnWorkspaceScriptOptions {
   serviceProxyPublicBaseUrl?: string | null;
   serviceProxy: ServiceProxySubsystem;
   runtimeStore: WorkspaceScriptRuntimeStore;
+  servicePortRegistry?: WorkspaceServicePortRegistry;
   terminalManager: TerminalManager;
   logger?: Logger;
   onLifecycleChanged?: () => void;
@@ -713,6 +714,7 @@ export interface SpawnWorkspaceScriptOptions {
 interface ServiceScriptSetupResult {
   hostname: string;
   port: number;
+  lease: WorkspaceServicePortLease;
   env: Record<string, string>;
 }
 
@@ -728,6 +730,7 @@ async function setupServiceScriptRoute(params: {
   serviceProxyPublicBaseUrl: string | null | undefined;
   existingRuntimeEntry: ReturnType<WorkspaceScriptRuntimeStore["get"]>;
   serviceProxy: ServiceProxySubsystem;
+  servicePortRegistry: WorkspaceServicePortRegistry;
 }): Promise<ServiceScriptSetupResult> {
   const {
     scriptConfigs,
@@ -741,6 +744,7 @@ async function setupServiceScriptRoute(params: {
     serviceProxyPublicBaseUrl,
     existingRuntimeEntry,
     serviceProxy,
+    servicePortRegistry,
   } = params;
 
   const serviceDeclarations: Array<{ scriptName: string; port?: number }> = [];
@@ -756,25 +760,24 @@ async function setupServiceScriptRoute(params: {
     serviceDeclarations.map((serviceDeclaration) => serviceDeclaration.scriptName),
   );
 
-  const plannedPorts = await ensureWorkspaceServicePortPlan({
+  const plannedPorts = await servicePortRegistry.ensurePlan({
     workspaceId,
     services: serviceDeclarations,
-    allocatePort: findFreePort,
   });
-  const port =
+  const lease =
     existingRuntimeEntry?.lifecycle === "stopped"
-      ? await refreshWorkspaceServicePort({
+      ? await servicePortRegistry.refresh({
           workspaceId,
           service: { scriptName, port: config.port },
-          allocatePort: findFreePort,
         })
       : requirePlannedWorkspaceServicePort(plannedPorts, scriptName);
+  const port = lease.port;
 
   const peers: WorkspaceServicePeer[] = [];
-  for (const [peerScriptName, peerPort] of plannedPorts) {
+  for (const [peerScriptName, peerLease] of plannedPorts) {
     peers.push({
       scriptName: peerScriptName,
-      port: peerScriptName === scriptName ? port : peerPort,
+      port: peerScriptName === scriptName ? port : peerLease.port,
     });
   }
 
@@ -788,15 +791,20 @@ async function setupServiceScriptRoute(params: {
     peers,
   });
 
-  const registeredRoute = serviceProxy.registerWorkspaceService({
-    port,
-    workspaceId,
-    projectSlug,
-    branchName,
-    scriptName,
-    publicBaseUrl: serviceProxyPublicBaseUrl ?? null,
-  });
-  return { hostname: registeredRoute.hostname, port, env };
+  try {
+    const registeredRoute = serviceProxy.registerWorkspaceService({
+      port,
+      workspaceId,
+      projectSlug,
+      branchName,
+      scriptName,
+      publicBaseUrl: serviceProxyPublicBaseUrl ?? null,
+    });
+    return { hostname: registeredRoute.hostname, port, lease, env };
+  } catch (error) {
+    servicePortRegistry.release(lease);
+    throw error;
+  }
 }
 
 async function acquireWorkspaceScriptTerminal(params: {
@@ -847,6 +855,7 @@ export async function spawnWorkspaceScript(
     serviceProxyPublicBaseUrl,
     serviceProxy,
     runtimeStore,
+    servicePortRegistry,
     terminalManager,
     logger,
     onLifecycleChanged,
@@ -868,6 +877,9 @@ export async function spawnWorkspaceScript(
   let runtimeRegistered = false;
   let routeRegistered = false;
   let disposeLifecycleListeners: (() => void) | null = null;
+  let servicePortLease: WorkspaceServicePortLease | null = null;
+  let servicePortHeartbeat: ReturnType<typeof setInterval> | null = null;
+  let serviceTerminal: TerminalSession | null = null;
 
   try {
     if (runtimeStore.isRunning({ workspaceId, scriptName })) {
@@ -877,6 +889,9 @@ export async function spawnWorkspaceScript(
     const existingRuntimeEntry = runtimeStore.get({ workspaceId, scriptName });
     let env: Record<string, string> | undefined;
     if (serviceScript) {
+      if (!servicePortRegistry) {
+        throw new Error("Persistent Workspace service-port authority is unavailable");
+      }
       const serviceSetup = await setupServiceScriptRoute({
         scriptConfigs,
         config,
@@ -889,9 +904,11 @@ export async function spawnWorkspaceScript(
         serviceProxyPublicBaseUrl,
         existingRuntimeEntry,
         serviceProxy,
+        servicePortRegistry,
       });
       hostname = serviceSetup.hostname;
       port = serviceSetup.port;
+      servicePortLease = serviceSetup.lease;
       env = serviceSetup.env;
       routeRegistered = true;
     }
@@ -905,6 +922,7 @@ export async function spawnWorkspaceScript(
       scriptName,
       env,
     });
+    if (serviceScript) serviceTerminal = terminal;
 
     runtimeStore.set({
       workspaceId,
@@ -927,6 +945,9 @@ export async function spawnWorkspaceScript(
 
       if (input.removeRoute && hostname) {
         serviceProxy.removeWorkspaceService({ workspaceId, scriptName });
+      }
+      if (servicePortLease && servicePortRegistry) {
+        servicePortRegistry.release(servicePortLease);
       }
       runtimeStore.set({
         workspaceId,
@@ -964,12 +985,32 @@ export async function spawnWorkspaceScript(
     disposeLifecycleListeners = () => {
       unsubscribeExit();
       unsubscribeCommandFinished?.();
+      if (servicePortHeartbeat) {
+        clearInterval(servicePortHeartbeat);
+        servicePortHeartbeat = null;
+      }
     };
 
     if (!reusableTerminal) {
       await waitForTerminalBootstrapReadiness(terminal);
     }
     terminal.send({ type: "input", data: `${config.command}\r` });
+    if (servicePortLease && servicePortRegistry) {
+      if (!servicePortRegistry.activate(servicePortLease)) {
+        throw new Error(`Service port lease changed before '${scriptName}' could become active`);
+      }
+      servicePortHeartbeat = setInterval(() => {
+        if (!servicePortLease || !servicePortRegistry.renew(servicePortLease)) {
+          logger?.error(
+            { workspaceId, scriptName, port, terminalId: terminal.id },
+            "Workspace service lost its persistent port lease",
+          );
+          terminal.kill();
+          stopRuntimeIfCurrent({ exitCode: null, removeRoute: true });
+        }
+      }, servicePortRegistry.heartbeatIntervalMs);
+      servicePortHeartbeat.unref();
+    }
 
     logger?.info(
       {
@@ -993,11 +1034,17 @@ export async function spawnWorkspaceScript(
     };
   } catch (error) {
     disposeLifecycleListeners?.();
+    if (servicePortLease && servicePortRegistry) {
+      servicePortRegistry.release(servicePortLease);
+    }
     if (routeRegistered && hostname) {
       serviceProxy.removeServiceRoutesByHostnames([hostname]);
     }
     if (runtimeRegistered) {
       runtimeStore.remove({ workspaceId, scriptName });
+    }
+    if (serviceTerminal) {
+      await serviceTerminal.killAndWait().catch(() => {});
     }
     logger?.error(
       {

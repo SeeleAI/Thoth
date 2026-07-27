@@ -53,6 +53,7 @@ describe("workspace source of truth consumption", () => {
       workspace: createWorkspaceDescriptor({
         name: "feat/workspace-sot",
         gitRuntime: {
+          forge: null,
           currentBranch: "feat/real-branch",
           isDirty: false,
           aheadOfOrigin: 0,
@@ -67,13 +68,13 @@ describe("workspace source of truth consumption", () => {
     const detached = createSidebarWorkspaceEntry({
       serverId: "srv",
       workspace: createWorkspaceDescriptor({
-        gitRuntime: { currentBranch: "HEAD", isDirty: false, aheadOfOrigin: 0 },
+        gitRuntime: { forge: null, currentBranch: "HEAD", isDirty: false, aheadOfOrigin: 0 },
       }),
     });
     const blank = createSidebarWorkspaceEntry({
       serverId: "srv",
       workspace: createWorkspaceDescriptor({
-        gitRuntime: { currentBranch: "  ", isDirty: false, aheadOfOrigin: 0 },
+        gitRuntime: { forge: null, currentBranch: "  ", isDirty: false, aheadOfOrigin: 0 },
       }),
     });
     const missing = createSidebarWorkspaceEntry({

@@ -8,8 +8,18 @@ import {
   MutableDaemonConfigSchema,
   MutableDaemonConfigPatchSchema,
 } from "@thoth/protocol/messages";
+import { getAgentProviderDefinition } from "@thoth/protocol/provider-manifest";
 
 export type { MutableDaemonConfig, MutableDaemonConfigPatch } from "@thoth/protocol/messages";
+
+function isBuiltinProviderId(providerId: string): boolean {
+  try {
+    getAgentProviderDefinition(providerId);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 type MutableDaemonConfig = import("@thoth/protocol/messages").MutableDaemonConfig;
 type MutableDaemonConfigPatch = import("@thoth/protocol/messages").MutableDaemonConfigPatch;
@@ -72,6 +82,12 @@ export function applyMutableProviderConfigToOverrides(
   }
 
   const nextOverrides: Record<string, ProviderOverride> = { ...baseOverrides };
+  const mutableProviderIds = new Set(Object.keys(mutableProviders ?? {}));
+  for (const providerId of Object.keys(nextOverrides)) {
+    if (!isBuiltinProviderId(providerId) && !mutableProviderIds.has(providerId)) {
+      delete nextOverrides[providerId];
+    }
+  }
   for (const [providerId, providerConfig] of Object.entries(mutableProviders ?? {})) {
     nextOverrides[providerId] = {
       ...nextOverrides[providerId],
@@ -138,6 +154,26 @@ export class DaemonConfigStore {
     return next;
   }
 
+  public deleteCustomProvider(providerId: string): MutableDaemonConfig {
+    if (isBuiltinProviderId(providerId)) {
+      throw new Error(`Builtin Provider '${providerId}' cannot be deleted`);
+    }
+    if (!Object.prototype.hasOwnProperty.call(this.current.providers, providerId)) {
+      throw new Error(`Custom Provider '${providerId}' is not configured`);
+    }
+
+    const providers = { ...this.current.providers };
+    delete providers[providerId];
+    const next = MutableDaemonConfigSchema.parse({ ...this.current, providers });
+    this.persistConfig(next);
+    this.current = next;
+
+    for (const listener of this.changeListeners) {
+      listener(next);
+    }
+    return next;
+  }
+
   public onFieldChange(path: string, handler: FieldChangeHandler): () => void {
     const handlers = this.fieldChangeHandlers.get(path) ?? new Set<FieldChangeHandler>();
     handlers.add(handler);
@@ -189,21 +225,11 @@ function mergeMutableConfigIntoPersistedConfig(params: {
   const shouldPersistMetadataGeneration =
     metadataGenerationProviders.length > 0 || persisted.agents?.metadataGeneration !== undefined;
 
-  let nextAgents = persisted.agents as PersistedConfig["agents"];
-  if (providerOverrides && Object.keys(providerOverrides).length > 0) {
-    nextAgents = {
-      ...persistedAgents,
-      providers: providerOverrides,
-      ...(shouldPersistMetadataGeneration
-        ? { metadataGeneration: persistedMetadataGeneration }
-        : {}),
-    } as PersistedConfig["agents"];
-  } else if (shouldPersistMetadataGeneration) {
-    nextAgents = {
-      ...persistedAgents,
-      metadataGeneration: persistedMetadataGeneration,
-    } as PersistedConfig["agents"];
-  }
+  const nextAgents = {
+    ...persistedAgents,
+    providers: providerOverrides ?? {},
+    ...(shouldPersistMetadataGeneration ? { metadataGeneration: persistedMetadataGeneration } : {}),
+  } as PersistedConfig["agents"];
 
   return {
     ...persisted,

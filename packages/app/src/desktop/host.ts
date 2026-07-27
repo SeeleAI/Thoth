@@ -1,5 +1,9 @@
 import { Platform } from "react-native";
 import { getElectronHost } from "@/desktop/electron/host";
+import type {
+  BrowserAutomationExecuteRequest,
+  BrowserAutomationExecuteResponse,
+} from "@thoth/protocol/browser-automation/rpc-schemas";
 
 export type DesktopNotificationPermission = "granted" | "denied" | "default";
 
@@ -116,10 +120,25 @@ export interface DesktopBrowserNewTabRequestEvent {
   url: string;
 }
 
+export interface DesktopAttachedBrowserRegistration {
+  browserId: string;
+  workspaceId: string;
+  webContentsId: number;
+}
+
 export interface DesktopBrowserBridge {
-  setWorkspaceActiveBrowser?: (browserId: string | null) => Promise<void>;
+  readonly profilePartition?: string;
+  registerAttachedBrowser?: (input: DesktopAttachedBrowserRegistration) => Promise<void>;
+  unregisterWorkspaceBrowser?: (browserId: string) => Promise<void>;
+  setWorkspaceActiveBrowser?: (input: {
+    workspaceId: string;
+    browserId: string | null;
+  }) => Promise<void>;
   openDevTools?: (browserId: string) => Promise<unknown>;
-  clearPartition?: (browserId: string) => Promise<void>;
+  clearProfile?: (browserIds: string[]) => Promise<void>;
+  executeAutomationCommand?: (
+    request: BrowserAutomationExecuteRequest,
+  ) => Promise<BrowserAutomationExecuteResponse["payload"]>;
 }
 
 export interface DesktopInvokeBridge {

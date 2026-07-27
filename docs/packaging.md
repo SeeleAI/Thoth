@@ -76,8 +76,8 @@ The APK is not committed. The packaging script writes a local receipt under `.ag
 Current verified debug artifact from the runtime isolation run:
 
 - Path: `/mnt/cfs/5vr0p6/yzy/thoth/packages/app/android/app/build/outputs/apk/debug/app-debug.apk`
-- sha256: `9579e3cb43637b6380faf2890eb496d43d7a7cc9779c787afdf16f9d98a70fa0`
-- Bytes: `302700513`
+- sha256: `042b2e4ad9cf46113385cb316d5dc2c13d6d22da4053bcf11896b4b854770702`
+- Bytes: `273165007`
 - Package: `sh.thoth.debug`
 - Permission check: does not request `android.permission.RECORD_AUDIO`
 
@@ -201,10 +201,12 @@ only for migration compatibility with older published clients.
 Current verified local artifact:
 
 - Path: `/mnt/cfs/5vr0p6/yzy/thoth/packages/desktop/release/Thoth-x86_64.AppImage`
-- sha256: `e44d33da8d40c6c9315c10386583c73a86d5a84ffa641c315297e5cde030eed3`
-- Bytes: `139651259`
+- sha256: `3e31b309d1e8a1ecd61e1d7bda149f420446f256d8e086499050d217a6a789ad`
+- Bytes: `137793946`
 - Version: `0.0.0-mvp-beta`
-- Packaged smoke: passed with an isolated desktop-managed daemon on a temporary port
+- Packaged smoke: passed with an isolated desktop-managed daemon on a temporary port; the real window verified
+  preload/renderer, read-only Files/Changes, Browser automation with typed wrong-`browserId` rejection, and a
+  Schedule run with real Task/Execution IDs and canonical Timeline events
 
 `packages/desktop/release/` is local artifact output and must not be committed.
 

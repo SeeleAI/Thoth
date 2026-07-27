@@ -23,6 +23,7 @@ const METADATA_GENERATION_PROMPT_PREFIX =
   "Generate metadata for a coding agent based on the user prompt.";
 
 export interface NormalizedImportAgentRequest {
+  workspaceId: string;
   provider: AgentProvider;
   providerHandleId: string;
   cwd?: string;
@@ -72,13 +73,23 @@ export interface ImportProviderSessionResult {
 // version that ships the new shape (target: 2026-11-08).
 export function normalizeImportAgentRequest(
   msg: ImportAgentRequestMessage,
-): NormalizedImportAgentRequest | { error: string } {
+): NormalizedImportAgentRequest | { error: string; errorCode: string } {
   const provider = msg.providerId ?? msg.provider;
   const providerHandleId = msg.providerHandleId ?? msg.sessionId;
   if (!provider || !providerHandleId) {
-    return { error: "Import requires providerId and providerHandleId" };
+    return {
+      error: "Import requires providerId and providerHandleId",
+      errorCode: "import_provider_handle_required",
+    };
+  }
+  if (!msg.workspaceId) {
+    return {
+      error: "Import requires an existing workspaceId",
+      errorCode: "import_workspace_required",
+    };
   }
   return {
+    workspaceId: msg.workspaceId,
     provider: provider as AgentProvider,
     providerHandleId,
     cwd: msg.cwd,

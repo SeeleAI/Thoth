@@ -16,6 +16,10 @@ import { isWeb as platformIsWeb } from "@/constants/platform";
 const METRICS_EPSILON = 0.5;
 const HIDE_SCROLLBAR_STYLE_ID = "thoth-hide-scrollbar";
 
+export function resolveWebScrollbarGutter(reserveStableGutter: boolean): "auto" | "stable" {
+  return reserveStableGutter ? "stable" : "auto";
+}
+
 function ensureHideScrollbarStyle(): void {
   if (typeof document === "undefined") return;
   if (document.getElementById(HIDE_SCROLLBAR_STYLE_ID)) return;
@@ -60,10 +64,12 @@ export function useWebElementScrollbar(
   options?: {
     enabled?: boolean;
     contentRef?: RefObject<HTMLElement | null>;
+    reserveStableGutter?: boolean;
   },
 ): ReactNode {
   const enabled = (options?.enabled ?? true) && platformIsWeb;
   const contentRef = options?.contentRef;
+  const reserveStableGutter = options?.reserveStableGutter ?? false;
 
   const [metrics, setMetrics] = useState<ScrollbarMetrics>({
     offset: 0,
@@ -89,7 +95,7 @@ export function useWebElementScrollbar(
     element.setAttribute("data-hide-scrollbar", "");
     style.scrollbarWidth = "none";
     style.msOverflowStyle = "none";
-    style.scrollbarGutter = "auto";
+    style.scrollbarGutter = resolveWebScrollbarGutter(reserveStableGutter);
     ensureHideScrollbarStyle();
 
     function update() {
@@ -122,7 +128,7 @@ export function useWebElementScrollbar(
       style.msOverflowStyle = previousMsOverflowStyle;
       style.scrollbarGutter = previousScrollbarGutter;
     };
-  }, [contentRef, elementRef, enabled]);
+  }, [contentRef, elementRef, enabled, reserveStableGutter]);
 
   const onScrollToOffset = useCallback(
     (offset: number) => {

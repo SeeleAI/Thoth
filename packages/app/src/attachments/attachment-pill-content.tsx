@@ -109,6 +109,13 @@ export function getWorkspaceAttachmentPillContent(
       subtitle: getTextAttachmentSubtitle(attachment.attachment, t),
     };
   }
+  if (attachment.kind === "workspace_file") {
+    return {
+      icon: attachmentFileIcon,
+      title: attachment.source.path,
+      subtitle: getFileTypeLabel(attachment.source.path) ?? t("message.attachments.file"),
+    };
+  }
   return {
     icon: attachmentReviewIcon,
     title: t("message.attachments.review"),

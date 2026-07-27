@@ -34,13 +34,25 @@ async function createClaudeConfigDirWithRawSettings(settings: string): Promise<s
   return configDir;
 }
 
+function createCatalogAdapter(version = "2.1.219"): ClaudeHarnessAdapter {
+  return new ClaudeHarnessAdapter({
+    logger: createTestLogger(),
+    resolveVersion: async () => version,
+  });
+}
+
 describe("getClaudeModels", () => {
   it("returns all claude models", () => {
     const models = getClaudeModels();
     expect(models.map((m) => m.id)).toEqual([
+      "claude-opus-5[1m]",
+      "claude-opus-5",
+      "claude-fable-5[1m]",
       "claude-fable-5",
       "claude-opus-4-8[1m]",
       "claude-opus-4-8",
+      "claude-sonnet-5",
+      "claude-sonnet-5[1m]",
       "claude-opus-4-7[1m]",
       "claude-opus-4-7",
       "claude-opus-4-6[1m]",
@@ -55,7 +67,24 @@ describe("getClaudeModels", () => {
     const models = getClaudeModels();
     const defaults = models.filter((m) => m.isDefault);
     expect(defaults).toHaveLength(1);
-    expect(defaults[0].id).toBe("claude-opus-4-8");
+    expect(defaults[0].id).toBe("claude-opus-5[1m]");
+  });
+
+  it("filters gated Claude 5 models by the real Claude Code version", () => {
+    expect(getClaudeModels("2.1.218").map((model) => model.id)).not.toContain("claude-opus-5");
+    expect(getClaudeModels("2.1.219").map((model) => model.id)).toContain("claude-opus-5");
+    expect(getClaudeModels("2.1.168").map((model) => model.id)).not.toContain("claude-fable-5");
+    expect(getClaudeModels("2.1.169").map((model) => model.id)).toContain("claude-fable-5");
+  });
+
+  it("publishes explicit 200K and 1M context-window receipts", () => {
+    const models = new Map(getClaudeModels().map((model) => [model.id, model]));
+    expect(models.get("claude-opus-5")?.contextWindowMaxTokens).toBe(200_000);
+    expect(models.get("claude-opus-5[1m]")?.contextWindowMaxTokens).toBe(1_000_000);
+    expect(models.get("claude-fable-5")?.contextWindowMaxTokens).toBe(200_000);
+    expect(models.get("claude-fable-5[1m]")?.contextWindowMaxTokens).toBe(1_000_000);
+    expect(models.get("claude-sonnet-5")?.contextWindowMaxTokens).toBe(200_000);
+    expect(models.get("claude-sonnet-5[1m]")?.contextWindowMaxTokens).toBe(1_000_000);
   });
 
   it("returns fresh copies each call", () => {
@@ -67,6 +96,21 @@ describe("getClaudeModels", () => {
 });
 
 describe("ClaudeHarnessAdapter.fetchCatalog", () => {
+  it("keeps the curated last-known-good catalog when the version probe fails", async () => {
+    const client = new ClaudeHarnessAdapter({
+      logger: createTestLogger(),
+      resolveVersion: async () => {
+        throw new Error("version probe unavailable");
+      },
+    });
+
+    const catalog = await client.fetchCatalog({ scope: "global", force: true });
+
+    expect(catalog.models.map((model) => model.id)).toContain("claude-opus-5[1m]");
+    expect(catalog.models.map((model) => model.id)).toContain("claude-fable-5[1m]");
+    expect(catalog.defaultModeId).toBe("auto");
+  });
+
   it("appends concrete models from Claude settings.json", async () => {
     const configDir = await createClaudeConfigDir({
       model: "us.anthropic.claude-opus-4-7[1m]",
@@ -79,7 +123,7 @@ describe("ClaudeHarnessAdapter.fetchCatalog", () => {
       },
     });
     vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
-    const client = new ClaudeHarnessAdapter({ logger: createTestLogger() });
+    const client = createCatalogAdapter();
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",
@@ -132,7 +176,7 @@ describe("ClaudeHarnessAdapter.fetchCatalog", () => {
     const configDir = await fs.mkdtemp(path.join(os.tmpdir(), "thoth-claude-models-"));
     createdClaudeConfigDirs.push(configDir);
     vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
-    const client = new ClaudeHarnessAdapter({ logger: createTestLogger() });
+    const client = createCatalogAdapter();
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",
@@ -146,7 +190,7 @@ describe("ClaudeHarnessAdapter.fetchCatalog", () => {
   it("falls back to hardcoded models when settings.json is malformed", async () => {
     const configDir = await createClaudeConfigDirWithRawSettings("{ nope");
     vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
-    const client = new ClaudeHarnessAdapter({ logger: createTestLogger() });
+    const client = createCatalogAdapter();
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",
@@ -166,7 +210,7 @@ describe("ClaudeHarnessAdapter.fetchCatalog", () => {
       },
     });
     vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
-    const client = new ClaudeHarnessAdapter({ logger: createTestLogger() });
+    const client = createCatalogAdapter();
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",
@@ -186,7 +230,7 @@ describe("ClaudeHarnessAdapter.fetchCatalog", () => {
       },
     });
     vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
-    const client = new ClaudeHarnessAdapter({ logger: createTestLogger() });
+    const client = createCatalogAdapter();
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",
@@ -203,7 +247,12 @@ describe("ClaudeHarnessAdapter.fetchCatalog", () => {
 
 describe("normalizeClaudeRuntimeModelId", () => {
   it("returns exact match for known model IDs", () => {
+    expect(normalizeClaudeRuntimeModelId("claude-opus-5")).toBe("claude-opus-5");
+    expect(normalizeClaudeRuntimeModelId("claude-opus-5[1m]")).toBe("claude-opus-5[1m]");
     expect(normalizeClaudeRuntimeModelId("claude-fable-5")).toBe("claude-fable-5");
+    expect(normalizeClaudeRuntimeModelId("claude-fable-5[1m]")).toBe("claude-fable-5[1m]");
+    expect(normalizeClaudeRuntimeModelId("claude-sonnet-5")).toBe("claude-sonnet-5");
+    expect(normalizeClaudeRuntimeModelId("claude-sonnet-5[1m]")).toBe("claude-sonnet-5[1m]");
     expect(normalizeClaudeRuntimeModelId("claude-opus-4-6")).toBe("claude-opus-4-6");
     expect(normalizeClaudeRuntimeModelId("claude-opus-4-6[1m]")).toBe("claude-opus-4-6[1m]");
     expect(normalizeClaudeRuntimeModelId("claude-sonnet-4-6")).toBe("claude-sonnet-4-6");
@@ -211,13 +260,20 @@ describe("normalizeClaudeRuntimeModelId", () => {
   });
 
   it("normalizes dated model IDs to base model", () => {
+    expect(normalizeClaudeRuntimeModelId("claude-opus-5-20260724")).toBe("claude-opus-5");
     expect(normalizeClaudeRuntimeModelId("claude-fable-5-20260301")).toBe("claude-fable-5");
+    expect(normalizeClaudeRuntimeModelId("claude-sonnet-5-20260101")).toBe("claude-sonnet-5");
     expect(normalizeClaudeRuntimeModelId("claude-opus-4-6-20260101")).toBe("claude-opus-4-6");
     expect(normalizeClaudeRuntimeModelId("claude-sonnet-4-6-20260101")).toBe("claude-sonnet-4-6");
     expect(normalizeClaudeRuntimeModelId("claude-haiku-4-5-20251001")).toBe("claude-haiku-4-5");
   });
 
   it("preserves [1m] suffix from runtime model strings", () => {
+    expect(normalizeClaudeRuntimeModelId("claude-opus-5-20260724[1m]")).toBe("claude-opus-5[1m]");
+    expect(normalizeClaudeRuntimeModelId("claude-fable-5-20260301[1m]")).toBe("claude-fable-5[1m]");
+    expect(normalizeClaudeRuntimeModelId("claude-sonnet-5-20260101[1m]")).toBe(
+      "claude-sonnet-5[1m]",
+    );
     expect(normalizeClaudeRuntimeModelId("claude-opus-4-6[1m]")).toBe("claude-opus-4-6[1m]");
   });
 

@@ -19,6 +19,7 @@ import {
   readThothConfigForProjection,
 } from "../../script-status-projection.js";
 import { deriveProjectSlug } from "../../workspace-git-metadata.js";
+import type { WorkspaceServicePortRegistry } from "../../workspace-service-port-registry.js";
 
 type WorkspaceScriptsPayload = WorkspaceDescriptorPayload["scripts"];
 
@@ -50,6 +51,7 @@ type WorkspaceScriptsGitSource = Pick<
 export function createWorkspaceScriptsService(deps: {
   serviceProxy: ServiceProxySubsystem | null;
   scriptRuntimeStore: WorkspaceScriptRuntimeStore | null;
+  servicePortRegistry: WorkspaceServicePortRegistry;
   terminalManager: TerminalManager | null;
   workspaceRegistry: Pick<WorkspaceRegistry, "get">;
   workspaceGitService: WorkspaceScriptsGitSource;
@@ -64,6 +66,7 @@ export function createWorkspaceScriptsService(deps: {
   const {
     serviceProxy,
     scriptRuntimeStore,
+    servicePortRegistry,
     terminalManager,
     workspaceRegistry,
     workspaceGitService,
@@ -140,6 +143,7 @@ export function createWorkspaceScriptsService(deps: {
         serviceProxyPublicBaseUrl,
         serviceProxy,
         runtimeStore: scriptRuntimeStore,
+        servicePortRegistry,
         terminalManager,
         logger,
         onLifecycleChanged: () => {

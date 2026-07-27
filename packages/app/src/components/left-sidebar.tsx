@@ -81,6 +81,7 @@ import type { ShortcutKey } from "@/utils/format-shortcut";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
+import { resolveDesktopSidebarPresentation } from "@/components/sidebar/desktop-sidebar-presentation";
 
 const MIN_CHAT_WIDTH = 400;
 
@@ -640,16 +641,14 @@ function MobileSidebar({
     overlayVisible,
     isGesturing,
     mobilePanelState,
-    gestureAnimatingRef,
     closeGestureRef,
   } = useSidebarAnimation();
   const closeTouchStartX = useSharedValue(0);
   const closeTouchStartY = useSharedValue(0);
 
   const handleCloseFromGesture = useCallback(() => {
-    gestureAnimatingRef.current = true;
     closeSidebar();
-  }, [closeSidebar, gestureAnimatingRef]);
+  }, [closeSidebar]);
 
   const handleViewMore = useCallback(() => {
     translateX.value = -windowWidth;
@@ -949,8 +948,12 @@ function DesktopSidebar({
 
   const paddingTopSpacerStyle = useMemo(() => ({ height: padding.top }), [padding.top]);
   const desktopSidebarStyle = useMemo(
-    () => [staticStyles.desktopSidebar, resizeAnimatedStyle],
-    [resizeAnimatedStyle],
+    () => [
+      staticStyles.desktopSidebar,
+      !isOpen && staticStyles.desktopSidebarHidden,
+      resizeAnimatedStyle,
+    ],
+    [isOpen, resizeAnimatedStyle],
   );
   const desktopSidebarBorderStyle = useMemo(
     () => [styles.desktopSidebarBorder, { flex: 1, paddingTop: insetsTop }],
@@ -961,12 +964,15 @@ function DesktopSidebar({
     [],
   );
 
-  if (!isOpen) {
-    return null;
-  }
+  const presentation = resolveDesktopSidebarPresentation(isOpen);
 
   return (
-    <Animated.View style={desktopSidebarStyle}>
+    <Animated.View
+      accessibilityElementsHidden={presentation.accessibilityElementsHidden}
+      importantForAccessibility={presentation.importantForAccessibility}
+      pointerEvents={presentation.pointerEvents}
+      style={desktopSidebarStyle}
+    >
       <View style={desktopSidebarBorderStyle}>
         <View style={styles.sidebarDragArea}>
           <TitlebarDragRegion />
@@ -1105,6 +1111,9 @@ const staticStyles = RNStyleSheet.create({
   },
   desktopSidebar: {
     position: "relative" as const,
+  },
+  desktopSidebarHidden: {
+    display: "none",
   },
 });
 

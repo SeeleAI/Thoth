@@ -257,6 +257,7 @@ export function AgentModeControlView({
         onOpenChange={handleOpenChange}
         anchorRef={anchorRef}
         desktopPlacement="top-start"
+        desktopMinWidth={260}
         header={sheetHeader}
         renderOption={renderOption}
       />

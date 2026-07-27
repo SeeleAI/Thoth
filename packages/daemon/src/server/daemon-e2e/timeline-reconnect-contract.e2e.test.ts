@@ -240,3 +240,74 @@ test("reconnect with no new committed rows resumes from future live provisional 
     rmSync(cwd, { recursive: true, force: true });
   }
 }, 30_000);
+
+test("reconnect traverses a bounded multi-page catch-up in canonical order without duplicates", async () => {
+  const cwd = tmpCwd();
+  try {
+    const agent = await ctx.client.createAgent({
+      provider: "codex",
+      cwd,
+      title: "Reconnect Multi-page Contract Test",
+      modeId: "full-access",
+    });
+    await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
+      type: "assistant_message",
+      text: "connected baseline",
+    });
+    const baseline = await ctx.client.fetchAgentTimeline(agent.id, {
+      direction: "tail",
+      limit: 1,
+      projection: "canonical",
+    });
+    const baselineCursor = baseline.endCursor;
+    expect(baselineCursor).not.toBeNull();
+
+    await ctx.client.close();
+    for (let seq = 1; seq <= 450; seq += 1) {
+      await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
+        type: "assistant_message",
+        text: `disconnected row ${seq}`,
+      });
+    }
+
+    const reconnectClient = new DaemonClient({
+      url: `ws://127.0.0.1:${ctx.daemon.port}/ws`,
+    });
+    await reconnectClient.connect();
+    try {
+      let cursor = baselineCursor!;
+      const rows: string[] = [];
+      let pages = 0;
+      while (true) {
+        const page = await reconnectClient.fetchAgentTimeline(agent.id, {
+          direction: "after",
+          cursor,
+          limit: 0,
+          projection: "canonical",
+        });
+        pages += 1;
+        expect(page.entries.length).toBeLessThanOrEqual(200);
+        rows.push(
+          ...page.entries.map((entry) => {
+            expect(entry.item.type).toBe("assistant_message");
+            return entry.item.type === "assistant_message" ? entry.item.text : "";
+          }),
+        );
+        if (!page.hasNewer) break;
+        expect(page.endCursor).not.toBeNull();
+        expect(page.endCursor!.seq).toBeGreaterThan(cursor.seq);
+        cursor = page.endCursor!;
+      }
+
+      expect(pages).toBe(3);
+      expect(rows).toEqual(
+        Array.from({ length: 450 }, (_, index) => `disconnected row ${index + 1}`),
+      );
+      expect(new Set(rows).size).toBe(450);
+    } finally {
+      await reconnectClient.close();
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, 30_000);

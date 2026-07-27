@@ -11,13 +11,17 @@ import {
 describe("rpcRegistry", () => {
   it("is the complete source for every JSON session message", () => {
     const entries = Object.values(rpcRegistry.entries);
-    const operations = entries.filter((entry) => entry.kind !== "serverEvent");
+    const operations = entries.filter(
+      (entry) => entry.kind === "unary" || entry.kind === "subscription",
+    );
+    const reverseOperations = entries.filter((entry) => entry.kind === "reverseUnary");
 
-    expect(operations).toHaveLength(131);
-    expect(SessionInboundMessageSchema.options).toHaveLength(131);
-    expect(SessionOutboundMessageSchema.options).toHaveLength(139);
-    expect(new Set(operations.map((entry) => entry.requestType)).size).toBe(131);
-    expect(new Set(SessionOutboundMessageSchema.options.map(messageType)).size).toBe(139);
+    expect(operations).toHaveLength(137);
+    expect(reverseOperations).toHaveLength(1);
+    expect(SessionInboundMessageSchema.options).toHaveLength(138);
+    expect(SessionOutboundMessageSchema.options).toHaveLength(146);
+    expect(new Set(operations.map((entry) => entry.requestType)).size).toBe(137);
+    expect(new Set(SessionOutboundMessageSchema.options.map(messageType)).size).toBe(146);
 
     expect(new Set(SessionInboundMessageSchema.options.map(messageType))).toEqual(
       new Set(rpcRegistry.inputSchemas.map(messageType)),
@@ -37,6 +41,13 @@ describe("rpcRegistry", () => {
       if (entry.kind === "serverEvent") {
         expect(entry.handlerKey).toBeNull();
         expect(entry.requestType).toBeNull();
+        continue;
+      }
+
+      if (entry.kind === "reverseUnary") {
+        expect(entry.handlerKey).toBeNull();
+        expect(entry.requestType).toBe(messageType(entry.input));
+        expect(entry.responseType).toBe(messageType(entry.output));
         continue;
       }
 

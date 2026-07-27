@@ -549,6 +549,7 @@ export class TerminalSessionController {
         name: msg.name,
         command: msg.command,
         args: msg.args,
+        ...(msg.size ? { rows: msg.size.rows, cols: msg.size.cols } : {}),
       });
       this.ensureExitSubscription(session);
       this.emit({

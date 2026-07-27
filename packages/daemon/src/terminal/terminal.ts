@@ -308,16 +308,16 @@ function resolveExternalProcessPath(filePath: string): string {
 }
 
 export function resolveThothCliBinDir(): string | null {
-  const cliEntrypoint = resolveThothCliBinEntrypoint();
-  if (!cliEntrypoint) {
-    return null;
-  }
-
-  const externalCliEntrypoint = resolveExternalProcessPath(cliEntrypoint);
-  return findNpmBinDir(dirname(externalCliEntrypoint)) ?? dirname(externalCliEntrypoint);
+  const cliExecutable = resolveThothCliExecutablePath();
+  return cliExecutable ? dirname(cliExecutable) : null;
 }
 
 export function resolveThothCliExecutablePath(): string | null {
+  const configuredCli = process.env.THOTH_CLI?.trim();
+  if (configuredCli) {
+    return resolvePath(configuredCli);
+  }
+
   const cliEntrypoint = resolveThothCliBinEntrypoint();
   if (!cliEntrypoint) {
     return null;

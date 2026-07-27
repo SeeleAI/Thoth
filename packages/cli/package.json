@@ -22,7 +22,8 @@
     "build:clean": "npm run build",
     "prepack": "npm run build:clean",
     "typecheck": "tsgo --noEmit",
-    "test": "npm run test:local",
+    "test": "npm run test:unit && npm run test:local",
+    "test:unit": "vitest run src/**/*.test.ts",
     "test:local": "tsx tests/run-all.ts",
     "test:e2e": "npm run test:local",
     "test:e2e:lifecycle": "npx tsx tests/e2e/agent-lifecycle.test.ts"

@@ -3193,7 +3193,7 @@ Relay, push, tag, Release or publication.
 
 ### `NTH-EV-065` Refactor Intermediate Promotion And Fixed Beta Replacement
 
-Status: in progress.
+Status: in progress; local candidate is `release_ready` and publication evidence is pending.
 
 Preflight authority on `2026-07-24`:
 
@@ -3825,3 +3825,126 @@ Evidence on `2026-07-26`:
 
 Conclusion: `NTH-TD-046` is verified. The skill can reproducibly analyze and guard future exact-SHA Paseo
 transplants, while `NTH-TD-036` remains the sole product top next action.
+
+### `NTH-EV-070` Paseo Divergence And Architecture Discussion Gate
+
+Status: verified.
+
+Evidence on `2026-07-26`:
+
+1. `NTH-CD-075` establishes that Thoth's initial Paseo-derived substrate does not make future Paseo patches or
+   directories authoritative or mechanically mergeable. Synchronization now reviews exact upstream capabilities
+   and engineering intent against the current Thoth ownership model as both projects continue to diverge.
+2. The five-stage `sync-paseo-into-thoth` skill now treats ownership, formal interface, state, storage, protocol,
+   transport, Provider lifecycle, package topology, recovery, security and Release-topology changes as
+   architecture-level. It requires a user-facing discussion packet and stops before Stage 3 until the exact
+   direction is recorded by a concrete `NTH-CD-*` decision.
+3. `paseo:inspect` now emits schema version 2. Each commit carries conservative architecture signals, and the
+   manifest distinguishes `review` signals from high-confidence `required` candidates for repository topology or
+   cross-boundary package changes. Signals are triage only; manual semantic review remains mandatory even when no
+   signal fires.
+4. Schema-version-2 classification separates `adopt/adapt/reject/defer` from `local/cross-layer/architectural`
+   impact. Every change requires an architecture assessment. Architectural changes require upstream intent, Thoth
+   impact, authority assessment, at least two options, recommendation and one decision question. Pending decisions
+   may pass only with `release_intent: analyze` and disposition `defer`; approved or rejected decisions require a
+   concrete `NTH-CD-*` reference.
+5. The permanent fixture passed a three-commit range containing a local Timeline/Terminal improvement, a required
+   Protocol/Client/server-session refactor and prohibited Voice/direct-model work. Pending analyze classification
+   passed with `architecture_review_required=true`; the same pending item in integrate mode failed; an approved
+   `NTH-CD-999` fixture passed; silent downclassification, hiding the candidate in `ignored_commits`, incomplete
+   commit coverage and all existing prohibited-boundary cases failed as required.
+6. Independent Stage 2 forward-testing classified a terminal anchor fix as `adopt + local` and a cross-boundary
+   session-transport rewrite as `defer + architectural + pending`, produced a complete three-option discussion plan
+   and refused implementation before a user decision. `NTH-EXP-066` preserves the first over-broad forward-test,
+   which was interrupted without a result and was not counted as passing evidence.
+7. Canonical and Codex-discovery skill validation passed. The real worktree boundary audit reported no blocking or
+   review findings; project/repository validation, format and diff hygiene passed. A fresh complete Foundation gate
+   passed lint/build/typecheck and all `565/565` tests: Highlight `66`, Protocol `351`, Relay `29`, Client `119`.
+8. No real Paseo commit range, product package, Provider session, daemon, independent Paseo service, Release, Relay,
+   Git commit, push, tag, deployment or publication was changed. Product Stage 4, current source metrics,
+   `NTH-TD-036` and its `15,506`-LOC Cut B gap remain unchanged.
+
+Conclusion: `NTH-TD-047` is verified. Future local Paseo improvements may be organically adopted or adapted, while
+architecture-level changes must be discussed and explicitly decided before they can enter Thoth implementation.
+
+### `NTH-EV-071` Paseo v0.2.2 Organic Integration And Fixed-Beta Replacement
+
+Status: in progress.
+
+Evidence on `2026-07-27`:
+
+1. The official annotated `v0.2.2` tag resolves through tag object
+   `4759a5baa8a1bf165f282a758081cb49e61a4630` to commit
+   `b589599a8f21bcc9e4c911603082566ce320a3c8`. The exact review range starts after the last accepted Paseo commit
+   `5fc53c576ef0d4dee55455ccc95660703f71b892`; later Paseo `main` is excluded.
+2. `npm run paseo:inspect` regenerated the schema-version-2 manifest from the full official clone. It reports
+   `393` commits, `1,475` changed paths, `143` architecture candidates, `43` required reviews and `24` explicitly
+   excluded voice/audio paths.
+3. `NTH-CD-076` through `NTH-CD-088` record the user-approved exact range, final Thoth owners/interfaces,
+   accepted Forge/Browser/Schedule/Timeline/Provider/Desktop/Files/App behavior, persistent service-port design,
+   direct-editing deferral, rejected voice/Hub/website/legacy/distribution boundaries, Cut B metric translation and
+   fixed desktop-only Beta publication authority.
+4. The coherent classification contains `14` capability groups and explicitly retains eight pathless merge commits
+   as merge bookkeeping with no independent combined diff. `npm run paseo:verify-provenance` passed with
+   `393/393` commits covered, `143/143` candidates assessed, all `43/43` required candidates included in
+   architectural changes, zero pending architecture reviews and zero failures.
+5. Fresh repository-local `Royalvice` GitHub queries confirmed `agent/dev/mvp=265c4af9`,
+   `release/mvp-actions=30528b81`, `main=e74c6e0d`, and fixed prerelease `v0.0.0-mvp-beta` id `359902667` at
+   `30528b81` with `26` assets. Paseo remained independently listening on `127.0.0.1:6767`; Thoth did not stop,
+   restart or reuse it.
+6. Accepted behavior was reconstructed through the one current Thoth chain. Protocol/Client/Core/Daemon/Drivers
+   now own typed Forge, read-only Files/Changes, scoped Browser, Schedule Task/Execution receipts, bounded Timeline,
+   Provider receipts, PTY sizing, and Host service-port leases; App/Desktop/CLI are semantic shells. No Paseo
+   AgentManager, JSON truth, provider-name business branch, per-browser authority, `6767` fallback, voice path,
+   direct file editor, or second read/write path was added.
+7. Current owner suites passed: Protocol `48 files / 435 tests`; Drivers `46 / 590` with `3 files / 21 tests`
+   skipped; Client `4 / 125`; App `355 / 2,678`; Desktop `37 / 300` with `5` skipped; Daemon unit `196 / 2,511`
+   with `26` skipped; CLI unit `3 / 30` plus all `40/40` local/e2e command files. Protocol, Drivers, Client, App,
+   Daemon, and Desktop typechecks passed. The App count is above the pre-integration baseline.
+8. Packaged Browser testing exposed and repaired a real WebSocket-generation race. Broker requests now survive a
+   reconnect by stable logical `clientId`; Client queues Browser responses by request ID; App executes each scoped
+   request at most once and returns it through the replacement Client. Packaged smoke now proves the new turn first
+   leaves `idle` and then returns before navigating to Schedule, preventing a stale-idle read from destroying an
+   in-flight Browser turn.
+9. The first full CLI local run retained one real failure: local Claude Code `2.1.159` correctly filtered Fable 5,
+   while the e2e incorrectly expected an ungated complete catalog. The test now injects a Provider command override
+   reporting `2.1.219` through the real daemon/Driver catalog path and asserts Opus 5, Fable 5, and Sonnet 5 in both
+   200K/1M forms. A debug-only single-file rerun passed, followed by the formal complete CLI result in item 7.
+10. Current formal provenance passed `393/393`, `143/143`, `43/43`, zero pending, and zero failures. The current
+    `npm run paseo:check-boundaries` report covers `368` changed paths with `blocking=0` and `review=0`; the Skill
+    fixture also passed its range, architecture-discussion, boundary, and provenance cases.
+11. All required root gates passed in the required order with current exit code `0`: `check:foundation` including
+    `655` tests; `accept:provider-control:fast` in `49.341s`; `accept:interaction-regressions:fast` in `28.870s`;
+    `accept:thoth:fast` in `103.459s`; and the unchanged shared-deadline `accept:refactor:fast` in `196.126s`.
+    The last gate included architecture/storage/LOC guards, real Web Playwright `3/3`, OpenTUI, and the complete
+    Thoth behavior chain under its single `300s` limit.
+12. `npm run build:web` exported the real 4,449-module App. The opt-in real Codex
+    `UT-01-quick-direct-passthrough` smoke passed `1/1` through an isolated Workspace and the existing official
+    Provider auth. CLI verified OpenCode's honest typed-unavailable path. `npm run smoke:isolation` retained Paseo
+    PID `3597831` on `127.0.0.1:6767`, no Thoth listener on `6688`, different-PID/source guards, and no legacy
+    fallback without starting or stopping a user service.
+13. `npm run accept:thoth:appimage` rebuilt the Linux AppImage and completed one real-window packaged journey with
+    `ok=true`, `14` hot-switch turns, schema-3 migration, read-only `README.md`, committed/uncommitted Changes,
+    Browser list/new/snapshot/navigate/close plus typed wrong-`browserId` rejection, and a succeeded Schedule with
+    real Task/Execution IDs and `schedule_run_started/succeeded` Timeline. The local AppImage is `137,793,946`
+    bytes with SHA-256 `3e31b309d1e8a1ecd61e1d7bda149f420446f256d8e086499050d217a6a789ad`; the ignored report is
+    `.dev/packaged-appimage-thoth-flow/report.json`.
+14. `npm run package:android:debug-apk` passed and produced only the ignored local Debug APK: `273,165,007` bytes,
+    SHA-256 `042b2e4ad9cf46113385cb316d5dc2c13d6d22da4053bcf11896b4b854770702`. `aapt` confirms package
+    `sh.thoth.debug`, version `0.0.0-mvp-beta`, and no `android.permission.RECORD_AUDIO`. It is not a Release asset.
+15. Production metrics are `310,932` lines, `1,343,083` scanner tokens, `1,362,658` AST nodes, `5,137` static
+    imports, and `164` runtime dependency edges. Relative to the fixed `296,437` pre-sync snapshot,
+    `DeltaP=14,495`; translated Cut B/final ceilings are `295,426` / `273,026`, preserving the independent Cut B
+    gap at exactly `15,506`. The translated baseline gate still reports net reductions of `12,094` LOC, `26,129`
+    tokens, `46,049` AST nodes, `65` imports, and one runtime dependency edge.
+
+Pending:
+
+1. Exact release-source commit and normal fast-forward pushes to the two authorized branches.
+2. Exact-SHA workflow, fixed Release replacement, public asset checksum/build-identity verification and downloaded
+   public AppImage journey.
+
+Conclusion: the exact Paseo range is organically integrated and the local candidate is `release_ready`.
+`NTH-TD-048` remains doing and `NTH-EV-071` remains in progress until the fixed 26-asset Beta is replaced by the
+exact-SHA workflow and the downloaded public AppImage passes the same product journey. Nothing here claims
+`verified` or `published` yet.

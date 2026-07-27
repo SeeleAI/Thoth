@@ -130,6 +130,8 @@ import type {
   ThothToolResult,
   ThothToolRuntimeCallerConfig,
 } from "@thoth/drivers/agent-runtime";
+import { registerBrowserTools } from "../../browser-tools/tools.js";
+import type { BrowserToolsBroker } from "../../browser-tools/broker.js";
 
 export interface ThothToolHostDependencies {
   executionService: ExecutionService;
@@ -167,6 +169,7 @@ export interface ThothToolHostDependencies {
   logger: Logger;
   workspaceAuthorityManager?: WorkspaceAuthorityManager;
   toolGateway?: ToolGateway;
+  browserToolsBroker?: Pick<BrowserToolsBroker, "execute">;
 }
 
 function parseTimestamp(value: string | null | undefined): number {
@@ -716,7 +719,12 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         throw new Error(`Thoth tool not found: ${name}`);
       }
       if (runtimeTools?.scope === "clarify" && callerAgentId) {
-        if (name === "thoth_get_bound_task_progress") {
+        if (name.startsWith("browser_")) {
+          // Browser tools are Provider execution capabilities, not Thoth
+          // authority submissions. Their handlers apply the stricter
+          // Workspace/Agent/generation capability fence and remain available
+          // during raw Provider turns.
+        } else if (name === "thoth_get_bound_task_progress") {
           requireToolGateway().assertForegroundContextTurn({ agentId: callerAgentId, context });
         } else {
           requireToolGateway().assertForegroundAuthorityTurn({ agentId: callerAgentId, context });
@@ -725,6 +733,25 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       return tool.handler(await parseToolInput(tool, input), context);
     },
   });
+
+  if (callerAgentId && options.toolGateway && options.browserToolsBroker) {
+    registerBrowserTools({
+      registerTool,
+      broker: options.browserToolsBroker,
+      callerAgentId,
+      toolGateway: options.toolGateway,
+      resolveCallerAgent: () => {
+        const caller = executionService.getAgent(callerAgentId);
+        return caller
+          ? {
+              id: caller.id,
+              cwd: caller.cwd,
+              ...(caller.workspaceId ? { workspaceId: caller.workspaceId } : {}),
+            }
+          : null;
+      },
+    });
+  }
 
   const runClarifyConvergenceAudit = async (input: {
     taskCard: ThothSubmitTaskCardInput["task_card"];

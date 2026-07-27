@@ -408,6 +408,7 @@ describe("ClaudeHarnessAdapter.fetchCatalog", () => {
       const client = new ClaudeHarnessAdapter({
         logger,
         resolveBinary: async () => "/test/claude/bin",
+        resolveVersion: async () => "2.1.219",
         configDir: emptyConfigDir,
       });
       const { models } = await client.fetchCatalog({
@@ -417,9 +418,14 @@ describe("ClaudeHarnessAdapter.fetchCatalog", () => {
       });
 
       expect(models.map((m) => m.id)).toEqual([
+        "claude-opus-5[1m]",
+        "claude-opus-5",
+        "claude-fable-5[1m]",
         "claude-fable-5",
         "claude-opus-4-8[1m]",
         "claude-opus-4-8",
+        "claude-sonnet-5",
+        "claude-sonnet-5[1m]",
         "claude-opus-4-7[1m]",
         "claude-opus-4-7",
         "claude-opus-4-6[1m]",
@@ -435,18 +441,19 @@ describe("ClaudeHarnessAdapter.fetchCatalog", () => {
       }
 
       const defaultModel = models.find((m) => m.isDefault);
-      expect(defaultModel?.id).toBe("claude-opus-4-8");
+      expect(defaultModel?.id).toBe("claude-opus-5[1m]");
     } finally {
       await fs.rm(emptyConfigDir, { recursive: true, force: true });
     }
   });
 
-  test("exposes Ultracode only on Claude models that support it", async () => {
+  test("exposes Ultra Code only on xhigh-capable Claude models", async () => {
     const emptyConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "thoth-claude-models-empty-"));
     try {
       const client = new ClaudeHarnessAdapter({
         logger,
         resolveBinary: async () => "/test/claude/bin",
+        resolveVersion: async () => "2.1.219",
         configDir: emptyConfigDir,
       });
       const { models } = await client.fetchCatalog({
@@ -458,10 +465,13 @@ describe("ClaudeHarnessAdapter.fetchCatalog", () => {
         return models.find((model) => model.id === modelId)?.thinkingOptions?.map(({ id }) => id);
       };
 
+      expect(getThinkingIds("claude-opus-5")).toContain("ultracode");
       expect(getThinkingIds("claude-fable-5")).toContain("ultracode");
       expect(getThinkingIds("claude-opus-4-8[1m]")).toContain("ultracode");
       expect(getThinkingIds("claude-opus-4-8")).toContain("ultracode");
-      expect(getThinkingIds("claude-opus-4-7")).not.toContain("ultracode");
+      expect(getThinkingIds("claude-sonnet-5")).toContain("xhigh");
+      expect(getThinkingIds("claude-sonnet-5")).toContain("ultracode");
+      expect(getThinkingIds("claude-opus-4-7")).toContain("ultracode");
       expect(getThinkingIds("claude-sonnet-4-6")).not.toContain("ultracode");
     } finally {
       await fs.rm(emptyConfigDir, { recursive: true, force: true });

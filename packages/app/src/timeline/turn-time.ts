@@ -1,5 +1,6 @@
 import {
   timelineId,
+  isPendingTimelineItem,
   timelineTimestamp,
   timelineType,
   type TimelineRenderItem,
@@ -14,6 +15,7 @@ export interface TurnTiming {
 export interface StreamTurnTiming {
   byAssistantId: Map<string, TurnTiming>;
   runningStartedAt: Date | null;
+  isActive: boolean;
 }
 
 export function deriveStreamTurnTiming(params: {
@@ -23,6 +25,8 @@ export function deriveStreamTurnTiming(params: {
 }): StreamTurnTiming {
   const byAssistantId = new Map<string, TurnTiming>();
   let currentUserAt: Date | null = null;
+  let currentAuthoritativeUserAt: Date | null = null;
+  let currentUserIsPending = false;
   let currentLastItemAt: Date | null = null;
   let currentAssistantIds: string[] = [];
 
@@ -44,6 +48,8 @@ export function deriveStreamTurnTiming(params: {
     if (timelineType(item) === "user_message") {
       flushCompletedTurn();
       currentUserAt = timelineTimestamp(item);
+      currentAuthoritativeUserAt = isPendingTimelineItem(item) ? null : currentUserAt;
+      currentUserIsPending = isPendingTimelineItem(item);
       currentLastItemAt = null;
       currentAssistantIds = [];
       return;
@@ -64,10 +70,8 @@ export function deriveStreamTurnTiming(params: {
     visitItem(item);
   }
 
-  const runningStartedAt =
-    params.agentStatus === "running"
-      ? (findLastUserMessageTimestamp(params.head) ?? currentUserAt)
-      : null;
+  const isRunning = params.agentStatus === "running";
+  const runningStartedAt = isRunning ? currentAuthoritativeUserAt : null;
   if (params.agentStatus !== "running") {
     flushCompletedTurn();
   }
@@ -75,15 +79,6 @@ export function deriveStreamTurnTiming(params: {
   return {
     byAssistantId,
     runningStartedAt,
+    isActive: isRunning || currentUserIsPending,
   };
-}
-
-function findLastUserMessageTimestamp(items: TimelineRenderItem[]): Date | null {
-  for (let i = items.length - 1; i >= 0; i -= 1) {
-    const item = items[i];
-    if (item && timelineType(item) === "user_message") {
-      return timelineTimestamp(item);
-    }
-  }
-  return null;
 }

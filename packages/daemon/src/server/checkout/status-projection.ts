@@ -4,6 +4,7 @@ import type {
   SessionOutboundMessage,
 } from "@thoth/protocol/messages";
 import type { WorkspaceGitRuntimeSnapshot } from "../workspace-git-service.js";
+import { resolveForgeRepository } from "@thoth/protocol/forge";
 
 type CheckoutPrStatusPayload = Extract<
   SessionOutboundMessage,
@@ -23,6 +24,7 @@ export function buildCheckoutStatusPayloadFromSnapshot({
   if (!snapshot.git.isGit) {
     return {
       cwd,
+      forge: null,
       isGit: false,
       repoRoot: null,
       currentBranch: null,
@@ -43,6 +45,8 @@ export function buildCheckoutStatusPayloadFromSnapshot({
     throw new Error("Workspace git snapshot is missing required checkout status fields");
   }
 
+  const forge = snapshot.git.remoteUrl ? resolveForgeRepository(snapshot.git.remoteUrl) : null;
+
   if (snapshot.git.isThothOwnedWorktree) {
     if (snapshot.git.mainRepoRoot === null || snapshot.git.baseRef === null) {
       throw new Error("Workspace git snapshot is missing required worktree status fields");
@@ -50,6 +54,7 @@ export function buildCheckoutStatusPayloadFromSnapshot({
 
     return {
       cwd,
+      forge,
       isGit: true,
       repoRoot: snapshot.git.repoRoot,
       mainRepoRoot: snapshot.git.mainRepoRoot,
@@ -69,6 +74,7 @@ export function buildCheckoutStatusPayloadFromSnapshot({
 
   return {
     cwd,
+    forge,
     isGit: true,
     repoRoot: snapshot.git.repoRoot,
     mainRepoRoot: snapshot.git.mainRepoRoot,
@@ -97,6 +103,7 @@ export function buildCheckoutPrStatusPayloadFromSnapshot({
 }): CheckoutPrStatusResponse["payload"] {
   return {
     cwd,
+    forge: snapshot.git.remoteUrl ? resolveForgeRepository(snapshot.git.remoteUrl) : null,
     status: normalizeCheckoutPrStatusPayload(snapshot.github.pullRequest),
     githubFeaturesEnabled: snapshot.github.featuresEnabled,
     error: snapshot.github.error

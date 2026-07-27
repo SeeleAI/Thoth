@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { isPlatform } from "../test-utils/platform.js";
 import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -139,6 +139,7 @@ async function removeTemporaryDir(dir: string): Promise<void> {
 }
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   const sessions = terminalSessions.splice(0);
   await Promise.all(
     sessions.map((session) =>
@@ -158,6 +159,14 @@ afterEach(async () => {
       await removeTemporaryDir(dir);
     }
   }
+});
+
+it("uses the Desktop-provided bundled CLI shim for terminal hooks", () => {
+  const configuredCli = join(tmpdir(), "packaged-thoth", "bin", "thoth");
+  vi.stubEnv("THOTH_CLI", `  ${configuredCli}  `);
+
+  expect(resolveThothCliExecutablePath()).toBe(configuredCli);
+  expect(resolveThothCliBinDir()).toBe(join(tmpdir(), "packaged-thoth", "bin"));
 });
 
 it("creates a terminal through the worker and streams output", async () => {

@@ -24,6 +24,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  MessageSquarePlus,
   MoreVertical,
   RotateCw,
 } from "lucide-react-native";
@@ -51,6 +52,13 @@ import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { filterVisibleExplorerEntries, isHiddenExplorerPath } from "@/file-explorer/visibility";
 import { useWebScrollViewScrollbar } from "@/components/use-web-scrollbar";
 import { isWeb } from "@/constants/platform";
+import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import {
+  buildWorkspaceAttachmentScopeKey,
+  useWorkspaceAttachmentsStore,
+} from "@/attachments/workspace-attachments-store";
+import { buildWorkspaceFileAttachment } from "@/attachments/workspace-file-attachment";
+import { useToast } from "@/contexts/toast-context";
 
 const SORT_OPTIONS: { value: SortOption }[] = [
   { value: "name" },
@@ -79,6 +87,7 @@ interface TreeRowItemProps {
   onEntryPress: (entry: ExplorerEntry) => void;
   onCopyPath: (path: string) => void;
   onDownloadEntry: (entry: ExplorerEntry) => void;
+  onAttachEntry: (entry: ExplorerEntry) => void;
 }
 
 function stopPressInPropagation(event: { stopPropagation?: () => void }) {
@@ -120,6 +129,7 @@ function TreeRowItem({
   onEntryPress,
   onCopyPath,
   onDownloadEntry,
+  onAttachEntry,
 }: TreeRowItemProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
@@ -145,6 +155,9 @@ function TreeRowItem({
   const handleDownload = useCallback(() => {
     onDownloadEntry(entry);
   }, [onDownloadEntry, entry]);
+  const handleAttach = useCallback(() => {
+    onAttachEntry(entry);
+  }, [entry, onAttachEntry]);
 
   const chevronStyle = useMemo(
     () => [styles.chevron, isExpanded && styles.chevronExpanded],
@@ -157,6 +170,10 @@ function TreeRowItem({
   );
   const downloadLeading = useMemo(
     () => <Download size={14} color={theme.colors.foregroundMuted} />,
+    [theme.colors.foregroundMuted],
+  );
+  const attachLeading = useMemo(
+    () => <MessageSquarePlus size={14} color={theme.colors.foregroundMuted} />,
     [theme.colors.foregroundMuted],
   );
 
@@ -209,9 +226,14 @@ function TreeRowItem({
             {t("workspace.fileExplorer.context.copyPath")}
           </DropdownMenuItem>
           {entry.kind === "file" ? (
-            <DropdownMenuItem leading={downloadLeading} onSelect={handleDownload}>
-              {t("workspace.fileExplorer.context.download")}
-            </DropdownMenuItem>
+            <>
+              <DropdownMenuItem leading={attachLeading} onSelect={handleAttach}>
+                {t("workspace.fileExplorer.context.attachToComposer")}
+              </DropdownMenuItem>
+              <DropdownMenuItem leading={downloadLeading} onSelect={handleDownload}>
+                {t("workspace.fileExplorer.context.download")}
+              </DropdownMenuItem>
+            </>
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -260,6 +282,20 @@ export function FileExplorerPane({
     [normalizedWorkspaceRoot, workspaceId],
   );
   const hasWorkspaceScope = Boolean(workspaceStateKey && normalizedWorkspaceRoot);
+  const client = useHostRuntimeClient(serverId);
+  const toast = useToast();
+  const attachmentScopeKey = useMemo(
+    () =>
+      buildWorkspaceAttachmentScopeKey({
+        serverId,
+        workspaceId,
+        cwd: normalizedWorkspaceRoot,
+      }),
+    [normalizedWorkspaceRoot, serverId, workspaceId],
+  );
+  const addWorkspaceAttachment = useWorkspaceAttachmentsStore(
+    (state) => state.addWorkspaceAttachment,
+  );
   const { data: explorerState } = useQuery({
     queryKey: fileExplorerQueryKey(serverId, workspaceStateKey ?? "unavailable"),
     queryFn: async () => emptyFileExplorerState(),
@@ -382,6 +418,48 @@ export function FileExplorerPane({
       }),
     [daemonProfile, requestFileDownloadToken, serverId, startDownload, workspaceScopeId],
   );
+  const handleAttachEntry = useCallback(
+    async (entry: ExplorerEntry) => {
+      if (!client || entry.kind !== "file") return;
+      try {
+        const file = await client.readFile(normalizedWorkspaceRoot, entry.path);
+        const result = buildWorkspaceFileAttachment({
+          serverId,
+          workspaceId,
+          cwd: normalizedWorkspaceRoot,
+          path: entry.path,
+          kind: file.kind,
+          bytes: file.bytes,
+          size: file.size,
+          modifiedAt: file.modifiedAt,
+        });
+        if (!result.ok) {
+          toast.error(
+            result.reason === "too_large"
+              ? t("workspace.fileExplorer.context.attachTooLarge")
+              : t("workspace.fileExplorer.context.attachTextOnly"),
+          );
+          return;
+        }
+        addWorkspaceAttachment({ scopeKey: attachmentScopeKey, attachment: result.attachment });
+        toast.show(t("workspace.fileExplorer.context.attachedToComposer"));
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : t("workspace.fileExplorer.context.attachFailed"),
+        );
+      }
+    },
+    [
+      addWorkspaceAttachment,
+      attachmentScopeKey,
+      client,
+      normalizedWorkspaceRoot,
+      serverId,
+      t,
+      toast,
+      workspaceId,
+    ],
+  );
 
   const handleSortCycle = useCallback(() => {
     const currentIndex = SORT_OPTIONS.findIndex((opt) => opt.value === sortOption);
@@ -449,6 +527,7 @@ export function FileExplorerPane({
         onEntryPress={handleEntryPress}
         onCopyPath={handleCopyPath}
         onDownloadEntry={handleDownloadEntry}
+        onAttachEntry={handleAttachEntry}
       />
     ),
     [
@@ -456,6 +535,7 @@ export function FileExplorerPane({
       handleEntryPress,
       handleCopyPath,
       handleDownloadEntry,
+      handleAttachEntry,
       isDirectoryLoading,
       selectedEntryPath,
     ],
@@ -891,6 +971,7 @@ function TreeRowDispatcher({
   onEntryPress,
   onCopyPath,
   onDownloadEntry,
+  onAttachEntry,
 }: {
   info: ListRenderItemInfo<TreeRow>;
   expandedPaths: Set<string>;
@@ -899,6 +980,7 @@ function TreeRowDispatcher({
   onEntryPress: (entry: ExplorerEntry) => void;
   onCopyPath: (path: string) => void | Promise<void>;
   onDownloadEntry: (entry: ExplorerEntry) => void;
+  onAttachEntry: (entry: ExplorerEntry) => void;
 }) {
   const entry = info.item.entry;
   const depth = info.item.depth;
@@ -917,6 +999,7 @@ function TreeRowDispatcher({
       onEntryPress={onEntryPress}
       onCopyPath={onCopyPath}
       onDownloadEntry={onDownloadEntry}
+      onAttachEntry={onAttachEntry}
     />
   );
 }

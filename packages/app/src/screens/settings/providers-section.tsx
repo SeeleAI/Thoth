@@ -1,10 +1,17 @@
 import { useCallback, useMemo, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { Alert, Pressable, Text, View, type PressableStateCallbackType } from "react-native";
+import {
+  Alert,
+  Pressable,
+  Text,
+  View,
+  type GestureResponderEvent,
+  type PressableStateCallbackType,
+} from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { settingsStyles } from "@/styles/settings";
-import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
+import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import { buildProviderDefinitions } from "@/utils/provider-definitions";
@@ -18,7 +25,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Switch } from "@/components/ui/switch";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { useProviderSettingsStore } from "@/stores/provider-settings-store";
-import { ChevronRight } from "lucide-react-native";
+import { ChevronRight, Trash2 } from "lucide-react-native";
 
 type ProviderDefinition = ReturnType<typeof buildProviderDefinitions>[number];
 type ProviderEntry = NonNullable<ReturnType<typeof useProvidersSnapshot>["entries"]>[number];
@@ -64,9 +71,11 @@ interface ProviderRowProps {
   entry: ProviderEntry;
   enabled: boolean;
   isToggling: boolean;
+  isDeleting: boolean;
   isFirst: boolean;
   onPress: (providerId: string) => void;
   onToggleEnabled: (providerId: string, enabled: boolean) => void;
+  onDelete: (providerId: string, label: string) => void;
 }
 
 function ProviderRow({
@@ -74,9 +83,11 @@ function ProviderRow({
   entry,
   enabled,
   isToggling,
+  isDeleting,
   isFirst,
   onPress,
   onToggleEnabled,
+  onDelete,
 }: ProviderRowProps) {
   const { t } = useTranslation();
   const { theme } = useUnistyles();
@@ -99,6 +110,13 @@ function ProviderRow({
       onToggleEnabled(def.id, value);
     },
     [def.id, onToggleEnabled],
+  );
+  const handleDeletePress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      onDelete(def.id, def.label);
+    },
+    [def.id, def.label, onDelete],
   );
   const rowStyle = useCallback(
     ({ pressed, hovered }: PressableStateCallbackType & { hovered?: boolean }) => [
@@ -141,6 +159,25 @@ function ProviderRow({
               ) : null}
             </View>
           </View>
+          {entry.source === "custom" && entry.deletable === true ? (
+            <Pressable
+              onPress={handleDeletePress}
+              disabled={isDeleting}
+              accessibilityRole="button"
+              accessibilityLabel={t("settings.providers.deleteProvider", { name: def.label })}
+              style={({ pressed }) => [
+                styles.deleteButton,
+                pressed && styles.deleteButtonPressed,
+                isDeleting && styles.deleteButtonDisabled,
+              ]}
+            >
+              {isDeleting ? (
+                <LoadingSpinner size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
+              ) : (
+                <Trash2 size={theme.iconSize.sm} color={theme.colors.statusDanger} />
+              )}
+            </Pressable>
+          ) : null}
           <Switch
             value={enabled}
             onValueChange={handleToggleValueChange}
@@ -203,11 +240,13 @@ export interface ProvidersSectionProps {
 export function ProvidersSection({ serverId }: ProvidersSectionProps) {
   const { t } = useTranslation();
   const isConnected = useHostRuntimeIsConnected(serverId);
+  const client = useHostRuntimeClient(serverId);
   const { entries, isLoading, refresh } = useProvidersSnapshot(serverId);
   const { patchConfig } = useDaemonConfig(serverId);
   const openProviderSettings = useProviderSettingsStore((state) => state.open);
   const [pendingProviderId, setPendingProviderId] = useState<string | null>(null);
   const [installingProviderId, setInstallingProviderId] = useState<string | null>(null);
+  const [deletingProviderId, setDeletingProviderId] = useState<string | null>(null);
 
   const providerDefinitions = useMemo(() => buildProviderDefinitions(entries), [entries]);
   const hasServer = serverId.length > 0;
@@ -255,6 +294,38 @@ export function ProvidersSection({ serverId }: ProvidersSectionProps) {
     [installingProviderId, patchConfig, refresh, t],
   );
 
+  const handleDelete = useCallback(
+    (providerId: string, label: string) => {
+      if (!client || deletingProviderId) return;
+      Alert.alert(
+        t("settings.providers.deleteConfirmTitle", { name: label }),
+        t("settings.providers.deleteConfirmMessage", { name: label }),
+        [
+          { text: t("common.actions.cancel"), style: "cancel" },
+          {
+            text: t("settings.providers.deleteAction"),
+            style: "destructive",
+            onPress: () => {
+              setDeletingProviderId(providerId);
+              void client
+                .deleteProvider(providerId)
+                .catch((error) => {
+                  Alert.alert(
+                    t("settings.providers.deleteErrorTitle"),
+                    error instanceof Error ? error.message : String(error),
+                  );
+                })
+                .finally(() => {
+                  setDeletingProviderId((current) => (current === providerId ? null : current));
+                });
+            },
+          },
+        ],
+      );
+    },
+    [client, deletingProviderId, t],
+  );
+
   return (
     <>
       <SettingsSection
@@ -284,9 +355,11 @@ export function ProvidersSection({ serverId }: ProvidersSectionProps) {
                   entry={entry}
                   enabled={entry.enabled ?? true}
                   isToggling={pendingProviderId === def.id}
+                  isDeleting={deletingProviderId === def.id}
                   isFirst={index === 0}
                   onPress={handleOpenProviderSettings}
                   onToggleEnabled={handleToggleEnabled}
+                  onDelete={handleDelete}
                 />
               );
             })}
@@ -373,6 +446,19 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.palette.red[300],
     fontSize: theme.fontSize.xs,
     marginTop: theme.spacing[1],
+  },
+  deleteButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 32,
+    height: 32,
+    borderRadius: theme.borderRadius.lg,
+  },
+  deleteButtonPressed: {
+    backgroundColor: theme.colors.surface3,
+  },
+  deleteButtonDisabled: {
+    opacity: theme.opacity[50],
   },
 }));
 

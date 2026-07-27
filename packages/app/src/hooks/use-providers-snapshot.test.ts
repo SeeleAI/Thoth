@@ -18,6 +18,7 @@ type GetProvidersSnapshotResult = Awaited<ReturnType<DaemonClient["getProvidersS
 type RefreshProvidersSnapshotResult = Awaited<ReturnType<DaemonClient["refreshProvidersSnapshot"]>>;
 type GetProvidersSnapshotOptions = Parameters<DaemonClient["getProvidersSnapshot"]>[0];
 type RefreshProvidersSnapshotOptions = Parameters<DaemonClient["refreshProvidersSnapshot"]>[0];
+type ParsedProviderSnapshotEntry = GetProvidersSnapshotResult["entries"][number];
 
 interface FakeProvidersSnapshotClient extends ProvidersSnapshotClient {
   getCalls: GetProvidersSnapshotOptions[];
@@ -57,7 +58,7 @@ function createClient(
   };
 }
 
-function providersSnapshot(entries: ProviderSnapshotEntry[]): GetProvidersSnapshotResult {
+function providersSnapshot(entries: ParsedProviderSnapshotEntry[]): GetProvidersSnapshotResult {
   return {
     entries,
     generatedAt: "2026-01-01T00:00:00.000Z",
@@ -68,11 +69,12 @@ function providersSnapshot(entries: ProviderSnapshotEntry[]): GetProvidersSnapsh
 function codexEntry(
   status: ProviderSnapshotEntry["status"],
   models?: ProviderSnapshotEntry["models"],
-): ProviderSnapshotEntry {
+): ParsedProviderSnapshotEntry {
   return {
     provider: "codex",
     status,
     enabled: true,
+    deletable: false,
     ...(models ? { models } : {}),
   };
 }
@@ -224,7 +226,7 @@ describe("applyProvidersSnapshotUpdate", () => {
   });
 
   function updateMessage(
-    entries: ProviderSnapshotEntry[],
+    entries: ParsedProviderSnapshotEntry[],
     cwd?: string,
   ): ProvidersSnapshotUpdateMessage {
     return {

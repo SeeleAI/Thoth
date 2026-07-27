@@ -20,6 +20,8 @@ import {
   TerminalStreamOpcode,
 } from "@thoth/protocol/terminal-stream-protocol";
 import { CLIENT_CAPS } from "@thoth/protocol/client-capabilities";
+import { BROWSER_AUTOMATION_COMMAND_NAMES } from "@thoth/protocol/browser-automation/rpc-schemas";
+import { BrowserToolsBroker } from "./browser-tools/broker.js";
 
 type SocketListener = (...args: unknown[]) => void;
 
@@ -63,6 +65,9 @@ const sessionMock = vi.hoisted(() => {
       checkoutDiffFallbackRefreshTargetCount: 0,
       terminalDirectorySubscriptionCount: 0,
       terminalSubscriptionCount: 0,
+      workspaceGitWatchedDirectoryCount: 0,
+      workspaceGitWorkspaceRecordCount: 0,
+      workspaceGitSubscriptionCount: 0,
       inflightRequests: 0,
       peakInflightRequests: 0,
     }));
@@ -119,6 +124,7 @@ const WireEnvelopeSchema = z.object({
       type: z.string().optional(),
       payload: z.unknown().optional(),
     })
+    .passthrough()
     .optional(),
 });
 
@@ -211,7 +217,10 @@ function createLogger() {
   return logger;
 }
 
-function createServer(options?: { logger?: ReturnType<typeof createLogger> }) {
+function createServer(options?: {
+  logger?: ReturnType<typeof createLogger>;
+  browserToolsBroker?: BrowserToolsBroker;
+}) {
   const daemonConfigStore = {
     onChange: vi.fn(() => () => {}),
   };
@@ -269,12 +278,18 @@ function createServer(options?: { logger?: ReturnType<typeof createLogger> }) {
     undefined,
     undefined,
     createProviderSnapshotManagerStub().manager,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    options?.browserToolsBroker,
   );
 }
 
 function createHelloMessage(
   clientId: string,
-  options?: { capabilities?: Record<string, boolean>; protocolVersion?: number },
+  options?: { capabilities?: Record<string, unknown>; protocolVersion?: number },
 ) {
   return {
     type: "hello" as const,
@@ -349,6 +364,19 @@ function holdNextSessionMessage(session: (typeof sessionMock.instances)[number])
   };
 }
 
+function holdSessionCleanup(session: (typeof sessionMock.instances)[number]): {
+  finish: () => void;
+} {
+  let finish = () => {};
+  session.cleanup.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  return { finish: () => finish() };
+}
+
 describe("relay external socket reconnect behavior", () => {
   beforeEach(() => {
     sessionMock.instances.length = 0;
@@ -393,6 +421,42 @@ describe("relay external socket reconnect behavior", () => {
     await server.close();
   });
 
+  test("rejects relay sockets attached after shutdown ingress closes", async () => {
+    const server = createServer();
+    const existingSocket = new MockSocket();
+    await attachRelayAndHello({
+      server,
+      socket: existingSocket,
+      clientId: "existing-client",
+    });
+
+    const heldCleanup = holdSessionCleanup(sessionMock.instances[0]);
+    const closePromise = server.close();
+    const lateSocket = new MockSocket();
+    let closeCode: number | null = null;
+    lateSocket.on("close", (code: unknown) => {
+      closeCode = typeof code === "number" ? code : null;
+    });
+
+    try {
+      await server.attachExternalSocket(lateSocket, { transport: "relay" });
+      lateSocket.emit("message", JSON.stringify(createHelloMessage("late-client")));
+
+      expect({
+        closeCode,
+        readyState: lateSocket.readyState,
+        sessions: sessionMock.instances.length,
+      }).toEqual({
+        closeCode: 1001,
+        readyState: 3,
+        sessions: 1,
+      });
+    } finally {
+      heldCleanup.finish();
+      await closePromise;
+    }
+  });
+
   test("passes hello capabilities through to the created session", async () => {
     const server = createServer();
     const socket = new MockSocket();
@@ -410,6 +474,147 @@ describe("relay external socket reconnect behavior", () => {
     const session = sessionMock.instances[0];
     expect(session.args.clientCapabilities).toEqual({
       [CLIENT_CAPS.reasoningMergeEnum]: true,
+    });
+
+    await server.close();
+  });
+
+  test("routes browser requests and responses only through the declared host connection", async () => {
+    let requestSequence = 0;
+    const broker = new BrowserToolsBroker({
+      createRequestId: () => `browser-request-${++requestSequence}`,
+    });
+    const server = createServer({ browserToolsBroker: broker });
+    const ordinarySocket = new MockSocket();
+    await attachDirectAndHello({
+      server,
+      socket: ordinarySocket,
+      clientId: "ordinary-client",
+    });
+    const hostSocket = new MockSocket();
+    await asInternals<WebSocketServerInternals>(server).attachSocket(
+      hostSocket,
+      createDirectRequest(),
+    );
+    hostSocket.emit(
+      "message",
+      JSON.stringify(
+        createHelloMessage("desktop-browser-host", {
+          capabilities: {
+            [CLIENT_CAPS.browserHost]: {
+              supportedCommands: [...BROWSER_AUTOMATION_COMMAND_NAMES],
+              hostKind: "Thoth Desktop",
+            },
+          },
+        }),
+      ),
+    );
+
+    const request = broker.execute({
+      workspaceId: "workspace-1",
+      agentId: "agent-1",
+      executionId: "execution-1",
+      generation: "generation-1",
+      command: { command: "new_tab", args: { url: "https://example.com" } },
+    });
+    await Promise.resolve();
+
+    expect(sentEnvelopes(ordinarySocket)).not.toContainEqual(
+      expect.objectContaining({
+        message: expect.objectContaining({ type: "browser.automation.execute.request" }),
+      }),
+    );
+    expect(sentEnvelopes(hostSocket)).toContainEqual({
+      type: "session",
+      message: {
+        type: "browser.automation.execute.request",
+        requestId: "browser-request-1",
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+        executionId: "execution-1",
+        generation: "generation-1",
+        command: { command: "new_tab", args: { url: "https://example.com" } },
+      },
+    });
+
+    hostSocket.emit(
+      "message",
+      JSON.stringify({
+        type: "session",
+        message: {
+          type: "browser.automation.execute.response",
+          payload: {
+            requestId: "browser-request-1",
+            ok: true,
+            result: {
+              command: "new_tab",
+              browserId: "11111111-1111-4111-8111-111111111111",
+              workspaceId: "workspace-1",
+              url: "https://example.com",
+            },
+          },
+        },
+      }),
+    );
+    await expect(request).resolves.toMatchObject({ ok: true });
+
+    const reconnected = broker.execute({
+      workspaceId: "workspace-1",
+      agentId: "agent-1",
+      executionId: "execution-2",
+      generation: "generation-2",
+      command: { command: "list_tabs", args: {} },
+    });
+    hostSocket.emit("close", 1006, "");
+    expect(broker.getPendingRequestCount()).toBe(1);
+
+    const resumedHostSocket = new MockSocket();
+    await asInternals<WebSocketServerInternals>(server).attachSocket(
+      resumedHostSocket,
+      createDirectRequest(),
+    );
+    resumedHostSocket.emit(
+      "message",
+      JSON.stringify(
+        createHelloMessage("desktop-browser-host", {
+          capabilities: {
+            [CLIENT_CAPS.browserHost]: {
+              supportedCommands: [...BROWSER_AUTOMATION_COMMAND_NAMES],
+              hostKind: "Thoth Desktop",
+            },
+          },
+        }),
+      ),
+    );
+    expect(sentEnvelopes(resumedHostSocket)).toContainEqual({
+      type: "session",
+      message: {
+        type: "browser.automation.execute.request",
+        requestId: "browser-request-2",
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+        executionId: "execution-2",
+        generation: "generation-2",
+        command: { command: "list_tabs", args: {} },
+      },
+    });
+    resumedHostSocket.emit(
+      "message",
+      JSON.stringify({
+        type: "session",
+        message: {
+          type: "browser.automation.execute.response",
+          payload: {
+            requestId: "browser-request-2",
+            ok: true,
+            result: { command: "list_tabs", tabs: [] },
+          },
+        },
+      }),
+    );
+    await expect(reconnected).resolves.toMatchObject({
+      ok: true,
+      result: { command: "list_tabs", tabs: [] },
     });
 
     await server.close();

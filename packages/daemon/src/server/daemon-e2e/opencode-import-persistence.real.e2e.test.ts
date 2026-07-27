@@ -183,7 +183,11 @@ describe("daemon E2E (real opencode) - persisted import resume", () => {
             cwd,
           });
 
+          const opened = await client.openProject(cwd);
+          expect(opened.workspace).not.toBeNull();
+
           const imported = await client.importAgent({
+            workspaceId: opened.workspace!.id,
             providerId: "opencode",
             providerHandleId,
             cwd,

@@ -9,18 +9,21 @@ const changesPreferencesSchema = z.object({
   layout: z.enum(["unified", "split"]).optional(),
   wrapLines: z.boolean().optional(),
   hideWhitespace: z.boolean().optional(),
+  commitsCollapsed: z.boolean().optional(),
 });
 
 export interface ChangesPreferences {
   layout: "unified" | "split";
   wrapLines: boolean;
   hideWhitespace: boolean;
+  commitsCollapsed: boolean;
 }
 
 export const DEFAULT_CHANGES_PREFERENCES: ChangesPreferences = {
   layout: "unified",
   wrapLines: false,
   hideWhitespace: false,
+  commitsCollapsed: true,
 };
 
 export interface KeyValueStorage {

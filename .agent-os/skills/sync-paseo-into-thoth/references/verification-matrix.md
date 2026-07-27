@@ -9,7 +9,8 @@ test totals, and acceptance scopes may change.
 2. Run the affected package typecheck and build through root scripts.
 3. Run architecture, source, and single-path guards affected by the change.
 4. Run `npm run paseo:check-boundaries -- --repo . --base <thoth-base-sha>`.
-5. Run `npm run paseo:verify-provenance` against the exact manifest and classification.
+5. Run `npm run paseo:verify-provenance` against the exact schema-version-2 manifest and
+   classification. Require zero pending architecture review before integration evidence.
 6. Run `npm run check:foundation`.
 7. Run the current comprehensive acceptance entry when its scope is affected.
 8. Add real product journeys when unit/source gates cannot prove the behavior.
@@ -35,6 +36,8 @@ test totals, and acceptance scopes may change.
 ## Evidence Rules
 
 - Record the exact command, exit code, important result, and artifact/report path.
+- Preserve architecture candidates, discussion packets, user decision IDs, and the resulting final
+  Thoth ownership even when the upstream architecture itself is rejected.
 - Do not reuse a historical pass as current evidence.
 - Do not delete or narrow a flaky or failing test to complete the transplant.
 - A fixture may replace external uncertainty only through the same public API and lifecycle.

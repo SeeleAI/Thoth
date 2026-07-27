@@ -306,6 +306,10 @@
 5. Claude, Codex, and ACP host surfaces may provide external operation entry points into the same authority.
 6. Relay may provide a remote encrypted synchronization entry point.
 7. Different responsibilities do not mean different semantics.
+8. Desktop may execute Host-native Browser and open-editor actions, but the semantic request and authority fence
+   remain Provider-neutral and Workspace-scoped.
+9. Files/Changes may be richly inspectable on App/Desktop while remaining read-only; presentation convenience does
+   not turn Thoth into an editor or a second Git authority.
 
 ## 10. Host-Independence Principles
 
@@ -455,6 +459,10 @@ Clarify levels:
 10. Whether the loop can push aggressively on the previous round's failure points is a core quality gate for the MVP.
 11. Provider output that can be shown from all phases must stream into the timeline in real time.
 12. Plan+Exec must make the most of the provider's native plan mode rather than having Thoth reimplement an execution agent.
+13. A Workspace Schedule creates a real Task and ExecutionAttempt on every trigger. It uses the same Workspace
+    mutation lease by default; a separate worktree Workspace exists only after an explicit user choice.
+14. Idle release may free Provider runtime handles, but it must retain Agent, Task, Timeline, Card, HumanDecision,
+    Evidence, and the opaque persistence receipt required for honest resume or replacement.
 
 ### 13.6 Reporting Constraints
 

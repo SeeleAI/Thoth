@@ -9,6 +9,7 @@ import type { ThothToolExecutionContext } from "@thoth/drivers/agent-runtime";
 export type ForegroundToolFenceKind = "raw_provider" | "thoth_clarify";
 
 interface ForegroundToolFence {
+  workspaceId: string;
   generation: string;
   kind: ForegroundToolFenceKind;
   foregroundTurnId: string;
@@ -23,6 +24,13 @@ export interface ExecutionToolBinding {
   executionId: string;
   generation: string;
   phase: "planexec" | "review";
+}
+
+export interface ScopedCapabilityAuthority {
+  workspaceId: string;
+  agentId: string;
+  executionId: string;
+  generation: string;
 }
 
 export interface ToolResultSink {
@@ -69,11 +77,13 @@ export class ToolGateway {
 
   beginForegroundTurn(input: {
     agentId: string;
+    workspaceId: string;
     generation: string;
     kind: ForegroundToolFenceKind;
     foregroundTurnId: string;
   }): void {
     this.foreground.set(input.agentId, {
+      workspaceId: input.workspaceId,
       generation: input.generation,
       kind: input.kind,
       foregroundTurnId: input.foregroundTurnId,
@@ -155,6 +165,36 @@ export class ToolGateway {
     if (!fence) throw new Error("No active foreground turn owns this context tool call");
     this.assertCurrentProviderTurn(input.agentId, fence, input.context);
     return fence.foregroundTurnId;
+  }
+
+  authorizeScopedCapability(input: {
+    agentId: string;
+    context: ThothToolExecutionContext;
+  }): ScopedCapabilityAuthority {
+    const foreground = this.foreground.get(input.agentId);
+    if (foreground) {
+      this.assertCurrentProviderTurn(input.agentId, foreground, input.context);
+      return {
+        workspaceId: foreground.workspaceId,
+        agentId: input.agentId,
+        executionId: foreground.foregroundTurnId,
+        generation: foreground.generation,
+      };
+    }
+
+    const binding = this.bindings.get(input.agentId);
+    if (!binding) {
+      throw new Error("No active Workspace-scoped execution owns this capability call");
+    }
+    if (input.context.providerToolCall?.isActiveProviderTurn !== true) {
+      throw new Error("Scoped capability calls require an active provider execution");
+    }
+    return {
+      workspaceId: binding.workspaceId,
+      agentId: input.agentId,
+      executionId: binding.executionId,
+      generation: binding.generation,
+    };
   }
 
   submitPlanExec(

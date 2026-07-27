@@ -31,6 +31,7 @@ export interface ToolCallPresentation {
   canOpenDetails: boolean;
   openFilePath: string | null;
   isPlan: boolean;
+  outputTruncated: boolean;
 }
 
 export type ToolCallIconResolver = (
@@ -44,6 +45,18 @@ function displayStatus(status: ToolCallStatus): ToolCallDisplayInput["status"] {
 
 function displayDetail(detail: ToolCallDetail | undefined): ToolCallDetail {
   return detail ?? { type: "unknown", input: null, output: null };
+}
+
+function hasCanonicalOutputTruncation(metadata: Record<string, unknown> | undefined): boolean {
+  const receipt = metadata?.contentTruncation;
+  return (
+    typeof receipt === "object" &&
+    receipt !== null &&
+    "truncated" in receipt &&
+    receipt.truncated === true &&
+    "encoding" in receipt &&
+    receipt.encoding === "utf-8"
+  );
 }
 
 export function buildToolCallPresentation(
@@ -64,10 +77,14 @@ export function buildToolCallPresentation(
     error: input.error,
   });
   const hasDetails = Boolean(input.error) || hasMeaningfulToolCallDetail(input.detail);
+  const outputTruncated = hasCanonicalOutputTruncation(input.metadata);
+  const summary = outputTruncated
+    ? [displayModel.summary, "Output truncated"].filter(Boolean).join(" · ")
+    : displayModel.summary;
 
   return {
     displayName: displayModel.displayName,
-    summary: displayModel.summary,
+    summary,
     errorText: displayModel.errorText,
     icon: input.resolveIcon(input.toolName, input.detail),
     isLoadingDetails,
@@ -75,5 +92,6 @@ export function buildToolCallPresentation(
     canOpenDetails: hasDetails || isLoadingDetails,
     openFilePath: extractToolCallFilePath(input.detail),
     isPlan: input.detail?.type === "plan",
+    outputTruncated,
   };
 }

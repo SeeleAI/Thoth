@@ -78,6 +78,7 @@ import {
 } from "./daemon-client-transport.js";
 import { DaemonClientRuntimeMetrics } from "./daemon-client-runtime-metrics.js";
 import { TerminalStreamRouter, type TerminalStreamEvent } from "./terminal-stream-router.js";
+import type { BrowserAutomationExecuteResponse } from "@thoth/protocol/browser-automation/rpc-schemas";
 
 export interface Logger {
   debug(obj: object, msg?: string): void;
@@ -99,6 +100,7 @@ const perfNow: () => number =
     : () => Date.now();
 
 interface ImportAgentInputBase {
+  workspaceId: string;
   cwd?: string;
   labels?: Record<string, string>;
 }
@@ -196,6 +198,7 @@ export interface DaemonClientConfig {
   clientType?: "mobile" | "browser" | "cli" | "mcp";
   appVersion?: string;
   runtimeGeneration?: number | null;
+  capabilities?: Record<string, unknown>;
   password?: string;
   authHeader?: string;
   protocols?: string[];
@@ -969,6 +972,8 @@ const clientRpcBindings = {
     },
   }),
   openProject: positionalRpc({ clientMethod: "openProject", fields: ["cwd"] }),
+  resolveForge: objectRpc({ clientMethod: "resolveForge" }),
+  cloneWorkspace: objectRpc({ clientMethod: "cloneWorkspace", timeout: 5 * 60_000 }),
   addProject: positionalRpc({ clientMethod: "addProject", fields: ["cwd"] }),
   startWorkspaceScript: positionalRpc({
     clientMethod: "startWorkspaceScript",
@@ -976,6 +981,10 @@ const clientRpcBindings = {
   }),
   archiveWorkspace: positionalRpc({
     clientMethod: "archiveWorkspace",
+    fields: ["workspaceId"],
+  }),
+  restoreWorkspace: positionalRpc({
+    clientMethod: "restoreWorkspace",
     fields: ["workspaceId"],
   }),
   fetchWorkspaceSetupStatus: positionalRpc({
@@ -1102,6 +1111,7 @@ const clientRpcBindings = {
     clientMethod: "importAgent",
     request: (input: ImportAgentInput) => ({
       body: {
+        workspaceId: input.workspaceId,
         ...("providerId" in input
           ? { providerId: input.providerId, providerHandleId: input.providerHandleId }
           : { provider: input.provider, sessionId: input.sessionId }),
@@ -1291,6 +1301,25 @@ const clientRpcBindings = {
   checkoutPull: positionalRpc({ clientMethod: "checkoutPull", fields: ["cwd"] }),
   checkoutPush: positionalRpc({ clientMethod: "checkoutPush", fields: ["cwd"] }),
   checkoutRefresh: positionalRpc({ clientMethod: "checkoutRefresh", fields: ["cwd"] }),
+  listCheckoutCommits: mappedRpcResult({
+    clientMethod: "listCheckoutCommits",
+    request: (cwd: string, requestId?: string) => ({ body: { cwd }, requestId }),
+    select: (payload) => {
+      if (payload.error) throw new Error(payload.error.message);
+      return { baseRef: payload.baseRef, commits: payload.commits };
+    },
+  }),
+  getCommitFileDiff: mappedRpcResult({
+    clientMethod: "getCommitFileDiff",
+    request: (cwd: string, sha: string, path: string, requestId?: string) => ({
+      body: { cwd, sha, path },
+      requestId,
+    }),
+    select: (payload) => {
+      if (payload.error) throw new Error(payload.error.message);
+      return { file: payload.file };
+    },
+  }),
   checkoutPrStatus: positionalRpc({ clientMethod: "checkoutPrStatus", fields: ["cwd"] }),
   checkoutSwitchBranch: positionalRpc({
     clientMethod: "checkoutSwitchBranch",
@@ -1548,6 +1577,13 @@ const clientRpcBindings = {
       timeout: 120_000,
     }),
   }),
+  deleteProvider: mappedRpc({
+    clientMethod: "deleteProvider",
+    request: (provider: AgentProvider, options?: { requestId?: string }) => ({
+      body: { provider, confirmed: true as const },
+      requestId: options?.requestId,
+    }),
+  }),
   getProviderDiagnostic: mappedRpc({
     clientMethod: "getProviderDiagnostic",
     request: (provider: AgentProvider, options?: { requestId?: string }) => ({
@@ -1578,7 +1614,13 @@ const clientRpcBindings = {
       cwd: string,
       name?: string,
       requestId?: string,
-      options?: { agentId?: string; command?: string; args?: string[]; workspaceId?: string },
+      options?: {
+        agentId?: string;
+        command?: string;
+        args?: string[];
+        workspaceId?: string;
+        size?: { rows: number; cols: number };
+      },
     ) => ({ body: { cwd, name, ...options }, requestId }),
   }),
   killTerminal: positionalRpc({ clientMethod: "killTerminal", fields: ["terminalId"] }),
@@ -1736,6 +1778,7 @@ class DaemonClientRuntime {
   private completedBinaryFileReads = new Map<string, FileReadResult>();
   private logger: Logger;
   private pendingSendQueue: PendingSend[] = [];
+  private pendingBrowserAutomationResponses = new Map<string, BrowserAutomationExecuteResponse>();
   private readonly logConnectionPath: "direct" | "relay";
   private readonly logServerId: string | null;
   private readonly logClientIdHash: string;
@@ -2011,6 +2054,7 @@ class DaemonClientRuntime {
     this.disposeTransport(1000, "Client closed");
     this.clearWaiters(new Error("Daemon client closed"));
     this.rejectPendingSendQueue(new Error("Daemon client closed"));
+    this.pendingBrowserAutomationResponses.clear();
     this.rejectPingProbe(new Error("Daemon client closed"));
     this.terminalStreams.clearSlots();
     this.lastServerInfoMessage = null;
@@ -3138,6 +3182,15 @@ class DaemonClientRuntime {
     });
   }
 
+  sendBrowserAutomationExecuteResponse(response: BrowserAutomationExecuteResponse): boolean {
+    if (this.connectionState.status === "disposed") {
+      return false;
+    }
+    this.pendingBrowserAutomationResponses.set(response.payload.requestId, response);
+    this.flushPendingBrowserAutomationResponses();
+    return true;
+  }
+
   // ============================================================================
   // Internals
   // ============================================================================
@@ -3175,6 +3228,7 @@ class DaemonClientRuntime {
             [CLIENT_CAPS.customModeIcons]: true,
             [CLIENT_CAPS.reasoningMergeEnum]: true,
             [CLIENT_CAPS.terminalReflowableSnapshot]: true,
+            ...this.config.capabilities,
           },
           ...(this.config.appVersion ? { appVersion: this.config.appVersion } : {}),
         }),
@@ -3544,6 +3598,7 @@ class DaemonClientRuntime {
           this.resubscribeCheckoutDiffSubscriptions();
           this.resubscribeTerminalDirectorySubscriptions();
           this.flushPendingSendQueue();
+          this.flushPendingBrowserAutomationResponses();
           this.resolveConnect();
         }
       }
@@ -3593,6 +3648,21 @@ class DaemonClientRuntime {
           clearTimeout(waiter.timeoutHandle);
         }
         waiter.resolve(result);
+      }
+    }
+  }
+
+  private flushPendingBrowserAutomationResponses(): void {
+    if (!this.transport || this.connectionState.status !== "connected") {
+      return;
+    }
+    for (const [requestId, response] of this.pendingBrowserAutomationResponses) {
+      const payload = SessionInboundMessageSchema.parse(response);
+      try {
+        this.transport.send(JSON.stringify({ type: "session", message: payload }));
+        this.pendingBrowserAutomationResponses.delete(requestId);
+      } catch {
+        return;
       }
     }
   }

@@ -4355,3 +4355,82 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   A fresh complete Foundation gate then passed lint/build/typecheck and all `565/565` tests
   (`66 + 351 + 29 + 119`). The closeout is ready for one normal fast-forward of `agent/dev/mvp`; all Release and
   independent-service boundaries remain unchanged.
+
+## 2026-07-26 [Paseo architecture discussion gate verified]
+
+- Recorded `NTH-CD-075`: Thoth's Paseo-derived origin is provenance, not a continuing structural merge contract.
+  Future exact ranges are capability and engineering-intent inventories; local improvements land through current
+  Thoth ownership, while architecture-level changes must be surfaced and decided before product-source edits.
+- Kept the skill at exactly five stages and strengthened Stage 2 with an architecture review reference, mandatory
+  `local/cross-layer/architectural` assessment, a structured discussion packet and a concrete `NTH-CD-*` decision
+  gate. Stage 3 now explicitly reconstructs approved capabilities for current Thoth instead of preserving Paseo
+  layout, patch shape or ownership for convenience.
+- Upgraded exact-range manifests and classifications to schema version 2. The inspector emits conservative
+  `review` and `required` architecture signals; provenance permits pending decisions only in analyze mode and blocks
+  pending integration, missing discussion fields, required-candidate downclassification and candidate hiding in
+  `ignored_commits`.
+- The expanded fixture passed local adaptation, required architecture detection, pending analyze, approved decision
+  and existing prohibited-boundary cases; pending integrate, downclassification, ignored candidates and incomplete
+  coverage failed as intended. Independent Stage 2 forward-testing also stopped the hypothetical protocol/client/
+  session rewrite while leaving the local terminal fix correctly classified. `NTH-EXP-066` preserves the initial
+  over-broad forward-test that returned no result and was interrupted without writes.
+- Skill validation, real-worktree boundary scanning, project/repository validation, formatting, diff hygiene and a
+  fresh complete Foundation gate passed, including `565/565` tests (`66 + 351 + 29 + 119`). `NTH-TD-047` /
+  `NTH-EV-070` are verified. No real Paseo range, product source, commit, push, tag, Release, deployment or service
+  mutation occurred; the sole top next action remains `NTH-TD-036`.
+
+## 2026-07-27 [Paseo v0.2.2 architecture review and provenance resolved]
+
+- Reverified the official annotated `v0.2.2` tag through the repository-local `Royalvice` GitHub configuration and
+  pinned the exact `5fc53c57..b589599a` range. The regenerated schema-version-2 manifest contains `393` commits,
+  `1,475` paths, `143` architecture candidates, `43` required reviews and `24` excluded voice/audio paths; later
+  Paseo `main` remains outside the range.
+- Recorded `NTH-REQ-028`, `NTH-AC-025` and concrete architecture/publication decisions `NTH-CD-076` through
+  `NTH-CD-088`. They preserve current Workspace/Task/HarnessAdapter ownership while approving selective
+  Forge/Browser/Schedule/Timeline/Provider/Desktop/Files/App adaptation, persistent service-port leases and the
+  fixed desktop-only Beta transaction; voice/Hub/website/legacy/distribution paths remain rejected and direct file
+  editing remains deferred.
+- Generated a coherent `14`-group classification under ignored artifacts. Eight two-parent merge commits have no
+  independent combined diff and are explicitly retained as merge bookkeeping; no upstream path was fabricated.
+  Formal provenance passed `393/393` commit coverage, `143/143` candidate assessment, all `43/43` required
+  candidates architectural, zero pending reviews and zero failures.
+- Fresh remote truth remains development `265c4af9`, Release automation `30528b81`, `main=e74c6e0d` and fixed
+  prerelease id `359902667` at `30528b81` with `26` assets. Independent Paseo PID `3597831` still listens on
+  `127.0.0.1:6767`; no product source, commit, push, Release or service mutation has occurred yet.
+- `NTH-TD-048` is now the sole top next action and may enter product integration. `NTH-TD-036` remains doing at
+  Stage 4; `NTH-CD-087` preserves its independent `15,506`-LOC gap through the measured `DeltaP` translation.
+
+## 2026-07-27 [Paseo v0.2.2 organic integration reached local release readiness]
+
+- Reconstructed the approved Forge/Workspace, Browser, Schedule, Timeline/subagent/idle, Provider portfolio,
+  Host service-port/PID, Desktop/Terminal, read-only Files/Changes, and App/Mobile behavior through the canonical
+  Protocol/Client/Core/Daemon/Drivers/App/Desktop/CLI owners. Voice/Hub/website/legacy authority/distribution and
+  direct editing remain rejected or deferred; no second truth or compatibility router was added.
+- Repaired Browser Host reconnect at three layers: the daemon Broker retains requests and affinity across stable
+  logical `clientId` registrations, Client queues Browser responses across reconnect, and App coordinates scoped
+  request IDs for at-most-once execution and delivery through the replacement Client. Focused Browser/reconnect
+  tests passed, as did complete Client `125/125`, App `2,678/2,678`, and Daemon `2,511/2,511` suites.
+- Fixed the packaged Browser/Schedule smoke race after renderer evidence showed Schedule navigation could consume a
+  stale pre-turn `idle` and destroy the Browser socket. `NTH-EXP-068` records the positive running-then-idle fence;
+  the rebuilt AppImage journey passed Browser, Files, Changes, Schedule, preload/renderer, schema-3 migration, and
+  the complete 14-turn Thoth flow with `ok=true`.
+- Preserved the first complete CLI failure: local Claude `2.1.159` correctly filtered version-gated Fable 5 while
+  the test assumed a newest catalog. The deterministic Provider command override now probes `2.1.219` through the
+  real daemon catalog and asserts all approved Claude 5 200K/1M entries. The formal rerun passed `30/30` unit tests
+  and all `40/40` local/e2e files, including Workspace Schedule; `NTH-EXP-069` records the distinction.
+- Current formal provenance passes `393/393` commit coverage, `143/143` candidate assessment, `43/43` required
+  architectural candidates, zero pending reviews and zero failures. The boundary report covers `368` paths with
+  zero blocking/review findings. Skill fixtures, format, diff hygiene, typechecks, Protocol `435`, Drivers `590`,
+  Client `125`, App `2,678`, Desktop `300`, Daemon `2,511`, and CLI suites passed.
+- Root gates passed in order: Foundation with `655` tests; Provider Control `49.341s`; interaction regressions
+  `28.870s`; complete Thoth `103.459s`; and the original shared-`300s` refactor gate `196.126s`, including real Web
+  Playwright `3/3`, OpenTUI, architecture/storage/LOC contracts, and complete source behavior.
+- Real Codex `UT-01-quick-direct-passthrough` passed in an isolated Workspace using existing official auth.
+  `smoke:isolation` retained independent Paseo PID `3597831` on `6767` and no Thoth/legacy fallback. The Android
+  Debug APK passed at `273,165,007` bytes with Thoth package `sh.thoth.debug` and no `RECORD_AUDIO`; it remains local
+  only. The local AppImage is `137,793,946` bytes and passed the formal combined package/journey command.
+- Production is `310,932` LOC, so approved `DeltaP=14,495`; translated Cut B/final ceilings are `295,426` /
+  `273,026`, preserving the independent `15,506` gap. The candidate is locally `release_ready`, but `NTH-TD-048`
+  and `NTH-EV-071` remain in progress until commit, two normal fast-forward pushes, exact-SHA workflow, fixed
+  26-asset Release replacement, and downloaded public AppImage verification finish. No remote mutation occurred in
+  this stage.

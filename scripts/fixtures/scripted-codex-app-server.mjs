@@ -333,6 +333,81 @@ async function requireTool(tool, argumentsValue, turnId) {
   return response;
 }
 
+function toolResponseText(response) {
+  return Array.isArray(response?.contentItems)
+    ? response.contentItems
+        .map((item) => (typeof item?.text === "string" ? item.text : ""))
+        .filter(Boolean)
+        .join("\n")
+    : "";
+}
+
+async function runPackagedBrowserFlow(turnId) {
+  const baseUrl = process.env.THOTH_FAKE_BROWSER_URL?.replace(/\/$/u, "");
+  if (!baseUrl?.startsWith("http://127.0.0.1:")) {
+    throw new Error("PACKAGED_BROWSER_AUTOMATION requires an isolated local fixture URL");
+  }
+  for (const tool of [
+    "browser_list_tabs",
+    "browser_new_tab",
+    "browser_snapshot",
+    "browser_navigate",
+    "browser_close_tab",
+  ]) {
+    if (!dynamicToolNames.includes(tool)) {
+      throw new Error(`Packaged browser flow is missing dynamic tool ${tool}`);
+    }
+  }
+
+  await requireTool("browser_list_tabs", {}, turnId);
+  const created = await requireTool("browser_new_tab", { url: `${baseUrl}/start` }, turnId);
+  const createdText = toolResponseText(created);
+  const browserId = /browserId=([^\s]+)/u.exec(createdText)?.[1];
+  if (!browserId) {
+    throw new Error(`browser_new_tab did not return a browserId: ${createdText}`);
+  }
+
+  const startSnapshot = toolResponseText(
+    await requireTool("browser_snapshot", { browserId }, turnId),
+  );
+  if (!startSnapshot.includes("PACKAGED_BROWSER_START")) {
+    throw new Error(`Browser start snapshot omitted fixture content: ${startSnapshot}`);
+  }
+
+  const wrongBrowser = await callTool(
+    "browser_snapshot",
+    { browserId: "11111111-1111-4111-8111-111111111111" },
+    turnId,
+  );
+  if (wrongBrowser?.success !== false) {
+    throw new Error(`Unknown browserId unexpectedly succeeded: ${JSON.stringify(wrongBrowser)}`);
+  }
+
+  await requireTool("browser_navigate", { browserId, url: `${baseUrl}/complete` }, turnId);
+  const completeSnapshot = toolResponseText(
+    await requireTool("browser_snapshot", { browserId }, turnId),
+  );
+  if (!completeSnapshot.includes("PACKAGED_BROWSER_COMPLETE")) {
+    throw new Error(`Browser complete snapshot omitted fixture content: ${completeSnapshot}`);
+  }
+
+  await requireTool("browser_close_tab", { browserId }, turnId);
+  const finalTabs = toolResponseText(await requireTool("browser_list_tabs", {}, turnId));
+  if (!finalTabs.includes("No Thoth browser tabs are open")) {
+    throw new Error(`Browser tab remained after close: ${finalTabs}`);
+  }
+  record({
+    kind: "browser_flow",
+    threadId,
+    turnId,
+    browserId,
+    startSnapshot: true,
+    completeSnapshot: true,
+    wrongBrowserRejected: true,
+    closed: true,
+  });
+}
+
 async function waitForPlanExecRelease(turnId) {
   while (readSharedState().holdPlanExec === true && activeTurns.has(turnId)) {
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -345,7 +420,9 @@ async function runTurn(params, turnId) {
   try {
     const inputText = JSON.stringify(params?.input ?? null);
     if (inputText.includes("PACKAGED_LOOP_STOP")) foregroundFlow = "stop";
-    if (dynamicToolNames.includes("thoth_submit_clarify_convergence_audit")) {
+    if (inputText.includes("PACKAGED_BROWSER_AUTOMATION")) {
+      await runPackagedBrowserFlow(turnId);
+    } else if (dynamicToolNames.includes("thoth_submit_clarify_convergence_audit")) {
       await requireTool(
         "thoth_submit_clarify_convergence_audit",
         {

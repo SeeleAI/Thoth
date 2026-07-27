@@ -305,6 +305,60 @@ function seedGitWorkspace(input: {
 }
 
 describe("workspace git watch targets", () => {
+  test("shares one cwd subscription across workspace records and tears it down by reference count", async () => {
+    const { session, subscriptions } = createSessionForWorkspaceGitWatchTests();
+    const observer = asInternals<SessionInternals>(session).workspaceGitObserver;
+    const descriptors = ["ws-10", "ws-11", "ws-12"].map(
+      (workspaceId): WorkspaceDescriptorPayload =>
+        ({
+          id: workspaceId,
+          workspaceDirectory: REPO_CWD,
+          projectKind: "git",
+          name: "main",
+          diffStat: { additions: 1, deletions: 0 },
+          gitRuntime: { currentBranch: "main" },
+        }) as unknown as WorkspaceDescriptorPayload,
+    );
+
+    observer.syncObservers(descriptors);
+
+    expect(subscriptions).toHaveLength(1);
+    expect(observer.getMetrics()).toEqual({
+      watchedDirectoryCount: 1,
+      workspaceRecordCount: 3,
+      subscriptionCount: 1,
+    });
+    for (const descriptor of descriptors) {
+      expect(observer.shouldSkipUpdate(descriptor.id, descriptor)).toBe(true);
+    }
+
+    observer.removeForWorkspaceId("ws-10");
+    expect(subscriptions[0]?.unsubscribe).not.toHaveBeenCalled();
+    expect(observer.getMetrics()).toEqual({
+      watchedDirectoryCount: 1,
+      workspaceRecordCount: 2,
+      subscriptionCount: 1,
+    });
+
+    observer.removeForWorkspaceId("ws-11");
+    expect(subscriptions[0]?.unsubscribe).not.toHaveBeenCalled();
+    expect(observer.getMetrics()).toEqual({
+      watchedDirectoryCount: 1,
+      workspaceRecordCount: 1,
+      subscriptionCount: 1,
+    });
+
+    observer.removeForWorkspaceId("ws-12");
+    expect(subscriptions[0]?.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(observer.getMetrics()).toEqual({
+      watchedDirectoryCount: 0,
+      workspaceRecordCount: 0,
+      subscriptionCount: 0,
+    });
+
+    await session.cleanup();
+  });
+
   test("emits one workspace_update when the workspace git service emits a changed snapshot", async () => {
     const { session, emitted, projects, workspaces, workspaceGitService, subscriptions } =
       createSessionForWorkspaceGitWatchTests();
@@ -644,6 +698,17 @@ describe("workspace git watch targets", () => {
       | undefined;
     expect(statusUpdate?.payload.prStatus).toEqual({
       cwd: REPO_CWD,
+      forge: {
+        forge: "github",
+        host: "github.com",
+        namespace: "acme",
+        repository: "repo",
+        fullName: "acme/repo",
+        remoteUrl: "https://github.com/acme/repo.git",
+        webUrl: "https://github.com/acme/repo",
+        changeRequestAbbrev: "PR",
+        changeRequestNoun: "pull request",
+      },
       status: {
         number: 456,
         url: "https://github.com/acme/repo/pull/456",
@@ -721,6 +786,17 @@ describe("workspace git watch targets", () => {
       emitted.find((message) => message.type === "checkout_pr_status_response")?.payload,
     ).toEqual({
       cwd: REPO_CWD,
+      forge: {
+        forge: "github",
+        host: "github.com",
+        namespace: "acme",
+        repository: "repo",
+        fullName: "acme/repo",
+        remoteUrl: "https://github.com/acme/repo.git",
+        webUrl: "https://github.com/acme/repo",
+        changeRequestAbbrev: "PR",
+        changeRequestNoun: "pull request",
+      },
       status: {
         number: undefined,
         url: "https://github.com/acme/repo/pull/456",

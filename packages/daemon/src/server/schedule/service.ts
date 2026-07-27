@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import { ExecutionService } from "../agent/execution-service.js";
 import type { AgentRegistry } from "../agent/agent-storage.js";
@@ -10,6 +10,9 @@ import { resolveCreateAgentTitles } from "../agent/create-agent-title.js";
 import { computeNextRunAt, validateScheduleCadence } from "./cron.js";
 import type { WorkspaceAuthorityManager } from "../workspace-authority/workspace-authority-manager.js";
 import type { WorkspaceCoordinationRepository } from "../workspace-authority/coordination-repository.js";
+import type { WorkspaceAuthorityStore } from "../workspace-authority/workspace-authority-store.js";
+import type { PersistedWorkspaceRecord } from "../workspace-registry.js";
+import { createTaskAuthority } from "@thoth/core/authority";
 import type {
   ProviderSnapshotManager,
   ResolvedProviderCreateConfig,
@@ -26,6 +29,16 @@ import type {
 } from "@thoth/protocol/schedule/types";
 
 const SCHEDULE_TICK_INTERVAL_MS = 1000;
+const SCHEDULE_MUTATION_LEASE_TTL_MS = 30_000;
+const SCHEDULE_MUTATION_LEASE_HEARTBEAT_MS = 10_000;
+const SCHEDULE_MUTATION_LEASE_RETRY_MS = 50;
+
+interface ScheduledAuthorityBinding {
+  taskId: string;
+  executionId: string;
+  generation: string;
+  store: WorkspaceAuthorityStore;
+}
 
 function trimOptionalName(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
@@ -77,6 +90,9 @@ function applyNewAgentConfig(
     } else {
       delete config.modeId;
     }
+  }
+  if (patch.isolation !== undefined) {
+    config.isolation = patch.isolation;
   }
   return { ...target, config };
 }
@@ -134,12 +150,25 @@ function buildRunOutput(params: {
 
 type CreateConfigResolver = Pick<ProviderSnapshotManager, "resolveCreateConfig">;
 
+export interface ScheduleWorktreeWorkspaceInput {
+  sourceWorkspaceId: string;
+  cwd: string;
+  prompt: string;
+  scheduleId: string;
+  runId: string;
+}
+
+export type CreateScheduleWorktreeWorkspace = (
+  input: ScheduleWorktreeWorkspaceInput,
+) => Promise<PersistedWorkspaceRecord>;
+
 export interface ScheduleServiceOptions {
   authority: WorkspaceAuthorityManager;
   logger: Logger;
   executionService: ExecutionService;
   agentStorage: AgentRegistry;
   providerSnapshotManager: CreateConfigResolver;
+  createWorktreeWorkspace?: CreateScheduleWorktreeWorkspace;
   now?: () => Date;
   runner?: (
     workspaceId: string,
@@ -154,6 +183,7 @@ export class ScheduleService {
   private readonly executionService: ExecutionService;
   private readonly agentStorage: AgentRegistry;
   private readonly createConfigResolver: CreateConfigResolver;
+  private readonly createWorktreeWorkspace: CreateScheduleWorktreeWorkspace | null;
   private readonly now: () => Date;
   private readonly runner: (
     workspaceId: string,
@@ -162,6 +192,7 @@ export class ScheduleService {
   ) => Promise<ScheduleExecutionResult>;
   private readonly runningScheduleIds = new Set<string>();
   private tickTimer: ReturnType<typeof setInterval> | null = null;
+  private stopping = false;
 
   constructor(options: ScheduleServiceOptions) {
     this.authority = options.authority;
@@ -169,6 +200,7 @@ export class ScheduleService {
     this.executionService = options.executionService;
     this.agentStorage = options.agentStorage;
     this.createConfigResolver = options.providerSnapshotManager;
+    this.createWorktreeWorkspace = options.createWorktreeWorkspace ?? null;
     this.now = options.now ?? (() => new Date());
     this.runner =
       options.runner ??
@@ -176,6 +208,7 @@ export class ScheduleService {
   }
 
   async start(): Promise<void> {
+    this.stopping = false;
     await this.recoverInterruptedRuns();
     if (this.tickTimer) {
       return;
@@ -190,6 +223,7 @@ export class ScheduleService {
   }
 
   async stop(): Promise<void> {
+    this.stopping = true;
     if (this.tickTimer) {
       clearInterval(this.tickTimer);
       this.tickTimer = null;
@@ -238,6 +272,18 @@ export class ScheduleService {
   async logs(workspaceId: string, id: string): Promise<ScheduleRun[]> {
     const schedule = await this.inspect(workspaceId, id);
     return [...schedule.runs].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+  }
+
+  listRuntimeProtectedAgentIds(): Set<string> {
+    const agentIds = new Set<string>();
+    for (const workspace of this.authority.catalog.listWorkspaces()) {
+      for (const schedule of this.repository(workspace.id).listSchedules()) {
+        if (schedule.status === "active" && schedule.target.type === "agent") {
+          agentIds.add(schedule.target.agentId);
+        }
+      }
+    }
+    return agentIds;
   }
 
   async pause(workspaceId: string, id: string): Promise<StoredSchedule> {
@@ -445,6 +491,8 @@ export class ScheduleService {
     const runId = randomUUID();
     const runningRun: ScheduleRun = {
       id: runId,
+      taskId: null,
+      executionId: null,
       scheduledFor: manual ? now.toISOString() : (schedule.nextRunAt ?? now.toISOString()),
       startedAt: now.toISOString(),
       endedAt: null,
@@ -460,8 +508,51 @@ export class ScheduleService {
     };
     this.repository(workspaceId).putSchedule(scheduleWithRun);
 
+    let authorityBinding: ScheduledAuthorityBinding | null = null;
+    let leaseHeartbeat: ReturnType<typeof setInterval> | null = null;
     try {
-      const result = await this.runner(workspaceId, scheduleWithRun, runId);
+      let executionWorkspaceId = workspaceId;
+      try {
+        executionWorkspaceId = await this.resolveExecutionWorkspace(
+          workspaceId,
+          scheduleWithRun,
+          runId,
+        );
+      } catch (error) {
+        authorityBinding = await this.beginScheduledAuthority(workspaceId, scheduleWithRun, runId);
+        this.recordRunAuthority(workspaceId, schedule.id, runId, authorityBinding);
+        throw error;
+      }
+      authorityBinding = await this.beginScheduledAuthority(
+        executionWorkspaceId,
+        scheduleWithRun,
+        runId,
+      );
+      this.recordRunAuthority(workspaceId, schedule.id, runId, authorityBinding);
+      leaseHeartbeat = setInterval(() => {
+        if (!authorityBinding) return;
+        const renewed = authorityBinding.store.renewMutationLease({
+          taskId: authorityBinding.taskId,
+          executionId: authorityBinding.executionId,
+          generation: authorityBinding.generation,
+          ttlMs: SCHEDULE_MUTATION_LEASE_TTL_MS,
+        });
+        if (!renewed) {
+          this.logger.warn(
+            {
+              workspaceId,
+              scheduleId: schedule.id,
+              taskId: authorityBinding.taskId,
+              executionId: authorityBinding.executionId,
+            },
+            "Scheduled execution lost its Workspace mutation lease",
+          );
+        }
+      }, SCHEDULE_MUTATION_LEASE_HEARTBEAT_MS);
+      leaseHeartbeat.unref();
+
+      const result = await this.runner(executionWorkspaceId, scheduleWithRun, runId);
+      this.settleScheduledAuthority(authorityBinding, "succeeded", result.output);
       await this.finishRun({
         workspaceId,
         scheduleId: schedule.id,
@@ -473,6 +564,13 @@ export class ScheduleService {
         manual,
       });
     } catch (error) {
+      if (authorityBinding) {
+        this.settleScheduledAuthority(
+          authorityBinding,
+          "failed",
+          error instanceof Error ? error.message : String(error),
+        );
+      }
       await this.finishRun({
         workspaceId,
         scheduleId: schedule.id,
@@ -484,8 +582,257 @@ export class ScheduleService {
         manual,
       });
     } finally {
+      if (leaseHeartbeat) clearInterval(leaseHeartbeat);
+      if (authorityBinding) {
+        authorityBinding.store.releaseMutationLease({
+          taskId: authorityBinding.taskId,
+          executionId: authorityBinding.executionId,
+          generation: authorityBinding.generation,
+        });
+      }
       this.runningScheduleIds.delete(scheduleKey);
     }
+  }
+
+  private async beginScheduledAuthority(
+    workspaceId: string,
+    schedule: StoredSchedule,
+    runId: string,
+  ): Promise<ScheduledAuthorityBinding> {
+    const store = this.authority.forWorkspace(workspaceId);
+    const now = this.now().toISOString();
+    const executionWorkspace = this.authority.catalog.getWorkspace(workspaceId);
+    if (!executionWorkspace) {
+      throw new Error(`Workspace ${workspaceId} is not registered`);
+    }
+    const existingAgent =
+      schedule.target.type === "agent"
+        ? await this.agentStorage.get(schedule.target.agentId)
+        : null;
+    const adapterId =
+      schedule.target.type === "new-agent"
+        ? schedule.target.config.provider
+        : existingAgent?.provider;
+    if (!adapterId) {
+      throw new Error(`Schedule ${schedule.id} has no available Provider profile`);
+    }
+    const profileConfig =
+      schedule.target.type === "new-agent"
+        ? { ...schedule.target.config, cwd: executionWorkspace.canonicalPath }
+        : {
+            provider: existingAgent!.provider,
+            cwd: existingAgent!.cwd,
+            ...(existingAgent!.config ?? {}),
+          };
+    const providerProfileId = `provider-profile-${createHash("sha256")
+      .update(JSON.stringify({ adapterId, config: profileConfig }))
+      .digest("hex")}`;
+    this.authority.catalog.upsertProviderProfile({
+      id: providerProfileId,
+      adapterId,
+      config: profileConfig,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const taskId = `task-${randomUUID()}`;
+    const taskTitle = schedule.name ?? `Scheduled task: ${schedule.prompt.split("\n", 1)[0]}`;
+    const task = createTaskAuthority({
+      id: taskId,
+      workspaceId,
+      sourceAgentId:
+        schedule.target.type === "agent"
+          ? schedule.target.agentId
+          : `schedule-source-${schedule.id}`,
+      mode: "quick",
+      title: taskTitle,
+      goal: schedule.prompt,
+      constraints: [
+        `Created by Schedule ${schedule.id}.`,
+        "Execute under the owning Workspace mutation lease.",
+      ],
+      acceptance: ["Record the Provider result and terminal status in the Schedule run."],
+      strength: "single",
+      goals: [
+        {
+          sourceId: `schedule-goal-${runId}`,
+          order: 1,
+          title: taskTitle,
+          goal: schedule.prompt,
+          constraints: [`Remain inside Workspace ${workspaceId}.`],
+          acceptance: ["The scheduled Provider execution reaches a durable terminal state."],
+        },
+      ],
+      now,
+    });
+    const registered = store.registerTask({
+      task,
+      sourceTurnId: `schedule-turn-${runId}`,
+      sourceGoalsCardId: `schedule-goals-${runId}`,
+      providerProfileId,
+      taskContract: {
+        source: "schedule",
+        scheduleId: schedule.id,
+        runId,
+        title: task.title,
+        goal: task.goal,
+        constraints: task.constraints,
+        acceptance: task.acceptance,
+      },
+      goalsContract: {
+        source: "schedule",
+        scheduleId: schedule.id,
+        runId,
+        goals: task.goals,
+      },
+    });
+    const executionId = `execution-${randomUUID()}`;
+    const generation = randomUUID();
+    await this.waitForMutationLease(store, {
+      taskId: registered.task.id,
+      executionId,
+      generation,
+    });
+    const created = store.createExecution({
+      execution: {
+        id: executionId,
+        taskId: registered.task.id,
+        goalId: registered.task.currentGoalId,
+        phaseRunId: `phase-run-${randomUUID()}`,
+        phase: "quick_exec",
+        providerThreadId: null,
+        status: "starting",
+        generation,
+        attachment: null,
+        runModeReceipt: null,
+        pendingApproval: null,
+        startedAt: now,
+        lastActivityAt: now,
+        completedAt: null,
+        summary: null,
+        revision: 1,
+      },
+    });
+    const running = store.updateExecution({
+      executionId,
+      generation,
+      expectedRevision: created.revision,
+      status: "running",
+      summary: `Schedule ${schedule.id} run ${runId} started.`,
+    });
+    if (!running) {
+      store.releaseMutationLease({ taskId: registered.task.id, executionId, generation });
+      throw new Error(`Scheduled execution ${executionId} could not enter running state`);
+    }
+    store.appendTimeline({
+      executionId,
+      occurredAt: now,
+      item: {
+        type: "schedule_run_started",
+        scheduleId: schedule.id,
+        runId,
+        prompt: schedule.prompt,
+      },
+    });
+    return { taskId: registered.task.id, executionId, generation, store };
+  }
+
+  private recordRunAuthority(
+    ownerWorkspaceId: string,
+    scheduleId: string,
+    runId: string,
+    binding: ScheduledAuthorityBinding,
+  ): void {
+    const schedule = this.repository(ownerWorkspaceId).getSchedule(scheduleId);
+    if (!schedule) {
+      throw new Error(`Schedule not found while recording authority: ${scheduleId}`);
+    }
+    this.repository(ownerWorkspaceId).putSchedule({
+      ...schedule,
+      runs: schedule.runs.map((run) =>
+        run.id === runId
+          ? {
+              ...run,
+              taskId: binding.taskId,
+              executionId: binding.executionId,
+            }
+          : run,
+      ),
+    });
+  }
+
+  private async resolveExecutionWorkspace(
+    ownerWorkspaceId: string,
+    schedule: StoredSchedule,
+    runId: string,
+  ): Promise<string> {
+    if (
+      schedule.target.type !== "new-agent" ||
+      (schedule.target.config.isolation ?? "same-workspace") !== "worktree"
+    ) {
+      return ownerWorkspaceId;
+    }
+    const sourceWorkspace = this.authority.catalog.getWorkspace(ownerWorkspaceId);
+    if (!sourceWorkspace) {
+      throw new Error(`Workspace ${ownerWorkspaceId} is not registered`);
+    }
+    if (!this.createWorktreeWorkspace) {
+      throw new Error("Schedule worktree isolation is unavailable in this daemon runtime");
+    }
+    const worktree = await this.createWorktreeWorkspace({
+      sourceWorkspaceId: ownerWorkspaceId,
+      cwd: sourceWorkspace.canonicalPath,
+      prompt: schedule.prompt,
+      scheduleId: schedule.id,
+      runId,
+    });
+    if (worktree.kind !== "worktree") {
+      throw new Error(`Schedule ${schedule.id} did not receive a worktree Workspace`);
+    }
+    if (worktree.workspaceId === ownerWorkspaceId) {
+      throw new Error(`Schedule ${schedule.id} worktree isolation reused its source Workspace`);
+    }
+    this.authority.registerWorkspace(worktree);
+    return worktree.workspaceId;
+  }
+
+  private async waitForMutationLease(
+    store: WorkspaceAuthorityStore,
+    input: { taskId: string; executionId: string; generation: string },
+  ): Promise<void> {
+    while (
+      !store.claimMutationLease({
+        ...input,
+        ttlMs: SCHEDULE_MUTATION_LEASE_TTL_MS,
+      })
+    ) {
+      if (this.stopping) {
+        throw new Error("Daemon stopped while the scheduled Task waited for its Workspace lease");
+      }
+      await new Promise((resolve) => setTimeout(resolve, SCHEDULE_MUTATION_LEASE_RETRY_MS));
+    }
+  }
+
+  private settleScheduledAuthority(
+    binding: ScheduledAuthorityBinding,
+    status: "succeeded" | "failed",
+    summary: string | null,
+  ): void {
+    const normalizedSummary = summary?.trim() || `Scheduled execution ${status}.`;
+    binding.store.settleQuickExecution({
+      executionId: binding.executionId,
+      generation: binding.generation,
+      status,
+      summary: normalizedSummary,
+    });
+    binding.store.appendTimeline({
+      executionId: binding.executionId,
+      item: {
+        type: status === "succeeded" ? "schedule_run_succeeded" : "schedule_run_failed",
+        output: normalizedSummary,
+      },
+    });
   }
 
   private async finishRun(params: {
@@ -567,6 +914,9 @@ export class ScheduleService {
         throw new Error(`Agent ${agent.id} already has an active run`);
       }
       const result = await this.executionService.runAgent(agent.id, wrappedPrompt);
+      if (result.canceled) {
+        throw new Error(`Scheduled Agent ${agent.id} was canceled`);
+      }
       const timelineText = curateAgentActivity(result.timeline);
       return {
         agentId: agent.id,
@@ -626,6 +976,9 @@ export class ScheduleService {
     let result;
     try {
       result = await this.executionService.runAgent(agent.id, schedule.prompt);
+      if (result.canceled) {
+        throw new Error(`Scheduled Agent ${agent.id} was canceled`);
+      }
     } catch (error) {
       try {
         await this.executionService.archiveAgent(agent.id);

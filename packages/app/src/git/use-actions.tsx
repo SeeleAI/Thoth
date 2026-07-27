@@ -233,11 +233,13 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
 
   const hasUncommittedChanges = Boolean(gitStatus?.isDirty);
 
-  const { status: prStatus, githubFeaturesEnabled } = useCheckoutPrStatusQuery({
-    serverId,
-    cwd,
-    enabled: isGit,
-  });
+  const {
+    status: prStatus,
+    githubFeaturesEnabled,
+    forge,
+    changeRequestFeaturesEnabled,
+  } = useCheckoutPrStatusQuery({ serverId, cwd, enabled: isGit });
+  const changeRequestAbbrev = forge?.changeRequestAbbrev ?? "PR";
   const baseRefLabel = useMemo(
     () => formatBaseRefLabel(baseRef, t("workspace.git.diff.base")),
     [baseRef, t],
@@ -423,13 +425,24 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
     void persistShipDefault("pr");
     void runCreatePr({ serverId, cwd })
       .then(() => {
-        toastActionSuccess(t("workspace.git.actions.createPr.success"));
+        toastActionSuccess(
+          t("workspace.git.actions.createPr.success").replace(/\bPR\b/gu, changeRequestAbbrev),
+        );
         return;
       })
       .catch((err) => {
         toastActionError(err, t("workspace.git.actions.toasts.failedCreatePr"));
       });
-  }, [cwd, persistShipDefault, runCreatePr, serverId, t, toastActionError, toastActionSuccess]);
+  }, [
+    changeRequestAbbrev,
+    cwd,
+    persistShipDefault,
+    runCreatePr,
+    serverId,
+    t,
+    toastActionError,
+    toastActionSuccess,
+  ]);
 
   const handleMergePr = useCallback(
     (method: CheckoutPrMergeMethod) => {
@@ -572,6 +585,8 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
     () => ({
       isGit,
       githubFeaturesEnabled,
+      changeRequestFeaturesEnabled,
+      changeRequestAbbrev,
       githubAutoMergeActionsEnabled,
       hasPullRequest,
       pullRequestUrl: prStatus?.url ?? null,
@@ -700,6 +715,8 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
       isThothOwnedWorktree,
       isOnBaseBranch,
       githubFeaturesEnabled,
+      changeRequestFeaturesEnabled,
+      changeRequestAbbrev,
       githubAutoMergeActionsEnabled,
       hasUncommittedChanges,
       aheadOfOrigin,
@@ -831,9 +848,9 @@ function getTranslatedGitActionLabels(
             successLabel: t("workspace.git.actions.viewPr"),
           }
         : {
-            label: t("workspace.git.actions.createPr.label"),
-            pendingLabel: t("workspace.git.actions.createPr.pending"),
-            successLabel: t("workspace.git.actions.createPr.success"),
+            label: action.label,
+            pendingLabel: action.pendingLabel,
+            successLabel: action.successLabel,
           };
     case "merge-pr-squash":
       return {

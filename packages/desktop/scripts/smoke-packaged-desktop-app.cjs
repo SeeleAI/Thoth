@@ -4,12 +4,27 @@ const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const { setTimeout: delay } = require("node:timers/promises");
+const { chromium } = require("playwright");
 
 const EXECUTABLE_NAME = "Thoth";
 const SMOKE_TIMEOUT_MS = 60_000;
 const EXIT_TIMEOUT_MS = 10_000;
 const TERMINAL_CAPTURE_ATTEMPTS = 20;
 const TERMINAL_CAPTURE_INTERVAL_MS = 500;
+const REQUIRED_DESKTOP_BRIDGE_KEYS = [
+  "platform",
+  "invoke",
+  "getPendingOpenProject",
+  "events",
+  "window",
+  "dialog",
+  "notification",
+  "opener",
+  "editor",
+  "webUtils",
+  "menu",
+  "browser",
+];
 
 function createTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -52,6 +67,50 @@ function getMacMainExecutablePath(appPath) {
   return path.join(appPath, "Contents", "MacOS", EXECUTABLE_NAME);
 }
 
+function ensureLinuxSandboxPermissions(appPath) {
+  if (process.platform !== "linux") {
+    return;
+  }
+
+  const sandboxPath = path.join(appPath, "chrome-sandbox");
+  if (!fs.existsSync(sandboxPath)) {
+    throw new Error(`Chromium sandbox helper does not exist: ${sandboxPath}`);
+  }
+
+  const hasRequiredPermissions = () => {
+    const stat = fs.statSync(sandboxPath);
+    return stat.uid === 0 && (stat.mode & 0o7777) === 0o4755;
+  };
+  if (hasRequiredPermissions()) {
+    return;
+  }
+
+  if (typeof process.getuid === "function" && process.getuid() === 0) {
+    fs.chownSync(sandboxPath, 0, 0);
+    fs.chmodSync(sandboxPath, 0o4755);
+    if (!hasRequiredPermissions()) {
+      throw new Error(`Chromium sandbox helper permissions remained incorrect: ${sandboxPath}`);
+    }
+    return;
+  }
+
+  const chown = spawnSync("sudo", ["-n", "chown", "root:root", sandboxPath], {
+    encoding: "utf8",
+  });
+  const chmod =
+    chown.status === 0
+      ? spawnSync("sudo", ["-n", "chmod", "4755", sandboxPath], { encoding: "utf8" })
+      : null;
+  if (chown.error || chown.status !== 0 || chmod?.error || chmod?.status !== 0) {
+    throw new Error(
+      `Failed to configure Chromium sandbox helper ${sandboxPath}. Run: sudo chown root:root ${sandboxPath} && sudo chmod 4755 ${sandboxPath}.\n${chown.stderr?.trim() || chmod?.stderr?.trim() || chown.error || chmod?.error || "Permissions remained incorrect."}`,
+    );
+  }
+  if (!hasRequiredPermissions()) {
+    throw new Error(`Chromium sandbox helper permissions remained incorrect: ${sandboxPath}`);
+  }
+}
+
 function getLaunchCommand(executablePath) {
   if (process.platform !== "linux") {
     return {
@@ -60,12 +119,9 @@ function getLaunchCommand(executablePath) {
     };
   }
 
-  const electronArgs =
-    typeof process.getuid === "function" && process.getuid() === 0 ? ["--no-sandbox"] : [];
-
   return {
     command: "xvfb-run",
-    args: ["-a", executablePath, ...electronArgs],
+    args: ["-a", "--server-args=-screen 0 1280x800x24", executablePath],
   };
 }
 
@@ -79,6 +135,20 @@ function shellQuoteCliArg(value) {
   }
 
   return shellQuote(String(value));
+}
+
+function getTerminalHookSmokeCommand(marker) {
+  if (process.platform === "win32") {
+    const script = [
+      "& $env:THOTH_HOOK_CLI hooks codex Stop",
+      "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+      `Write-Output '${marker}'`,
+    ].join("; ");
+    const encodedScript = Buffer.from(script, "utf16le").toString("base64");
+    return `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encodedScript}`;
+  }
+
+  return `"$THOTH_HOOK_CLI" hooks codex Stop && echo ${marker}`;
 }
 
 function getShellCommand(script) {
@@ -96,10 +166,26 @@ function getShellCommand(script) {
 }
 
 function createDefaultDaemonEnv(extraEnv = {}) {
-  return {
+  const env = {
     ...process.env,
     ...extraEnv,
   };
+  if (!("THOTH_HOME" in extraEnv)) delete env.THOTH_HOME;
+  if (!("THOTH_LISTEN" in extraEnv)) delete env.THOTH_LISTEN;
+  return env;
+}
+
+function createIsolatedDesktopEnv({ home, listen, userData, cdpPort }) {
+  const env = createDefaultDaemonEnv({
+    THOTH_HOME: home,
+    THOTH_LISTEN: listen,
+    THOTH_RELAY_ENABLED: "false",
+    THOTH_MCP_ENABLED: "false",
+    THOTH_ELECTRON_USER_DATA_DIR: userData,
+    THOTH_ELECTRON_FLAGS: `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${cdpPort}`,
+  });
+  delete env.APPIMAGE;
+  return env;
 }
 
 function reserveLocalTcpPort() {
@@ -204,38 +290,68 @@ function assertDarwinProcessDoesNotUseMainAppExecutable({ appPath, pid, label })
   }
 }
 
-function parseSmokeLine(line) {
-  const prefix = "[thoth-smoke] ";
-  if (!line.startsWith(prefix)) {
-    return null;
-  }
-  return JSON.parse(line.slice(prefix.length));
-}
-
-function appendChunk(lines, chunk, onSmokeMessage) {
-  const text = chunk.toString();
-  lines.push(text);
-  for (const line of text.split(/\r?\n/)) {
-    const parsed = parseSmokeLine(line.trim());
-    if (parsed) {
-      onSmokeMessage(parsed);
-    }
-  }
-}
-
 function readIfExists(filePath) {
   return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : null;
 }
 
-function formatLogs({ stdout, stderr, userData, thothHome }) {
+function formatLogs({ stdout, stderr, userData, daemonHome }) {
   const desktopLog = readIfExists(path.join(userData, "logs", "main.log"));
-  const daemonLog = readIfExists(path.join(thothHome, "daemon.log"));
+  const daemonLog = readIfExists(path.join(daemonHome, "daemon.log"));
   return [
     `App stdout:\n${stdout.join("").trim() || "<empty>"}`,
     `App stderr:\n${stderr.join("").trim() || "<empty>"}`,
     `Desktop log:\n${desktopLog?.trim() || "<missing>"}`,
     `Daemon log:\n${daemonLog?.trim() || "<missing>"}`,
   ].join("\n\n");
+}
+
+async function writeFailureArtifacts({ page, stdout, stderr, userData, daemonHome, error }) {
+  const artifactDir = process.env.THOTH_DESKTOP_SMOKE_ARTIFACT_DIR?.trim();
+  if (!artifactDir) {
+    return;
+  }
+
+  fs.mkdirSync(artifactDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(artifactDir, "failure.txt"),
+    `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n\n${formatLogs({
+      stdout,
+      stderr,
+      userData,
+      daemonHome,
+    })}\n`,
+  );
+
+  const desktopLog = readIfExists(path.join(userData, "logs", "main.log"));
+  if (desktopLog !== null) {
+    fs.writeFileSync(path.join(artifactDir, "desktop-main.log"), desktopLog);
+  }
+  const daemonLog = readIfExists(path.join(daemonHome, "daemon.log"));
+  if (daemonLog !== null) {
+    fs.writeFileSync(path.join(artifactDir, "daemon.log"), daemonLog);
+  }
+
+  if (page) {
+    const renderer = await page
+      .evaluate(() => ({
+        url: window.location.href,
+        title: document.title,
+        rootChildCount: document.querySelector("#root")?.childElementCount ?? 0,
+        rootText: document.querySelector("#root")?.textContent?.trim().slice(0, 2_000) ?? "",
+        bridgeKeys:
+          typeof window.thothDesktop === "object" && window.thothDesktop !== null
+            ? Object.keys(window.thothDesktop)
+            : [],
+      }))
+      .catch((evaluationError) => ({ evaluationError: String(evaluationError) }));
+    fs.writeFileSync(
+      path.join(artifactDir, "renderer.json"),
+      `${JSON.stringify(renderer, null, 2)}\n`,
+    );
+    await page
+      .screenshot({ path: path.join(artifactDir, "renderer.png"), fullPage: true })
+      .catch(() => undefined);
+  }
 }
 
 function isRunning(child) {
@@ -300,71 +416,119 @@ async function removeTempDir(tempDir) {
   }
 }
 
-function waitForSmokeMessage({ child, stdout, stderr, userData, thothHome, type, validate }) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-
-    const finish = (callback, value) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      callback(value);
-    };
-
-    const timer = setTimeout(() => {
-      terminateChild(child);
-      finish(
-        reject,
-        new Error(
-          `Timed out waiting for packaged desktop smoke result.\n${formatLogs({
-            stdout,
-            stderr,
-            userData,
-            thothHome,
-          })}`,
-        ),
-      );
-    }, SMOKE_TIMEOUT_MS);
-
-    const onSmokeMessage = (message) => {
-      if (message.type !== type) {
-        return;
-      }
-      if (validate(message)) {
-        finish(resolve, message);
-        return;
-      }
-      finish(reject, new Error(`Unexpected desktop smoke message: ${JSON.stringify(message)}`));
-    };
-
-    child.stdout.on("data", (chunk) => appendChunk(stdout, chunk, onSmokeMessage));
-    child.stderr.on("data", (chunk) => appendChunk(stderr, chunk, onSmokeMessage));
-    child.once("error", (error) => finish(reject, error));
-    child.once("exit", (code, signal) => {
-      if (settled) {
-        return;
-      }
-      finish(
-        reject,
-        new Error(
-          `Packaged app exited before reporting smoke success (code ${code}, signal ${
-            signal ?? "none"
-          }).\n${formatLogs({ stdout, stderr, userData, thothHome })}`,
-        ),
-      );
-    });
-  });
+function remainingTime(deadline) {
+  return Math.max(1, deadline - Date.now());
 }
 
-function assertRunningDesktopManagedDaemon(message) {
-  return (
-    message.status?.status === "running" &&
-    message.status?.desktopManaged === true &&
-    typeof message.status?.pid === "number" &&
-    typeof message.status?.listen === "string" &&
-    message.status.listen.length > 0
+async function connectToPackagedApp({
+  child,
+  cdpPort,
+  stdout,
+  stderr,
+  userData,
+  daemonHome,
+  deadline,
+}) {
+  let lastError = null;
+
+  while (Date.now() < deadline) {
+    if (!isRunning(child)) {
+      throw new Error(
+        `Packaged app exited before opening its debugging endpoint (code ${child.exitCode}, signal ${
+          child.signalCode ?? "none"
+        }).\n${formatLogs({ stdout, stderr, userData, daemonHome })}`,
+      );
+    }
+
+    try {
+      return await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
+    } catch (error) {
+      lastError = error;
+      await delay(250);
+    }
+  }
+
+  throw new Error(
+    `Timed out connecting to the packaged app over CDP: ${lastError}.\n${formatLogs({
+      stdout,
+      stderr,
+      userData,
+      daemonHome,
+    })}`,
+  );
+}
+
+async function waitForPackagedAppPage(browser, deadline) {
+  while (Date.now() < deadline) {
+    const page = browser
+      .contexts()
+      .flatMap((context) => context.pages())
+      .find((candidate) => candidate.url().startsWith("thoth://app/"));
+    if (page) {
+      return page;
+    }
+    await delay(250);
+  }
+  throw new Error("Timed out waiting for the packaged thoth://app/ renderer");
+}
+
+async function assertPackagedRendererLoaded(page, deadline) {
+  await page.waitForFunction(
+    () => {
+      const root = document.querySelector("#root");
+      return root instanceof HTMLElement && root.childElementCount > 0;
+    },
+    undefined,
+    { timeout: remainingTime(deadline) },
+  );
+
+  const bridgeKeys = await page.evaluate(() =>
+    typeof window.thothDesktop === "object" && window.thothDesktop !== null
+      ? Object.keys(window.thothDesktop)
+      : [],
+  );
+  const missingBridgeKeys = REQUIRED_DESKTOP_BRIDGE_KEYS.filter((key) => !bridgeKeys.includes(key));
+  if (missingBridgeKeys.length > 0) {
+    throw new Error(
+      `Packaged renderer is missing desktop preload bridge keys: ${missingBridgeKeys.join(", ")}. Present keys: ${bridgeKeys.join(", ") || "<none>"}`,
+    );
+  }
+}
+
+async function waitForRendererStartedDaemon({
+  page,
+  daemonHome,
+  listen,
+  stdout,
+  stderr,
+  userData,
+  deadline,
+}) {
+  let lastStatus = null;
+  let lastError = null;
+
+  while (Date.now() < deadline) {
+    try {
+      lastStatus = await page.evaluate(() => window.thothDesktop.invoke("desktop_daemon_status"));
+      if (
+        lastStatus?.status === "running" &&
+        lastStatus.desktopManaged === true &&
+        typeof lastStatus.pid === "number" &&
+        typeof lastStatus.serverId === "string" &&
+        lastStatus.serverId.length > 0 &&
+        lastStatus.listen === listen &&
+        path.resolve(lastStatus.home) === path.resolve(daemonHome)
+      ) {
+        return lastStatus;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    await delay(250);
+  }
+
+  throw new Error(
+    `Packaged renderer did not start its desktop-managed daemon. Last status: ${JSON.stringify(lastStatus)}. Last error: ${lastError}.\n${formatLogs({ stdout, stderr, userData, daemonHome })}`,
   );
 }
 
@@ -583,8 +747,8 @@ async function smokeCliTerminal({ appPath, env }) {
     await runCliShimJsonCommand({
       appPath,
       env,
-      args: ["terminal", "send-keys", terminalId, "echo", "Space", marker, "Enter"],
-      label: "Bundled CLI shim terminal send-keys",
+      args: ["terminal", "send-keys", terminalId, getTerminalHookSmokeCommand(marker), "Enter"],
+      label: "Bundled CLI shim terminal hook command",
     });
 
     for (let attempt = 1; attempt <= TERMINAL_CAPTURE_ATTEMPTS; attempt += 1) {
@@ -596,7 +760,7 @@ async function smokeCliTerminal({ appPath, env }) {
       });
       const lines = Array.isArray(capture?.lines) ? capture.lines : [];
       if (lines.join("\n").includes(marker)) {
-        console.log("Packaged desktop smoke: terminal command output captured");
+        console.log("Packaged desktop smoke: terminal hook command completed");
         return;
       }
 
@@ -634,18 +798,25 @@ async function stopCliDaemon({ appPath, env }) {
 async function smokePackagedDesktopApp({ appPath }) {
   const executablePath = getExecutablePath(appPath);
   assertExecutable(executablePath, "Packaged app executable");
+  ensureLinuxSandboxPermissions(appPath);
   await smokeColdCliDaemonStart({ appPath });
 
   const userData = createTempDir("thoth-smoke-user-data-");
-  const thothHome = createTempDir("thoth-smoke-desktop-home-");
-  const port = await reserveLocalTcpPort();
-  const listen = `127.0.0.1:${port}`;
-  const env = createDefaultDaemonEnv({
-    THOTH_DESKTOP_SMOKE: "1",
-    THOTH_ELECTRON_USER_DATA_DIR: userData,
-    THOTH_HOME: thothHome,
-    THOTH_LISTEN: listen,
-    THOTH_RELAY_ENABLED: "false",
+  const daemonHome = createTempDir("thoth-smoke-desktop-home-");
+  const daemonPort = await reserveLocalTcpPort();
+  let cdpPort = await reserveLocalTcpPort();
+  for (let attempt = 0; cdpPort === daemonPort && attempt < 10; attempt += 1) {
+    cdpPort = await reserveLocalTcpPort();
+  }
+  if (cdpPort === daemonPort) {
+    throw new Error("Failed to reserve distinct TCP ports for the daemon and CDP");
+  }
+  const listen = `127.0.0.1:${daemonPort}`;
+  const env = createIsolatedDesktopEnv({
+    home: daemonHome,
+    listen,
+    userData,
+    cdpPort,
   });
 
   const stdout = [];
@@ -657,7 +828,15 @@ async function smokePackagedDesktopApp({ appPath }) {
     env,
     stdio: ["pipe", "pipe", "pipe"],
   });
-  let smokeStarted = false;
+  child.stdout.on("data", (chunk) => stdout.push(chunk.toString()));
+  child.stderr.on("data", (chunk) => stderr.push(chunk.toString()));
+  child.once("error", (error) =>
+    stderr.push(`Packaged app launch error: ${error.stack ?? error}\n`),
+  );
+  const deadline = Date.now() + SMOKE_TIMEOUT_MS;
+
+  let browser = null;
+  let page = null;
   let daemonStopped = false;
 
   const stopDaemonForCleanup = async () => {
@@ -670,36 +849,48 @@ async function smokePackagedDesktopApp({ appPath }) {
   };
 
   try {
-    const message = await waitForSmokeMessage({
+    browser = await connectToPackagedApp({
       child,
+      cdpPort,
       stdout,
       stderr,
       userData,
-      thothHome,
-      type: "desktop-daemon-smoke-started",
-      validate: assertRunningDesktopManagedDaemon,
+      daemonHome,
+      deadline,
     });
-    smokeStarted = true;
-    console.log("Packaged desktop smoke: desktop-managed daemon reported running");
-    const cliEnv = createDefaultDaemonEnv({
-      THOTH_HOME: thothHome,
-      THOTH_LISTEN: listen,
-      THOTH_RELAY_ENABLED: "false",
+    page = await waitForPackagedAppPage(browser, deadline);
+    await assertPackagedRendererLoaded(page, deadline);
+    console.log("Packaged desktop smoke: real app renderer and preload bridge loaded");
+    const status = await waitForRendererStartedDaemon({
+      page,
+      daemonHome,
+      listen,
+      stdout,
+      stderr,
+      userData,
+      deadline,
     });
-    await smokeCliShim({ appPath, env: cliEnv });
-    await smokeCliTerminal({ appPath, env: cliEnv });
+    console.log("Packaged desktop smoke: renderer-started desktop daemon reported running");
+    await smokeCliShim({ appPath, env });
+    await smokeCliTerminal({ appPath, env });
     await stopDaemonForCleanup();
     console.log(
-      `Packaged desktop smoke passed: desktop-managed daemon pid ${message.status.pid}, listen ${message.status.listen}; CLI shim daemon status and terminal smoke succeeded`,
+      `Packaged desktop smoke passed: real renderer and preload loaded; renderer-started desktop daemon pid ${status.pid}, listen ${status.listen}; CLI shim daemon status and terminal smoke succeeded`,
     );
   } catch (error) {
-    if (smokeStarted && !daemonStopped) {
+    await writeFailureArtifacts({ page, stdout, stderr, userData, daemonHome, error }).catch(
+      (artifactError) => {
+        console.warn(`Packaged desktop smoke: failed to write failure artifacts: ${artifactError}`);
+      },
+    );
+    if (!daemonStopped) {
       try {
         await stopDaemonForCleanup();
       } catch {}
     }
     throw error;
   } finally {
+    await browser?.close().catch(() => undefined);
     if (isRunning(child)) {
       terminateChild(child);
       if (!(await waitForChildExit(child))) {
@@ -709,7 +900,7 @@ async function smokePackagedDesktopApp({ appPath }) {
     }
     releaseChildHandles(child);
     await removeTempDir(userData);
-    await removeTempDir(thothHome);
+    await removeTempDir(daemonHome);
   }
 }
 

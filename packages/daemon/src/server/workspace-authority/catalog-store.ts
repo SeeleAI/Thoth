@@ -23,6 +23,20 @@ export interface CatalogProviderProfile {
   updatedAt: string;
 }
 
+export interface CatalogRuntimeResourceLease {
+  resourceKind: string;
+  resourceKey: string;
+  workspaceId: string;
+  ownerKey: string;
+  holderId: string;
+  status: "reserved" | "active";
+  generation: string;
+  value: Record<string, unknown>;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export class WorkspaceCatalogStore {
   private readonly database: DatabaseSync;
   private readonly agentLocations = new Map<string, string | null>();
@@ -272,6 +286,198 @@ export class WorkspaceCatalogStore {
     };
   }
 
+  getRuntimeResourceLeaseByOwner(input: {
+    resourceKind: string;
+    workspaceId: string;
+    ownerKey: string;
+  }): CatalogRuntimeResourceLease | null {
+    const row = this.database
+      .prepare(
+        `SELECT * FROM catalog_runtime_resource_leases
+         WHERE resource_kind = ? AND workspace_id = ? AND owner_key = ?`,
+      )
+      .get(input.resourceKind, input.workspaceId, input.ownerKey) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? this.toRuntimeResourceLease(row) : null;
+  }
+
+  getRuntimeResourceLeaseByKey(input: {
+    resourceKind: string;
+    resourceKey: string;
+  }): CatalogRuntimeResourceLease | null {
+    const row = this.database
+      .prepare(
+        `SELECT * FROM catalog_runtime_resource_leases
+         WHERE resource_kind = ? AND resource_key = ?`,
+      )
+      .get(input.resourceKind, input.resourceKey) as Record<string, unknown> | undefined;
+    return row ? this.toRuntimeResourceLease(row) : null;
+  }
+
+  listRuntimeResourceLeases(resourceKind: string): CatalogRuntimeResourceLease[] {
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM catalog_runtime_resource_leases
+         WHERE resource_kind = ? ORDER BY workspace_id, owner_key`,
+      )
+      .all(resourceKind) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.toRuntimeResourceLease(row));
+  }
+
+  tryReserveRuntimeResource(
+    input: CatalogRuntimeResourceLease,
+  ): CatalogRuntimeResourceLease | null {
+    const existing = this.getRuntimeResourceLeaseByOwner(input);
+    if (existing) {
+      if (
+        existing.resourceKey !== input.resourceKey ||
+        existing.holderId !== input.holderId ||
+        existing.generation !== input.generation
+      ) {
+        return null;
+      }
+      const changed = this.database
+        .prepare(
+          `UPDATE catalog_runtime_resource_leases
+           SET value_json = ?, expires_at = ?, updated_at = ?
+           WHERE resource_kind = ? AND resource_key = ? AND workspace_id = ?
+             AND owner_key = ? AND holder_id = ? AND generation = ?`,
+        )
+        .run(
+          JSON.stringify(input.value),
+          input.expiresAt,
+          input.updatedAt,
+          input.resourceKind,
+          input.resourceKey,
+          input.workspaceId,
+          input.ownerKey,
+          input.holderId,
+          input.generation,
+        ).changes;
+      return Number(changed) === 1 ? this.getRuntimeResourceLeaseByOwner(input) : null;
+    }
+
+    const inserted = this.database
+      .prepare(
+        `INSERT OR IGNORE INTO catalog_runtime_resource_leases(
+           resource_kind, resource_key, workspace_id, owner_key, holder_id,
+           status, generation, value_json, expires_at, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.resourceKind,
+        input.resourceKey,
+        input.workspaceId,
+        input.ownerKey,
+        input.holderId,
+        input.status,
+        input.generation,
+        JSON.stringify(input.value),
+        input.expiresAt,
+        input.createdAt,
+        input.updatedAt,
+      ).changes;
+    return Number(inserted) === 1 ? this.getRuntimeResourceLeaseByOwner(input) : null;
+  }
+
+  reclaimRuntimeResource(input: {
+    resourceKind: string;
+    resourceKey: string;
+    workspaceId: string;
+    ownerKey: string;
+    expectedGeneration: string;
+    holderId: string;
+    generation: string;
+    value: Record<string, unknown>;
+    expiresAt: string;
+    updatedAt: string;
+  }): CatalogRuntimeResourceLease | null {
+    const changed = this.database
+      .prepare(
+        `UPDATE catalog_runtime_resource_leases
+         SET holder_id = ?, status = 'reserved', generation = ?, value_json = ?,
+             expires_at = ?, updated_at = ?
+         WHERE resource_kind = ? AND resource_key = ? AND workspace_id = ?
+           AND owner_key = ? AND generation = ?`,
+      )
+      .run(
+        input.holderId,
+        input.generation,
+        JSON.stringify(input.value),
+        input.expiresAt,
+        input.updatedAt,
+        input.resourceKind,
+        input.resourceKey,
+        input.workspaceId,
+        input.ownerKey,
+        input.expectedGeneration,
+      ).changes;
+    return Number(changed) === 1 ? this.getRuntimeResourceLeaseByOwner(input) : null;
+  }
+
+  updateRuntimeResourceLease(input: {
+    resourceKind: string;
+    resourceKey: string;
+    workspaceId: string;
+    ownerKey: string;
+    holderId: string;
+    generation: string;
+    fromStatuses: readonly ("reserved" | "active")[];
+    status: "reserved" | "active";
+    expiresAt: string;
+    updatedAt: string;
+  }): boolean {
+    if (input.fromStatuses.length === 0) return false;
+    const placeholders = input.fromStatuses.map(() => "?").join(", ");
+    const changed = this.database
+      .prepare(
+        `UPDATE catalog_runtime_resource_leases
+         SET status = ?, expires_at = ?, updated_at = ?
+         WHERE resource_kind = ? AND resource_key = ? AND workspace_id = ?
+           AND owner_key = ? AND holder_id = ? AND generation = ?
+           AND status IN (${placeholders})`,
+      )
+      .run(
+        input.status,
+        input.expiresAt,
+        input.updatedAt,
+        input.resourceKind,
+        input.resourceKey,
+        input.workspaceId,
+        input.ownerKey,
+        input.holderId,
+        input.generation,
+        ...input.fromStatuses,
+      ).changes;
+    return Number(changed) === 1;
+  }
+
+  releaseRuntimeResource(input: {
+    resourceKind: string;
+    resourceKey: string;
+    workspaceId: string;
+    ownerKey: string;
+    holderId: string;
+    generation: string;
+  }): boolean {
+    const changed = this.database
+      .prepare(
+        `DELETE FROM catalog_runtime_resource_leases
+         WHERE resource_kind = ? AND resource_key = ? AND workspace_id = ?
+           AND owner_key = ? AND holder_id = ? AND generation = ?`,
+      )
+      .run(
+        input.resourceKind,
+        input.resourceKey,
+        input.workspaceId,
+        input.ownerKey,
+        input.holderId,
+        input.generation,
+      ).changes;
+    return Number(changed) === 1;
+  }
+
   locateAgent(agentId: string): string | null {
     return this.locate(
       this.agentLocations,
@@ -378,6 +584,26 @@ export class WorkspaceCatalogStore {
       parentWorkspaceId:
         typeof row.parent_workspace_id === "string" ? row.parent_workspace_id : null,
       archivedAt: typeof row.archived_at === "string" ? row.archived_at : null,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  private toRuntimeResourceLease(row: Record<string, unknown>): CatalogRuntimeResourceLease {
+    const status = String(row.status);
+    if (status !== "reserved" && status !== "active") {
+      throw new Error(`Invalid runtime resource lease status: ${status}`);
+    }
+    return {
+      resourceKind: String(row.resource_kind),
+      resourceKey: String(row.resource_key),
+      workspaceId: String(row.workspace_id),
+      ownerKey: String(row.owner_key),
+      holderId: String(row.holder_id),
+      status,
+      generation: String(row.generation),
+      value: JSON.parse(String(row.value_json)) as Record<string, unknown>,
+      expiresAt: String(row.expires_at),
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
     };

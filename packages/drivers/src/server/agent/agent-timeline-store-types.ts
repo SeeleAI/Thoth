@@ -23,7 +23,7 @@ export interface AgentTimelineFetchOptions {
   /**
    * Number of canonical rows to return.
    * - undefined: store default
-   * - 0: all rows in the selected window
+   * - 0 or negative: legacy input normalized to the bounded store default
    */
   limit?: number;
 }
@@ -57,6 +57,7 @@ export interface AgentTimelineStore {
     agentId: string,
     options?: AgentTimelineFetchOptions,
   ): Promise<AgentTimelineFetchResult>;
+  fetchAllCommitted(agentId: string): Promise<AgentTimelineFetchResult>;
   getLatestCommittedSeq(agentId: string): Promise<number>;
   getCommittedRows(agentId: string): Promise<AgentTimelineRow[]>;
   getLastItem(agentId: string): Promise<AgentTimelineItem | null>;

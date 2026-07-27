@@ -479,6 +479,27 @@ describe("git-actions-policy", () => {
     });
   });
 
+  it("uses Forge-neutral MR capability and labels when GitHub status is unavailable", () => {
+    const actions = buildGitActions(
+      createInput({
+        githubFeaturesEnabled: false,
+        changeRequestFeaturesEnabled: true,
+        changeRequestAbbrev: "MR",
+        hasRemote: true,
+        isOnBaseBranch: false,
+        aheadCount: 2,
+        aheadOfOrigin: 0,
+      }),
+    );
+
+    expect(actions.primary).toMatchObject({
+      id: "pr",
+      label: "Create MR",
+      disabled: false,
+      unavailableMessage: undefined,
+    });
+  });
+
   it("uses local merge when merge is the stored ship default", () => {
     const actions = buildGitActions(
       createInput({

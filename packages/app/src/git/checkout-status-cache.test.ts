@@ -34,6 +34,7 @@ function checkoutStatus(overrides: Partial<CheckoutStatusPayload> = {}): Checkou
     hasRemote: true,
     remoteUrl: "git@github.com:thoth/thoth.git",
     ...overrides,
+    forge: overrides.forge ?? null,
   } as CheckoutStatusPayload;
 }
 
@@ -57,6 +58,7 @@ function prStatus(overrides: Partial<CheckoutPrStatusPayload> = {}): CheckoutPrS
     error: null,
     requestId: "pr-status-1",
     ...overrides,
+    forge: overrides.forge ?? null,
   };
 }
 

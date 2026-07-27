@@ -11,11 +11,13 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { chromium } from "playwright";
 
 import { DaemonClient } from "../packages/client/dist/daemon-client.js";
 import { ThothApiJourney } from "./acceptance/thoth-api-journey.mjs";
@@ -23,6 +25,20 @@ import { ThothApiJourney } from "./acceptance/thoth-api-journey.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const realCodex = args.includes("--real-codex");
+const REQUIRED_DESKTOP_BRIDGE_KEYS = [
+  "platform",
+  "invoke",
+  "getPendingOpenProject",
+  "events",
+  "window",
+  "dialog",
+  "notification",
+  "opener",
+  "editor",
+  "webUtils",
+  "menu",
+  "browser",
+];
 
 function option(name, fallback) {
   const index = args.indexOf(name);
@@ -61,6 +77,189 @@ async function reservePort() {
   return port;
 }
 
+function runGit(cwd, args) {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  assert(
+    result.status === 0,
+    `Git fixture command failed (${args.join(" ")}): ${result.stderr || result.stdout}`,
+  );
+}
+
+function seedProductSurfaceWorkspace(workspace) {
+  const baseline = ["# Packaged product surface", "", "PACKAGED_BASELINE", ""].join("\n");
+  const committed = `${baseline}PACKAGED_COMMITTED_BASE\n`;
+  writeFileSync(path.join(workspace, "README.md"), baseline);
+  runGit(workspace, ["init", "-b", "main"]);
+  runGit(workspace, ["config", "user.name", "Thoth Packaged Smoke"]);
+  runGit(workspace, ["config", "user.email", "packaged-smoke@thoth.local"]);
+  runGit(workspace, ["add", "README.md"]);
+  runGit(workspace, ["commit", "-m", "seed packaged product surface baseline"]);
+  runGit(workspace, ["checkout", "-b", "packaged-feature"]);
+  writeFileSync(path.join(workspace, "README.md"), committed);
+  runGit(workspace, ["add", "README.md"]);
+  runGit(workspace, ["commit", "-m", "add packaged committed change"]);
+  writeFileSync(path.join(workspace, "README.md"), `${committed}PACKAGED_UNCOMMITTED_CHANGE\n`);
+}
+
+async function startBrowserFixture() {
+  const server = createServer((request, response) => {
+    const complete = request.url === "/complete";
+    const marker = complete ? "PACKAGED_BROWSER_COMPLETE" : "PACKAGED_BROWSER_START";
+    response.writeHead(200, {
+      "cache-control": "no-store",
+      "content-type": "text/html; charset=utf-8",
+    });
+    response.end(
+      `<!doctype html><html><head><title>${marker}</title></head><body><main><h1>${marker}</h1><p>Host-wide persistent profile packaged acceptance.</p></main></body></html>`,
+    );
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  assert(address && typeof address === "object", "Browser fixture did not bind a TCP port");
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise((resolve) => server.close(() => resolve())),
+  };
+}
+
+async function visibleTestId(page, testId, timeout = 30_000) {
+  const locator = page.getByTestId(testId).filter({ visible: true }).first();
+  await locator.waitFor({ state: "visible", timeout });
+  return locator;
+}
+
+async function ensureDiffFileExpanded(page, fileIndex = 0) {
+  const body = page.getByTestId(`diff-file-${fileIndex}-body`).filter({ visible: true }).first();
+  if (!(await body.isVisible())) {
+    await (await visibleTestId(page, `diff-file-${fileIndex}`)).click();
+  }
+  await body.waitFor({ state: "visible", timeout: 30_000 });
+  return body;
+}
+
+async function inspectFilesAndChangesSurface(page, input) {
+  const workspaceRoute = `thoth://app/h/${encodeURIComponent(input.serverId)}/workspace/${encodeURIComponent(input.workspaceId)}`;
+  await page.goto(workspaceRoute);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await (await visibleTestId(page, "workspace-explorer-toggle")).click();
+
+  await (await visibleTestId(page, "explorer-tab-changes")).click();
+  await visibleTestId(page, "changes-header");
+  await page.getByText("README.md", { exact: true }).filter({ visible: true }).first().waitFor({
+    state: "visible",
+    timeout: 30_000,
+  });
+  const uncommittedBody = await ensureDiffFileExpanded(page);
+  assert(
+    (await uncommittedBody.textContent())?.includes("PACKAGED_UNCOMMITTED_CHANGE"),
+    "Packaged Changes did not render the uncommitted README diff",
+  );
+
+  await (await visibleTestId(page, "changes-diff-status")).click();
+  await (await visibleTestId(page, "changes-diff-mode-committed")).click();
+  await page.getByText("README.md", { exact: true }).filter({ visible: true }).first().waitFor({
+    state: "visible",
+    timeout: 30_000,
+  });
+  const committedBody = await ensureDiffFileExpanded(page);
+  assert(
+    (await committedBody.textContent())?.includes("PACKAGED_COMMITTED_BASE"),
+    "Packaged Changes did not render the committed README diff",
+  );
+
+  await (await visibleTestId(page, "explorer-tab-files")).click();
+  await visibleTestId(page, "files-pane-header");
+  const readme = page.getByText("README.md", { exact: true }).filter({ visible: true }).first();
+  await readme.waitFor({ state: "visible", timeout: 30_000 });
+  await readme.click();
+  const filePane = await visibleTestId(page, "workspace-file-pane");
+  assert(
+    (await filePane.textContent())?.includes("PACKAGED_UNCOMMITTED_CHANGE"),
+    "Packaged Files did not render the read-only README content",
+  );
+
+  return {
+    workspaceRoute,
+    files: { readOnlyFile: "README.md", marker: "PACKAGED_UNCOMMITTED_CHANGE" },
+    changes: {
+      uncommittedMarker: "PACKAGED_UNCOMMITTED_CHANGE",
+      committedMarker: "PACKAGED_COMMITTED_BASE",
+    },
+  };
+}
+
+async function runScheduleSurfaceAcceptance({ client, page, serverId, workspaceId }) {
+  const created = await client.scheduleCreate({
+    workspaceId,
+    prompt: "PACKAGED_SCHEDULE_RUN",
+    name: "Packaged Schedule",
+    cadence: { type: "every", everyMs: 24 * 60 * 60 * 1_000 },
+    target: {
+      type: "new-agent",
+      config: { provider: "codex", model: "gpt-5.4", modeId: "full-access" },
+    },
+    maxRuns: 2,
+    runOnCreate: false,
+    requestId: "packaged-schedule-create",
+  });
+  assert(!created.error && created.schedule, `Packaged Schedule create failed: ${created.error}`);
+
+  const fired = await client.scheduleRunOnce({
+    workspaceId,
+    id: created.schedule.id,
+    requestId: "packaged-schedule-run-once",
+  });
+  assert(!fired.error && fired.schedule, `Packaged Schedule run failed: ${fired.error}`);
+  const run = fired.schedule.runs.at(-1);
+  assert(run?.status === "succeeded", "Packaged Schedule did not reach succeeded");
+  assert(typeof run.taskId === "string", "Packaged Schedule did not create a real Task");
+  assert(
+    typeof run.executionId === "string",
+    "Packaged Schedule did not create a real ExecutionAttempt",
+  );
+
+  const task = await client.getTask({ workspaceId, taskId: run.taskId });
+  assert(!task.error && task.task?.id === run.taskId, "Packaged Schedule Task is not queryable");
+  assert(
+    task.executions.some(
+      (execution) => execution.id === run.executionId && execution.status === "succeeded",
+    ),
+    "Packaged Schedule ExecutionAttempt is not durably succeeded",
+  );
+  const timeline = await client.getExecutionTimeline({
+    workspaceId,
+    taskId: run.taskId,
+    executionId: run.executionId,
+    limit: 20,
+  });
+  assert(!timeline.error, `Packaged Schedule Timeline failed: ${timeline.error}`);
+  const timelineTypes = timeline.entries.map((entry) => entry.item?.type).filter(Boolean);
+  assert(
+    timelineTypes.includes("schedule_run_started") &&
+      timelineTypes.includes("schedule_run_succeeded"),
+    `Packaged Schedule Timeline is incomplete: ${JSON.stringify(timelineTypes)}`,
+  );
+
+  const route = `thoth://app/h/${encodeURIComponent(serverId)}/workspace/${encodeURIComponent(workspaceId)}/background-tasks`;
+  await page.goto(route);
+  const row = await visibleTestId(page, `background-task-row-${run.taskId}`);
+  assert(
+    (await row.textContent())?.includes("Packaged Schedule"),
+    "Packaged Background Tasks projection omitted the Schedule Task title",
+  );
+  return {
+    scheduleId: created.schedule.id,
+    taskId: run.taskId,
+    executionId: run.executionId,
+    status: run.status,
+    timelineTypes,
+    route,
+  };
+}
+
 async function waitFor(read, timeoutMs = 30_000, label = "condition") {
   const deadline = Date.now() + timeoutMs;
   let lastError = null;
@@ -75,6 +274,65 @@ async function waitFor(read, timeoutMs = 30_000, label = "condition") {
   }
   throw new Error(
     `Timed out waiting for ${label}${lastError ? `: ${lastError.message ?? String(lastError)}` : ""}`,
+  );
+}
+
+async function connectToPackagedRenderer({ child, cdpPort }) {
+  const browser = await waitFor(
+    async () => {
+      assert(child.exitCode === null, `Packaged desktop exited early with code ${child.exitCode}`);
+      try {
+        return await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
+      } catch {
+        return null;
+      }
+    },
+    60_000,
+    "packaged desktop CDP endpoint",
+  );
+  const page = await waitFor(
+    async () =>
+      browser
+        .contexts()
+        .flatMap((context) => context.pages())
+        .find((candidate) => candidate.url().startsWith("thoth://app/")) ?? null,
+    60_000,
+    "packaged thoth://app/ renderer",
+  );
+  await page.waitForFunction(
+    () => {
+      const root = document.querySelector("#root");
+      return root instanceof HTMLElement && root.childElementCount > 0;
+    },
+    undefined,
+    { timeout: 60_000 },
+  );
+  const bridgeKeys = await page.evaluate(() =>
+    typeof window.thothDesktop === "object" && window.thothDesktop !== null
+      ? Object.keys(window.thothDesktop)
+      : [],
+  );
+  const missingBridgeKeys = REQUIRED_DESKTOP_BRIDGE_KEYS.filter((key) => !bridgeKeys.includes(key));
+  assert(
+    missingBridgeKeys.length === 0,
+    `Packaged renderer is missing desktop preload bridge keys: ${missingBridgeKeys.join(", ")}`,
+  );
+  return { browser, page, bridgeKeys };
+}
+
+async function waitForRendererStartedDaemon({ page, listen, thothHome }) {
+  return await waitFor(
+    async () => {
+      const status = await page.evaluate(() => window.thothDesktop.invoke("desktop_daemon_status"));
+      return status?.status === "running" &&
+        status.desktopManaged === true &&
+        status.listen === listen &&
+        path.resolve(status.home) === path.resolve(thothHome)
+        ? status
+        : null;
+    },
+    60_000,
+    "renderer-started packaged desktop daemon",
   );
 }
 
@@ -161,8 +419,12 @@ function seedReleaseStorage(thothHome) {
 
 function inspectStorageMigration(thothHome, probe) {
   const marker = JSON.parse(readFileSync(path.join(thothHome, "storage-layout.json"), "utf8"));
-  assert(marker.version === 2, "Packaged Release storage did not activate layout v2");
-  assert(marker.schemaVersion === 2, "Packaged Release storage did not activate schema v2");
+  assert(marker.version === 3, "Packaged Release storage did not activate layout v3");
+  assert(marker.schemaVersion === 3, "Packaged Release storage did not activate schema v3");
+  assert(
+    marker.migrationState === "complete",
+    "Packaged Release storage migration is not complete",
+  );
   assert(marker.migrated === true, "Packaged Release storage was not marked as migrated");
   assert(
     marker.workspaceCount === 1,
@@ -173,7 +435,9 @@ function inspectStorageMigration(thothHome, probe) {
     .prepare("SELECT workspace_id FROM catalog_agent_locator WHERE agent_id = ?")
     .get(probe.agentId);
   const agents = catalog.prepare("SELECT COUNT(*) AS count FROM catalog_agent_locator").get().count;
+  const catalogSchemaVersion = catalog.prepare("PRAGMA user_version").get().user_version;
   catalog.close();
+  assert(catalogSchemaVersion === 3, "Packaged Release catalog did not activate SQLite schema v3");
   assert(
     locator?.workspace_id === probe.workspaceId,
     "Release Agent is missing from the migrated global locator",
@@ -186,7 +450,12 @@ function inspectStorageMigration(thothHome, probe) {
   const timelineRows = authority
     .prepare("SELECT COUNT(*) AS count FROM agent_timeline_rows")
     .get().count;
+  const authoritySchemaVersion = authority.prepare("PRAGMA user_version").get().user_version;
   authority.close();
+  assert(
+    authoritySchemaVersion === 3,
+    "Packaged Release Workspace authority did not activate SQLite schema v3",
+  );
   assert(
     timeline?.item_json === probe.itemJson,
     "Release Agent Timeline probe changed during packaged migration",
@@ -200,6 +469,8 @@ function inspectStorageMigration(thothHome, probe) {
     workspaceId: probe.workspaceId,
     agents,
     timelineRows,
+    catalogSchemaVersion,
+    authoritySchemaVersion,
   };
 }
 
@@ -271,18 +542,46 @@ function inspectRuntimeAuthority(thothHome, workspaceId, taskId) {
   }
 }
 
-function waitForProcessExit(child, timeoutMs) {
-  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error("Packaged desktop smoke process did not exit"));
-    }, timeoutMs);
-    child.once("exit", (code) => {
-      clearTimeout(timer);
-      resolve(code);
-    });
-  });
+function isProcessTreeRunning(child) {
+  if (!child.pid) return false;
+  if (process.platform === "win32") {
+    return child.exitCode === null && child.signalCode === null;
+  }
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function signalProcessTree(child, signal) {
+  if (!child.pid) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+    return;
+  }
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    child.kill(signal);
+  }
+}
+
+async function waitForProcessTreeExit(child, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isProcessTreeRunning(child)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return !isProcessTreeRunning(child);
+}
+
+function releaseChildHandles(child) {
+  child.stdin?.destroy();
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  child.unref();
 }
 
 function assertRemovedProductPathIsAbsent(appImage, runRoot) {
@@ -353,15 +652,31 @@ async function main() {
   const thothHome = path.join(runRoot, "thoth-home");
   const xdgConfigHome = path.join(runRoot, "xdg-config");
   const xdgCacheHome = path.join(runRoot, "xdg-cache");
+  const userData = path.join(runRoot, "user-data");
   const fakeBin = path.join(runRoot, "bin");
   const capturePath = path.join(runRoot, "scripted-codex.jsonl");
   const statePath = path.join(runRoot, "scripted-codex-state.json");
   const desktopStdoutPath = path.join(runRoot, "desktop.stdout.log");
   const desktopStderrPath = path.join(runRoot, "desktop.stderr.log");
+  const desktopRendererPath = path.join(runRoot, "desktop-renderer.json");
+  const desktopRendererLogPath = path.join(runRoot, "desktop-renderer.log");
+  const desktopRendererScreenshotPath = path.join(runRoot, "desktop-renderer.png");
+  const desktopProductSurfacesPath = path.join(runRoot, "desktop-product-surfaces.json");
+  const desktopProductSurfacesScreenshotPath = path.join(runRoot, "desktop-product-surfaces.png");
   const quickWorkspace = path.join(runRoot, "quick-workspace");
-  for (const directory of [home, thothHome, xdgConfigHome, xdgCacheHome, fakeBin, quickWorkspace]) {
+  for (const directory of [
+    home,
+    thothHome,
+    xdgConfigHome,
+    xdgCacheHome,
+    userData,
+    fakeBin,
+    quickWorkspace,
+  ]) {
     mkdirSync(directory, { recursive: true });
   }
+  seedProductSurfaceWorkspace(quickWorkspace);
+  const browserFixture = realCodex ? null : await startBrowserFixture();
   let releaseMigrationProbe = null;
   if (!realCodex) {
     releaseMigrationProbe = seedReleaseStorage(thothHome);
@@ -372,11 +687,14 @@ async function main() {
   }
 
   const port = await reservePort();
+  let cdpPort = await reservePort();
+  while (cdpPort === port) cdpPort = await reservePort();
   const listen = `127.0.0.1:${port}`;
   const command = process.env.DISPLAY ? appImagePath : "xvfb-run";
   const commandArgs = process.env.DISPLAY ? ["--no-sandbox"] : ["-a", appImagePath, "--no-sandbox"];
   const child = spawn(command, commandArgs, {
     cwd: runRoot,
+    detached: process.platform !== "win32",
     env: {
       ...process.env,
       APPIMAGE_EXTRACT_AND_RUN: "1",
@@ -387,13 +705,15 @@ async function main() {
       THOTH_HOME: thothHome,
       THOTH_LISTEN: listen,
       THOTH_RELAY_ENABLED: "false",
-      THOTH_DESKTOP_SMOKE: "1",
+      THOTH_ELECTRON_USER_DATA_DIR: userData,
+      THOTH_ELECTRON_FLAGS: `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${cdpPort}`,
       THOTH_DISABLE_SINGLE_INSTANCE_LOCK: "1",
       ...(realCodex
         ? { CODEX_HOME: process.env.CODEX_HOME }
         : {
             THOTH_FAKE_CODEX_CAPTURE: capturePath,
             THOTH_FAKE_CODEX_STATE: statePath,
+            THOTH_FAKE_BROWSER_URL: browserFixture.baseUrl,
           }),
       PATH: realCodex
         ? (process.env.PATH ?? "")
@@ -406,22 +726,58 @@ async function main() {
   let stderr = "";
   child.stdout.on("data", (chunk) => {
     stdout += chunk.toString();
-    writeFileSync(desktopStdoutPath, stdout);
   });
   child.stderr.on("data", (chunk) => {
     stderr += chunk.toString();
-    writeFileSync(desktopStderrPath, stderr);
   });
 
   let client = null;
+  let browser = null;
+  let page = null;
+  let rendererReceipt = null;
+  const rendererLog = [];
+  let productSurfacesReceipt = null;
   let report = null;
   let failure = null;
   try {
-    await waitFor(
-      async () => (stdout.includes("desktop-daemon-smoke-started") ? true : null),
-      60_000,
-      "packaged desktop-managed daemon startup",
-    );
+    const renderer = await connectToPackagedRenderer({ child, cdpPort });
+    browser = renderer.browser;
+    page = renderer.page;
+    page.on("console", (message) => {
+      rendererLog.push(
+        JSON.stringify({
+          at: new Date().toISOString(),
+          kind: "console",
+          type: message.type(),
+          text: message.text(),
+        }),
+      );
+    });
+    page.on("pageerror", (error) => {
+      rendererLog.push(
+        JSON.stringify({ at: new Date().toISOString(), kind: "pageerror", message: error.message }),
+      );
+    });
+    page.on("framenavigated", (frame) => {
+      if (frame === page.mainFrame()) {
+        rendererLog.push(
+          JSON.stringify({
+            at: new Date().toISOString(),
+            kind: "main-frame-navigated",
+            url: frame.url(),
+          }),
+        );
+      }
+    });
+    const desktopDaemon = await waitForRendererStartedDaemon({ page, listen, thothHome });
+    rendererReceipt = {
+      url: page.url(),
+      title: await page.title(),
+      bridgeKeys: renderer.bridgeKeys,
+      daemon: desktopDaemon,
+    };
+    writeFileSync(desktopRendererPath, `${JSON.stringify(rendererReceipt, null, 2)}\n`);
+    await page.screenshot({ path: desktopRendererScreenshotPath, fullPage: true });
     client = new DaemonClient({
       url: `ws://${listen}/ws`,
       clientId: "packaged-appimage-thoth-flow",
@@ -438,6 +794,10 @@ async function main() {
       `Failed to register packaged Quick workspace: ${quickWorkspaceResult.error}`,
     );
     const quickWorkspaceId = quickWorkspaceResult.workspace.id;
+    productSurfacesReceipt = await inspectFilesAndChangesSurface(page, {
+      serverId: desktopDaemon.serverId,
+      workspaceId: quickWorkspaceId,
+    });
 
     const quickPrompt = realCodex
       ? readFileSync(quickPromptPath, "utf8")
@@ -472,6 +832,62 @@ async function main() {
       path.join(runRoot, "background-task-detail.json"),
       JSON.stringify(core.task, null, 2),
     );
+
+    if (!realCodex) {
+      await client.sendAgentMessage(core.agent.id, "PACKAGED_BROWSER_AUTOMATION", {
+        thoth: { enabled: false },
+      });
+      await waitFor(
+        async () => {
+          const snapshot = await client.fetchAgent({ agentId: core.agent.id });
+          return snapshot?.agent.status !== "idle" ? snapshot : null;
+        },
+        30_000,
+        "packaged Browser turn to start",
+      );
+      await journey.waitForAgentIdle(core.agent.id);
+      const browserCapture = parseCapture(capturePath);
+      const browserTurnError = browserCapture.find(
+        (entry) => entry.kind === "turn_error" && entry.threadId === core.sessionId,
+      );
+      assert(
+        !browserTurnError,
+        `Packaged Browser turn failed before surface navigation: ${JSON.stringify(browserTurnError)}`,
+      );
+      const completedBrowserFlow = browserCapture.find(
+        (entry) => entry.kind === "browser_flow" && entry.threadId === core.sessionId,
+      );
+      assert(
+        completedBrowserFlow?.startSnapshot === true &&
+          completedBrowserFlow.completeSnapshot === true &&
+          completedBrowserFlow.wrongBrowserRejected === true &&
+          completedBrowserFlow.closed === true,
+        "Packaged Browser flow did not settle before the Schedule surface navigation",
+      );
+      productSurfacesReceipt.browser = {
+        commands: [
+          "list_tabs",
+          "new_tab",
+          "snapshot",
+          "navigate",
+          "snapshot",
+          "close_tab",
+          "list_tabs",
+        ],
+        unknownBrowserIdRejected: true,
+      };
+      productSurfacesReceipt.schedule = await runScheduleSurfaceAcceptance({
+        client,
+        page,
+        serverId: desktopDaemon.serverId,
+        workspaceId: quickWorkspaceId,
+      });
+      writeFileSync(
+        desktopProductSurfacesPath,
+        `${JSON.stringify(productSurfacesReceipt, null, 2)}\n`,
+      );
+      await page.screenshot({ path: desktopProductSurfacesScreenshotPath, fullPage: true });
+    }
 
     let stopTask = null;
     if (!realCodex) {
@@ -592,8 +1008,18 @@ async function main() {
         (entry) => entry.kind === "turn_start" && entry.threadId === quickThreadStart.threadId,
       ).length;
       assert(
-        visibleTurnCount === 13,
-        `Expected thirteen hot-switch, @Task and Stop-probe turns, received ${visibleTurnCount}`,
+        visibleTurnCount === 14,
+        `Expected fourteen hot-switch, @Task, Browser and Stop-probe turns, received ${visibleTurnCount}`,
+      );
+      const browserFlow = capture.find(
+        (entry) => entry.kind === "browser_flow" && entry.threadId === quickThreadStart.threadId,
+      );
+      assert(
+        browserFlow?.startSnapshot === true &&
+          browserFlow.completeSnapshot === true &&
+          browserFlow.wrongBrowserRejected === true &&
+          browserFlow.closed === true,
+        "Packaged Browser flow did not complete through Provider tools and Desktop automation",
       );
     }
 
@@ -641,16 +1067,35 @@ async function main() {
           }),
       runtimeBundles: runtimeAuthority.bundles,
       loopAttachmentCount: runtimeAuthority.loopAttachmentCount,
+      desktopRenderer: rendererReceipt,
+      productSurfaces: productSurfacesReceipt,
     };
   } catch (error) {
     failure = error;
     throw error;
   } finally {
     await client?.close().catch(() => undefined);
-    if (child.exitCode === null) {
-      child.stdin.write("thoth-smoke-stop\n");
-      await waitForProcessExit(child, 30_000).catch(() => undefined);
+    await page
+      ?.evaluate(() => window.thothDesktop.invoke("stop_desktop_daemon", { reason: "manual_ipc" }))
+      .catch(() => undefined);
+    await page?.evaluate(() => window.close()).catch(() => undefined);
+    await browser?.close().catch(() => undefined);
+    if (isProcessTreeRunning(child)) {
+      signalProcessTree(child, "SIGTERM");
+      if (!(await waitForProcessTreeExit(child, 10_000))) {
+        signalProcessTree(child, "SIGKILL");
+        if (!(await waitForProcessTreeExit(child, 10_000))) {
+          failure ??= new Error("Packaged desktop smoke process tree did not exit");
+        }
+      }
     }
+    releaseChildHandles(child);
+    writeFileSync(desktopStdoutPath, stdout);
+    writeFileSync(desktopStderrPath, stderr);
+    writeFileSync(
+      desktopRendererLogPath,
+      rendererLog.length > 0 ? `${rendererLog.join("\n")}\n` : "",
+    );
     rmSync(outputDir, { recursive: true, force: true });
     mkdirSync(outputDir, { recursive: true });
     for (const filePath of [
@@ -658,6 +1103,11 @@ async function main() {
       statePath,
       desktopStdoutPath,
       desktopStderrPath,
+      desktopRendererPath,
+      desktopRendererLogPath,
+      desktopRendererScreenshotPath,
+      desktopProductSurfacesPath,
+      desktopProductSurfacesScreenshotPath,
       path.join(thothHome, "daemon.log"),
       path.join(runRoot, "background-task-detail.json"),
       path.join(runRoot, "stopped-task-detail.json"),
@@ -680,10 +1130,12 @@ async function main() {
         cpSync(thothHome, path.join(outputDir, "thoth-home"), { recursive: true });
       }
     }
+    await browserFixture?.close().catch(() => undefined);
     if (report) writeFileSync(path.join(outputDir, "report.json"), JSON.stringify(report, null, 2));
     rmSync(runRoot, { recursive: true, force: true });
   }
 
+  if (failure) throw failure;
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }
 

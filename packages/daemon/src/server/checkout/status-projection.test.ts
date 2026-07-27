@@ -1,9 +1,51 @@
 import { describe, expect, test } from "vitest";
 
 import { CheckoutPrStatusSchema } from "@thoth/protocol/messages";
-import { normalizeCheckoutPrStatusPayload } from "./status-projection.js";
+import type { WorkspaceGitRuntimeSnapshot } from "../workspace-git-service.js";
+import {
+  buildCheckoutPrStatusPayloadFromSnapshot,
+  buildCheckoutStatusPayloadFromSnapshot,
+  normalizeCheckoutPrStatusPayload,
+} from "./status-projection.js";
 
 describe("checkout status projection", () => {
+  test("projects GitLab Forge identity into checkout and change-request status", () => {
+    const snapshot: WorkspaceGitRuntimeSnapshot = {
+      cwd: "/work/widgets",
+      git: {
+        isGit: true,
+        repoRoot: "/work/widgets",
+        mainRepoRoot: null,
+        currentBranch: "feature/widgets",
+        remoteUrl: "git@gitlab.com:acme/platform/widgets.git",
+        isThothOwnedWorktree: false,
+        isDirty: false,
+        baseRef: "origin/main",
+        aheadBehind: { ahead: 1, behind: 0 },
+        aheadOfOrigin: 0,
+        behindOfOrigin: 0,
+        hasRemote: true,
+        diffStat: null,
+      },
+      github: { featuresEnabled: false, pullRequest: null, error: null },
+    };
+
+    expect(
+      buildCheckoutStatusPayloadFromSnapshot({
+        cwd: snapshot.cwd,
+        requestId: "checkout-status",
+        snapshot,
+      }).forge,
+    ).toMatchObject({ forge: "gitlab", fullName: "acme/platform/widgets" });
+    expect(
+      buildCheckoutPrStatusPayloadFromSnapshot({
+        cwd: snapshot.cwd,
+        requestId: "change-request-status",
+        snapshot,
+      }).forge,
+    ).toMatchObject({ forge: "gitlab", changeRequestAbbrev: "MR" });
+  });
+
   test("includes repository identity fields on the PR status wire payload", () => {
     const payload = normalizeCheckoutPrStatusPayload({
       number: 123,

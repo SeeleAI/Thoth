@@ -14,6 +14,7 @@ describe("foreground turn fence", () => {
   it("binds only an active provider turn to the current Thoth generation", () => {
     gateway.beginForegroundTurn({
       agentId: "agent-1",
+      workspaceId: "workspace-1",
       generation: "generation-2",
       kind: "thoth_clarify",
       foregroundTurnId: "foreground-turn-2",
@@ -40,6 +41,7 @@ describe("foreground turn fence", () => {
   it("rejects stale provider turns after an explicit binding", () => {
     gateway.beginForegroundTurn({
       agentId: "agent-1",
+      workspaceId: "workspace-1",
       generation: "generation-2",
       kind: "thoth_clarify",
       foregroundTurnId: "foreground-turn-2",
@@ -70,6 +72,7 @@ describe("foreground turn fence", () => {
   it("keeps session-scoped tools unauthorized during a raw turn", () => {
     gateway.beginForegroundTurn({
       agentId: "agent-1",
+      workspaceId: "workspace-1",
       generation: "generation-raw",
       kind: "raw_provider",
       foregroundTurnId: "foreground-turn-raw",
@@ -91,6 +94,7 @@ describe("foreground turn fence", () => {
   it("keeps an old parked provider turn fenced while a continuation becomes active", () => {
     gateway.beginForegroundTurn({
       agentId: "agent-1",
+      workspaceId: "workspace-1",
       generation: "generation-1",
       kind: "thoth_clarify",
       foregroundTurnId: "foreground-turn-1",
@@ -110,6 +114,7 @@ describe("foreground turn fence", () => {
 
     gateway.beginForegroundTurn({
       agentId: "agent-1",
+      workspaceId: "workspace-1",
       generation: "generation-1",
       kind: "thoth_clarify",
       foregroundTurnId: "foreground-turn-1",
@@ -143,5 +148,85 @@ describe("foreground turn fence", () => {
         providerTurnId: "provider-turn-1",
       }),
     ).toBe(false);
+  });
+});
+
+describe("provider-neutral scoped capability fence", () => {
+  it("returns the active foreground Workspace/Agent/generation scope", () => {
+    gateway.beginForegroundTurn({
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+      generation: "generation-2",
+      kind: "raw_provider",
+      foregroundTurnId: "foreground-turn-2",
+    });
+
+    expect(
+      gateway.authorizeScopedCapability({
+        agentId: "agent-1",
+        context: {
+          providerToolCall: {
+            provider: "provider",
+            threadId: "thread-1",
+            turnId: "provider-turn-2",
+            callId: "call-1",
+            toolName: "browser_snapshot",
+            isActiveProviderTurn: true,
+          },
+        },
+      }),
+    ).toEqual({
+      workspaceId: "workspace-1",
+      agentId: "agent-1",
+      executionId: "foreground-turn-2",
+      generation: "generation-2",
+    });
+  });
+
+  it("rejects stale provider callbacks and exposes active Loop execution scope", () => {
+    gateway.bind("agent-loop", {
+      workspaceId: "workspace-loop",
+      taskId: "task-1",
+      goalId: "goal-1",
+      executionId: "execution-1",
+      generation: "generation-loop",
+      phase: "planexec",
+    });
+
+    expect(() =>
+      gateway.authorizeScopedCapability({
+        agentId: "agent-loop",
+        context: {
+          providerToolCall: {
+            provider: "provider",
+            threadId: "thread-1",
+            turnId: "turn-stale",
+            callId: "call-stale",
+            toolName: "browser_snapshot",
+          },
+        },
+      }),
+    ).toThrow("active provider execution");
+
+    expect(
+      gateway.authorizeScopedCapability({
+        agentId: "agent-loop",
+        context: {
+          providerToolCall: {
+            provider: "provider",
+            threadId: "thread-1",
+            turnId: "turn-current",
+            callId: "call-current",
+            toolName: "browser_snapshot",
+            isActiveProviderTurn: true,
+          },
+        },
+      }),
+    ).toEqual({
+      workspaceId: "workspace-loop",
+      agentId: "agent-loop",
+      executionId: "execution-1",
+      generation: "generation-loop",
+    });
   });
 });

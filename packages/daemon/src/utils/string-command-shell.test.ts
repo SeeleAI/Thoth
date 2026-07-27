@@ -1,18 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import { buildStringCommandShellInvocation } from "./string-command-shell.js";
+import {
+  buildStringCommandShellInvocation,
+  createStringCommandShellEnv,
+  createStringCommandShellEnvOverlay,
+} from "./string-command-shell.js";
 
 describe("buildStringCommandShellInvocation", () => {
-  it("uses bash login-command semantics on unix platforms", () => {
+  it("uses a non-login bash command on unix platforms", () => {
     expect(
       buildStringCommandShellInvocation({
         command: 'echo "hello"',
         platform: "darwin",
       }),
     ).toEqual({
-      shell: "/bin/bash",
-      args: ["-lc", 'echo "hello"'],
+      shell: "bash",
+      args: ["-c", 'echo "hello"'],
     });
+  });
+
+  it("removes BASH_ENV from full and overlay environments", () => {
+    expect(createStringCommandShellEnv({ PATH: "/bin", BASH_ENV: "/tmp/injected" })).toEqual({
+      PATH: "/bin",
+    });
+    expect(createStringCommandShellEnvOverlay()).toEqual({ BASH_ENV: undefined });
   });
 
   it("uses powershell command semantics on windows", () => {

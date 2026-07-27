@@ -128,6 +128,12 @@ export type AuthorityCommand =
       runModeReceipt?: ExecutionProjection["runModeReceipt"];
     }
   | {
+      type: "execution.quick.settled";
+      generation: string;
+      status: "succeeded" | "failed";
+      summary: string;
+    }
+  | {
       type: "execution.approval.requested";
       approval: ExecutionApprovalProjection;
     }
@@ -360,6 +366,8 @@ export function transitionAuthority(
       return transitionExecutionCreated(authority, command, input);
     case "execution.status.changed":
       return transitionExecutionStatus(authority, command, input);
+    case "execution.quick.settled":
+      return transitionQuickExecutionSettled(authority, command, input);
     case "execution.approval.requested":
       return transitionApprovalRequested(authority, command, input);
     case "execution.approval.resolved":
@@ -462,6 +470,63 @@ function transitionExecutionStatus(
       runModeReceipt:
         command.runModeReceipt === undefined ? execution.runModeReceipt : command.runModeReceipt,
     }),
+  );
+}
+
+function transitionQuickExecutionSettled(
+  state: AuthorityState,
+  command: Extract<AuthorityCommand, { type: "execution.quick.settled" }>,
+  input: DeterministicAuthorityInput,
+): AuthorityMutation {
+  const execution = requireExecutionGeneration(state, command.generation);
+  if (state.task.mode !== "quick" || execution.phase !== "quick_exec") {
+    invalid("Quick settlement requires a Quick Task and quick_exec ExecutionAttempt");
+  }
+  if (
+    state.task.currentExecutionId !== execution.id ||
+    state.task.status === "stopping" ||
+    TERMINAL_EXECUTION_STATUSES.has(execution.status)
+  ) {
+    conflict(`Execution ${execution.id} no longer owns Quick Task ${state.task.id}`);
+  }
+  if (!execution.goalId) invalid("Quick execution is missing its Goal identity");
+  const currentGoal = state.task.goals.find((goal) => goal.id === execution.goalId);
+  if (!currentGoal || currentGoal.status !== "running") {
+    conflict(`Quick Goal ${execution.goalId} is no longer running`);
+  }
+
+  const succeeded = command.status === "succeeded";
+  const goals = updateGoal(
+    state.task.goals,
+    execution.goalId,
+    succeeded ? "passed" : "interrupted",
+    "running",
+  );
+  return mutation(
+    state,
+    updateTask(state.task, input.now, {
+      status: succeeded ? "completed" : "interrupted",
+      summary: command.summary,
+      currentGoalId: succeeded ? null : execution.goalId,
+      currentExecutionId: null,
+      goals,
+    }),
+    updateExecution(execution, input.now, {
+      status: command.status,
+      summary: command.summary,
+      completedAt: input.now,
+    }),
+    {
+      blackboard: [
+        blackboard(input, 0, state.task.id, succeeded ? "evidence_summary" : "blocker", "daemon", {
+          executionId: execution.id,
+          status: command.status,
+          summary: command.summary,
+        }),
+      ],
+      phaseRunStatus: succeeded ? "succeeded" : "interrupted",
+      effects: [{ type: "release_task_runtime", taskId: state.task.id }],
+    },
   );
 }
 

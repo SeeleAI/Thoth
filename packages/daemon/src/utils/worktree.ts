@@ -6,7 +6,10 @@ import { join, basename, dirname, isAbsolute, resolve, sep } from "path";
 import net from "node:net";
 import { createHash } from "node:crypto";
 import stripAnsi from "strip-ansi";
-import { buildStringCommandShellInvocation } from "./string-command-shell.js";
+import {
+  buildStringCommandShellInvocation,
+  createStringCommandShellEnv,
+} from "./string-command-shell.js";
 import { readThothConfigJson, resolveThothConfigPath } from "./thoth-config-file.js";
 export {
   ThothConfigRawSchema,
@@ -392,7 +395,7 @@ async function execSetupCommand(
   try {
     const { stdout, stderr } = await execFileAsync(shellInvocation.shell, shellInvocation.args, {
       cwd: options.cwd,
-      env: options.env,
+      env: createStringCommandShellEnv(options.env),
     });
     return {
       command,
@@ -488,7 +491,7 @@ async function execSetupCommandStreamed(options: {
     const shellInvocation = buildStringCommandShellInvocation({ command: options.command });
     const child = spawnProcess(shellInvocation.shell, shellInvocation.args, {
       cwd: options.cwd,
-      env: options.env,
+      env: createStringCommandShellEnv(options.env),
       stdio: ["ignore", "pipe", "pipe"],
     });
 

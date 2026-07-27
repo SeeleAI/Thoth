@@ -25,6 +25,12 @@ The user renewed the same narrow authorization on `2026-07-17` for the install-f
 build-ID updater repair on `release/mvp-actions`, including its branch push and replace-in-place MVP
 Release run. This does not expand the authorization to `main`, npm, stores or hosted infrastructure.
 
+`NTH-CD-088` renews the narrow authorization on `2026-07-27` for the verified organic integration of exact Paseo
+range `5fc53c57..b589599a`. It authorizes normal fast-forward pushes of one release-source commit to
+`agent/dev/mvp` and `release/mvp-actions`, followed by the existing exact-SHA fixed-Beta workflow and public asset
+reverification. It does not authorize force push, `main`, Relay deployment, npm/store/mobile publication, or any
+operation on the independent Paseo service.
+
 ## MVP Beta Authority
 
 - Version: `0.0.0-mvp-beta`
@@ -68,6 +74,11 @@ The release contains unsigned/ad-hoc macOS and Windows desktop packages, Linux d
 updater manifests, source-commit metadata and checksums. It contains no Android APK, iOS package or
 server CLI tgz. Actions still build and install the server CLI internally for daemon and Relay gates.
 
+The fixed Beta asset manifest contains exactly 26 desktop-only assets. It excludes APK, iOS, public Server CLI,
+npm, Nix, and Docker outputs. After publication, verification downloads `BUILD-SOURCE.txt`, `MVP-UPDATE.json`,
+`SHA256SUMS`, and `Thoth-x86_64.AppImage` from the public Release rather than reusing workflow or local files; size,
+SHA-256, source commit, update manifest, embedded build identity, and the complete packaged journey must agree.
+
 ## Credentials And GitHub Operations
 
 All repository GitHub operations use the Royalvice repository-local configuration:
@@ -85,10 +96,19 @@ reuse a credential exposed in chat. Local Android keystore material stays in ign
 
 ## Branch Safety
 
-The user authorized a guarded `--force-with-lease` update of `agent/dev/mvp` only against the
-previously audited remote SHA, followed by a normal push of `release/mvp-actions`. `main` must not be
-merged, pushed, rebased or retagged by this flow. If the audited remote branch SHA changes before
-push, stop and inspect the concurrent update rather than overriding it.
+Both authorized source pushes are normal fast-forwards only:
+
+```text
+agent/dev/mvp       -> exact release-source SHA
+release/mvp-actions -> same exact release-source SHA
+```
+
+Force push, `--force-with-lease`, merge, rebase, history rewrite, and any `main` mutation are forbidden. If an
+audited remote SHA changes before push, stop and inspect the concurrent update rather than overriding it. A push
+timeout is not success: query the remote SHA before deciding whether retry is needed.
+
+After public verification, the evidence-only closeout commit is pushed normally to `agent/dev/mvp` only;
+`release/mvp-actions` stays at the published release-source SHA so documentation does not trigger a second Release.
 
 The independent `SeeleAI/Thoth-Relay` deployment and any future production relay/web deployment are
 outside this release authorization.

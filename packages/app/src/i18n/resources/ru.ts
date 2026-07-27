@@ -60,6 +60,8 @@ export const ru: TranslationResources = {
       newAgent: "Новый агент",
       openProject: "Открыть проект",
       home: "Дом",
+      modelGroupLabel: "Модель",
+      modelSearchKeywords: "сменить модель изменить модель выбрать модель установить модель",
     },
   },
   composer: {
@@ -102,6 +104,8 @@ export const ru: TranslationResources = {
       removeBrowserElement: "Удалить вложение элемента браузера",
       openReview: "Открыть прикрепленный файл с отзывом",
       removeReview: "Удалить прикрепленный отзыв",
+      openWorkspaceFile: "Открыть вложенный файл рабочей области",
+      removeWorkspaceFile: "Удалить вложенный файл рабочей области",
     },
     errors: {
       failedToSend: "Не удалось отправить сообщение",
@@ -359,6 +363,11 @@ export const ru: TranslationResources = {
         modified: "Модифицированный",
         copyPath: "Копировать путь",
         download: "Скачать",
+        attachToComposer: "Добавить в сообщение",
+        attachedToComposer: "Файл добавлен в сообщение",
+        attachTextOnly: "Можно добавлять только текстовые файлы",
+        attachTooLarge: "Файл слишком велик (не более 10 МБ)",
+        attachFailed: "Не удалось добавить файл в сообщение",
       },
       actions: {
         back: "Назад",
@@ -729,6 +738,14 @@ export const ru: TranslationResources = {
         base: "база",
         newFile: "Новый",
         deletedFile: "Удалено",
+        commits: {
+          title: "Коммиты",
+          loading: "Загрузка истории коммитов...",
+          loadError: "Не удалось загрузить историю коммитов",
+          noneAhead: "Пока нет коммитов поверх {{baseRef}}",
+          countLabel: "Коммитов: {{count}}",
+          noTextualChanges: "В этом коммите нет текстовых изменений",
+        },
       },
       openInEditor: {
         open: "Открыть",
@@ -826,6 +843,8 @@ export const ru: TranslationResources = {
       actions: {
         menu: "Действия Workspace",
         newWorkspace: "Новое рабочее пространство",
+        showMore: "Показать ещё",
+        showLess: "Показать меньше",
         createWorkspaceFor: "Создайте новое рабочее пространство для{{projectName}}.",
         copyPath: "Копировать путь",
         copyBranchName: "Скопировать название ветки",
@@ -1413,6 +1432,18 @@ export const ru: TranslationResources = {
     },
     general: {
       title: "Общий",
+      browserData: {
+        title: "Данные браузера",
+        siteData: "Файлы cookie и данные сайтов",
+        description: "Вкладки браузера используют общие данные входа и данные сайтов в Thoth.",
+        clear: "Очистить данные браузера",
+        clearing: "Очистка...",
+        confirmTitle: "Очистить данные браузера?",
+        confirmMessage:
+          "На сайтах будет выполнен выход, а открытые вкладки браузера перезагрузятся.",
+        success: "Данные браузера очищены.",
+        error: "Не удалось очистить данные браузера.",
+      },
       defaultSend: {
         label: "Отправка по умолчанию",
         descriptions: {
@@ -1543,6 +1574,7 @@ export const ru: TranslationResources = {
     },
     shortcuts: {
       dialogTitle: "Ярлыки",
+      searchPlaceholder: "Поиск сочетаний клавиш",
       unavailableOnMobile: "Сочетания клавиш доступны только на рабочем столе.",
       capturePrompt: "Нажмите ярлык...",
       actions: {
@@ -1801,6 +1833,12 @@ export const ru: TranslationResources = {
       loading: "Загрузка...",
       addErrorTitle: "Unable to add provider",
       updateErrorTitle: "Невозможно обновить провайдера",
+      deleteProvider: "Удалить {{name}}",
+      deleteConfirmTitle: "Удалить {{name}}?",
+      deleteConfirmMessage:
+        "Пользовательский провайдер будет удалён с этого хоста. Запущенные сеансы продолжат работу, но новые и возобновляемые сеансы не смогут его использовать.",
+      deleteAction: "Удалить провайдера",
+      deleteErrorTitle: "Не удалось удалить провайдера",
       statuses: {
         disabled: "Неполноценный",
         loading: "Загрузка",

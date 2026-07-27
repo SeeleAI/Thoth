@@ -19,6 +19,10 @@ import {
   removeWorkspaceAttachmentsMatching,
 } from "./workspace-cleanup";
 import { useClearReviewDraft } from "@/review/store";
+import {
+  mergeWorkspaceSubmitSuppression,
+  shouldResetWorkspaceSubmitSuppression,
+} from "./workspace-submit-suppression";
 
 interface WorkspaceAttachmentBindingInput {
   normalAttachments: UserComposerAttachment[];
@@ -45,6 +49,7 @@ interface ComposerWorkspaceAttachmentBinding {
   buildOutgoingAttachments: (normalAttachments: UserComposerAttachment[]) => ComposerAttachment[];
   removeAttachment: (input: RemoveWorkspaceAttachmentInput) => boolean;
   openAttachment: (input: OpenWorkspaceAttachmentInput) => boolean;
+  beginSubmit: (attachments: readonly ComposerAttachment[]) => void;
   clearSentAttachments: (attachments: readonly ComposerAttachment[]) => void;
   completeSubmit: (input: CompleteSubmitInput) => void;
   resetSuppression: () => void;
@@ -63,6 +68,9 @@ function getOpenAccessibilityLabel(
   if (attachment.kind === "chat_history") {
     return "Open chat history attachment";
   }
+  if (attachment.kind === "workspace_file") {
+    return t("composer.attachments.openWorkspaceFile");
+  }
   return t("composer.attachments.openReview");
 }
 
@@ -79,12 +87,18 @@ function getRemoveAccessibilityLabel(
   if (attachment.kind === "chat_history") {
     return "Remove chat history attachment";
   }
+  if (attachment.kind === "workspace_file") {
+    return t("composer.attachments.removeWorkspaceFile");
+  }
   return t("composer.attachments.removeReview");
 }
 
 function getPillTestID(attachment: WorkspaceComposerAttachment): string {
   if (attachment.kind === "chat_history") {
     return "composer-chat-history-attachment-pill";
+  }
+  if (attachment.kind === "workspace_file") {
+    return "composer-workspace-file-attachment-pill";
   }
   return "composer-review-attachment-pill";
 }
@@ -167,6 +181,7 @@ function useWorkspaceAttachmentBinding({
         if (
           selected.kind === "browser_element" ||
           selected.kind === "chat_history" ||
+          selected.kind === "workspace_file" ||
           isPullRequestContextAttachment(selected)
         ) {
           const selectedKey = getAttachmentKey(selected);
@@ -183,7 +198,10 @@ function useWorkspaceAttachmentBinding({
 
   const openAttachment = useCallback(
     ({ attachment }: OpenWorkspaceAttachmentInput) => {
-      if (!isWorkspaceAttachment(attachment) || attachment.kind !== "review") {
+      if (
+        !isWorkspaceAttachment(attachment) ||
+        (attachment.kind !== "review" && attachment.kind !== "workspace_file")
+      ) {
         return false;
       }
       onOpenWorkspaceAttachment?.(attachment);
@@ -196,12 +214,16 @@ function useWorkspaceAttachmentBinding({
     setSuppressedKeys([]);
   }, []);
 
+  const beginSubmit = useCallback((attachments: readonly ComposerAttachment[]) => {
+    setSuppressedKeys((current) => mergeWorkspaceSubmitSuppression(current, attachments));
+  }, []);
+
   const completeSubmit = useCallback(
     ({ result, outgoingAttachments }: CompleteSubmitInput) => {
       if (result === "submitted") {
         clearSentAttachments(outgoingAttachments);
       }
-      if (result === "queued" || result === "submitted") {
+      if (shouldResetWorkspaceSubmitSuppression(result)) {
         resetSuppression();
       }
     },
@@ -213,6 +235,7 @@ function useWorkspaceAttachmentBinding({
     buildOutgoingAttachments,
     removeAttachment,
     openAttachment,
+    beginSubmit,
     clearSentAttachments,
     completeSubmit,
     resetSuppression,

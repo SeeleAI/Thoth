@@ -33,7 +33,6 @@ interface ExplorerSidebarAnimationContextValue {
   overlayVisible: boolean;
   setOverlayPeek: (peek: boolean) => void;
   isGesturing: SharedValue<boolean>;
-  gestureAnimatingRef: React.MutableRefObject<boolean>;
   openGestureRef: React.MutableRefObject<GestureType | undefined>;
   closeGestureRef: React.MutableRefObject<GestureType | undefined>;
 }
@@ -56,7 +55,6 @@ export function ExplorerSidebarAnimationProvider({ children }: { children: React
   const translateX = useSharedValue(initialTargets.translateX);
   const backdropOpacity = useSharedValue(initialTargets.backdropOpacity);
   const isGesturing = useSharedValue(false);
-  const gestureAnimatingRef = useRef(false);
   const openGestureRef = useRef<GestureType | undefined>(undefined);
   const closeGestureRef = useRef<GestureType | undefined>(undefined);
 
@@ -102,12 +100,8 @@ export function ExplorerSidebarAnimationProvider({ children }: { children: React
       return;
     }
 
-    if (gestureAnimatingRef.current) {
-      gestureAnimatingRef.current = false;
-      return;
-    }
-
-    // Don't animate if we're in the middle of a gesture - the gesture handler will handle it
+    // A live gesture owns the values until it ends. Its resulting store command is still the
+    // canonical target and must always be reconciled once the gesture releases ownership.
     if (isGesturing.value) {
       return;
     }
@@ -229,7 +223,6 @@ export function ExplorerSidebarAnimationProvider({ children }: { children: React
       overlayVisible,
       setOverlayPeek,
       isGesturing,
-      gestureAnimatingRef,
       openGestureRef,
       closeGestureRef,
     }),

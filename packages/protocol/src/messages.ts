@@ -4,6 +4,7 @@ import { CLIENT_CAPS } from "./client-capabilities.js";
 import { AGENT_LIFECYCLE_STATUSES } from "./agent-lifecycle.js";
 import { MAX_EXPLICIT_AGENT_TITLE_CHARS } from "@thoth/protocol/agent-title-limits";
 import { AgentProviderSchema } from "@thoth/protocol/provider-manifest";
+import { ForgeIdSchema, ForgeRepositorySchema, ForgeResolveErrorCodeSchema } from "./forge.js";
 import { normalizeAgentModelDefinition, TOOL_CALL_ICON_NAMES } from "./agent-types.js";
 import {
   AgentProviderControlSchema,
@@ -79,6 +80,11 @@ import {
   ScheduleRunOnceResponseSchema,
   ScheduleUpdateResponseSchema,
 } from "@thoth/protocol/schedule/rpc-schemas";
+import {
+  BrowserAutomationExecuteRequestSchema,
+  BrowserAutomationExecuteResponseSchema,
+} from "./browser-automation/rpc-schemas.js";
+import { BrowserAutomationHostCapabilitySchema } from "./browser-automation/capabilities.js";
 import {
   AgentThothStateRequestSchema,
   AgentThothCardAnswerRequestSchema,
@@ -333,6 +339,7 @@ const AgentModelDefinitionSchema: z.ZodType<AgentModelDefinition> = z
     metadata: z.record(z.string(), z.unknown()).optional(),
     thinkingOptions: z.array(AgentSelectOptionSchema).optional(),
     defaultThinkingOptionId: z.string().optional(),
+    contextWindowMaxTokens: z.number().int().positive().optional(),
   })
   .transform(normalizeAgentModelDefinition);
 
@@ -347,6 +354,8 @@ export const ProviderSnapshotEntrySchema = z.object({
   label: z.string().optional(),
   description: z.string().optional(),
   defaultModeId: z.string().nullable().optional(),
+  source: z.enum(["builtin", "custom"]).optional(),
+  deletable: z.boolean().optional().default(false),
   planCapability: ProviderPlanCapabilitySchema.optional(),
 });
 
@@ -1285,6 +1294,13 @@ export const RefreshProvidersSnapshotRequestMessageSchema = z.object({
   requestId: z.string(),
 });
 
+export const DeleteProviderRequestMessageSchema = z.object({
+  type: z.literal("provider.delete.request"),
+  provider: AgentProviderSchema,
+  confirmed: z.literal(true),
+  requestId: z.string(),
+});
+
 export const ProviderDiagnosticRequestMessageSchema = z.object({
   type: z.literal("provider_diagnostic_request"),
   provider: AgentProviderSchema,
@@ -1305,6 +1321,9 @@ export const ResumeAgentRequestMessageSchema = z.object({
 
 export const ImportAgentRequestMessageSchema = z.object({
   type: z.literal("import_agent_request"),
+  // Kept optional at the wire parser only so older clients receive a typed
+  // authority rejection. The daemon never mints a Workspace for an import.
+  workspaceId: z.string().min(1).optional(),
   provider: AgentProviderSchema.optional(),
   providerId: z.string().optional(),
   sessionId: z.string().optional(),
@@ -1353,7 +1372,7 @@ export const FetchAgentTimelineRequestMessageSchema = z.object({
   requestId: z.string(),
   direction: z.enum(["tail", "before", "after"]).optional(),
   cursor: AgentTimelineCursorSchema.optional(),
-  // 0 means "all matching rows for this query window".
+  // Legacy 0 is accepted but normalized by the daemon to a bounded default page.
   limit: z.number().int().nonnegative().optional(),
   // Default should be projected for app timeline loading.
   projection: z.enum(["projected", "canonical"]).optional(),
@@ -1584,6 +1603,40 @@ export const CheckoutCommitRequestSchema = z.object({
   cwd: z.string(),
   message: z.string().optional(),
   addAll: z.boolean().optional(),
+  requestId: z.string(),
+});
+
+const CheckoutCommitFileSchema = z.object({
+  path: z.string(),
+  additions: z.number(),
+  deletions: z.number(),
+  status: z.enum(["added", "modified", "deleted", "renamed"]).optional(),
+});
+
+const CheckoutCommitSchema = z.object({
+  sha: z.string(),
+  shortSha: z.string(),
+  subject: z.string(),
+  authorName: z.string(),
+  authorDate: z.string(),
+  isOnRemote: z.boolean(),
+  // Permanently optional on the wire so an older daemon remains parseable.
+  // A daemon advertising commitBaseClassification always sends the value.
+  isOnBase: z.boolean().optional(),
+  files: z.array(CheckoutCommitFileSchema),
+});
+
+export const CheckoutCommitsListRequestSchema = z.object({
+  type: z.literal("checkout.commits.list.request"),
+  cwd: z.string(),
+  requestId: z.string(),
+});
+
+export const CheckoutCommitFileDiffRequestSchema = z.object({
+  type: z.literal("checkout.commits.file_diff.request"),
+  cwd: z.string(),
+  sha: z.string(),
+  path: z.string(),
   requestId: z.string(),
 });
 
@@ -1839,6 +1892,22 @@ export const OpenProjectRequestSchema = z.object({
   requestId: z.string(),
 });
 
+export const ForgeResolveRequestSchema = z.object({
+  type: z.literal("forge.resolve.request"),
+  remoteUrl: z.string().trim().min(1),
+  forgeHint: ForgeIdSchema.optional(),
+  requestId: z.string(),
+});
+
+export const WorkspaceCloneRequestSchema = z.object({
+  type: z.literal("workspace.clone.request"),
+  remoteUrl: z.string().trim().min(1),
+  destinationPath: z.string().trim().min(1),
+  forgeHint: ForgeIdSchema.optional(),
+  title: z.string().trim().min(1).optional(),
+  requestId: z.string(),
+});
+
 export const ProjectAddRequestSchema = z.object({
   type: z.literal("project.add.request"),
   cwd: z.string(),
@@ -1848,6 +1917,12 @@ export const ProjectAddRequestSchema = z.object({
 export const ArchiveWorkspaceRequestSchema = z.object({
   type: z.literal("archive_workspace_request"),
   workspaceId: z.string(),
+  requestId: z.string(),
+});
+
+export const RestoreWorkspaceRequestSchema = z.object({
+  type: z.literal("workspace.restore.request"),
+  workspaceId: z.string().min(1),
   requestId: z.string(),
 });
 
@@ -2055,6 +2130,12 @@ export const CreateTerminalRequestSchema = z.object({
   agentId: z.string().optional(),
   command: z.string().optional(),
   args: z.array(z.string()).optional(),
+  size: z
+    .object({
+      rows: z.number().int().positive(),
+      cols: z.number().int().positive(),
+    })
+    .optional(),
   requestId: z.string(),
 });
 
@@ -2224,6 +2305,10 @@ export const ServerInfoStatusPayloadSchema = z
         daemonSelfUpdate: z.boolean().optional(),
         // COMPAT(agentForkContext): added in v0.1.102, remove gate after 2026-12-28.
         agentForkContext: z.boolean().optional(),
+        // COMPAT(commitsList): read-only commit history and per-file commit diff.
+        commitsList: z.boolean().optional(),
+        // COMPAT(commitBaseClassification): daemon distinguishes Workspace and base history.
+        commitBaseClassification: z.boolean().optional(),
       })
       .optional(),
   })
@@ -2420,6 +2505,7 @@ export const WorkspaceScriptPayloadSchema = z.object({
 
 const WorkspaceGitRuntimePayloadSchema = z
   .object({
+    forge: ForgeRepositorySchema.nullable().optional().default(null),
     currentBranch: z.string().nullable().optional(),
     remoteUrl: z.string().nullable().optional(),
     isThothOwnedWorktree: z.boolean().optional(),
@@ -2727,6 +2813,36 @@ export const OpenProjectResponseMessageSchema = z.object({
   }),
 });
 
+export const ForgeResolveResponseSchema = z.object({
+  type: z.literal("forge.resolve.response"),
+  payload: z.object({
+    requestId: z.string(),
+    repository: ForgeRepositorySchema.nullable(),
+    error: z.string().nullable(),
+    errorCode: ForgeResolveErrorCodeSchema.nullable(),
+  }),
+});
+
+export const WorkspaceCloneResponseSchema = z.object({
+  type: z.literal("workspace.clone.response"),
+  payload: z.object({
+    requestId: z.string(),
+    workspace: WorkspaceDescriptorPayloadSchema.nullable(),
+    repository: ForgeRepositorySchema.nullable(),
+    error: z.string().nullable(),
+    errorCode: z
+      .enum([
+        "invalid_remote",
+        "unsupported_forge",
+        "destination_exists",
+        "duplicate_workspace",
+        "authentication_failed",
+        "clone_failed",
+      ])
+      .nullable(),
+  }),
+});
+
 export const ProjectAddResponseSchema = z.object({
   type: z.literal("project.add.response"),
   payload: z.object({
@@ -2778,6 +2894,16 @@ export const ArchiveWorkspaceResponseMessageSchema = z.object({
     workspaceId: z.string(),
     archivedAt: z.string().nullable(),
     error: z.string().nullable(),
+  }),
+});
+
+export const RestoreWorkspaceResponseSchema = z.object({
+  type: z.literal("workspace.restore.response"),
+  payload: z.object({
+    requestId: z.string(),
+    workspace: WorkspaceDescriptorPayloadSchema.nullable(),
+    error: z.string().nullable(),
+    errorCode: z.enum(["workspace_not_found", "directory_not_found"]).nullable(),
   }),
 });
 
@@ -3097,6 +3223,7 @@ const AheadBehindSchema = z.object({
 
 const CheckoutStatusCommonSchema = z.object({
   cwd: z.string(),
+  forge: ForgeRepositorySchema.nullable().optional().default(null),
   error: CheckoutErrorSchema.nullable(),
   requestId: z.string(),
 });
@@ -3232,6 +3359,7 @@ export const CheckoutPrStatusSchema = z.object({
 
 const CheckoutPrStatusPayloadSchema = z.object({
   cwd: z.string(),
+  forge: ForgeRepositorySchema.nullable().optional().default(null),
   status: CheckoutPrStatusSchema.nullable(),
   githubFeaturesEnabled: z.boolean(),
   error: CheckoutErrorSchema.nullable(),
@@ -3277,6 +3405,30 @@ export const CheckoutCommitResponseSchema = z.object({
   payload: z.object({
     cwd: z.string(),
     success: z.boolean(),
+    error: CheckoutErrorSchema.nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const CheckoutCommitsListResponseSchema = z.object({
+  type: z.literal("checkout.commits.list.response"),
+  payload: z.object({
+    cwd: z.string(),
+    baseRef: z.string().nullable(),
+    commits: z.array(CheckoutCommitSchema),
+    error: CheckoutErrorSchema.nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const CheckoutCommitFileDiffResponseSchema = z.object({
+  type: z.literal("checkout.commits.file_diff.response"),
+  payload: z.object({
+    cwd: z.string(),
+    sha: z.string(),
+    path: z.string(),
+    // null means the path has no textual patch (absent or binary-only).
+    file: ParsedDiffFileSchema.nullable(),
     error: CheckoutErrorSchema.nullable(),
     requestId: z.string(),
   }),
@@ -3804,6 +3956,15 @@ export const RefreshProvidersSnapshotResponseMessageSchema = z.object({
   }),
 });
 
+export const DeleteProviderResponseMessageSchema = z.object({
+  type: z.literal("provider.delete.response"),
+  payload: z.object({
+    requestId: z.string(),
+    provider: AgentProviderSchema,
+    deleted: z.literal(true),
+  }),
+});
+
 // COMPAT(providersSnapshot): added in v0.1.48, remove gating when all clients use snapshot
 export const ProviderDiagnosticResponseMessageSchema = z.object({
   type: z.literal("provider_diagnostic_response"),
@@ -4258,6 +4419,13 @@ export type SubscribeCheckoutDiffResponse = z.infer<typeof SubscribeCheckoutDiff
 export type CheckoutDiffUpdate = z.infer<typeof CheckoutDiffUpdateSchema>;
 export type CheckoutCommitRequest = z.infer<typeof CheckoutCommitRequestSchema>;
 export type CheckoutCommitResponse = z.infer<typeof CheckoutCommitResponseSchema>;
+export type CheckoutCommitFile = z.infer<typeof CheckoutCommitFileSchema>;
+export type CheckoutCommit = z.infer<typeof CheckoutCommitSchema>;
+export type CheckoutCommitsListRequest = z.infer<typeof CheckoutCommitsListRequestSchema>;
+export type CheckoutCommitsListResponse = z.infer<typeof CheckoutCommitsListResponseSchema>;
+export type CheckoutCommitFileDiffRequest = z.infer<typeof CheckoutCommitFileDiffRequestSchema>;
+export type CheckoutCommitFileDiffResponse = z.infer<typeof CheckoutCommitFileDiffResponseSchema>;
+export type ParsedDiffFile = z.infer<typeof ParsedDiffFileSchema>;
 export type CheckoutMergeRequest = z.infer<typeof CheckoutMergeRequestSchema>;
 export type CheckoutMergeResponse = z.infer<typeof CheckoutMergeResponseSchema>;
 export type CheckoutMergeFromBaseRequest = z.infer<typeof CheckoutMergeFromBaseRequestSchema>;
@@ -4324,8 +4492,11 @@ export type LegacyListAvailableEditorsRequest = z.infer<
 >;
 export type LegacyOpenInEditorRequest = z.infer<typeof LegacyOpenInEditorRequestSchema>;
 export type OpenProjectRequest = z.infer<typeof OpenProjectRequestSchema>;
+export type ForgeResolveRequest = z.infer<typeof ForgeResolveRequestSchema>;
+export type WorkspaceCloneRequest = z.infer<typeof WorkspaceCloneRequestSchema>;
 export type ProjectAddRequest = z.infer<typeof ProjectAddRequestSchema>;
 export type ArchiveWorkspaceRequest = z.infer<typeof ArchiveWorkspaceRequestSchema>;
+export type RestoreWorkspaceRequest = z.infer<typeof RestoreWorkspaceRequestSchema>;
 export type WorkspaceClearAttentionRequest = z.infer<typeof WorkspaceClearAttentionRequestSchema>;
 export type FileExplorerRequest = z.infer<typeof FileExplorerRequestSchema>;
 export type FileExplorerResponse = z.infer<typeof FileExplorerResponseSchema>;
@@ -4390,7 +4561,18 @@ type RpcServerEventDescriptor<Output extends RpcSchema = RpcSchema> = Readonly<{
   kind: "serverEvent";
   output: Output;
 }>;
-type RpcDescriptor = RpcOperationDescriptor | RpcServerEventDescriptor;
+type RpcReverseOperationDescriptor<
+  Input extends RpcSchema = RpcSchema,
+  Output extends RpcSchema = RpcSchema,
+> = Readonly<{
+  kind: "reverseUnary";
+  input: Input;
+  output: Output;
+}>;
+type RpcDescriptor =
+  | RpcOperationDescriptor
+  | RpcReverseOperationDescriptor
+  | RpcServerEventDescriptor;
 type RpcMetadata = Readonly<{
   operation: string;
   handlerKey: string | null;
@@ -4407,6 +4589,9 @@ type RpcOperationName<Entries extends Record<string, RpcDescriptor>> = Extract<
   }[keyof Entries],
   string
 >;
+type RpcInput<Descriptor> = Descriptor extends { input: infer Input extends RpcSchema }
+  ? z.output<Input>
+  : never;
 type RpcOutput<Descriptor> = Descriptor extends { output: infer Output extends RpcSchema }
   ? z.output<Output>
   : never;
@@ -4431,11 +4616,19 @@ function serverEvent<const Output extends RpcSchema>(
   return { kind: "serverEvent", output };
 }
 
+function reverseUnary<const Input extends RpcSchema, const Output extends RpcSchema>(
+  input: Input,
+  output: Output,
+): RpcReverseOperationDescriptor<Input, Output> {
+  return { kind: "reverseUnary", input, output };
+}
+
 function defineRpcRegistry<
   const Entries extends Record<string, RpcDescriptor>,
   const ErrorSchema extends RpcSchema,
 >(options: { version: number; error: ErrorSchema; entries: Entries }) {
   const byRequestType = new Map<string, RpcEntry<RpcOperationDescriptor>>();
+  const inputTypes = new Set<string>();
   const inputSchemas: RpcSchema[] = [];
   const outputSchemas = new Map<string, RpcSchema>();
   const entries: Record<string, RpcEntry> = {};
@@ -4445,10 +4638,12 @@ function defineRpcRegistry<
     const output = descriptor.output;
     const requestType = input ? rpcMessageType(input) : null;
     const responseType = output ? rpcMessageType(output) : null;
+    const handlerKey =
+      descriptor.kind === "unary" || descriptor.kind === "subscription" ? operation : null;
     const entry = Object.freeze({
       ...descriptor,
       operation,
-      handlerKey: input ? operation : null,
+      handlerKey,
       requestType,
       responseType,
       error: options.error,
@@ -4458,10 +4653,13 @@ function defineRpcRegistry<
 
     entries[operation] = entry;
     if (input && requestType) {
-      if (byRequestType.has(requestType)) {
+      if (inputTypes.has(requestType)) {
         throw new Error(`Duplicate RPC request type: ${requestType}`);
       }
-      byRequestType.set(requestType, entry as RpcEntry<RpcOperationDescriptor>);
+      inputTypes.add(requestType);
+      if (handlerKey) {
+        byRequestType.set(requestType, entry as RpcEntry<RpcOperationDescriptor>);
+      }
       inputSchemas.push(input);
     }
     if (output && responseType) outputSchemas.set(responseType, output);
@@ -4583,6 +4781,7 @@ export const rpcRegistry = defineRpcRegistry({
       RefreshProvidersSnapshotRequestMessageSchema,
       RefreshProvidersSnapshotResponseMessageSchema,
     ),
+    deleteProvider: unary(DeleteProviderRequestMessageSchema, DeleteProviderResponseMessageSchema),
     getProviderDiagnostic: unary(
       ProviderDiagnosticRequestMessageSchema,
       ProviderDiagnosticResponseMessageSchema,
@@ -4636,6 +4835,11 @@ export const rpcRegistry = defineRpcRegistry({
       SubscribeCheckoutDiffResponseSchema,
     ),
     unsubscribeCheckoutDiff: subscription(UnsubscribeCheckoutDiffRequestSchema, null),
+    listCheckoutCommits: unary(CheckoutCommitsListRequestSchema, CheckoutCommitsListResponseSchema),
+    getCommitFileDiff: unary(
+      CheckoutCommitFileDiffRequestSchema,
+      CheckoutCommitFileDiffResponseSchema,
+    ),
     checkoutCommit: unary(CheckoutCommitRequestSchema, CheckoutCommitResponseSchema),
     checkoutMerge: unary(CheckoutMergeRequestSchema, CheckoutMergeResponseSchema),
     checkoutMergeFromBase: unary(
@@ -4688,8 +4892,15 @@ export const rpcRegistry = defineRpcRegistry({
     ),
     openInEditor: unary(LegacyOpenInEditorRequestSchema, LegacyOpenInEditorResponseMessageSchema),
     openProject: unary(OpenProjectRequestSchema, OpenProjectResponseMessageSchema),
+    resolveForge: unary(ForgeResolveRequestSchema, ForgeResolveResponseSchema),
+    cloneWorkspace: unary(WorkspaceCloneRequestSchema, WorkspaceCloneResponseSchema),
     addProject: unary(ProjectAddRequestSchema, ProjectAddResponseSchema),
     archiveWorkspace: unary(ArchiveWorkspaceRequestSchema, ArchiveWorkspaceResponseMessageSchema),
+    restoreWorkspace: unary(RestoreWorkspaceRequestSchema, RestoreWorkspaceResponseSchema),
+    browserAutomationExecute: reverseUnary(
+      BrowserAutomationExecuteResponseSchema,
+      BrowserAutomationExecuteRequestSchema,
+    ),
     createWorkspace: unary(WorkspaceCreateRequestSchema, WorkspaceCreateResponseSchema),
     clearWorkspaceAttention: unary(
       WorkspaceClearAttentionRequestSchema,
@@ -4798,12 +5009,16 @@ export type ProtocolRpcInput<Operation extends ProtocolRpcOperation> = z.input<
 export type ProtocolRpcResponse<Operation extends ProtocolRpcOperation> = RpcOutput<
   RpcEntries[Operation]
 >;
-export type SessionInboundMessage = {
-  [Operation in ProtocolRpcOperation]: ProtocolRpcRequest<Operation>;
-}[ProtocolRpcOperation];
-export type SessionOutboundMessage =
+type RegistrySessionInboundMessage =
+  | {
+      [Operation in ProtocolRpcOperation]: ProtocolRpcRequest<Operation>;
+    }[ProtocolRpcOperation]
+  | RpcInput<Extract<RpcEntries[keyof RpcEntries], RpcReverseOperationDescriptor>>;
+type RegistrySessionOutboundMessage =
   | z.output<typeof RpcErrorMessageSchema>
   | RpcOutput<RpcEntries[keyof RpcEntries]>;
+export type SessionInboundMessage = RegistrySessionInboundMessage;
+export type SessionOutboundMessage = RegistrySessionOutboundMessage;
 
 export const SessionInboundMessageSchema = createRpcMessageUnion<SessionInboundMessage>(
   rpcRegistry.inputSchemas,
@@ -4837,6 +5052,7 @@ export const WSHelloMessageSchema = z.object({
       [CLIENT_CAPS.reasoningMergeEnum]: z.boolean().optional(),
       [CLIENT_CAPS.customModeIcons]: z.boolean().optional(),
       [CLIENT_CAPS.terminalReflowableSnapshot]: z.boolean().optional(),
+      [CLIENT_CAPS.browserHost]: BrowserAutomationHostCapabilitySchema.optional(),
     })
     .passthrough()
     .optional(),

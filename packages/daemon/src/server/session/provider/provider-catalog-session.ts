@@ -82,7 +82,7 @@ export class ProviderCatalogSession {
         type: "providers_snapshot_update",
         payload: {
           ...(snapshotCwd ? { cwd: snapshotCwd } : {}),
-          entries: this.downgradeEntryModesForClient(visibleEntries),
+          entries: this.prepareProviderEntriesForWire(visibleEntries),
           generatedAt: new Date().toISOString(),
         },
       });
@@ -117,6 +117,15 @@ export class ProviderCatalogSession {
     return entries.map((entry) =>
       entry.modes ? { ...entry, modes: this.downgradeModeIconsForClient(entry.modes) } : entry,
     );
+  }
+
+  private prepareProviderEntriesForWire(
+    entries: ProviderSnapshotEntry[],
+  ): Array<ProviderSnapshotEntry & { deletable: boolean }> {
+    return this.downgradeEntryModesForClient(entries).map((entry) => ({
+      ...entry,
+      deletable: entry.deletable === true,
+    }));
   }
 
   private emitProviderDisabledResponse(
@@ -364,7 +373,7 @@ export class ProviderCatalogSession {
     this.host.emit({
       type: "get_providers_snapshot_response",
       payload: {
-        entries: this.downgradeEntryModesForClient(entries),
+        entries: this.prepareProviderEntriesForWire(entries),
         generatedAt: new Date().toISOString(),
         requestId: msg.requestId,
       },

@@ -1,8 +1,11 @@
 import type pino from "pino";
+import { isAbsolute } from "node:path";
 import { getErrorMessage } from "@thoth/protocol/error-utils";
 import { validateBranchSlug } from "@thoth/protocol/branch-slug";
 import type {
   BranchSuggestionsRequest,
+  CheckoutCommitFileDiffRequest,
+  CheckoutCommitsListRequest,
   CheckoutRefreshRequest,
   CheckoutRenameBranchRequest,
   CheckoutStatusRequest,
@@ -36,7 +39,8 @@ import {
 } from "../../../services/github-service.js";
 import {
   commitChanges,
-  createPullRequest,
+  getCommitFileDiff,
+  listCheckoutCommits,
   mergeFromBase,
   mergeToBase,
   pullCurrentBranch,
@@ -45,6 +49,7 @@ import {
 import { execCommand } from "@thoth/drivers/internal/utils/spawn";
 import { expandTilde } from "@thoth/drivers/internal/utils/path";
 import type { GitMetadataGenerator } from "./git-metadata-generator.js";
+import { ForgeChangeRequestService } from "../../../services/forge-change-request-service.js";
 
 /**
  * The collaborators a checkout command reaches that are NOT part of the checkout
@@ -89,6 +94,7 @@ export interface CheckoutSessionOptions {
   gitMutation: Pick<GitMutationService, "checkoutExistingBranch" | "notifyGitMutation">;
   workspaceGitService: WorkspaceGitService;
   github: GitHubService;
+  forgeChangeRequests?: Pick<ForgeChangeRequestService, "create">;
   checkoutDiffManager: CheckoutDiffSubscriber;
   gitMetadataGenerator: GitMetadataGenerator;
   thothHome: string;
@@ -116,6 +122,7 @@ export class CheckoutSession {
   >;
   private readonly workspaceGitService: WorkspaceGitService;
   private readonly github: GitHubService;
+  private readonly forgeChangeRequests: Pick<ForgeChangeRequestService, "create">;
   private readonly checkoutDiffManager: CheckoutDiffSubscriber;
   private readonly gitMetadataGenerator: GitMetadataGenerator;
   private readonly thothHome: string;
@@ -128,6 +135,12 @@ export class CheckoutSession {
     this.gitMutation = options.gitMutation;
     this.workspaceGitService = options.workspaceGitService;
     this.github = options.github;
+    this.forgeChangeRequests =
+      options.forgeChangeRequests ??
+      new ForgeChangeRequestService({
+        workspaceGitService: options.workspaceGitService,
+        github: options.github,
+      });
     this.checkoutDiffManager = options.checkoutDiffManager;
     this.gitMetadataGenerator = options.gitMetadataGenerator;
     this.thothHome = options.thothHome;
@@ -154,6 +167,7 @@ export class CheckoutSession {
         type: "checkout_status_response",
         payload: {
           cwd,
+          forge: null,
           isGit: false,
           repoRoot: null,
           currentBranch: null,
@@ -165,6 +179,58 @@ export class CheckoutSession {
           hasRemote: false,
           remoteUrl: null,
           isThothOwnedWorktree: false,
+          error: toCheckoutError(error),
+          requestId,
+        },
+      });
+    }
+  }
+
+  async handleCommitsListRequest(msg: CheckoutCommitsListRequest): Promise<void> {
+    const { cwd, requestId } = msg;
+    try {
+      const { baseRef, commits } = await listCheckoutCommits({
+        cwd: expandTilde(cwd),
+        context: { worktreesRoot: this.worktreesRoot, logger: this.logger },
+      });
+      this.host.emit({
+        type: "checkout.commits.list.response",
+        payload: { cwd, baseRef, commits, error: null, requestId },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.commits.list.response",
+        payload: {
+          cwd,
+          baseRef: null,
+          commits: [],
+          error: toCheckoutError(error),
+          requestId,
+        },
+      });
+    }
+  }
+
+  async handleCommitFileDiffRequest(msg: CheckoutCommitFileDiffRequest): Promise<void> {
+    const { cwd, sha, path, requestId } = msg;
+    try {
+      assertSafeGitRef(sha, "commit");
+      if (!path || isAbsolute(path) || path.split(/[\\/]/).includes("..")) {
+        throw new Error(`Invalid path: ${path}`);
+      }
+      const file = await getCommitFileDiff({ cwd: expandTilde(cwd), sha, path });
+      this.host.emit({
+        type: "checkout.commits.file_diff.response",
+        payload: { cwd, sha, path, file, error: null, requestId },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.commits.file_diff.response",
+        payload: {
+          cwd,
+          sha,
+          path,
+          file: null,
           error: toCheckoutError(error),
           requestId,
         },
@@ -755,16 +821,13 @@ export class CheckoutSession {
         if (!body) body = generated.body;
       }
 
-      const result = await createPullRequest(
+      const result = await this.forgeChangeRequests.create({
         cwd,
-        {
-          title,
-          body,
-          base: msg.baseRef,
-        },
-        this.github,
-      );
-      await this.gitMutation.notifyGitMutation(cwd, "create-pr", { invalidateGithub: true });
+        title,
+        body,
+        baseRef: msg.baseRef,
+      });
+      await this.gitMutation.notifyGitMutation(cwd, "create-pr");
 
       this.host.emit({
         type: "checkout_pr_create_response",
@@ -942,6 +1005,7 @@ export class CheckoutSession {
         type: "checkout_pr_status_response",
         payload: {
           cwd,
+          forge: null,
           status: null,
           githubFeaturesEnabled: true,
           error: toCheckoutError(error),

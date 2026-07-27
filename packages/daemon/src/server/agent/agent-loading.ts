@@ -24,8 +24,9 @@ export async function ensureAgentLoaded(
   agentId: string,
   deps: EnsureAgentLoadedDeps,
 ): Promise<ManagedAgent> {
+  await deps.executionService.waitForAgentClose(agentId);
   const existing = deps.executionService.getAgent(agentId);
-  if (existing) {
+  if (existing && existing.lifecycle !== "closed") {
     return existing;
   }
 
@@ -35,9 +36,18 @@ export async function ensureAgentLoaded(
   }
 
   const initPromise = (async () => {
+    await deps.executionService.waitForAgentClose(agentId);
+    const liveAfterClose = deps.executionService.getAgent(agentId);
+    if (liveAfterClose && liveAfterClose.lifecycle !== "closed") {
+      return liveAfterClose;
+    }
+
     const record = await deps.agentStorage.get(agentId);
     if (!record) {
       throw new Error(`Agent not found: ${agentId}`);
+    }
+    if (record.archivedAt && liveAfterClose?.lifecycle === "closed") {
+      return liveAfterClose;
     }
 
     const validProviders = deps.validProviders ?? deps.executionService.getRegisteredProviderIds();

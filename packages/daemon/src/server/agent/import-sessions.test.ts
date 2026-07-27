@@ -334,11 +334,13 @@ test("normalizeImportAgentRequest accepts new and legacy import handle shapes", 
     normalizeImportAgentRequest({
       type: "import_agent_request",
       requestId: "new-shape",
+      workspaceId: "workspace-1",
       providerId: "custom-codex",
       providerHandleId: "thread-1",
     }),
   ).toEqual({
     requestId: "new-shape",
+    workspaceId: "workspace-1",
     provider: "custom-codex",
     providerHandleId: "thread-1",
   });
@@ -347,13 +349,29 @@ test("normalizeImportAgentRequest accepts new and legacy import handle shapes", 
     normalizeImportAgentRequest({
       type: "import_agent_request",
       requestId: "legacy-shape",
+      workspaceId: "workspace-1",
       provider: "codex",
       sessionId: "thread-2",
     }),
   ).toEqual({
     requestId: "legacy-shape",
+    workspaceId: "workspace-1",
     provider: "codex",
     providerHandleId: "thread-2",
+  });
+});
+
+test("normalizeImportAgentRequest requires an existing Workspace binding", () => {
+  expect(
+    normalizeImportAgentRequest({
+      type: "import_agent_request",
+      requestId: "missing-workspace",
+      providerId: "codex",
+      providerHandleId: "thread-1",
+    }),
+  ).toEqual({
+    error: "Import requires an existing workspaceId",
+    errorCode: "import_workspace_required",
   });
 });
 
@@ -384,6 +402,7 @@ test("importProviderSession imports a selected provider session without listing"
   const result = await importProviderSession({
     request: {
       requestId: "import-thread",
+      workspaceId: "workspace-imported",
       provider: "custom-codex",
       providerHandleId: "provider-thread-imported",
       cwd,
@@ -425,6 +444,7 @@ test("importProviderSession passes labels through the manager import operation",
   await importProviderSession({
     request: {
       requestId: "import-thread",
+      workspaceId: "workspace-imported",
       provider: "codex",
       providerHandleId: "thread-imported",
       cwd,
@@ -452,6 +472,7 @@ test("importProviderSession requires cwd from the selected provider row", async 
     importProviderSession({
       request: {
         requestId: "import-thread",
+        workspaceId: "workspace-imported",
         provider: "opencode",
         providerHandleId: "thread-imported",
       },

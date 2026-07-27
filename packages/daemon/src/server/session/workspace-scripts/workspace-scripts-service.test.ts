@@ -9,6 +9,7 @@ import type { TerminalManager } from "../../../terminal/terminal-manager.js";
 import type { PersistedWorkspaceRecord, WorkspaceRegistry } from "../../workspace-registry.js";
 import type { WorkspaceGitMetadata } from "../../workspace-git-metadata.js";
 import { WorkspaceScriptRuntimeStore } from "../../workspace-script-runtime-store.js";
+import type { WorkspaceServicePortRegistry } from "../../workspace-service-port-registry.js";
 import type {
   SpawnWorkspaceScriptOptions,
   WorktreeScriptResult,
@@ -58,6 +59,7 @@ function fakeGitService(metadata: WorkspaceGitMetadata = gitMetadata) {
 // The service only truthiness-checks terminalManager in its availability guard and then forwards it
 // opaquely to the injected spawnWorkspaceScript fake, which ignores it — an empty stand-in is enough.
 const availableTerminalManager = {} as unknown as TerminalManager;
+const servicePortRegistry = {} as WorkspaceServicePortRegistry;
 
 interface BuildOptions {
   serviceProxy?: ServiceProxySubsystem | null;
@@ -84,6 +86,7 @@ function buildService(options: BuildOptions = {}) {
       options.scriptRuntimeStore === undefined
         ? new WorkspaceScriptRuntimeStore()
         : options.scriptRuntimeStore,
+    servicePortRegistry,
     terminalManager:
       options.terminalManager === undefined ? availableTerminalManager : options.terminalManager,
     workspaceRegistry: fakeWorkspaceRegistry(workspace),

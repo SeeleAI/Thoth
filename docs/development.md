@@ -28,16 +28,19 @@ Do not use pnpm/yarn in this repository unless a future decision changes the pac
 
 ## Current State
 
-The repository contains promoted implementation substrate. It is not a complete runnable product yet.
+The canonical Workspace / Task / HarnessAdapter main chain is implemented and exercised through source, real Web,
+Android Debug APK, AppImage-managed daemon, and real Codex entrypoints. Current milestone, blocker, Release, and
+sole-next-action truth remains in `.agent-os/project-index.md`; do not infer it from a package's historical state.
 
-The first development gate is the foundation set:
+The Foundation gate remains the first development gate and covers:
 
 - `packages/app/highlight`
 - `packages/relay`
 - `packages/protocol`
 - `packages/client`
 
-The daemon, web app export, desktop packaged smoke, Android Debug APK, test relay deployment and Codex provider smoke now have verified development entrypoints. The Thoth MVP business chain is still not implemented, and broader non-foundation packages may still contain incomplete wiring. Do not delete promoted code simply because some broader paths remain expected-broken.
+Daemon, App, Desktop, CLI, TUI, Core, and Drivers have separate owner-level gates because they are outside the
+Foundation package set. A green Foundation gate does not by itself prove the complete product or a Release.
 
 ## Architecture-First Development
 
@@ -88,10 +91,11 @@ Check isolation:
 
 ```bash
 npm run smoke:isolation
-curl -sS http://127.0.0.1:6688/api/health
 ```
 
-The smoke must show `6767` owned by the reserved local legacy daemon and `6688` owned by Thoth.
+The smoke must show the reserved service still owns `6767`, no Thoth command points to that port, and any listener
+on `6688` has a different PID. It does not start a user daemon merely to populate `6688`; when no Thoth daemon is
+running, an empty `6688` listener set is valid.
 
 ## Human Dogfood UI
 
@@ -143,12 +147,13 @@ npm run lint:fix
 Repository-local GitHub CLI:
 
 ```bash
-npm run gh -- auth status --hostname github.com
-npm run gh -- api user
-npm run gh -- repo view SeeleAI/Thoth-Relay
+THOTH_GH_CONFIG_DIR=.dev/gh-royalvice npm run gh -- auth status --hostname github.com
+THOTH_GH_CONFIG_DIR=.dev/gh-royalvice npm run gh -- api user
+THOTH_GH_CONFIG_DIR=.dev/gh-royalvice npm run gh -- repo view SeeleAI/Thoth-Relay
 ```
 
-`npm run gh -- ...` wraps the system `gh` binary and forces `GH_CONFIG_DIR` to `.dev/gh`.
+`npm run gh -- ...` wraps the system `gh` binary and forces `GH_CONFIG_DIR` to the ignored
+`THOTH_GH_CONFIG_DIR` value, defaulting to `.dev/gh`.
 That keeps the Thoth checkout's GitHub login separate from global `~/.config/gh`.
 Do not run plain `gh auth login` for repository work.
 
@@ -156,10 +161,23 @@ To create or replace the local login, pass the token through stdin so the token 
 the shell command line:
 
 ```bash
-printf '%s\n' "$GITHUB_TOKEN" | npm run gh -- auth login --hostname github.com --with-token
+printf '%s\n' "$GITHUB_TOKEN" | THOTH_GH_CONFIG_DIR=.dev/gh-royalvice npm run gh -- auth login --hostname github.com --with-token
 ```
 
-The `.dev/gh` directory is ignored and must never be staged.
+The `.dev/gh*` directories are ignored and must never be staged.
+
+Paseo synchronization uses the repository-local five-stage Skill and exact-SHA reports:
+
+```bash
+npm run paseo:inspect -- --repo <official-clone> --from <base-sha> --to <target-sha> --out <ignored-manifest.json>
+npm run paseo:verify-provenance -- --manifest <ignored-manifest.json> --classification <ignored-classification.json>
+npm run paseo:check-boundaries -- --repo . --base <thoth-base-sha> --out <ignored-boundary-report.json>
+```
+
+Raw clones and generated reports stay under ignored `.agent-os/upstreams/` and `.agent-os/artifacts/`. Architecture
+changes require a concrete `NTH-CD-*` decision before product-source edits. Integration rebuilds the approved
+capability through the current Protocol / Client / Daemon / Core / Drivers / shell owners; it does not cherry-pick
+or preserve Paseo authority.
 
 Android packaging:
 
@@ -192,6 +210,10 @@ npm run package:ios:build
 ## Command Discipline
 
 Use root npm scripts as the public command surface. Do not make routine changes by directly invoking `npx oxfmt`, `npx oxlint`, `npx vitest` or `npx tsc`. Direct tool calls are only for debugging a root script failure, and the final report must say so.
+
+Run root build, typecheck, and test scripts that clean shared package outputs serially. In particular, concurrent
+commands that both rebuild `packages/protocol/dist` can create a temporary package-not-found failure that does not
+represent source behavior.
 
 ## Generated And Local Files
 

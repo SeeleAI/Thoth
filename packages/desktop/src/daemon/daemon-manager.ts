@@ -21,7 +21,11 @@ import {
   type AppUpdateCheckIntent,
   type AppReleaseChannel,
 } from "../features/auto-updater.js";
-import { getCliInstallStatus, installCli } from "../integrations/cli-install/index.js";
+import {
+  getBundledCliShimPath,
+  getCliInstallStatus,
+  installCli,
+} from "../integrations/cli-install/index.js";
 import {
   getSkillsStatus,
   installSkills,
@@ -403,10 +407,12 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
   }
 
   const daemonRunner = resolveDaemonRunnerEntrypoint();
+  const reclaimStalePidLock =
+    current.status === "errored" && current.desktopManaged && current.error === null;
   const invocation = createNodeEntrypointInvocation({
     entrypoint: daemonRunner,
     argvMode: "node-script",
-    args: [],
+    args: reclaimStalePidLock ? ["--reclaim-stale-pid-lock"] : [],
     baseEnv: process.env,
   });
 
@@ -429,7 +435,11 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
     detached: true,
     envMode: "internal",
     env: invocation.env,
-    envOverlay: { THOTH_DESKTOP_MANAGED: "1", THOTH_WEB_UI_ENABLED: "false" },
+    envOverlay: {
+      THOTH_DESKTOP_MANAGED: "1",
+      THOTH_CLI: getBundledCliShimPath(),
+      THOTH_WEB_UI_ENABLED: "false",
+    },
     stdio: ["ignore", "ignore", "ignore"],
   });
 

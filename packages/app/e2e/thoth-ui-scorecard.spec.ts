@@ -60,7 +60,7 @@ test.describe("Loop-2 restored Paseo surface scorecard", () => {
     mkdirSync(captureDirectory, { recursive: true });
   });
 
-  test("keeps the original open-project tile surface and removes toy shell entrypoints", async ({
+  test("keeps the authority-safe open-project surface and removes toy shell entrypoints", async ({
     page,
   }, testInfo) => {
     test.setTimeout(120_000);
@@ -71,7 +71,7 @@ test.describe("Loop-2 restored Paseo surface scorecard", () => {
     await gotoAppShell(page);
 
     await expect(page.getByTestId("open-project-submit")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("open-project-import-session")).toBeVisible();
+    await expect(page.getByTestId("open-project-import-session")).toHaveCount(0);
     await expect(page.getByTestId("open-project-setup-providers")).toBeVisible();
     await expect(page.getByText("Add a project", { exact: true })).toBeVisible();
     await expect(page.getByTestId("sidebar-project-empty-state")).toBeVisible({ timeout: 30_000 });
@@ -111,6 +111,9 @@ test.describe("Loop-2 restored Paseo surface scorecard", () => {
     await expect(
       page.getByTestId(`sidebar-workspace-row-${getServerId()}:${workspace.workspaceId}`),
     ).toBeVisible();
+    await page.getByRole("button", { name: "Workspace actions" }).click();
+    await expect(page.getByTestId("workspace-header-import-agent")).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect(
       page.getByTestId("workspace-tabs-row").filter({ visible: true }).first(),
     ).toBeVisible();

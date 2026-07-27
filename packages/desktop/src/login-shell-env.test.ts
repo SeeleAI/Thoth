@@ -116,12 +116,16 @@ describeIfZsh("login shell env", () => {
 
     expect(env.PATH).toBe(basePath);
     expect(logger.infos.map((entry) => entry.message)).toEqual(["[login-shell-env] start"]);
-    expect(logger.warnings).toHaveLength(1);
-    expect(logger.warnings[0]?.message).toBe("[login-shell-env] failed; keeping inherited env");
-    expect(logger.warnings[0]?.fields).toMatchObject({
+    expect(logger.warnings).toHaveLength(2);
+    expect(logger.warnings[0]?.message).toBe(
+      "[login-shell-env] interactive attempt failed; retrying",
+    );
+    expect(logger.warnings[1]?.message).toBe("[login-shell-env] failed; keeping inherited env");
+    expect(logger.warnings[1]?.fields).toMatchObject({
       reason: "non-zero-exit",
+      attemptKind: "non-interactive",
       shell: zsh,
-      shellArgs: ["-i", "-l", "-c"],
+      shellArgs: ["-l", "-c"],
       status: 42,
       stdoutLength: "premarker\n".length,
       markerFound: false,
@@ -129,7 +133,7 @@ describeIfZsh("login shell env", () => {
       afterPath: basePath,
       pathChanged: false,
     });
-    expectNoRawStdout(logger.warnings[0]?.fields ?? {});
+    expectNoRawStdout(logger.warnings[1]?.fields ?? {});
   });
 
   it("keeps the inherited env when a timed-out shell printed an env marker", async () => {
@@ -162,12 +166,16 @@ describeIfZsh("login shell env", () => {
 
     expect(env.PATH).toBe(basePath);
     expect(logger.infos.map((entry) => entry.message)).toEqual(["[login-shell-env] start"]);
-    expect(logger.warnings).toHaveLength(1);
-    expect(logger.warnings[0]?.message).toBe("[login-shell-env] failed; keeping inherited env");
-    expect(logger.warnings[0]?.fields).toMatchObject({
-      reason: "spawn-error",
+    expect(logger.warnings).toHaveLength(2);
+    expect(logger.warnings[0]?.message).toBe(
+      "[login-shell-env] interactive attempt failed; retrying",
+    );
+    expect(logger.warnings[1]?.message).toBe("[login-shell-env] failed; keeping inherited env");
+    expect(logger.warnings[1]?.fields).toMatchObject({
+      reason: "timeout",
+      attemptKind: "non-interactive",
       shell: zsh,
-      shellArgs: ["-i", "-l", "-c"],
+      shellArgs: ["-l", "-c"],
       status: null,
       signal: "SIGTERM",
       stdoutLength: stdout.length,
@@ -177,6 +185,115 @@ describeIfZsh("login shell env", () => {
       afterPath: basePath,
       pathChanged: false,
     });
-    expectNoRawStdout(logger.warnings[0]?.fields ?? {});
+    expectNoRawStdout(logger.warnings[1]?.fields ?? {});
+  });
+
+  it("falls back to a non-interactive login shell after interactive startup times out", async () => {
+    const home = await createShellHome();
+    homes.add(home);
+    const env = createEnv(home);
+    const logger = new RecordingLoginShellLogger();
+    const fallbackPath = path.join(home, "fallback-tools");
+    const calls: string[][] = [];
+    const timeoutError = Object.assign(new Error("spawnSync ETIMEDOUT"), {
+      code: "ETIMEDOUT",
+    });
+    const spawnSync: LoginShellSpawnSync = (_shell, args) => {
+      const values = Array.isArray(args) ? args.map(String) : [];
+      calls.push(values);
+      const command = values.at(-1) ?? "";
+      const marker = markerFromShellCommand(command);
+      if (calls.length === 1) {
+        return {
+          pid: 0,
+          output: ["", "", ""],
+          stdout: "",
+          stderr: "interactive startup stalled",
+          status: null,
+          signal: "SIGTERM",
+          error: timeoutError,
+        } satisfies SpawnSyncReturns<string>;
+      }
+      const stdout = `${marker}${JSON.stringify({ ...env, PATH: fallbackPath })}${marker}`;
+      return {
+        pid: 0,
+        output: [stdout, stdout, ""],
+        stdout,
+        stderr: "",
+        status: 0,
+        signal: null,
+      } satisfies SpawnSyncReturns<string>;
+    };
+
+    inheritLoginShellEnv({ env, logger, spawnSync });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.slice(0, 3)).toEqual(["-i", "-l", "-c"]);
+    expect(calls[1]?.slice(0, 2)).toEqual(["-l", "-c"]);
+    expect(env.PATH).toBe(fallbackPath);
+    expect(logger.warnings.map((entry) => entry.message)).toEqual([
+      "[login-shell-env] interactive attempt failed; retrying",
+    ]);
+    expect(logger.infos.at(-1)?.fields).toMatchObject({
+      attemptKind: "non-interactive",
+      afterPath: fallbackPath,
+    });
+  });
+});
+
+describe("login shell fallback without a system shell dependency", () => {
+  it("uses a non-interactive login attempt after interactive startup times out", async () => {
+    const home = await createShellHome();
+    try {
+      const env = createEnv(home);
+      const logger = new RecordingLoginShellLogger();
+      const fallbackPath = path.join(home, "fallback-tools");
+      const calls: string[][] = [];
+      const timeoutError = Object.assign(new Error("spawnSync ETIMEDOUT"), {
+        code: "ETIMEDOUT",
+      });
+      const spawnSync: LoginShellSpawnSync = (_shell, args) => {
+        const values = Array.isArray(args) ? args.map(String) : [];
+        calls.push(values);
+        const marker = markerFromShellCommand(values.at(-1) ?? "");
+        if (calls.length === 1) {
+          return {
+            pid: 0,
+            output: ["", "", ""],
+            stdout: "",
+            stderr: "interactive startup stalled",
+            status: null,
+            signal: "SIGTERM",
+            error: timeoutError,
+          } satisfies SpawnSyncReturns<string>;
+        }
+        const stdout = `${marker}${JSON.stringify({ ...env, PATH: fallbackPath })}${marker}`;
+        return {
+          pid: 0,
+          output: [stdout, stdout, ""],
+          stdout,
+          stderr: "",
+          status: 0,
+          signal: null,
+        } satisfies SpawnSyncReturns<string>;
+      };
+
+      inheritLoginShellEnv({ env, logger, spawnSync });
+
+      expect(calls.map((args) => args.slice(0, -1))).toEqual([
+        ["-i", "-l", "-c"],
+        ["-l", "-c"],
+      ]);
+      expect(env.PATH).toBe(fallbackPath);
+      expect(logger.warnings.map((entry) => entry.message)).toEqual([
+        "[login-shell-env] interactive attempt failed; retrying",
+      ]);
+      expect(logger.infos.at(-1)?.fields).toMatchObject({
+        attemptKind: "non-interactive",
+        afterPath: fallbackPath,
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 });

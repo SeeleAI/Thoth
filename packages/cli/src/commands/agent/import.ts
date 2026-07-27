@@ -10,6 +10,7 @@ export function addImportOptions(cmd: Command): Command {
     .description("Import an existing provider session as a Thoth agent")
     .argument("<id>", "Provider session/thread ID to import")
     .requiredOption("--provider <provider>", "Agent provider id")
+    .requiredOption("--workspace <workspace-id>", "Existing Workspace authority id")
     .option("--cwd <path>", "Working directory for providers that require it")
     .option(
       "--label <key=value>",
@@ -21,6 +22,7 @@ export function addImportOptions(cmd: Command): Command {
 
 export interface AgentImportOptions extends CommandOptions {
   provider?: string;
+  workspace?: string;
   cwd?: string;
   label?: string[];
   host?: string;
@@ -49,6 +51,18 @@ function parseImportProvider(provider: string | undefined): string {
   }
 
   return normalizedProvider;
+}
+
+function parseImportWorkspace(workspace: string | undefined): string {
+  const workspaceId = workspace?.trim();
+  if (!workspaceId) {
+    throw {
+      code: "MISSING_WORKSPACE",
+      message: "Existing Workspace id is required",
+      details: "Usage: thoth import --workspace <workspace-id> --provider <provider> <id>",
+    } satisfies CommandError;
+  }
+  return workspaceId;
 }
 
 function parseImportLabels(labelFlags: string[] | undefined): Record<string, string> {
@@ -126,6 +140,7 @@ export async function runImportCommand(
   }
 
   const provider = parseImportProvider(options.provider);
+  const workspaceId = parseImportWorkspace(options.workspace);
   const cwd = resolveImportCwd(options.cwd, process.cwd());
 
   const labels = parseImportLabels(options.label);
@@ -133,6 +148,7 @@ export async function runImportCommand(
 
   try {
     const agent = await client.importAgent({
+      workspaceId,
       provider,
       sessionId,
       cwd,

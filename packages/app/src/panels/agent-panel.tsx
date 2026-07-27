@@ -4,7 +4,7 @@ import { SquarePen } from "lucide-react-native";
 import { useQuery } from "@tanstack/react-query";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet as RNStyleSheet, Text, View } from "react-native";
 import ReanimatedAnimated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -88,6 +88,7 @@ import type { ThothCardAnswerPayload } from "@thoth/protocol/thoth/rpc-schemas";
 import { getInitDeferred, getInitKey } from "@/utils/agent-initialization";
 import { derivePendingPermissionKey } from "@/utils/agent-snapshots";
 import type { WorkspaceFileOpenRequest } from "@/workspace/file-open";
+import { workspaceFileAttachmentOpenRequest } from "@/attachments/workspace-file-attachment";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { deriveSidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { buildDraftAgentSetup, type ClientSlashCommand } from "@/client-slash-commands";
@@ -1002,7 +1003,7 @@ function ChatAgentContent({
   ]);
 
   const animatedContentStyle = useMemo(
-    () => [styles.content, animatedKeyboardStyle],
+    () => [animatedStaticStyles.content, animatedKeyboardStyle],
     [animatedKeyboardStyle],
   );
 
@@ -1408,6 +1409,10 @@ function ActiveAgentComposer({
   const setExplorerTabForCheckout = usePanelStore((state) => state.setExplorerTabForCheckout);
   const handleOpenWorkspaceAttachment = useCallback(
     (attachment: WorkspaceComposerAttachment) => {
+      if (attachment.kind === "workspace_file") {
+        paneContext.openFileInWorkspace(workspaceFileAttachmentOpenRequest(attachment));
+        return;
+      }
       if (attachment.kind !== "review") {
         return;
       }
@@ -1425,7 +1430,13 @@ function ActiveAgentComposer({
         tab: "changes",
       });
     },
-    [isCompactFormFactor, openFileExplorerForCheckout, serverId, setExplorerTabForCheckout],
+    [
+      isCompactFormFactor,
+      openFileExplorerForCheckout,
+      paneContext,
+      serverId,
+      setExplorerTabForCheckout,
+    ],
   );
 
   const handleClientSlashCommand = useCallback(
@@ -1472,7 +1483,11 @@ function ActiveAgentComposer({
   });
 
   const inputAreaStyle = useMemo(
-    () => [styles.inputAreaWrapper, { paddingBottom: insets.bottom }, composerKeyboardStyle],
+    () => [
+      animatedStaticStyles.inputAreaWrapper,
+      { paddingBottom: insets.bottom },
+      composerKeyboardStyle,
+    ],
     [insets.bottom, composerKeyboardStyle],
   );
 
@@ -1596,6 +1611,15 @@ const foregroundColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
 });
 
+const animatedStaticStyles = RNStyleSheet.create({
+  content: {
+    flex: 1,
+  },
+  inputAreaWrapper: {
+    width: "100%",
+  },
+});
+
 const styles = StyleSheet.create((theme) => ({
   root: {
     flex: 1,
@@ -1609,13 +1633,6 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     overflow: "hidden",
     ...(isWeb ? { userSelect: "none" as const } : {}),
-  },
-  content: {
-    flex: 1,
-  },
-  inputAreaWrapper: {
-    width: "100%",
-    backgroundColor: theme.colors.surface0,
   },
   historySyncOverlay: {
     position: "absolute",

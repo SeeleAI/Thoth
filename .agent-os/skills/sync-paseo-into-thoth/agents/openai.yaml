@@ -1,7 +1,7 @@
 interface:
   display_name: "Sync Paseo into Thoth"
-  short_description: "Safely integrate pinned Paseo changes into Thoth"
-  default_prompt: "Use $sync-paseo-into-thoth to review a pinned Paseo commit range and integrate compatible changes into Thoth with provenance, tests, documentation, and release evidence."
+  short_description: "Integrate Paseo with architecture review gates"
+  default_prompt: "Use $sync-paseo-into-thoth to review a pinned Paseo range, surface architecture-level changes for discussion, and organically integrate only approved capabilities into Thoth."
 
 policy:
   allow_implicit_invocation: true

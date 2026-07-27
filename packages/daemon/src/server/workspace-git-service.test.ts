@@ -452,6 +452,55 @@ describe("WorkspaceGitServiceImpl", () => {
     service.dispose();
   });
 
+  test("reports workspace, repository, watcher, and listener resource counts", async () => {
+    const service = createService();
+    const snapshotSubscription = service.onSnapshotUpdated(vi.fn());
+    const firstWorkspaceSubscription = service.registerWorkspace({ cwd: REPO_CWD }, vi.fn());
+    const secondWorkspaceSubscription = service.registerWorkspace({ cwd: REPO_CWD }, vi.fn());
+    const workingTreeSubscription = await service.requestWorkingTreeWatch(REPO_CWD, vi.fn());
+
+    await vi.waitFor(() => {
+      expect(service.getMetrics()).toMatchObject({
+        workspaceTargetCount: 1,
+        workspaceListenerCount: 2,
+        repositoryTargetCount: 1,
+        repositoryWorkspaceLinkCount: 1,
+        workingTreeWatchTargetCount: 1,
+        workingTreeWatchListenerCount: 1,
+        workspaceObservationSetupInFlightCount: 0,
+        workingTreeWatchSetupInFlightCount: 0,
+        snapshotUpdatedListenerCount: 1,
+      });
+    });
+
+    firstWorkspaceSubscription.unsubscribe();
+    expect(service.getMetrics().workspaceListenerCount).toBe(1);
+
+    workingTreeSubscription.unsubscribe();
+    expect(service.getMetrics()).toMatchObject({
+      workingTreeWatchTargetCount: 0,
+      workingTreeWatchListenerCount: 0,
+    });
+
+    secondWorkspaceSubscription.unsubscribe();
+    snapshotSubscription.unsubscribe();
+    service.dispose();
+    expect(service.getMetrics()).toEqual({
+      workspaceTargetCount: 0,
+      workspaceListenerCount: 0,
+      repositoryTargetCount: 0,
+      repositoryWorkspaceLinkCount: 0,
+      workingTreeWatchTargetCount: 0,
+      workingTreeWatchListenerCount: 0,
+      workspaceObservationSetupInFlightCount: 0,
+      workingTreeWatchSetupInFlightCount: 0,
+      workspaceRefreshInFlightCount: 0,
+      workspaceRefreshQueuedCount: 0,
+      fetchInFlightCount: 0,
+      snapshotUpdatedListenerCount: 0,
+    });
+  });
+
   test("equivalent cwd strings share one workspace target across service entry points", async () => {
     const getPullRequestStatus = vi.fn(async () => createPullRequestStatusResult());
     const resolveAbsoluteGitDir = vi.fn(async () => join(REPO_CWD, ".git"));

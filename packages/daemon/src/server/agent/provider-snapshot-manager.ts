@@ -134,6 +134,8 @@ export interface ExecutionProviderState {
       {
         enabled: boolean;
         derivedFromProviderId: string | null;
+        defaultModeId: string | null;
+        source: "builtin" | "custom";
         loadAdapter: () => Promise<HarnessAdapter>;
       }
     >
@@ -259,6 +261,8 @@ export class ProviderSnapshotManager {
       providerDefinitions[provider] = {
         enabled: manifest.enabled,
         derivedFromProviderId: manifest.derivedFromProviderId,
+        defaultModeId: manifest.defaultModeId,
+        source: manifest.source,
         loadAdapter: () => this.ensureAdapter(provider, manifest),
       };
     }
@@ -344,6 +348,7 @@ export class ProviderSnapshotManager {
       parent,
       unattended: input.unattended || parent?.isUnattended === true,
       availableModes: entry.modes ?? [],
+      defaultModeId: entry.defaultModeId,
     });
   }
 
@@ -506,6 +511,8 @@ export class ProviderSnapshotManager {
         label: definition.label,
         description: definition.description,
         defaultModeId: definition.defaultModeId,
+        source: definition.source,
+        deletable: definition.source === "custom",
         error: toErrorMessage(error),
       };
     }
@@ -547,6 +554,8 @@ export class ProviderSnapshotManager {
         label: definition?.label,
         description: definition?.description,
         defaultModeId: definition?.defaultModeId ?? null,
+        source: definition?.source,
+        deletable: definition?.source === "custom",
       });
     }
     return entries;
@@ -565,6 +574,8 @@ export class ProviderSnapshotManager {
         label: definition?.label,
         description: definition?.description,
         defaultModeId: definition?.defaultModeId ?? null,
+        source: definition?.source,
+        deletable: definition?.source === "custom",
       };
 
       if (!definition?.enabled || !current || current.status === "loading") {
@@ -728,6 +739,8 @@ export class ProviderSnapshotManager {
       label: definition.label,
       description: definition.description,
       defaultModeId: definition.defaultModeId,
+      source: definition.source,
+      deletable: definition.source === "custom",
     };
     const setEntry = (entry: ProviderSnapshotEntry) => {
       if (!this.isCurrentProviderLoad(snapshotCwd, provider, load)) {
@@ -775,6 +788,7 @@ export class ProviderSnapshotManager {
         enabled: true,
         models: catalog.models,
         modes: catalog.modes,
+        defaultModeId: catalog.defaultModeId ?? definition.defaultModeId,
         ...(catalog.planCapability ? { planCapability: catalog.planCapability } : {}),
         fetchedAt: new Date().toISOString(),
       });

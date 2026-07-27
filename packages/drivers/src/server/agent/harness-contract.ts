@@ -89,6 +89,7 @@ export interface AgentModelDefinition {
   metadata?: AgentMetadata;
   thinkingOptions?: AgentSelectOption[];
   defaultThinkingOptionId?: string;
+  contextWindowMaxTokens?: number;
 }
 
 export interface AgentSelectOption {
@@ -119,6 +120,8 @@ export interface ProviderSnapshotEntry {
   label?: string;
   description?: string;
   defaultModeId?: string | null;
+  source?: "builtin" | "custom";
+  deletable?: boolean;
   planCapability?: import("@thoth/protocol/provider-control").ProviderPlanCapability;
 }
 
@@ -135,6 +138,7 @@ export interface ResolveAgentCreateConfigInput {
   parent: AgentCreateConfigParent | null;
   unattended: boolean;
   availableModes: AgentMode[] | undefined;
+  defaultModeId?: string | null;
 }
 
 export interface ResolveAgentCreateConfigResult {
@@ -338,13 +342,24 @@ export type ToolCallDetail =
       output: unknown;
     };
 
+export interface AgentTimelineContentTruncationReceipt {
+  truncated: true;
+  encoding: "utf-8";
+  strategy: "prefix";
+  originalBytes: number;
+  retainedBytes: number;
+  limitBytes: number;
+}
+
 interface ToolCallBase {
   [key: string]: unknown;
   type: "tool_call";
   callId: string;
   name: string;
   detail: ToolCallDetail;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & {
+    contentTruncation?: AgentTimelineContentTruncationReceipt;
+  };
 }
 
 type ToolCallRunningTimelineItem = ToolCallBase & {
@@ -722,6 +737,7 @@ export type FetchCatalogOptions = (
 export interface ProviderCatalog {
   models: AgentModelDefinition[];
   modes: AgentMode[];
+  defaultModeId?: string | null;
   planCapability?: import("@thoth/protocol/provider-control").ProviderPlanCapability;
 }
 

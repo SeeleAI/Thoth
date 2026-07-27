@@ -44,6 +44,9 @@ function createCatalog(
     toolGateway?: ToolGateway;
     callerAvailableAfterCatalogCreation?: boolean;
     foregroundTurnKind?: "raw_provider" | "thoth_clarify";
+    browserToolsBroker?: {
+      execute: ReturnType<typeof vi.fn>;
+    };
   } = {},
 ) {
   const timeline: AgentTimelineItem[] = [];
@@ -56,6 +59,7 @@ function createCatalog(
     id: "agent-1",
     provider: "codex",
     cwd: "/tmp/thoth-tool-test",
+    workspaceId: "workspace-test",
     labels: { topicId: "topic-main", ...(input.loopPhase ? { loopPhase: input.loopPhase } : {}) },
     config: {
       provider: "codex",
@@ -160,10 +164,12 @@ function createCatalog(
     callerAgentId: "agent-1",
     callerAgentConfig: primaryAgent.config,
     toolGateway,
+    ...(input.browserToolsBroker ? { browserToolsBroker: input.browserToolsBroker } : {}),
   });
   callerRegistered = true;
   toolGateway.beginForegroundTurn({
     agentId: "agent-1",
+    workspaceId: "workspace-test",
     generation: "test-generation",
     kind: turnKind,
     foregroundTurnId: foreground.turn.id,
@@ -262,6 +268,7 @@ async function submitApprovedTaskCard(
   if (!turn) throw new Error("Missing foreground turn after Task Card answer");
   activeToolGateway().beginForegroundTurn({
     agentId: "agent-1",
+    workspaceId: turn.workspaceId,
     generation: turn.generation,
     kind: "thoth_clarify",
     foregroundTurnId: turn.id,
@@ -360,6 +367,7 @@ async function submitAnsweredClarifyCard(
   if (!turn) throw new Error("Missing foreground turn after Clarify Card answer");
   activeToolGateway().beginForegroundTurn({
     agentId: "agent-1",
+    workspaceId: turn.workspaceId,
     generation: turn.generation,
     kind: "thoth_clarify",
     foregroundTurnId: turn.id,
@@ -385,6 +393,65 @@ afterEach(() => {
 });
 
 describe("Thoth runtime authority tools", () => {
+  it("mounts the complete provider-neutral browser portfolio through an Agent fence", async () => {
+    const execute = vi.fn(async () => ({
+      requestId: "browser-test",
+      ok: true as const,
+      result: { command: "list_tabs" as const, tabs: [] },
+    }));
+    const { catalog } = createCatalog({
+      foregroundTurnKind: "raw_provider",
+      browserToolsBroker: { execute },
+    });
+
+    expect([...catalog.tools.keys()].filter((name) => name.startsWith("browser_"))).toEqual([
+      "browser_list_tabs",
+      "browser_new_tab",
+      "browser_snapshot",
+      "browser_click",
+      "browser_fill",
+      "browser_wait",
+      "browser_type",
+      "browser_keypress",
+      "browser_navigate",
+      "browser_back",
+      "browser_forward",
+      "browser_reload",
+      "browser_screenshot",
+      "browser_upload",
+      "browser_hover",
+      "browser_select",
+      "browser_drag",
+      "browser_logs",
+      "browser_evaluate",
+      "browser_scroll",
+      "browser_resize",
+      "browser_close_tab",
+    ]);
+
+    await catalog.executeTool(
+      "browser_list_tabs",
+      {},
+      {
+        providerToolCall: {
+          provider: "codex",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          callId: "call-1",
+          toolName: "browser_list_tabs",
+          isActiveProviderTurn: true,
+        },
+      },
+    );
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-test",
+        agentId: "agent-1",
+        generation: "test-generation",
+        command: { command: "list_tabs", args: {} },
+      }),
+    );
+  });
   it("rejects remembered authority tools during a raw provider turn", async () => {
     const { catalog, timeline } = createCatalog({ foregroundTurnKind: "raw_provider" });
 

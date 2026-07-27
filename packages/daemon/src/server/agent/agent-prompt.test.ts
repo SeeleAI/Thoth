@@ -56,6 +56,7 @@ function createFinishNotificationScenario(
   Reflect.set(executionService, "getLastAssistantMessage", async () => {
     return options?.childLastAssistantMessage ?? null;
   });
+  Reflect.set(executionService, "waitForAgentClose", async () => {});
   Reflect.set(executionService, "tryRunOutOfBand", () => false);
   Reflect.set(executionService, "hasInFlightRun", () => false);
   Reflect.set(executionService, "streamAgent", (_agentId: string, prompt: string) => {
@@ -139,6 +140,7 @@ test("sendPromptToAgent forwards the client message id as run options", async ()
   );
   Reflect.set(executionService, "tryRunOutOfBand", vi.fn().mockReturnValue(false));
   Reflect.set(executionService, "hasInFlightRun", vi.fn().mockReturnValue(false));
+  Reflect.set(executionService, "waitForAgentClose", vi.fn().mockResolvedValue(undefined));
   Reflect.set(executionService, "streamAgent", streamAgentSpy);
 
   const agentStorage: AgentStorage = Object.create(AgentStorage.prototype);

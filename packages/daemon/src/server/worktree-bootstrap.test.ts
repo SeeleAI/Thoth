@@ -5,8 +5,13 @@ import { join } from "path";
 import { tmpdir } from "os";
 
 import type { AgentTimelineItem } from "@thoth/drivers/agent-runtime";
-import { runAsyncWorktreeBootstrap, spawnWorkspaceScript } from "./worktree-bootstrap.js";
-import { ensureWorkspaceServicePortPlan } from "./workspace-service-port-registry.js";
+import {
+  runAsyncWorktreeBootstrap,
+  spawnWorkspaceScript as spawnWorkspaceScriptProduction,
+  type SpawnWorkspaceScriptOptions,
+} from "./worktree-bootstrap.js";
+import { WorkspaceServicePortRegistry } from "./workspace-service-port-registry.js";
+import { WorkspaceAuthorityManager } from "./workspace-authority/index.js";
 import { ScriptRouteStore } from "./script-proxy.js";
 import { createBranchChangeRouteHandler } from "./script-route-branch-handler.js";
 import { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
@@ -68,12 +73,19 @@ describe("runAsyncWorktreeBootstrap", () => {
   let repoDir: string;
   let thothHome: string;
   let realTerminalManagers: TerminalManager[];
+  let authorityManager: WorkspaceAuthorityManager;
+  let servicePortRegistry: WorkspaceServicePortRegistry;
 
   beforeEach(() => {
     realTerminalManagers = [];
     tempDir = realpathSync(mkdtempSync(join(tmpdir(), "worktree-bootstrap-test-")));
     repoDir = join(tempDir, "repo");
     thothHome = join(tempDir, "thoth-home");
+    authorityManager = new WorkspaceAuthorityManager(thothHome);
+    servicePortRegistry = new WorkspaceServicePortRegistry({
+      catalog: authorityManager.catalog,
+      heartbeatIntervalMs: 24 * 60 * 60_000,
+    });
 
     mkdirSync(repoDir, { recursive: true });
     execFileSync("git", ["init", "-b", "main"], { cwd: repoDir, stdio: "pipe" });
@@ -89,8 +101,15 @@ describe("runAsyncWorktreeBootstrap", () => {
 
   afterEach(async () => {
     await Promise.all(realTerminalManagers.map(cleanupTerminalManager));
+    authorityManager.close();
     rmSync(tempDir, { recursive: true, force: true });
   });
+
+  async function spawnWorkspaceScript(
+    options: Omit<SpawnWorkspaceScriptOptions, "servicePortRegistry">,
+  ) {
+    return await spawnWorkspaceScriptProduction({ ...options, servicePortRegistry });
+  }
 
   it("does not fail setup when live timeline emission throws", async () => {
     writeFileSync(
@@ -459,19 +478,16 @@ describe("runAsyncWorktreeBootstrap", () => {
     repoDir: string;
   }): Promise<void> {
     const { createTerminalCalls, repoDir: testRepoDir } = params;
-    const plannedPorts = await ensureWorkspaceServicePortPlan({
+    const plannedPorts = await servicePortRegistry.ensurePlan({
       workspaceId: testRepoDir,
       services: [{ scriptName: "api" }, { scriptName: "app-server" }],
-      allocatePort: async () => {
-        throw new Error("Peer env test should reuse the existing service port plan");
-      },
     });
-    const plannedAppServerPort = plannedPorts.get("app-server");
-    if (plannedAppServerPort === undefined) {
+    const plannedAppServerLease = plannedPorts.get("app-server");
+    if (plannedAppServerLease === undefined) {
       throw new Error("Expected app-server to be present in the service port plan");
     }
     expect(createTerminalCalls[0]?.env?.THOTH_SERVICE_APP_SERVER_PORT).toBe(
-      String(plannedAppServerPort),
+      String(plannedAppServerLease.port),
     );
     expect(createTerminalCalls[0]?.env?.THOTH_SERVICE_APP_SERVER_URL).toBe(
       "http://app-server--feature-socket-service--repo.localhost:6767",
@@ -837,6 +853,46 @@ describe("runAsyncWorktreeBootstrap", () => {
     });
   });
 
+  it("rolls back the reserved port and route when service spawn fails", async () => {
+    commitThothScripts({
+      api: {
+        type: "service",
+        command: "npm run api",
+      },
+    });
+    const routeStore = new ScriptRouteStore();
+    const runtimeStore = new WorkspaceScriptRuntimeStore();
+    const baseTerminalManager = createStubTerminalManager([]);
+    const terminalManager: TerminalManager = {
+      ...baseTerminalManager,
+      async createTerminal() {
+        throw new Error("terminal spawn failed");
+      },
+    };
+
+    await expect(
+      spawnWorkspaceScript({
+        repoRoot: repoDir,
+        workspaceId: repoDir,
+        projectSlug: "repo",
+        branchName: "feature-service-spawn-failure",
+        scriptName: "api",
+        daemonPort: 6767,
+        serviceProxy: routeStore,
+        runtimeStore,
+        terminalManager,
+      }),
+    ).rejects.toThrow("terminal spawn failed");
+
+    expect(routeStore.listRoutes()).toEqual([]);
+    expect(runtimeStore.get({ workspaceId: repoDir, scriptName: "api" })).toBeNull();
+    expect(
+      authorityManager.catalog
+        .listRuntimeResourceLeases("workspace-service-port")
+        .filter((lease) => lease.workspaceId === repoDir),
+    ).toEqual([]);
+  });
+
   it("spawns services with public aliases and public service URLs", async () => {
     commitThothScripts(
       {
@@ -1138,12 +1194,9 @@ describe("runAsyncWorktreeBootstrap", () => {
       terminalManager: createStubTerminalManager(createTerminalCalls),
     });
 
-    const plan = await ensureWorkspaceServicePortPlan({
+    const plan = await servicePortRegistry.ensurePlan({
       workspaceId: repoDir,
       services: [{ scriptName: "app-server" }, { scriptName: "worker" }],
-      allocatePort: async () => {
-        throw new Error("Collision recovery should reuse the fixed service port plan");
-      },
     });
 
     expect(Array.from(plan.keys())).toEqual(["app-server", "worker"]);

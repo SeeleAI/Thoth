@@ -144,6 +144,7 @@ export function parseScheduleCreateInput(options: {
   target?: string;
   provider?: string;
   mode?: string;
+  worktree?: boolean;
   maxRuns?: string;
   expiresIn?: string;
   runNow?: boolean;
@@ -168,7 +169,8 @@ export function parseScheduleCreateInput(options: {
 
   const targetValue = options.target?.trim();
   const modeId = options.mode?.trim();
-  const hasExplicitNewAgentOption = options.provider !== undefined || options.mode !== undefined;
+  const hasExplicitNewAgentOption =
+    options.provider !== undefined || options.mode !== undefined || options.worktree === true;
   const createNewAgentTarget = (): ScheduleTarget => {
     const resolvedProviderModel = resolveProviderAndModel({
       provider: options.provider,
@@ -179,6 +181,7 @@ export function parseScheduleCreateInput(options: {
         provider: resolvedProviderModel.provider,
         ...(resolvedProviderModel.model ? { model: resolvedProviderModel.model } : {}),
         ...(modeId ? { modeId } : {}),
+        ...(options.worktree === true ? { isolation: "worktree" as const } : {}),
       },
     };
   };
@@ -237,6 +240,8 @@ export interface ScheduleUpdateOptionsInput {
   provider?: string;
   model?: string;
   mode?: string;
+  worktree?: boolean;
+  sameWorkspace?: boolean;
   maxRuns?: string;
   expiresIn?: string;
   clearMaxRuns?: boolean;
@@ -400,6 +405,17 @@ function buildNewAgentConfigPatch(
   if (options.mode !== undefined) {
     const trimmed = options.mode.trim();
     patch.modeId = trimmed.length > 0 ? trimmed : null;
+  }
+  if (options.worktree && options.sameWorkspace) {
+    throw {
+      code: "CONFLICTING_ISOLATION",
+      message: "Use either --worktree or --same-workspace, not both",
+    } satisfies CommandError;
+  }
+  if (options.worktree) {
+    patch.isolation = "worktree";
+  } else if (options.sameWorkspace) {
+    patch.isolation = "same-workspace";
   }
   return Object.keys(patch).length > 0 ? patch : undefined;
 }

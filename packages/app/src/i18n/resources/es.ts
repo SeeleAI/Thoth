@@ -60,6 +60,8 @@ export const es: TranslationResources = {
       newAgent: "Nuevo agente",
       openProject: "Abrir proyecto",
       home: "Hogar",
+      modelGroupLabel: "Modelo",
+      modelSearchKeywords: "cambiar modelo modificar modelo establecer modelo seleccionar modelo",
     },
   },
   composer: {
@@ -102,6 +104,8 @@ export const es: TranslationResources = {
       removeBrowserElement: "Eliminar el archivo adjunto del elemento del navegador",
       openReview: "Abrir archivo adjunto de reseña",
       removeReview: "Eliminar archivo adjunto de reseña",
+      openWorkspaceFile: "Abrir archivo adjunto del espacio de trabajo",
+      removeWorkspaceFile: "Quitar archivo adjunto del espacio de trabajo",
     },
     errors: {
       failedToSend: "No se pudo enviar el mensaje",
@@ -359,6 +363,11 @@ export const es: TranslationResources = {
         modified: "Modificado",
         copyPath: "Copiar ruta",
         download: "Descargar",
+        attachToComposer: "Añadir al mensaje",
+        attachedToComposer: "Archivo añadido al mensaje",
+        attachTextOnly: "Solo se pueden añadir archivos de texto",
+        attachTooLarge: "El archivo es demasiado grande (máximo 10 MB)",
+        attachFailed: "No se pudo añadir el archivo al mensaje",
       },
       actions: {
         back: "Atrás",
@@ -736,6 +745,14 @@ export const es: TranslationResources = {
         base: "base",
         newFile: "Nuevo",
         deletedFile: "Eliminado",
+        commits: {
+          title: "Commits",
+          loading: "Cargando historial de commits...",
+          loadError: "No se pudo cargar el historial de commits",
+          noneAhead: "Aún no hay commits por delante de {{baseRef}}",
+          countLabel: "{{count}} commits",
+          noTextualChanges: "Este commit no contiene cambios de texto",
+        },
       },
       openInEditor: {
         open: "Abierto",
@@ -833,6 +850,8 @@ export const es: TranslationResources = {
       actions: {
         menu: "AccionesWorkspace",
         newWorkspace: "Nuevo espacio de trabajo",
+        showMore: "Mostrar más",
+        showLess: "Mostrar menos",
         createWorkspaceFor: "Crea un nuevo espacio de trabajo para{{projectName}}",
         copyPath: "Copiar ruta",
         copyBranchName: "Copiar nombre de sucursal",
@@ -1419,6 +1438,19 @@ export const es: TranslationResources = {
     },
     general: {
       title: "General",
+      browserData: {
+        title: "Datos del navegador",
+        siteData: "Cookies y datos de sitios",
+        description:
+          "Las pestañas del navegador comparten inicios de sesión y datos de sitios en Thoth.",
+        clear: "Borrar datos del navegador",
+        clearing: "Borrando...",
+        confirmTitle: "¿Borrar los datos del navegador?",
+        confirmMessage:
+          "Se cerrarán las sesiones de los sitios y se recargarán las pestañas abiertas del navegador.",
+        success: "Datos del navegador borrados.",
+        error: "No se pudieron borrar los datos del navegador.",
+      },
       defaultSend: {
         label: "Envío predeterminado",
         descriptions: {
@@ -1549,6 +1581,7 @@ export const es: TranslationResources = {
     },
     shortcuts: {
       dialogTitle: "Atajos",
+      searchPlaceholder: "Buscar atajos",
       unavailableOnMobile: "Los atajos de teclado solo están disponibles en el escritorio",
       capturePrompt: "Presione el acceso directo...",
       actions: {
@@ -1808,6 +1841,12 @@ export const es: TranslationResources = {
       loading: "Cargando...",
       addErrorTitle: "Unable to add provider",
       updateErrorTitle: "No se puede actualizar el proveedor",
+      deleteProvider: "Eliminar {{name}}",
+      deleteConfirmTitle: "¿Eliminar {{name}}?",
+      deleteConfirmMessage:
+        "Esto elimina el proveedor personalizado de este host. Las sesiones en ejecución continuarán, pero las sesiones nuevas o reanudadas no podrán usarlo.",
+      deleteAction: "Eliminar proveedor",
+      deleteErrorTitle: "No se pudo eliminar el proveedor",
       statuses: {
         disabled: "Desactivado",
         loading: "Cargando",

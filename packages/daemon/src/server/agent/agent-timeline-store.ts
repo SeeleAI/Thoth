@@ -20,7 +20,8 @@ interface AgentTimelineState {
   nextSeq: number;
 }
 
-const DEFAULT_TIMELINE_FETCH_LIMIT = 200;
+export const DEFAULT_TIMELINE_FETCH_LIMIT = 200;
+export const MAX_TIMELINE_FETCH_LIMIT = 500;
 
 function cloneRow(row: AgentTimelineRow): AgentTimelineRow {
   return { ...row };
@@ -172,18 +173,31 @@ export class InMemoryAgentTimelineStore {
   }
 
   fetch(agentId: string, options?: AgentTimelineFetchOptions): AgentTimelineFetchResult {
+    return this.fetchWindow(agentId, options, false);
+  }
+
+  fetchAll(
+    agentId: string,
+    options?: Omit<AgentTimelineFetchOptions, "limit">,
+  ): AgentTimelineFetchResult {
+    return this.fetchWindow(agentId, options, true);
+  }
+
+  private fetchWindow(
+    agentId: string,
+    options: AgentTimelineFetchOptions | undefined,
+    selectAll: boolean,
+  ): AgentTimelineFetchResult {
     const state = this.requireState(agentId);
     const direction = options?.direction ?? "tail";
     const requestedLimit = options?.limit;
     const limit =
-      requestedLimit === undefined
+      selectAll || requestedLimit === undefined || requestedLimit <= 0
         ? DEFAULT_TIMELINE_FETCH_LIMIT
-        : Math.max(0, Math.floor(requestedLimit));
+        : Math.min(MAX_TIMELINE_FETCH_LIMIT, Math.max(1, Math.floor(requestedLimit)));
     const cursor = options?.cursor;
     const minSeq = state.rows.length ? state.rows[0].seq : 0;
     const maxSeq = state.rows.length ? state.rows[state.rows.length - 1].seq : 0;
-    const selectAll = limit === 0;
-
     const window = {
       minSeq,
       maxSeq,

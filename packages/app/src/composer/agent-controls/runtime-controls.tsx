@@ -35,6 +35,7 @@ import { useToast } from "@/contexts/toast-context";
 import { toErrorMessage } from "@/utils/error-messages";
 import { isWeb } from "@/constants/platform";
 import { Switch } from "@/components/ui/switch";
+import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import {
   isThothModeEnabled,
   resolveThothClarifyStrength,
@@ -87,6 +88,38 @@ const WEB_DIVE_TEXT_KEYFRAME_CSS = `
     }
   }
 `;
+
+type WebGradientTextStyle = TextStyle & {
+  backgroundImage: string;
+  backgroundSize: string;
+  backgroundClip: string;
+  WebkitBackgroundClip: string;
+  WebkitTextFillColor: string;
+  animation: string;
+  textShadow: string;
+};
+
+const DIVE_AZURE_TEXT_WEB_STYLE = inlineUnistylesStyle<WebGradientTextStyle>({
+  color: "transparent",
+  backgroundImage: "linear-gradient(90deg, #0369a1, #0ea5e9, #67e8f9, #2563eb, #0369a1)",
+  backgroundSize: "260% 100%",
+  backgroundClip: "text",
+  WebkitBackgroundClip: "text",
+  WebkitTextFillColor: "transparent",
+  animation: `${WEB_DIVE_TEXT_ANIMATION_NAME} 3.2s ease-in-out infinite`,
+  textShadow: "0 0 5px rgba(14, 165, 233, 0.18)",
+});
+
+const LASER_TEXT_WEB_STYLE = inlineUnistylesStyle<WebGradientTextStyle>({
+  color: "transparent",
+  backgroundImage: "linear-gradient(90deg, #38bdf8, #a78bfa, #f472b6, #facc15, #38bdf8)",
+  backgroundSize: "240% 100%",
+  backgroundClip: "text",
+  WebkitBackgroundClip: "text",
+  WebkitTextFillColor: "transparent",
+  animation: `${WEB_LASER_ANIMATION_NAME} 2.4s linear infinite`,
+  textShadow: "0 0 10px rgba(167, 139, 250, 0.45)",
+});
 
 let webLaserKeyframesRegistered = false;
 let webDiveTextKeyframesRegistered = false;
@@ -340,7 +373,7 @@ const RuntimeControlTrigger = forwardRef<
 ) {
   return (
     <DropdownTrigger
-      ref={ref}
+      triggerRef={ref}
       disabled={disabled}
       style={makeChipStyle(disabled, false)}
       accessibilityRole="button"
@@ -516,13 +549,13 @@ function LoopInfiniteLabel({
   });
 
   const animatedStyle = isWeb
-    ? (styles.laserTextWeb as StyleProp<TextStyle>)
-    : ({
+    ? LASER_TEXT_WEB_STYLE
+    : {
         color: nativeColor,
         textShadowColor: "#a78bfa",
         textShadowOffset: { width: 0, height: 0 },
         textShadowRadius: 7,
-      } as StyleProp<TextStyle>);
+      };
 
   return (
     <Animated.Text
@@ -568,9 +601,7 @@ function DiveAzureLabel({ children }: { children: ReactNode }) {
     outputRange: ["#0284c7", "#22d3ee", "#2563eb"],
   });
 
-  const animatedStyle = isWeb
-    ? (styles.diveAzureTextWeb as StyleProp<TextStyle>)
-    : ({ color: nativeColor } as StyleProp<TextStyle>);
+  const animatedStyle = isWeb ? DIVE_AZURE_TEXT_WEB_STYLE : { color: nativeColor };
 
   return (
     <Animated.Text
@@ -687,31 +718,11 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
   },
-  diveAzureTextWeb: {
-    color: "transparent",
-    backgroundImage: "linear-gradient(90deg, #0369a1, #0ea5e9, #67e8f9, #2563eb, #0369a1)",
-    backgroundSize: "260% 100%",
-    backgroundClip: "text",
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    animation: `${WEB_DIVE_TEXT_ANIMATION_NAME} 3.2s ease-in-out infinite`,
-    textShadow: "0 0 5px rgba(14, 165, 233, 0.18)",
-  } as TextStyle,
   laserText: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
   },
-  laserTextWeb: {
-    color: "transparent",
-    backgroundImage: "linear-gradient(90deg, #38bdf8, #a78bfa, #f472b6, #facc15, #38bdf8)",
-    backgroundSize: "240% 100%",
-    backgroundClip: "text",
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    animation: `${WEB_LASER_ANIMATION_NAME} 2.4s linear infinite`,
-    textShadow: "0 0 10px rgba(167, 139, 250, 0.45)",
-  } as TextStyle,
   chipPrefix: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,

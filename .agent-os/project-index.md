@@ -3,25 +3,27 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-036`
+2. Top next action: `NTH-TD-048`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. `NTH-TD-045` is verified: the persisted entity-tab repair is published through the fixed
-   desktop-only Beta and independently revalidated from the downloaded public AppImage.
+4. Active blockers: none. The Paseo v0.2.2 architecture review is resolved by `NTH-CD-076` through `NTH-CD-088`,
+   and schema-version-2 provenance covers all `393/393` commits with `143/143` architecture candidates assessed,
+   `43/43` required candidates architectural, zero pending reviews and zero failures.
 5. Current branch: `agent/dev/mvp`; repository-maintenance commit
-   `ca71358aabb8fe03891ea24e57939d82547bcd21` is on the remote development branch. Published product source
+   `ca71358aabb8fe03891ea24e57939d82547bcd21` and its tracked-symlink validation closeout
+   `265c4af9a45d6272ce4d3a107546b90541779983` are on the remote development branch. Published product source
    `30528b814eff68eb63e2379e133aac6ee36d5fb4` remains on `release/mvp-actions`, fixed tag
    `v0.0.0-mvp-beta` and Release metadata. Remote `main` remains unchanged at
    `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-TD-031` through `NTH-TD-035`
-   are verified; `NTH-TD-036` remains doing at Stage 4 with `296,437` production LOC and `15,506` lines still
-   required for its independent Cut B target. `NTH-TD-043` is verified: the intermediate source is released without
-   claiming Cut B or the final 50k reduction complete. Current local metrics are `1,272,435` scanner tokens,
-   `1,300,610` AST nodes, `4,992` non-type static imports and `164` runtime dependency edges. `NTH-TD-044` is
-   verified under `NTH-EV-066` and published under verified `NTH-TD-045` / `NTH-EV-067`, so the main refactor resumes
-   without a Stage switch. Repository-local Paseo synchronization governance is independently verified under
-   `NTH-TD-046` / `NTH-EV-069`; it does not change the product stage, source metrics, Release, or sole top action.
-   Under `NTH-CD-074`, the complete verified repository-maintenance batch was committed and normally pushed only to
-   `agent/dev/mvp`; the Release branch, tag, GitHub Release, `main`, Relay and Paseo remained unchanged.
+6. Current implementation state: `NTH-CD-060` remains the only product path. The approved Paseo v0.2.2 capabilities
+   are organically integrated through current Protocol/Client/Core/Daemon/Drivers/App/Desktop/CLI owners and the
+   local candidate is `release_ready` under WIP `NTH-EV-071`: owner suites, schema-v2 provenance, the 368-path
+   boundary audit, Foundation, Provider Control, interaction, complete Thoth, the shared `196.126s` refactor gate,
+   real Web, real Codex, local Android Debug APK and rebuilt AppImage journeys all pass. Production source is
+   `310,932` LOC, so approved `DeltaP=14,495`; translated Cut B/final ceilings are `295,426` / `273,026`, and the
+   independent `NTH-TD-036` gap remains exactly `15,506`. `NTH-TD-036` stays doing at Stage 4 and is temporarily not
+   the sole top action. `NTH-TD-048` remains doing until the exact release-source commit, two normal fast-forward
+   pushes, exact-SHA workflow, fixed 26-asset Beta replacement, and downloaded public AppImage verification finish.
+   No commit, push, Release mutation, `main` change, Relay deployment, or Paseo service mutation has occurred yet.
 
 ## Objective Summary
 
@@ -38,15 +40,17 @@
 
 ## Top Next Action
 
-`NTH-TD-036` `[doing]`: Continue the feature-zero-loss shared UI convergence from the verified Stage 4 state.
-Remove the remaining duplicated presentation paths until the independent Cut B ceiling of `280,931` production LOC
-is reached, without changing AgentTimeline, public behavior or UX.
+`NTH-TD-048` `[doing]`: Integrate the approved capabilities and bug fixes from exact Paseo range
+`5fc53c576ef0d4dee55455ccc95660703f71b892..b589599a8f21bcc9e4c911603082566ce320a3c8`
+through current Thoth owners, verify the complete provenance and affected product paths, and replace the fixed
+desktop-only MVP Beta from one exact source SHA. `NTH-TD-036` remains open at Stage 4 and resumes after publication.
 
 ## Active Blockers
 
-None. The stale persisted entity-tab regression is locally closed by `NTH-EV-066` and publicly closed by
-`NTH-EV-067`. `NTH-TD-036` remains open by design with a `15,506`-LOC Cut B gap and was not verified or waived by
-this publication.
+None. Paseo v0.2.2 architecture review, provenance, local implementation, and Stage 4 verification are resolved.
+The authorized exact-SHA fixed-Beta publication transaction remains unfinished work under `NTH-TD-048`, not a
+blocker.
+`NTH-TD-036` remains open by design with a preserved `15,506`-LOC Cut B gap and is not verified or waived.
 
 ## Recent Important Changes
 
@@ -140,6 +144,10 @@ this publication.
 88. `NTH-CD-073`: Repository-local development skills now have one canonical `.agent-os/skills` source, optional Provider discovery links and a strict separation from product RuntimeBundle skills; Paseo synchronization is a five-stage exact-SHA workflow with publication as an explicitly authorized terminal stage.
 89. `NTH-EV-069`: The `sync-paseo-into-thoth` skill, repo-local Codex discovery link, three deterministic helpers and root entries are verified by positive/negative fixtures, real-worktree boundary audit, skill/repository validation, formatting and the complete `565/565` Foundation gate without product or Release mutation. Post-commit `NTH-EXP-065` closed the tracked-directory-symlink secret-scan assumption by limiting reads to regular files and rerunning the same repository/Foundation gates.
 90. `NTH-CD-074`: The complete verified architecture, English-documentation and repository-local Paseo-skill maintenance batch was committed as `ca71358a` and normally pushed only to `agent/dev/mvp`; the Release branch, fixed tag, GitHub Release, `main`, deployments and independent services remained unchanged.
+91. `NTH-CD-075`: Thoth and Paseo are expected to diverge increasingly. Future synchronization reviews pinned upstream capabilities and engineering intent rather than mechanically merging patches; architecture-level upstream changes require a user-facing discussion packet and a concrete decision before source integration.
+92. `NTH-EV-070`: The schema-version-2 range and provenance tools now surface architecture candidates, require every change to assess Thoth architecture impact, permit pending discussion only in analyze mode, and reject pending integration, silent downclassification or ignored architecture candidates. Fixtures and an independent Stage 2 forward-test prove the gate without changing product source.
+93. `NTH-CD-076` through `NTH-CD-088`: The user approved the exact Paseo v0.2.2 range, selective Forge/Browser/Schedule/Timeline/Provider/Desktop/Files/App adaptation, persistent service-port leases, explicit rejected/deferred boundaries, Cut B metric translation and the guarded fixed-Beta publication transaction.
+94. `NTH-EV-071` `[in progress, release_ready]`: The exact manifest contains `393` commits and `1,475` paths. Coherent classification covers `393/393` commits and all architecture reviews with zero failures. Organic implementation, owner suites, five root gates, real Web/Codex, Android, isolation, and rebuilt AppImage product surfaces pass locally; exact-SHA workflow, fixed 26-asset Release replacement, and downloaded public verification remain pending.
 
 ## Read Next
 

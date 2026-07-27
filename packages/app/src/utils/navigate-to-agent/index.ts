@@ -11,7 +11,7 @@ import { navigateToPreparedWorkspaceTab } from "@/utils/workspace-navigation";
 
 export type { NavigateToAgentInput } from "./resolve";
 
-// Clears the transient restoring state if the daemon resolves refreshAgent without
+// Clears the transient restoring state if the daemon resolves restoreWorkspace without
 // re-emitting a workspace_update (the directory-gone case), so the gate never spins
 // forever. Recreating a worktree can require a git fetch, so the budget is generous
 // to avoid flashing a false "failed" on a capable daemon doing slow real work.
@@ -56,7 +56,12 @@ function restoreArchivedWorkspace(serverId: string, agentId: string, workspaceId
     }
   }, RESTORE_TIMEOUT_MS);
   client
-    .refreshAgent(agentId)
+    .restoreWorkspace(workspaceId)
+    .then((result) => {
+      if (result.error) {
+        setWorkspaceRestoreStatus(queryClient, serverId, workspaceId, "failed");
+      }
+    })
     .catch(() => setWorkspaceRestoreStatus(queryClient, serverId, workspaceId, "failed"));
 }
 

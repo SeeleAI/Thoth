@@ -455,13 +455,14 @@ function ProjectConfigForm({
     },
     onSuccess: (result) => {
       if (result.ok) {
-        queryClient.setQueryData<ReadProjectConfigData>(queryKey, {
+        const cachedReadResult: Extract<ReadProjectConfigData, { ok: true }> = {
           ok: true,
           config: result.config,
           revision: result.revision,
           requestId: "local-cache",
           repoRoot,
-        });
+        };
+        queryClient.setQueryData<ReadProjectConfigData>(queryKey, cachedReadResult);
         setWriteError(null);
         queryClient.invalidateQueries({ queryKey: ["projects"] });
         toast.show(t("settings.project.actions.saved"), { variant: "success" });

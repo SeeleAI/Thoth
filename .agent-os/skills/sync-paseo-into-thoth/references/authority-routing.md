@@ -17,6 +17,7 @@ change. Never infer Thoth product architecture from the current source tree or f
 | Change type                                              | Required authority and handbook                                                                      |
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Product or user journey                                  | `designs/core-design-principles.md`, `thoth-high-level-design.md`, `thoth-mvp-user-journey.md`       |
+| Architecture candidate or divergence conflict            | All canonical designs, `upstream-transplant.md`, and current `change-decisions.md` boundaries        |
 | App, Composer, Timeline, Card, Quick, Loop               | `designs/thoth-app-runtime-contract.md`, `designs/thoth-engineering-architecture.md`                 |
 | Runtime instructions or semantic tools                   | `designs/thoth-prompt-contract-seeds.md`, runtime contract, affected RuntimeBundle sources           |
 | Package ownership or main-chain change                   | `designs/thoth-engineering-architecture.md`, `change-decisions.md` for current `NTH-CD-*` boundaries |

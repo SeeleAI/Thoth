@@ -53,11 +53,9 @@ describe("app diagnostics report", () => {
       },
       connectionStatus: "online",
       client: null,
+      serverInfo: null,
       lastError: null,
       lastOnlineAt: "2026-06-25T00:00:00.000Z",
-      agentDirectoryStatus: "ready",
-      agentDirectoryError: null,
-      hasEverLoadedAgentDirectory: true,
       probeByConnectionId: new Map([
         ["direct:secret.example.test:6767", { status: "available", latencyMs: 42 }],
         ["relay:relay.secret.test:443", { status: "available", latencyMs: 8 }],

@@ -312,8 +312,8 @@ export class WorkspaceCoordinationRepository {
       const insertRun = this.database.prepare(
         `INSERT INTO schedule_runs(
            run_id, schedule_id, scheduled_for, started_at, ended_at,
-           status, agent_id, output, error
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           status, task_id, execution_id, agent_id, output, error
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const run of schedule.runs) {
         insertRun.run(
@@ -323,6 +323,8 @@ export class WorkspaceCoordinationRepository {
           run.startedAt,
           run.endedAt,
           run.status,
+          run.taskId ?? null,
+          run.executionId ?? null,
           run.agentId,
           run.output,
           run.error,
@@ -442,6 +444,8 @@ export class WorkspaceCoordinationRepository {
   private toScheduleRun(row: Record<string, unknown>): ScheduleRun {
     return ScheduleRunSchema.parse({
       id: row.run_id,
+      taskId: row.task_id ?? null,
+      executionId: row.execution_id ?? null,
       scheduledFor: row.scheduled_for,
       startedAt: row.started_at,
       endedAt: row.ended_at ?? null,

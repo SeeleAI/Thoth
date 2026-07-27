@@ -30,6 +30,10 @@ import { MountedTabActiveContext } from "@/components/split-container";
 import { useAppVisible } from "@/hooks/use-app-visible";
 import { isFileQueryEnabled } from "@/components/file-pane-enabled";
 import { useFilePreviewSource } from "@/file-explorer/use-file-preview-source";
+import {
+  clampFileLineSelection,
+  fileLineSelectionScrollOffset,
+} from "@/file-explorer/line-navigation";
 
 interface CodeLineProps {
   tokens: HighlightToken[];
@@ -55,11 +59,6 @@ function trimNonEmpty(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-interface FileLineSelection {
-  lineStart: number;
-  lineEnd: number;
-}
-
 function formatFileSize({ size }: { size: number }): string {
   if (size < 1024) {
     return `${size} B`;
@@ -83,21 +82,6 @@ function createFilePanePreview(file: FileReadResult | null): {
     return { file: explorerFile, imageFile: null };
   }
   return { file: explorerFile, imageFile: file };
-}
-
-function clampLineSelection(input: {
-  lineStart?: number;
-  lineEnd?: number;
-  lineCount: number;
-}): FileLineSelection | null {
-  if (!input.lineStart || input.lineStart <= 0 || input.lineCount <= 0) {
-    return null;
-  }
-  const lineStart = Math.min(Math.floor(input.lineStart), input.lineCount);
-  const rawLineEnd =
-    input.lineEnd && input.lineEnd >= input.lineStart ? input.lineEnd : input.lineStart;
-  const lineEnd = Math.min(Math.floor(rawLineEnd), input.lineCount);
-  return { lineStart, lineEnd: Math.max(lineStart, lineEnd) };
 }
 
 const CodeLine = React.memo(function CodeLine({
@@ -207,7 +191,7 @@ function FilePreviewBody({
     if (!highlightedLines) {
       return null;
     }
-    return clampLineSelection({
+    return clampFileLineSelection({
       lineStart: location.lineStart,
       lineEnd: location.lineEnd,
       lineCount: highlightedLines.length,
@@ -225,7 +209,7 @@ function FilePreviewBody({
     }
     const timeout = setTimeout(() => {
       previewScrollRef.current?.scrollTo({
-        y: Math.max(0, (lineSelection.lineStart - 1) * lineHeight),
+        y: fileLineSelectionScrollOffset(lineSelection, lineHeight),
         animated: false,
       });
     }, 0);

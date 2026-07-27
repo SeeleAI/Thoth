@@ -116,7 +116,14 @@ describe("daemon E2E - refresh rehydrates timeline from on-disk session", () => 
       subscribe: { subscriptionId: "refresh-rehydrate-test" },
     });
 
-    const imported = await client.importAgent({ provider: "claude", sessionId, cwd });
+    const opened = await client.openProject(cwd);
+    expect(opened.workspace).not.toBeNull();
+    const imported = await client.importAgent({
+      workspaceId: opened.workspace!.id,
+      provider: "claude",
+      sessionId,
+      cwd,
+    });
     expect(imported.id).toBeTruthy();
 
     const before = await client.fetchAgentTimeline(imported.id, {

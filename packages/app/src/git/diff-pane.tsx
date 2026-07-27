@@ -54,6 +54,8 @@ import {
 } from "@/git/use-diff-query";
 import { useCheckoutStatusQuery } from "@/git/use-status-query";
 import { useCheckoutPrStatusQuery } from "@/git/use-pr-status-query";
+import { useCommitDiffFiles } from "@/git/use-commit-diff-files";
+import { CommitsSection } from "@/git/commits-section";
 import { useChangesPreferences } from "@/hooks/use-changes-preferences";
 import { useAppSettings } from "@/hooks/use-settings";
 import { DiffScroll } from "@/components/diff-scroll";
@@ -98,6 +100,10 @@ import {
   buildWorkspaceAttachmentScopeKey,
   useWorkspaceAttachmentsStore,
 } from "@/attachments/workspace-attachments-store";
+import {
+  getAttachmentKey,
+  removeWorkspaceAttachmentsMatching,
+} from "@/composer/attachments/workspace-cleanup";
 import {
   buildReviewDraftScopeKey,
   buildReviewDraftKey,
@@ -1793,19 +1799,30 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
     hasUncommittedChanges,
   });
   const setDiffModeOverride = useSetDiffModeOverride();
+  const [selectedCommitSha, setSelectedCommitSha] = useState<string | null>(null);
 
   const {
-    files,
-    payloadError: diffPayloadError,
-    isLoading: isDiffLoading,
+    files: liveDiffFiles,
+    payloadError: liveDiffPayloadError,
+    isLoading: isLiveDiffLoading,
   } = useCheckoutDiffQuery({
     serverId,
     cwd,
     mode: diffMode,
     baseRef,
     ignoreWhitespace: changesPreferences.hideWhitespace,
-    enabled: shouldEnableCheckoutDiff({ paneEnabled: enabled !== false, isGit }),
+    enabled:
+      !selectedCommitSha && shouldEnableCheckoutDiff({ paneEnabled: enabled !== false, isGit }),
   });
+  const commitDiff = useCommitDiffFiles({
+    serverId,
+    cwd,
+    sha: selectedCommitSha,
+    enabled: enabled !== false && isGit,
+  });
+  const files = selectedCommitSha ? commitDiff.files : liveDiffFiles;
+  const diffPayloadError = selectedCommitSha ? commitDiff.error : liveDiffPayloadError;
+  const isDiffLoading = selectedCommitSha ? commitDiff.isLoading : isLiveDiffLoading;
   const reviewDraftKey = useMemo(
     () =>
       buildReviewDraftKey({
@@ -1820,6 +1837,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   );
 
   const handleSelectUncommitted = useCallback(() => {
+    setSelectedCommitSha(null);
     setDiffModeOverride({
       scopeKey: reviewDraftScopeKey,
       override: { serverId, cwd, mode: "uncommitted", isDirtyAtSelection: hasUncommittedChanges },
@@ -1827,18 +1845,23 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   }, [cwd, hasUncommittedChanges, reviewDraftScopeKey, serverId, setDiffModeOverride]);
 
   const handleSelectBase = useCallback(() => {
+    setSelectedCommitSha(null);
     setDiffModeOverride({
       scopeKey: reviewDraftScopeKey,
       override: { serverId, cwd, mode: "base", isDirtyAtSelection: hasUncommittedChanges },
     });
   }, [cwd, hasUncommittedChanges, reviewDraftScopeKey, serverId, setDiffModeOverride]);
 
+  const handleSelectCommit = useCallback((sha: string) => {
+    setSelectedCommitSha(sha);
+  }, []);
+
   const reviewActions = useInlineReviewController({
     reviewDraftKey,
   });
   const reviewAttachment = useReviewAttachmentSnapshot({
     key: reviewDraftKey,
-    diffFiles: files,
+    diffFiles: selectedCommitSha ? [] : files,
     cwd,
     mode: diffMode,
     baseRef,
@@ -1847,28 +1870,22 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
     () => buildWorkspaceAttachmentScopeKey({ serverId, workspaceId, cwd }),
     [cwd, serverId, workspaceId],
   );
-  const setWorkspaceAttachments = useWorkspaceAttachmentsStore(
-    (state) => state.setWorkspaceAttachments,
-  );
-  const clearWorkspaceAttachments = useWorkspaceAttachmentsStore(
-    (state) => state.clearWorkspaceAttachments,
+  const addWorkspaceAttachment = useWorkspaceAttachmentsStore(
+    (state) => state.addWorkspaceAttachment,
   );
 
   useEffect(() => {
-    setWorkspaceAttachments({
+    if (!reviewAttachment) return;
+    addWorkspaceAttachment({
       scopeKey: workspaceAttachmentScopeKey,
-      attachments: reviewAttachment ? [reviewAttachment] : [],
+      attachment: reviewAttachment,
     });
+    const attachmentKey = getAttachmentKey(reviewAttachment);
 
     return () => {
-      clearWorkspaceAttachments({ scopeKey: workspaceAttachmentScopeKey });
+      removeWorkspaceAttachmentsMatching(attachmentKey);
     };
-  }, [
-    clearWorkspaceAttachments,
-    reviewAttachment,
-    setWorkspaceAttachments,
-    workspaceAttachmentScopeKey,
-  ]);
+  }, [addWorkspaceAttachment, reviewAttachment, workspaceAttachmentScopeKey]);
   const { githubFeaturesEnabled, payloadError: prPayloadError } = useCheckoutPrStatusQuery({
     serverId,
     cwd,
@@ -2104,7 +2121,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
           wrapLines={wrapLines}
           codeFontSize={codeFontSize}
           textMetricsStyle={diffTextMetricsStyle}
-          reviewActions={reviewActions}
+          reviewActions={selectedCommitSha ? undefined : reviewActions}
           onBodyHeightChange={handleBodyHeightChange}
           testID={`diff-file-${item.fileIndex}-body`}
         />
@@ -2118,6 +2135,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
       handleHeaderHeightChange,
       handleToggleExpanded,
       reviewActions,
+      selectedCommitSha,
       wrapLines,
     ],
   );
@@ -2211,16 +2229,13 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
   const uncommittedLabel = t("workspace.git.diff.uncommitted");
   const committedLabel = t("workspace.git.diff.committed");
 
-  const emptyMessage = computeEmptyMessage(
-    changesPreferences.hideWhitespace,
-    diffMode,
-    baseRefLabel,
-    {
-      hiddenWhitespace: t("workspace.git.diff.emptyHiddenWhitespace"),
-      uncommitted: t("workspace.git.diff.emptyUncommitted"),
-      againstBase: (label) => t("workspace.git.diff.emptyAgainstBase", { baseRef: label }),
-    },
-  );
+  const emptyMessage = selectedCommitSha
+    ? t("workspace.git.diff.commits.noTextualChanges")
+    : computeEmptyMessage(changesPreferences.hideWhitespace, diffMode, baseRefLabel, {
+        hiddenWhitespace: t("workspace.git.diff.emptyHiddenWhitespace"),
+        uncommitted: t("workspace.git.diff.emptyUncommitted"),
+        againstBase: (label) => t("workspace.git.diff.emptyAgainstBase", { baseRef: label }),
+      });
 
   const bodyContent: ReactElement = (
     <DiffBodyContent
@@ -2274,14 +2289,18 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
                 accessibilityLabel={t("workspace.git.diff.diffMode")}
               >
                 <Text style={styles.diffStatusText} numberOfLines={1}>
-                  {diffMode === "uncommitted" ? uncommittedLabel : committedLabel}
+                  {selectedCommitSha
+                    ? (commitDiff.commit?.subject ?? selectedCommitSha.slice(0, 7))
+                    : diffMode === "uncommitted"
+                      ? uncommittedLabel
+                      : committedLabel}
                 </Text>
                 <ThemedChevronDown size={12} uniProps={foregroundMutedIconColorMapping} />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" width={260} testID="changes-diff-status-menu">
                 <DropdownMenuItem
                   testID="changes-diff-mode-uncommitted"
-                  selected={diffMode === "uncommitted"}
+                  selected={!selectedCommitSha && diffMode === "uncommitted"}
                   onSelect={handleSelectUncommitted}
                 >
                   {uncommittedLabel}
@@ -2289,7 +2308,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   testID="changes-diff-mode-committed"
-                  selected={diffMode === "base"}
+                  selected={!selectedCommitSha && diffMode === "base"}
                   description={committedDiffDescription}
                   onSelect={handleSelectBase}
                 >
@@ -2342,6 +2361,14 @@ export function GitDiffPane({ serverId, workspaceId, cwd, enabled }: GitDiffPane
         {bodyContent}
         {hasChanges ? scrollbar.overlay : null}
       </View>
+      {isGit ? (
+        <CommitsSection
+          serverId={serverId}
+          cwd={cwd}
+          selectedSha={selectedCommitSha}
+          onCommitPress={handleSelectCommit}
+        />
+      ) : null}
     </View>
   );
 }

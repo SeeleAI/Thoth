@@ -14,6 +14,30 @@ const ctx = await createE2ETestContext({
 try {
   const workspaceId = await ctx.createWorkspace();
   const scopedSchedule = (args: string[]) => [...args, "--workspace", workspaceId];
+  const scheduledAuthority: Array<{ taskId: string; executionId: string }> = [];
+  const waitForScheduleAuthority = async (
+    scheduleId: string,
+  ): Promise<{ taskId: string; executionId: string }> => {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const logs = await ctx.thoth(scopedSchedule(["schedule", "logs", scheduleId, "--json"]));
+      assert.strictEqual(logs.exitCode, 0, logs.stderr);
+      const runs = JSON.parse(logs.stdout) as Array<{
+        taskId?: string | null;
+        executionId?: string | null;
+      }>;
+      const authorityRun = runs.find(
+        (run) => typeof run.taskId === "string" && typeof run.executionId === "string",
+      );
+      if (authorityRun?.taskId && authorityRun.executionId) {
+        return {
+          taskId: authorityRun.taskId,
+          executionId: authorityRun.executionId,
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`Schedule ${scheduleId} did not create Task/Execution authority`);
+  };
   {
     console.log("Test 1: schedule create/ls/inspect/pause/resume/delete work");
     const created = await ctx.thoth(
@@ -57,6 +81,7 @@ try {
     const inspectedJson = JSON.parse(inspected.stdout);
     assert.strictEqual(inspectedJson.status, "active");
     assert.strictEqual(inspectedJson.prompt, "Review new PRs");
+    scheduledAuthority.push(await waitForScheduleAuthority(createdJson.id));
 
     const paused = await ctx.thoth(scopedSchedule(["schedule", "pause", createdJson.id, "--json"]));
     assert.strictEqual(paused.exitCode, 0, paused.stderr);
@@ -102,6 +127,7 @@ try {
     const inspectedJson = JSON.parse(inspected.stdout);
     assert.strictEqual(inspectedJson.target.config.provider, "codex");
     assert.strictEqual(inspectedJson.target.config.model, "gpt-5.4");
+    scheduledAuthority.push(await waitForScheduleAuthority(createdJson.id));
 
     const deleted = await ctx.thoth(
       scopedSchedule(["schedule", "delete", createdJson.id, "--json"]),
@@ -139,11 +165,49 @@ try {
     console.log("Test 2: task list resolves Workspace authority");
     const listed = await ctx.thoth(["task", "list", "--workspace", workspaceId, "--json"]);
     assert.strictEqual(listed.exitCode, 0, listed.stderr);
-    assert.deepStrictEqual(JSON.parse(listed.stdout), []);
+    const listedTasks = JSON.parse(listed.stdout) as Array<{
+      id: string;
+      workspaceId: string;
+      sourceAgentId: string;
+    }>;
+    assert.strictEqual(scheduledAuthority.length, 2);
+    for (const authority of scheduledAuthority) {
+      const task = listedTasks.find((candidate) => candidate.id === authority.taskId);
+      assert(task, `Task ${authority.taskId} should remain after deleting its Schedule`);
+      assert.strictEqual(task.workspaceId, workspaceId);
+      assert(task.sourceAgentId.startsWith("schedule-source-"));
+
+      const detail = await ctx.thoth([
+        "task",
+        "get",
+        authority.taskId,
+        "--workspace",
+        workspaceId,
+        "--json",
+      ]);
+      assert.strictEqual(detail.exitCode, 0, detail.stderr);
+      const detailJson = JSON.parse(detail.stdout) as {
+        task: { id: string; workspaceId: string };
+        executions: Array<{ id: string; taskId: string }>;
+      };
+      assert.strictEqual(detailJson.task.id, authority.taskId);
+      assert.strictEqual(detailJson.task.workspaceId, workspaceId);
+      assert(
+        detailJson.executions.some(
+          (execution) =>
+            execution.id === authority.executionId && execution.taskId === authority.taskId,
+        ),
+        `Execution ${authority.executionId} should belong to Task ${authority.taskId}`,
+      );
+    }
 
     const inferred = await ctx.thoth(["task", "list", "--json"]);
     assert.strictEqual(inferred.exitCode, 0, inferred.stderr);
-    assert.deepStrictEqual(JSON.parse(inferred.stdout), []);
+    const inferredTasks = JSON.parse(inferred.stdout) as Array<{ id: string }>;
+    assert.deepStrictEqual(
+      new Set(inferredTasks.map((task) => task.id)),
+      new Set(listedTasks.map((task) => task.id)),
+    );
     console.log("task list resolves Workspace authority\n");
   }
 

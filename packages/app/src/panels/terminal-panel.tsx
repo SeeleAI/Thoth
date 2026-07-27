@@ -113,6 +113,7 @@ function TerminalPanel() {
     <Suspense fallback={<View style={FLEX_FILL_STYLE} />}>
       <TerminalPane
         serverId={serverId}
+        workspaceId={workspaceId}
         cwd={workspaceDirectory}
         terminalId={target.terminalId}
         isWorkspaceFocused={isWorkspaceFocused}

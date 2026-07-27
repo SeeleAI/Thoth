@@ -40,6 +40,7 @@ import {
   createProviderSnapshotManagerStub,
   createTestToolGateway,
   createSessionWithAuthority,
+  findByType,
 } from "./test-utils/session-stubs.js";
 import { isPlatform } from "../test-utils/platform.js";
 import type {
@@ -47,6 +48,7 @@ import type {
   GitHubPullRequestStatusFacts,
   GitHubService,
 } from "../services/github-service.js";
+import type { ForgeChangeRequestService } from "../services/forge-change-request-service.js";
 
 interface SessionHandlerInternals {
   handleSendAgentMessage(
@@ -334,6 +336,7 @@ interface SessionForTestOptions {
     resolveRepoRoot?: ReturnType<typeof vi.fn>;
     getWorkspaceGitMetadata?: ReturnType<typeof vi.fn>;
   };
+  forgeChangeRequests?: Pick<ForgeChangeRequestService, "create">;
   workspaceRegistry?: { get: ReturnType<typeof vi.fn> };
   projectRegistry?: Partial<SessionOptions["projectRegistry"]>;
   terminalManager?: SessionOptions["terminalManager"];
@@ -342,6 +345,7 @@ interface SessionForTestOptions {
   getDaemonTcpPort?: () => number | null;
   getDaemonTcpHost?: () => string | null;
   providerSnapshotManager?: ProviderSnapshotManager;
+  daemonConfigStore?: { [K in keyof SessionOptions["daemonConfigStore"]]?: unknown };
   thothHome?: string;
   serverId?: SessionOptions["serverId"];
   daemonVersion?: SessionOptions["daemonVersion"];
@@ -430,6 +434,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     checkoutDiffManager: asCheckoutDiffManager(checkoutDiffManager),
     github: asGitHubService(github),
     workspaceGitService: asWorkspaceGitService(workspaceGitService),
+    forgeChangeRequests: options.forgeChangeRequests,
     daemonConfigStore: asDaemonConfigStore({
       getThothHome: vi.fn(() => thothHome),
       get: vi.fn(() => ({
@@ -437,6 +442,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
         providers: {},
       })),
       onChange: vi.fn(() => () => {}),
+      ...options.daemonConfigStore,
     }),
     terminalManager: options.terminalManager ?? null,
     providerSnapshotManager:
@@ -1398,6 +1404,110 @@ describe("session provider permission authority", () => {
   });
 });
 
+describe("session Provider deletion authority", () => {
+  test("deletes only a confirmed custom Provider and emits the durable receipt", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const deleteCustomProvider = vi.fn();
+    const providerStub = createProviderSnapshotManagerStub();
+    providerStub.getSnapshot.mockReturnValue([
+      {
+        provider: "custom-claude",
+        status: "ready",
+        enabled: true,
+        source: "custom",
+        deletable: true,
+      },
+    ]);
+    providerStub.hasProvider.mockReturnValue(false);
+    const session = createSessionForTest({
+      messages,
+      providerSnapshotManager: providerStub.manager,
+      daemonConfigStore: { deleteCustomProvider },
+    });
+
+    await session.handleMessage({
+      type: "provider.delete.request",
+      provider: "custom-claude",
+      confirmed: true,
+      requestId: "delete-custom-provider",
+    });
+
+    expect(deleteCustomProvider).toHaveBeenCalledWith("custom-claude");
+    expect(findByType(messages, "provider.delete.response")).toEqual({
+      type: "provider.delete.response",
+      payload: {
+        provider: "custom-claude",
+        deleted: true,
+        requestId: "delete-custom-provider",
+      },
+    });
+    expect(findByType(messages, "rpc_error")).toBeUndefined();
+  });
+
+  test("rejects builtin Provider deletion without mutating configuration", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const deleteCustomProvider = vi.fn();
+    const providerStub = createProviderSnapshotManagerStub();
+    providerStub.getSnapshot.mockReturnValue([
+      {
+        provider: "claude",
+        status: "ready",
+        enabled: true,
+        source: "builtin",
+        deletable: false,
+      },
+    ]);
+    const session = createSessionForTest({
+      messages,
+      providerSnapshotManager: providerStub.manager,
+      daemonConfigStore: { deleteCustomProvider },
+    });
+
+    await session.handleMessage({
+      type: "provider.delete.request",
+      provider: "claude",
+      confirmed: true,
+      requestId: "delete-builtin-provider",
+    });
+
+    expect(deleteCustomProvider).not.toHaveBeenCalled();
+    expect(findByType(messages, "rpc_error")?.payload).toMatchObject({
+      requestId: "delete-builtin-provider",
+      requestType: "provider.delete.request",
+      code: "provider_not_deletable",
+    });
+  });
+
+  test("returns typed unavailable without unarchiving a deleted Provider session", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const resumeAgentFromPersistence = vi.fn();
+    const session = createSessionForTest({
+      messages,
+      executionService: {
+        getRegisteredProviderIds: vi.fn(() => []),
+        resumeAgentFromPersistence,
+      },
+    });
+
+    await session.handleMessage({
+      type: "resume_agent_request",
+      handle: {
+        provider: "custom-claude",
+        sessionId: "deleted-provider-thread",
+      },
+      requestId: "resume-deleted-provider",
+    });
+
+    expect(resumeAgentFromPersistence).not.toHaveBeenCalled();
+    expect(findByType(messages, "rpc_error")?.payload).toMatchObject({
+      requestId: "resume-deleted-provider",
+      requestType: "resume_agent_request",
+      code: "provider_unavailable",
+      error: expect.stringContaining("no longer configured"),
+    });
+  });
+});
+
 describe("session provider refresh cwd routing", () => {
   test("routes no-cwd provider snapshot refreshes through settings refresh", async () => {
     const {
@@ -2063,6 +2173,26 @@ diff --git a/file.txt b/file.txt
 +hello
 `;
 
+  function createForgeChangeRequestStub(url: string, number: number) {
+    return {
+      create: vi.fn<ForgeChangeRequestService["create"]>().mockResolvedValue({
+        url,
+        number,
+        repository: {
+          forge: "github",
+          host: "github.com",
+          namespace: "thoth",
+          repository: "thoth",
+          fullName: "thoth/thoth",
+          remoteUrl: "https://github.com/thoth/thoth.git",
+          webUrl: "https://github.com/thoth/thoth",
+          changeRequestAbbrev: "PR",
+          changeRequestNoun: "pull request",
+        },
+      }),
+    };
+  }
+
   afterEach(() => {
     for (const dir of tempDirs.splice(0)) {
       rmSync(dir, { recursive: true, force: true });
@@ -2108,11 +2238,11 @@ diff --git a/file.txt b/file.txt
       title: "Update file",
       body: "Updates file.",
     });
-    checkoutGitMocks.createPullRequest.mockResolvedValue({
-      url: "https://github.com/thoth/thoth/pull/1",
-      number: 1,
-    });
-    const session = createSessionForTest({ workspaceGitService });
+    const forgeChangeRequests = createForgeChangeRequestStub(
+      "https://github.com/thoth/thoth/pull/1",
+      1,
+    );
+    const session = createSessionForTest({ workspaceGitService, forgeChangeRequests });
 
     await session.handleMessage({
       type: "checkout_pr_create_request",
@@ -2153,11 +2283,11 @@ diff --git a/file.txt b/file.txt
       title: "Update file",
       body: "Updates file.",
     });
-    checkoutGitMocks.createPullRequest.mockResolvedValue({
-      url: "https://github.com/thoth/thoth/pull/1",
-      number: 1,
-    });
-    const session = createSessionForTest({ workspaceGitService, messages });
+    const forgeChangeRequests = createForgeChangeRequestStub(
+      "https://github.com/thoth/thoth/pull/1",
+      1,
+    );
+    const session = createSessionForTest({ workspaceGitService, forgeChangeRequests, messages });
 
     await session.handleMessage({
       type: "checkout_pr_create_request",
@@ -2183,15 +2313,12 @@ diff --git a/file.txt b/file.txt
         }),
       }),
     );
-    expect(checkoutGitMocks.createPullRequest).toHaveBeenCalledWith(
-      "/tmp/request-worktree",
-      {
-        title: "Update file",
-        body: "Updates file.",
-        base: "main",
-      },
-      expect.anything(),
-    );
+    expect(forgeChangeRequests.create).toHaveBeenCalledWith({
+      cwd: "/tmp/request-worktree",
+      title: "Update file",
+      body: "Updates file.",
+      baseRef: "main",
+    });
     expect(messages).toContainEqual({
       type: "checkout_pr_create_response",
       payload: {
@@ -2292,11 +2419,11 @@ diff --git a/file.txt b/file.txt
     agentResponseMocks.generateStructuredAgentResponseWithFallback.mockRejectedValue(
       new StructuredAgentFallbackError([]),
     );
-    checkoutGitMocks.createPullRequest.mockResolvedValue({
-      url: "https://github.com/thoth/thoth/pull/9",
-      number: 9,
-    });
-    const session = createSessionForTest({ workspaceGitService, messages });
+    const forgeChangeRequests = createForgeChangeRequestStub(
+      "https://github.com/thoth/thoth/pull/9",
+      9,
+    );
+    const session = createSessionForTest({ workspaceGitService, forgeChangeRequests, messages });
 
     await session.handleMessage({
       type: "checkout_pr_create_request",
@@ -2307,15 +2434,12 @@ diff --git a/file.txt b/file.txt
       requestId: "request-generated-pr-fallback",
     });
 
-    expect(checkoutGitMocks.createPullRequest).toHaveBeenCalledWith(
-      "/tmp/request-worktree",
-      {
-        title: "Update changes",
-        body: "Automated PR generated by Thoth.",
-        base: "main",
-      },
-      expect.anything(),
-    );
+    expect(forgeChangeRequests.create).toHaveBeenCalledWith({
+      cwd: "/tmp/request-worktree",
+      title: "Update changes",
+      body: "Automated PR generated by Thoth.",
+      baseRef: "main",
+    });
     expect(messages).toContainEqual({
       type: "checkout_pr_create_response",
       payload: {
@@ -2328,17 +2452,20 @@ diff --git a/file.txt b/file.txt
     });
   });
 
-  test("forces workspace git and GitHub refresh after creating a pull request", async () => {
+  test("refreshes Workspace Git after the Forge use case creates a change request", async () => {
     const messages: unknown[] = [];
-    const github = { invalidate: vi.fn() };
     const workspaceGitService = {
       getSnapshot: vi.fn().mockResolvedValue({}),
     };
-    checkoutGitMocks.createPullRequest.mockResolvedValue({
-      url: "https://github.com/thoth/thoth/pull/2",
-      number: 2,
+    const forgeChangeRequests = createForgeChangeRequestStub(
+      "https://github.com/thoth/thoth/pull/2",
+      2,
+    );
+    const session = createSessionForTest({
+      workspaceGitService,
+      forgeChangeRequests,
+      messages,
     });
-    const session = createSessionForTest({ github, workspaceGitService, messages });
 
     await session.handleMessage({
       type: "checkout_pr_create_request",
@@ -2353,7 +2480,6 @@ diff --git a/file.txt b/file.txt
       force: true,
       reason: "create-pr",
     });
-    expect(github.invalidate).toHaveBeenCalledWith({ cwd: "/tmp/request-worktree" });
     expect(messages).toContainEqual({
       type: "checkout_pr_create_response",
       payload: {
@@ -3157,6 +3283,17 @@ describe("session checkout status handling", () => {
         behindOfOrigin: 1,
         hasRemote: true,
         remoteUrl: "https://github.com/thoth/thoth.git",
+        forge: {
+          forge: "github",
+          host: "github.com",
+          namespace: "thoth",
+          repository: "thoth",
+          fullName: "thoth/thoth",
+          remoteUrl: "https://github.com/thoth/thoth.git",
+          webUrl: "https://github.com/thoth/thoth",
+          changeRequestAbbrev: "PR",
+          changeRequestNoun: "pull request",
+        },
         isThothOwnedWorktree: false,
         error: null,
         requestId: "request-status",

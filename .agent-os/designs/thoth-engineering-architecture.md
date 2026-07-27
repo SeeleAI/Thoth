@@ -116,6 +116,10 @@ names, compatibility rules, and the binary frame codec, but not business executi
 | `src/binary-frames/file-transfer.ts` | Workspace file transfer binary frame codec                                                                 |
 | `src/client-capabilities.ts`         | Client capability negotiation keys                                                                         |
 | `src/provider-manifest.ts`           | Provider manifest and public Provider metadata schemas                                                     |
+| `src/forge.ts`                       | Forge identity, clone, Workspace lifecycle, and change-request URL semantics                               |
+| `src/browser-automation/`            | Provider-neutral Browser command, target, result, and typed error schemas                                  |
+| `src/schedule/types.ts`              | Workspace-owned Schedule and real Task / Execution run receipts                                            |
+| `src/messages.ts` checkout entries   | Read-only Files/Changes, commit history, commit diff, and terminal-size RPC contracts                      |
 
 Protocol must remain a dependency leaf: it cannot import daemon, drivers, App, or platform runtimes. New wire fields
 should be optional/defaultable; compatibility must be handled explicitly at the serialization boundary, not guessed by clients.
@@ -173,6 +177,9 @@ application use cases, and publishes the canonical projection to all clients. Th
 | `src/server/file-*/`             | Workspace file reading, preview, and transfer handling                                       |
 | `src/server/managed-processes/`  | Managed subprocess lifecycle and cleanup                                                     |
 | `src/server/worktree/`           | Worktree creation, registration, and archive flow                                            |
+| `src/server/forge/`              | Forge URL normalization and infrastructure adapters for GitHub/GitLab/Gitea/Forgejo/Codeberg |
+| `src/server/browser-tools/`      | Logical Browser Host broker, reconnect-safe request correlation, and tab affinity            |
+| `src/server/schedule/`           | Workspace-owned Schedule triggers that create real Task and ExecutionAttempt records         |
 | `src/terminal/`                  | PTY lifecycle, snapshots, and binary stream integration                                      |
 
 **Workspace authority modules:**
@@ -182,6 +189,7 @@ application use cases, and publishes the canonical projection to all clients. Th
 | `workspace-authority/workspace-authority-store.ts`      | `WorkspaceAuthorityStore`: per-Workspace SQLite Repository / UoW; commits current rows and incremental records in one transaction |
 | `workspace-authority/workspace-authority-manager.ts`    | `WorkspaceAuthorityManager`: lazy-open, caching, closing, and store lifecycle per Workspace                                       |
 | `workspace-authority/catalog-store.ts`                  | Global catalog: settings, provider profiles, Workspace Registry, and rebuildable Task locator                                     |
+| `workspace-service-port-registry.ts`                    | Host-runtime SQLite `reserve -> spawn -> activate` service-port lease lifecycle and generation fencing                            |
 | `workspace-authority/coordination-repository.ts`        | Workspace-level commands, leases, cursors, and coordination records                                                               |
 | `workspace-authority/foreground-authority.ts`           | Durable foreground transitions for Agent / Turn / Card                                                                            |
 | `workspace-authority/foreground-projection.ts`          | Stable mapping from foreground authority to client projection                                                                     |
@@ -239,6 +247,12 @@ Built-in adapters cover Claude Agent SDK, Codex app-server, OpenCode, Pi, ACP/ge
 Cursor ACP. Provider-owned auth, configuration, native transcripts, KV caches, tool caches, and home directories
 remain in the Provider's own storage; Thoth does not copy, merge, or take them over.
 
+Provider catalog and default truth is expressed as capability/default receipts. Claude, Codex, ACP, OpenCode, Pi,
+and OMP use the same SPI; the daemon may not branch on provider ID. Only provider profiles declared
+`source=custom` may be deleted. Deletion atomically updates config and catalog, prevents new sessions, and returns a
+typed unavailable result for later resume without terminating an already-running session; builtin providers cannot
+be deleted.
+
 Provider-native Plan is a capability-based Harness contract, not prompt simulation. A `plan` execution must
 produce a verifiable run-mode receipt; a Provider without native Plan support may still be used for raw/Quick, but must honestly report Plan
 and Loop as unsupported. Authority for the Plan feature belongs to the visible Agent, and capability truth comes from the live Harness session;
@@ -266,7 +280,9 @@ sends semantic commands, and handles cross-platform interaction; it does not own
 | `src/git/`, `src/review/`                     | Git diff, PR, and review surfaces; mutations still go through the daemon                               |
 | `src/attachments/`                            | Workspace-scoped attachment presentation and upload workflow                                           |
 | `src/terminal/`                               | Terminal UI and binary-stream consumption                                                              |
-| `src/browser/`                                | In-app browser presentation and platform integration                                                   |
+| `src/browser-automation/`                     | Request coordination and at-most-once response delivery across Client reconnect                        |
+| `src/components/browser-*`                    | In-app Browser presentation over Desktop's scoped Host implementation                                  |
+| `src/file-explorer/`, `src/git/`              | Read-only file tree, line navigation, commit history, and commit-file diff presentation                |
 | `src/screens/`                                | Route-level screen composition; does not establish a second domain store                               |
 
 `AuthorityProjectionStore` is written only by `DaemonProjectionService`. Host runtime owns connection and server info,
@@ -292,6 +308,9 @@ daemon subprocesses, but cannot define desktop-only Task or Protocol branches.
 | `src/open-project-routing.ts`            | Routing OS/CLI open-project requests into the App flow            |
 | `src/features/menu.ts`                   | Native Thoth menus                                                |
 | `src/features/auto-updater.ts`           | Build-identity update manifest, download, and installer handoff   |
+| `src/features/browser-profile.ts`        | One Host-wide persistent Chromium profile and explicit data clear |
+| `src/features/browser-automation/`       | Trusted Chromium operations and scoped Browser Host registration  |
+| `src/features/browser-webviews/`         | Tab registry, OAuth/popup handling, and renderer presentation     |
 | `src/settings/`                          | Desktop-local settings and window state                           |
 | `src/preload.cts`                        | Narrow renderer IPC bridge                                        |
 
@@ -340,7 +359,7 @@ approval, provider readiness, or success results without daemon authority.
 
 ### `packages/cli` - Command and automation surface
 
-`@thoth/cli` provides daemon, agent, task, loop, permit, provider, terminal, and worktree commands for human and automated callers.
+`@thoth/cli` provides daemon, agent/import, task, schedule, loop, permit, provider, terminal, and worktree commands for human and automated callers.
 CLI uses the same RPC through `@thoth/client` and does not open the Workspace authority database directly.
 
 **Key modules:**
@@ -664,8 +683,14 @@ Provider events / Human commands / Task transitions
 Rules:
 
 - Daemon timestamp, sequence, message identity, and epoch are canonical.
-- Live streams provide immediacy; paged fetch/catch-up provides correctness.
+- Live streams provide immediacy; bounded paged fetch/catch-up provides correctness. `limit=0` cannot create an
+  unbounded production read.
 - Client deduplicates by identity/sequence/cursor, not by textual similarity.
+- Canonical ingress truncates textual content once at a UTF-8-safe boundary of at most 64 KiB and records
+  truncated/original/retained byte metadata. Live and durable projections use the same object, and no complete
+  output copy is retained elsewhere in Thoth authority.
+- Provider-native subagents appear only as bounded nested read-only traces under their parent AgentTimeline; they
+  do not mint Agent, Task, or Workspace authority.
 - Rewind binds the canonical Thoth message id to a versioned adapter-owned opaque Provider anchor receipt.
 - Successful Conversation/both rewind resets the canonical Timeline epoch.
 - Unknown or ambiguous legacy anchors display unavailable; Provider position must not be guessed.
@@ -761,6 +786,7 @@ Canonical topology：
 - Provider profiles and non-secret references;
 - Workspace Registry；
 - Task locators rebuildable from Workspace shards;
+- Host-runtime service-port leases and their generation/activation receipts;
 - storage schema/version and migration bookkeeping.
 
 It does not store complete Task authority, become a global Loop database, or place all Workspaces in one shared contention
@@ -810,6 +836,17 @@ and one-way: remove the old layout on success; retain the source and reject runt
 Each Provider execution is bound to `workspaceId + task/turnId + attemptId + generation + bundle/scope`. Every Provider
 event, tool call, approval, and settlement must match the active binding. Interrupt, Stop, Card suspension, rewind,
 or a replacement attempt fences the old generation.
+
+### Schedule and Host resource leases
+
+- A Schedule belongs to one Workspace. Each trigger creates a real Task and ExecutionAttempt and publishes the
+  same canonical Timeline/Evidence lifecycle as an interactive run.
+- Schedule mutation is serialized by the existing Workspace mutation lease unless the user explicitly selected a
+  worktree Workspace. A trigger never creates an Agent-only shadow run.
+- Host service ports use durable `reserve -> spawn -> activate` leases. Spawn failure, cancellation, stale
+  generation, and crash recovery roll back or reclaim the lease; two Workspaces cannot activate the same port.
+- Daemon PID locks carry heartbeat and instance fencing. Shutdown rejects new session/provider registrations before
+  draining in-flight registration; failed initialization releases processes, handles, and leases.
 
 ### Stop and cancellation
 

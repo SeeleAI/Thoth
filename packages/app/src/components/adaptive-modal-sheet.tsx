@@ -2,7 +2,15 @@ import { forwardRef, useCallback, useEffect, useMemo } from "react";
 import type { ReactNode, Ref } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet as RNStyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import type { TextInputProps } from "react-native";
 import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -55,7 +63,7 @@ export interface SheetHeader {
 type EscHandler = () => void;
 const escStack: EscHandler[] = [];
 let escListenerAttached = false;
-const ABSOLUTE_FILL_STYLE = { ...StyleSheet.absoluteFillObject };
+const ABSOLUTE_FILL_STYLE = { ...RNStyleSheet.absoluteFillObject };
 
 function handleEscKeyDown(event: KeyboardEvent) {
   if (event.key !== "Escape") return;
@@ -84,7 +92,7 @@ function pushEscHandler(handler: EscHandler): () => void {
 
 const styles = StyleSheet.create((theme) => ({
   desktopOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...RNStyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "center",
     alignItems: "center",

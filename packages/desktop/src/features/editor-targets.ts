@@ -13,6 +13,7 @@ interface EditorTargetDefinition {
   label: string;
   kind: EditorTargetKind;
   command: string;
+  commandAliases?: readonly string[];
   platforms?: readonly NodeJS.Platform[];
   excludedPlatforms?: readonly NodeJS.Platform[];
 }
@@ -70,10 +71,90 @@ const RUNTIME_CONTROL_ENV_KEYS = [
 
 const BUILT_IN_EDITOR_TARGETS: readonly EditorTargetDefinition[] = [
   { id: "cursor", label: "Cursor", kind: "editor", command: "cursor" },
+  { id: "trae", label: "Trae", kind: "editor", command: "trae" },
+  { id: "kiro", label: "Kiro", kind: "editor", command: "kiro" },
   { id: "vscode", label: "VS Code", kind: "editor", command: "code" },
-  { id: "webstorm", label: "WebStorm", kind: "editor", command: "webstorm" },
-  { id: "zed", label: "Zed", kind: "editor", command: "zed" },
+  {
+    id: "vscode-insiders",
+    label: "VS Code Insiders",
+    kind: "editor",
+    command: "code-insiders",
+  },
+  {
+    id: "vscodium",
+    label: "VSCodium",
+    kind: "editor",
+    command: "codium",
+    commandAliases: ["vscodium"],
+  },
+  { id: "zed", label: "Zed", kind: "editor", command: "zed", commandAliases: ["zeditor"] },
   { id: "antigravity", label: "Antigravity", kind: "editor", command: "antigravity" },
+  {
+    id: "intellij-idea",
+    label: "IntelliJ IDEA",
+    kind: "editor",
+    command: "idea",
+    commandAliases: ["idea64"],
+  },
+  { id: "aqua", label: "Aqua", kind: "editor", command: "aqua", commandAliases: ["aqua64"] },
+  { id: "clion", label: "CLion", kind: "editor", command: "clion", commandAliases: ["clion64"] },
+  {
+    id: "datagrip",
+    label: "DataGrip",
+    kind: "editor",
+    command: "datagrip",
+    commandAliases: ["datagrip64"],
+  },
+  {
+    id: "dataspell",
+    label: "DataSpell",
+    kind: "editor",
+    command: "dataspell",
+    commandAliases: ["dataspell64"],
+  },
+  {
+    id: "goland",
+    label: "GoLand",
+    kind: "editor",
+    command: "goland",
+    commandAliases: ["goland64"],
+  },
+  {
+    id: "phpstorm",
+    label: "PhpStorm",
+    kind: "editor",
+    command: "phpstorm",
+    commandAliases: ["phpstorm64"],
+  },
+  {
+    id: "pycharm",
+    label: "PyCharm",
+    kind: "editor",
+    command: "pycharm",
+    commandAliases: ["pycharm64"],
+  },
+  { id: "rider", label: "Rider", kind: "editor", command: "rider", commandAliases: ["rider64"] },
+  {
+    id: "rubymine",
+    label: "RubyMine",
+    kind: "editor",
+    command: "rubymine",
+    commandAliases: ["rubymine64"],
+  },
+  {
+    id: "rustrover",
+    label: "RustRover",
+    kind: "editor",
+    command: "rustrover",
+    commandAliases: ["rustrover64"],
+  },
+  {
+    id: "webstorm",
+    label: "WebStorm",
+    kind: "editor",
+    command: "webstorm",
+    commandAliases: ["webstorm64"],
+  },
   {
     id: "finder",
     label: "Finder",
@@ -170,6 +251,23 @@ function resolveTargetDefinitions(
   dependencies: ListEditorTargetsDependencies,
 ): readonly EditorTargetDefinition[] {
   return dependencies.targetDefinitions ?? BUILT_IN_EDITOR_TARGETS;
+}
+
+function resolveTargetExecutable(
+  target: EditorTargetDefinition,
+  input: {
+    env: NodeJS.ProcessEnv;
+    existsSync: (path: string) => boolean;
+    platform: NodeJS.Platform;
+  },
+): string | null {
+  for (const command of [target.command, ...(target.commandAliases ?? [])]) {
+    const executable = resolveExecutable(command, input);
+    if (executable) {
+      return executable;
+    }
+  }
+  return null;
 }
 
 function findTarget(
@@ -283,7 +381,7 @@ export function listAvailableEditorTargets(
 
   return targetDefinitions
     .filter((target) => isTargetSupportedOnPlatform(target, platform))
-    .filter((target) => resolveExecutable(target.command, { platform, env, existsSync }))
+    .filter((target) => resolveTargetExecutable(target, { platform, env, existsSync }))
     .map((target) => ({ id: target.id, label: target.label, kind: target.kind }));
 }
 
@@ -310,7 +408,7 @@ export async function openEditorTarget(
     throw new Error(`Editor target unavailable: ${target.label}`);
   }
 
-  const executable = resolveExecutable(target.command, { platform, env, existsSync });
+  const executable = resolveTargetExecutable(target, { platform, env, existsSync });
   if (!executable) {
     throw new Error(`Editor target unavailable: ${target.label}`);
   }

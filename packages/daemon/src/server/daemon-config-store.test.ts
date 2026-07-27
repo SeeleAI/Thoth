@@ -52,6 +52,18 @@ describe("applyMutableProviderConfigToOverrides", () => {
       },
     });
   });
+
+  test("removes custom base overrides omitted from the authoritative mutable catalog", () => {
+    expect(
+      applyMutableProviderConfigToOverrides(
+        {
+          gemini: { extends: "acp", label: "Gemini", command: ["gemini", "--acp"] },
+          claude: { enabled: false },
+        },
+        { claude: { enabled: true } },
+      ),
+    ).toEqual({ claude: { enabled: true } });
+  });
 });
 
 describe("DaemonConfigStore", () => {
@@ -344,5 +356,80 @@ describe("DaemonConfigStore", () => {
       command: ["npx", "-y", "--version"],
       env: {},
     });
+  });
+
+  test("deletes a custom Provider atomically and notifies the live catalog", () => {
+    const thothHome = mkdtempSync(path.join(tmpdir(), "thoth-daemon-config-store-"));
+    tempDirs.push(thothHome);
+    const configPath = path.join(thothHome, "config.json");
+    writeFileSync(
+      configPath,
+      `${JSON.stringify(
+        {
+          version: 1,
+          agents: {
+            providers: {
+              gemini: {
+                extends: "acp",
+                label: "Gemini",
+                command: ["gemini", "--acp"],
+              },
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const store = new DaemonConfigStore(
+      thothHome,
+      {
+        mcp: { injectIntoAgents: false },
+        providers: {
+          gemini: {
+            extends: "acp",
+            label: "Gemini",
+            command: ["gemini", "--acp"],
+          },
+        },
+        metadataGeneration: { providers: [] },
+        autoArchiveAfterMerge: false,
+        enableTerminalAgentHooks: false,
+        appendSystemPrompt: "",
+      },
+      undefined,
+    );
+    const changes: string[][] = [];
+    store.onChange((config) => changes.push(Object.keys(config.providers)));
+
+    const result = store.deleteCustomProvider("gemini");
+
+    expect(result.providers).toEqual({});
+    expect(changes).toEqual([[]]);
+    expect(loadPersistedConfig(thothHome).agents?.providers?.gemini).toBeUndefined();
+  });
+
+  test("refuses to delete builtin Providers", () => {
+    const thothHome = mkdtempSync(path.join(tmpdir(), "thoth-daemon-config-store-"));
+    tempDirs.push(thothHome);
+    const store = new DaemonConfigStore(
+      thothHome,
+      {
+        mcp: { injectIntoAgents: false },
+        providers: { claude: { enabled: false } },
+        metadataGeneration: { providers: [] },
+        autoArchiveAfterMerge: false,
+        enableTerminalAgentHooks: false,
+        appendSystemPrompt: "",
+      },
+      undefined,
+    );
+
+    expect(() => store.deleteCustomProvider("claude")).toThrow(
+      "Builtin Provider 'claude' cannot be deleted",
+    );
+    expect(() => store.deleteCustomProvider("mock-slow")).toThrow(
+      "Builtin Provider 'mock-slow' cannot be deleted",
+    );
   });
 });

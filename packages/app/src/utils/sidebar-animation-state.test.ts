@@ -21,11 +21,19 @@ import {
 } from "./sidebar-animation-state";
 
 describe("sidebar-animation-state", () => {
-  it("requests a sync when the open state changes", () => {
+  it("always requests store reconciliation after an open or close command", () => {
     expect(
       shouldSyncSidebarAnimation({
         previousIsOpen: false,
         nextIsOpen: true,
+        previousWindowWidth: 390,
+        nextWindowWidth: 390,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSyncSidebarAnimation({
+        previousIsOpen: true,
+        nextIsOpen: false,
         previousWindowWidth: 390,
         nextWindowWidth: 390,
       }),

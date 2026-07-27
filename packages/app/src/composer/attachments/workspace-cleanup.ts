@@ -25,6 +25,9 @@ export function getAttachmentKey(attachment: WorkspaceComposerAttachment): strin
       id: attachment.id,
     });
   }
+  if (attachment.kind === "workspace_file") {
+    return JSON.stringify({ kind: attachment.kind, id: attachment.id });
+  }
   return JSON.stringify({
     type: "review",
     cwd: attachment.attachment.cwd,
@@ -58,6 +61,7 @@ function isSentContextAttachment(
   return (
     attachment.kind === "browser_element" ||
     attachment.kind === "chat_history" ||
+    attachment.kind === "workspace_file" ||
     isPullRequestContextAttachment(attachment)
   );
 }

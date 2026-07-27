@@ -73,6 +73,8 @@ import { useToast } from "@/contexts/toast-context";
 import { toErrorMessage } from "@/utils/error-messages";
 import { showProviderNoticeToast } from "@/utils/provider-notice-toast";
 import { resolveProviderControlDisplayLabel } from "@/composer/agent-controls/provider-display";
+import { buildModelChoiceContribution } from "@/command-center/model-contributions";
+import { useCommandCenterModelRegistration } from "@/command-center/model-registry";
 
 interface AgentControlOption {
   id: string;
@@ -151,6 +153,8 @@ export interface DraftAgentControlsProps {
   planCapability?: ProviderPlanCapability | null;
   providerRunMode?: ProviderRunMode;
   onSelectProviderRunMode?: (runMode: ProviderRunMode) => void;
+  commandCenterActive?: boolean;
+  commandCenterOwnerId?: string;
 }
 
 interface AgentControlsProps {
@@ -159,6 +163,7 @@ interface AgentControlsProps {
   onDropdownClose?: () => void;
   isCompactLayout?: boolean;
   controlExtras?: ReactNode;
+  commandCenterActive?: boolean;
 }
 
 function findOptionLabel(
@@ -861,6 +866,7 @@ function ProviderConfigSheet({
               onOpenChange={handleThinkingOpenChange}
               anchorRef={thinkingAnchorRef}
               desktopPlacement="top-start"
+              desktopMinWidth={200}
               renderOption={renderThinkingOption}
             />
           </View>
@@ -1161,7 +1167,9 @@ export const AgentControls = memo(function AgentControls({
   onDropdownClose,
   isCompactLayout,
   controlExtras,
+  commandCenterActive = false,
 }: AgentControlsProps) {
+  const { t } = useTranslation();
   const { preferences, updatePreferences } = useFormPreferences();
   const agent = useAuthorityProjection(
     serverId,
@@ -1241,24 +1249,52 @@ export const AgentControls = memo(function AgentControls({
       if (!client || !agentProvider) {
         return;
       }
-      void updatePreferences((current) =>
-        mergeProviderPreferences({
-          preferences: current,
-          provider: agentProvider,
-          updates: {
-            model: modelId,
-          },
-        }),
-      ).catch((error) => {
-        console.warn("[AgentControls] persist model preference failed", error);
-      });
-      void client.setAgentModel(agentId, modelId).catch((error) => {
-        console.warn("[AgentControls] setAgentModel failed", error);
-        toast.error(toErrorMessage(error));
-      });
+      void client
+        .setAgentModel(agentId, modelId)
+        .then(() =>
+          updatePreferences((current) =>
+            mergeProviderPreferences({
+              preferences: current,
+              provider: agentProvider,
+              updates: {
+                model: modelId,
+              },
+            }),
+          ),
+        )
+        .catch((error) => {
+          console.warn("[AgentControls] setAgentModel failed", error);
+          toast.error(toErrorMessage(error));
+        });
     },
     [agentId, agentProvider, client, toast, updatePreferences],
   );
+
+  const commandCenterModelContribution = useMemo(
+    () =>
+      buildModelChoiceContribution({
+        sourceId: `agent:${serverId}:${agentId}`,
+        providers: agentModelSelectorProviders,
+        selectedProvider: agentProvider ?? null,
+        selectedModelId: activeModelId,
+        groupLabel: t("shell.commandCenter.modelGroupLabel"),
+        searchKeywords: t("shell.commandCenter.modelSearchKeywords"),
+        select: (_providerId, modelId) => handleSelectModel(modelId),
+      }),
+    [
+      activeModelId,
+      agentId,
+      agentModelSelectorProviders,
+      agentProvider,
+      handleSelectModel,
+      serverId,
+      t,
+    ],
+  );
+  useCommandCenterModelRegistration({
+    active: commandCenterActive && Boolean(agent && client),
+    contribution: commandCenterModelContribution,
+  });
 
   const handleToggleFavoriteModel = useCallback(
     (provider: string, modelId: string) => {
@@ -1472,7 +1508,10 @@ export function DraftAgentControls({
   planCapability = null,
   providerRunMode = "default",
   onSelectProviderRunMode,
+  commandCenterActive = false,
+  commandCenterOwnerId,
 }: DraftAgentControlsProps) {
+  const { t } = useTranslation();
   const { preferences, updatePreferences } = useFormPreferences();
   const isCompactFormFactor = useIsCompactFormFactor();
   const isCompact = isCompactLayout ?? isCompactFormFactor;
@@ -1524,6 +1563,33 @@ export function DraftAgentControls({
     },
     [onSelectModel],
   );
+
+  const commandCenterModelContribution = useMemo(
+    () =>
+      buildModelChoiceContribution({
+        sourceId: commandCenterOwnerId ?? `draft:${modelSelectorServerId ?? "unknown"}:unscoped`,
+        providers: modelSelectorProviders,
+        selectedProvider,
+        selectedModelId: selectedModel,
+        groupLabel: t("shell.commandCenter.modelGroupLabel"),
+        searchKeywords: t("shell.commandCenter.modelSearchKeywords"),
+        select: (providerId, modelId) =>
+          handleDraftProviderAndModelSelect(providerId as AgentProvider, modelId),
+      }),
+    [
+      commandCenterOwnerId,
+      handleDraftProviderAndModelSelect,
+      modelSelectorProviders,
+      modelSelectorServerId,
+      selectedModel,
+      selectedProvider,
+      t,
+    ],
+  );
+  useCommandCenterModelRegistration({
+    active: commandCenterActive && !disabled,
+    contribution: commandCenterModelContribution,
+  });
 
   const handleDraftThinkingSelect = useCallback(
     (thinkingOptionId: string) => {

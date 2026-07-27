@@ -159,7 +159,23 @@ export interface WorkspaceGitService {
   ): Promise<{ repoRoot: string | null; unsubscribe: () => void }>;
   scheduleRefreshForCwd(cwd: string): void;
   onWorkspaceStateMayHaveChanged(cwd: string): void;
+  getMetrics(): WorkspaceGitServiceMetrics;
   dispose(): void;
+}
+
+export interface WorkspaceGitServiceMetrics {
+  workspaceTargetCount: number;
+  workspaceListenerCount: number;
+  repositoryTargetCount: number;
+  repositoryWorkspaceLinkCount: number;
+  workingTreeWatchTargetCount: number;
+  workingTreeWatchListenerCount: number;
+  workspaceObservationSetupInFlightCount: number;
+  workingTreeWatchSetupInFlightCount: number;
+  workspaceRefreshInFlightCount: number;
+  workspaceRefreshQueuedCount: number;
+  fetchInFlightCount: number;
+  snapshotUpdatedListenerCount: number;
 }
 
 export type WorkspaceGitListener = (snapshot: WorkspaceGitRuntimeSnapshot) => void;
@@ -698,6 +714,53 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       includeGitHub: true,
       reason: "external-state-change",
     });
+  }
+
+  getMetrics(): WorkspaceGitServiceMetrics {
+    let workspaceListenerCount = 0;
+    let repositoryWorkspaceLinkCount = 0;
+    let workingTreeWatchListenerCount = 0;
+    let workspaceRefreshInFlightCount = 0;
+    let workspaceRefreshQueuedCount = 0;
+    let workspaceObservationSetupInFlightCount = 0;
+    let fetchInFlightCount = 0;
+
+    for (const target of this.workspaceTargets.values()) {
+      workspaceListenerCount += target.listeners.size;
+      if (target.observationSetupPromise) {
+        workspaceObservationSetupInFlightCount += 1;
+      }
+      if (target.refreshState.status === "in-flight") {
+        workspaceRefreshInFlightCount += 1;
+        if (target.refreshState.queued) {
+          workspaceRefreshQueuedCount += 1;
+        }
+      }
+    }
+    for (const target of this.repoTargets.values()) {
+      repositoryWorkspaceLinkCount += target.workspaceKeys.size;
+      if (target.fetchInFlight) {
+        fetchInFlightCount += 1;
+      }
+    }
+    for (const target of this.workingTreeWatchTargets.values()) {
+      workingTreeWatchListenerCount += target.listeners.size;
+    }
+
+    return {
+      workspaceTargetCount: this.workspaceTargets.size,
+      workspaceListenerCount,
+      repositoryTargetCount: this.repoTargets.size,
+      repositoryWorkspaceLinkCount,
+      workingTreeWatchTargetCount: this.workingTreeWatchTargets.size,
+      workingTreeWatchListenerCount,
+      workspaceObservationSetupInFlightCount,
+      workingTreeWatchSetupInFlightCount: this.workingTreeWatchSetups.size,
+      workspaceRefreshInFlightCount,
+      workspaceRefreshQueuedCount,
+      fetchInFlightCount,
+      snapshotUpdatedListenerCount: this.snapshotUpdatedListeners.size,
+    };
   }
 
   dispose(): void {

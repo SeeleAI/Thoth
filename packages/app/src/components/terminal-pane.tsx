@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  StyleSheet as RNStyleSheet,
   Text,
   View,
   type PressableStateCallbackType,
@@ -21,6 +22,13 @@ import {
   resolvePendingModifierDataInput,
 } from "@/utils/terminal-keys";
 import { getWorkspaceTerminalSession } from "@/terminal/runtime/workspace-terminal-session";
+import { rememberTerminalViewportSize } from "@/terminal/runtime/terminal-size-cache";
+import {
+  canRequestTerminalFocusClaim,
+  EMPTY_TERMINAL_FOCUS_CLAIM,
+  reconcileTerminalFocusClaim,
+  settleTerminalFocusClaim,
+} from "./terminal-pane-focus-claim";
 import {
   TerminalStreamController,
   type TerminalStreamControllerStatus,
@@ -52,6 +60,7 @@ import {
 
 interface TerminalPaneProps {
   serverId: string;
+  workspaceId: string;
   cwd: string;
   terminalId: string;
   isWorkspaceFocused: boolean;
@@ -164,6 +173,7 @@ function VirtualKeyButton({ id, label, keyValue, onSend }: VirtualKeyButtonProps
 
 export function TerminalPane({
   serverId,
+  workspaceId,
   cwd,
   terminalId,
   isWorkspaceFocused,
@@ -220,7 +230,7 @@ export function TerminalPane({
   const pendingTerminalInputRef = useRef<PendingTerminalInput[]>([]);
   const keyboardRefitTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const lastAutoFocusKeyRef = useRef<string | null>(null);
-  const lastPaneFocusResizeKeyRef = useRef<string | null>(null);
+  const paneFocusResizeClaimRef = useRef(EMPTY_TERMINAL_FOCUS_CLAIM);
   const initialSnapshot = workspaceTerminalSession.snapshots.get({ terminalId });
 
   useEffect(() => {
@@ -278,23 +288,34 @@ export function TerminalPane({
   }, [isMobile, isPaneFocused, isWorkspaceFocused, requestTerminalFocus, scopeKey, terminalId]);
 
   useEffect(() => {
-    if (!isPaneFocused || !terminalId) {
-      lastPaneFocusResizeKeyRef.current = null;
-      return;
+    const canRequest = canRequestTerminalFocusClaim({
+      isWorkspaceFocused,
+      isAppVisible,
+      isClientReady: client !== null,
+      isConnected,
+      isRendererReady: rendererReadyStreamKey === terminalStreamKey,
+    });
+    const step = reconcileTerminalFocusClaim(paneFocusResizeClaimRef.current, {
+      key: !isPaneFocused || !terminalId ? null : `${scopeKey}:${terminalId}`,
+      canRequest,
+    });
+    paneFocusResizeClaimRef.current = step.state;
+    if (step.shouldRequest) {
+      lastSentTerminalSizeRef.current = null;
+      requestTerminalReflow();
     }
-
-    const focusResizeKey = `${scopeKey}:${terminalId}`;
-    if (lastPaneFocusResizeKeyRef.current === focusResizeKey) {
-      return;
-    }
-    lastPaneFocusResizeKeyRef.current = focusResizeKey;
-    if (!isWorkspaceFocused) {
-      return;
-    }
-
-    lastSentTerminalSizeRef.current = null;
-    requestTerminalReflow();
-  }, [isPaneFocused, isWorkspaceFocused, requestTerminalReflow, scopeKey, terminalId]);
+  }, [
+    client,
+    isAppVisible,
+    isConnected,
+    isPaneFocused,
+    isWorkspaceFocused,
+    rendererReadyStreamKey,
+    requestTerminalReflow,
+    scopeKey,
+    terminalId,
+    terminalStreamKey,
+  ]);
 
   const handleTerminalFocus = useCallback(() => {
     if (isWorkspaceFocused && isPaneFocused) {
@@ -634,23 +655,41 @@ export function TerminalPane({
       const normalizedCols = Math.floor(cols);
       const nextSize = { rows: normalizedRows, cols: normalizedCols };
       measuredTerminalSizeRef.current = nextSize;
-      if (!input.shouldClaim || !client || !terminalId || !isWorkspaceFocused || !isAppVisible) {
+      rememberTerminalViewportSize({ serverId, workspaceId, cwd, size: nextSize });
+      if (!input.shouldClaim) {
         return;
       }
-      const previousSent = lastSentTerminalSizeRef.current;
-      if (
-        previousSent &&
-        previousSent.rows === normalizedRows &&
-        previousSent.cols === normalizedCols
-      ) {
-        return;
-      }
-      lastSentTerminalSizeRef.current = nextSize;
-      client.sendTerminalInput(terminalId, {
-        type: "resize",
-        rows: normalizedRows,
-        cols: normalizedCols,
+      let sent = false;
+      const canSend = canRequestTerminalFocusClaim({
+        isWorkspaceFocused,
+        isAppVisible,
+        isClientReady: client !== null,
+        isConnected,
+        isRendererReady: true,
       });
+      if (client && terminalId && canSend) {
+        const previousSent = lastSentTerminalSizeRef.current;
+        if (
+          !previousSent ||
+          previousSent.rows !== normalizedRows ||
+          previousSent.cols !== normalizedCols
+        ) {
+          lastSentTerminalSizeRef.current = nextSize;
+          client.sendTerminalInput(terminalId, {
+            type: "resize",
+            rows: normalizedRows,
+            cols: normalizedCols,
+          });
+        }
+        sent = true;
+      }
+      const requestedKey = paneFocusResizeClaimRef.current.requestedKey;
+      if (requestedKey) {
+        paneFocusResizeClaimRef.current = settleTerminalFocusClaim(
+          paneFocusResizeClaimRef.current,
+          { key: requestedKey, sent },
+        );
+      }
     },
   );
 
@@ -894,7 +933,7 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: 0,
   },
   attachOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...RNStyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(0, 0, 0, 0.16)",

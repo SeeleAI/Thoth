@@ -799,6 +799,7 @@ export class ForegroundTurnCoordinator {
     this.activeRunTokens.set(turn.agentId, token);
     this.options.toolGateway.beginForegroundTurn({
       agentId: turn.agentId,
+      workspaceId: turn.workspaceId,
       generation: turn.generation,
       kind: input.structured ? "thoth_clarify" : "raw_provider",
       foregroundTurnId: turn.id,

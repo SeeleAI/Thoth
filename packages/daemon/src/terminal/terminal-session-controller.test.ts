@@ -232,6 +232,7 @@ describe("terminal-session-controller legacy terminal creation", () => {
       type: "create_terminal_request",
       cwd: terminalCwd,
       name: "App Shell",
+      size: { rows: 48, cols: 160 },
       requestId: "req-1",
     });
 
@@ -240,6 +241,8 @@ describe("terminal-session-controller legacy terminal creation", () => {
         cwd: terminalCwd,
         workspaceId: "ws-app",
         name: "App Shell",
+        rows: 48,
+        cols: 160,
       }),
     );
     expect(outboundMessages).toEqual([

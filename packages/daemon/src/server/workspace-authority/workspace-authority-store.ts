@@ -1650,6 +1650,38 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     if (updated) this.emit([updated.taskId], [updated.id]);
     return updated;
   }
+
+  settleQuickExecution(input: {
+    executionId: string;
+    generation: string;
+    status: "succeeded" | "failed";
+    summary: string;
+  }): boolean {
+    let taskId = "";
+    this.transaction(() => {
+      const execution = this.getExecution(input.executionId);
+      if (!execution || execution.generation !== input.generation) {
+        throw new WorkspaceAuthorityConflictError(
+          `Quick execution ${input.executionId} is no longer active`,
+        );
+      }
+      const task = this.getTask(execution.taskId);
+      if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
+      const mutation = this.transition(this.authorityState({ task, execution }), {
+        type: "execution.quick.settled",
+        generation: input.generation,
+        status: input.status,
+        summary: input.summary,
+      });
+      this.applyAuthorityMutationInTransaction(mutation);
+      taskId = task.id;
+    });
+    const task = this.getTask(taskId)!;
+    this.syncTaskLocator(task);
+    this.emit([taskId], [input.executionId]);
+    return true;
+  }
+
   recordExecutionRunModeReceipt(input: {
     executionId: string;
     generation: string;

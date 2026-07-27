@@ -976,6 +976,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
 
     const inputScrollbar = useWebElementScrollbar(webTextareaRef, {
       enabled: isWeb,
+      reserveStableGutter: true,
     });
 
     usePasteImagesEffect({

@@ -23,7 +23,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { View } from "react-native";
+import { AppState, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { Extrapolation, interpolate, runOnJS, useSharedValue } from "react-native-reanimated";
@@ -95,6 +95,7 @@ import {
 import { getDaemonStartService } from "@/runtime/daemon-start-service";
 import { applyAppearance } from "@/screens/settings/appearance/apply-appearance";
 import { usePanelStore } from "@/stores/panel-store";
+import { flushDraftPersistStorage } from "@/stores/draft-store";
 import { THEME_TO_UNISTYLES, type ThemeName } from "@/styles/theme";
 import type { HostProfile } from "@/types/host-connection";
 import { toggleDesktopSidebarsWithCheckoutIntent } from "@/utils/desktop-sidebar-toggle";
@@ -528,7 +529,6 @@ function MobileGestureWrapper({
     setOverlayPeek,
     isGesturing,
     mobilePanelState,
-    gestureAnimatingRef,
     openGestureRef,
   } = useSidebarAnimation();
   const touchStartX = useSharedValue(0);
@@ -536,9 +536,8 @@ function MobileGestureWrapper({
   const openGestureEnabled = chromeEnabled;
 
   const handleGestureOpen = useCallback(() => {
-    gestureAnimatingRef.current = true;
     showMobileAgentList();
-  }, [showMobileAgentList, gestureAnimatingRef]);
+  }, [showMobileAgentList]);
 
   const openGesture = useMemo(
     () =>
@@ -1007,6 +1006,15 @@ function RootProviders({ children }: { children: ReactNode }) {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active") {
+        void flushDraftPersistStorage();
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
   return (
     <GestureHandlerRootView style={flexStyle}>
       <View style={layoutStyles.surfaceFill}>

@@ -237,6 +237,89 @@ describe("bottom anchor controller driver", () => {
     });
   });
 
+  it("preserves a blocked route anchor while a user scroll ends at the bottom", () => {
+    const harness = createDriverHarness({ authoritativeReady: false });
+
+    harness.driver.applyRouteRequest({
+      agentId: "agent-1",
+      reason: "initial-entry",
+      requestKey: "route:agent-1:initial-entry",
+    });
+    harness.scheduler.flushAll();
+
+    harness.driver.beginUserScroll();
+    harness.context.authoritativeReady = true;
+    harness.driver.notifyAuthoritativeHistoryMaybeChanged();
+    harness.driver.reevaluate();
+    harness.scheduler.flushAll();
+
+    expect(harness.scrollToBottom).not.toHaveBeenCalled();
+
+    harness.driver.endUserScroll({ isNearBottom: true });
+    harness.scheduler.flushAll();
+
+    expect(harness.scrollToBottom).toHaveBeenCalledTimes(1);
+    expect(harness.driver.getSnapshot()).toMatchObject({
+      mode: "sticky-bottom",
+      blockedReason: null,
+      pendingRequest: null,
+      pendingVerification: null,
+    });
+  });
+
+  it("lets a user scroll away supersede a blocked route anchor", () => {
+    const harness = createDriverHarness({ authoritativeReady: false });
+
+    harness.driver.applyRouteRequest({
+      agentId: "agent-1",
+      reason: "resume",
+      requestKey: "route:agent-1:resume",
+    });
+    harness.scheduler.flushAll();
+
+    harness.driver.beginUserScroll();
+    harness.context.nearBottom = false;
+    harness.driver.handleScrollNearBottomChange({
+      nextIsNearBottom: false,
+      scrollDelta: 48,
+    });
+    harness.driver.endUserScroll({ isNearBottom: false });
+    harness.context.authoritativeReady = true;
+    harness.driver.notifyAuthoritativeHistoryMaybeChanged();
+    harness.driver.reevaluate();
+    harness.scheduler.flushAll();
+
+    expect(harness.scrollToBottom).not.toHaveBeenCalled();
+    expect(harness.driver.getSnapshot()).toMatchObject({
+      mode: "detached",
+      blockedReason: null,
+      pendingRequest: null,
+      pendingVerification: null,
+    });
+  });
+
+  it("pauses sticky maintenance while a user scroll owns the viewport", () => {
+    const harness = createDriverHarness();
+
+    harness.driver.beginUserScroll();
+    harness.driver.handleContentSizeChange({
+      previousContentHeight: 1200,
+      contentHeight: 1400,
+    });
+    harness.context.nearBottom = false;
+    harness.driver.handleScrollNearBottomChange({
+      nextIsNearBottom: false,
+      scrollDelta: 48,
+    });
+    harness.scheduler.flushAll();
+
+    expect(harness.scrollToBottom).not.toHaveBeenCalled();
+    expect(harness.driver.getSnapshot().mode).toBe("sticky-bottom");
+
+    harness.driver.endUserScroll({ isNearBottom: false });
+    expect(harness.driver.getSnapshot().mode).toBe("detached");
+  });
+
   it("suppresses sticky maintenance while detached", () => {
     const harness = createDriverHarness();
 

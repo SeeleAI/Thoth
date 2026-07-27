@@ -18,6 +18,7 @@ export interface ResolveCreateAgentModeInput {
   // Target provider's own unattended mode id, if it has one. Used to bridge
   // unattended parents into unattended children across providers.
   targetUnattendedMode: string | undefined;
+  defaultModeId: string | null | undefined;
 }
 
 function listModes(modes: string[] | undefined): string {
@@ -57,11 +58,11 @@ export function resolveAndValidateCreateAgentMode(
     if (input.unattended && input.targetUnattendedMode !== undefined) {
       return input.targetUnattendedMode;
     }
-    return undefined;
+    return resolveAvailableDefaultMode(input.defaultModeId, availableModes);
   }
 
   if (parent.provider === targetProvider) {
-    return parent.modeId ?? undefined;
+    return parent.modeId ?? resolveAvailableDefaultMode(input.defaultModeId, availableModes);
   }
 
   if (
@@ -88,6 +89,7 @@ export function resolveDefaultAgentCreateConfig(
       unattended: input.unattended,
       availableModes: availableModeIds,
       targetUnattendedMode: input.availableModes?.find(isUnattendedMode)?.id,
+      defaultModeId: input.defaultModeId,
     }),
     featureValues: input.featureValues,
   };
@@ -148,4 +150,16 @@ export function isOpenCodeCreateConfigUnattended(input: AgentCreateConfigUnatten
 
 function isUnattendedMode(mode: AgentMode): boolean {
   return mode.isUnattended === true;
+}
+
+function resolveAvailableDefaultMode(
+  defaultModeId: string | null | undefined,
+  availableModes: string[] | undefined,
+): string | undefined {
+  if (!defaultModeId) {
+    return undefined;
+  }
+  return availableModes === undefined || availableModes.includes(defaultModeId)
+    ? defaultModeId
+    : undefined;
 }

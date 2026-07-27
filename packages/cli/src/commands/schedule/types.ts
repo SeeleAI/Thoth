@@ -24,6 +24,7 @@ export type ScheduleTarget =
       type: "new-agent";
       config: {
         provider: string;
+        isolation?: "same-workspace" | "worktree";
         modeId?: string;
         model?: string;
         thinkingOptionId?: string;
@@ -37,6 +38,8 @@ export type ScheduleTarget =
 
 export interface ScheduleRunRecord {
   id: string;
+  taskId: string | null;
+  executionId: string | null;
   scheduledFor: string;
   startedAt: string;
   endedAt: string | null;
@@ -140,6 +143,7 @@ export interface UpdateScheduleNewAgentConfig {
   provider?: string;
   model?: string | null;
   modeId?: string | null;
+  isolation?: "same-workspace" | "worktree";
 }
 
 export interface UpdateScheduleInput {

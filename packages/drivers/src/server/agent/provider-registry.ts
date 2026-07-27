@@ -47,6 +47,7 @@ export { AGENT_PROVIDER_DEFINITIONS, getAgentProviderDefinition };
 
 export interface ProviderManifest extends AgentProviderDefinition {
   enabled: boolean;
+  source: "builtin" | "custom";
   /**
    * The id of another *registered* provider this one extends (e.g. a Z.AI
    * profile that extends "claude"). null for built-in providers and for
@@ -99,6 +100,7 @@ interface ResolvedProvider {
   additionalModels: ProviderProfileModel[];
   profileModelsAreAdditive: boolean;
   enabled: boolean;
+  source: "builtin" | "custom";
   derivedFromProviderId: string | null;
   providerParams?: unknown;
   loadBaseAdapter: (logger: Logger) => Promise<HarnessAdapter>;
@@ -442,6 +444,7 @@ function wrapAdapterProvider(
     fetchCatalog: async (options) => {
       const catalog = await inner.fetchCatalog(options);
       return {
+        ...catalog,
         models: mergeModels(provider, profileModels, additionalModels, catalog.models, {
           profileModelsAreAdditive,
         }),
@@ -532,6 +535,7 @@ function createRegistryEntry(
   return {
     ...resolved.definition,
     enabled: resolved.enabled,
+    source: resolved.source,
     derivedFromProviderId: resolved.derivedFromProviderId,
     loadAdapter,
     resolveCreateConfig: resolved.resolveCreateConfig,
@@ -547,14 +551,21 @@ function createRegistryEntry(
           return {
             models,
             modes: decorateModes(resolved.definition.modes),
+            defaultModeId: resolved.definition.defaultModeId,
           };
         }
         const catalog = await catalogAdapter.fetchCatalog(options);
-        return { models, modes: decorateModes(catalog.modes) };
+        return {
+          ...catalog,
+          models,
+          modes: decorateModes(catalog.modes),
+          defaultModeId: catalog.defaultModeId ?? resolved.definition.defaultModeId,
+        };
       }
 
       const catalog = await catalogAdapter.fetchCatalog(options);
       return {
+        ...catalog,
         models: mergeModels(
           provider,
           resolved.profileModels,
@@ -565,6 +576,7 @@ function createRegistryEntry(
           },
         ),
         modes: decorateModes(catalog.modes),
+        defaultModeId: catalog.defaultModeId ?? resolved.definition.defaultModeId,
       };
     },
   };
@@ -617,6 +629,7 @@ function buildResolvedBuiltinProviders(
       additionalModels: override?.additionalModels ?? [],
       profileModelsAreAdditive: false,
       enabled: override?.enabled ?? definition.enabledByDefault ?? true,
+      source: "builtin",
       derivedFromProviderId: null,
       providerParams: override?.params,
       loadBaseAdapter: (logger) =>
@@ -677,6 +690,7 @@ function addDerivedProviders(
         additionalModels: override.additionalModels ?? [],
         profileModelsAreAdditive: false,
         enabled: override.enabled !== false,
+        source: "custom",
         derivedFromProviderId: null,
         providerParams: override.params,
         loadBaseAdapter: async (logger) => {
@@ -724,6 +738,7 @@ function addDerivedProviders(
       additionalModels: override.additionalModels ?? [],
       profileModelsAreAdditive: false,
       enabled: override.enabled !== false,
+      source: "custom",
       derivedFromProviderId: baseProviderId,
       providerParams,
       loadBaseAdapter: (logger) =>

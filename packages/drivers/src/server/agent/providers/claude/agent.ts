@@ -30,6 +30,7 @@ import {
   mapTaskNotificationUserContentToToolCall,
 } from "./task-notification-tool-call.js";
 import { getClaudeModelsWithSettings, normalizeClaudeRuntimeModelId } from "./models.js";
+import { parseClaudeCodeVersion } from "./model-manifest.js";
 import { parsePartialJsonObject } from "./partial-json.js";
 import { ClaudeSidechainTracker } from "./sidechain-tracker.js";
 import { buildClaudeFeatures, claudeModelSupportsFastMode } from "./feature-definitions.js";
@@ -355,6 +356,7 @@ interface ClaudeHarnessAdapterOptions {
   runtimeSettings?: ProviderRuntimeSettings;
   queryFactory?: ClaudeQueryFactory;
   resolveBinary?: () => Promise<string>;
+  resolveVersion?: () => Promise<string>;
   configDir?: string;
 }
 
@@ -1413,6 +1415,7 @@ export class ClaudeHarnessAdapter implements HarnessAdapter {
   private readonly runtimeSettings?: ProviderRuntimeSettings;
   private readonly queryFactory?: ClaudeQueryFactory;
   private readonly resolveBinary: () => Promise<string>;
+  private readonly resolveVersion: () => Promise<string>;
   private readonly configDir?: string;
 
   constructor(options: ClaudeHarnessAdapterOptions) {
@@ -1421,6 +1424,8 @@ export class ClaudeHarnessAdapter implements HarnessAdapter {
     this.runtimeSettings = options.runtimeSettings;
     this.queryFactory = options.queryFactory;
     this.resolveBinary = options.resolveBinary ?? (() => resolveClaudeBinary(this.runtimeSettings));
+    this.resolveVersion =
+      options.resolveVersion ?? (() => resolveClaudeCodeVersion(this.runtimeSettings));
     this.configDir = options.configDir;
   }
 
@@ -1472,8 +1477,28 @@ export class ClaudeHarnessAdapter implements HarnessAdapter {
 
   async fetchCatalog(_options: FetchCatalogOptions): Promise<ProviderCatalog> {
     // Claude exposes a global catalog here; cwd/force are intentionally irrelevant.
-    const models = await getClaudeModelsWithSettings(this.logger, this.configDir);
-    return { models, modes: DEFAULT_MODES, planCapability: { kind: "native" } };
+    let claudeCodeVersion: string | undefined;
+    try {
+      claudeCodeVersion = await this.resolveVersion();
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to resolve Claude Code version for model catalog");
+    }
+    const models = await getClaudeModelsWithSettings(
+      this.logger,
+      this.configDir,
+      claudeCodeVersion,
+    );
+    const modes = detectIneligibleAutoModeTransport(
+      createProviderEnv({ baseEnv: process.env, runtimeSettings: this.runtimeSettings }),
+    )
+      ? DEFAULT_MODES.filter((mode) => mode.id !== "auto")
+      : DEFAULT_MODES;
+    return {
+      models,
+      modes,
+      defaultModeId: modes.some((mode) => mode.id === "auto") ? "auto" : "default",
+      planCapability: { kind: "native" },
+    };
   }
 
   async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
@@ -1567,6 +1592,29 @@ async function resolveClaudeBinary(runtimeSettings?: ProviderRuntimeSettings): P
   throw new Error(
     "Claude binary not found. Install Claude Code (https://github.com/anthropics/claude-code) and ensure it is available in your shell PATH.",
   );
+}
+
+export async function resolveClaudeCodeVersion(
+  runtimeSettings?: ProviderRuntimeSettings,
+): Promise<string> {
+  const launch = await resolveProviderLaunch({
+    commandConfig: runtimeSettings?.command,
+    defaultBinary: "claude",
+  });
+  const availability = await checkProviderLaunchAvailable(launch);
+  if (!availability.available) {
+    throw new Error("Claude binary not found while resolving Claude Code version");
+  }
+  const executable = availability.resolvedPath ?? launch.command;
+  const { stdout, stderr } = await execCommand(executable, [...launch.args, "--version"], {
+    ...createProviderEnvSpec({ runtimeSettings }),
+    timeout: 5_000,
+  });
+  const version = parseClaudeCodeVersion(`${stdout}\n${stderr}`);
+  if (!version) {
+    throw new Error("Unable to parse Claude Code version from --version output");
+  }
+  return version.join(".");
 }
 
 async function resolveClaudeAuth(

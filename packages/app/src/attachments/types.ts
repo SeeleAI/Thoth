@@ -76,6 +76,20 @@ export interface ChatHistoryContextAttachment {
   };
 }
 
+export interface WorkspaceFileContextAttachment {
+  kind: "workspace_file";
+  id: string;
+  attachment: Extract<AgentAttachment, { type: "text" }>;
+  source: {
+    serverId: string;
+    workspaceId: string | null;
+    cwd: string;
+    path: string;
+    size: number;
+    modifiedAt: string;
+  };
+}
+
 export type UserComposerAttachment =
   | { kind: "image"; metadata: AttachmentMetadata }
   | { kind: "file"; attachment: UploadedFileAttachment }
@@ -95,6 +109,7 @@ export type WorkspaceComposerAttachment =
     }
   | PullRequestContextAttachment
   | ChatHistoryContextAttachment
+  | WorkspaceFileContextAttachment
   | {
       kind: "review";
       attachment: Extract<AgentAttachment, { type: "review" }>;

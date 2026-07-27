@@ -448,4 +448,80 @@ describe("runGitCommand", () => {
       expect.objectContaining({ exitCode: 0, stdout: "fourth", truncated: false }),
     ]);
   });
+
+  it("measures limiter queue wait separately from each command timeout", async () => {
+    const { runGitCommand, snapshotGitCommandRuntimeMetrics } = await loadRunGitCommand(1);
+    snapshotGitCommandRuntimeMetrics();
+    enqueueSpawnBehaviors({ delayMs: 100 }, { delayMs: 5 });
+
+    await expect(
+      Promise.all([
+        runGitCommand(["status"], { cwd: process.cwd(), timeout: 250 }),
+        runGitCommand(["rev-parse", "--show-toplevel"], {
+          cwd: process.cwd(),
+          timeout: 20,
+        }),
+      ]),
+    ).resolves.toEqual([
+      expect.objectContaining({ exitCode: 0 }),
+      expect.objectContaining({ exitCode: 0 }),
+    ]);
+
+    const snapshot = snapshotGitCommandRuntimeMetrics();
+    expect(snapshot).toMatchObject({
+      concurrencyLimit: 1,
+      active: 0,
+      pending: 0,
+      submitted: 2,
+      started: 2,
+      completed: 2,
+      failed: 0,
+      timedOut: 0,
+      operationsTop: [
+        ["rev-parse", 1],
+        ["status", 1],
+      ],
+    });
+    expect(snapshot.queueWaitMs).toMatchObject({ count: 2 });
+    expect(snapshot.queueWaitMs.maxMs).toBeGreaterThanOrEqual(70);
+    expect(snapshot.executionMs).toMatchObject({ count: 2 });
+
+    expect(snapshotGitCommandRuntimeMetrics()).toMatchObject({
+      submitted: 0,
+      started: 0,
+      completed: 0,
+      failed: 0,
+      timedOut: 0,
+      operationsTop: [],
+    });
+  });
+
+  it("counts command failures and execution timeouts in the diagnostic window", async () => {
+    const { runGitCommand, snapshotGitCommandRuntimeMetrics } = await loadRunGitCommand(1);
+    snapshotGitCommandRuntimeMetrics();
+    enqueueSpawnBehaviors(
+      { delayMs: 5_000 },
+      { delayMs: 0, exitCode: 1, stderrData: "fatal: nope\n" },
+    );
+
+    await expect(runGitCommand(["fetch"], { cwd: process.cwd(), timeout: 20 })).rejects.toThrow(
+      "Git command timed out after 20ms",
+    );
+    await expect(runGitCommand(["status"], { cwd: process.cwd() })).rejects.toThrow(
+      "Git command failed: git status",
+    );
+
+    expect(snapshotGitCommandRuntimeMetrics()).toMatchObject({
+      submitted: 2,
+      started: 2,
+      completed: 2,
+      failed: 2,
+      timedOut: 1,
+      operationsTop: [
+        ["fetch", 1],
+        ["status", 1],
+      ],
+      executionMs: { count: 2 },
+    });
+  });
 });

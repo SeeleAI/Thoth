@@ -1,7 +1,8 @@
 # Change Classification
 
 Use this reference during Stage 2. Classify coherent capabilities rather than entire commits when a
-commit mixes acceptable and prohibited work.
+commit mixes acceptable and prohibited work. Classify upstream behavior and intent, not whether its
+patch applies cleanly to an older Paseo-derived Thoth path.
 
 ## Dispositions
 
@@ -11,6 +12,21 @@ commit mixes acceptable and prohibited work.
 | `adapt`     | The capability is valuable but Paseo's ownership or product semantics cannot be copied          | Final module, interface, state owner, replaced path, acceptance |
 | `reject`    | The change conflicts with locked goals, authority, security, licensing, or explicit non-goals   | Concrete reason                                                 |
 | `defer`     | The change may be useful but is outside the current slice or lacks a required decision/resource | Concrete reason and retry condition                             |
+
+## Architecture Impact
+
+Every coherent change also has one independent architecture impact:
+
+| Impact          | Meaning                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `local`         | One owner and existing interface; no durable-state, lifecycle, migration, or topology shift |
+| `cross-layer`   | Multiple existing owners cooperate without changing their contracts or authority            |
+| `architectural` | Ownership, interface, state, lifecycle, topology, recovery, security, or migration changes  |
+
+Write a concrete `architecture_assessment` for every change. Read
+[architecture-review.md](architecture-review.md) for architecture candidates and the mandatory
+discussion gate. Disposition and architecture impact are separate: a useful capability may be
+`adapt` plus `architectural`, while a prohibited local feature may be `reject` plus `local`.
 
 ## Common Routing
 
@@ -38,7 +54,7 @@ Store working classification files under ignored `.agent-os/artifacts/paseo-sync
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "paseo_base_sha": "<40-hex-sha>",
   "paseo_target_sha": "<40-hex-sha>",
   "thoth_base_sha": "<40-hex-sha>",
@@ -50,6 +66,8 @@ Store working classification files under ignored `.agent-os/artifacts/paseo-sync
       "upstream_paths": ["packages/app/src/agent-stream/view.tsx"],
       "disposition": "adapt",
       "reason": "Retain the rendering improvement behind the daemon-owned canonical Timeline.",
+      "architecture_impact": "local",
+      "architecture_assessment": "Rendering changes stay behind the existing canonical Timeline projection.",
       "thoth_modules": ["packages/app"],
       "formal_interface": "AuthorityProjectionStore -> AgentTimeline view registry",
       "state_owner": "Daemon Workspace authority",
@@ -66,22 +84,29 @@ Store working classification files under ignored `.agent-os/artifacts/paseo-sync
 }
 ```
 
+Schema version 2 is mandatory. Regenerate older working manifests and classifications rather than
+upgrading or trusting them without a new exact-range review.
+
 Allowed `release_intent` values are `analyze`, `integrate`, `release-ready`, and `publish`.
 
 Every manifest commit must appear in at least one `upstream_commits` array or in
 `ignored_commits`. Every `adopt` or `adapt` item requires non-empty `thoth_modules`,
 `formal_interface`, `state_owner`, and `acceptance`. Every item requires a reason and at least one
-upstream path.
+upstream path. Architecture candidates must appear in a coherent change rather than
+`ignored_commits`. A manifest candidate marked `required` must be classified as `architectural` and
+must carry the review packet and decision state defined in `architecture-review.md`.
 
 ## Architecture Questions
 
 Before changing source, answer:
 
-1. Which final Thoth module owns the capability?
-2. Which formal interface carries it?
-3. Which component owns durable state, if any?
-4. What existing path is replaced?
-5. Which independent behavioral evidence proves the result?
+1. What capability or behavior is Paseo trying to change, independent of its current code shape?
+2. Which final Thoth module owns the capability now?
+3. Which formal interface carries it?
+4. Which component owns durable state, if any?
+5. What existing path is replaced?
+6. Which independent behavioral evidence proves the result?
+7. Does the change require user discussion under the architecture review gate?
 
 If the answers require a second authority or compatibility path, the classification is not ready
 for implementation.

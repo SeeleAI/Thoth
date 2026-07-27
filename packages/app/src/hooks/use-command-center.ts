@@ -20,9 +20,15 @@ import { getIsElectronRuntime } from "@/constants/layout";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { focusWithRetries } from "@/utils/web-focus";
 import { isWeb } from "@/constants/platform";
+import { filterCommandCenterModelChoices } from "@/command-center/model-contributions";
+import {
+  useCommandCenterModelContributions,
+  type CommandCenterModelChoice,
+} from "@/command-center/model-registry";
 
 const EMPTY_AGENTS: AggregatedAgent[] = [];
 const EMPTY_ACTION_ITEMS: CommandCenterActionItem[] = [];
+const EMPTY_MODEL_ITEMS: CommandCenterModelChoice[] = [];
 const EMPTY_COMMAND_CENTER_ITEMS: CommandCenterItem[] = [];
 
 function isMatch(agent: AggregatedAgent, query: string): boolean {
@@ -116,6 +122,10 @@ export type CommandCenterItem =
   | {
       kind: "agent";
       agent: AggregatedAgent;
+    }
+  | {
+      kind: "model";
+      model: CommandCenterModelChoice;
     };
 
 function resolveActionShortcutKeys(
@@ -151,6 +161,7 @@ export function useCommandCenter() {
   const [activeIndex, setActiveIndex] = useState(0);
 
   const { agents } = useAggregatedAgents();
+  const modelContributions = useCommandCenterModelContributions();
 
   const agentResults = useMemo(() => {
     if (!open || agents.length === 0) {
@@ -189,6 +200,13 @@ export function useCommandCenter() {
     });
   }, [open, query, settingsRoute, homeRoute, overrides, t]);
 
+  const modelItems = useMemo(() => {
+    if (!open) {
+      return EMPTY_MODEL_ITEMS;
+    }
+    return filterCommandCenterModelChoices(modelContributions, query);
+  }, [modelContributions, open, query]);
+
   const items = useMemo(() => {
     if (!open) {
       return EMPTY_COMMAND_CENTER_ITEMS;
@@ -200,6 +218,12 @@ export function useCommandCenter() {
         action,
       });
     }
+    for (const model of modelItems) {
+      next.push({
+        kind: "model",
+        model,
+      });
+    }
     for (const agent of agentResults) {
       next.push({
         kind: "agent",
@@ -207,7 +231,7 @@ export function useCommandCenter() {
       });
     }
     return next;
-  }, [actionItems, agentResults, open]);
+  }, [actionItems, agentResults, modelItems, open]);
 
   const handleClose = useCallback(() => {
     setOpen(false);
@@ -248,15 +272,28 @@ export function useCommandCenter() {
     [openProjectPicker, setOpen],
   );
 
+  const handleSelectModel = useCallback(
+    (model: CommandCenterModelChoice) => {
+      clearCommandCenterFocusRestoreElement();
+      setOpen(false);
+      model.run();
+    },
+    [setOpen],
+  );
+
   const handleSelectItem = useCallback(
     (item: CommandCenterItem) => {
       if (item.kind === "action") {
         handleSelectAction(item.action);
         return;
       }
+      if (item.kind === "model") {
+        handleSelectModel(item.model);
+        return;
+      }
       handleSelectAgent(item.agent);
     },
-    [handleSelectAction, handleSelectAgent],
+    [handleSelectAction, handleSelectAgent, handleSelectModel],
   );
 
   useEffect(() => {

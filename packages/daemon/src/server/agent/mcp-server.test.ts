@@ -208,6 +208,7 @@ interface TestDeps {
 function buildAgentManagerSpies() {
   return {
     createAgent: vi.fn(),
+    waitForAgentClose: vi.fn().mockResolvedValue(undefined),
     waitForAgentEvent: vi.fn().mockResolvedValue({
       status: "idle",
       permission: null,
@@ -4222,6 +4223,7 @@ describe("agent snapshot MCP serialization", () => {
       currentModeId: "default",
     } as ManagedAgent;
     spies.executionService.getAgent
+      .mockReturnValueOnce(null)
       .mockReturnValueOnce(null)
       .mockReturnValue(snapshot)
       .mockReturnValue(snapshot);

@@ -22,22 +22,15 @@ export function useExplorerOpenGesture({ enabled, onOpen }: UseExplorerOpenGestu
     animateToClose,
     setOverlayPeek,
     isGesturing,
-    gestureAnimatingRef,
     openGestureRef,
   } = useExplorerSidebarAnimation();
-  const {
-    mobilePanelState,
-    gestureAnimatingRef: mobilePanelGestureAnimatingRef,
-    openGestureRef: leftOpenGestureRef,
-  } = useSidebarAnimation();
+  const { mobilePanelState, openGestureRef: leftOpenGestureRef } = useSidebarAnimation();
   const touchStartX = useSharedValue(0);
   const touchStartY = useSharedValue(0);
 
   const handleGestureOpen = useCallback(() => {
-    gestureAnimatingRef.current = true;
-    mobilePanelGestureAnimatingRef.current = true;
     onOpen();
-  }, [onOpen, gestureAnimatingRef, mobilePanelGestureAnimatingRef]);
+  }, [onOpen]);
 
   return useMemo(
     () =>

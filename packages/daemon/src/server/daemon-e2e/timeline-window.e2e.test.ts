@@ -321,6 +321,46 @@ describe("daemon E2E - timeline window", () => {
     }
   });
 
+  test("legacy zero and oversized limits are normalized to bounded public pages", async () => {
+    const cwd = tmpCwd();
+    try {
+      const agent = await ctx.client.createAgent({
+        provider: "codex",
+        cwd,
+        title: "Timeline Public Bounds Test",
+        modeId: "full-access",
+      });
+      for (let seq = 1; seq <= 700; seq += 1) {
+        await ctx.daemon.daemon.executionService.appendTimelineItem(agent.id, {
+          type: "user_message",
+          text: `row ${seq}`,
+        });
+      }
+
+      const legacyZero = await ctx.client.fetchAgentTimeline(agent.id, {
+        direction: "tail",
+        limit: 0,
+        projection: "canonical",
+      });
+      expect(legacyZero.entries).toHaveLength(200);
+      expect(legacyZero.startCursor?.seq).toBe(501);
+      expect(legacyZero.endCursor?.seq).toBe(700);
+      expect(legacyZero.hasOlder).toBe(true);
+
+      const oversized = await ctx.client.fetchAgentTimeline(agent.id, {
+        direction: "tail",
+        limit: 50_000,
+        projection: "canonical",
+      });
+      expect(oversized.entries).toHaveLength(500);
+      expect(oversized.startCursor?.seq).toBe(201);
+      expect(oversized.endCursor?.seq).toBe(700);
+      expect(oversized.hasOlder).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("after fetch does not re-fetch full plain chat history", async () => {
     const cwd = tmpCwd();
     try {

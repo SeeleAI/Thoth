@@ -30,6 +30,7 @@ describe("loadChangesPreferencesFromStorage", () => {
       layout: "unified",
       wrapLines: true,
       hideWhitespace: false,
+      commitsCollapsed: true,
     });
     expect(storage.entries.get(CHANGES_PREFERENCES_STORAGE_KEY)).toBe(JSON.stringify(result));
   });
@@ -39,6 +40,7 @@ describe("loadChangesPreferencesFromStorage", () => {
       layout: "split",
       hideWhitespace: true,
       wrapLines: false,
+      commitsCollapsed: true,
     });
     const storage = createInMemoryKeyValueStorage({
       [CHANGES_PREFERENCES_STORAGE_KEY]: persisted,
@@ -50,6 +52,7 @@ describe("loadChangesPreferencesFromStorage", () => {
       layout: "split",
       hideWhitespace: true,
       wrapLines: false,
+      commitsCollapsed: true,
     });
     expect(storage.entries.get(CHANGES_PREFERENCES_STORAGE_KEY)).toBe(persisted);
     expect(storage.entries.size).toBe(1);

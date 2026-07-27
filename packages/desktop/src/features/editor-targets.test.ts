@@ -69,9 +69,58 @@ describe("desktop editor targets", () => {
     expect(targets).toEqual([
       { id: "cursor", label: "Cursor", kind: "editor" },
       { id: "vscode", label: "VS Code", kind: "editor" },
-      { id: "webstorm", label: "WebStorm", kind: "editor" },
       { id: "zed", label: "Zed", kind: "editor" },
+      { id: "webstorm", label: "WebStorm", kind: "editor" },
       { id: "explorer", label: "Explorer", kind: "file-manager" },
+    ]);
+  });
+
+  it("detects the expanded editor portfolio and Windows 64-bit JetBrains launchers", () => {
+    const commands = [
+      "trae",
+      "kiro",
+      "code-insiders",
+      "codium",
+      "antigravity",
+      "idea64",
+      "aqua64",
+      "clion64",
+      "datagrip64",
+      "dataspell64",
+      "goland64",
+      "phpstorm64",
+      "pycharm64",
+      "rider64",
+      "rubymine64",
+      "rustrover64",
+    ];
+    const targets = listAvailableEditorTargets({
+      platform: "win32",
+      env: { PATH: "C:/bin" },
+      existsSync: createExistsSync([
+        ...commands.map((command) => `C:/bin/${command}.exe`),
+        "C:/bin/explorer.exe",
+      ]),
+    });
+
+    expect(targets.map((target) => target.id)).toEqual([
+      "trae",
+      "kiro",
+      "vscode-insiders",
+      "vscodium",
+      "antigravity",
+      "intellij-idea",
+      "aqua",
+      "clion",
+      "datagrip",
+      "dataspell",
+      "goland",
+      "phpstorm",
+      "pycharm",
+      "rider",
+      "rubymine",
+      "rustrover",
+      "explorer",
     ]);
   });
 

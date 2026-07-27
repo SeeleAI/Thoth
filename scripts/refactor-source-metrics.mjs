@@ -31,16 +31,22 @@ const excludedPathPatterns = [
 
 const args = parseArgs(process.argv.slice(2));
 const manifest = collectManifest();
+const baseline = args.baseline ? readJson(resolve(repoRoot, args.baseline)) : null;
+const allowance = args.allowance ? readCapabilityAllowance(args.allowance) : null;
 
-if (args.baseline) {
-  compareWithBaseline(manifest, readJson(resolve(repoRoot, args.baseline)), args);
+if (allowance && !baseline) {
+  throw new Error("--allowance requires --baseline");
+}
+
+if (baseline) {
+  compareWithBaseline(manifest, baseline, allowance, args);
 }
 
 if (args.write) {
   writeFileSync(resolve(repoRoot, args.write), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
-printSummary(manifest, args.baseline ? readJson(resolve(repoRoot, args.baseline)) : null);
+printSummary(manifest, baseline, allowance);
 
 function parseArgs(argv) {
   const ceilingFlags = new Map([
@@ -52,6 +58,7 @@ function parseArgs(argv) {
   ]);
   const result = {
     baseline: null,
+    allowance: null,
     write: null,
     requireNetNegative: false,
     requireTarget: null,
@@ -61,6 +68,8 @@ function parseArgs(argv) {
     const arg = argv[index];
     if (arg === "--baseline") {
       result.baseline = requiredValue(argv, ++index, arg);
+    } else if (arg === "--allowance") {
+      result.allowance = requiredValue(argv, ++index, arg);
     } else if (arg === "--write") {
       result.write = requiredValue(argv, ++index, arg);
     } else if (arg === "--require-net-negative") {
@@ -479,7 +488,7 @@ function collectStringLiterals(node, target) {
   ts.forEachChild(node, (child) => collectStringLiterals(child, target));
 }
 
-function compareWithBaseline(current, baseline, options) {
+function compareWithBaseline(current, baseline, allowance, options) {
   if (baseline.schemaVersion !== current.schemaVersion) {
     throw new Error(`Unsupported baseline schema ${baseline.schemaVersion}`);
   }
@@ -490,26 +499,31 @@ function compareWithBaseline(current, baseline, options) {
     );
     if (missing.length > 0) failures.push(`publicSurface.${key} missing: ${missing.join(", ")}`);
   }
-  if (current.runtimeDependencies.length > baseline.runtimeDependencies.length) {
+  const baselineRuntimeDependencies =
+    baseline.runtimeDependencies.length + (allowance?.metrics.runtimeDependencyEdges ?? 0);
+  if (current.runtimeDependencies.length > baselineRuntimeDependencies) {
     failures.push(
-      `runtime dependency edges grew ${baseline.runtimeDependencies.length} -> ${current.runtimeDependencies.length}`,
+      `runtime dependency edges grew ${baselineRuntimeDependencies} -> ${current.runtimeDependencies.length}`,
     );
   }
   if (options.requireNetNegative) {
     for (const key of ["physicalLines", "scannerTokens", "astNodes", "staticImportEdges"]) {
-      if (current.totals[key] >= baseline.totals[key]) {
+      const translatedBaseline = baseline.totals[key] + (allowance?.metrics[key] ?? 0);
+      if (current.totals[key] >= translatedBaseline) {
         failures.push(
-          `${key} is not net-negative: ${baseline.totals[key]} -> ${current.totals[key]}`,
+          `${key} is not net-negative: ${translatedBaseline} -> ${current.totals[key]}`,
         );
       }
     }
   }
+  const translatedPhysicalLines =
+    baseline.totals.physicalLines + (allowance?.metrics.physicalLines ?? 0);
   if (
     options.requireTarget !== null &&
-    baseline.totals.physicalLines - current.totals.physicalLines < options.requireTarget
+    translatedPhysicalLines - current.totals.physicalLines < options.requireTarget
   ) {
     failures.push(
-      `production LOC reduction is ${baseline.totals.physicalLines - current.totals.physicalLines}, required ${options.requireTarget}`,
+      `production LOC reduction is ${translatedPhysicalLines - current.totals.physicalLines}, required ${options.requireTarget}`,
     );
   }
   for (const [key, maximum] of Object.entries(options.ceilings)) {
@@ -523,7 +537,12 @@ function compareWithBaseline(current, baseline, options) {
     throw new Error(`Refactor source contract failed:\n- ${failures.join("\n- ")}`);
 }
 
-function printSummary(current, baseline) {
+function printSummary(current, baseline, allowance) {
+  if (allowance) {
+    console.log(
+      `approvedCapabilityAllowance: ${allowance.decision} (${allowance.metrics.physicalLines} LOC)`,
+    );
+  }
   const rows = [
     ["files", current.totals.files],
     ["physicalLines", current.totals.physicalLines],
@@ -535,13 +554,41 @@ function printSummary(current, baseline) {
   for (const [label, value] of rows) {
     const baselineValue = baseline
       ? label === "runtimeDependencyEdges"
-        ? baseline.runtimeDependencies.length
-        : baseline.totals[label]
+        ? baseline.runtimeDependencies.length + (allowance?.metrics.runtimeDependencyEdges ?? 0)
+        : baseline.totals[label] + (allowance?.metrics[label] ?? 0)
       : null;
     const delta =
       baselineValue === null || baselineValue === undefined ? "" : ` (${value - baselineValue})`;
     console.log(`${label}: ${value}${delta}`);
   }
+}
+
+function readCapabilityAllowance(path) {
+  const allowance = readJson(resolve(repoRoot, path));
+  if (allowance.schemaVersion !== 1 || typeof allowance.decision !== "string") {
+    throw new Error(`Invalid capability allowance: ${path}`);
+  }
+  for (const key of [
+    "physicalLines",
+    "scannerTokens",
+    "astNodes",
+    "staticImportEdges",
+    "runtimeDependencyEdges",
+  ]) {
+    const value = allowance.metrics?.[key];
+    const preSync = allowance.preSync?.[key];
+    const postSync = allowance.postSync?.[key];
+    if (
+      !Number.isSafeInteger(value) ||
+      value < 0 ||
+      !Number.isSafeInteger(preSync) ||
+      !Number.isSafeInteger(postSync) ||
+      postSync - preSync !== value
+    ) {
+      throw new Error(`Invalid capability allowance metric ${key}: ${path}`);
+    }
+  }
+  return allowance;
 }
 
 function readJson(path) {

@@ -10,6 +10,7 @@ import {
   computeSidebarOrderUpdates,
   deriveSidebarLoadingState,
   shouldShowSidebarHostLabels,
+  prependMissingOrderKeys,
   type SidebarProjectEntry,
 } from "./sidebar-workspaces-view-model";
 
@@ -136,6 +137,17 @@ describe("appendMissingOrderKeys", () => {
     });
 
     expect(result).toBe(currentOrder);
+  });
+});
+
+describe("prependMissingOrderKeys", () => {
+  it("keeps newly discovered workspaces ahead of the saved order", () => {
+    expect(
+      prependMissingOrderKeys({
+        currentOrder: ["old-b", "old-a"],
+        visibleKeys: ["newest", "newer", "old-a", "old-b"],
+      }),
+    ).toEqual(["newest", "newer", "old-b", "old-a"]);
   });
 });
 
@@ -366,7 +378,7 @@ describe("computeSidebarOrderUpdates", () => {
     expect(updates).toEqual({ projectOrder: null, workspaceOrders: [] });
   });
 
-  it("appends unseen projects and workspaces to the persisted orders", () => {
+  it("appends unseen projects while prepending newly discovered workspaces", () => {
     const projects = [
       sidebarProject({ projectKey: "project-a", workspaceKeys: ["ws-1", "ws-2"] }),
       sidebarProject({ projectKey: "project-b", workspaceKeys: ["ws-3"] }),
@@ -380,7 +392,7 @@ describe("computeSidebarOrderUpdates", () => {
 
     expect(updates.projectOrder).toEqual(["project-a", "project-b"]);
     expect(updates.workspaceOrders).toEqual([
-      { projectKey: "project-a", order: ["srv:ws-1", "srv:ws-2"] },
+      { projectKey: "project-a", order: ["srv:ws-2", "srv:ws-1"] },
       { projectKey: "project-b", order: ["srv:ws-3"] },
     ]);
   });

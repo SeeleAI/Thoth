@@ -2,6 +2,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet as RNStyleSheet,
   Text,
   TextInput,
   View,
@@ -9,7 +10,7 @@ import {
 } from "react-native";
 import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Home, Plus, Settings } from "lucide-react-native";
+import { Check, Home, Plus, Settings } from "lucide-react-native";
 import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 import { useCommandCenter } from "@/hooks/use-command-center";
 import type { AggregatedAgent } from "@/hooks/use-aggregated-agents";
@@ -28,6 +29,7 @@ import {
   BottomSheetScrollView,
   BottomSheetTextInput,
 } from "@gorhom/bottom-sheet";
+import { getProviderIcon } from "@/components/provider-icons";
 
 function agentKey(agent: Pick<AggregatedAgent, "serverId" | "id">): string {
   return `${agent.serverId}:${agent.id}`;
@@ -43,6 +45,7 @@ interface CommandCenterRowProps {
   onPress: () => void;
   registerRow: (el: View | null) => void;
   onLayout?: (event: { nativeEvent: { layout: { y: number; height: number } } }) => void;
+  testID?: string;
 }
 
 const CommandCenterRow = memo(function CommandCenterRow({
@@ -51,6 +54,7 @@ const CommandCenterRow = memo(function CommandCenterRow({
   onPress,
   registerRow,
   onLayout,
+  testID,
 }: CommandCenterRowProps) {
   const { theme } = useUnistyles();
 
@@ -65,7 +69,13 @@ const CommandCenterRow = memo(function CommandCenterRow({
   );
 
   return (
-    <Pressable ref={registerRow} style={pressableStyle} onPress={onPress} onLayout={onLayout}>
+    <Pressable
+      ref={registerRow}
+      style={pressableStyle}
+      onPress={onPress}
+      onLayout={onLayout}
+      testID={testID}
+    >
       {children}
     </Pressable>
   );
@@ -78,6 +88,7 @@ interface CommandCenterRowContainerProps {
   onPress: () => void;
   onLayout?: (event: { nativeEvent: { layout: { y: number; height: number } } }) => void;
   children: ReactNode;
+  testID?: string;
 }
 
 function CommandCenterRowContainer({
@@ -87,6 +98,7 @@ function CommandCenterRowContainer({
   onPress,
   onLayout,
   children,
+  testID,
 }: CommandCenterRowContainerProps) {
   const registerRow = useCallback(
     (el: View | null) => {
@@ -101,9 +113,63 @@ function CommandCenterRowContainer({
       registerRow={registerRow}
       onPress={onPress}
       onLayout={onLayout}
+      testID={testID}
     >
       {children}
     </CommandCenterRow>
+  );
+}
+
+interface CommandCenterModelRowProps {
+  item: Extract<ReturnType<typeof useCommandCenter>["items"][number], { kind: "model" }>;
+  rowIndex: number;
+  active: boolean;
+  rowRefs: React.MutableRefObject<Map<number, View>>;
+  onLayout?: (event: { nativeEvent: { layout: { y: number; height: number } } }) => void;
+  onSelect: (item: ReturnType<typeof useCommandCenter>["items"][number]) => void;
+}
+
+function CommandCenterModelRow({
+  item,
+  rowIndex,
+  active,
+  rowRefs,
+  onLayout,
+  onSelect,
+}: CommandCenterModelRowProps) {
+  const { theme } = useUnistyles();
+  const { t } = useTranslation();
+  const handlePress = useCallback(() => onSelect(item), [item, onSelect]);
+  const Icon = getProviderIcon(item.model.providerId);
+  const titleStyle = useMemo(
+    () => [styles.title, { color: theme.colors.foreground }],
+    [theme.colors.foreground],
+  );
+  const breadcrumb = `${t("shell.commandCenter.modelGroupLabel")} › ${item.model.providerLabel} › ${item.model.modelLabel}`;
+
+  return (
+    <CommandCenterRowContainer
+      rowIndex={rowIndex}
+      active={active}
+      rowRefs={rowRefs}
+      onPress={handlePress}
+      onLayout={onLayout}
+      testID={`command-center-model-${item.model.providerId}:${item.model.modelId}`}
+    >
+      <View style={styles.rowContent}>
+        <View style={styles.rowMain}>
+          <View style={styles.iconSlot}>
+            <Icon size={16} color={theme.colors.foregroundMuted} />
+          </View>
+          <View style={styles.textContent}>
+            <Text style={titleStyle} numberOfLines={1}>
+              {breadcrumb}
+            </Text>
+          </View>
+        </View>
+        {item.model.selected ? <Check size={16} color={theme.colors.foregroundMuted} /> : null}
+      </View>
+    </CommandCenterRowContainer>
   );
 }
 
@@ -237,7 +303,7 @@ function CommandCenterAgentRowContent({ agent }: CommandCenterAgentRowContentPro
 
 interface AgentItemsSectionProps {
   agentItems: Extract<ReturnType<typeof useCommandCenter>["items"][number], { kind: "agent" }>[];
-  actionItemsLength: number;
+  precedingItemsLength: number;
   activeIndex: number;
   rowRefs: React.MutableRefObject<Map<number, View>>;
   onRowLayout: (
@@ -250,7 +316,7 @@ interface AgentItemsSectionProps {
 
 function AgentItemsSection({
   agentItems,
-  actionItemsLength,
+  precedingItemsLength,
   activeIndex,
   rowRefs,
   onRowLayout,
@@ -262,10 +328,10 @@ function AgentItemsSection({
 
   return (
     <>
-      {actionItemsLength > 0 ? <View style={sectionDividerStyle} /> : null}
+      {precedingItemsLength > 0 ? <View style={sectionDividerStyle} /> : null}
       <Text style={sectionLabelStyle}>{t("shell.commandCenter.agents")}</Text>
       {agentItems.map((item, index) => {
-        const rowIndex = actionItemsLength + index;
+        const rowIndex = precedingItemsLength + index;
         const agent = item.agent;
         return (
           <CommandCenterAgentRow
@@ -279,6 +345,50 @@ function AgentItemsSection({
           >
             <CommandCenterAgentRowContent agent={agent} />
           </CommandCenterAgentRow>
+        );
+      })}
+    </>
+  );
+}
+
+function ModelItemsSection({
+  modelItems,
+  actionItemsLength,
+  activeIndex,
+  rowRefs,
+  onRowLayout,
+  onSelect,
+  sectionDividerStyle,
+  sectionLabelStyle,
+}: {
+  modelItems: Extract<ReturnType<typeof useCommandCenter>["items"][number], { kind: "model" }>[];
+  actionItemsLength: number;
+  activeIndex: number;
+  rowRefs: React.MutableRefObject<Map<number, View>>;
+  onRowLayout: (
+    rowIndex: number,
+  ) => (event: { nativeEvent: { layout: { y: number; height: number } } }) => void;
+  onSelect: (item: ReturnType<typeof useCommandCenter>["items"][number]) => void;
+  sectionDividerStyle: React.ComponentProps<typeof View>["style"];
+  sectionLabelStyle: React.ComponentProps<typeof Text>["style"];
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {actionItemsLength > 0 ? <View style={sectionDividerStyle} /> : null}
+      <Text style={sectionLabelStyle}>{t("shell.commandCenter.modelGroupLabel")}</Text>
+      {modelItems.map((item, index) => {
+        const rowIndex = actionItemsLength + index;
+        return (
+          <CommandCenterModelRow
+            key={item.model.id}
+            item={item}
+            rowIndex={rowIndex}
+            active={rowIndex === activeIndex}
+            rowRefs={rowRefs}
+            onLayout={onRowLayout(rowIndex)}
+            onSelect={onSelect}
+          />
         );
       })}
     </>
@@ -402,6 +512,7 @@ export function CommandCenter() {
   );
 
   const actionItems = useMemo(() => items.filter((item) => item.kind === "action"), [items]);
+  const modelItems = useMemo(() => items.filter((item) => item.kind === "model"), [items]);
   const agentItems = useMemo(() => items.filter((item) => item.kind === "agent"), [items]);
 
   const panelStyle = useMemo(
@@ -467,10 +578,23 @@ export function CommandCenter() {
           </>
         ) : null}
 
+        {modelItems.length > 0 ? (
+          <ModelItemsSection
+            modelItems={modelItems}
+            actionItemsLength={actionItems.length}
+            activeIndex={activeIndex}
+            rowRefs={rowRefs}
+            onRowLayout={handleRowLayout}
+            onSelect={handleSelectItem}
+            sectionDividerStyle={sectionDividerStyle}
+            sectionLabelStyle={sectionLabelStyle}
+          />
+        ) : null}
+
         {agentItems.length > 0 ? (
           <AgentItemsSection
             agentItems={agentItems}
-            actionItemsLength={actionItems.length}
+            precedingItemsLength={actionItems.length + modelItems.length}
             activeIndex={activeIndex}
             rowRefs={rowRefs}
             onRowLayout={handleRowLayout}
@@ -577,7 +701,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingTop: theme.spacing[12],
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...RNStyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
   panel: {

@@ -91,4 +91,27 @@ describe("tool-call presentation", () => {
     expect(presentation.isPlan).toBe(true);
     expect(presentation.icon).toBe(fakeIcons.brain);
   });
+
+  it("shows an explicit canonical truncation marker in the tool badge", () => {
+    const presentation = buildToolCallPresentation({
+      toolName: "exec_command",
+      status: "completed",
+      error: null,
+      detail: { type: "shell", command: "run", output: "retained prefix" },
+      metadata: {
+        contentTruncation: {
+          truncated: true,
+          encoding: "utf-8",
+          strategy: "prefix",
+          originalBytes: 70_000,
+          retainedBytes: 65_536,
+          limitBytes: 65_536,
+        },
+      },
+      resolveIcon: fakeResolveIcon,
+    });
+
+    expect(presentation.outputTruncated).toBe(true);
+    expect(presentation.summary).toContain("Output truncated");
+  });
 });

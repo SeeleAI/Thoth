@@ -1,6 +1,6 @@
 import { useMemo, type Ref } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { View } from "react-native";
+import { StyleSheet as RNStyleSheet, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 export type SplitDropZonePosition = "center" | "left" | "right" | "top" | "bottom";
@@ -147,7 +147,7 @@ function getPreviewFrameStyle(position: SplitDropZonePosition) {
 
 const styles = StyleSheet.create((theme) => ({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...RNStyleSheet.absoluteFillObject,
     zIndex: 40,
   },
   previewOverlay: {

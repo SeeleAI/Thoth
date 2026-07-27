@@ -67,6 +67,7 @@ import {
 } from "./workspace-registry.js";
 import { WorkspaceAuthorityManager } from "./workspace-authority/workspace-authority-manager.js";
 import { WorkspaceTaskCoordinator } from "./workspace-authority/task-coordinator.js";
+import type { WorkspaceForgeService } from "./forge/workspace-forge-service.js";
 
 const REPO_CWD = path.resolve("/tmp/repo");
 const UNREGISTERED_CWD = path.resolve("/tmp/unregistered");
@@ -167,6 +168,7 @@ interface SessionTestAccess {
     peekSnapshot: (cwd: string) => WorkspaceGitRuntimeSnapshot | null;
     registerWorkspace: (params: { cwd: string }, listener: unknown) => { unsubscribe: () => void };
   };
+  registerAuthorityWorkspace(workspaceId: string): Promise<boolean>;
   filesystem: {
     isDirectory(cwd: string): Promise<boolean>;
   };
@@ -529,6 +531,7 @@ function createSessionForWorkspaceTests(
     appVersion?: string | null;
     onMessage?: (message: SessionOutboundMessage) => void;
     workspaceGitService?: ReturnType<typeof createNoopWorkspaceGitService>;
+    workspaceForgeService?: WorkspaceForgeService;
     terminalManager?: TerminalManager | null;
     projectRegistry?: SessionOptions["projectRegistry"];
     workspaceRegistry?: SessionOptions["workspaceRegistry"];
@@ -656,6 +659,7 @@ function createSessionForWorkspaceTests(
       }),
       github: options.github,
       workspaceGitService: options.workspaceGitService ?? createNoopWorkspaceGitService(),
+      workspaceForgeService: options.workspaceForgeService,
       renameCurrentBranch: options.renameCurrentBranch,
       generateWorkspaceName: options.generateWorkspaceName,
       daemonConfigStore: asDaemonConfigStore({
@@ -3597,7 +3601,173 @@ test("open_project_request registers a workspace before any agent exists", async
   expect(response?.payload.workspace?.id).toBe(registeredWorkspace?.workspaceId);
 });
 
-test("import_agent_request registers a workspace for a never-seen cwd", async () => {
+test("Forge RPCs resolve and clone through the Workspace authority path", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const workspace = createPersistedWorkspaceRecord({
+    workspaceId: "ws-forge-clone",
+    projectId: "project-forge-clone",
+    cwd: "/tmp/forge-clone",
+    kind: "local_checkout",
+    displayName: "widgets",
+    title: "Widgets",
+    createdAt: "2026-07-27T00:00:00.000Z",
+    updatedAt: "2026-07-27T00:00:00.000Z",
+  });
+  const project = createPersistedProjectRecord({
+    projectId: workspace.projectId,
+    rootPath: workspace.cwd,
+    kind: "git",
+    displayName: "widgets",
+    createdAt: workspace.createdAt,
+    updatedAt: workspace.updatedAt,
+  });
+  const repository = {
+    forge: "gitlab" as const,
+    host: "gitlab.com",
+    namespace: "acme/platform",
+    repository: "widgets",
+    fullName: "acme/platform/widgets",
+    remoteUrl: "git@gitlab.com:acme/platform/widgets.git",
+    webUrl: "https://gitlab.com/acme/platform/widgets",
+    changeRequestAbbrev: "MR" as const,
+    changeRequestNoun: "merge request" as const,
+  };
+  const resolveRepository = vi.fn(() => repository);
+  const cloneWorkspace = vi.fn(async () => ({ repository, workspace }));
+  const session = createSessionForWorkspaceTests({
+    workspaceForgeService: {
+      resolveRepository,
+      cloneWorkspace,
+    } as unknown as WorkspaceForgeService,
+  });
+  session.emit = (message) => {
+    if (isSessionOutboundMessage(message)) emitted.push(message);
+  };
+  session.workspaceRegistry.get = async (workspaceId: string) =>
+    workspaceId === workspace.workspaceId ? workspace : null;
+  session.workspaceRegistry.list = async () => [workspace];
+  session.projectRegistry.get = async (projectId: string) =>
+    projectId === project.projectId ? project : null;
+  session.projectRegistry.list = async () => [project];
+  session.registerAuthorityWorkspace = async () => true;
+
+  await session.handleMessage({
+    type: "forge.resolve.request",
+    remoteUrl: repository.remoteUrl,
+    requestId: "resolve-forge",
+  });
+  await session.handleMessage({
+    type: "workspace.clone.request",
+    remoteUrl: repository.remoteUrl,
+    destinationPath: workspace.cwd,
+    title: "Widgets",
+    requestId: "clone-forge",
+  });
+
+  expect(resolveRepository).toHaveBeenCalledWith(repository.remoteUrl, undefined);
+  expect(cloneWorkspace).toHaveBeenCalledWith({
+    remoteUrl: repository.remoteUrl,
+    destinationPath: workspace.cwd,
+    forgeHint: undefined,
+    title: "Widgets",
+  });
+  expect(findByType(emitted, "forge.resolve.response")?.payload.repository).toEqual(repository);
+  expect(findByType(emitted, "workspace.clone.response")?.payload).toMatchObject({
+    requestId: "clone-forge",
+    workspace: { id: workspace.workspaceId },
+    error: null,
+  });
+});
+
+test("workspace.restore.request explicitly unarchives an existing Workspace", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  let workspace = createPersistedWorkspaceRecord({
+    workspaceId: "ws-explicit-restore",
+    projectId: "project-explicit-restore",
+    cwd: "/tmp/explicit-restore",
+    kind: "directory",
+    displayName: "explicit-restore",
+    createdAt: "2026-07-27T00:00:00.000Z",
+    updatedAt: "2026-07-27T00:00:00.000Z",
+    archivedAt: "2026-07-27T01:00:00.000Z",
+  });
+  const project = createPersistedProjectRecord({
+    projectId: workspace.projectId,
+    rootPath: workspace.cwd,
+    kind: "non_git",
+    displayName: "explicit-restore",
+    createdAt: workspace.createdAt,
+    updatedAt: workspace.updatedAt,
+  });
+  const session = createSessionForWorkspaceTests();
+  session.emit = (message) => {
+    if (isSessionOutboundMessage(message)) emitted.push(message);
+  };
+  session.workspaceRegistry.get = async (workspaceId: string) =>
+    workspaceId === workspace.workspaceId ? workspace : null;
+  session.workspaceRegistry.list = async () => [workspace];
+  session.workspaceRegistry.upsert = async (record: PersistedWorkspaceRecord) => {
+    workspace = record;
+  };
+  session.projectRegistry.get = async (projectId: string) =>
+    projectId === project.projectId ? project : null;
+  session.projectRegistry.list = async () => [project];
+  session.registerAuthorityWorkspace = async () => true;
+
+  await session.handleMessage({
+    type: "workspace.restore.request",
+    workspaceId: workspace.workspaceId,
+    requestId: "restore-workspace",
+  });
+
+  expect(workspace.archivedAt).toBeNull();
+  expect(findByType(emitted, "workspace.restore.response")?.payload).toMatchObject({
+    requestId: "restore-workspace",
+    workspace: { id: workspace.workspaceId },
+    error: null,
+    errorCode: null,
+  });
+});
+
+test("workspace.restore.request returns typed errors for missing authority and directories", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const workspace = createPersistedWorkspaceRecord({
+    workspaceId: "ws-missing-directory",
+    projectId: "project-missing-directory",
+    cwd: "/tmp/missing-directory",
+    kind: "directory",
+    displayName: "missing-directory",
+    createdAt: "2026-07-27T00:00:00.000Z",
+    updatedAt: "2026-07-27T00:00:00.000Z",
+    archivedAt: "2026-07-27T01:00:00.000Z",
+  });
+  const session = createSessionForWorkspaceTests();
+  session.emit = (message) => {
+    if (isSessionOutboundMessage(message)) emitted.push(message);
+  };
+  session.workspaceRegistry.get = async (workspaceId: string) =>
+    workspaceId === workspace.workspaceId ? workspace : null;
+  session.filesystem.isDirectory = async () => false;
+
+  await session.handleMessage({
+    type: "workspace.restore.request",
+    workspaceId: "unknown-workspace",
+    requestId: "restore-unknown",
+  });
+  await session.handleMessage({
+    type: "workspace.restore.request",
+    workspaceId: workspace.workspaceId,
+    requestId: "restore-missing-directory",
+  });
+
+  const responses = filterByType(emitted, "workspace.restore.response");
+  expect(responses.map((response) => response.payload.errorCode)).toEqual([
+    "workspace_not_found",
+    "directory_not_found",
+  ]);
+});
+
+test("import_agent_request binds the Provider session to an existing Workspace", async () => {
   const emitted: SessionOutboundMessage[] = [];
   const session = createSessionForWorkspaceTests({
     onMessage: (message) => {
@@ -3607,6 +3777,25 @@ test("import_agent_request registers a workspace for a never-seen cwd", async ()
   const projects = new Map<string, ReturnType<typeof createPersistedProjectRecord>>();
   const workspaces = new Map<string, ReturnType<typeof createPersistedWorkspaceRecord>>();
   const importedCwd = path.resolve("/tmp/imported-project");
+  const existingProject = createPersistedProjectRecord({
+    projectId: "project-imported",
+    rootPath: importedCwd,
+    kind: "non_git",
+    displayName: "imported",
+    createdAt: "2026-05-21T00:00:00.000Z",
+    updatedAt: "2026-05-21T00:00:00.000Z",
+  });
+  const existingWorkspace = createPersistedWorkspaceRecord({
+    workspaceId: "workspace-imported",
+    projectId: existingProject.projectId,
+    cwd: importedCwd,
+    kind: "directory",
+    displayName: "imported",
+    createdAt: "2026-05-21T00:00:00.000Z",
+    updatedAt: "2026-05-21T00:00:00.000Z",
+  });
+  projects.set(existingProject.projectId, existingProject);
+  workspaces.set(existingWorkspace.workspaceId, existingWorkspace);
 
   session.projectRegistry.get = async (projectId: string) => projects.get(projectId) ?? null;
   session.projectRegistry.upsert = async (
@@ -3640,6 +3829,7 @@ test("import_agent_request registers a workspace for a never-seen cwd", async ()
   const managed = makeManagedAgent({
     id: "imported-agent",
     cwd: importedCwd,
+    workspaceId: existingWorkspace.workspaceId,
     lifecycle: "idle",
     updatedAt: "2026-05-21T00:00:00.000Z",
   });
@@ -3650,6 +3840,7 @@ test("import_agent_request registers a workspace for a never-seen cwd", async ()
   session.agentStorage.list = async () => [];
   session.agentStorage.get = async () => null;
   session.agentUpdates.forwardLiveAgent = async () => undefined;
+  session.registerAuthorityWorkspace = async () => true;
 
   session.workspaceUpdatesSubscription = {
     subscriptionId: "sub-import",
@@ -3687,15 +3878,14 @@ test("import_agent_request registers a workspace for a never-seen cwd", async ()
   await session.handleMessage({
     type: "import_agent_request",
     requestId: "req-import",
+    workspaceId: existingWorkspace.workspaceId,
     providerId: "codex",
     providerHandleId: "session-xyz",
     cwd: importedCwd,
   });
 
-  const importedWorkspace = Array.from(workspaces.values()).find(
-    (workspace) => workspace.cwd === importedCwd,
-  );
-  expect(importedWorkspace).toBeTruthy();
+  expect(workspaces.size).toBe(1);
+  expect(workspaces.get(existingWorkspace.workspaceId)).toEqual(existingWorkspace);
   const workspaceUpdates = filterByType(emitted, "workspace_update");
   expect(workspaceUpdates.length).toBeGreaterThan(0);
   expect(
@@ -3705,6 +3895,63 @@ test("import_agent_request registers a workspace for a never-seen cwd", async ()
         update.payload.workspace.workspaceDirectory === importedCwd,
     ),
   ).toBe(true);
+});
+
+test("import_agent_request rejects missing, unknown, archived, and mismatched Workspace bindings", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const active = createPersistedWorkspaceRecord({
+    workspaceId: "workspace-active-import",
+    projectId: "project-import",
+    cwd: "/tmp/import-authority",
+    kind: "directory",
+    displayName: "import-authority",
+    createdAt: "2026-07-27T00:00:00.000Z",
+    updatedAt: "2026-07-27T00:00:00.000Z",
+  });
+  const archived = { ...active, workspaceId: "workspace-archived-import", archivedAt: "now" };
+  const session = createSessionForWorkspaceTests();
+  session.emit = (message) => {
+    if (isSessionOutboundMessage(message)) emitted.push(message);
+  };
+  session.workspaceRegistry.get = async (workspaceId: string) => {
+    if (workspaceId === active.workspaceId) return active;
+    if (workspaceId === archived.workspaceId) return archived;
+    return null;
+  };
+
+  const base = {
+    type: "import_agent_request" as const,
+    providerId: "codex",
+    providerHandleId: "thread-1",
+    cwd: active.cwd,
+  };
+  await session.handleMessage({ ...base, requestId: "missing-binding" });
+  await session.handleMessage({
+    ...base,
+    requestId: "unknown-binding",
+    workspaceId: "workspace-unknown-import",
+  });
+  await session.handleMessage({
+    ...base,
+    requestId: "archived-binding",
+    workspaceId: archived.workspaceId,
+  });
+  await session.handleMessage({
+    ...base,
+    requestId: "mismatched-binding",
+    workspaceId: active.workspaceId,
+    cwd: "/tmp/a-different-project",
+  });
+
+  const failures = filterByType(emitted, "status").filter(
+    (message) => message.payload.status === "agent_create_failed",
+  );
+  expect(failures.map((message) => message.payload.errorCode)).toEqual([
+    "import_workspace_required",
+    "import_workspace_not_found",
+    "import_workspace_archived",
+    "import_workspace_mismatch",
+  ]);
 });
 
 test("open_project_response returns immediately even when the GitHub fetch is slow", async () => {
@@ -6142,6 +6389,17 @@ test("fetch_workspaces_response reads runtime fields from passive workspace git 
       gitRuntime: {
         currentBranch: "runtime-branch",
         remoteUrl: "https://github.com/acme/repo.git",
+        forge: {
+          forge: "github",
+          host: "github.com",
+          namespace: "acme",
+          repository: "repo",
+          fullName: "acme/repo",
+          remoteUrl: "https://github.com/acme/repo.git",
+          webUrl: "https://github.com/acme/repo",
+          changeRequestAbbrev: "PR",
+          changeRequestNoun: "pull request",
+        },
         isThothOwnedWorktree: false,
         isDirty: true,
         aheadBehind: { ahead: 3, behind: 1 },

@@ -60,6 +60,8 @@ export const ar: TranslationResources = {
       newAgent: "وكيل جديد",
       openProject: "مشروع مفتوح",
       home: "بيت",
+      modelGroupLabel: "النموذج",
+      modelSearchKeywords: "تبديل النموذج تغيير النموذج تعيين النموذج اختيار النموذج",
     },
   },
   composer: {
@@ -102,6 +104,8 @@ export const ar: TranslationResources = {
       removeBrowserElement: "إزالة مرفق عنصر المتصفح",
       openReview: "فتح مرفق المراجعة",
       removeReview: "إزالة مرفق المراجعة",
+      openWorkspaceFile: "فتح مرفق ملف مساحة العمل",
+      removeWorkspaceFile: "إزالة مرفق ملف مساحة العمل",
     },
     errors: {
       failedToSend: "فشل في إرسال الرسالة",
@@ -355,6 +359,11 @@ export const ar: TranslationResources = {
         modified: "معدل",
         copyPath: "نسخ المسار",
         download: "تحميل",
+        attachToComposer: "إضافة إلى الرسالة",
+        attachedToComposer: "تمت إضافة الملف إلى الرسالة",
+        attachTextOnly: "يمكن إضافة الملفات النصية فقط إلى الرسالة",
+        attachTooLarge: "الملف كبير جدًا (الحد الأقصى 10 ميغابايت)",
+        attachFailed: "تعذرت إضافة الملف إلى الرسالة",
       },
       actions: {
         back: "خلف",
@@ -709,6 +718,14 @@ export const ar: TranslationResources = {
         base: "قاعدة",
         newFile: "جديد",
         deletedFile: "تم الحذف",
+        commits: {
+          title: "الالتزامات",
+          loading: "جارٍ تحميل سجل الالتزامات...",
+          loadError: "تعذر تحميل سجل الالتزامات",
+          noneAhead: "لا توجد التزامات قبل {{baseRef}} بعد",
+          countLabel: "{{count}} من الالتزامات",
+          noTextualChanges: "لا توجد تغييرات نصية في هذا الالتزام",
+        },
       },
       openInEditor: {
         open: "يفتح",
@@ -806,6 +823,8 @@ export const ar: TranslationResources = {
       actions: {
         menu: "إجراءات Workspace",
         newWorkspace: "مساحة عمل جديدة",
+        showMore: "عرض المزيد",
+        showLess: "عرض أقل",
         createWorkspaceFor: "قم بإنشاء مساحة عمل جديدة لـ{{projectName}}",
         copyPath: "نسخ المسار",
         copyBranchName: "انسخ اسم الفرع",
@@ -1382,6 +1401,17 @@ export const ar: TranslationResources = {
     },
     general: {
       title: "عام",
+      browserData: {
+        title: "بيانات المتصفح",
+        siteData: "ملفات تعريف الارتباط وبيانات المواقع",
+        description: "تتشارك علامات تبويب المتصفح تسجيلات الدخول وبيانات المواقع عبر Thoth.",
+        clear: "مسح بيانات المتصفح",
+        clearing: "جارٍ المسح...",
+        confirmTitle: "هل تريد مسح بيانات المتصفح؟",
+        confirmMessage: "سيتم تسجيل خروجك من المواقع وإعادة تحميل علامات تبويب المتصفح المفتوحة.",
+        success: "تم مسح بيانات المتصفح.",
+        error: "تعذر مسح بيانات المتصفح.",
+      },
       defaultSend: {
         label: "إرسال افتراضي",
         descriptions: {
@@ -1510,6 +1540,7 @@ export const ar: TranslationResources = {
     },
     shortcuts: {
       dialogTitle: "الاختصارات",
+      searchPlaceholder: "البحث في الاختصارات",
       unavailableOnMobile: "اختصارات لوحة المفاتيح متاحة فقط على سطح المكتب",
       capturePrompt: "اضغط على الاختصار...",
       actions: {
@@ -1766,6 +1797,12 @@ export const ar: TranslationResources = {
       loading: "تحميل...",
       addErrorTitle: "Unable to add provider",
       updateErrorTitle: "غير قادر على تحديث الموفر",
+      deleteProvider: "حذف {{name}}",
+      deleteConfirmTitle: "هل تريد حذف {{name}}؟",
+      deleteConfirmMessage:
+        "سيؤدي هذا إلى إزالة المزوّد المخصص من هذا المضيف. ستستمر الجلسات قيد التشغيل، لكن الجلسات الجديدة أو المستأنفة لن تتمكن من استخدامه.",
+      deleteAction: "حذف المزوّد",
+      deleteErrorTitle: "تعذر حذف المزوّد",
       statuses: {
         disabled: "عاجز",
         loading: "تحميل",

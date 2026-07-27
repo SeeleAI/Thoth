@@ -232,6 +232,7 @@ export function connectAndProbe(
 interface ProbeOptions {
   serverId?: string;
   timeoutMs?: number;
+  capabilities?: Record<string, unknown>;
 }
 
 function resolveTimeout(connection: HostConnection, options?: ProbeOptions): number {
@@ -254,5 +255,8 @@ export async function connectToDaemon(
   deps: DaemonConnectionDependencies<DaemonProbeClient> = defaultDaemonConnectionDependencies,
 ): Promise<{ client: DaemonProbeClient; serverId: string; hostname: string | null }> {
   const config = await buildClientConfig(connection, options?.serverId, deps);
+  if (options?.capabilities) {
+    config.capabilities = options.capabilities;
+  }
   return connectAndProbe(config, resolveTimeout(connection, options), deps);
 }

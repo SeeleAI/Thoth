@@ -55,6 +55,18 @@ export class WorkspaceAgentTimelineStore implements AgentTimelineStore {
     return memory.fetch(agentId, options);
   }
 
+  async fetchAllCommitted(agentId: string): Promise<AgentTimelineFetchResult> {
+    const store = this.store(agentId);
+    const meta = store.getAgentTimelineMeta(agentId);
+    const memory = new InMemoryAgentTimelineStore();
+    memory.initialize(agentId, {
+      epoch: meta?.epoch ?? randomUUID(),
+      nextSeq: meta?.nextSeq ?? 1,
+      rows: store.listAgentTimelineRows(agentId),
+    });
+    return memory.fetchAll(agentId, { direction: "tail" });
+  }
+
   async getLatestCommittedSeq(agentId: string): Promise<number> {
     const meta = this.store(agentId).getAgentTimelineMeta(agentId);
     return meta ? Math.max(0, meta.nextSeq - 1) : 0;

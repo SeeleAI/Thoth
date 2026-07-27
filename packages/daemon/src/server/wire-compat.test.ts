@@ -88,6 +88,8 @@ interface SessionInternals {
 class InMemoryExecutionService {
   constructor(private readonly rows: AgentTimelineRow[]) {}
 
+  async waitForAgentClose() {}
+
   getAgent() {
     return {
       id: "agent-1",

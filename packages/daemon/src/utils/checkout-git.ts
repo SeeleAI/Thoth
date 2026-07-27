@@ -3,6 +3,7 @@ import { existsSync, realpathSync } from "fs";
 import { open as openFile, readFile, stat as statFile } from "fs/promises";
 import { TTLCache } from "@isaacs/ttlcache";
 import type { Logger } from "pino";
+import type { CheckoutCommit, CheckoutCommitFile } from "@thoth/protocol/messages";
 import type { ParsedDiffFile } from "../server/utils/diff-highlighter.js";
 import { parseAndHighlightDiff } from "../server/utils/diff-highlighter.js";
 import { parseGitHubRepoFromRemote } from "../server/workspace-git-metadata.js";
@@ -1921,6 +1922,270 @@ export async function getCheckoutStatus(
     remoteUrl,
     isThothOwnedWorktree: false,
   };
+}
+
+// Workspace history is complete. Base history is bounded context until the
+// semantic API gains explicit pagination for older base commits.
+const CHECKOUT_BASE_COMMIT_LIMIT = 10;
+const COMMIT_FIELD_SEPARATOR = "\x00";
+const COMMIT_RECORD_SEPARATOR = "\x1e";
+// These are git format placeholders, not literal NUL bytes in argv.
+const COMMIT_LOG_FORMAT = "%x1e%H%x00%h%x00%an%x00%aI%x00%s";
+
+type CheckoutCommitFileStatus = NonNullable<CheckoutCommitFile["status"]>;
+
+interface ParsedCheckoutCommit {
+  sha: string;
+  shortSha: string;
+  authorName: string;
+  authorDate: string;
+  subject: string;
+  files: CheckoutCommitFile[];
+}
+
+interface CheckoutCommitLogInput {
+  cwd: string;
+  revision: string;
+  maxCount?: number;
+}
+
+function mapCheckoutCommitStatus(letter: string): CheckoutCommitFileStatus | undefined {
+  switch (letter) {
+    case "A":
+    case "C":
+      return "added";
+    case "M":
+    case "T":
+      return "modified";
+    case "D":
+      return "deleted";
+    case "R":
+      return "renamed";
+    default:
+      return undefined;
+  }
+}
+
+function parseCheckoutCommitRawStatus(
+  line: string,
+  statuses: Map<string, CheckoutCommitFileStatus>,
+): void {
+  const tabParts = line.split("\t");
+  const meta = tabParts[0] ?? "";
+  const statusToken = meta.slice(meta.lastIndexOf(" ") + 1);
+  const letter = statusToken.charAt(0);
+  const status = mapCheckoutCommitStatus(letter);
+  if (!status) return;
+
+  const path =
+    letter === "R" || letter === "C" ? (tabParts[tabParts.length - 1] ?? "") : (tabParts[1] ?? "");
+  if (path) statuses.set(path, status);
+}
+
+function parseCheckoutCommitNumstat(
+  line: string,
+  stats: Map<string, { additions: number; deletions: number }>,
+): void {
+  const parts = line.split("\t");
+  if (parts.length < 3) return;
+
+  const path = normalizeNumstatPath(parts.slice(2).join("\t"));
+  if (!path) return;
+
+  const additionsField = parts[0] ?? "";
+  const deletionsField = parts[1] ?? "";
+  if (additionsField === "-" || deletionsField === "-") {
+    stats.set(path, { additions: 0, deletions: 0 });
+    return;
+  }
+
+  const additions = Number.parseInt(additionsField, 10);
+  const deletions = Number.parseInt(deletionsField, 10);
+  if (!Number.isNaN(additions) && !Number.isNaN(deletions)) {
+    stats.set(path, { additions, deletions });
+  }
+}
+
+function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
+  const records = stdout.split(COMMIT_RECORD_SEPARATOR).filter(Boolean);
+  const commits: ParsedCheckoutCommit[] = [];
+
+  for (const record of records) {
+    const lines = record.split("\n");
+    const fields = (lines[0] ?? "").split(COMMIT_FIELD_SEPARATOR);
+    if (fields.length < 5) continue;
+
+    const sha = (fields[0] ?? "").trim();
+    if (!sha) continue;
+
+    const stats = new Map<string, { additions: number; deletions: number }>();
+    const statuses = new Map<string, CheckoutCommitFileStatus>();
+    for (let index = 1; index < lines.length; index += 1) {
+      const line = lines[index] ?? "";
+      if (!line) continue;
+      if (line.startsWith(":")) {
+        parseCheckoutCommitRawStatus(line, statuses);
+      } else {
+        parseCheckoutCommitNumstat(line, stats);
+      }
+    }
+
+    const files = Array.from(stats, ([path, stat]): CheckoutCommitFile => {
+      const status = statuses.get(path);
+      return { path, ...stat, ...(status ? { status } : {}) };
+    });
+    commits.push({
+      sha,
+      shortSha: (fields[1] ?? "").trim(),
+      authorName: fields[2] ?? "",
+      authorDate: (fields[3] ?? "").trim(),
+      subject: fields[4] ?? "",
+      files,
+    });
+  }
+
+  return commits;
+}
+
+async function getUnpushedCommitShas(cwd: string, context?: CheckoutContext): Promise<Set<string>> {
+  const { stdout } = await runGitCommand(["rev-list", "HEAD", "--not", "--remotes"], {
+    cwd,
+    envOverlay: READ_ONLY_GIT_ENV,
+    logger: context?.logger,
+  });
+  return new Set(
+    stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+}
+
+async function getCheckoutCommitRecords({
+  cwd,
+  revision,
+  maxCount,
+}: CheckoutCommitLogInput): Promise<ParsedCheckoutCommit[]> {
+  const args = [
+    "log",
+    revision,
+    "--diff-merges=first-parent",
+    `--format=${COMMIT_LOG_FORMAT}`,
+    "--raw",
+    "--numstat",
+    "-M",
+  ];
+  if (maxCount !== undefined) args.splice(2, 0, `--max-count=${maxCount}`);
+
+  const result = await runGitCommand(args, { cwd, envOverlay: READ_ONLY_GIT_ENV });
+  if (result.truncated) throw new Error("Commit history exceeded the git output limit");
+  return parseCheckoutCommitRecords(result.stdout);
+}
+
+export interface CheckoutCommitsResult {
+  baseRef: string | null;
+  commits: CheckoutCommit[];
+}
+
+async function tryResolveCheckoutCommitsBaseRef(
+  cwd: string,
+  baseRef: string | null,
+  currentBranch: string,
+): Promise<string | null> {
+  if (!baseRef) return null;
+  const normalizedBaseRef = normalizeLocalBranchRefName(baseRef);
+  if (!normalizedBaseRef || normalizedBaseRef === currentBranch) return null;
+  return resolveMostAheadBaseRef(cwd, normalizedBaseRef).catch(() => null);
+}
+
+export async function listCheckoutCommits({
+  cwd,
+  context,
+}: {
+  cwd: string;
+  context?: CheckoutContext;
+}): Promise<CheckoutCommitsResult> {
+  const currentBranch = await getCurrentBranch(cwd);
+  if (!currentBranch) return { baseRef: null, commits: [] };
+
+  const { resolvedBaseRef } = await resolveBaseRefForCwd(cwd, context);
+  const normalizedBaseRef = resolvedBaseRef ? normalizeLocalBranchRefName(resolvedBaseRef) : null;
+  let comparisonBaseRef = await tryResolveCheckoutCommitsBaseRef(
+    cwd,
+    resolvedBaseRef,
+    currentBranch,
+  );
+  if (!comparisonBaseRef && normalizedBaseRef && normalizedBaseRef !== currentBranch) {
+    // Worktree metadata may outlive a renamed or deleted base branch.
+    comparisonBaseRef = await tryResolveCheckoutCommitsBaseRef(
+      cwd,
+      await resolveBaseRef(cwd),
+      currentBranch,
+    );
+  }
+
+  let workspaceRecords: ParsedCheckoutCommit[] = [];
+  let baseRevision = "HEAD";
+  if (comparisonBaseRef) {
+    const [records, mergeBase] = await Promise.all([
+      getCheckoutCommitRecords({ cwd, revision: `${comparisonBaseRef}..HEAD` }),
+      tryResolveMergeBase(cwd, comparisonBaseRef),
+    ]);
+    workspaceRecords = records;
+    baseRevision = mergeBase ?? "";
+  }
+
+  const baseRecords = baseRevision
+    ? await getCheckoutCommitRecords({
+        cwd,
+        revision: baseRevision,
+        maxCount: CHECKOUT_BASE_COMMIT_LIMIT,
+      })
+    : [];
+  const records = [...workspaceRecords, ...baseRecords];
+  if (records.length === 0) return { baseRef: comparisonBaseRef, commits: [] };
+
+  const unpushedShas = await getUnpushedCommitShas(cwd, context);
+  const workspaceShas = new Set(workspaceRecords.map((record) => record.sha));
+  return {
+    baseRef: comparisonBaseRef,
+    commits: records.map((record) => ({
+      ...record,
+      isOnRemote: !unpushedShas.has(record.sha),
+      isOnBase: !workspaceShas.has(record.sha),
+    })),
+  };
+}
+
+export async function getCommitFileDiff({
+  cwd,
+  sha,
+  path,
+}: {
+  cwd: string;
+  sha: string;
+  path: string;
+}): Promise<ParsedDiffFile | null> {
+  const { stdout: parentsOutput } = await runGitCommand(
+    ["rev-list", "--parents", "--max-count=1", sha],
+    { cwd, envOverlay: READ_ONLY_GIT_ENV },
+  );
+  const [, firstParent] = parentsOutput.trim().split(/\s+/);
+  const baseRef = firstParent ?? EMPTY_TREE_OBJECT_ID;
+  const { stdout } = await runGitCommand(["diff", "-M", baseRef, sha, "--", path], {
+    cwd,
+    envOverlay: READ_ONLY_GIT_ENV,
+  });
+  if (!stdout.trim()) return null;
+
+  const parsedFiles = await parseAndHighlightDiff(stdout, cwd, {
+    getOldFileContent: (file) => readGitFileContentAtRef(cwd, baseRef, file.path),
+    getNewFileContent: (file) => readGitFileContentAtRef(cwd, sha, file.path),
+  });
+  const file = parsedFiles.find((candidate) => candidate.path === path) ?? null;
+  if (!file) return null;
+  if (file.hunks.length === 0 && /^Binary files .* differ$/m.test(stdout)) return null;
+  return { ...file, status: "ok" };
 }
 
 export interface CheckoutShortstat {

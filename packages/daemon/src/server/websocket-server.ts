@@ -31,7 +31,11 @@ import { isHostnameAllowed } from "./hostnames.js";
 import { Session, type SessionLifecycleIntent, type SessionRuntimeMetrics } from "./session.js";
 import type { AgentProvider } from "@thoth/drivers/agent-runtime";
 import { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
-import type { WorkspaceGitRuntimeSnapshot, WorkspaceGitService } from "./workspace-git-service.js";
+import type {
+  WorkspaceGitRuntimeSnapshot,
+  WorkspaceGitService,
+  WorkspaceGitServiceMetrics,
+} from "./workspace-git-service.js";
 import { buildWorkspaceGitMetadataFromSnapshot } from "./workspace-git-metadata.js";
 import { PushTokenStore } from "./push/token-store.js";
 import { createPushNotificationSender, type PushNotificationSender } from "./push/notifications.js";
@@ -60,6 +64,7 @@ import {
   type WebSocketRuntimeDiagnosticSnapshot,
 } from "./websocket/runtime-metrics.js";
 import { ProviderUsageService } from "../services/quota-fetcher/service.js";
+import { WorkspaceServicePortRegistry } from "./workspace-service-port-registry.js";
 import { getProcessMemoryDiagnostics, getProcessUptimeSeconds } from "./process-diagnostics.js";
 import {
   CLIENT_SHUTDOWN_RPC_REASON,
@@ -70,6 +75,15 @@ import {
   WorkspaceAuthorityManager,
   WorkspaceTaskCoordinator,
 } from "./workspace-authority/index.js";
+import { snapshotGitCommandRuntimeMetrics } from "../utils/run-git-command.js";
+import type { GitCommandRuntimeMetricsSnapshot } from "../utils/git-command-runtime-metrics.js";
+import { CLIENT_CAPS } from "@thoth/protocol/client-capabilities";
+import {
+  BrowserAutomationHostCapabilitySchema,
+  type BrowserAutomationHostCapability,
+} from "@thoth/protocol/browser-automation/capabilities";
+import type { BrowserAutomationExecuteResponse } from "@thoth/protocol/browser-automation/rpc-schemas";
+import { BrowserToolsBroker, type BrowserHostDisconnectOptions } from "./browser-tools/broker.js";
 
 const WS_CLOSE_DAEMON_AUTH_FAILED = 4401;
 
@@ -103,10 +117,24 @@ interface WebSocketServerConfig {
   hostnames?: HostnamesConfig;
 }
 
+function parseBrowserHostCapability(
+  capabilities: Record<string, unknown> | null,
+): BrowserAutomationHostCapability | null {
+  const parsed = BrowserAutomationHostCapabilitySchema.safeParse(
+    capabilities?.[CLIENT_CAPS.browserHost],
+  );
+  return parsed.success ? parsed.data : null;
+}
+
 type WebSocketRuntimeMetrics = SessionRuntimeMetrics & CheckoutDiffMetrics;
+interface WebSocketGitRuntimeMetrics {
+  commands: GitCommandRuntimeMetricsSnapshot;
+  workspaceService: WorkspaceGitServiceMetrics;
+}
 type WebSocketRuntimeDiagnosticPayload = WebSocketRuntimeDiagnosticSnapshot<
   WebSocketRuntimeMetrics,
-  AgentMetricsSnapshot
+  AgentMetricsSnapshot,
+  WebSocketGitRuntimeMetrics
 >;
 type WebSocketRuntimeMetricsLogPayload = Omit<WebSocketRuntimeDiagnosticPayload, "collectedAt">;
 
@@ -201,6 +229,20 @@ function createFallbackWorkspaceGitService(): WorkspaceGitService {
     }),
     scheduleRefreshForCwd: () => {},
     onWorkspaceStateMayHaveChanged: () => {},
+    getMetrics: () => ({
+      workspaceTargetCount: 0,
+      workspaceListenerCount: 0,
+      repositoryTargetCount: 0,
+      repositoryWorkspaceLinkCount: 0,
+      workingTreeWatchTargetCount: 0,
+      workingTreeWatchListenerCount: 0,
+      workspaceObservationSetupInFlightCount: 0,
+      workingTreeWatchSetupInFlightCount: 0,
+      workspaceRefreshInFlightCount: 0,
+      workspaceRefreshQueuedCount: 0,
+      fetchInFlightCount: 0,
+      snapshotUpdatedListenerCount: 0,
+    }),
     dispose: () => {},
   };
 }
@@ -257,6 +299,7 @@ interface SessionConnection {
   connectionLogger: pino.Logger;
   sockets: Set<WebSocketLike>;
   externalDisconnectCleanupTimeout: ReturnType<typeof setTimeout> | null;
+  unregisterBrowserHost: ((options?: BrowserHostDisconnectOptions) => void) | null;
 }
 
 const SLOW_REQUEST_THRESHOLD_MS = 500;
@@ -265,6 +308,7 @@ const HELLO_TIMEOUT_MS = 15_000;
 const WS_CLOSE_HELLO_TIMEOUT = 4001;
 const WS_CLOSE_INVALID_HELLO = 4002;
 const WS_CLOSE_INCOMPATIBLE_PROTOCOL = 4003;
+const WS_CLOSE_SERVER_SHUTDOWN = 1001;
 const WS_RUNTIME_METRICS_FLUSH_MS = 30_000;
 
 export class MissingDaemonVersionError extends Error {
@@ -331,6 +375,7 @@ export class DaemonWebSocketServer {
   private readonly workspaceAuthorityManager: WorkspaceAuthorityManager;
   private readonly ownsWorkspaceAuthorityManager: boolean;
   private readonly workspaceTaskCoordinator: WorkspaceTaskCoordinator;
+  private readonly workspaceServicePortRegistry: WorkspaceServicePortRegistry;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
   private readonly github: GitHubService;
@@ -364,6 +409,8 @@ export class DaemonWebSocketServer {
   private readonly relayCredentials: RelayCredentialsManager | null;
   private readonly refreshRelayRegistration: (() => void) | null;
   private unsubscribeTerminalActivity: (() => void) | null = null;
+  private acceptingConnections = true;
+  private readonly browserToolsBroker: BrowserToolsBroker;
 
   constructor(
     server: HTTPServer,
@@ -418,6 +465,7 @@ export class DaemonWebSocketServer {
       manager: WorkspaceAuthorityManager;
       coordinator: WorkspaceTaskCoordinator;
     },
+    browserToolsBroker?: BrowserToolsBroker,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.serverId = serverId;
@@ -451,6 +499,10 @@ export class DaemonWebSocketServer {
         this.workspaceAuthorityManager,
         this.logger.child({ component: "workspace-task-coordinator" }),
       );
+    this.browserToolsBroker = browserToolsBroker ?? new BrowserToolsBroker({});
+    this.workspaceServicePortRegistry = new WorkspaceServicePortRegistry({
+      catalog: this.workspaceAuthorityManager.catalog,
+    });
     this.worktreesRoot = daemonRuntimeConfig?.worktreesRoot;
     this.daemonConfigStore = daemonConfigStore;
     this.mcpBaseUrl = mcpBaseUrl;
@@ -602,6 +654,10 @@ export class DaemonWebSocketServer {
     hostnames: HostnamesConfig | undefined,
     callback: (res: boolean, code?: number, message?: string) => void,
   ): void {
+    if (!this.acceptingConnections) {
+      callback(false, 503, "Server shutting down");
+      return;
+    }
     const requestMetadata = extractSocketRequestMetadata(req);
     const origin = requestMetadata.origin;
     const requestHost = requestMetadata.host ?? null;
@@ -680,7 +736,12 @@ export class DaemonWebSocketServer {
     await this.attachSocket(ws, undefined, metadata);
   }
 
+  public prepareForShutdown(): void {
+    this.acceptingConnections = false;
+  }
+
   public async close(): Promise<void> {
+    this.prepareForShutdown();
     this.unsubscribeDaemonConfigChange?.();
     this.unsubscribeDaemonConfigChange = null;
     this.unsubscribeTerminalActivity?.();
@@ -708,6 +769,9 @@ export class DaemonWebSocketServer {
 
     const cleanupPromises: Promise<void>[] = [];
     for (const connection of uniqueConnections) {
+      connection.unregisterBrowserHost?.();
+      connection.unregisterBrowserHost = null;
+      this.browserToolsBroker.unregisterClient(connection.clientId);
       if (connection.externalDisconnectCleanupTimeout) {
         clearTimeout(connection.externalDisconnectCleanupTimeout);
         connection.externalDisconnectCleanupTimeout = null;
@@ -801,6 +865,14 @@ export class DaemonWebSocketServer {
     request?: unknown,
     metadata?: ExternalSocketMetadata,
   ): Promise<void> {
+    if (!this.acceptingConnections) {
+      try {
+        ws.close(WS_CLOSE_SERVER_SHUTDOWN, "Server shutting down");
+      } catch {
+        // Ignore close errors while shutdown owns the connection lifecycle.
+      }
+      return;
+    }
     const requestMetadata = extractSocketRequestMetadata(request);
     const identity = createWebSocketConnectionIdentity(requestMetadata, metadata);
     this.socketIdentities.set(ws, identity);
@@ -911,6 +983,7 @@ export class DaemonWebSocketServer {
       providerUsageService: this.providerUsageService,
       serviceProxy: this.serviceProxy ?? undefined,
       scriptRuntimeStore: this.scriptRuntimeStore ?? undefined,
+      workspaceServicePortRegistry: this.workspaceServicePortRegistry,
       workspaceSetupSnapshots: this.workspaceSetupSnapshots,
       onBranchChanged: this.onBranchChanged ?? undefined,
       getDaemonTcpPort: this.getDaemonTcpPort ?? undefined,
@@ -933,6 +1006,7 @@ export class DaemonWebSocketServer {
       connectionLogger,
       sockets: new Set([ws]),
       externalDisconnectCleanupTimeout: null,
+      unregisterBrowserHost: null,
     };
     return connection;
   }
@@ -1012,6 +1086,7 @@ export class DaemonWebSocketServer {
         existing.session.updateClientCapabilities(newClientCapabilities);
       }
       existing.sockets.add(ws);
+      this.refreshBrowserHostRegistration(existing);
       this.sessions.set(ws, existing);
       pending.identity.sessionId = existing.session.getSessionId();
       this.sendToClient(ws, this.createServerInfoMessage());
@@ -1037,6 +1112,7 @@ export class DaemonWebSocketServer {
     });
     this.sessions.set(ws, connection);
     this.externalSessionsByKey.set(clientId, connection);
+    this.refreshBrowserHostRegistration(connection);
     pending.identity.sessionId = connection.session.getSessionId();
     this.sendToClient(ws, this.createServerInfoMessage());
     connection.connectionLogger.info(
@@ -1087,6 +1163,8 @@ export class DaemonWebSocketServer {
         daemonSelfUpdate: true,
         // COMPAT(agentForkContext): added in v0.1.102, remove gate after 2026-12-28.
         agentForkContext: true,
+        commitsList: true,
+        commitBaseClassification: true,
       },
     };
   }
@@ -1187,6 +1265,8 @@ export class DaemonWebSocketServer {
     this.socketIdentities.delete(ws);
 
     if (connection.sockets.size === 0) {
+      connection.unregisterBrowserHost?.({ preservePending: true });
+      connection.unregisterBrowserHost = null;
       this.incrementRuntimeCounter("sessionDisconnectedWaitingReconnect");
       if (connection.externalDisconnectCleanupTimeout) {
         clearTimeout(connection.externalDisconnectCleanupTimeout);
@@ -1244,6 +1324,9 @@ export class DaemonWebSocketServer {
       this.socketIdentities.delete(socket);
     }
     connection.sockets.clear();
+    connection.unregisterBrowserHost?.();
+    connection.unregisterBrowserHost = null;
+    this.browserToolsBroker.unregisterClient(connection.clientId);
     const existing = this.externalSessionsByKey.get(connection.clientId);
     if (existing === connection) {
       this.externalSessionsByKey.delete(connection.clientId);
@@ -1402,6 +1485,9 @@ export class DaemonWebSocketServer {
     ws: WebSocketLike,
     data: Buffer | ArrayBuffer | Buffer[] | string,
   ): void {
+    if (!this.acceptingConnections) {
+      return;
+    }
     const activeConnection = this.sessions.get(ws);
     const pendingConnection = this.pendingConnections.get(ws);
     const log =
@@ -1483,6 +1569,13 @@ export class DaemonWebSocketServer {
     message: Extract<WSInboundMessage, { type: "session" }>,
   ): Promise<void> {
     this.recordInboundSessionRequestType(message.message.type);
+    if (message.message.type === "browser.automation.execute.response") {
+      this.browserToolsBroker.receiveResponse(
+        activeConnection.clientId,
+        message.message as BrowserAutomationExecuteResponse,
+      );
+      return;
+    }
     const controlRpc = getControlRpcLogInfo(message.message);
     if (controlRpc) {
       const identity = this.socketIdentities.get(ws);
@@ -1509,6 +1602,23 @@ export class DaemonWebSocketServer {
         "ws_slow_request",
       );
     }
+  }
+
+  private refreshBrowserHostRegistration(connection: SessionConnection): void {
+    connection.unregisterBrowserHost?.({ preservePending: true });
+    connection.unregisterBrowserHost = null;
+    const capability = parseBrowserHostCapability(connection.clientCapabilities);
+    if (!capability || connection.sockets.size === 0) {
+      return;
+    }
+    connection.unregisterBrowserHost = this.browserToolsBroker.registerClient({
+      id: connection.clientId,
+      hostKind: capability.hostKind,
+      supportedCommands: capability.supportedCommands,
+      sendBrowserAutomationRequest: (request) => {
+        this.sendToConnection(connection, wrapSessionMessage(request));
+      },
+    });
   }
 
   private handleRawMessageError(params: {
@@ -1614,6 +1724,9 @@ export class DaemonWebSocketServer {
     const uniqueConnections = new Set<SessionConnection>(this.externalSessionsByKey.values());
     let terminalDirectorySubscriptionCount = 0;
     let terminalSubscriptionCount = 0;
+    let workspaceGitWatchedDirectoryCount = 0;
+    let workspaceGitWorkspaceRecordCount = 0;
+    let workspaceGitSubscriptionCount = 0;
     let inflightRequests = 0;
     let peakInflightRequests = 0;
 
@@ -1621,6 +1734,9 @@ export class DaemonWebSocketServer {
       const sessionMetrics = connection.session.getRuntimeMetrics();
       terminalDirectorySubscriptionCount += sessionMetrics.terminalDirectorySubscriptionCount;
       terminalSubscriptionCount += sessionMetrics.terminalSubscriptionCount;
+      workspaceGitWatchedDirectoryCount += sessionMetrics.workspaceGitWatchedDirectoryCount;
+      workspaceGitWorkspaceRecordCount += sessionMetrics.workspaceGitWorkspaceRecordCount;
+      workspaceGitSubscriptionCount += sessionMetrics.workspaceGitSubscriptionCount;
       inflightRequests += sessionMetrics.inflightRequests;
       peakInflightRequests = Math.max(peakInflightRequests, sessionMetrics.peakInflightRequests);
       connection.session.resetPeakInflight();
@@ -1630,6 +1746,9 @@ export class DaemonWebSocketServer {
       ...this.checkoutDiffManager.getMetrics(),
       terminalDirectorySubscriptionCount,
       terminalSubscriptionCount,
+      workspaceGitWatchedDirectoryCount,
+      workspaceGitWorkspaceRecordCount,
+      workspaceGitSubscriptionCount,
       inflightRequests,
       peakInflightRequests,
     };
@@ -1673,6 +1792,10 @@ export class DaemonWebSocketServer {
       runtime: sessionMetrics,
       latency: runtimeMetrics.latency,
       agents: agentSnapshot,
+      git: {
+        commands: snapshotGitCommandRuntimeMetrics(),
+        workspaceService: this.workspaceGitService.getMetrics(),
+      },
     } satisfies WebSocketRuntimeMetricsLogPayload;
 
     this.lastRuntimeMetricsSnapshot = {

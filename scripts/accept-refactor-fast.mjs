@@ -15,18 +15,20 @@ const sourceArgs = [
   "scripts/refactor-source-metrics.mjs",
   "--baseline",
   "scripts/refactor-baseline.json",
+  "--allowance",
+  "scripts/refactor-paseo-v0.2.2-allowance.json",
 ];
 if (stage.stage >= 1) sourceArgs.push("--require-net-negative");
 if (stage.stage >= 5) {
   sourceArgs.push(
     "--max-physical-lines",
-    "280931",
+    "295426",
     "--max-scanner-tokens",
-    "1278967",
+    "1349615",
     "--max-ast-nodes",
-    "1319294",
+    "1381342",
     "--max-static-import-edges",
-    "5031",
+    "5176",
     "--max-runtime-dependency-edges",
     "164",
   );

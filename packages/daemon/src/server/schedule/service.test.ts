@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ExecutionService } from "../agent/execution-service.js";
 import { AgentStorage } from "../agent/agent-storage.js";
 import type {
@@ -148,7 +148,206 @@ describe("ScheduleService", () => {
       agentId: "00000000-0000-0000-0000-000000000001",
       output: "ran:Review new PRs",
     });
+    const run = inspected.runs[0]!;
+    expect(run.taskId).toMatch(/^task-/);
+    expect(run.executionId).toMatch(/^execution-/);
+    const store = authority.forWorkspace(WORKSPACE_ID);
+    expect(store.getTask(run.taskId!)).toMatchObject({
+      id: run.taskId,
+      workspaceId: WORKSPACE_ID,
+      mode: "quick",
+      status: "completed",
+    });
+    expect(store.getExecution(run.executionId!)).toMatchObject({
+      id: run.executionId,
+      taskId: run.taskId,
+      phase: "quick_exec",
+      status: "succeeded",
+    });
+    expect(
+      store.readTimeline({ executionId: run.executionId!, limit: 20 }).map((entry) => entry.item),
+    ).toEqual([
+      expect.objectContaining({ type: "schedule_run_started", scheduleId: created.id }),
+      expect.objectContaining({ type: "schedule_run_succeeded", output: "ran:Review new PRs" }),
+    ]);
     expect(inspected.nextRunAt).toBe("2026-01-01T00:02:00.000Z");
+  });
+
+  test("creates an independent worktree Workspace only for an explicit isolation request", async () => {
+    const worktreeId = "workspace-schedule-worktree";
+    const worktreePath = join(tempDir, "worktree-run");
+    await mkdir(worktreePath, { recursive: true });
+    const createWorktreeWorkspace = vi.fn(async () => ({
+      workspaceId: worktreeId,
+      projectId: "project-schedule-test",
+      cwd: worktreePath,
+      kind: "worktree" as const,
+      displayName: "Schedule worktree",
+      title: "Schedule worktree",
+      branch: "schedule-worktree",
+      baseBranch: "main",
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+      archivedAt: null,
+    }));
+    const observedWorkspaceIds: string[] = [];
+    const service = new ScheduleService({
+      authority,
+      logger: createTestLogger(),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
+      agentStorage,
+      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+      createWorktreeWorkspace,
+      now: () => now,
+      runner: async (workspaceId) => {
+        observedWorkspaceIds.push(workspaceId);
+        return { agentId: null, output: "isolated" };
+      },
+    });
+
+    const sameWorkspace = await service.create(WORKSPACE_ID, {
+      prompt: "same Workspace",
+      cadence: { type: "every", everyMs: 60_000 },
+      target: { type: "new-agent", config: { provider: "claude" } },
+      maxRuns: 1,
+    });
+    await service.runOnce(WORKSPACE_ID, sameWorkspace.id);
+    expect(createWorktreeWorkspace).not.toHaveBeenCalled();
+    expect(observedWorkspaceIds).toEqual([WORKSPACE_ID]);
+
+    const isolated = await service.create(WORKSPACE_ID, {
+      prompt: "isolated Workspace",
+      cadence: { type: "every", everyMs: 60_000 },
+      target: {
+        type: "new-agent",
+        config: { provider: "claude", isolation: "worktree" },
+      },
+      maxRuns: 1,
+    });
+    const completed = await service.runOnce(WORKSPACE_ID, isolated.id);
+
+    expect(createWorktreeWorkspace).toHaveBeenCalledWith({
+      sourceWorkspaceId: WORKSPACE_ID,
+      cwd: tempDir,
+      prompt: "isolated Workspace",
+      scheduleId: isolated.id,
+      runId: expect.any(String),
+    });
+    expect(observedWorkspaceIds).toEqual([WORKSPACE_ID, worktreeId]);
+    const run = completed.runs[0]!;
+    expect(authority.forWorkspace(worktreeId).getTask(run.taskId!)).toMatchObject({
+      id: run.taskId,
+      workspaceId: worktreeId,
+      status: "completed",
+    });
+    expect(authority.forWorkspace(WORKSPACE_ID).getTask(run.taskId!)).toBeNull();
+  });
+
+  test("records Provider cancellation as a failed Schedule run and interrupted Quick Task", async () => {
+    const executionService = new ExecutionService({
+      logger: createTestLogger(),
+      adapters: createTestHarnessAdapters(),
+      registry: agentStorage,
+    });
+    vi.spyOn(executionService, "runAgent").mockResolvedValue({
+      sessionId: "schedule-canceled-session",
+      finalText: "",
+      timeline: [],
+      canceled: true,
+    });
+    const service = new ScheduleService({
+      authority,
+      logger: createTestLogger(),
+      executionService,
+      agentStorage,
+      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+      now: () => now,
+    });
+    const created = await service.create(WORKSPACE_ID, {
+      prompt: "cancel this run",
+      cadence: { type: "every", everyMs: 60_000 },
+      target: { type: "new-agent", config: { provider: "claude" } },
+      maxRuns: 1,
+    });
+
+    await service.runOnce(WORKSPACE_ID, created.id);
+
+    const run = (await service.inspect(WORKSPACE_ID, created.id)).runs[0]!;
+    expect(run).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("canceled"),
+    });
+    expect(authority.forWorkspace(WORKSPACE_ID).getTask(run.taskId!)).toMatchObject({
+      status: "interrupted",
+    });
+    expect(authority.forWorkspace(WORKSPACE_ID).getExecution(run.executionId!)).toMatchObject({
+      status: "failed",
+    });
+  });
+
+  test("restart recovery settles the same running Schedule Task and ExecutionAttempt", async () => {
+    let markRunnerStarted: (() => void) | null = null;
+    const runnerStarted = new Promise<void>((resolve) => {
+      markRunnerStarted = resolve;
+    });
+    let releaseRunner: (() => void) | null = null;
+    const runnerBlocked = new Promise<void>((resolve) => {
+      releaseRunner = resolve;
+    });
+    const service = new ScheduleService({
+      authority,
+      logger: createTestLogger(),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
+      agentStorage,
+      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+      now: () => now,
+      runner: async () => {
+        markRunnerStarted?.();
+        await runnerBlocked;
+        return { agentId: null, output: "late result" };
+      },
+    });
+    const created = await service.create(WORKSPACE_ID, {
+      prompt: "recover after restart",
+      cadence: { type: "every", everyMs: 60_000 },
+      target: { type: "new-agent", config: { provider: "claude" } },
+      runOnCreate: false,
+    });
+
+    const tick = service.runOnce(WORKSPACE_ID, created.id);
+    await runnerStarted;
+    const running = await service.inspect(WORKSPACE_ID, created.id);
+    const run = running.runs[0]!;
+    expect(run).toMatchObject({ status: "running", taskId: expect.any(String) });
+
+    authority.forWorkspace(WORKSPACE_ID).recoverInterruptedExecutionsAfterRestart();
+    now = new Date("2026-01-01T00:10:00.000Z");
+    const restartedService = new ScheduleService({
+      authority,
+      logger: createTestLogger(),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
+      agentStorage,
+      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+      now: () => now,
+      runner: async () => ({ agentId: null, output: "unused" }),
+    });
+    await restartedService.start();
+
+    expect((await restartedService.inspect(WORKSPACE_ID, created.id)).runs[0]).toMatchObject({
+      status: "failed",
+      error: "Daemon restarted before the scheduled run completed",
+    });
+    expect(authority.forWorkspace(WORKSPACE_ID).getTask(run.taskId!)).toMatchObject({
+      status: "interrupted",
+    });
+    expect(authority.forWorkspace(WORKSPACE_ID).getExecution(run.executionId!)).toMatchObject({
+      status: "failed",
+      summary: expect.stringContaining("Daemon restarted"),
+    });
+
+    await restartedService.stop();
+    releaseRunner?.();
+    await tick.catch(() => undefined);
   });
 
   test("pause and resume update persisted schedule state", async () => {
@@ -185,6 +384,50 @@ describe("ScheduleService", () => {
     const resumed = await service.resume(WORKSPACE_ID, created.id);
     expect(resumed.status).toBe("active");
     expect(resumed.nextRunAt).toBe("2026-01-01T00:04:00.000Z");
+  });
+
+  test("protects only active schedules that target an existing Agent from idle release", async () => {
+    const activeAgentId = "00000000-0000-4000-8000-000000000201";
+    const pausedAgentId = "00000000-0000-4000-8000-000000000202";
+    const completedAgentId = "00000000-0000-4000-8000-000000000203";
+    await registerWorkspaceAgent(activeAgentId);
+    await registerWorkspaceAgent(pausedAgentId);
+    await registerWorkspaceAgent(completedAgentId);
+    const service = new ScheduleService({
+      authority,
+      logger: createTestLogger(),
+      executionService: new ExecutionService({ logger: createTestLogger() }),
+      agentStorage,
+      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+      now: () => now,
+      runner: async () => ({ agentId: null, output: "done" }),
+    });
+
+    await service.create(WORKSPACE_ID, {
+      prompt: "Keep the active Agent warm",
+      cadence: { type: "every", everyMs: 60_000 },
+      target: { type: "agent", agentId: activeAgentId },
+    });
+    const paused = await service.create(WORKSPACE_ID, {
+      prompt: "Paused existing Agent",
+      cadence: { type: "every", everyMs: 60_000 },
+      target: { type: "agent", agentId: pausedAgentId },
+    });
+    await service.create(WORKSPACE_ID, {
+      prompt: "Completed existing Agent",
+      cadence: { type: "every", everyMs: 60_000 },
+      target: { type: "agent", agentId: completedAgentId },
+      maxRuns: 1,
+    });
+    await service.create(WORKSPACE_ID, {
+      prompt: "New Agent schedule",
+      cadence: { type: "every", everyMs: 60_000 },
+      target: { type: "new-agent", config: { provider: "claude", cwd: tempDir } },
+    });
+    await service.pause(WORKSPACE_ID, paused.id);
+    await service.tick();
+
+    expect(service.listRuntimeProtectedAgentIds()).toEqual(new Set([activeAgentId]));
   });
 
   test("completes schedules when max runs is reached", async () => {

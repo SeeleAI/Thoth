@@ -22,12 +22,7 @@
 import assert from "node:assert";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  createE2ETestContext,
-  createTempDirs,
-  runThothCli,
-  startTestDaemon,
-} from "./helpers/test-daemon.ts";
+import { createTempDirs, runThothCli, startTestDaemon } from "./helpers/test-daemon.ts";
 
 console.log("=== Provider Commands ===\n");
 
@@ -50,9 +45,34 @@ type ProviderModelsProbe =
 
 const EXPECTED_CLAUDE_MODELS = [
   {
+    id: "claude-opus-5[1m]",
+    model: "Opus 5 1M",
+    descriptionFragment: "1M context window",
+  },
+  {
+    id: "claude-opus-5",
+    model: "Opus 5",
+    descriptionFragment: "200K context window",
+  },
+  {
+    id: "claude-fable-5[1m]",
+    model: "Fable 5 1M",
+    descriptionFragment: "1M context window",
+  },
+  {
     id: "claude-fable-5",
     model: "Fable 5",
     descriptionFragment: "Most powerful",
+  },
+  {
+    id: "claude-sonnet-5[1m]",
+    model: "Sonnet 5 1M",
+    descriptionFragment: "1M context window",
+  },
+  {
+    id: "claude-sonnet-5",
+    model: "Sonnet 5",
+    descriptionFragment: "Best for everyday tasks",
   },
   {
     id: "claude-opus-4-8[1m]",
@@ -62,7 +82,7 @@ const EXPECTED_CLAUDE_MODELS = [
   {
     id: "claude-opus-4-8",
     model: "Opus 4.8",
-    descriptionFragment: "Latest release",
+    descriptionFragment: "Previous release",
   },
   {
     id: "claude-opus-4-7[1m]",
@@ -105,7 +125,44 @@ let claudeModelIdsFromJson: string[] = [];
 let claudeModelsFromJson: ProviderModel[] = [];
 let claudeModelsProbe: ProviderModelsProbe | null = null;
 
-const ctx = await createE2ETestContext({ timeout: 120000 });
+const { thothHome: primaryThothHome, workDir: primaryWorkDir } = await createTempDirs();
+const claudeVersionFixturePath = join(primaryWorkDir, "claude-version-fixture.mjs");
+await writeFile(
+  claudeVersionFixturePath,
+  [
+    'if (process.argv.includes("--version")) {',
+    '  console.log("2.1.219 (Claude Code)");',
+    "}",
+    "",
+  ].join("\n"),
+);
+await writeFile(
+  join(primaryThothHome, "config.json"),
+  JSON.stringify(
+    {
+      version: 1,
+      agents: {
+        providers: {
+          claude: {
+            command: [process.execPath, claudeVersionFixturePath],
+          },
+        },
+      },
+    },
+    null,
+    2,
+  ) + "\n",
+);
+const primaryDaemon = await startTestDaemon({
+  thothHome: primaryThothHome,
+  workDir: primaryWorkDir,
+  timeout: 120000,
+});
+const ctx = {
+  ...primaryDaemon,
+  thoth: (args: string[], opts?: { timeout?: number; cwd?: string; env?: NodeJS.ProcessEnv }) =>
+    runThothCli(primaryDaemon, args, opts),
+};
 
 function parseJsonObjectFromOutput(value: string): unknown {
   const start = value.indexOf("{");

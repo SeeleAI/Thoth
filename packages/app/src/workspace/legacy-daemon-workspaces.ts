@@ -105,6 +105,7 @@ function createLegacyWorkspace(
     scripts: [],
     gitRuntime: checkout.isGit
       ? {
+          forge: null,
           currentBranch: checkout.currentBranch,
           remoteUrl: checkout.remoteUrl,
           isThothOwnedWorktree: checkout.isThothOwnedWorktree,

@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { findFreePort, ScriptRouteStore } from "./script-proxy.js";
 import { ScriptHealthMonitor, type ScriptHealthEntry } from "./script-health-monitor.js";
 import { spawnWorkspaceScript } from "./worktree-bootstrap.js";
+import { WorkspaceAuthorityManager } from "./workspace-authority/index.js";
+import { WorkspaceServicePortRegistry } from "./workspace-service-port-registry.js";
 import { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
 import type { TerminalManager } from "./terminal/terminal-manager.js";
 
@@ -437,6 +439,13 @@ describe("ScriptHealthMonitor", () => {
     });
     const routeStore = new ScriptRouteStore();
     const runtimeStore = new WorkspaceScriptRuntimeStore();
+    const authorityManager = new WorkspaceAuthorityManager(
+      path.join(workspace.tempDir, "thoth-home"),
+    );
+    const servicePortRegistry = new WorkspaceServicePortRegistry({
+      catalog: authorityManager.catalog,
+      heartbeatIntervalMs: 24 * 60 * 60_000,
+    });
     const createTerminalCalls: Array<{ cwd: string; name?: string; env?: Record<string, string> }> =
       [];
 
@@ -452,6 +461,7 @@ describe("ScriptHealthMonitor", () => {
             daemonPort: null,
             serviceProxy: routeStore,
             runtimeStore,
+            servicePortRegistry,
             terminalManager: createStubTerminalManager(
               createTerminalCalls,
             ) as unknown as TerminalManager,
@@ -494,6 +504,7 @@ describe("ScriptHealthMonitor", () => {
       ]);
       expect(monitor.getHealthForHostname("typecheck")).toBeNull();
     } finally {
+      authorityManager.close();
       workspace.cleanup();
     }
   });

@@ -199,6 +199,7 @@ function renderSheet(
         visible={options?.visible ?? true}
         client={client}
         serverId="server-1"
+        workspaceId="workspace-1"
         cwd={cwd}
         onClose={options?.onClose ?? vi.fn()}
         onImportedAgent={options?.onImportedAgent ?? vi.fn()}
@@ -450,6 +451,7 @@ describe("ImportSessionSheet", () => {
             visible={visible}
             client={client}
             serverId="server-1"
+            workspaceId="workspace-1"
             cwd="/repo/thoth"
             onClose={vi.fn()}
             onImportedAgent={vi.fn()}
@@ -508,6 +510,7 @@ describe("ImportSessionSheet", () => {
 
     await waitFor(() => {
       expect(importAgent).toHaveBeenCalledWith({
+        workspaceId: "workspace-1",
         providerId: "claude",
         providerHandleId: "provider-thread-1",
         cwd: "/repo/thoth-realpath",
@@ -544,6 +547,7 @@ describe("ImportSessionSheet", () => {
 
     await screen.findByText("Could not import selected session.");
     expect(importAgent).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
       providerId: "claude",
       providerHandleId: "provider-thread-1",
       cwd: "/repo/thoth",
@@ -829,6 +833,7 @@ describe("ImportSessionSheet", () => {
 
     await waitFor(() => {
       expect(importAgent).toHaveBeenCalledWith({
+        workspaceId: "workspace-1",
         providerId: "claude",
         providerHandleId: "provider-thread-1",
         cwd: "/home/me/work/other-project",

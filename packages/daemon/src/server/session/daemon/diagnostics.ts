@@ -7,6 +7,8 @@ import type pino from "pino";
 import type { ManagedAgent, ProviderAvailability } from "../../agent/execution-service.js";
 import type { WebSocketRuntimeDiagnosticSnapshot } from "../../websocket/runtime-metrics.js";
 import type { PersistedProjectRecord, PersistedWorkspaceRecord } from "../../workspace-registry.js";
+import type { WorkspaceGitServiceMetrics } from "../../workspace-git-service.js";
+import type { GitCommandRuntimeMetricsSnapshot } from "../../../utils/git-command-runtime-metrics.js";
 import { execCommand } from "@thoth/drivers/internal/utils/spawn";
 import type { DaemonRuntimeConfig } from "./daemon-session.js";
 
@@ -37,6 +39,9 @@ interface DiagnosticWebSocketRuntimeMetrics {
   checkoutDiffSubscriptionCount: number;
   checkoutDiffWatcherCount: number;
   checkoutDiffFallbackRefreshTargetCount: number;
+  workspaceGitWatchedDirectoryCount: number;
+  workspaceGitWorkspaceRecordCount: number;
+  workspaceGitSubscriptionCount: number;
 }
 
 interface DiagnosticAgentRuntimeMetrics {
@@ -49,9 +54,15 @@ interface DiagnosticAgentRuntimeMetrics {
   };
 }
 
+interface DiagnosticGitRuntimeMetrics {
+  commands: GitCommandRuntimeMetricsSnapshot;
+  workspaceService: WorkspaceGitServiceMetrics;
+}
+
 export type DaemonWebSocketRuntimeDiagnosticSnapshot = WebSocketRuntimeDiagnosticSnapshot<
   DiagnosticWebSocketRuntimeMetrics,
-  DiagnosticAgentRuntimeMetrics
+  DiagnosticAgentRuntimeMetrics,
+  DiagnosticGitRuntimeMetrics
 >;
 
 const TOOL_TIMEOUT_MS = 3_000;
@@ -244,6 +255,7 @@ function collectWebSocketRuntimeEntries(options: DaemonDiagnosticsOptions): Diag
 
   const runtime = snapshot.runtime;
   const agents = snapshot.agents;
+  const git = snapshot.git;
 
   return [
     { label: "Collected at", value: snapshot.collectedAt },
@@ -297,6 +309,46 @@ function collectWebSocketRuntimeEntries(options: DaemonDiagnosticsOptions): Diag
         `fallbackRefreshTargets=${formatNumberMetric(
           runtime.checkoutDiffFallbackRefreshTargetCount,
         )}`,
+      ].join(", "),
+    },
+    {
+      label: "Workspace Git observers",
+      value: [
+        `directories=${formatNumberMetric(runtime.workspaceGitWatchedDirectoryCount)}`,
+        `workspaces=${formatNumberMetric(runtime.workspaceGitWorkspaceRecordCount)}`,
+        `subscriptions=${formatNumberMetric(runtime.workspaceGitSubscriptionCount)}`,
+      ].join(", "),
+    },
+    {
+      label: "Git commands",
+      value: [
+        `submitted=${formatNumberMetric(git.commands.submitted)}`,
+        `completed=${formatNumberMetric(git.commands.completed)}`,
+        `failed=${formatNumberMetric(git.commands.failed)}`,
+        `timedOut=${formatNumberMetric(git.commands.timedOut)}`,
+        `active=${formatNumberMetric(git.commands.active)}`,
+        `pending=${formatNumberMetric(git.commands.pending)}`,
+      ].join(", "),
+    },
+    {
+      label: "Git command latency",
+      value: [
+        `queueP95=${formatMilliseconds(git.commands.queueWaitMs.p95Ms)}`,
+        `executionP95=${formatMilliseconds(git.commands.executionMs.p95Ms)}`,
+        `oldestPending=${formatMilliseconds(git.commands.oldestPendingMs)}`,
+        `operations=${formatTopCounts(git.commands.operationsTop)}`,
+      ].join(", "),
+    },
+    {
+      label: "Workspace Git service",
+      value: [
+        `workspaceTargets=${formatNumberMetric(git.workspaceService.workspaceTargetCount)}`,
+        `workspaceListeners=${formatNumberMetric(git.workspaceService.workspaceListenerCount)}`,
+        `repositoryTargets=${formatNumberMetric(git.workspaceService.repositoryTargetCount)}`,
+        `workingTreeWatchTargets=${formatNumberMetric(
+          git.workspaceService.workingTreeWatchTargetCount,
+        )}`,
+        `refreshInFlight=${formatNumberMetric(git.workspaceService.workspaceRefreshInFlightCount)}`,
       ].join(", "),
     },
     {

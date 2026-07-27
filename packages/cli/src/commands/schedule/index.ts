@@ -42,6 +42,7 @@ export function createScheduleCommand(): Command {
         "--mode <mode>",
         "Provider-specific mode (e.g. claude bypassPermissions, opencode build)",
       )
+      .option("--worktree", "Run each new-agent trigger in an independent Thoth worktree Workspace")
       .option("--run-now", "Fire one immediate run on creation (only with --cron)")
       .option("--no-run-now", "Wait the full interval before the first run (only with --every)")
       .option("--max-runs <n>", "Maximum number of runs")
@@ -101,6 +102,8 @@ export function createScheduleCommand(): Command {
       )
       .option("--model <model>", "New agent model (only for new-agent target)")
       .option("--mode <mode>", "New agent provider mode (only for new-agent target)")
+      .option("--worktree", "Run future triggers in independent worktree Workspaces")
+      .option("--same-workspace", "Run future triggers in the owning Workspace")
       .option("--max-runs <n>", "Set or change maximum number of runs")
       .option("--no-max-runs", "Clear the max-runs limit")
       .option("--expires-in <duration>", "Set or change time to live for the schedule")

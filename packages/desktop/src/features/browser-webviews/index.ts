@@ -1,75 +1,182 @@
 import { webContents as allWebContents, type WebContents } from "electron";
+import { THOTH_BROWSER_PROFILE_PARTITION } from "../browser-profile.js";
 import {
   BROWSER_NEW_TAB_REQUEST_EVENT,
-  handleBrowserWindowOpenRequest,
+  decideBrowserWindowOpenRequest,
   isAllowedBrowserWebviewUrl,
+  PendingBrowserWindowOpenRequests,
 } from "./window-open.js";
+import { ThothBrowserWebviewRegistry } from "./registry.js";
 
-export { BROWSER_NEW_TAB_REQUEST_EVENT, handleBrowserWindowOpenRequest };
+export {
+  BROWSER_NEW_TAB_REQUEST_EVENT,
+  decideBrowserWindowOpenRequest,
+  PendingBrowserWindowOpenRequests,
+};
 
-const browserIdsByWebContentsId = new Map<number, string>();
-let workspaceActiveBrowserId: string | null = null;
+const browserRegistry = new ThothBrowserWebviewRegistry();
 
-function getBrowserIdFromWebviewPartition(partition: string | undefined): string | null {
-  const prefix = "persist:thoth-browser-";
-  if (!partition?.startsWith(prefix)) {
-    return null;
-  }
-  const browserId = partition.slice(prefix.length).trim();
-  return browserId.length > 0 ? browserId : null;
+interface BrowserWebContentsIdentity {
+  readonly id: number;
+  isDestroyed(): boolean;
 }
 
-export function readBrowserIdFromWebviewAttach(input: {
-  src?: string;
-  partition?: string;
-}): string | null {
-  if (!isAllowedBrowserWebviewUrl(input.src)) {
-    return null;
-  }
-  return getBrowserIdFromWebviewPartition(input.partition);
+interface RegisteredBrowserWebContents extends BrowserWebContentsIdentity {
+  readonly hostWebContents: BrowserWebContentsIdentity | null;
+  readonly session: object;
+  setBackgroundThrottling(allowed: boolean): void;
+  once(event: "destroyed", listener: () => void): void;
+}
+
+interface AttachedBrowserRegistration {
+  browserId: string;
+  workspaceId: string;
+  webContentsId: number;
+}
+
+interface RegisterAttachedBrowserInput extends AttachedBrowserRegistration {
+  sender: BrowserWebContentsIdentity;
+  profileSession: object;
+  findWebContents(webContentsId: number): RegisteredBrowserWebContents | null;
+}
+
+export function isThothBrowserWebviewAttach(input: { src?: string; partition?: string }): boolean {
+  return (
+    isAllowedBrowserWebviewUrl(input.src) && input.partition === THOTH_BROWSER_PROFILE_PARTITION
+  );
 }
 
 export function listRegisteredThothBrowserIds(): string[] {
-  return Array.from(new Set(browserIdsByWebContentsId.values())).sort();
+  return browserRegistry.listBrowserIds();
 }
 
-export function registerThothBrowserWebContents(contents: WebContents, browserId: string): void {
-  browserIdsByWebContentsId.set(contents.id, browserId);
+export function getThothBrowserWebviewRegistry(): ThothBrowserWebviewRegistry {
+  return browserRegistry;
+}
+
+export function prepareThothBrowserWebContents(contents: RegisteredBrowserWebContents): void {
+  const webContentsId = contents.id;
+  contents.setBackgroundThrottling(false);
   contents.once("destroyed", () => {
-    browserIdsByWebContentsId.delete(contents.id);
-    if (workspaceActiveBrowserId === browserId) {
-      workspaceActiveBrowserId = null;
-    }
+    browserRegistry.unregisterWebContents(webContentsId);
   });
 }
 
-export function getThothBrowserIdForWebContents(contents: WebContents | null): string | null {
+export function registerAttachedThothBrowser(input: RegisterAttachedBrowserInput): boolean {
+  const guest = input.findWebContents(input.webContentsId);
+  if (
+    !guest ||
+    guest.isDestroyed() ||
+    guest.hostWebContents !== input.sender ||
+    guest.session !== input.profileSession
+  ) {
+    return false;
+  }
+
+  if (
+    !browserRegistry.registerWorkspace({
+      browserId: input.browserId,
+      workspaceId: input.workspaceId,
+    })
+  ) {
+    return false;
+  }
+
+  browserRegistry.registerWebContents({
+    webContentsId: input.webContentsId,
+    browserId: input.browserId,
+    hostWebContentsId: input.sender.id,
+  });
+  return true;
+}
+
+export function getThothBrowserIdForWebContents(
+  contents: BrowserWebContentsIdentity | null,
+): string | null {
   if (!contents || contents.isDestroyed()) {
     return null;
   }
-  return browserIdsByWebContentsId.get(contents.id) ?? null;
+  return browserRegistry.getBrowserIdForWebContents(contents.id);
 }
 
-export function setWorkspaceActiveThothBrowserId(browserId: string | null): void {
-  workspaceActiveBrowserId = browserId;
+export function unregisterThothBrowser(browserId: string): void {
+  browserRegistry.unregisterBrowser(browserId);
 }
 
-export function getThothBrowserWebContents(browserId: string): WebContents | null {
-  for (const [contentsId, registeredBrowserId] of browserIdsByWebContentsId) {
-    if (registeredBrowserId !== browserId) continue;
-    const contents = allWebContents.fromId(contentsId);
-    if (contents && !contents.isDestroyed()) {
-      return contents;
-    }
+export function unregisterThothBrowserFromHost(hostWebContentsId: number, browserId: string): void {
+  browserRegistry.unregisterBrowserFromHost(hostWebContentsId, browserId);
+}
+
+export function unregisterThothBrowserHost(hostWebContentsId: number): void {
+  browserRegistry.unregisterHostWebContents(hostWebContentsId);
+}
+
+export function getThothBrowserWorkspaceId(browserId: string): string | null {
+  return browserRegistry.getWorkspaceId(browserId);
+}
+
+export function listRegisteredThothBrowserIdsForWorkspace(workspaceId: string): string[] {
+  return browserRegistry.listBrowserIdsForWorkspace(workspaceId);
+}
+
+export function setWorkspaceActiveThothBrowserId(input: {
+  hostWebContentsId: number;
+  workspaceId: string;
+  browserId: string | null;
+}): void {
+  browserRegistry.setWorkspaceActiveBrowser(input);
+}
+
+export function getWorkspaceActiveThothBrowserId(workspaceId: string): string | null {
+  return browserRegistry.getMostRecentActiveBrowserIdForWorkspace(workspaceId);
+}
+
+export function getWorkspaceActiveThothBrowserIdForHostWindow(
+  workspaceId: string,
+  hostWebContentsId: number,
+): string | null {
+  return browserRegistry.getActiveBrowserIdForWorkspaceInHostWindow(hostWebContentsId, workspaceId);
+}
+
+export function getThothBrowserWebContentsForHostWindow(
+  browserId: string,
+  hostWebContentsId: number,
+): WebContents | null {
+  const contentsId = browserRegistry.getWebContentsIdForBrowserInHostWindow(
+    hostWebContentsId,
+    browserId,
+  );
+  if (contentsId === null) {
+    return null;
   }
+  const contents = allWebContents.fromId(contentsId);
+  if (contents && !contents.isDestroyed()) {
+    return contents;
+  }
+  browserRegistry.unregisterWebContents(contentsId);
   return null;
 }
 
-export function getWorkspaceActiveThothBrowserWebContents(): WebContents | null {
-  if (!workspaceActiveBrowserId) {
+export function getActiveThothBrowserWebContentsForHostWindow(
+  hostWebContentsId: number,
+): WebContents | null {
+  const browserId = browserRegistry.getActiveBrowserIdForHostWindow(hostWebContentsId);
+  if (!browserId) {
     return null;
   }
-  return getThothBrowserWebContents(workspaceActiveBrowserId);
+  const contentsId = browserRegistry.getWebContentsIdForBrowserInHostWindow(
+    hostWebContentsId,
+    browserId,
+  );
+  if (contentsId === null) {
+    return null;
+  }
+  const contents = allWebContents.fromId(contentsId);
+  if (contents && !contents.isDestroyed()) {
+    return contents;
+  }
+  browserRegistry.unregisterWebContents(contentsId);
+  return null;
 }
 
 function preventUnsafeBrowserWebviewNavigation(

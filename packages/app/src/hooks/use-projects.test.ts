@@ -49,6 +49,8 @@ function createRuntime(hosts: HostFixture[]): RuntimeAdapter {
         requestId: `req-${host.serverId}`,
         entries: workspaces,
         emptyProjects: [],
+        workspaceRedirects: [],
+        dedupeNotice: null,
         pageInfo: { nextCursor: null, prevCursor: null, hasMore: false },
       } satisfies FetchWorkspacesResult;
     };
@@ -90,6 +92,7 @@ function workspace(input: {
     diffStat: null,
     scripts: [],
     gitRuntime: {
+      forge: null,
       currentBranch: "main",
       remoteUrl: input.remoteUrl,
       isThothOwnedWorktree: false,

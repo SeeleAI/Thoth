@@ -60,6 +60,8 @@ export const ptBR: TranslationResources = {
       newAgent: "Novo agente",
       openProject: "Abrir projeto",
       home: "Início",
+      modelGroupLabel: "Modelo",
+      modelSearchKeywords: "trocar modelo mudar modelo definir modelo selecionar modelo",
     },
   },
   composer: {
@@ -102,6 +104,8 @@ export const ptBR: TranslationResources = {
       removeBrowserElement: "Remover anexo de elemento do navegador",
       openReview: "Abrir anexo de revisão",
       removeReview: "Remover anexo de revisão",
+      openWorkspaceFile: "Abrir anexo de arquivo do workspace",
+      removeWorkspaceFile: "Remover anexo de arquivo do workspace",
     },
     errors: {
       failedToSend: "Falha ao enviar mensagem",
@@ -359,6 +363,11 @@ export const ptBR: TranslationResources = {
         modified: "Modificado",
         copyPath: "Copiar caminho",
         download: "Baixar",
+        attachToComposer: "Adicionar à mensagem",
+        attachedToComposer: "Arquivo adicionado à mensagem",
+        attachTextOnly: "Somente arquivos de texto podem ser adicionados",
+        attachTooLarge: "O arquivo é muito grande (máximo de 10 MB)",
+        attachFailed: "Não foi possível adicionar o arquivo à mensagem",
       },
       actions: {
         back: "Voltar",
@@ -727,6 +736,14 @@ export const ptBR: TranslationResources = {
         base: "base",
         newFile: "Novo",
         deletedFile: "Excluído",
+        commits: {
+          title: "Commits",
+          loading: "Carregando histórico de commits...",
+          loadError: "Não foi possível carregar o histórico de commits",
+          noneAhead: "Ainda não há commits à frente de {{baseRef}}",
+          countLabel: "{{count}} commits",
+          noTextualChanges: "Este commit não contém alterações de texto",
+        },
       },
       openInEditor: {
         open: "Abrir",
@@ -824,6 +841,8 @@ export const ptBR: TranslationResources = {
       actions: {
         menu: "Ações do workspace",
         newWorkspace: "Novo workspace",
+        showMore: "Mostrar mais",
+        showLess: "Mostrar menos",
         createWorkspaceFor: "Criar um novo workspace para {{projectName}}",
         copyPath: "Copiar caminho",
         copyBranchName: "Copiar nome da branch",
@@ -1407,6 +1426,18 @@ export const ptBR: TranslationResources = {
     },
     general: {
       title: "Geral",
+      browserData: {
+        title: "Dados do navegador",
+        siteData: "Cookies e dados de sites",
+        description: "As abas do navegador compartilham logins e dados de sites no Thoth.",
+        clear: "Limpar dados do navegador",
+        clearing: "Limpando...",
+        confirmTitle: "Limpar dados do navegador?",
+        confirmMessage:
+          "Você será desconectado dos sites e as abas abertas do navegador serão recarregadas.",
+        success: "Dados do navegador limpos.",
+        error: "Não foi possível limpar os dados do navegador.",
+      },
       defaultSend: {
         label: "Envio padrão",
         descriptions: {
@@ -1535,6 +1566,7 @@ export const ptBR: TranslationResources = {
     },
     shortcuts: {
       dialogTitle: "Atalhos",
+      searchPlaceholder: "Pesquisar atalhos",
       unavailableOnMobile: "Atalhos de teclado estão disponíveis apenas no desktop",
       capturePrompt: "Pressione o atalho...",
       actions: {
@@ -1796,6 +1828,12 @@ export const ptBR: TranslationResources = {
       loading: "Carregando...",
       addErrorTitle: "Não foi possível adicionar provedor",
       updateErrorTitle: "Não foi possível atualizar provedor",
+      deleteProvider: "Excluir {{name}}",
+      deleteConfirmTitle: "Excluir {{name}}?",
+      deleteConfirmMessage:
+        "Isso remove o provedor personalizado deste host. As sessões em execução continuarão, mas sessões novas ou retomadas não poderão usá-lo.",
+      deleteAction: "Excluir provedor",
+      deleteErrorTitle: "Não foi possível excluir o provedor",
       statuses: {
         disabled: "Desativado",
         loading: "Carregando",

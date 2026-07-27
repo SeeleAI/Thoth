@@ -93,8 +93,7 @@ export function CompactExplorerSidebar({
   });
   const closeTouchStartX = useSharedValue(0);
   const closeTouchStartY = useSharedValue(0);
-  const { mobilePanelState, gestureAnimatingRef: mobilePanelGestureAnimatingRef } =
-    useSidebarAnimation();
+  const { mobilePanelState } = useSidebarAnimation();
   const { style: mobileKeyboardInsetStyle } = useKeyboardShiftStyle({
     mode: "padding",
     enabled: true,
@@ -107,7 +106,6 @@ export function CompactExplorerSidebar({
     animateToClose,
     overlayVisible,
     isGesturing,
-    gestureAnimatingRef,
     closeGestureRef,
   } = useExplorerSidebarAnimation();
 
@@ -123,10 +121,8 @@ export function CompactExplorerSidebar({
   );
 
   const handleCloseFromGesture = useCallback(() => {
-    gestureAnimatingRef.current = true;
-    mobilePanelGestureAnimatingRef.current = true;
     showMobileAgent();
-  }, [gestureAnimatingRef, mobilePanelGestureAnimatingRef, showMobileAgent]);
+  }, [showMobileAgent]);
 
   const handleHeaderClose = useCallback(() => handleClose("header-close-button"), [handleClose]);
 

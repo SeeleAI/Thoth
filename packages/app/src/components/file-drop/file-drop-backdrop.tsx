@@ -55,7 +55,7 @@ const positionStyles = RNStyleSheet.create({
 
 const styles = StyleSheet.create((theme) => ({
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...RNStyleSheet.absoluteFillObject,
     backgroundColor: theme.colors.surface0,
     opacity: 0.7,
   },

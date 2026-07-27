@@ -88,6 +88,94 @@ function changedPathsForCommit(repo, sha) {
     .filter(Boolean);
 }
 
+const architectureSubjectPattern =
+  /\b(architect(?:ure|ural)?|refactor|redesign|rewrite|rework|overhaul|migrat(?:e|ion))\b/i;
+const architectureBoundaryPathPattern =
+  /(^|\/)(architecture|protocol|rpc|registry|transport|session|provider|adapter|runtime|lifecycle|storage|store|database|schema|migration|repository|composition|supervisor|daemon)([./_-]|$)/i;
+const architecturePackages = new Set([
+  "client",
+  "core",
+  "daemon",
+  "drivers",
+  "protocol",
+  "relay",
+  "server",
+]);
+
+function architectureSignals(subject, paths) {
+  const normalizedPaths = paths.map((entry) => entry.replaceAll("\\", "/"));
+  const packageNames = new Set(
+    normalizedPaths.map((entry) => entry.match(/^packages\/([^/]+)\//)?.[1]).filter(Boolean),
+  );
+  const boundaryPackages = [...packageNames].filter((entry) => architecturePackages.has(entry));
+  const boundaryPaths = normalizedPaths.filter((entry) =>
+    architectureBoundaryPathPattern.test(entry),
+  );
+  const topologyPaths = normalizedPaths.filter((entry) =>
+    /^(?:(?:pnpm-)?workspace\.ya?ml|turbo\.json|nx\.json)$/.test(entry),
+  );
+  const rootConfigurationPaths = normalizedPaths.filter((entry) =>
+    /^(package\.json|tsconfig\.json)$/.test(entry),
+  );
+  const categories = new Set(normalizedPaths.map((entry) => categorize(entry)));
+  const signals = [];
+
+  if (architectureSubjectPattern.test(subject)) {
+    signals.push({
+      code: "architecture-subject",
+      level: "review",
+      detail:
+        "Commit subject describes an architecture, refactor, rewrite, migration, or redesign.",
+    });
+  }
+  if (boundaryPaths.length > 0) {
+    signals.push({
+      code: "architecture-boundary-path",
+      level: "review",
+      detail:
+        "Changed paths touch protocol, transport, session, provider, runtime, storage, or lifecycle boundaries.",
+      paths: [...new Set(boundaryPaths)].sort(),
+    });
+  }
+  if (topologyPaths.length > 0) {
+    signals.push({
+      code: "repository-topology",
+      level: "required",
+      detail: "Changed paths can alter workspace, package, or repository topology.",
+      paths: [...new Set(topologyPaths)].sort(),
+    });
+  }
+  if (rootConfigurationPaths.length > 0) {
+    signals.push({
+      code: "root-configuration",
+      level: "review",
+      detail:
+        "Root manifest or TypeScript configuration changes may affect dependency direction or package contracts.",
+      paths: [...new Set(rootConfigurationPaths)].sort(),
+    });
+  }
+  if (
+    boundaryPackages.length >= 3 ||
+    (boundaryPackages.length >= 2 && architectureSubjectPattern.test(subject))
+  ) {
+    signals.push({
+      code: "cross-boundary-package-change",
+      level: "required",
+      detail: "One commit changes multiple architecture-owning packages.",
+      packages: boundaryPackages.sort(),
+    });
+  }
+  if (normalizedPaths.length >= 25 && categories.size >= 3) {
+    signals.push({
+      code: "large-cross-category-change",
+      level: "review",
+      detail: "One commit changes at least 25 paths across at least three repository categories.",
+    });
+  }
+
+  return signals;
+}
+
 function summarize(changes) {
   const categories = {};
   for (const change of changes)
@@ -151,11 +239,14 @@ try {
     .filter(Boolean)
     .map((record) => {
       const [sha, authoredAt, ...subjectParts] = record.split("\x1f");
+      const subject = subjectParts.join("\x1f");
+      const paths = changedPathsForCommit(repo, sha);
       return {
         sha,
         authored_at: authoredAt,
-        subject: subjectParts.join("\x1f"),
-        paths: changedPathsForCommit(repo, sha),
+        subject,
+        paths,
+        architecture_signals: architectureSignals(subject, paths),
       };
     });
 
@@ -164,9 +255,23 @@ try {
   );
   const summary = summarize(changes);
   summary.commit_count = commits.length;
+  const architectureCandidates = commits
+    .filter((commit) => commit.architecture_signals.length > 0)
+    .map((commit) => ({
+      commit_sha: commit.sha,
+      subject: commit.subject,
+      review_level: commit.architecture_signals.some((signal) => signal.level === "required")
+        ? "required"
+        : "review",
+      signals: commit.architecture_signals,
+    }));
+  summary.architecture_candidate_count = architectureCandidates.length;
+  summary.required_architecture_review_count = architectureCandidates.filter(
+    (candidate) => candidate.review_level === "required",
+  ).length;
 
   writeJson(args.out, {
-    schema_version: 1,
+    schema_version: 2,
     upstream: {
       repository_path: repo,
       base_sha: baseSha,
@@ -175,6 +280,7 @@ try {
     },
     commits,
     changes,
+    architecture_candidates: architectureCandidates,
     summary,
   });
 } catch (error) {

@@ -107,6 +107,19 @@ function createSession(
   return session;
 }
 
+function createProviderWithFakeAppServer(appServer: FakeCodexAppServer): CodexHarnessAdapter {
+  const provider = new CodexHarnessAdapter(createTestLogger());
+  const internals = castInternals<{
+    goalsEnabledPromise: Promise<boolean> | null;
+    autoReviewEnabledPromise: Promise<boolean> | null;
+    spawnAppServer: () => Promise<ChildProcessWithoutNullStreams>;
+  }>(provider);
+  internals.goalsEnabledPromise = Promise.resolve(false);
+  internals.autoReviewEnabledPromise = Promise.resolve(false);
+  internals.spawnAppServer = async () => appServer.child;
+  return provider;
+}
+
 function asInternals(session: CodexTestSession): CodexSessionTestAccess {
   return castInternals<CodexSessionTestAccess>(session);
 }
@@ -156,7 +169,14 @@ function createRuntimeToolCatalogStub(input?: {
                   }),
                 ),
               })
-            : z.object({}),
+            : name === "browser_new_tab"
+              ? z.object({
+                  url: z
+                    .string()
+                    .transform((value) => value.trim())
+                    .optional(),
+                })
+              : z.object({}),
         handler: async () => ({ content: [{ type: "text", text: "ok" }] }),
       },
     ]),
@@ -356,6 +376,19 @@ process.stdin.on("data", (chunk) => {
 }
 
 describe("Codex app-server provider", () => {
+  test("closes the app-server process when initialization fails", async () => {
+    const appServer = createFakeCodexAppServer({
+      initialize: () => Promise.reject(new Error("initialize failed")),
+    });
+    const killSpy = vi.spyOn(appServer.child, "kill");
+    const provider = createProviderWithFakeAppServer(appServer);
+
+    await expect(provider.createSession(createConfig())).rejects.toThrow("initialize failed");
+
+    expect(killSpy).toHaveBeenCalledWith("SIGTERM");
+    appServer.assertNoErrors();
+  });
+
   test("uses the control-plane launch environment when fetching the model catalog", async () => {
     const appServer = createFakeCodexAppServer({
       "model/list": () => ({ data: [{ id: "gpt-5.4", isDefault: true }] }),
@@ -366,10 +399,14 @@ describe("Codex app-server provider", () => {
       spawnAppServer: (
         launchEnv?: Record<string, string>,
       ) => Promise<ChildProcessWithoutNullStreams>;
+      resolveAutoReviewEnabled: () => Promise<boolean>;
     }>(provider).spawnAppServer = async (launchEnv) => {
       launchEnvironments.push(launchEnv);
       return appServer.child;
     };
+    castInternals<{ resolveAutoReviewEnabled: () => Promise<boolean> }>(
+      provider,
+    ).resolveAutoReviewEnabled = async () => true;
 
     const catalog = await provider.fetchCatalog({
       scope: "global",
@@ -378,6 +415,7 @@ describe("Codex app-server provider", () => {
     });
 
     expect(catalog.models.map((model) => model.id)).toContain("gpt-5.4");
+    expect(catalog.defaultModeId).toBe("auto-review");
     expect(launchEnvironments).toEqual([{ CODEX_HOME: "/tmp/thoth-codex-probe" }]);
   });
 
@@ -592,7 +630,14 @@ describe("Codex app-server provider", () => {
       false,
       false,
       "agent-dynamic-tools",
-      createRuntimeToolCatalogStub(),
+      createRuntimeToolCatalogStub({
+        toolNames: [
+          "thoth_submit_clarify_card",
+          "browser_list_tabs",
+          "browser_new_tab",
+          "untrusted_tool",
+        ],
+      }),
     );
     castInternals<{ client: CodexClientLike }>(session).client = fakeClient;
 
@@ -616,6 +661,19 @@ describe("Codex app-server provider", () => {
             "frontier_ledger",
             "questions",
           ]),
+        }),
+      }),
+      expect.objectContaining({
+        name: "browser_list_tabs",
+        inputSchema: expect.objectContaining({ type: "object" }),
+      }),
+      expect.objectContaining({
+        name: "browser_new_tab",
+        inputSchema: expect.objectContaining({
+          type: "object",
+          properties: expect.objectContaining({
+            url: expect.objectContaining({ type: "string" }),
+          }),
         }),
       }),
     ]);
@@ -655,7 +713,9 @@ describe("Codex app-server provider", () => {
       false,
       false,
       "agent-resumed-dynamic-tools",
-      createRuntimeToolCatalogStub(),
+      createRuntimeToolCatalogStub({
+        toolNames: ["thoth_submit_clarify_card", "browser_list_tabs"],
+      }),
     ) as CodexTestSession;
     session.client = fakeClient;
 
@@ -664,7 +724,10 @@ describe("Codex app-server provider", () => {
     const resumeCall = requests.find((request) => request.method === "thread/resume");
     expect(resumeCall?.params).toEqual({
       threadId: "persisted-tool-thread",
-      dynamicTools: [expect.objectContaining({ name: "thoth_submit_clarify_card" })],
+      dynamicTools: [
+        expect.objectContaining({ name: "thoth_submit_clarify_card" }),
+        expect.objectContaining({ name: "browser_list_tabs" }),
+      ],
     });
   });
 

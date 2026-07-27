@@ -808,10 +808,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [pendingPermissions, agentId],
     );
 
-    const showRunningTurnFooter = shouldShowForegroundTurnSpinner(
-      agentThothState,
-      effectiveAgentStatus,
-    );
+    const showRunningTurnFooter =
+      shouldShowForegroundTurnSpinner(agentThothState, effectiveAgentStatus) ||
+      baseRenderModel.turnTiming.isActive;
     const pendingPermissionsNode = useMemo(
       () =>
         renderPendingPermissionsNode({

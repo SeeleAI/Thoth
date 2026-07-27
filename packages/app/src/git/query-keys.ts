@@ -31,6 +31,21 @@ export function checkoutPrStatusQueryKey(serverId: string, cwd: string) {
   return ["checkoutPrStatus", serverId, cwd] as const;
 }
 
+export function checkoutCommitsQueryKey(serverId: string, cwd: string) {
+  return ["checkoutCommits", serverId, cwd] as const;
+}
+
+export const COMMIT_FILE_DIFF_STALE_TIME = 5 * 60_000;
+
+export function checkoutCommitFileDiffQueryKey(
+  serverId: string,
+  cwd: string,
+  sha: string,
+  path: string,
+) {
+  return ["checkoutCommitFileDiff", serverId, cwd, sha, path] as const;
+}
+
 export async function invalidateCheckoutGitQueriesForClient(
   queryClient: QueryClient,
   identity: CheckoutQueryIdentity,
@@ -46,6 +61,9 @@ export async function invalidateCheckoutGitQueriesForClient(
       predicate: checkoutQueryPredicate("checkoutPrStatus", identity),
     }),
     queryClient.invalidateQueries({
+      queryKey: checkoutCommitsQueryKey(identity.serverId, identity.cwd),
+    }),
+    queryClient.invalidateQueries({
       predicate: checkoutQueryPredicate(prPaneTimelineQueryKind, identity),
     }),
   ]);
@@ -58,7 +76,7 @@ export async function invalidateCheckoutGitQueriesForServer(
   queryClient: QueryClient,
   serverId: string,
 ) {
-  const kinds = ["checkoutStatus", "checkoutPrStatus", prPaneTimelineQueryKind];
+  const kinds = ["checkoutStatus", "checkoutPrStatus", "checkoutCommits", prPaneTimelineQueryKind];
   await Promise.all(
     kinds.map((kind) =>
       queryClient.invalidateQueries({ predicate: checkoutQueryPredicate(kind, { serverId }) }),

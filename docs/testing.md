@@ -57,6 +57,33 @@ npm run typecheck:protocol
 npm run typecheck:client
 ```
 
+Owner-level changes outside Foundation use the package's declared script. Examples for the Paseo v0.2.2
+integration are:
+
+```bash
+npm --workspace=@thoth/daemon run test:unit
+npm --workspace=@thoth/app run test
+npm --workspace=@thoth/desktop run test
+npm --workspace=@thoth/cli run test
+```
+
+Do not run output-cleaning root/package scripts concurrently when they share `packages/protocol/dist` or another
+built workspace dependency.
+
+## Paseo Organic-Integration Gates
+
+An exact Paseo range is complete only when both provenance and the current Thoth boundary pass:
+
+```bash
+npm run test:skill:paseo-sync
+npm run paseo:verify-provenance -- --manifest <manifest.json> --classification <classification.json>
+npm run paseo:check-boundaries -- --repo . --base <thoth-base-sha> --out <boundary-report.json>
+```
+
+For the accepted v0.2.2 range, provenance must cover `393/393` commits, assess `143/143` architecture candidates,
+retain all `43/43` required candidates as architectural, and report zero pending reviews and failures. Generated
+JSON belongs under ignored `.agent-os/artifacts/paseo-sync/`; durable conclusions belong in the project ledgers.
+
 ## Fast Thoth Product API Acceptance
 
 The smallest non-negotiable product acceptance is one public-API journey against the daemon bundled
@@ -159,6 +186,17 @@ Use the cheapest layer that can disprove the current change, then promote the sa
 4. `Environment extensions`: UI, Relay, Pause/Resume/Stop and daemon/app restart composed around `runCore()`.
 5. `Release`: clean native jobs and a repeat run against assets downloaded from the public Release.
 
+The complete local desktop gate is:
+
+```bash
+npm run accept:thoth:appimage
+```
+
+It rebuilds the AppImage and runs one real-window packaged journey. The report must include read-only Files,
+Changes, Browser automation, and Schedule surfaces. A Browser turn must first be observed leaving `idle` and then
+returning to `idle` before the smoke navigates to the Schedule page; an old idle snapshot cannot prove the newly
+submitted turn completed.
+
 Claude Code, OpenCode and ACP must use the same Journey through their adapter capability contracts. Until an
 adapter supports session-scoped skills, semantic tools, turn identity and continuation, Thoth-on acceptance must
 report honest unsupported rather than use a provider-specific fallback.
@@ -192,6 +230,16 @@ packaged Journey before publishing and rerun it against the downloaded public Ap
 - `*.local.e2e.test.ts`: tests that require local-only resources.
 
 Real provider tests are opt-in. They must never be part of `check:foundation`.
+
+A narrow native Codex runtime smoke may select one named test through the daemon's real-flow project while keeping
+the Workspace temporary and using the Provider's existing auth:
+
+```bash
+npm --workspace=@thoth/daemon run test:e2e:real:flow -- --testNamePattern UT-01-quick-direct-passthrough
+```
+
+Unavailable Providers must be verified through capability or typed-unavailable behavior; tests must never fake
+authentication success.
 
 ## Rules
 

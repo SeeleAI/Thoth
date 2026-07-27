@@ -48,6 +48,7 @@ function workspace(input: {
     diffStat: null,
     scripts: [],
     gitRuntime: {
+      forge: null,
       currentBranch: "main",
       remoteUrl: input.remoteUrl ?? input.project?.checkout.remoteUrl ?? null,
       isThothOwnedWorktree: false,

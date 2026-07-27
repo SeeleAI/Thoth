@@ -27,6 +27,8 @@ import {
 } from "lucide-react-native";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import { MemoSidebarWorkspaceRow } from "@/components/sidebar/sidebar-workspace-row";
+import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
+import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
 
 // Themed icon wrappers
 const foregroundMutedColorMapping = (theme: Theme) => ({
@@ -146,33 +148,81 @@ function StatusGroupList({
   return (
     <>
       {groups.map((group) => (
-        <View key={group.bucket} style={styles.statusGroupBlock}>
-          <StatusGroupHeader group={group} collapsed={collapsedStatusGroupKeys.has(group.bucket)} />
-          {!collapsedStatusGroupKeys.has(group.bucket) ? (
-            <View
-              style={styles.statusWorkspaceListContainer}
-              testID={`sidebar-status-group-rows-${group.bucket}`}
-            >
-              {group.rows.map((workspace) => (
-                <StatusWorkspaceRow
-                  key={workspace.workspaceKey}
-                  workspace={workspace}
-                  subtitle={buildStatusRowSubtitle({
-                    projectName: projectNamesByKey.get(workspace.projectKey) ?? "",
-                    hostLabel: showHostLabels
-                      ? (hostLabelByServerId.get(workspace.serverId) ?? workspace.serverId)
-                      : null,
-                  })}
-                  shortcutNumber={shortcutIndex.get(workspace.workspaceKey) ?? null}
-                  showShortcutBadge={showShortcutBadges}
-                  onWorkspacePress={onWorkspacePress}
-                />
-              ))}
-            </View>
-          ) : null}
-        </View>
+        <StatusGroupRows
+          key={group.bucket}
+          group={group}
+          collapsed={collapsedStatusGroupKeys.has(group.bucket)}
+          projectNamesByKey={projectNamesByKey}
+          shortcutIndex={shortcutIndex}
+          showShortcutBadges={showShortcutBadges}
+          onWorkspacePress={onWorkspacePress}
+          hostLabelByServerId={hostLabelByServerId}
+          showHostLabels={showHostLabels}
+        />
       ))}
     </>
+  );
+}
+
+function StatusGroupRows({
+  group,
+  collapsed,
+  projectNamesByKey,
+  shortcutIndex,
+  showShortcutBadges,
+  onWorkspacePress,
+  hostLabelByServerId,
+  showHostLabels,
+}: {
+  group: StatusGroup;
+  collapsed: boolean;
+  projectNamesByKey: Map<string, string>;
+  shortcutIndex: Map<string, number>;
+  showShortcutBadges: boolean;
+  onWorkspacePress?: () => void;
+  hostLabelByServerId: ReadonlyMap<string, string>;
+  showHostLabels: boolean;
+}) {
+  const {
+    visibleItems: visibleWorkspaces,
+    expanded: workspacesExpanded,
+    canToggle: canToggleWorkspaces,
+    toggleExpanded: toggleWorkspacesExpanded,
+  } = useLimitedSidebarGroup(group.rows);
+
+  return (
+    <View style={styles.statusGroupBlock}>
+      <StatusGroupHeader group={group} collapsed={collapsed} />
+      {!collapsed ? (
+        <View
+          style={styles.statusWorkspaceListContainer}
+          testID={`sidebar-status-group-rows-${group.bucket}`}
+        >
+          {visibleWorkspaces.map((workspace) => (
+            <StatusWorkspaceRow
+              key={workspace.workspaceKey}
+              workspace={workspace}
+              subtitle={buildStatusRowSubtitle({
+                projectName: projectNamesByKey.get(workspace.projectKey) ?? "",
+                hostLabel: showHostLabels
+                  ? (hostLabelByServerId.get(workspace.serverId) ?? workspace.serverId)
+                  : null,
+              })}
+              shortcutNumber={shortcutIndex.get(workspace.workspaceKey) ?? null}
+              showShortcutBadge={showShortcutBadges}
+              onWorkspacePress={onWorkspacePress}
+            />
+          ))}
+          {canToggleWorkspaces ? (
+            <SidebarGroupToggleRow
+              expanded={workspacesExpanded}
+              onPress={toggleWorkspacesExpanded}
+              testID={`sidebar-status-show-more-${group.bucket}`}
+            />
+          ) : null}
+        </View>
+      ) : null}
+    </View>
   );
 }
 

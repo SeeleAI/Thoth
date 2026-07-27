@@ -7,41 +7,53 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderSnapshotEntry } from "@thoth/protocol/agent-types";
 import type { MutableDaemonConfig } from "@thoth/protocol/messages";
 
-const { theme, snapshotState, configState, patchConfigMock, openProviderSettingsMock } = vi.hoisted(
-  () => ({
-    theme: {
-      spacing: { 1: 4, "1.5": 6, 2: 8, 3: 12, 4: 16, 6: 24 },
-      iconSize: { sm: 14, md: 20 },
-      fontSize: { xs: 11, sm: 13, base: 15 },
-      fontWeight: { normal: "400" },
-      borderRadius: { lg: 8 },
-      opacity: { 50: 0.5 },
-      colors: {
-        surface1: "#111",
-        surface2: "#222",
-        surface3: "#333",
-        foreground: "#fff",
-        foregroundMuted: "#aaa",
-        border: "#555",
-        accent: "#0a84ff",
-        statusSuccess: "#00ff00",
-        statusWarning: "#ff9500",
-        statusDanger: "#ff0000",
-        palette: { red: { 300: "#ff6b6b" }, white: "#fff" },
-      },
+const {
+  theme,
+  snapshotState,
+  configState,
+  patchConfigMock,
+  openProviderSettingsMock,
+  deleteProviderMock,
+  alertMock,
+} = vi.hoisted(() => ({
+  theme: {
+    spacing: { 1: 4, "1.5": 6, 2: 8, 3: 12, 4: 16, 6: 24 },
+    iconSize: { sm: 14, md: 20 },
+    fontSize: { xs: 11, sm: 13, base: 15 },
+    fontWeight: { normal: "400" },
+    borderRadius: { lg: 8 },
+    opacity: { 50: 0.5 },
+    colors: {
+      surface1: "#111",
+      surface2: "#222",
+      surface3: "#333",
+      foreground: "#fff",
+      foregroundMuted: "#aaa",
+      border: "#555",
+      accent: "#0a84ff",
+      statusSuccess: "#00ff00",
+      statusWarning: "#ff9500",
+      statusDanger: "#ff0000",
+      palette: { red: { 300: "#ff6b6b" }, white: "#fff" },
     },
-    snapshotState: {
-      entries: undefined as ProviderSnapshotEntry[] | undefined,
-      isLoading: false,
-      isRefreshing: false,
-    },
-    configState: {
-      config: null as MutableDaemonConfig | null,
-    },
-    patchConfigMock: vi.fn(async () => undefined),
-    openProviderSettingsMock: vi.fn(),
-  }),
-);
+  },
+  snapshotState: {
+    entries: undefined as ProviderSnapshotEntry[] | undefined,
+    isLoading: false,
+    isRefreshing: false,
+  },
+  configState: {
+    config: null as MutableDaemonConfig | null,
+  },
+  patchConfigMock: vi.fn(async () => undefined),
+  openProviderSettingsMock: vi.fn(),
+  deleteProviderMock: vi.fn(async () => ({
+    provider: "custom-claude",
+    deleted: true as const,
+    requestId: "delete-provider",
+  })),
+  alertMock: vi.fn(),
+}));
 
 vi.mock("react-native", () => ({
   View: ({ children, testID }: { children?: React.ReactNode; testID?: string }) =>
@@ -83,6 +95,7 @@ vi.mock("react-native", () => ({
       typeof children === "function" ? children({ pressed: false, hovered: false }) : children,
     ),
   ActivityIndicator: () => React.createElement("span", { "data-testid": "activity-indicator" }),
+  Alert: { alert: alertMock },
 }));
 
 vi.mock("react-native-unistyles", () => ({
@@ -97,6 +110,7 @@ vi.mock("lucide-react-native", () => {
   const icon = (name: string) => () => React.createElement("span", { "data-icon": name });
   return {
     ChevronRight: icon("ChevronRight"),
+    Trash2: icon("Trash2"),
   };
 });
 
@@ -114,6 +128,12 @@ vi.mock("react-i18next", () => ({
       if (key === "settings.providers.models.many") return `${values?.count} models`;
       if (key === "settings.providers.addErrorTitle") return "Unable to add provider";
       if (key === "settings.providers.updateErrorTitle") return "Unable to update provider";
+      if (key === "settings.providers.deleteProvider") return `Delete ${values?.name}`;
+      if (key === "settings.providers.deleteConfirmTitle") return `Delete ${values?.name}?`;
+      if (key === "settings.providers.deleteConfirmMessage") return "Deletion warning";
+      if (key === "settings.providers.deleteAction") return "Delete provider";
+      if (key === "settings.providers.deleteErrorTitle") return "Unable to delete provider";
+      if (key === "common.actions.cancel") return "Cancel";
       return key;
     },
   }),
@@ -188,6 +208,7 @@ vi.mock("@/hooks/use-daemon-config", () => ({
 
 vi.mock("@/runtime/host-runtime", () => ({
   useHostRuntimeIsConnected: () => true,
+  useHostRuntimeClient: () => ({ deleteProvider: deleteProviderMock }),
 }));
 
 import { ProvidersSection } from "./providers-section";
@@ -215,6 +236,18 @@ const disabledCodexEntry: ProviderSnapshotEntry = {
   description: "OpenAI Codex",
   defaultModeId: null,
   modes: [],
+};
+
+const customClaudeEntry: ProviderSnapshotEntry = {
+  provider: "custom-claude",
+  status: "ready",
+  enabled: true,
+  label: "Custom Claude",
+  description: "Custom Claude transport",
+  defaultModeId: null,
+  modes: [],
+  source: "custom",
+  deletable: true,
 };
 
 function makeConfig(providers: MutableDaemonConfig["providers"] = {}): MutableDaemonConfig {
@@ -261,6 +294,8 @@ describe("ProvidersSection", () => {
     patchConfigMock.mockReset();
     patchConfigMock.mockResolvedValue(undefined);
     openProviderSettingsMock.mockReset();
+    deleteProviderMock.mockClear();
+    alertMock.mockReset();
   });
 
   afterEach(() => {
@@ -373,5 +408,43 @@ describe("ProvidersSection", () => {
     expect(patchConfigMock).toHaveBeenCalledWith({
       providers: { claude: { enabled: false } },
     });
+  });
+
+  it("shows deletion only for a custom Provider and requires destructive confirmation", async () => {
+    snapshotState.entries = [claudeEntry, customClaudeEntry];
+    configState.config = makeConfig({
+      "custom-claude": { extends: "claude", label: "Custom Claude" },
+    });
+
+    render();
+
+    expect(container?.querySelector('[aria-label="Delete Claude"]')).toBeNull();
+    const deleteButton = container?.querySelector<HTMLElement>(
+      '[role="button"][aria-label="Delete Custom Claude"]',
+    );
+    expect(deleteButton).not.toBeNull();
+
+    act(() => {
+      deleteButton?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(deleteProviderMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
+      "Delete Custom Claude?",
+      "Deletion warning",
+      expect.arrayContaining([
+        expect.objectContaining({ text: "Cancel", style: "cancel" }),
+        expect.objectContaining({ text: "Delete provider", style: "destructive" }),
+      ]),
+    );
+
+    const buttons = alertMock.mock.calls[0]?.[2] as Array<{ onPress?: () => void }>;
+    const destructiveAction = buttons.find((button) => typeof button.onPress === "function");
+    await act(async () => {
+      destructiveAction?.onPress?.();
+      await Promise.resolve();
+    });
+
+    expect(deleteProviderMock).toHaveBeenCalledWith("custom-claude");
   });
 });

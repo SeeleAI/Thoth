@@ -1,4 +1,4 @@
-import { View, Pressable, Text, ActivityIndicator } from "react-native";
+import { View, Pressable, Text, ActivityIndicator, StyleSheet as RNStyleSheet } from "react-native";
 import type { TFunction } from "i18next";
 import {
   useState,
@@ -218,16 +218,27 @@ interface RenderLeftContentArgs {
   focusInput: () => void;
   isCompactLayout: boolean;
   controlExtras: ReactNode;
+  commandCenterActive: boolean;
 }
 
 function renderLeftContent(args: RenderLeftContentArgs): ReactElement {
-  const { agentControls, agentId, serverId, focusInput, isCompactLayout, controlExtras } = args;
+  const {
+    agentControls,
+    agentId,
+    serverId,
+    focusInput,
+    isCompactLayout,
+    controlExtras,
+    commandCenterActive,
+  } = args;
   if (resolveAgentControlsMode(agentControls) === "draft" && agentControls) {
     return (
       <DraftAgentControls
         {...agentControls}
         isCompactLayout={isCompactLayout}
         controlExtras={controlExtras}
+        commandCenterActive={commandCenterActive}
+        commandCenterOwnerId={`draft:${serverId}:${agentId}`}
       />
     );
   }
@@ -238,6 +249,7 @@ function renderLeftContent(args: RenderLeftContentArgs): ReactElement {
       onDropdownClose={focusInput}
       isCompactLayout={isCompactLayout}
       controlExtras={controlExtras}
+      commandCenterActive={commandCenterActive}
     />
   );
 }
@@ -902,6 +914,7 @@ export function Composer({
     buildOutgoingAttachments,
     removeAttachment,
     openAttachment,
+    beginSubmit,
     completeSubmit,
     resetSuppression,
   } = composerWorkspaceAttachment.useBinding({
@@ -1136,6 +1149,9 @@ export function Composer({
         canSubmit: Boolean(sendAgentMessageRef.current || onSubmitMessageRef.current),
         queueMessage: () => undefined,
         submitMessage: async ({ message: submitText, attachments: submitAttachments }) => {
+          if (submitBehavior !== "preserve-and-lock") {
+            beginSubmit(submitAttachments);
+          }
           await submitMessage(
             submitText,
             submitAttachments,
@@ -1161,6 +1177,7 @@ export function Composer({
     },
     [
       allowEmptySubmit,
+      beginSubmit,
       clearDraft,
       completeSubmit,
       hasExternalContent,
@@ -1622,8 +1639,17 @@ export function Composer({
         focusInput,
         isCompactLayout,
         controlExtras: contextWindowMeter,
+        commandCenterActive: isPaneFocused,
       }),
-    [agentControls, agentId, contextWindowMeter, focusInput, isCompactLayout, serverId],
+    [
+      agentControls,
+      agentId,
+      contextWindowMeter,
+      focusInput,
+      isCompactLayout,
+      isPaneFocused,
+      serverId,
+    ],
   );
 
   const handleAttachButtonRef = useCallback((node: View | null) => {
@@ -1681,7 +1707,7 @@ export function Composer({
   );
 
   const composerContainerStyle = useMemo(
-    () => [styles.container, keyboardAnimatedStyle],
+    () => [animatedStaticStyles.container, keyboardAnimatedStyle],
     [keyboardAnimatedStyle],
   );
   const inputAreaContainerStyle = useMemo(
@@ -1830,11 +1856,14 @@ export function Composer({
   );
 }
 
-const styles = StyleSheet.create((theme: Theme) => ({
+const animatedStaticStyles = RNStyleSheet.create({
   container: {
     flexDirection: "column",
     position: "relative",
   },
+});
+
+const styles = StyleSheet.create((theme: Theme) => ({
   borderSeparator: {
     height: theme.borderWidth[1],
     backgroundColor: theme.colors.border,

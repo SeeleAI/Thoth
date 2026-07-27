@@ -44,12 +44,14 @@ describe("resolveImportCwd", () => {
       "pi-session-1",
       {
         provider: "pi",
+        workspace: "workspace-1",
         cwd: "/tmp/project",
       },
       {} as never,
     );
 
     expect(importAgent).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
       provider: "pi",
       sessionId: "pi-session-1",
       cwd: "/tmp/project",

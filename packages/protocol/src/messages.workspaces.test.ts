@@ -248,6 +248,7 @@ describe("workspace message schemas", () => {
     const newRequest = SessionInboundMessageSchema.parse({
       type: "import_agent_request",
       requestId: "req-import-new",
+      workspaceId: "workspace-1",
       providerId: "custom-codex",
       providerHandleId: "thread-1",
       cwd: "/tmp/repo",
@@ -255,6 +256,7 @@ describe("workspace message schemas", () => {
     const legacyRequest = SessionInboundMessageSchema.parse({
       type: "import_agent_request",
       requestId: "req-import-legacy",
+      workspaceId: "workspace-1",
       provider: "custom-codex",
       sessionId: "thread-1",
       cwd: "/tmp/repo",
@@ -263,6 +265,7 @@ describe("workspace message schemas", () => {
     expect(newRequest).toEqual({
       type: "import_agent_request",
       requestId: "req-import-new",
+      workspaceId: "workspace-1",
       providerId: "custom-codex",
       providerHandleId: "thread-1",
       cwd: "/tmp/repo",
@@ -270,6 +273,7 @@ describe("workspace message schemas", () => {
     expect(legacyRequest).toEqual({
       type: "import_agent_request",
       requestId: "req-import-legacy",
+      workspaceId: "workspace-1",
       provider: "custom-codex",
       sessionId: "thread-1",
       cwd: "/tmp/repo",

@@ -43,6 +43,7 @@ interface ImportSessionSheetProps {
   visible: boolean;
   client: RecentProviderSessionsClient | null;
   serverId: string | null;
+  workspaceId: string;
   cwd?: string | null;
   onClose: () => void;
   onImportedAgent?: (agentId: string) => void;
@@ -259,6 +260,7 @@ export function ImportSessionSheet({
   visible,
   client,
   serverId,
+  workspaceId,
   cwd,
   onClose,
   onImportedAgent,
@@ -405,6 +407,7 @@ export function ImportSessionSheet({
         throw new Error("Session is missing a working directory");
       }
       const agent = await client.importAgent({
+        workspaceId,
         providerId: entry.providerId,
         providerHandleId: entry.providerHandleId,
         cwd: entry.cwd,

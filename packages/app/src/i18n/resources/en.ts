@@ -58,6 +58,8 @@ export const en = {
       newAgent: "New agent",
       openProject: "Open project",
       home: "Home",
+      modelGroupLabel: "Model",
+      modelSearchKeywords: "switch model change model set model select model",
     },
   },
   composer: {
@@ -100,6 +102,8 @@ export const en = {
       removeBrowserElement: "Remove browser element attachment",
       openReview: "Open review attachment",
       removeReview: "Remove review attachment",
+      openWorkspaceFile: "Open workspace file attachment",
+      removeWorkspaceFile: "Remove workspace file attachment",
     },
     errors: {
       failedToSend: "Failed to send message",
@@ -355,6 +359,11 @@ export const en = {
         modified: "Modified",
         copyPath: "Copy path",
         download: "Download",
+        attachToComposer: "Add to message",
+        attachedToComposer: "Added file to the message",
+        attachTextOnly: "Only text files can be added to a message",
+        attachTooLarge: "This file is too large to add (max 10 MB)",
+        attachFailed: "Failed to add file to the message",
       },
       actions: {
         back: "Back",
@@ -716,6 +725,14 @@ export const en = {
         base: "base",
         newFile: "New",
         deletedFile: "Deleted",
+        commits: {
+          title: "Commits",
+          loading: "Loading commit history...",
+          loadError: "Unable to load commit history",
+          noneAhead: "No commits ahead of {{baseRef}} yet",
+          countLabel: "{{count}} commits",
+          noTextualChanges: "No textual changes in this commit",
+        },
       },
       openInEditor: {
         open: "Open",
@@ -813,6 +830,8 @@ export const en = {
       actions: {
         menu: "Workspace actions",
         newWorkspace: "New workspace",
+        showMore: "Show more",
+        showLess: "Show less",
         createWorkspaceFor: "Create a new workspace for {{projectName}}",
         copyPath: "Copy path",
         copyBranchName: "Copy branch name",
@@ -1390,6 +1409,17 @@ export const en = {
     },
     general: {
       title: "General",
+      browserData: {
+        title: "Browser data",
+        siteData: "Cookies and site data",
+        description: "Browser tabs share sign-ins and site data across Thoth.",
+        clear: "Clear browser data",
+        clearing: "Clearing...",
+        confirmTitle: "Clear browser data?",
+        confirmMessage: "Sites will be signed out and open browser tabs will reload.",
+        success: "Browser data cleared.",
+        error: "Couldn't clear browser data.",
+      },
       defaultSend: {
         label: "Default send",
         descriptions: {
@@ -1517,6 +1547,7 @@ export const en = {
     },
     shortcuts: {
       dialogTitle: "Shortcuts",
+      searchPlaceholder: "Search shortcuts",
       unavailableOnMobile: "Keyboard shortcuts are only available on desktop",
       capturePrompt: "Press shortcut...",
       actions: {
@@ -1775,6 +1806,12 @@ export const en = {
       loading: "Loading...",
       addErrorTitle: "Unable to add provider",
       updateErrorTitle: "Unable to update provider",
+      deleteProvider: "Delete {{name}}",
+      deleteConfirmTitle: "Delete {{name}}?",
+      deleteConfirmMessage:
+        "This removes the custom provider from this host. Existing running sessions will continue, but new and resumed sessions cannot use it.",
+      deleteAction: "Delete provider",
+      deleteErrorTitle: "Unable to delete provider",
       statuses: {
         disabled: "Disabled",
         loading: "Loading",

@@ -1,5 +1,5 @@
 import { Menu, BrowserWindow, ipcMain } from "electron";
-import { getWorkspaceActiveThothBrowserWebContents } from "./browser-webviews/index.js";
+import { getActiveThothBrowserWebContentsForHostWindow } from "./browser-webviews/index.js";
 
 interface ShowContextMenuInput {
   kind?: "terminal";
@@ -19,12 +19,8 @@ function withBrowserWindow(
   };
 }
 
-function getReloadTargetBrowserWebContents(): Electron.WebContents | null {
-  return getWorkspaceActiveThothBrowserWebContents();
-}
-
 function reloadFocusedContentsOrWindow(win: BrowserWindow, options?: { ignoreCache?: boolean }) {
-  const browserContents = getReloadTargetBrowserWebContents();
+  const browserContents = getActiveThothBrowserWebContentsForHostWindow(win.webContents.id);
   if (browserContents) {
     if (options?.ignoreCache) {
       browserContents.reloadIgnoringCache();

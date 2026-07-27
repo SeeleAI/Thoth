@@ -423,7 +423,7 @@ export function AgentList({
   }, [actionAgent, actionClient, archiveAgent]);
 
   const flatItems = useMemo((): FlatListItem[] => {
-    const buckets = new Map<DateSectionKey, AggregatedAgent[]>();
+    const buckets = new Map<AgentDateBucket, AggregatedAgent[]>();
     for (const agent of agents) {
       const section = deriveDateBucket(agent.lastActivityAt);
       const existing = buckets.get(section) ?? [];

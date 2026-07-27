@@ -169,13 +169,18 @@ if (stage.stage >= 3) {
   );
   requireText(
     "packages/protocol/src/rpc-registry.test.ts",
-    /toHaveLength\(131\)/,
-    "131 inbound RPC coverage assertion",
+    /SessionInboundMessageSchema\.options\)\.toHaveLength\(138\)/,
+    "138 inbound RPC coverage assertion",
   );
   requireText(
     "packages/protocol/src/rpc-registry.test.ts",
-    /toHaveLength\(139\)/,
-    "139 outbound RPC/event coverage assertion",
+    /SessionOutboundMessageSchema\.options\)\.toHaveLength\(146\)/,
+    "146 outbound RPC/event coverage assertion",
+  );
+  requireText(
+    "packages/protocol/src/rpc-registry.test.ts",
+    /reverseOperations\)\.toHaveLength\(1\)/,
+    "single reverse RPC coverage assertion",
   );
   for (const binaryType of ["file_begin", "file_chunk", "file_end", "terminal_frame"]) {
     requireText(

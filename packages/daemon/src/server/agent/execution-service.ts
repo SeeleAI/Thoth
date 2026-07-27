@@ -82,7 +82,6 @@ import {
   AgentStreamCoalescer,
 } from "./agent-stream-coalescer.js";
 import { ForegroundRunState, type ForegroundTurnWaiter } from "./foreground-run-state.js";
-import { getAgentProviderDefinition } from "@thoth/protocol/provider-manifest";
 import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
 import { isSystemInjectedEnvelope } from "./agent-prompt.js";
 import { stripInternalThothMcpServer, withRuntimeThothMcpServer } from "./runtime-mcp-config.js";
@@ -95,6 +94,7 @@ import {
 import type { ThothToolCatalogFactory } from "@thoth/drivers/agent-runtime";
 import type { ForegroundThothSessionProvisioner } from "./foreground-thoth-session-provisioner.js";
 import type { ToolGateway } from "../workspace-authority/tool-gateway.js";
+import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
@@ -119,6 +119,25 @@ const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
 
 type TimeoutResult = "completed" | "timed_out";
 
+export class ExecutionServiceShuttingDownError extends Error {
+  constructor() {
+    super("Execution service is shutting down");
+    this.name = "ExecutionServiceShuttingDownError";
+  }
+}
+
+export class ProviderUnavailableError extends Error {
+  readonly code = "provider_unavailable";
+
+  constructor(
+    readonly provider: AgentProvider,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ProviderUnavailableError";
+  }
+}
+
 interface PreparedSessionConfig {
   storedConfig: AgentSessionConfig;
   launchConfig: AgentSessionConfig;
@@ -126,6 +145,7 @@ interface PreparedSessionConfig {
 
 interface NormalizeConfigOptions {
   resolveDefaultModel?: boolean;
+  allowDefaultModeCatalogLookup?: boolean;
 }
 
 interface TimeoutOptions {
@@ -346,6 +366,8 @@ interface ExecutionRescueTimeouts {
 interface ProviderEnabledFlag {
   enabled: boolean;
   derivedFromProviderId?: string | null;
+  defaultModeId?: string | null;
+  source?: "builtin" | "custom";
   loadAdapter?: () => Promise<HarnessAdapter>;
 }
 type ProviderEnabledMap = Partial<Record<AgentProvider, ProviderEnabledFlag>>;
@@ -508,6 +530,17 @@ export interface AgentMetricsSnapshot {
     totalItems: number;
     maxItemsPerAgent: number;
   };
+}
+
+export interface IdleAgentRuntimeCollectionOptions {
+  cutoff: Date;
+  protectedAgentIds?: ReadonlySet<string> | Iterable<string>;
+}
+
+export interface IdleAgentRuntimeCollectionResult {
+  examinedAgentCount: number;
+  eligibleAgentCount: number;
+  releasedAgentIds: string[];
 }
 
 type ActiveManagedAgent =
@@ -711,6 +744,8 @@ export class ExecutionService {
   private readonly durableTimelineStore?: AgentTimelineStore;
   private readonly previousStatuses = new Map<string, AgentLifecycleStatus>();
   private readonly backgroundTasks = new Set<Promise<void>>();
+  private readonly agentRegistrationTasks = new Set<Promise<void>>();
+  private readonly agentCloseTasks = new Map<string, Promise<void>>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
@@ -724,6 +759,7 @@ export class ExecutionService {
   private onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
   private logger: Logger;
   private readonly rescueTimeouts: Required<ExecutionRescueTimeouts>;
+  private acceptingAgentRegistrations = true;
 
   constructor(options: ExecutionServiceOptions) {
     this.idFactory = options?.idFactory ?? (() => randomUUID());
@@ -756,6 +792,10 @@ export class ExecutionService {
     });
   }
 
+  prepareForShutdown(): void {
+    this.acceptingAgentRegistrations = false;
+  }
+
   private configureThothTools(options: ExecutionServiceOptions): void {
     this.thothToolsEnabled = options.thothToolsEnabled ?? true;
     this.thothToolCatalogFactory = options.thothToolCatalogFactory ?? null;
@@ -785,6 +825,7 @@ export class ExecutionService {
           this.providerDefinitions.set(provider, {
             enabled: true,
             derivedFromProviderId: null,
+            source: "custom",
             loadAdapter: async () => adapter,
           });
         }
@@ -804,6 +845,7 @@ export class ExecutionService {
     adapterId: AgentProvider,
     input: HarnessThreadInput,
   ): Promise<HarnessThreadDescriptor> {
+    this.assertAcceptingAgentRegistrations();
     const descriptor: HarnessThreadDescriptor = {
       id: `provider-thread-${randomUUID()}`,
       nativeHandle: null,
@@ -829,6 +871,7 @@ export class ExecutionService {
       workspacePath: string;
     },
   ): Promise<HarnessThreadDescriptor> {
+    this.assertAcceptingAgentRegistrations();
     if (input.descriptor.adapterId !== adapterId) {
       throw new Error("Provider thread belongs to a different HarnessAdapter");
     }
@@ -1423,6 +1466,124 @@ export class ExecutionService {
     );
   }
 
+  async waitForAgentClose(agentId: string): Promise<void> {
+    while (true) {
+      const closeTask = this.agentCloseTasks.get(agentId);
+      if (!closeTask) {
+        return;
+      }
+      await closeTask.catch(() => undefined);
+    }
+  }
+
+  async collectIdleAgentRuntimes(
+    options: IdleAgentRuntimeCollectionOptions,
+  ): Promise<IdleAgentRuntimeCollectionResult> {
+    await this.drainQueuedSessionEvents();
+    this.agentStreamCoalescer.flushAll();
+    await this.flush();
+
+    const protectedAgentIds = new Set(options.protectedAgentIds ?? []);
+    const examinedAgentCount = this.agents.size;
+    const candidateIds = [...this.agents.values()]
+      .filter((agent) =>
+        this.isIdleRuntimeCollectionCandidate(agent, options.cutoff, protectedAgentIds),
+      )
+      .map((agent) => agent.id)
+      .sort();
+    const releasedAgentIds: string[] = [];
+
+    for (const agentId of candidateIds) {
+      let released = false;
+      const { task, started } = this.startAgentCloseTask(agentId, async () => {
+        const current = this.agents.get(agentId);
+        if (
+          !current ||
+          !this.isIdleRuntimeCollectionCandidate(current, options.cutoff, protectedAgentIds)
+        ) {
+          return;
+        }
+        await this.releaseIdleAgentRuntime(current);
+        released = true;
+      });
+      await task;
+      if (started && released) {
+        releasedAgentIds.push(agentId);
+      }
+    }
+
+    return {
+      examinedAgentCount,
+      eligibleAgentCount: candidateIds.length,
+      releasedAgentIds,
+    };
+  }
+
+  private isIdleRuntimeCollectionCandidate(
+    agent: LiveManagedAgent,
+    cutoff: Date,
+    protectedAgentIds: ReadonlySet<string>,
+  ): boolean {
+    return (
+      agent.lifecycle === "idle" &&
+      !agent.internal &&
+      agent.persistence !== null &&
+      agent.updatedAt.getTime() <= cutoff.getTime() &&
+      !protectedAgentIds.has(agent.id) &&
+      !agent.pendingReplacement &&
+      agent.activeForegroundTurnId === null &&
+      agent.pendingPermissions.size === 0 &&
+      agent.inFlightPermissionResponses.size === 0 &&
+      agent.bufferedPermissionResolutions.size === 0 &&
+      !this.foregroundRuns.hasPendingRun(agent.id) &&
+      !this.sessionEventTails.has(agent.id)
+    );
+  }
+
+  private async drainQueuedSessionEvents(): Promise<void> {
+    while (this.sessionEventTails.size > 0) {
+      await Promise.allSettled([...this.sessionEventTails.values()]);
+    }
+  }
+
+  private async releaseIdleAgentRuntime(agent: LiveManagedAgent): Promise<void> {
+    const harnessThread = agent.session;
+    const closedAgent = this.prepareAgentForClosure(agent, "idle runtime released");
+    this.touchUpdatedAt(closedAgent);
+    this.historyOnlyAgents.set(closedAgent.id, closedAgent);
+    await this.persistSnapshot(closedAgent);
+    this.emitClosedAgent(closedAgent, { persist: false });
+
+    try {
+      await harnessThread.close();
+    } catch (error) {
+      this.logger.warn(
+        { err: error, agentId: closedAgent.id, provider: closedAgent.provider },
+        "Provider runtime close failed after durable idle release",
+      );
+    }
+  }
+
+  private startAgentCloseTask(
+    agentId: string,
+    operation: () => Promise<void>,
+  ): { task: Promise<void>; started: boolean } {
+    const existing = this.agentCloseTasks.get(agentId);
+    if (existing) {
+      return { task: existing, started: false };
+    }
+
+    const task = operation();
+    this.agentCloseTasks.set(agentId, task);
+    const clear = () => {
+      if (this.agentCloseTasks.get(agentId) === task) {
+        this.agentCloseTasks.delete(agentId);
+      }
+    };
+    void task.then(clear, clear);
+    return { task, started: true };
+  }
+
   subscribe(callback: AgentSubscriber, options?: SubscribeOptions): () => void {
     const targetAgentId =
       options?.agentId == null ? null : validateAgentId(options.agentId, "subscribe");
@@ -1600,7 +1761,10 @@ export class ExecutionService {
   }
 
   async listDraftCommands(config: AgentSessionConfig): Promise<AgentSlashCommand[]> {
-    const normalizedConfig = await this.normalizeConfig(config, { resolveDefaultModel: false });
+    const normalizedConfig = await this.normalizeConfig(config, {
+      resolveDefaultModel: false,
+      allowDefaultModeCatalogLookup: false,
+    });
     const client = await this.loadAdapter(normalizedConfig.provider);
     if (!normalizedConfig.model) {
       return [];
@@ -1644,7 +1808,10 @@ export class ExecutionService {
   }
 
   async listDraftFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
-    const normalizedConfig = await this.normalizeConfig(config, { resolveDefaultModel: false });
+    const normalizedConfig = await this.normalizeConfig(config, {
+      resolveDefaultModel: false,
+      allowDefaultModeCatalogLookup: false,
+    });
     const client = await this.loadAdapter(normalizedConfig.provider);
     if (!normalizedConfig.model) {
       return [];
@@ -1689,7 +1856,7 @@ export class ExecutionService {
 
   /** True only when the agent has a live provider session that can accept a new turn. */
   hasRunnableSession(agentId: string): boolean {
-    return this.agents.get(agentId)?.session !== null;
+    return this.agents.has(agentId);
   }
 
   getTimeline(id: string): AgentTimelineItem[] {
@@ -1710,6 +1877,11 @@ export class ExecutionService {
     return this.timelineStore.fetch(id, options);
   }
 
+  fetchFullTimeline(id: string): AgentTimelineFetchResult {
+    this.requireTimelineAgent(id);
+    return this.timelineStore.fetchAll(id, { direction: "tail" });
+  }
+
   /**
    * Restores a timeline-only snapshot after provider resume fails. This is
    * intentionally not a runnable agent: sending, interrupting and permission
@@ -1724,10 +1896,7 @@ export class ExecutionService {
       return null;
     }
 
-    const durableTimeline = await this.durableTimelineStore.fetchCommitted(record.id, {
-      direction: "tail",
-      limit: 0,
-    });
+    const durableTimeline = await this.durableTimelineStore.fetchAllCommitted(record.id);
     if (durableTimeline.rows.length === 0) {
       return null;
     }
@@ -1788,7 +1957,7 @@ export class ExecutionService {
     return { ...historyOnly };
   }
 
-  async createAgent(
+  createAgent(
     config: AgentSessionConfig,
     agentId?: string,
     options?: {
@@ -1803,6 +1972,25 @@ export class ExecutionService {
       providerControlRevision?: number;
     },
   ): Promise<ManagedAgent> {
+    return this.trackAgentRegistrationOperation(this.createAgentInternal(config, agentId, options));
+  }
+
+  private async createAgentInternal(
+    config: AgentSessionConfig,
+    agentId?: string,
+    options?: {
+      labels?: Record<string, string>;
+      initialPrompt?: string;
+      env?: Record<string, string>;
+      persistSession?: boolean;
+      persistInternal?: boolean;
+      initialTitle?: string | null;
+      workspaceId?: string;
+      providerRunMode?: ProviderRunMode;
+      providerControlRevision?: number;
+    },
+  ): Promise<ManagedAgent> {
+    this.assertAcceptingAgentRegistrations();
     const resolvedAgentId = validateAgentId(agentId ?? this.idFactory(), "createAgent");
     const { storedConfig, launchConfig } = await this.prepareSessionConfig(config, resolvedAgentId);
     this.requireEnabledProvider(storedConfig.provider);
@@ -1844,7 +2032,7 @@ export class ExecutionService {
 
   // Reconstruct an agent from provider persistence. Callers should explicitly
   // hydrate timeline history after resume.
-  async resumeAgentFromPersistence(
+  resumeAgentFromPersistence(
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
     agentId?: string,
@@ -1859,6 +2047,33 @@ export class ExecutionService {
       providerControlRevision?: number;
     },
   ): Promise<ManagedAgent> {
+    return this.trackAgentRegistrationOperation(
+      (async () => {
+        if (agentId) {
+          await this.waitForAgentClose(agentId);
+        }
+        return await this.resumeAgentFromPersistenceInternal(handle, overrides, agentId, options);
+      })(),
+    );
+  }
+
+  private async resumeAgentFromPersistenceInternal(
+    handle: AgentPersistenceHandle,
+    overrides?: Partial<AgentSessionConfig>,
+    agentId?: string,
+    options?: {
+      createdAt?: Date;
+      updatedAt?: Date;
+      lastUserMessageAt?: Date | null;
+      labels?: Record<string, string>;
+      workspaceId?: string;
+      historyOnly?: boolean;
+      providerRunMode?: ProviderRunMode;
+      providerControlRevision?: number;
+    },
+  ): Promise<ManagedAgent> {
+    this.assertAcceptingAgentRegistrations();
+    this.requireEnabledProvider(handle.provider);
     const resolvedAgentId = validateAgentId(
       agentId ?? this.idFactory(),
       "resumeAgentFromPersistence",
@@ -1889,13 +2104,24 @@ export class ExecutionService {
     return this.registerSession(session, storedConfig, resolvedAgentId, options);
   }
 
-  async importProviderSession(input: {
+  importProviderSession(input: {
     provider: AgentProvider;
     providerHandleId: string;
     cwd: string;
     workspaceId: string;
     labels?: Record<string, string>;
   }): Promise<ManagedAgent> {
+    return this.trackAgentRegistrationOperation(this.importProviderSessionInternal(input));
+  }
+
+  private async importProviderSessionInternal(input: {
+    provider: AgentProvider;
+    providerHandleId: string;
+    cwd: string;
+    workspaceId: string;
+    labels?: Record<string, string>;
+  }): Promise<ManagedAgent> {
+    this.assertAcceptingAgentRegistrations();
     const resolvedAgentId = validateAgentId(this.idFactory(), "importProviderSession");
     this.requireEnabledProvider(input.provider);
 
@@ -1920,35 +2146,43 @@ export class ExecutionService {
       },
       { config: providerLaunchConfig, storedConfig, launchContext },
     );
-    const importedConfig = await this.normalizeConfig(
-      stripInternalThothMcpServer({
-        ...storedConfig,
-        ...imported.config,
-        extra: {
-          ...(storedConfig.extra ?? {}),
-          ...(imported.config.extra ?? {}),
-          // Provisioned runtime tools are a daemon launch contract. Provider import metadata
-          // may omit unknown extra fields, but that must not make the already-mounted thread
-          // look incapable on its first Thoth turn.
-          ...(storedConfig.extra?.thothRuntimeTools
-            ? { thothRuntimeTools: storedConfig.extra.thothRuntimeTools }
-            : {}),
-        },
-      }),
-    );
-    const timelineRows = buildImportedTimelineRows(imported.timeline);
-    const initialTitle = resolveImportedAgentTitle(importedConfig, timelineRows);
+    let handedToRegistration = false;
+    try {
+      const importedConfig = await this.normalizeConfig(
+        stripInternalThothMcpServer({
+          ...storedConfig,
+          ...imported.config,
+          extra: {
+            ...(storedConfig.extra ?? {}),
+            ...(imported.config.extra ?? {}),
+            // Provisioned runtime tools are a daemon launch contract. Provider import metadata
+            // may omit unknown extra fields, but that must not make the already-mounted thread
+            // look incapable on its first Thoth turn.
+            ...(storedConfig.extra?.thothRuntimeTools
+              ? { thothRuntimeTools: storedConfig.extra.thothRuntimeTools }
+              : {}),
+          },
+        }),
+      );
+      const timelineRows = buildImportedTimelineRows(imported.timeline);
+      const initialTitle = resolveImportedAgentTitle(importedConfig, timelineRows);
 
-    return this.registerSession(imported.session, importedConfig, resolvedAgentId, {
-      labels: input.labels,
-      workspaceId: input.workspaceId,
-      timelineRows,
-      timelineNextSeq: timelineRows.length + 1,
-      persistence: imported.persistence,
-      historyPrimed: true,
-      initialTitle,
-      publishWhenReady: true,
-    });
+      handedToRegistration = true;
+      return this.registerSession(imported.session, importedConfig, resolvedAgentId, {
+        labels: input.labels,
+        workspaceId: input.workspaceId,
+        timelineRows,
+        timelineNextSeq: timelineRows.length + 1,
+        persistence: imported.persistence,
+        historyPrimed: true,
+        initialTitle,
+        publishWhenReady: true,
+      });
+    } finally {
+      if (!handedToRegistration) {
+        await this.closeUnregisteredSession(imported.session);
+      }
+    }
   }
 
   // Hot-reload an active agent session with config overrides. By default the
@@ -1957,11 +2191,22 @@ export class ExecutionService {
   // new epoch is minted and provider history is re-streamed — this is what the
   // user-facing "Reload agent" action wants when the on-disk session was
   // mutated outside Thoth.
-  async reloadAgentSession(
+  reloadAgentSession(
     agentId: string,
     overrides?: Partial<AgentSessionConfig>,
     options?: { rehydrateFromDisk?: boolean },
   ): Promise<ManagedAgent> {
+    return this.trackAgentRegistrationOperation(
+      this.reloadAgentSessionInternal(agentId, overrides, options),
+    );
+  }
+
+  private async reloadAgentSessionInternal(
+    agentId: string,
+    overrides?: Partial<AgentSessionConfig>,
+    options?: { rehydrateFromDisk?: boolean },
+  ): Promise<ManagedAgent> {
+    this.assertAcceptingAgentRegistrations();
     let existing = this.requireSessionAgent(agentId);
     if (this.hasInFlightRun(agentId)) {
       await this.cancelAgentRun(agentId);
@@ -1988,38 +2233,44 @@ export class ExecutionService {
       ? await client.resumeSession(handle, providerLaunchConfig, launchContext)
       : await client.createSession(providerLaunchConfig, launchContext);
 
-    this.agentStreamCoalescer.flushAndDiscard(agentId);
-    // Remove the existing agent entry before swapping sessions
-    this.agents.delete(agentId);
-    if (existing.unsubscribeSession) {
-      existing.unsubscribeSession();
-      existing.unsubscribeSession = null;
-    }
-    this.foregroundRuns.clearAgent(agentId, existing);
-    await this.closeReloadedSession(existing.session, agentId);
+    let handedToRegistration = false;
+    try {
+      this.assertAcceptingAgentRegistrations();
+      const closedExisting = this.prepareAgentForClosure(existing, "agent reloaded");
+      try {
+        await this.persistSnapshot(closedExisting);
+      } finally {
+        await this.closeReloadedSession(existing.session, agentId);
+      }
 
-    if (rehydrateFromDisk) {
-      // Wipe both durable and in-memory timeline so registerSession mints a
-      // new epoch and hydrateTimelineFromProvider re-streams the freshly read
-      // provider history into an empty timeline.
-      await this.deleteCommittedTimeline(agentId);
-      this.timelineStore.delete(agentId);
-    }
+      if (rehydrateFromDisk) {
+        // Wipe both durable and in-memory timeline so registerSession mints a
+        // new epoch and hydrateTimelineFromProvider re-streams the freshly read
+        // provider history into an empty timeline.
+        await this.deleteCommittedTimeline(agentId);
+        this.timelineStore.delete(agentId);
+      }
 
-    // Preserve existing labels and timeline during reload.
-    return this.registerSession(session, storedConfig, agentId, {
-      labels: existing.labels,
-      workspaceId: existing.workspaceId,
-      createdAt: existing.createdAt,
-      updatedAt: existing.updatedAt,
-      lastUserMessageAt: existing.lastUserMessageAt,
-      historyPrimed: rehydrateFromDisk ? false : preservedHistoryPrimed,
-      lastUsage: preservedLastUsage,
-      lastError: preservedLastError,
-      attention: preservedAttention,
-      providerRunMode: existing.providerRunMode,
-      providerControlRevision: existing.providerControlRevision,
-    });
+      // Preserve existing labels and timeline during reload.
+      handedToRegistration = true;
+      return this.registerSession(session, storedConfig, agentId, {
+        labels: existing.labels,
+        workspaceId: existing.workspaceId,
+        createdAt: existing.createdAt,
+        updatedAt: existing.updatedAt,
+        lastUserMessageAt: existing.lastUserMessageAt,
+        historyPrimed: rehydrateFromDisk ? false : preservedHistoryPrimed,
+        lastUsage: preservedLastUsage,
+        lastError: preservedLastError,
+        attention: preservedAttention,
+        providerRunMode: existing.providerRunMode,
+        providerControlRevision: existing.providerControlRevision,
+      });
+    } finally {
+      if (!handedToRegistration) {
+        await this.closeUnregisteredSession(session);
+      }
+    }
   }
 
   private async closeReloadedSession(session: HarnessThread, agentId: string): Promise<void> {
@@ -2077,7 +2328,19 @@ export class ExecutionService {
   }
 
   async closeAgent(agentId: string): Promise<void> {
-    const agent = this.requireAgent(agentId);
+    const { task } = this.startAgentCloseTask(agentId, () => this.closeAgentInternal(agentId));
+    await task;
+  }
+
+  private async closeAgentInternal(agentId: string): Promise<void> {
+    const agent = this.agents.get(agentId);
+    if (!agent) {
+      if (this.historyOnlyAgents.has(agentId)) {
+        return;
+      }
+      this.requireAgent(agentId);
+      return;
+    }
     this.logger.trace(
       {
         agentId,
@@ -2091,7 +2354,12 @@ export class ExecutionService {
       "execution.service.close.start",
     );
     const closedAgent = this.prepareAgentForClosure(agent, "agent closed");
-    await agent.session.close();
+    let closeError: unknown;
+    try {
+      await agent.session.close();
+    } catch (error) {
+      closeError = error;
+    }
     this.timelineStore.delete(agentId);
     await this.persistSnapshot(closedAgent);
     this.emitClosedAgent(closedAgent, { persist: false });
@@ -2103,6 +2371,9 @@ export class ExecutionService {
       },
       "execution.service.close.complete",
     );
+    if (closeError) {
+      throw closeError;
+    }
   }
 
   async archiveAgent(agentId: string): Promise<{ archivedAt: string }> {
@@ -2664,8 +2935,12 @@ export class ExecutionService {
       // for live subscribers. Other event types are broadcast only.
       if (event.type === "timeline") {
         this.touchUpdatedAt(agent);
-        const row = this.recordTimeline(agent.id, event.item);
-        this.dispatchStream(agent.id, event, {
+        const normalizedEvent = {
+          ...event,
+          item: limitAgentTimelineItemContent(event.item),
+        };
+        const row = this.recordTimeline(agent.id, normalizedEvent.item);
+        this.dispatchStream(agent.id, normalizedEvent, {
           seq: row.seq,
           epoch: this.timelineStore.getEpoch(agent.id),
           timestamp: row.timestamp,
@@ -2692,10 +2967,11 @@ export class ExecutionService {
   async appendTimelineItem(agentId: string, item: AgentTimelineItem): Promise<void> {
     const agent = this.requireAgent(agentId);
     this.touchUpdatedAt(agent);
-    const row = this.recordTimeline(agentId, item);
+    const normalizedItem = limitAgentTimelineItemContent(item);
+    const row = this.recordTimeline(agentId, normalizedItem);
     const event: AgentStreamEvent = {
       type: "timeline",
-      item,
+      item: normalizedItem,
       provider: agent.provider,
       ...(agent.activeForegroundTurnId ? { turnId: agent.activeForegroundTurnId } : {}),
     };
@@ -2711,11 +2987,18 @@ export class ExecutionService {
   async emitLiveTimelineItem(agentId: string, item: AgentTimelineItem): Promise<void> {
     const agent = this.requireAgent(agentId);
     this.touchUpdatedAt(agent);
-    this.dispatchStream(agentId, {
-      type: "timeline",
-      item,
-      provider: agent.provider,
-    });
+    this.dispatchStream(
+      agentId,
+      {
+        type: "timeline",
+        item: limitAgentTimelineItemContent(item),
+        provider: agent.provider,
+      },
+      {
+        epoch: this.timelineStore.getEpoch(agentId),
+        timestamp: new Date().toISOString(),
+      },
+    );
   }
 
   streamAgent(
@@ -3589,54 +3872,118 @@ export class ExecutionService {
       providerControlRevision?: number;
     },
   ): Promise<ManagedAgent> {
-    const resolvedAgentId = validateAgentId(agentId, "registerSession");
-    if (this.agents.has(resolvedAgentId)) {
-      throw new Error(`Agent with id ${resolvedAgentId} already exists`);
-    }
-    this.historyOnlyAgents.delete(resolvedAgentId);
-    const initialPersistedTitle = await this.resolveInitialPersistedTitle(
-      resolvedAgentId,
-      config,
-      options?.initialTitle ?? null,
-    );
+    let managed: ActiveManagedAgent | null = null;
+    let displacedHistoryOnly: ManagedAgentClosed | undefined;
+    try {
+      this.assertAcceptingAgentRegistrations();
+      const resolvedAgentId = validateAgentId(agentId, "registerSession");
+      if (this.agents.has(resolvedAgentId)) {
+        throw new Error(`Agent with id ${resolvedAgentId} already exists`);
+      }
+      displacedHistoryOnly = this.historyOnlyAgents.get(resolvedAgentId);
+      this.historyOnlyAgents.delete(resolvedAgentId);
+      const initialPersistedTitle = await this.resolveInitialPersistedTitle(
+        resolvedAgentId,
+        config,
+        options?.initialTitle ?? null,
+      );
 
-    if (options?.workspaceId) {
-      this.durableTimelineStore?.bindAgentWorkspace(resolvedAgentId, options.workspaceId);
-    }
+      if (options?.workspaceId) {
+        this.durableTimelineStore?.bindAgentWorkspace(resolvedAgentId, options.workspaceId);
+      }
 
-    const now = new Date();
-    const { durableTimelineHasRows } = await this.initializeAgentTimelineForRegister({
-      agentId: resolvedAgentId,
-      now,
-      options,
-    });
+      const now = new Date();
+      const { durableTimelineHasRows } = await this.initializeAgentTimelineForRegister({
+        agentId: resolvedAgentId,
+        now,
+        options,
+      });
 
-    const managed = this.buildManagedAgentForRegister({
-      resolvedAgentId,
-      session,
-      config,
-      now,
-      durableTimelineHasRows,
-      options,
-    });
+      managed = this.buildManagedAgentForRegister({
+        resolvedAgentId,
+        session,
+        config,
+        now,
+        durableTimelineHasRows,
+        options,
+      });
 
-    this.agents.set(resolvedAgentId, managed);
-    // Initialize previousStatus to track transitions
-    this.previousStatuses.set(resolvedAgentId, managed.lifecycle);
-    await this.refreshRuntimeInfo(managed, { emit: !options?.publishWhenReady });
-    await this.persistSnapshot(managed, {
-      title: initialPersistedTitle,
-    });
-    if (!options?.publishWhenReady) {
+      this.assertAcceptingAgentRegistrations();
+      this.agents.set(resolvedAgentId, managed);
+      this.previousStatuses.set(resolvedAgentId, managed.lifecycle);
+      await this.refreshRuntimeInfo(managed, { emit: !options?.publishWhenReady });
+      this.assertAgentRegistrationActive(managed);
+      await this.persistSnapshot(managed, {
+        title: initialPersistedTitle,
+      });
+      this.assertAgentRegistrationActive(managed);
+      if (!options?.publishWhenReady) {
+        this.emitState(managed, { persist: false });
+      }
+
+      await this.refreshSessionState(managed, { emit: !options?.publishWhenReady });
+      this.assertAgentRegistrationActive(managed);
+      managed.lifecycle = "idle";
+      await this.persistSnapshot(managed);
+      this.assertAgentRegistrationActive(managed);
       this.emitState(managed, { persist: false });
+      this.subscribeToSession(managed);
+      return { ...managed };
+    } catch (error) {
+      await this.cleanupFailedAgentRegistration(session, managed, error);
+      if (displacedHistoryOnly && !this.agents.has(displacedHistoryOnly.id)) {
+        this.historyOnlyAgents.set(displacedHistoryOnly.id, displacedHistoryOnly);
+      }
+      throw error;
+    }
+  }
+
+  private assertAcceptingAgentRegistrations(): void {
+    if (!this.acceptingAgentRegistrations) {
+      throw new ExecutionServiceShuttingDownError();
+    }
+  }
+
+  private assertAgentRegistrationActive(agent: ActiveManagedAgent): void {
+    if (!this.acceptingAgentRegistrations || this.agents.get(agent.id) !== agent) {
+      throw new ExecutionServiceShuttingDownError();
+    }
+  }
+
+  private async cleanupFailedAgentRegistration(
+    session: HarnessThread,
+    managed: ActiveManagedAgent | null,
+    registrationError: unknown,
+  ): Promise<void> {
+    if (!managed) {
+      await this.closeUnregisteredSession(session);
+      return;
     }
 
-    await this.refreshSessionState(managed, { emit: !options?.publishWhenReady });
-    managed.lifecycle = "idle";
-    await this.persistSnapshot(managed);
-    this.emitState(managed, { persist: false });
-    this.subscribeToSession(managed);
-    return { ...managed };
+    if (this.agents.get(managed.id) !== managed) {
+      // Another lifecycle owner already removed this exact registration and owns its close.
+      return;
+    }
+
+    const closed = this.prepareAgentForClosure(managed, "agent registration failed");
+    await this.closeUnregisteredSession(session);
+    try {
+      await this.persistSnapshot(closed);
+    } catch (cleanupError) {
+      this.logger.warn(
+        { err: cleanupError, registrationError, agentId: managed.id },
+        "Failed to persist closed snapshot after agent registration failure",
+      );
+    }
+    this.emitClosedAgent(closed, { persist: false });
+  }
+
+  private async closeUnregisteredSession(session: HarnessThread): Promise<void> {
+    try {
+      await session.close();
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to close unregistered provider session");
+    }
   }
 
   private async initializeAgentTimelineForRegister(params: {
@@ -3744,10 +4091,7 @@ export class ExecutionService {
       return { timestamp: now.toISOString() };
     }
 
-    const durableTimeline = await this.durableTimelineStore.fetchCommitted(agentId, {
-      direction: "tail",
-      limit: 0,
-    });
+    const durableTimeline = await this.durableTimelineStore.fetchAllCommitted(agentId);
     return {
       epoch: durableTimeline.epoch,
       nextSeq: durableTimeline.window.nextSeq,
@@ -4045,9 +4389,13 @@ export class ExecutionService {
       }
 
       for (const { event, timestamp } of replay) {
-        const row = this.recordTimeline(agent.id, event.item, { timestamp });
+        const normalizedEvent = {
+          ...event,
+          item: limitAgentTimelineItemContent(event.item),
+        };
+        const row = this.recordTimeline(agent.id, normalizedEvent.item, { timestamp });
         if (options?.broadcast) {
-          this.dispatchStream(agent.id, event, {
+          this.dispatchStream(agent.id, normalizedEvent, {
             seq: row.seq,
             epoch: this.timelineStore.getEpoch(agent.id),
             timestamp: row.timestamp,
@@ -4070,7 +4418,7 @@ export class ExecutionService {
         }
         this.recordTimeline(
           agent.id,
-          event.item,
+          limitAgentTimelineItemContent(event.item),
           event.timestamp ? { timestamp: event.timestamp } : undefined,
         );
       }
@@ -4428,7 +4776,7 @@ export class ExecutionService {
     if (options?.fromHistory) {
       this.recordTimeline(
         agent.id,
-        event.item,
+        limitAgentTimelineItemContent(event.item),
         event.timestamp ? { timestamp: event.timestamp } : undefined,
       );
       flags.shouldDispatchEvent = false;
@@ -4436,7 +4784,13 @@ export class ExecutionService {
       return;
     }
 
-    this.recordAndDispatchTimelineItem(agent.id, event.item, event.provider, event.turnId);
+    const normalizedEvent = this.recordAndDispatchTimelineItem(
+      agent.id,
+      event.item,
+      event.provider,
+      event.turnId,
+    );
+    event.item = normalizedEvent.item;
     if (event.item.type === "user_message") {
       agent.lastUserMessageAt = new Date();
       this.emitState(agent);
@@ -4620,11 +4974,12 @@ export class ExecutionService {
     item: AgentTimelineItem,
     provider: AgentProvider,
     turnId?: string,
-  ): AgentStreamEvent {
-    const row = this.recordTimeline(agentId, item);
-    const event: AgentStreamEvent = {
+  ): Extract<AgentStreamEvent, { type: "timeline" }> {
+    const normalizedItem = limitAgentTimelineItemContent(item);
+    const row = this.recordTimeline(agentId, normalizedItem);
+    const event: Extract<AgentStreamEvent, { type: "timeline" }> = {
       type: "timeline",
-      item,
+      item: normalizedItem,
       provider,
       ...(turnId !== undefined ? { turnId } : {}),
     };
@@ -4635,10 +4990,10 @@ export class ExecutionService {
     });
 
     if (
-      item.type === "tool_call" &&
-      item.status === "completed" &&
-      item.detail?.type === "shell" &&
-      commandMayHaveChangedExternalState(item.detail.command)
+      normalizedItem.type === "tool_call" &&
+      normalizedItem.status === "completed" &&
+      normalizedItem.detail?.type === "shell" &&
+      commandMayHaveChangedExternalState(normalizedItem.detail.command)
     ) {
       const agent = this.agents.get(agentId);
       if (agent) {
@@ -4834,15 +5189,43 @@ export class ExecutionService {
     });
   }
 
+  private trackAgentRegistrationOperation<T>(result: Promise<T>): Promise<T> {
+    const settled = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.agentRegistrationTasks.add(settled);
+    void settled.then(() => {
+      this.agentRegistrationTasks.delete(settled);
+    });
+    return result;
+  }
+
   /**
    * Flush any background persistence work (best-effort).
-   * Used by daemon shutdown paths to avoid unhandled rejections after cleanup.
    */
   async flush(): Promise<void> {
+    await this.flushTasks({ includeAgentRegistrations: false });
+  }
+
+  /**
+   * Drain registrations that crossed the synchronous shutdown fence. Each operation owns a
+   * provider process/thread until it either installs it or closes it.
+   */
+  async flushForShutdown(): Promise<void> {
+    await this.flushTasks({ includeAgentRegistrations: true });
+  }
+
+  private async flushTasks(options: { includeAgentRegistrations: boolean }): Promise<void> {
     this.agentStreamCoalescer.flushAll();
     // Drain tasks, including tasks spawned while awaiting.
-    while (this.backgroundTasks.size > 0) {
-      const pending = Array.from(this.backgroundTasks);
+    while (
+      this.backgroundTasks.size > 0 ||
+      (options.includeAgentRegistrations && this.agentRegistrationTasks.size > 0)
+    ) {
+      const pending = options.includeAgentRegistrations
+        ? [...this.backgroundTasks, ...this.agentRegistrationTasks]
+        : [...this.backgroundTasks];
       await Promise.allSettled(pending);
     }
   }
@@ -4957,11 +5340,12 @@ export class ExecutionService {
     }
 
     if (!normalized.modeId) {
-      try {
-        normalized.modeId =
-          getAgentProviderDefinition(normalized.provider).defaultModeId ?? undefined;
-      } catch {
-        // Unknown provider
+      const defaultModeId = await this.resolveDefaultModeId(
+        normalized,
+        options.allowDefaultModeCatalogLookup ?? true,
+      );
+      if (defaultModeId) {
+        normalized.modeId = defaultModeId;
       }
     }
 
@@ -4983,6 +5367,33 @@ export class ExecutionService {
       return (catalog.models.find((model) => model.isDefault) ?? catalog.models[0])?.id;
     } catch {
       // Provider may not support model listing — leave model undefined.
+      return undefined;
+    }
+  }
+
+  private async resolveDefaultModeId(
+    config: AgentSessionConfig,
+    allowCatalogLookup: boolean,
+  ): Promise<string | undefined> {
+    const definition = this.providerDefinitions.get(config.provider);
+    if (!definition) {
+      return undefined;
+    }
+    if (definition.defaultModeId) {
+      return definition.defaultModeId;
+    }
+    if (!allowCatalogLookup) {
+      return undefined;
+    }
+    try {
+      const client = await this.loadAdapter(config.provider);
+      const catalog = await client.fetchCatalog({
+        scope: "workspace",
+        cwd: config.cwd,
+        force: false,
+      });
+      return catalog.defaultModeId ?? undefined;
+    } catch {
       return undefined;
     }
   }
@@ -5062,7 +5473,8 @@ export class ExecutionService {
   }): Promise<HarnessAdapter> {
     if (!this.providerDefinitions.has(options.provider)) {
       const configuredProviders = this.getConfiguredProviderIds();
-      throw new Error(
+      throw new ProviderUnavailableError(
+        options.provider,
         `Unknown provider '${options.provider}'. Configured providers: ${formatProviderList(
           configuredProviders,
         )}.`,
@@ -5091,7 +5503,17 @@ export class ExecutionService {
   }
 
   private requireEnabledProvider(provider: AgentProvider): void {
-    if (this.providerDefinitions.get(provider)?.enabled === false) {
+    const definition = this.providerDefinitions.get(provider);
+    if (!definition) {
+      const configuredProviders = this.getConfiguredProviderIds();
+      throw new ProviderUnavailableError(
+        provider,
+        `Unknown provider '${provider}'. Configured providers: ${formatProviderList(
+          configuredProviders,
+        )}.`,
+      );
+    }
+    if (definition.enabled === false) {
       throw new Error(`Provider '${provider}' is disabled`);
     }
   }
@@ -5104,7 +5526,12 @@ export class ExecutionService {
     const current = this.adapters.get(provider);
     if (current) return current;
     const definition = this.providerDefinitions.get(provider);
-    if (!definition) throw new Error(`No adapter registered for provider '${provider}'`);
+    if (!definition) {
+      throw new ProviderUnavailableError(
+        provider,
+        `Provider '${provider}' is no longer configured and cannot start or resume a session`,
+      );
+    }
     if (!definition.loadAdapter) {
       throw new Error(`Provider '${provider}' has no adapter loader`);
     }
