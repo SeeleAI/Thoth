@@ -34,6 +34,7 @@ const NON_AUTHORITY_HOME_ENTRIES = new Set([
   "config.json",
   "daemon.log",
   "daemon-keypair.json",
+  "desktop-attachments",
   "relay-credentials.json",
   "server-id",
 ]);

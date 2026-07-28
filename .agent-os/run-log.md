@@ -4419,7 +4419,7 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   real daemon catalog and asserts all approved Claude 5 200K/1M entries. The formal rerun passed `30/30` unit tests
   and all `40/40` local/e2e files, including Workspace Schedule; `NTH-EXP-069` records the distinction.
 - Current formal provenance passes `393/393` commit coverage, `143/143` candidate assessment, `43/43` required
-  architectural candidates, zero pending reviews and zero failures. The boundary report covers `368` paths with
+  architectural candidates, zero pending reviews and zero failures. The current boundary report covers `367` paths with
   zero blocking/review findings. Skill fixtures, format, diff hygiene, typechecks, Protocol `435`, Drivers `590`,
   Client `125`, App `2,678`, Desktop `300`, Daemon `2,511`, and CLI suites passed.
 - Root gates passed in order: Foundation with `655` tests; Provider Control `49.341s`; interaction regressions
@@ -4434,3 +4434,23 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   and `NTH-EV-071` remain in progress until commit, two normal fast-forward pushes, exact-SHA workflow, fixed
   26-asset Release replacement, and downloaded public AppImage verification finish. No remote mutation occurred in
   this stage.
+
+## 2026-07-28 [First Paseo v0.2.2 native Release attempt failed safely and corrective source verified]
+
+- Created source `5e4007a995b2d8bff1e1d7e01c621aebf1b3eec3` and normally fast-forwarded both authorized branches. Exact-SHA
+  workflow `30282306284` passed preflight, Server CLI, all three Server CLI install smokes and the real hosted Relay
+  journey, but all four native Desktop jobs failed during their build-time packaged renderer smoke. Publish was
+  skipped; the old fixed tag and 26-asset public Release remain intact at `30528b81`.
+- GitHub logs and an isolated local packaged launch proved one common cause: App startup legitimately creates the
+  Desktop-owned `desktop-attachments/` directory before starting the daemon, while storage v3 fresh-home detection
+  did not classify it as non-authority and rejected the clean home as older than Release `05775486`.
+- Added a retained-attachment characterization test, observed it fail `15/16` with the exact workflow error, and
+  added only `desktop-attachments` to the non-authority allowlist. The focused suite then passed `16/16`; complete
+  Daemon unit passed `196 files / 2,512 tests` with `26` skipped; Foundation passed `655` tests.
+- The corrective AppImage is `137,794,211` bytes with SHA-256
+  `66ab61916cf3314d26a912aa5a9f7e0d88c69e1686266b243d991b1b5e384dbb` and passed the complete real-window
+  14-turn, schema-v3, Files/Changes, Browser and Schedule journey. The shared `accept:refactor:fast` gate passed in
+  `152.842s` under its unchanged `300s` deadline.
+- One production allowlist line changes approved `DeltaP` to `14,496` and mechanically translates Cut B/final
+  ceilings to `295,427` / `273,027`; the independent `NTH-TD-036` gap remains exactly `15,506`. `NTH-TD-048` and
+  `NTH-EV-071` remain in progress pending the corrective exact-SHA workflow and public-download verification.

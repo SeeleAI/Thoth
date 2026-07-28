@@ -1780,3 +1780,22 @@ Observed on `2026-07-27` during the complete CLI local/e2e run:
 Conclusion: test the curated catalog with a deterministic capability/version fixture and test the actual installed
 Provider as an opt-in runtime probe. Do not make a machine's older valid version look like a product failure, and do
 not weaken catalog coverage to accommodate it.
+
+## `NTH-EXP-070` Fresh authority detection must admit non-authority Desktop resources created before daemon startup
+
+Observed on `2026-07-28` in exact-SHA workflow `30282306284`:
+
+1. All four native Desktop builds reached their real packaged renderer smoke and then failed identically while the
+   Desktop-managed daemon established storage layout v3. The renderer had already created
+   `desktop-attachments/`, but the fresh-home allowlist contained only non-authority files such as `config.json`,
+   `cli-client-id`, `server-id`, credentials and logs.
+2. The migration correctly refuses unknown old authority and preserves it. Treating every early Desktop resource as
+   legacy authority, however, made a clean install impossible. Local source and AppImage journeys had not isolated
+   this exact clean build-time ordering before the native workflow exercised it on all operating systems.
+3. A characterization test now places a retained attachment in `desktop-attachments/` before migration. It first
+   reproduced the exact failure, then passed after the directory alone was classified as non-authority. The repair
+   does not allow `agents/`, JSON truth or any unknown entry, and it does not move or rewrite the attachment.
+
+Conclusion: fresh storage classification must be based on ownership, not merely on whether another shell created a
+path before the daemon. Keep the allowlist narrow, preserve unknown authority, and include the packaged renderer's
+startup ordering in Release gates.

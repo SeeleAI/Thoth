@@ -3871,7 +3871,7 @@ architecture-level changes must be discussed and explicitly decided before they 
 
 Status: in progress.
 
-Evidence on `2026-07-27`:
+Evidence on `2026-07-27` and `2026-07-28`:
 
 1. The official annotated `v0.2.2` tag resolves through tag object
    `4759a5baa8a1bf165f282a758081cb49e61a4630` to commit
@@ -3911,7 +3911,7 @@ Evidence on `2026-07-27`:
    reporting `2.1.219` through the real daemon/Driver catalog path and asserts Opus 5, Fable 5, and Sonnet 5 in both
    200K/1M forms. A debug-only single-file rerun passed, followed by the formal complete CLI result in item 7.
 10. Current formal provenance passed `393/393`, `143/143`, `43/43`, zero pending, and zero failures. The current
-    `npm run paseo:check-boundaries` report covers `368` changed paths with `blocking=0` and `review=0`; the Skill
+    `npm run paseo:check-boundaries` report covers `367` changed paths with `blocking=0` and `review=0`; the Skill
     fixture also passed its range, architecture-discussion, boundary, and provenance cases.
 11. All required root gates passed in the required order with current exit code `0`: `check:foundation` including
     `655` tests; `accept:provider-control:fast` in `49.341s`; `accept:interaction-regressions:fast` in `28.870s`;
@@ -3926,25 +3926,41 @@ Evidence on `2026-07-27`:
 13. `npm run accept:thoth:appimage` rebuilt the Linux AppImage and completed one real-window packaged journey with
     `ok=true`, `14` hot-switch turns, schema-3 migration, read-only `README.md`, committed/uncommitted Changes,
     Browser list/new/snapshot/navigate/close plus typed wrong-`browserId` rejection, and a succeeded Schedule with
-    real Task/Execution IDs and `schedule_run_started/succeeded` Timeline. The local AppImage is `137,793,946`
-    bytes with SHA-256 `3e31b309d1e8a1ecd61e1d7bda149f420446f256d8e086499050d217a6a789ad`; the ignored report is
+    real Task/Execution IDs and `schedule_run_started/succeeded` Timeline. The current corrective AppImage is
+    `137,794,211` bytes with SHA-256 `66ab61916cf3314d26a912aa5a9f7e0d88c69e1686266b243d991b1b5e384dbb`; the ignored report is
     `.dev/packaged-appimage-thoth-flow/report.json`.
 14. `npm run package:android:debug-apk` passed and produced only the ignored local Debug APK: `273,165,007` bytes,
     SHA-256 `042b2e4ad9cf46113385cb316d5dc2c13d6d22da4053bcf11896b4b854770702`. `aapt` confirms package
     `sh.thoth.debug`, version `0.0.0-mvp-beta`, and no `android.permission.RECORD_AUDIO`. It is not a Release asset.
-15. Production metrics are `310,932` lines, `1,343,083` scanner tokens, `1,362,658` AST nodes, `5,137` static
+15. Corrective production metrics are `310,933` lines, `1,343,087` scanner tokens, `1,362,659` AST nodes, `5,137` static
     imports, and `164` runtime dependency edges. Relative to the fixed `296,437` pre-sync snapshot,
-    `DeltaP=14,495`; translated Cut B/final ceilings are `295,426` / `273,026`, preserving the independent Cut B
+    `DeltaP=14,496`; translated Cut B/final ceilings are `295,427` / `273,027`, preserving the independent Cut B
     gap at exactly `15,506`. The translated baseline gate still reports net reductions of `12,094` LOC, `26,129`
     tokens, `46,049` AST nodes, `65` imports, and one runtime dependency edge.
+16. Source `5e4007a995b2d8bff1e1d7e01c621aebf1b3eec3` was normally fast-forwarded to both authorized branches and
+    exact-SHA workflow `30282306284` ran. Preflight `90031473885`, Server CLI `90034856253`, hosted Relay
+    `90035416284`, and macOS/Windows/Linux Server CLI install smokes `90035416290` / `90035416414` /
+    `90035416892` passed. Native Desktop jobs `90034856222`, `90034856224`, `90034856233`, and `90034856252`
+    failed in their build-time real renderer smoke, so publish `90036430565` was skipped exactly as designed.
+    GitHub API revalidation proved the old tag and public Release still target `30528b81`, with all `26` assets.
+17. All four native failures had the same deterministic cause: a clean packaged renderer created the legitimate
+    Desktop-owned `desktop-attachments/` directory before the daemon established storage layout v3, while
+    `isFreshHome` did not yet classify that directory as non-authority. A new test with a retained attachment first
+    failed `15/16` with the exact `Unsupported storage older than Release 05775486` error, then passed `16/16` after
+    adding only `desktop-attachments` to the non-authority allowlist. Unknown legacy authority such as `agents/`
+    remains rejected and preserved.
+18. Corrective verification passed with current exit code `0`: complete Daemon unit `196 files / 2,512 tests`
+    plus `26` skipped; Foundation `655`; `npm run accept:thoth:appimage` with the complete real-window product
+    result in item 13; and `npm run accept:refactor:fast` in `152.842s` under the unchanged shared `300s` deadline.
+    The translated gate recognizes `NTH-CD-087 (14,496 LOC)` and preserves every original net-reduction metric.
 
 Pending:
 
-1. Exact release-source commit and normal fast-forward pushes to the two authorized branches.
-2. Exact-SHA workflow, fixed Release replacement, public asset checksum/build-identity verification and downloaded
+1. Corrective release-source commit and normal fast-forward updates of the two authorized branches.
+2. Successful exact-SHA workflow, fixed Release replacement, public asset checksum/build-identity verification and downloaded
    public AppImage journey.
 
-Conclusion: the exact Paseo range is organically integrated and the local candidate is `release_ready`.
+Conclusion: the exact Paseo range is organically integrated and the corrective local candidate is `release_ready`.
 `NTH-TD-048` remains doing and `NTH-EV-071` remains in progress until the fixed 26-asset Beta is replaced by the
 exact-SHA workflow and the downloaded public AppImage passes the same product journey. Nothing here claims
 `verified` or `published` yet.

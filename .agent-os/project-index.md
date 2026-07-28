@@ -8,22 +8,25 @@
 4. Active blockers: none. The Paseo v0.2.2 architecture review is resolved by `NTH-CD-076` through `NTH-CD-088`,
    and schema-version-2 provenance covers all `393/393` commits with `143/143` architecture candidates assessed,
    `43/43` required candidates architectural, zero pending reviews and zero failures.
-5. Current branch: `agent/dev/mvp`; repository-maintenance commit
-   `ca71358aabb8fe03891ea24e57939d82547bcd21` and its tracked-symlink validation closeout
-   `265c4af9a45d6272ce4d3a107546b90541779983` are on the remote development branch. Published product source
-   `30528b814eff68eb63e2379e133aac6ee36d5fb4` remains on `release/mvp-actions`, fixed tag
-   `v0.0.0-mvp-beta` and Release metadata. Remote `main` remains unchanged at
+5. Current branch: `agent/dev/mvp`; first Paseo v0.2.2 source attempt
+   `5e4007a995b2d8bff1e1d7e01c621aebf1b3eec3` is on both remote authorized branches. Exact-SHA workflow
+   `30282306284` failed before publication, so fixed tag `v0.0.0-mvp-beta` and Release id `359902667` still target
+   the prior published source `30528b814eff68eb63e2379e133aac6ee36d5fb4` with all `26` assets intact. Remote `main` remains unchanged at
    `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the only product path. The approved Paseo v0.2.2 capabilities
    are organically integrated through current Protocol/Client/Core/Daemon/Drivers/App/Desktop/CLI owners and the
-   local candidate is `release_ready` under WIP `NTH-EV-071`: owner suites, schema-v2 provenance, the 368-path
+   local candidate is `release_ready` under WIP `NTH-EV-071`: owner suites, schema-v2 provenance, the 367-path
    boundary audit, Foundation, Provider Control, interaction, complete Thoth, the shared `196.126s` refactor gate,
-   real Web, real Codex, local Android Debug APK and rebuilt AppImage journeys all pass. Production source is
-   `310,932` LOC, so approved `DeltaP=14,495`; translated Cut B/final ceilings are `295,426` / `273,026`, and the
+   real Web, real Codex, local Android Debug APK and rebuilt AppImage journeys all pass. The first native workflow
+   exposed one clean-home packaging defect: Desktop legitimately created `desktop-attachments/` before the daemon
+   storage migration, but the non-authority allowlist rejected it. A failing characterization test now covers that
+   ordering, the one-entry allowlist fix preserves attachments and legacy-storage rejection, Daemon `2,512`,
+   Foundation `655`, the real-window AppImage journey and the shared `152.842s` refactor gate pass. Production is
+   `310,933` LOC, so approved `DeltaP=14,496`; translated Cut B/final ceilings are `295,427` / `273,027`, and the
    independent `NTH-TD-036` gap remains exactly `15,506`. `NTH-TD-036` stays doing at Stage 4 and is temporarily not
-   the sole top action. `NTH-TD-048` remains doing until the exact release-source commit, two normal fast-forward
-   pushes, exact-SHA workflow, fixed 26-asset Beta replacement, and downloaded public AppImage verification finish.
-   No commit, push, Release mutation, `main` change, Relay deployment, or Paseo service mutation has occurred yet.
+   the sole top action. `NTH-TD-048` remains doing until the corrective source commit, normal fast-forward updates,
+   successful exact-SHA workflow, fixed 26-asset Beta replacement, and downloaded public AppImage verification
+   finish. No Release/tag, `main`, Relay deployment, or Paseo service mutation occurred in the failed attempt.
 
 ## Objective Summary
 

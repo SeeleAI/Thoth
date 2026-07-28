@@ -131,6 +131,20 @@ describe("Thoth storage layout migration", () => {
     });
   });
 
+  it("creates fresh authority storage when Desktop attachments exist before daemon startup", async () => {
+    const root = temporaryRoot("desktop-attachments-fresh");
+    const home = path.join(root, ".thoth");
+    const attachment = path.join(home, "desktop-attachments", "pending.txt");
+    mkdirSync(path.dirname(attachment), { recursive: true });
+    writeFileSync(attachment, "pending desktop attachment\n");
+
+    await expect(ensureThothStorageLayout(home, createTestLogger())).resolves.toEqual({
+      requiresProviderThreadFinalization: false,
+    });
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(3);
+    expect(readFileSync(attachment, "utf8")).toBe("pending desktop attachment\n");
+  });
+
   it("upgrades normalized schema v2 catalog and authority without changing old schedule rows", async () => {
     const home = await normalizedV2Home();
     const catalogPath = path.join(home, "catalog.sqlite");

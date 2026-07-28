@@ -16,21 +16,21 @@
     "runtimeDependencyEdges": 164
   },
   "postSync": {
-    "physicalLines": 310932,
-    "scannerTokens": 1343083,
-    "astNodes": 1362658,
+    "physicalLines": 310933,
+    "scannerTokens": 1343087,
+    "astNodes": 1362659,
     "staticImportEdges": 5137,
     "runtimeDependencyEdges": 164
   },
   "metrics": {
-    "physicalLines": 14495,
-    "scannerTokens": 70648,
-    "astNodes": 62048,
+    "physicalLines": 14496,
+    "scannerTokens": 70652,
+    "astNodes": 62049,
     "staticImportEdges": 145,
     "runtimeDependencyEdges": 0
   },
   "translatedTargets": {
-    "cutBCeilingPhysicalLines": 295426,
-    "finalCeilingPhysicalLines": 273026
+    "cutBCeilingPhysicalLines": 295427,
+    "finalCeilingPhysicalLines": 273027
   }
 }
