@@ -3869,7 +3869,7 @@ architecture-level changes must be discussed and explicitly decided before they 
 
 ### `NTH-EV-071` Paseo v0.2.2 Organic Integration And Fixed-Beta Replacement
 
-Status: in progress.
+Status: verified.
 
 Evidence on `2026-07-27` and `2026-07-28`:
 
@@ -3953,14 +3953,41 @@ Evidence on `2026-07-27` and `2026-07-28`:
     plus `26` skipped; Foundation `655`; `npm run accept:thoth:appimage` with the complete real-window product
     result in item 13; and `npm run accept:refactor:fast` in `152.842s` under the unchanged shared `300s` deadline.
     The translated gate recognizes `NTH-CD-087 (14,496 LOC)` and preserves every original net-reduction metric.
+19. Corrective source `cf5067fa3835c498f3842a5b2e371d4cb3b25577` is an ordinary descendant of the failed source and was
+    normally fast-forwarded to both authorized branches without force push, merge, rebase, or history rewrite.
+    Exact-SHA workflow `30318942696` completed with `status=completed`, `conclusion=success`, and the same
+    `headSha`. Preflight `90150568849`, Server CLI `90151979969`, Windows Desktop `90151979991`, macOS arm64
+    `90151980010`, macOS x64 `90151980011`, Linux Desktop and packaged journey `90151980014`, macOS/Windows/Linux
+    CLI install smokes `90152323567` / `90152323604` / `90152323625`, hosted Relay `90152323571`, and publish
+    `90154089694` all passed.
+20. Fixed tag `v0.0.0-mvp-beta` is a direct commit ref to `cf5067fa3835c498f3842a5b2e371d4cb3b25577`.
+    Public Release `360786111` has the same target, `draft=false`, `prerelease=true`, publication time
+    `2026-07-28T01:26:33Z`, and exactly the approved 26 desktop-only assets. An exact-name API check found no APK,
+    iOS package, Server CLI archive, npm, Nix, or Docker output.
+21. Fresh public downloads under ignored
+    `.dev/release-verification/cf5067fa3835c498f3842a5b2e371d4cb3b25577/` match both GitHub asset metadata
+    and their API SHA-256 digests. `BUILD-SOURCE.txt` is `89` bytes with digest
+    `2be982e73573dff5b16df18cf2f592e4d5e0120567472c11b5992c6ea22504bc`; `MVP-UPDATE.json` is `2,455` bytes
+    with digest `721dd0d003719733da2999049ae8a401fe0aa423152036bfb84061aa94d4b430`; `SHA256SUMS` is `2,418` bytes with
+    digest `3db528f276a927e6205fb4f321067fc9616e127527afb5c4c25589c126b52875`; and the AppImage is `137,790,134`
+    bytes with digest `3dd624b9f8b506ef694f3d7fe689f78b61b541d22863b376745ca5141e995476`.
+    `SHA256SUMS`, `BUILD-SOURCE.txt`, `MVP-UPDATE.json` workflow `30318942696`, and extracted
+    `resources/build-identity.json` all identify the same source.
+22. After restoring only its executable bit, the checksum-verified public AppImage passed
+    `npm run accept:thoth:api` with exit code `0` and `ok=true`. The ignored report at
+    `.dev/release-verification/cf5067fa3835c498f3842a5b2e371d4cb3b25577/product-journey/report.json`
+    records `14` hot-switch turns, six visible sessions, one failed-Review retry, schema-v3 migration with `23`
+    Agents and `17` Timeline rows, three PlanExec calls, three Review calls, both mounted RuntimeBundles, and six
+    durable Loop attachments. The real Desktop renderer/preload bridge passed read-only Files, committed and
+    uncommitted Changes, Browser list/new/snapshot/navigate/close plus wrong-`browserId` rejection, and a succeeded
+    Schedule with real Task/Execution IDs and canonical started/succeeded Timeline entries.
+23. Post-publication read-only guards confirm `main=e74c6e0de8a110d5e07249880d0e4e4f0ceab691`; independent Relay
+    source remains `317bcda46571ae0ae508f4d892759eff779d9d73` and its health response remains protocol `3`; Paseo remains
+    PID `3597831` on `127.0.0.1:6767`; and official Paseo `v0.2.2` still resolves through tag object
+    `4759a5baa8a1bf165f282a758081cb49e61a4630` to `b589599a8f21bcc9e4c911603082566ce320a3c8`.
+    No Relay/Web deployment, npm publication, mobile/store publication, Nix/Docker publication, or independent
+    Paseo operation occurred.
 
-Pending:
-
-1. Corrective release-source commit and normal fast-forward updates of the two authorized branches.
-2. Successful exact-SHA workflow, fixed Release replacement, public asset checksum/build-identity verification and downloaded
-   public AppImage journey.
-
-Conclusion: the exact Paseo range is organically integrated and the corrective local candidate is `release_ready`.
-`NTH-TD-048` remains doing and `NTH-EV-071` remains in progress until the fixed 26-asset Beta is replaced by the
-exact-SHA workflow and the downloaded public AppImage passes the same product journey. Nothing here claims
-`verified` or `published` yet.
+Conclusion: `NTH-AC-025` is satisfied, the exact Paseo range is organically integrated, `NTH-TD-048` is verified,
+and the fixed desktop-only Beta is `published` at source `cf5067fa3835c498f3842a5b2e371d4cb3b25577`. The sole top next
+action returns to `NTH-TD-036`; it remains doing at Stage 4 with its independent `15,506`-LOC Cut B gap unchanged.

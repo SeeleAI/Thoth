@@ -4454,3 +4454,30 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - One production allowlist line changes approved `DeltaP` to `14,496` and mechanically translates Cut B/final
   ceilings to `295,427` / `273,027`; the independent `NTH-TD-036` gap remains exactly `15,506`. `NTH-TD-048` and
   `NTH-EV-071` remain in progress pending the corrective exact-SHA workflow and public-download verification.
+
+## 2026-07-28 [Paseo v0.2.2 organic integration published and publicly reverified]
+
+- Corrective source `cf5067fa3835c498f3842a5b2e371d4cb3b25577` remained the exact normal fast-forward target of both
+  authorized branches. Exact-SHA workflow `30318942696` completed successfully: preflight `90150568849`, Server
+  CLI `90151979969`, Windows Desktop `90151979991`, macOS arm64/x64 `90151980010` / `90151980011`, Linux Desktop
+  and packaged journey `90151980014`, macOS/Windows/Linux CLI smokes `90152323567` / `90152323604` /
+  `90152323625`, hosted Relay `90152323571`, and publish `90154089694` all passed.
+- Fixed tag `v0.0.0-mvp-beta` and public prerelease `360786111` now target `cf5067fa`; the Release is
+  `draft=false`, `prerelease=true`, and contains exactly 26 desktop-only assets with no APK, iOS, Server CLI, npm,
+  Nix or Docker output.
+- Fresh public `BUILD-SOURCE.txt`, `MVP-UPDATE.json`, `SHA256SUMS`, and `Thoth-x86_64.AppImage` downloads agree on
+  source and workflow. The AppImage is `137,790,134` bytes with SHA-256
+  `3dd624b9f8b506ef694f3d7fe689f78b61b541d22863b376745ca5141e995476`; GitHub metadata, the update manifest,
+  checksum file, local digest and extracted `resources/build-identity.json` agree.
+- The downloaded AppImage passed the complete formal product journey with `ok=true`: `14` hot-switch turns,
+  schema-v3 migration, real Desktop renderer/preload, read-only Files, committed/uncommitted Changes, Browser
+  list/new/snapshot/navigate/close with wrong-`browserId` rejection, and a succeeded Schedule with real Task and
+  Execution receipts. Evidence remains ignored under
+  `.dev/release-verification/cf5067fa3835c498f3842a5b2e371d4cb3b25577/`.
+- Remote `main` remains `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`; independent Relay source remains
+  `317bcda46571ae0ae508f4d892759eff779d9d73` with protocol-3 health; Paseo remains PID `3597831` on
+  `127.0.0.1:6767`; and official Paseo `v0.2.2` still resolves through tag object `4759a5ba` to `b589599a`. No
+  Relay/Web deployment, npm/mobile/store/Nix/Docker publication or independent Paseo operation occurred.
+- `NTH-EV-071` and `NTH-TD-048` are verified; terminal state is `published`. `NTH-TD-036` is again the sole top
+  next action, remains doing at Stage 4 and retains exactly the independent `15,506`-LOC Cut B gap. This closeout
+  is pushed only to `agent/dev/mvp`; `release/mvp-actions` stays at the published source to avoid a second Release.

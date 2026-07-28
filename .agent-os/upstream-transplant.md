@@ -129,9 +129,10 @@ Tracked `_paseo` seed directories have been promoted into formal source trees an
    combined diff are retained as explicit merge-bookkeeping entries rather than being assigned fabricated paths.
 6. Working manifest, classification and provenance reports stay under ignored
    `.agent-os/artifacts/paseo-sync/`. Durable decisions and final evidence are recorded in tracked project ledgers.
-7. Organic implementation and all required local Stage 4 gates pass under WIP `NTH-EV-071`; the candidate is
-   `release_ready`. Exact-SHA workflow, fixed-Beta replacement, and downloaded public AppImage verification remain
-   required before `NTH-TD-048` can become verified or published.
+7. Organic implementation, all required local Stage 4 gates, corrective exact-SHA workflow `30318942696`, the
+   fixed 26-asset desktop-only Beta replacement, public checksum/build-identity checks, and the downloaded AppImage
+   product journey pass under verified `NTH-EV-071`. Published Thoth source is
+   `cf5067fa3835c498f3842a5b2e371d4cb3b25577`; `NTH-TD-048` is verified.
 
 ## Follow-Up
 
