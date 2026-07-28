@@ -5,9 +5,11 @@ import { createJSONStorage, persist } from "zustand/middleware";
 export interface BackgroundTasksSurfaceState {
   open: boolean;
   closedByUser?: boolean;
+  activeTab?: "tasks" | "schedules";
   sidebarWidth?: number;
   taskListWidth?: number;
   selectedTaskId: string | null;
+  selectedScheduleId?: string | null;
   selectedGoalId: string | null;
   selectedExecutionId: string | null;
 }
@@ -24,8 +26,10 @@ interface BackgroundTasksSurfaceStore {
 const DEFAULT_STATE: BackgroundTasksSurfaceState = {
   open: false,
   closedByUser: false,
+  activeTab: "tasks",
   sidebarWidth: undefined,
   selectedTaskId: null,
+  selectedScheduleId: null,
   selectedGoalId: null,
   selectedExecutionId: null,
 };

@@ -6,6 +6,7 @@ import { createTaskCommand } from "./commands/task/index.js";
 import { createPermitCommand } from "./commands/permit/index.js";
 import { createProviderCommand } from "./commands/provider/index.js";
 import { createScheduleCommand } from "./commands/schedule/index.js";
+import { createScriptCommand } from "./commands/script/index.js";
 import { createTerminalCommand } from "./commands/terminal/index.js";
 import { createWorktreeCommand } from "./commands/worktree/index.js";
 import { createHooksCommand } from "./commands/hooks.js";
@@ -158,6 +159,9 @@ export function createCli(): Command {
 
   // Schedule commands
   program.addCommand(createScheduleCommand());
+
+  // Workspace script commands
+  program.addCommand(createScriptCommand());
 
   // Permission commands
   program.addCommand(createPermitCommand());

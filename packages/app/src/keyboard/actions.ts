@@ -27,6 +27,7 @@ export type KeyboardActionId =
   | "workspace.pane.close"
   | "workspace.navigate.index"
   | "workspace.navigate.relative"
+  | "workspace.pin"
   | "sidebar.toggle.left"
   | "sidebar.toggle.right"
   | "sidebar.toggle.both"

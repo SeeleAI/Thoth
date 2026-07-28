@@ -11,8 +11,13 @@ import {
   AgentListItemPayloadSchema,
   AgentPermissionResponseSchema,
   AgentSnapshotPayloadSchema,
+  WorkspaceScriptPayloadSchema,
 } from "../../messages.js";
-import type { AgentListItemPayload } from "../../messages.js";
+import type {
+  AgentListItemPayload,
+  WorkspaceScriptErrorCode,
+  WorkspaceScriptPayload,
+} from "../../messages.js";
 import {
   buildStoredAgentPayload,
   toAgentListItemPayload,
@@ -170,6 +175,31 @@ export interface ThothToolHostDependencies {
   workspaceAuthorityManager?: WorkspaceAuthorityManager;
   toolGateway?: ToolGateway;
   browserToolsBroker?: Pick<BrowserToolsBroker, "execute">;
+  workspaceScripts?: {
+    listWorkspace(workspaceId: string): Promise<{
+      scripts: WorkspaceScriptPayload[];
+      error: string | null;
+      errorCode: WorkspaceScriptErrorCode | null;
+    }>;
+    startWorkspace(
+      workspaceId: string,
+      scriptName: string,
+    ): Promise<{
+      script: WorkspaceScriptPayload | null;
+      terminalId: string | null;
+      error: string | null;
+      errorCode: WorkspaceScriptErrorCode | null;
+    }>;
+    stopWorkspace(
+      workspaceId: string,
+      scriptName: string,
+    ): Promise<{
+      script: WorkspaceScriptPayload | null;
+      terminalId: string | null;
+      error: string | null;
+      errorCode: WorkspaceScriptErrorCode | null;
+    }>;
+  };
 }
 
 function parseTimestamp(value: string | null | undefined): number {
@@ -663,6 +693,9 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
   const enableContractAuditTools = runtimeTools?.scope === "contract_audit";
   const enableLoopRuntimeTools =
     runtimeTools?.scope === "loop_planexec" || runtimeTools?.scope === "loop_review";
+  const enableWorkspaceScriptRead =
+    runtimeTools?.scope === "clarify" || runtimeTools?.scope === "loop_planexec";
+  const enableWorkspaceScriptMutation = enableWorkspaceScriptRead;
   const loopRuntimePhase =
     runtimeTools?.scope === "loop_planexec"
       ? "planexec"
@@ -751,6 +784,149 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           : null;
       },
     });
+  }
+
+  const WorkspaceScriptNameSchema = z.string().trim().min(1);
+  const workspaceScriptListOutputSchema = z
+    .object({
+      ok: z.boolean(),
+      scripts: z.array(WorkspaceScriptPayloadSchema),
+      errorCode: z.string().nullable(),
+    })
+    .strict();
+  const workspaceScriptMutationOutputSchema = z
+    .object({
+      ok: z.boolean(),
+      script: WorkspaceScriptPayloadSchema.nullable(),
+      terminalId: z.string().nullable(),
+      errorCode: z.string().nullable(),
+    })
+    .strict();
+  const requireWorkspaceScriptAuthority = (
+    context: ThothToolExecutionContext,
+    mutation: boolean,
+  ) => {
+    if (!callerAgentId) {
+      throw new Error("Workspace script tools require an Agent-scoped caller");
+    }
+    if (!options.workspaceScripts) {
+      throw new Error("Workspace script management is unavailable on this daemon");
+    }
+    const authority = requireToolGateway().authorizeScopedCapability({
+      agentId: callerAgentId,
+      context,
+    });
+    if (mutation && runtimeTools?.scope === "clarify") {
+      const lifecycle = foregroundAuthorityStore?.getState(callerAgentId).lifecycle;
+      if (lifecycle !== "quick_exec") {
+        const error = new Error(
+          "Workspace script mutation is permission_denied during Clarify; it is enabled only after the user-approved Quick implementation begins",
+        );
+        error.name = "WorkspaceScriptPermissionError";
+        throw error;
+      }
+    }
+    if (mutation && runtimeTools?.scope !== "clarify" && runtimeTools?.scope !== "loop_planexec") {
+      throw new Error(
+        "Workspace script mutation is permission_denied outside implementation scope",
+      );
+    }
+    context.signal?.throwIfAborted();
+    return { authority, operations: options.workspaceScripts };
+  };
+  const workspaceScriptFailure = (input: {
+    message: string;
+    errorCode: WorkspaceScriptErrorCode | null;
+    script?: WorkspaceScriptPayload | null;
+    terminalId?: string | null;
+  }): ThothToolResult => ({
+    content: [{ type: "text", text: input.message }],
+    structuredContent: {
+      ok: false,
+      ...(input.script !== undefined ? { script: input.script } : { scripts: [] }),
+      ...(input.terminalId !== undefined ? { terminalId: input.terminalId } : {}),
+      errorCode: input.errorCode,
+    },
+    isError: true,
+  });
+
+  if (enableWorkspaceScriptRead) {
+    registerTool(
+      "thoth_list_workspace_scripts",
+      {
+        title: "List Workspace scripts",
+        description:
+          "List configured scripts in the Workspace bound to the active execution. Workspace scope is derived by ToolGateway and cannot be supplied by the Provider.",
+        inputSchema: z.object({}).strict(),
+        outputSchema: workspaceScriptListOutputSchema,
+      },
+      async (_input, context) => {
+        const { authority, operations } = requireWorkspaceScriptAuthority(context, false);
+        const result = await operations.listWorkspace(authority.workspaceId);
+        context.signal?.throwIfAborted();
+        if (result.error) {
+          return workspaceScriptFailure({
+            message: result.error,
+            errorCode: result.errorCode,
+          });
+        }
+        return {
+          content: [{ type: "text", text: JSON.stringify(result.scripts) }],
+          structuredContent: { ok: true, scripts: result.scripts, errorCode: null },
+        };
+      },
+    );
+  }
+
+  if (enableWorkspaceScriptMutation) {
+    const registerWorkspaceScriptMutation = (
+      action: "start" | "stop",
+      execute: (
+        operations: NonNullable<ThothToolHostDependencies["workspaceScripts"]>,
+        workspaceId: string,
+        scriptName: string,
+      ) => ReturnType<NonNullable<ThothToolHostDependencies["workspaceScripts"]>["startWorkspace"]>,
+    ) => {
+      registerTool(
+        action === "start" ? "thoth_start_workspace_script" : "thoth_stop_workspace_script",
+        {
+          title: `${action === "start" ? "Start" : "Stop"} Workspace script`,
+          description: `${action === "start" ? "Start" : "Stop"} a configured script in the execution-bound Workspace. Mutation is rejected during Clarify, Review, raw turns, and stale generations.`,
+          inputSchema: z.object({ scriptName: WorkspaceScriptNameSchema }).strict(),
+          outputSchema: workspaceScriptMutationOutputSchema,
+        },
+        async (input: { scriptName: string }, context) => {
+          const { authority, operations } = requireWorkspaceScriptAuthority(context, true);
+          const result = await execute(operations, authority.workspaceId, input.scriptName);
+          context.signal?.throwIfAborted();
+          if (result.error || !result.script) {
+            return workspaceScriptFailure({
+              message:
+                result.error ??
+                `Workspace script '${input.scriptName}' did not return status metadata`,
+              errorCode: result.errorCode,
+              script: result.script,
+              terminalId: result.terminalId,
+            });
+          }
+          return {
+            content: [{ type: "text", text: JSON.stringify(result.script) }],
+            structuredContent: {
+              ok: true,
+              script: result.script,
+              terminalId: result.terminalId,
+              errorCode: null,
+            },
+          };
+        },
+      );
+    };
+    registerWorkspaceScriptMutation("start", (operations, workspaceId, scriptName) =>
+      operations.startWorkspace(workspaceId, scriptName),
+    );
+    registerWorkspaceScriptMutation("stop", (operations, workspaceId, scriptName) =>
+      operations.stopWorkspace(workspaceId, scriptName),
+    );
   }
 
   const runClarifyConvergenceAudit = async (input: {

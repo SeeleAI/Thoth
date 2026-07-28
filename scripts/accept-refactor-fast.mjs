@@ -16,7 +16,7 @@ const sourceArgs = [
   "--baseline",
   "scripts/refactor-baseline.json",
   "--allowance",
-  "scripts/refactor-paseo-v0.2.2-allowance.json",
+  "scripts/refactor-paseo-v0.2.3-allowance.json",
 ];
 if (stage.stage >= 1) sourceArgs.push("--require-net-negative");
 if (stage.stage >= 5) {

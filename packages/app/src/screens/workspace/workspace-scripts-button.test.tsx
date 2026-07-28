@@ -12,31 +12,38 @@ import { WorkspaceScriptsButton } from "@/screens/workspace/workspace-scripts-bu
 
 void testI18n;
 
-const { theme, startWorkspaceScriptMock } = vi.hoisted(() => {
-  const hoistedTheme = {
-    spacing: { 1: 4, 1.5: 6, 2: 8, 3: 12 },
-    borderWidth: { 1: 1 },
-    borderRadius: { md: 6, lg: 8 },
-    fontSize: { xs: 11, sm: 13 },
-    fontWeight: { normal: "400", medium: "500" },
-    colors: {
-      foreground: "#fff",
-      foregroundMuted: "#aaa",
-      surface2: "#222",
-      borderAccent: "#444",
-      palette: {
-        blue: { 500: "#0a84ff" },
-        green: { 500: "#30d158" },
-        red: { 300: "#ff9f99", 500: "#ff453a" },
+const { theme, startWorkspaceScriptMock, stopWorkspaceScriptMock, toastShowMock } = vi.hoisted(
+  () => {
+    const hoistedTheme = {
+      spacing: { 1: 4, 1.5: 6, 2: 8, 3: 12 },
+      borderWidth: { 1: 1 },
+      borderRadius: { md: 6, lg: 8 },
+      fontSize: { xs: 11, sm: 13 },
+      fontWeight: { normal: "400", medium: "500" },
+      colors: {
+        foreground: "#fff",
+        foregroundMuted: "#aaa",
+        surface2: "#222",
+        borderAccent: "#444",
+        palette: {
+          blue: { 500: "#0a84ff" },
+          green: { 500: "#30d158" },
+          red: { 300: "#ff9f99", 500: "#ff453a" },
+        },
       },
-    },
-  };
+    };
 
-  return {
-    theme: hoistedTheme,
-    startWorkspaceScriptMock: vi.fn(async () => ({ terminalId: "terminal-script-1" })),
-  };
-});
+    return {
+      theme: hoistedTheme,
+      startWorkspaceScriptMock: vi.fn(async () => ({
+        terminalId: "terminal-script-1",
+        error: null,
+      })),
+      stopWorkspaceScriptMock: vi.fn(async () => ({ error: null })),
+      toastShowMock: vi.fn(),
+    };
+  },
+);
 
 vi.hoisted(() => {
   (globalThis as unknown as { __DEV__: boolean }).__DEV__ = false;
@@ -65,12 +72,15 @@ vi.mock("@/constants/platform", () => ({
 }));
 
 vi.mock("@/runtime/host-runtime", () => ({
-  useHostRuntimeClient: () => ({ startWorkspaceScript: startWorkspaceScriptMock }),
+  useHostRuntimeClient: () => ({
+    startWorkspaceScript: startWorkspaceScriptMock,
+    stopWorkspaceScript: stopWorkspaceScriptMock,
+  }),
   useHostRuntimeSnapshot: () => ({ activeConnection: null }),
 }));
 
 vi.mock("@/contexts/toast-context", () => ({
-  useToast: () => ({ show: vi.fn(), error: vi.fn() }),
+  useToast: () => ({ show: toastShowMock, error: vi.fn() }),
 }));
 
 vi.mock("@/utils/open-external-url", () => ({
@@ -114,6 +124,7 @@ vi.mock("lucide-react-native", () => {
     ExternalLink: createIcon("ExternalLink"),
     Globe: createIcon("Globe"),
     Play: createIcon("Play"),
+    Square: createIcon("Square"),
     SquareTerminal: createIcon("SquareTerminal"),
   };
 });
@@ -229,6 +240,10 @@ describe("WorkspaceScriptsButton", () => {
     );
     document.body.innerHTML = "";
     startWorkspaceScriptMock.mockClear();
+    startWorkspaceScriptMock.mockResolvedValue({ terminalId: "terminal-script-1", error: null });
+    stopWorkspaceScriptMock.mockClear();
+    stopWorkspaceScriptMock.mockResolvedValue({ error: null });
+    toastShowMock.mockClear();
   });
 
   afterEach(() => {
@@ -348,5 +363,50 @@ describe("WorkspaceScriptsButton", () => {
 
     const trigger = document.querySelector('[data-testid="workspace-scripts-button"]');
     expect(trigger?.querySelector('[data-icon="ChevronDown"]')).not.toBeNull();
+  });
+
+  it("starts stopped scripts through the Workspace-scoped semantic Client API", async () => {
+    current = renderScripts([script({ scriptName: "dev", lifecycle: "stopped" })]);
+
+    const start = document.querySelector('[data-testid="workspace-scripts-start-dev"]');
+    if (!(start instanceof HTMLElement)) throw new Error("Missing start action");
+    await act(async () => {
+      start.click();
+      await Promise.resolve();
+    });
+
+    expect(startWorkspaceScriptMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      scriptName: "dev",
+    });
+  });
+
+  it("stops running scripts through the same semantic Client and reports typed failures", async () => {
+    current = renderScripts([
+      script({
+        scriptName: "dev",
+        lifecycle: "running",
+        terminalId: "terminal-script-1",
+      }),
+    ]);
+
+    const stop = document.querySelector('[data-testid="workspace-scripts-stop-dev"]');
+    if (!(stop instanceof HTMLElement)) throw new Error("Missing stop action");
+    await act(async () => {
+      stop.click();
+      await Promise.resolve();
+    });
+    expect(stopWorkspaceScriptMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      scriptName: "dev",
+    });
+
+    stopWorkspaceScriptMock.mockRejectedValueOnce(new Error("stale generation"));
+    await act(async () => {
+      stop.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(toastShowMock).toHaveBeenCalledWith("stale generation", { variant: "error" });
   });
 });

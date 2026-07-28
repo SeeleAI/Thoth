@@ -494,10 +494,21 @@ function compareWithBaseline(current, baseline, allowance, options) {
   }
   const failures = [];
   for (const key of Object.keys(current.publicSurface)) {
+    const approvedRemovals = new Set(allowance?.publicSurfaceRemovals?.[key] ?? []);
     const missing = (baseline.publicSurface[key] ?? []).filter(
       (entry) => !(current.publicSurface[key] ?? []).includes(entry),
     );
-    if (missing.length > 0) failures.push(`publicSurface.${key} missing: ${missing.join(", ")}`);
+    const unapprovedMissing = missing.filter((entry) => !approvedRemovals.has(entry));
+    if (unapprovedMissing.length > 0) {
+      failures.push(`publicSurface.${key} missing: ${unapprovedMissing.join(", ")}`);
+    }
+    for (const entry of approvedRemovals) {
+      if (!(baseline.publicSurface[key] ?? []).includes(entry)) {
+        failures.push(`publicSurface.${key} approved removal is absent from baseline: ${entry}`);
+      } else if ((current.publicSurface[key] ?? []).includes(entry)) {
+        failures.push(`publicSurface.${key} approved removal is still present: ${entry}`);
+      }
+    }
   }
   const baselineRuntimeDependencies =
     baseline.runtimeDependencies.length + (allowance?.metrics.runtimeDependencyEdges ?? 0);
@@ -586,6 +597,22 @@ function readCapabilityAllowance(path) {
       postSync - preSync !== value
     ) {
       throw new Error(`Invalid capability allowance metric ${key}: ${path}`);
+    }
+  }
+  const publicSurfaceRemovals = allowance.publicSurfaceRemovals ?? {};
+  if (
+    typeof publicSurfaceRemovals !== "object" ||
+    publicSurfaceRemovals === null ||
+    Array.isArray(publicSurfaceRemovals)
+  ) {
+    throw new Error(`Invalid public surface removals: ${path}`);
+  }
+  for (const [key, entries] of Object.entries(publicSurfaceRemovals)) {
+    if (!Array.isArray(entries) || entries.some((entry) => typeof entry !== "string")) {
+      throw new Error(`Invalid public surface removals for ${key}: ${path}`);
+    }
+    if (new Set(entries).size !== entries.length) {
+      throw new Error(`Duplicate public surface removals for ${key}: ${path}`);
     }
   }
   return allowance;

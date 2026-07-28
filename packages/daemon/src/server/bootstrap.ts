@@ -36,8 +36,6 @@ function resolveBoundListenTarget(
 
 // Matches a Windows drive-letter path like C:\ or D:\
 const WINDOWS_DRIVE_RE = /^[A-Za-z]:\\/;
-const AGENT_IDLE_RUNTIME_TTL_MS = 2 * 60 * 1000;
-const AGENT_IDLE_RUNTIME_SWEEP_INTERVAL_MS = 15 * 1000;
 
 export function parseListenString(listen: string): ListenTarget {
   // 1. Windows named pipes: \\.\pipe\... or pipe://...
@@ -99,6 +97,10 @@ import {
 import { createThothWorktreeWorkflow } from "./worktree-session.js";
 import { DownloadTokenStore } from "./file-download/token-store.js";
 import { ExecutionService } from "./agent/execution-service.js";
+import {
+  AGENT_IDLE_RUNTIME_SWEEP_INTERVAL_MS,
+  AGENT_IDLE_RUNTIME_TTL_MS,
+} from "./agent/idle-runtime-policy.js";
 import { provisionForegroundThothSession } from "./agent/foreground-thoth-session-provisioner.js";
 import type { AgentRegistry } from "./agent/agent-storage.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
@@ -150,7 +152,13 @@ import type { PersistedConfig } from "./persisted-config.js";
 import { createServiceProxySubsystem, type ServiceProxySubsystem } from "./service-proxy.js";
 import { ScriptHealthMonitor } from "./script-health-monitor.js";
 import { createScriptStatusEmitter } from "./script-status-projection.js";
-import { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
+import { createWorkspaceScriptsService } from "./session/workspace-scripts/workspace-scripts-service.js";
+import { spawnWorkspaceScript } from "./worktree-bootstrap.js";
+import { WorkspaceServicePortRegistry } from "./workspace-service-port-registry.js";
+import {
+  CatalogWorkspaceScriptRuntimeReceiptRepository,
+  WorkspaceScriptRuntimeStore,
+} from "./workspace-script-runtime-store.js";
 import {
   createManagedProcessRegistry,
   createSystemManagedProcessTable,
@@ -506,8 +514,22 @@ export async function createThothDaemon(
   const serviceProxy = createServiceProxySubsystem({
     logger,
     publicBaseUrl: serviceProxyPublicBaseUrl,
+    trustedProxies: config.trustedProxies,
   });
-  const scriptRuntimeStore = new WorkspaceScriptRuntimeStore();
+  const workspaceAuthorityManager = new WorkspaceAuthorityManager(config.thothHome);
+  const workspaceServicePortRegistry = new WorkspaceServicePortRegistry({
+    catalog: workspaceAuthorityManager.catalog,
+  });
+  const scriptRuntimeStore = new WorkspaceScriptRuntimeStore(
+    new CatalogWorkspaceScriptRuntimeReceiptRepository(workspaceAuthorityManager.catalog),
+  );
+  const staleScriptReceipts = scriptRuntimeStore.reconcileStaleRunningEntries();
+  if (staleScriptReceipts.length > 0) {
+    logger.info(
+      { count: staleScriptReceipts.length },
+      "Reconciled stale Workspace script receipts after daemon restart",
+    );
+  }
   const configuredHostnames = config.hostnames ?? config.allowedHosts;
   let wsServer: DaemonWebSocketServer | null = null;
   let serviceProxyListenTarget: ListenTarget | null = null;
@@ -693,7 +715,6 @@ export async function createThothDaemon(
     serviceProxyListenTarget = parseListenString(config.serviceProxy.standaloneListen);
   }
 
-  const workspaceAuthorityManager = new WorkspaceAuthorityManager(config.thothHome);
   const agentStorage = new WorkspaceAgentStorage(workspaceAuthorityManager);
   const durableTimelineStore = new WorkspaceAgentTimelineStore(workspaceAuthorityManager);
   const projectRegistry = new CatalogProjectRegistry(workspaceAuthorityManager.catalog);
@@ -814,6 +835,21 @@ export async function createThothDaemon(
   const emitExternalSessionMessage = (message: SessionOutboundMessage) => {
     wsServer?.broadcast(wrapSessionMessage(message));
   };
+  const workspaceScriptOperations = createWorkspaceScriptsService({
+    serviceProxy,
+    scriptRuntimeStore,
+    servicePortRegistry: workspaceServicePortRegistry,
+    terminalManager,
+    workspaceRegistry,
+    workspaceGitService,
+    getDaemonTcpPort: () => (boundListenTarget?.type === "tcp" ? boundListenTarget.port : null),
+    getDaemonTcpHost: () => (boundListenTarget?.type === "tcp" ? boundListenTarget.host : null),
+    serviceProxyPublicBaseUrl,
+    resolveScriptHealth: (hostname) => scriptHealthMonitor.getHealthForHostname(hostname),
+    logger,
+    emit: emitExternalSessionMessage,
+    spawnWorkspaceScript,
+  });
   let createScheduleWorktreeWorkspace: CreateScheduleWorktreeWorkspace | null = null;
   const scheduleService = new ScheduleService({
     authority: workspaceAuthorityManager,
@@ -1033,6 +1069,7 @@ export async function createThothDaemon(
     workspaceAuthorityManager,
     toolGateway: workspaceTaskCoordinator.toolGateway,
     browserToolsBroker,
+    workspaceScripts: workspaceScriptOperations,
     logger,
   });
   const createAgentToolCatalog = (runtime: ThothToolRuntimeContext) =>
@@ -1298,6 +1335,7 @@ export async function createThothDaemon(
                 coordinator: workspaceTaskCoordinator,
               },
               browserToolsBroker,
+              workspaceServicePortRegistry,
             );
 
             if (relayEnabled) {

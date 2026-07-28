@@ -23,7 +23,33 @@ function tool(name: string, description: string, schema: z.ZodType): RuntimeBund
   };
 }
 
+const WorkspaceScriptListInputSchema = z.object({}).strict();
+const WorkspaceScriptMutationInputSchema = z
+  .object({ scriptName: z.string().trim().min(1) })
+  .strict();
+
+const WORKSPACE_SCRIPT_READ_TOOL = tool(
+  "thoth_list_workspace_scripts",
+  "List configured scripts for the Workspace bound to this execution. Workspace scope is derived by Thoth and cannot be supplied by the Provider.",
+  WorkspaceScriptListInputSchema,
+);
+
+const WORKSPACE_SCRIPT_MUTATION_TOOLS: readonly RuntimeBundleTool[] = [
+  tool(
+    "thoth_start_workspace_script",
+    "Start a configured script in the execution-bound Workspace after the current Quick implementation or Loop PlanExec authority permits mutation.",
+    WorkspaceScriptMutationInputSchema,
+  ),
+  tool(
+    "thoth_stop_workspace_script",
+    "Stop a running configured script in the execution-bound Workspace after the current Quick implementation or Loop PlanExec authority permits mutation.",
+    WorkspaceScriptMutationInputSchema,
+  ),
+];
+
 const CLARIFY_TOOLS: readonly RuntimeBundleTool[] = [
+  WORKSPACE_SCRIPT_READ_TOOL,
+  ...WORKSPACE_SCRIPT_MUTATION_TOOLS,
   tool(
     "thoth_get_bound_task_progress",
     "Read the latest semantic progress for Tasks explicitly attached to this foreground turn.",
@@ -53,6 +79,8 @@ const CLARIFY_TOOLS: readonly RuntimeBundleTool[] = [
 ];
 
 const LOOP_TOOLS: readonly RuntimeBundleTool[] = [
+  WORKSPACE_SCRIPT_READ_TOOL,
+  ...WORKSPACE_SCRIPT_MUTATION_TOOLS,
   tool(
     "thoth_loop_submit_planexec_result",
     "Submit the semantic PlanExec result for independent Review.",

@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, Home, Plus, Settings } from "lucide-react-native";
+import { Check, FolderKanban, Home, Plus, Settings } from "lucide-react-native";
 import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 import { useCommandCenter } from "@/hooks/use-command-center";
 import type { AggregatedAgent } from "@/hooks/use-aggregated-agents";
@@ -301,6 +301,78 @@ function CommandCenterAgentRowContent({ agent }: CommandCenterAgentRowContentPro
   );
 }
 
+function WorkspaceItemsSection({
+  workspaceItems,
+  precedingItemsLength,
+  activeIndex,
+  rowRefs,
+  onRowLayout,
+  onSelect,
+  sectionDividerStyle,
+  sectionLabelStyle,
+}: {
+  workspaceItems: Extract<
+    ReturnType<typeof useCommandCenter>["items"][number],
+    { kind: "workspace" }
+  >[];
+  precedingItemsLength: number;
+  activeIndex: number;
+  rowRefs: React.MutableRefObject<Map<number, View>>;
+  onRowLayout: (
+    rowIndex: number,
+  ) => (event: { nativeEvent: { layout: { y: number; height: number } } }) => void;
+  onSelect: (item: ReturnType<typeof useCommandCenter>["items"][number]) => void;
+  sectionDividerStyle: React.ComponentProps<typeof View>["style"];
+  sectionLabelStyle: React.ComponentProps<typeof Text>["style"];
+}) {
+  const { theme } = useUnistyles();
+  const { t } = useTranslation();
+  return (
+    <>
+      {precedingItemsLength > 0 ? <View style={sectionDividerStyle} /> : null}
+      <Text style={sectionLabelStyle}>{t("settings.hostSections.workspaces")}</Text>
+      {workspaceItems.map((item, index) => {
+        const rowIndex = precedingItemsLength + index;
+        const handlePress = () => onSelect(item);
+        return (
+          <CommandCenterRowContainer
+            key={item.workspace.id}
+            rowIndex={rowIndex}
+            active={rowIndex === activeIndex}
+            rowRefs={rowRefs}
+            onPress={handlePress}
+            onLayout={onRowLayout(rowIndex)}
+            testID={`command-center-workspace-${item.workspace.serverId}:${item.workspace.workspaceId}`}
+          >
+            <View style={styles.rowContent}>
+              <View style={styles.rowMain}>
+                <View style={styles.iconSlot}>
+                  <FolderKanban size={16} color={theme.colors.foregroundMuted} />
+                </View>
+                <View style={styles.textContent}>
+                  <Text
+                    style={[styles.title, { color: theme.colors.foreground }]}
+                    numberOfLines={1}
+                  >
+                    {item.workspace.title}
+                  </Text>
+                  <Text
+                    style={[styles.subtitle, { color: theme.colors.foregroundMuted }]}
+                    numberOfLines={1}
+                    testID="command-center-workspace-subtitle"
+                  >
+                    {item.workspace.subtitle}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </CommandCenterRowContainer>
+        );
+      })}
+    </>
+  );
+}
+
 interface AgentItemsSectionProps {
   agentItems: Extract<ReturnType<typeof useCommandCenter>["items"][number], { kind: "agent" }>[];
   precedingItemsLength: number;
@@ -513,6 +585,7 @@ export function CommandCenter() {
 
   const actionItems = useMemo(() => items.filter((item) => item.kind === "action"), [items]);
   const modelItems = useMemo(() => items.filter((item) => item.kind === "model"), [items]);
+  const workspaceItems = useMemo(() => items.filter((item) => item.kind === "workspace"), [items]);
   const agentItems = useMemo(() => items.filter((item) => item.kind === "agent"), [items]);
 
   const panelStyle = useMemo(
@@ -591,10 +664,23 @@ export function CommandCenter() {
           />
         ) : null}
 
+        {workspaceItems.length > 0 ? (
+          <WorkspaceItemsSection
+            workspaceItems={workspaceItems}
+            precedingItemsLength={actionItems.length + modelItems.length}
+            activeIndex={activeIndex}
+            rowRefs={rowRefs}
+            onRowLayout={handleRowLayout}
+            onSelect={handleSelectItem}
+            sectionDividerStyle={sectionDividerStyle}
+            sectionLabelStyle={sectionLabelStyle}
+          />
+        ) : null}
+
         {agentItems.length > 0 ? (
           <AgentItemsSection
             agentItems={agentItems}
-            precedingItemsLength={actionItems.length + modelItems.length}
+            precedingItemsLength={actionItems.length + modelItems.length + workspaceItems.length}
             activeIndex={activeIndex}
             rowRefs={rowRefs}
             onRowLayout={handleRowLayout}

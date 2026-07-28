@@ -39,6 +39,7 @@ describe("ScheduleRunSchema", () => {
 
   test("keeps older persisted runs backward parseable", () => {
     expect(ScheduleRunSchema.parse(legacyRun)).toMatchObject({
+      workspaceId: null,
       taskId: null,
       executionId: null,
     });
@@ -48,10 +49,12 @@ describe("ScheduleRunSchema", () => {
     expect(
       ScheduleRunSchema.parse({
         ...legacyRun,
+        workspaceId: "workspace-run-1",
         taskId: "task-schedule-1",
         executionId: "execution-schedule-1",
       }),
     ).toMatchObject({
+      workspaceId: "workspace-run-1",
       taskId: "task-schedule-1",
       executionId: "execution-schedule-1",
     });

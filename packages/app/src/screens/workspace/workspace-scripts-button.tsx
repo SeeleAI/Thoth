@@ -2,7 +2,14 @@ import { Fragment, useCallback, useMemo, type ReactElement } from "react";
 import type { GestureResponderEvent } from "react-native";
 import { Pressable, Text, View } from "react-native";
 import { useMutation } from "@tanstack/react-query";
-import { ChevronDown, ExternalLink, Globe, Play, SquareTerminal } from "lucide-react-native";
+import {
+  ChevronDown,
+  ExternalLink,
+  Globe,
+  Play,
+  Square,
+  SquareTerminal,
+} from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceDescriptor } from "@/projection/authority-model";
@@ -20,7 +27,7 @@ import { openServiceUrl } from "@/utils/open-service-url";
 import { resolveWorkspaceScriptLink } from "@/utils/workspace-script-links";
 import type { Theme } from "@/styles/theme";
 
-type ScriptActionIcon = "start" | "view";
+type ScriptActionIcon = "start" | "stop" | "view";
 
 interface WorkspaceScriptsButtonProps {
   serverId: string;
@@ -45,6 +52,7 @@ interface ScriptActionButtonProps {
 
 const ThemedPlay = withUnistyles(Play);
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
+const ThemedSquare = withUnistyles(Square);
 const ThemedGlobe = withUnistyles(Globe);
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedExternalLink = withUnistyles(ExternalLink);
@@ -81,12 +89,14 @@ function ScriptActionButtonChildren({
   label,
 }: ScriptActionButtonChildrenProps): ReactElement {
   const colorMapping = hovered ? foregroundColorMapping : mutedColorMapping;
-  const iconElement =
-    icon === "view" ? (
-      <ThemedSquareTerminal size={10} uniProps={colorMapping} />
-    ) : (
-      <ThemedPlay size={10} uniProps={colorMapping} {...playFillTransparent} />
-    );
+  let iconElement: ReactElement;
+  if (icon === "view") {
+    iconElement = <ThemedSquareTerminal size={10} uniProps={colorMapping} />;
+  } else if (icon === "stop") {
+    iconElement = <ThemedSquare size={10} uniProps={colorMapping} />;
+  } else {
+    iconElement = <ThemedPlay size={10} uniProps={colorMapping} {...playFillTransparent} />;
+  }
   const labelStyle = hovered ? actionButtonLabelHoveredStyle : styles.actionButtonLabel;
   return (
     <>
@@ -229,7 +239,9 @@ interface ScriptRowProps {
       : null
     : null;
   isStartPending: boolean;
+  isStopPending: boolean;
   onStartScript: (scriptName: string) => void;
+  onStopScript: (scriptName: string) => void;
   onViewTerminal?: (terminalId: string) => void;
   onOpenUrlInBrowserTab?: (url: string) => void;
 }
@@ -255,7 +267,9 @@ function ScriptRow({
   liveTerminalIdSet,
   activeConnection,
   isStartPending,
+  isStopPending,
   onStartScript,
+  onStopScript,
   onViewTerminal,
   onOpenUrlInBrowserTab,
 }: ScriptRowProps): ReactElement {
@@ -302,6 +316,9 @@ function ScriptRow({
   const handleRun = useCallback(() => {
     onStartScript(script.scriptName);
   }, [onStartScript, script.scriptName]);
+  const handleStop = useCallback(() => {
+    onStopScript(script.scriptName);
+  }, [onStopScript, script.scriptName]);
 
   const scriptNameStyle = useMemo(
     () => (isRunning ? scriptNameActiveStyle : styles.scriptName),
@@ -309,17 +326,31 @@ function ScriptRow({
   );
 
   let primaryAction: ReactElement | null = null;
-  if (isRunning && liveTerminalId) {
+  if (isRunning) {
     primaryAction = (
-      <ScriptActionButton
-        accessibilityLabel={t("workspace.scripts.accessibility.viewTerminal", {
-          scriptName: script.scriptName,
-        })}
-        testID={`workspace-scripts-view-${script.scriptName}`}
-        icon="view"
-        label={t("workspace.scripts.actions.view")}
-        onPress={handleView}
-      />
+      <View style={styles.scriptActions}>
+        {liveTerminalId ? (
+          <ScriptActionButton
+            accessibilityLabel={t("workspace.scripts.accessibility.viewTerminal", {
+              scriptName: script.scriptName,
+            })}
+            testID={`workspace-scripts-view-${script.scriptName}`}
+            icon="view"
+            label={t("workspace.scripts.actions.view")}
+            onPress={handleView}
+          />
+        ) : null}
+        <ScriptActionButton
+          accessibilityLabel={t("workspace.scripts.accessibility.stopScript", {
+            scriptName: script.scriptName,
+          })}
+          testID={`workspace-scripts-stop-${script.scriptName}`}
+          disabled={isStopPending}
+          icon="stop"
+          label={t("workspace.scripts.actions.stop")}
+          onPress={handleStop}
+        />
+      </View>
     );
   } else if (!isRunning) {
     primaryAction = (
@@ -392,7 +423,7 @@ export function WorkspaceScriptsButton({
       if (!client) {
         throw new Error(t("common.errors.daemonClientUnavailable"));
       }
-      const result = await client.startWorkspaceScript(workspaceId, scriptName);
+      const result = await client.startWorkspaceScript({ workspaceId, scriptName });
       if (result.error) {
         throw new Error(result.error);
       }
@@ -414,6 +445,24 @@ export function WorkspaceScriptsButton({
       }
     },
   });
+  const stopScriptMutation = useMutation({
+    mutationFn: async (scriptName: string) => {
+      if (!client) {
+        throw new Error(t("common.errors.daemonClientUnavailable"));
+      }
+      const result = await client.stopWorkspaceScript({ workspaceId, scriptName });
+      if (result.error) throw new Error(result.error);
+      return result;
+    },
+    onError: (error, scriptName) => {
+      toast.show(
+        error instanceof Error
+          ? error.message
+          : t("workspace.scripts.states.stopFailed", { scriptName }),
+        { variant: "error" },
+      );
+    },
+  });
 
   const triggerStyle = useCallback(
     ({ hovered, pressed, open }: { hovered: boolean; pressed: boolean; open: boolean }) => [
@@ -427,6 +476,10 @@ export function WorkspaceScriptsButton({
   const handleStartScript = useCallback(
     (scriptName: string) => startScriptMutation.mutate(scriptName),
     [startScriptMutation],
+  );
+  const handleStopScript = useCallback(
+    (scriptName: string) => stopScriptMutation.mutate(scriptName),
+    [stopScriptMutation],
   );
 
   if (scripts.length === 0) {
@@ -478,7 +531,9 @@ export function WorkspaceScriptsButton({
                     liveTerminalIdSet={liveTerminalIdSet}
                     activeConnection={activeConnection}
                     isStartPending={startScriptMutation.isPending}
+                    isStopPending={stopScriptMutation.isPending}
                     onStartScript={handleStartScript}
+                    onStopScript={handleStopScript}
                     onViewTerminal={onViewTerminal}
                     onOpenUrlInBrowserTab={onOpenUrlInBrowserTab}
                   />
@@ -573,6 +628,11 @@ const styles = StyleSheet.create((theme) => ({
   spacer: {
     flex: 1,
     minWidth: 0,
+  },
+  scriptActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
   },
   hostList: {
     marginTop: 2,

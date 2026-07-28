@@ -37,6 +37,13 @@ export interface CatalogRuntimeResourceLease {
   updatedAt: string;
 }
 
+export interface CatalogSettingRecord {
+  key: string;
+  value: Record<string, unknown>;
+  revision: number;
+  updatedAt: string;
+}
+
 export class WorkspaceCatalogStore {
   private readonly database: DatabaseSync;
   private readonly agentLocations = new Map<string, string | null>();
@@ -284,6 +291,56 @@ export class WorkspaceCatalogStore {
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
     };
+  }
+
+  getSetting(key: string): CatalogSettingRecord | null {
+    const row = this.database
+      .prepare("SELECT * FROM catalog_settings WHERE setting_key = ?")
+      .get(key) as Record<string, unknown> | undefined;
+    return row ? this.toSetting(row) : null;
+  }
+
+  listSettings(prefix: string): CatalogSettingRecord[] {
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM catalog_settings
+         WHERE setting_key LIKE ?
+         ORDER BY setting_key`,
+      )
+      .all(`${prefix}%`) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.toSetting(row));
+  }
+
+  compareAndSetSetting(input: {
+    key: string;
+    value: Record<string, unknown>;
+    expectedRevision: number | null;
+    updatedAt: string;
+  }): CatalogSettingRecord | null {
+    if (input.expectedRevision === null) {
+      const inserted = this.database
+        .prepare(
+          `INSERT OR IGNORE INTO catalog_settings(setting_key, value_json, revision, updated_at)
+           VALUES (?, ?, 0, ?)`,
+        )
+        .run(input.key, JSON.stringify(input.value), input.updatedAt).changes;
+      return Number(inserted) === 1 ? this.getSetting(input.key) : null;
+    }
+    const changed = this.database
+      .prepare(
+        `UPDATE catalog_settings
+         SET value_json = ?, revision = revision + 1, updated_at = ?
+         WHERE setting_key = ? AND revision = ?`,
+      )
+      .run(JSON.stringify(input.value), input.updatedAt, input.key, input.expectedRevision).changes;
+    return Number(changed) === 1 ? this.getSetting(input.key) : null;
+  }
+
+  removeSetting(input: { key: string; expectedRevision: number }): boolean {
+    const changed = this.database
+      .prepare("DELETE FROM catalog_settings WHERE setting_key = ? AND revision = ?")
+      .run(input.key, input.expectedRevision).changes;
+    return Number(changed) === 1;
   }
 
   getRuntimeResourceLeaseByOwner(input: {
@@ -605,6 +662,15 @@ export class WorkspaceCatalogStore {
       value: JSON.parse(String(row.value_json)) as Record<string, unknown>,
       expiresAt: String(row.expires_at),
       createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  private toSetting(row: Record<string, unknown>): CatalogSettingRecord {
+    return {
+      key: String(row.setting_key),
+      value: JSON.parse(String(row.value_json)) as Record<string, unknown>,
+      revision: Number(row.revision),
       updatedAt: String(row.updated_at),
     };
   }

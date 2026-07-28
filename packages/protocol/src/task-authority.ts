@@ -176,6 +176,17 @@ export const ExecutionProjectionSchema = z
   })
   .strict();
 
+export const TaskOriginSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("schedule"),
+      ownerWorkspaceId: NonEmptyStringSchema,
+      scheduleId: NonEmptyStringSchema,
+      runId: NonEmptyStringSchema,
+    })
+    .strict(),
+]);
+
 export const TaskProjectionSchema = z
   .object({
     id: NonEmptyStringSchema,
@@ -192,6 +203,7 @@ export const TaskProjectionSchema = z
     currentExecutionId: NonEmptyStringSchema.nullable(),
     goals: z.array(TaskGoalProjectionSchema).min(1),
     latestReviewDirection: z.string().nullable(),
+    origin: TaskOriginSchema.nullable().default(null),
     pendingDecision: TaskUserDecisionProjectionSchema.nullable().default(null),
     budget: z
       .object({
@@ -449,6 +461,7 @@ export type TaskGoalProjection = z.infer<typeof TaskGoalProjectionSchema>;
 export type TaskUserDecisionOption = z.infer<typeof TaskUserDecisionOptionSchema>;
 export type TaskUserDecisionProjection = z.infer<typeof TaskUserDecisionProjectionSchema>;
 export type ExecutionProjection = z.infer<typeof ExecutionProjectionSchema>;
+export type TaskOrigin = z.infer<typeof TaskOriginSchema>;
 export type TaskProjection = z.infer<typeof TaskProjectionSchema>;
 export type TaskBlackboardEntry = z.infer<typeof TaskBlackboardEntrySchema>;
 export type TaskContextEnvelope = z.infer<typeof TaskContextEnvelopeSchema>;

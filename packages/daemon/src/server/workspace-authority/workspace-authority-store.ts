@@ -7,6 +7,7 @@ import {
   HumanDecisionRecordSchema,
   TaskBlackboardEntrySchema,
   TaskContextEnvelopeSchema,
+  TaskOriginSchema,
   TaskProjectionSchema,
   TaskUserDecisionProjectionSchema,
   type ExecutionLifecycle,
@@ -19,6 +20,7 @@ import {
   type TaskCommand,
   type TaskContextEnvelope,
   type TaskContextReference,
+  type TaskOrigin,
   type TaskProjection,
   type TaskUserDecisionProjection,
 } from "@thoth/protocol/task-authority";
@@ -3679,6 +3681,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
         revision: Number(goal.revision),
       })),
       latestReviewDirection: row.latest_review_direction,
+      origin: this.resolveTaskOrigin(row.task_id),
       pendingDecision: this.getPendingTaskDecision(row.task_id),
       budget: {
         strength: row.budget_strength,
@@ -3693,6 +3696,42 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
+  }
+
+  private resolveTaskOrigin(taskId: string): TaskOrigin | null {
+    const row = this.database
+      .prepare(
+        `SELECT content_digest FROM task_blackboard
+         WHERE task_id = ? AND kind = 'task_contract'
+         ORDER BY created_at DESC, entry_id DESC LIMIT 1`,
+      )
+      .get(taskId) as { content_digest: string } | undefined;
+    if (!row) {
+      return null;
+    }
+    let content: unknown;
+    try {
+      content = this.blobs.readJson(row.content_digest);
+    } catch {
+      // Legacy fixtures and partially retained homes can contain a blackboard
+      // digest without the optional source blob. Origin is an additive
+      // projection, so absence must remain null instead of breaking Task reads.
+      return null;
+    }
+    if (!content || typeof content !== "object" || Array.isArray(content)) {
+      return null;
+    }
+    const contract = content as Record<string, unknown>;
+    if (contract.source !== "schedule") {
+      return null;
+    }
+    const parsed = TaskOriginSchema.safeParse({
+      type: "schedule",
+      ownerWorkspaceId: contract.ownerWorkspaceId,
+      scheduleId: contract.scheduleId,
+      runId: contract.runId,
+    });
+    return parsed.success ? parsed.data : null;
   }
 
   private toExecutionProjection(row: ExecutionRow): ExecutionProjection {

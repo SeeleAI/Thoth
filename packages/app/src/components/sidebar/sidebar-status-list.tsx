@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState, type ReactElement } from "react";
 import { usePathname } from "expo-router";
 import { View, Text, Pressable, ScrollView, type PressableStateCallbackType } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
@@ -54,6 +54,7 @@ interface StatusWorkspaceListProps {
   onWorkspacePress?: () => void;
   hostLabelByServerId: ReadonlyMap<string, string>;
   showHostLabels: boolean;
+  listHeaderComponent?: ReactElement | null;
 }
 
 export function SidebarStatusWorkspaceList({
@@ -64,6 +65,7 @@ export function SidebarStatusWorkspaceList({
   onWorkspacePress,
   hostLabelByServerId,
   showHostLabels,
+  listHeaderComponent,
 }: StatusWorkspaceListProps) {
   const groups = useMemo(
     () => buildStatusGroups(workspaces, projectNamesByKey),
@@ -92,6 +94,7 @@ export function SidebarStatusWorkspaceList({
           showsVerticalScrollIndicator={false}
           testID="sidebar-status-list-scroll"
         >
+          {listHeaderComponent}
           <StatusGroupList
             groups={groups}
             collapsedStatusGroupKeys={collapsedStatusGroupKeys}
@@ -110,6 +113,7 @@ export function SidebarStatusWorkspaceList({
           showsVerticalScrollIndicator={false}
           testID="sidebar-status-list-scroll"
         >
+          {listHeaderComponent}
           <StatusGroupList
             groups={groups}
             collapsedStatusGroupKeys={collapsedStatusGroupKeys}

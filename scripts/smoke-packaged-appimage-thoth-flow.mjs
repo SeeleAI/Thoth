@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
@@ -39,6 +40,9 @@ const REQUIRED_DESKTOP_BRIDGE_KEYS = [
   "menu",
   "browser",
 ];
+const PACKAGED_SCRIPT_NAME = "packaged-web-service";
+const LARGE_FILE_NAME = "packaged-large-file.bin";
+const LARGE_FILE_SIZE = 1024 * 1024 + 73;
 
 function option(name, fallback) {
   const index = args.indexOf(name);
@@ -89,16 +93,59 @@ function seedProductSurfaceWorkspace(workspace) {
   const baseline = ["# Packaged product surface", "", "PACKAGED_BASELINE", ""].join("\n");
   const committed = `${baseline}PACKAGED_COMMITTED_BASE\n`;
   writeFileSync(path.join(workspace, "README.md"), baseline);
+  writeFileSync(
+    path.join(workspace, "thoth.json"),
+    `${JSON.stringify(
+      {
+        scripts: {
+          [PACKAGED_SCRIPT_NAME]: {
+            type: "service",
+            command:
+              "node -e \"const http = require('http'); const server = http.createServer((_request, response) => response.end('PACKAGED_SCRIPT_OK')); server.listen(process.env.PORT || 3000)\"",
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
   runGit(workspace, ["init", "-b", "main"]);
   runGit(workspace, ["config", "user.name", "Thoth Packaged Smoke"]);
   runGit(workspace, ["config", "user.email", "packaged-smoke@thoth.local"]);
-  runGit(workspace, ["add", "README.md"]);
+  runGit(workspace, ["add", "README.md", "thoth.json"]);
   runGit(workspace, ["commit", "-m", "seed packaged product surface baseline"]);
   runGit(workspace, ["checkout", "-b", "packaged-feature"]);
   writeFileSync(path.join(workspace, "README.md"), committed);
   runGit(workspace, ["add", "README.md"]);
   runGit(workspace, ["commit", "-m", "add packaged committed change"]);
   writeFileSync(path.join(workspace, "README.md"), `${committed}PACKAGED_UNCOMMITTED_CHANGE\n`);
+}
+
+function seedLargeFile(workspace) {
+  const bytes = Buffer.allocUnsafe(LARGE_FILE_SIZE);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = (index * 31 + 17) % 256;
+  }
+  writeFileSync(path.join(workspace, LARGE_FILE_NAME), bytes);
+  return {
+    size: bytes.byteLength,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+}
+
+async function verifyLargeFileTransfer(client, workspace, expected) {
+  const received = await client.readFile(workspace, LARGE_FILE_NAME, "packaged-large-file-read");
+  assert(received.size === expected.size, "Packaged large-file advertised size changed");
+  assert(received.bytes.byteLength === expected.size, "Packaged large-file bytes were truncated");
+  const sha256 = createHash("sha256").update(received.bytes).digest("hex");
+  assert(sha256 === expected.sha256, "Packaged large-file SHA-256 mismatch");
+  return {
+    path: LARGE_FILE_NAME,
+    size: received.size,
+    sha256,
+    revision: received.revision ?? null,
+    expectedChunkCount: Math.ceil(received.size / (256 * 1024)),
+  };
 }
 
 async function startBrowserFixture() {
@@ -176,9 +223,11 @@ async function inspectFilesAndChangesSurface(page, input) {
   await readme.waitFor({ state: "visible", timeout: 30_000 });
   await readme.click();
   const filePane = await visibleTestId(page, "workspace-file-pane");
-  assert(
-    (await filePane.textContent())?.includes("PACKAGED_UNCOMMITTED_CHANGE"),
-    "Packaged Files did not render the read-only README content",
+  await waitFor(
+    async () =>
+      (await filePane.textContent())?.includes("PACKAGED_UNCOMMITTED_CHANGE") ? true : null,
+    30_000,
+    "packaged Files read-only README content",
   );
 
   return {
@@ -191,29 +240,129 @@ async function inspectFilesAndChangesSurface(page, input) {
   };
 }
 
-async function runScheduleSurfaceAcceptance({ client, page, serverId, workspaceId }) {
-  const created = await client.scheduleCreate({
-    workspaceId,
-    prompt: "PACKAGED_SCHEDULE_RUN",
-    name: "Packaged Schedule",
-    cadence: { type: "every", everyMs: 24 * 60 * 60 * 1_000 },
-    target: {
-      type: "new-agent",
-      config: { provider: "codex", model: "gpt-5.4", modeId: "full-access" },
+async function runWorkspaceScriptsSurfaceAcceptance({ client, page, serverId, workspaceId }) {
+  const workspaceRoute = `thoth://app/h/${encodeURIComponent(serverId)}/workspace/${encodeURIComponent(workspaceId)}`;
+  await page.goto(workspaceRoute);
+  const tasksSurface = page
+    .getByTestId("workspace-background-tasks-surface")
+    .filter({ visible: true })
+    .first();
+  await tasksSurface.waitFor({ state: "visible", timeout: 30_000 });
+  await (await visibleTestId(page, "workspace-background-tasks-close")).click();
+  await tasksSurface.waitFor({ state: "hidden", timeout: 30_000 });
+  await (await visibleTestId(page, "workspace-scripts-button")).click();
+  await visibleTestId(page, "workspace-scripts-menu");
+  await (await visibleTestId(page, `workspace-scripts-start-${PACKAGED_SCRIPT_NAME}`)).click();
+  const item = await visibleTestId(page, `workspace-scripts-item-${PACKAGED_SCRIPT_NAME}`);
+  await item.waitFor({ state: "visible", timeout: 30_000 });
+  const running = await waitFor(
+    async () => {
+      const listed = await client.listWorkspaceScripts({ workspaceId });
+      const script = listed.scripts.find((entry) => entry.scriptName === PACKAGED_SCRIPT_NAME);
+      return script?.lifecycle === "running" && script.port ? script : null;
     },
-    maxRuns: 2,
-    runOnCreate: false,
-    requestId: "packaged-schedule-create",
-  });
-  assert(!created.error && created.schedule, `Packaged Schedule create failed: ${created.error}`);
+    30_000,
+    "packaged Workspace script running projection",
+  );
+  assert(
+    (await item.textContent())?.includes(`localhost:${running.port}`),
+    "Packaged Workspace scripts UI omitted the service port",
+  );
+  await (await visibleTestId(page, `workspace-scripts-stop-${PACKAGED_SCRIPT_NAME}`)).click();
+  const stopped = await waitFor(
+    async () => {
+      const listed = await client.listWorkspaceScripts({ workspaceId });
+      const script = listed.scripts.find((entry) => entry.scriptName === PACKAGED_SCRIPT_NAME);
+      return script?.lifecycle === "stopped" ? script : null;
+    },
+    30_000,
+    "packaged Workspace script stopped projection",
+  );
+  await visibleTestId(page, `workspace-scripts-start-${PACKAGED_SCRIPT_NAME}`);
+  return {
+    scriptName: PACKAGED_SCRIPT_NAME,
+    command: running.command,
+    runningPort: running.port,
+    runningTerminalId: running.terminalId,
+    finalLifecycle: stopped.lifecycle,
+    route: workspaceRoute,
+  };
+}
 
-  const fired = await client.scheduleRunOnce({
-    workspaceId,
-    id: created.schedule.id,
-    requestId: "packaged-schedule-run-once",
-  });
-  assert(!fired.error && fired.schedule, `Packaged Schedule run failed: ${fired.error}`);
-  const run = fired.schedule.runs.at(-1);
+async function runScheduleSurfaceAcceptance({ client, page, serverId, workspaceId }) {
+  const route = `thoth://app/h/${encodeURIComponent(serverId)}/workspace/${encodeURIComponent(workspaceId)}/tasks`;
+  await page.goto(route);
+  await visibleTestId(page, "tasks-surface");
+  await (await visibleTestId(page, "schedules-tab")).click();
+  await visibleTestId(page, "schedules-panel");
+  await (await visibleTestId(page, "schedule-create-open")).click();
+  await (await visibleTestId(page, "schedule-name")).fill("Packaged Schedule");
+  await (await visibleTestId(page, "schedule-prompt")).fill("PACKAGED_SCHEDULE_RUN");
+  await (await visibleTestId(page, "schedule-provider")).fill("codex");
+  await (await visibleTestId(page, "schedule-model")).fill("gpt-5.4");
+  await (await visibleTestId(page, "schedule-mode")).fill("full-access");
+  await (await visibleTestId(page, "schedule-max-runs")).fill("2");
+  await (await visibleTestId(page, "schedule-create-submit")).click();
+  await visibleTestId(page, "schedule-detail");
+
+  const created = await waitFor(
+    async () => {
+      const listed = await client.scheduleList({ workspaceId });
+      return listed.schedules.find((schedule) => schedule.name === "Packaged Schedule") ?? null;
+    },
+    30_000,
+    "packaged Schedule created through UI",
+  );
+  const initialRun = await waitFor(
+    async () => {
+      const inspected = await client.scheduleInspect({ workspaceId, id: created.id });
+      return inspected.schedule?.runs.findLast((entry) => entry.status === "succeeded") ?? null;
+    },
+    60_000,
+    "packaged Schedule run-on-create through UI",
+  );
+  await (await visibleTestId(page, "schedule-edit-open")).click();
+  await (await visibleTestId(page, "schedule-name")).fill("Packaged Schedule Updated");
+  await (await visibleTestId(page, "schedule-edit-submit")).click();
+  await waitFor(
+    async () => {
+      const inspected = await client.scheduleInspect({ workspaceId, id: created.id });
+      return inspected.schedule?.name === "Packaged Schedule Updated" ? inspected.schedule : null;
+    },
+    30_000,
+    "packaged Schedule edited through UI",
+  );
+  await (await visibleTestId(page, "schedule-pause")).click();
+  await waitFor(
+    async () => {
+      const inspected = await client.scheduleInspect({ workspaceId, id: created.id });
+      return inspected.schedule?.status === "paused" ? inspected.schedule : null;
+    },
+    30_000,
+    "packaged Schedule paused through UI",
+  );
+  await (await visibleTestId(page, "schedule-resume")).click();
+  await waitFor(
+    async () => {
+      const inspected = await client.scheduleInspect({ workspaceId, id: created.id });
+      return inspected.schedule?.status === "active" ? inspected.schedule : null;
+    },
+    30_000,
+    "packaged Schedule resumed through UI",
+  );
+  await (await visibleTestId(page, "schedule-run-now")).click();
+  const fired = await waitFor(
+    async () => {
+      const inspected = await client.scheduleInspect({ workspaceId, id: created.id });
+      const successful = inspected.schedule?.runs.findLast(
+        (entry) => entry.status === "succeeded" && entry.id !== initialRun.id,
+      );
+      return successful ? { schedule: inspected.schedule, run: successful } : null;
+    },
+    60_000,
+    "packaged Schedule run triggered through UI",
+  );
+  const run = fired.run;
   assert(run?.status === "succeeded", "Packaged Schedule did not reach succeeded");
   assert(typeof run.taskId === "string", "Packaged Schedule did not create a real Task");
   assert(
@@ -243,20 +392,32 @@ async function runScheduleSurfaceAcceptance({ client, page, serverId, workspaceI
     `Packaged Schedule Timeline is incomplete: ${JSON.stringify(timelineTypes)}`,
   );
 
-  const route = `thoth://app/h/${encodeURIComponent(serverId)}/workspace/${encodeURIComponent(workspaceId)}/background-tasks`;
-  await page.goto(route);
+  await visibleTestId(page, `schedule-run-${run.id}`);
+  await (await visibleTestId(page, `schedule-open-task-${run.id}`)).click();
   const row = await visibleTestId(page, `background-task-row-${run.taskId}`);
   assert(
-    (await row.textContent())?.includes("Packaged Schedule"),
-    "Packaged Background Tasks projection omitted the Schedule Task title",
+    (await row.textContent())?.includes("Packaged Schedule Updated"),
+    "Packaged Tasks projection omitted the Schedule Task title",
+  );
+  await (await visibleTestId(page, "background-task-open-schedule")).click();
+  const scheduleDetail = await visibleTestId(page, "schedule-detail");
+  assert(
+    (await scheduleDetail.textContent())?.includes("Packaged Schedule Updated"),
+    "Packaged Task-to-Schedule reverse navigation lost the Schedule",
   );
   return {
-    scheduleId: created.schedule.id,
+    scheduleId: created.id,
     taskId: run.taskId,
     executionId: run.executionId,
     status: run.status,
     timelineTypes,
     route,
+    createdThroughUi: true,
+    runOnCreateThroughUi: true,
+    editedThroughUi: true,
+    pauseResumeThroughUi: true,
+    runNowThroughUi: true,
+    bidirectionalNavigation: true,
   };
 }
 
@@ -419,8 +580,8 @@ function seedReleaseStorage(thothHome) {
 
 function inspectStorageMigration(thothHome, probe) {
   const marker = JSON.parse(readFileSync(path.join(thothHome, "storage-layout.json"), "utf8"));
-  assert(marker.version === 3, "Packaged Release storage did not activate layout v3");
-  assert(marker.schemaVersion === 3, "Packaged Release storage did not activate schema v3");
+  assert(marker.version === 4, "Packaged Release storage did not activate layout v4");
+  assert(marker.schemaVersion === 4, "Packaged Release storage did not activate schema v4");
   assert(
     marker.migrationState === "complete",
     "Packaged Release storage migration is not complete",
@@ -437,7 +598,7 @@ function inspectStorageMigration(thothHome, probe) {
   const agents = catalog.prepare("SELECT COUNT(*) AS count FROM catalog_agent_locator").get().count;
   const catalogSchemaVersion = catalog.prepare("PRAGMA user_version").get().user_version;
   catalog.close();
-  assert(catalogSchemaVersion === 3, "Packaged Release catalog did not activate SQLite schema v3");
+  assert(catalogSchemaVersion === 4, "Packaged Release catalog did not activate SQLite schema v4");
   assert(
     locator?.workspace_id === probe.workspaceId,
     "Release Agent is missing from the migrated global locator",
@@ -453,8 +614,8 @@ function inspectStorageMigration(thothHome, probe) {
   const authoritySchemaVersion = authority.prepare("PRAGMA user_version").get().user_version;
   authority.close();
   assert(
-    authoritySchemaVersion === 3,
-    "Packaged Release Workspace authority did not activate SQLite schema v3",
+    authoritySchemaVersion === 4,
+    "Packaged Release Workspace authority did not activate SQLite schema v4",
   );
   assert(
     timeline?.item_json === probe.itemJson,
@@ -798,6 +959,17 @@ async function main() {
       serverId: desktopDaemon.serverId,
       workspaceId: quickWorkspaceId,
     });
+    productSurfacesReceipt.workspaceScripts = await runWorkspaceScriptsSurfaceAcceptance({
+      client,
+      page,
+      serverId: desktopDaemon.serverId,
+      workspaceId: quickWorkspaceId,
+    });
+    productSurfacesReceipt.largeFile = await verifyLargeFileTransfer(
+      client,
+      quickWorkspace,
+      seedLargeFile(quickWorkspace),
+    );
 
     const quickPrompt = realCodex
       ? readFileSync(quickPromptPath, "utf8")

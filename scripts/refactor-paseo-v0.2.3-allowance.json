@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "decision": "NTH-CD-087",
+  "thothBase": "265c4af9a45d6272ce4d3a107546b90541779983",
+  "paseoRanges": [
+    "5fc53c576ef0d4dee55455ccc95660703f71b892..b589599a8f21bcc9e4c911603082566ce320a3c8",
+    "b589599a8f21bcc9e4c911603082566ce320a3c8...43cf858c3760679ec9be805ba8b903cdf20f7103 --right-only"
+  ],
+  "definition": {
+    "productionOnly": true,
+    "excluded": ["tests", "docs", "generated files"],
+    "preservedCutBGap": 15506
+  },
+  "preSync": {
+    "physicalLines": 296437,
+    "scannerTokens": 1272435,
+    "astNodes": 1300610,
+    "staticImportEdges": 4992,
+    "runtimeDependencyEdges": 164
+  },
+  "postSync": {
+    "physicalLines": 315762,
+    "scannerTokens": 1357222,
+    "astNodes": 1386279,
+    "staticImportEdges": 5215,
+    "runtimeDependencyEdges": 165
+  },
+  "metrics": {
+    "physicalLines": 19325,
+    "scannerTokens": 84787,
+    "astNodes": 85669,
+    "staticImportEdges": 223,
+    "runtimeDependencyEdges": 1
+  },
+  "v0.2.3Delta": {
+    "thothBase": "48e73cb24c022182c3c55fce1b171f9a5816ebc5",
+    "paseoReviewExpression": "v0.2.2...v0.2.3 --right-only",
+    "preSync": {
+      "physicalLines": 310933,
+      "scannerTokens": 1343087,
+      "astNodes": 1362659,
+      "staticImportEdges": 5137,
+      "runtimeDependencyEdges": 164
+    },
+    "postSync": {
+      "physicalLines": 315762,
+      "scannerTokens": 1357222,
+      "astNodes": 1386279,
+      "staticImportEdges": 5215,
+      "runtimeDependencyEdges": 165
+    },
+    "metrics": {
+      "physicalLines": 4829,
+      "scannerTokens": 14135,
+      "astNodes": 23620,
+      "staticImportEdges": 78,
+      "runtimeDependencyEdges": 1
+    }
+  },
+  "publicSurfaceRemovals": {
+    "wireTypes": ["start_workspace_script_request", "start_workspace_script_response"],
+    "timelineTypes": ["start_workspace_script_request", "start_workspace_script_response"]
+  },
+  "translatedTargets": {
+    "cutBCeilingPhysicalLines": 300256,
+    "finalCeilingPhysicalLines": 277856
+  }
+}

@@ -82,9 +82,9 @@ import {
   type PiToolResult,
   type PiTrackedToolCall,
 } from "./tool-call-mapper.js";
+import { DEFAULT_PI_THINKING_LEVEL, mapPiModel, type PiAdapterFlavor } from "./model-mapper.js";
 
 const PI_PROVIDER = "pi";
-const DEFAULT_PI_THINKING_LEVEL: PiThinkingLevel = "medium";
 const PI_BINARY_COMMAND = process.env.PI_COMMAND ?? process.env.PI_ACP_PI_COMMAND ?? "pi";
 const PI_CATALOG_REQUEST_TIMEOUT_MS = 120_000;
 const THOTH_PI_TREE_EXTENSION_COMMAND = "thoth_tree";
@@ -141,26 +141,13 @@ const PI_CAPABILITIES: AgentCapabilityFlags = {
   supportsRewindBoth: false,
 };
 
-const PI_THINKING_OPTIONS: ReadonlyArray<{
-  id: PiThinkingLevel;
-  label: string;
-  description: string;
-  isDefault?: boolean;
-}> = [
-  { id: "off", label: "Off", description: "No extra reasoning" },
-  { id: "minimal", label: "Minimal", description: "Light reasoning" },
-  { id: "low", label: "Low", description: "Faster reasoning" },
-  { id: "medium", label: "Medium", description: "Balanced reasoning", isDefault: true },
-  { id: "high", label: "High", description: "Deeper reasoning" },
-  { id: "xhigh", label: "XHigh", description: "Maximum reasoning" },
-] as const;
-
 interface PiHarnessAdapterOptions {
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
   providerParams?: unknown;
   commandsRpcType?: PiCommandsRpcType;
   runtime?: PiRuntime;
+  flavor?: PiAdapterFlavor;
 }
 
 interface PiPromptPayload {
@@ -191,6 +178,7 @@ interface PiHarnessThreadOptions {
   capabilities: AgentCapabilityFlags;
   cleanup?: () => void;
   extensionTimeoutMs?: number;
+  flavor?: PiAdapterFlavor;
 }
 
 interface PiResumeConfig {
@@ -295,7 +283,8 @@ function isPiThinkingLevel(value: string | null | undefined): value is PiThinkin
     value === "low" ||
     value === "medium" ||
     value === "high" ||
-    value === "xhigh"
+    value === "xhigh" ||
+    value === "max"
   );
 }
 
@@ -318,21 +307,6 @@ function parseAutoCompactMode(value: string | undefined): AutoCompactMode {
     return "toggle";
   }
   return "unknown";
-}
-
-function mapThinkingOption(option: (typeof PI_THINKING_OPTIONS)[number]) {
-  const mappedOption = {
-    id: option.id,
-    label: option.label,
-    description: option.description,
-  };
-  if (option.isDefault) {
-    return {
-      ...mappedOption,
-      isDefault: true,
-    };
-  }
-  return mappedOption;
 }
 
 function toAgentUsage(stats: PiSessionStats): AgentUsage | undefined {
@@ -959,21 +933,6 @@ function buildExtensionUiResponse(
   return { value: answer };
 }
 
-function mapPiModel(model: PiModel): AgentModelDefinition {
-  return {
-    provider: PI_PROVIDER,
-    id: `${model.provider}/${model.id}`,
-    label: `${model.provider}/${model.name ?? model.id}`,
-    description: `${model.provider}/${model.id}`,
-    metadata: {
-      provider: model.provider,
-      modelId: model.id,
-    },
-    thinkingOptions: model.reasoning ? PI_THINKING_OPTIONS.map(mapThinkingOption) : undefined,
-    defaultThinkingOptionId: model.reasoning ? DEFAULT_PI_THINKING_LEVEL : undefined,
-  };
-}
-
 function createRuntime(
   logger: Logger,
   runtimeSettings?: ProviderRuntimeSettings,
@@ -1004,6 +963,7 @@ export class PiHarnessThread implements HarnessThread {
   private outOfBandCompactionCompleted = false;
   private state: PiSessionState;
   private closed = false;
+  private readonly flavor: PiAdapterFlavor;
 
   constructor(options: PiHarnessThreadOptions) {
     this.runtimeSession = options.runtimeSession;
@@ -1016,6 +976,7 @@ export class PiHarnessThread implements HarnessThread {
       this.state.thinkingLevel ??
       null;
     this.extensionTimeoutMs = options.extensionTimeoutMs ?? DEFAULT_PI_EXTENSION_RESULT_TIMEOUT_MS;
+    this.flavor = options.flavor ?? "pi";
 
     this.runtimeSession.onEvent((event) => {
       this.handleRuntimeEvent(event);
@@ -1293,7 +1254,13 @@ export class PiHarnessThread implements HarnessThread {
   }
 
   async setThinkingOption(thinkingOptionId: string | null): Promise<void> {
-    const thinkingLevel = normalizePiThinkingOption(thinkingOptionId) ?? DEFAULT_PI_THINKING_LEVEL;
+    const normalized = normalizePiThinkingOption(thinkingOptionId);
+    if (!normalized && this.flavor === "omp") {
+      delete this.config.thinkingOptionId;
+      this.lastKnownThinkingOptionId = null;
+      return;
+    }
+    const thinkingLevel = normalized ?? DEFAULT_PI_THINKING_LEVEL;
     await this.runtimeSession.setThinkingLevel(thinkingLevel);
     this.lastKnownThinkingOptionId = thinkingLevel;
     this.config.thinkingOptionId = thinkingLevel;
@@ -1901,10 +1868,12 @@ export class PiHarnessAdapter implements HarnessAdapter {
   private readonly runtimeSettings?: ProviderRuntimeSettings;
   private readonly providerParams: PiProviderParams;
   private readonly runtime: PiRuntime;
+  private readonly flavor: PiAdapterFlavor;
 
   constructor(options: PiHarnessAdapterOptions) {
     this.logger = options.logger;
     this.runtimeSettings = options.runtimeSettings;
+    this.flavor = options.flavor ?? "pi";
     this.providerParams = PiProviderParamsSchema.parse(options.providerParams ?? {});
     this.runtime =
       options.runtime ??
@@ -1923,7 +1892,8 @@ export class PiHarnessAdapter implements HarnessAdapter {
         cwd: config.cwd,
         model: config.model,
         thinkingOptionId:
-          normalizePiThinkingOption(config.thinkingOptionId) ?? DEFAULT_PI_THINKING_LEVEL,
+          normalizePiThinkingOption(config.thinkingOptionId) ??
+          (this.flavor === "pi" ? DEFAULT_PI_THINKING_LEVEL : undefined),
         systemPrompt: composeSystemPromptParts(
           config.systemPrompt,
           config.daemonAppendSystemPrompt,
@@ -1945,6 +1915,7 @@ export class PiHarnessAdapter implements HarnessAdapter {
         capabilities: withPiMcpCapability(mcpConfig !== null),
         cleanup: combineCleanup([mcpConfig?.cleanup, thothExtension.cleanup]),
         extensionTimeoutMs: this.providerParams.extensionTimeoutMs,
+        flavor: this.flavor,
       });
     } catch (error) {
       await runtimeSession.close().catch(() => undefined);
@@ -1996,6 +1967,7 @@ export class PiHarnessAdapter implements HarnessAdapter {
         capabilities: withPiMcpCapability(mcpConfig !== null),
         cleanup: combineCleanup([mcpConfig?.cleanup, thothExtension.cleanup]),
         extensionTimeoutMs: this.providerParams.extensionTimeoutMs,
+        flavor: this.flavor,
       });
     } catch (error) {
       await runtimeSession.close().catch(() => undefined);
@@ -2011,7 +1983,9 @@ export class PiHarnessAdapter implements HarnessAdapter {
     });
     try {
       const models = transformPiModels(
-        (await runtimeSession.getAvailableModels(PI_CATALOG_REQUEST_TIMEOUT_MS)).map(mapPiModel),
+        (await runtimeSession.getAvailableModels(PI_CATALOG_REQUEST_TIMEOUT_MS)).map((model) =>
+          mapPiModel(model, this.flavor),
+        ),
       );
       return {
         models,

@@ -38,6 +38,7 @@ import {
   GitPullRequest,
   Settings,
   MoreVertical,
+  Pin,
   Plus,
   Trash2,
 } from "lucide-react-native";
@@ -103,6 +104,10 @@ import {
 import { getDesktopHost } from "@/desktop/host";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
+import {
+  selectPinnedWorkspaces,
+  useSidebarWorkspacePinsStore,
+} from "@/stores/sidebar-workspace-pins-store";
 
 const workspaceKeyExtractor = (workspace: SidebarWorkspacePlacement) => workspace.workspaceKey;
 
@@ -121,6 +126,9 @@ const ThemedPlus = withUnistyles(Plus);
 const ThemedMoreVertical = withUnistyles(MoreVertical);
 const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedSettings = withUnistyles(Settings);
+const ThemedPin = withUnistyles(Pin);
+const ThemedChevronDown = withUnistyles(ChevronDown);
+const ThemedChevronRight = withUnistyles(ChevronRight);
 
 const foregroundColorMapping = (theme: Theme) => ({
   color: theme.colors.foreground,
@@ -997,6 +1005,108 @@ function areWorkspaceRowItemPropsEqual(
 
 const MemoWorkspaceRowItem = memo(WorkspaceRowItem, areWorkspaceRowItemPropsEqual);
 
+function PinnedWorkspaceSection({
+  projects,
+  projectNamesByKey,
+  hostLabelByServerId,
+  showHostLabels,
+  onWorkspacePress,
+}: {
+  projects: SidebarProjectEntry[];
+  projectNamesByKey: Map<string, string>;
+  hostLabelByServerId: ReadonlyMap<string, string>;
+  showHostLabels: boolean;
+  onWorkspacePress?: () => void;
+}) {
+  const { t } = useTranslation();
+  const pathname = usePathname();
+  const activeWorkspaceSelection = useActiveWorkspaceSelection();
+  const pinnedWorkspaceKeys = useSidebarWorkspacePinsStore((state) => state.pinnedWorkspaceKeys);
+  const collapsed = useSidebarWorkspacePinsStore((state) => state.pinnedSectionCollapsed);
+  const toggleCollapsed = useSidebarWorkspacePinsStore(
+    (state) => state.togglePinnedSectionCollapsed,
+  );
+  const allWorkspaces = useMemo(
+    () => projects.flatMap((project) => project.workspaces),
+    [projects],
+  );
+  const pinnedWorkspaces = useMemo(
+    () => selectPinnedWorkspaces(allWorkspaces, pinnedWorkspaceKeys),
+    [allWorkspaces, pinnedWorkspaceKeys],
+  );
+  const projectKindByKey = useMemo(
+    () => new Map(projects.map((project) => [project.projectKey, project.projectKind])),
+    [projects],
+  );
+  const selectionEnabled = Boolean(pathname && parseHostWorkspaceRouteFromPathname(pathname));
+  const accessibilityState = useMemo(() => ({ expanded: !collapsed }), [collapsed]);
+
+  if (pinnedWorkspaces.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.pinnedSection} testID="sidebar-pinned-section">
+      <Pressable
+        accessibilityRole={platformIsWeb ? undefined : "button"}
+        accessibilityLabel={t("sidebar.sections.pinned")}
+        accessibilityState={accessibilityState}
+        style={pinnedSectionHeaderStyle}
+        onPress={toggleCollapsed}
+        testID="sidebar-pinned-section-header"
+      >
+        <View style={styles.pinnedSectionHeaderLeft}>
+          <View style={styles.pinnedSectionIconSlot}>
+            <ThemedPin size={14} uniProps={foregroundMutedColorMapping} />
+          </View>
+          <Text style={styles.pinnedSectionTitle} numberOfLines={1}>
+            {t("sidebar.sections.pinned")}
+          </Text>
+        </View>
+        {collapsed ? (
+          <ThemedChevronRight size={14} uniProps={foregroundMutedColorMapping} />
+        ) : (
+          <ThemedChevronDown size={14} uniProps={foregroundMutedColorMapping} />
+        )}
+      </Pressable>
+      {!collapsed ? (
+        <View style={styles.pinnedWorkspaceRows} testID="sidebar-pinned-section-rows">
+          {pinnedWorkspaces.map((workspace) => {
+            const projectName = projectNamesByKey.get(workspace.projectKey) ?? "";
+            const hostLabel = showHostLabels
+              ? (hostLabelByServerId.get(workspace.serverId) ?? workspace.serverId)
+              : "";
+            const subtitle = [projectName, hostLabel].filter(Boolean).join(" · ") || null;
+            return (
+              <MemoWorkspaceRowItem
+                key={workspace.workspaceKey}
+                workspace={workspace}
+                subtitle={subtitle}
+                shortcutNumber={null}
+                showShortcutBadge={false}
+                canCopyBranchName={projectKindByKey.get(workspace.projectKey) === "git"}
+                selectionEnabled={selectionEnabled}
+                activeWorkspaceSelection={activeWorkspaceSelection}
+                onWorkspacePress={onWorkspacePress}
+              />
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function pinnedSectionHeaderStyle({
+  hovered = false,
+  pressed,
+}: PressableStateCallbackType & { hovered?: boolean }) {
+  return [
+    styles.pinnedSectionHeader,
+    (Boolean(hovered) || pressed) && styles.pinnedSectionHeaderHovered,
+  ];
+}
+
 function WorkspaceRow({
   workspace,
   subtitle,
@@ -1383,6 +1493,15 @@ export function SidebarWorkspaceList({
     return labels;
   }, [hosts]);
   const showHostLabels = useMemo(() => shouldShowSidebarHostLabels(projects), [projects]);
+  const pinnedSection = (
+    <PinnedWorkspaceSection
+      projects={projects}
+      projectNamesByKey={projectNamesByKey}
+      hostLabelByServerId={hostLabelByServerId}
+      showHostLabels={showHostLabels}
+      onWorkspacePress={onWorkspacePress}
+    />
+  );
 
   const content =
     groupMode === "status" ? (
@@ -1393,6 +1512,7 @@ export function SidebarWorkspaceList({
         onWorkspacePress={onWorkspacePress}
         hostLabelByServerId={hostLabelByServerId}
         showHostLabels={showHostLabels}
+        listHeaderComponent={pinnedSection}
       />
     ) : (
       <ProjectModeList
@@ -1407,6 +1527,7 @@ export function SidebarWorkspaceList({
         pathname={pathname}
         hostLabelByServerId={hostLabelByServerId}
         showHostLabels={showHostLabels}
+        pinnedSection={pinnedSection}
       />
     );
 
@@ -1420,6 +1541,7 @@ function SidebarStatusModeWrapper({
   onWorkspacePress,
   hostLabelByServerId,
   showHostLabels,
+  listHeaderComponent,
 }: {
   statusWorkspacePlacements: SidebarStatusWorkspacePlacement[];
   projectNamesByKey: Map<string, string>;
@@ -1427,6 +1549,7 @@ function SidebarStatusModeWrapper({
   onWorkspacePress?: () => void;
   hostLabelByServerId: ReadonlyMap<string, string>;
   showHostLabels: boolean;
+  listHeaderComponent?: ReactElement | null;
 }) {
   const showShortcutBadges = useShowShortcutBadges();
 
@@ -1439,6 +1562,7 @@ function SidebarStatusModeWrapper({
       onWorkspacePress={onWorkspacePress}
       hostLabelByServerId={hostLabelByServerId}
       showHostLabels={showHostLabels}
+      listHeaderComponent={listHeaderComponent}
     />
   );
 }
@@ -1455,6 +1579,7 @@ function ProjectModeList({
   pathname,
   hostLabelByServerId,
   showHostLabels,
+  pinnedSection,
 }: Omit<
   SidebarWorkspaceListProps,
   "statusWorkspacePlacements" | "projectNamesByKey" | "groupMode" | "isRefreshing" | "onRefresh"
@@ -1462,6 +1587,7 @@ function ProjectModeList({
   pathname: string;
   hostLabelByServerId: ReadonlyMap<string, string>;
   showHostLabels: boolean;
+  pinnedSection?: ReactElement | null;
 }) {
   const { t } = useTranslation();
   const [creatingWorkspaceIds, setCreatingWorkspaceIds] = useState<Set<string>>(() => new Set());
@@ -1673,6 +1799,7 @@ function ProjectModeList({
 
   const content = (
     <>
+      {pinnedSection}
       {projects.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyTitle} testID="sidebar-project-empty-state">
@@ -1745,6 +1872,48 @@ const styles = StyleSheet.create((theme) => ({
   },
   projectBlock: {
     marginBottom: theme.spacing[1],
+  },
+  pinnedSection: {
+    marginBottom: theme.spacing[2],
+  },
+  pinnedSectionHeader: {
+    minHeight: 36,
+    paddingVertical: theme.spacing[2],
+    paddingHorizontal: theme.spacing[2],
+    borderRadius: theme.borderRadius.lg,
+    marginBottom: theme.spacing[1],
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing[2],
+    userSelect: "none",
+  },
+  pinnedSectionHeaderHovered: {
+    backgroundColor: theme.colors.surfaceSidebarHover,
+  },
+  pinnedSectionHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    flex: 1,
+    minWidth: 0,
+  },
+  pinnedSectionIconSlot: {
+    width: theme.iconSize.md,
+    height: theme.iconSize.md,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  pinnedSectionTitle: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    minWidth: 0,
+    flexShrink: 1,
+  },
+  pinnedWorkspaceRows: {
+    width: "100%",
   },
   workspaceListContainer: {},
   newWorkspaceGhostRow: {

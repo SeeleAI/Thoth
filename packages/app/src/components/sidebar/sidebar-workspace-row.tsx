@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, useState, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { View, Text, Pressable, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { Archive, CircleCheck, Copy, MoreVertical, Pencil } from "lucide-react-native";
+import { Archive, CircleCheck, Copy, MoreVertical, Pencil, Pin, PinOff } from "lucide-react-native";
 import { useMutation } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import type { Theme } from "@/styles/theme";
@@ -30,6 +30,7 @@ import { redirectIfArchivingActiveWorkspace } from "@/utils/sidebar-workspace-ar
 import { requireWorkspaceDirectory, resolveWorkspaceDirectory } from "@/utils/workspace-directory";
 import { isWeb as platformIsWeb, isNative as platformIsNative } from "@/constants/platform";
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
+import { useSidebarWorkspacePinsStore } from "@/stores/sidebar-workspace-pins-store";
 import {
   SidebarWorkspaceRowFrame,
   SidebarWorkspaceRowContent,
@@ -46,6 +47,8 @@ const ThemedCopy = withUnistyles(Copy);
 const ThemedArchive = withUnistyles(Archive);
 const ThemedPencil = withUnistyles(Pencil);
 const ThemedCircleCheck = withUnistyles(CircleCheck);
+const ThemedPin = withUnistyles(Pin);
+const ThemedPinOff = withUnistyles(PinOff);
 
 const copyLeadingIcon = <ThemedCopy size={14} uniProps={foregroundMutedColorMapping} />;
 const renameLeadingIcon = <ThemedPencil size={14} uniProps={foregroundMutedColorMapping} />;
@@ -195,6 +198,14 @@ export function SidebarWorkspaceRow({
   );
 
   const archiveShortcutKeys = useShortcutKeys("archive-worktree");
+  const pinShortcutKeys = useShortcutKeys("pin-workspace");
+  const isPinned = useSidebarWorkspacePinsStore((state) =>
+    state.pinnedWorkspaceKeys.includes(workspace.workspaceKey),
+  );
+  const toggleWorkspacePin = useSidebarWorkspacePinsStore((state) => state.toggle);
+  const handleTogglePin = useCallback(() => {
+    toggleWorkspacePin(workspace.workspaceKey);
+  }, [toggleWorkspacePin, workspace.workspaceKey]);
   const { hasClearableAttention, clearAttention } = useClearWorkspaceAttention({
     serverId: workspace.serverId,
     workspaceId: workspace.workspaceId,
@@ -245,6 +256,9 @@ export function SidebarWorkspaceRow({
         onCopyPath={handleCopyPath}
         onRename={handleOpenRename}
         onMarkAsRead={hasClearableAttention ? handleMarkAsRead : undefined}
+        isPinned={isPinned}
+        onTogglePin={handleTogglePin}
+        pinShortcutKeys={selected ? pinShortcutKeys : null}
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
       />
       <AdaptiveRenameModal
@@ -281,6 +295,9 @@ interface WorkspaceRowBodyProps {
   onCopyPath?: () => void;
   onRename?: () => void;
   onMarkAsRead?: () => void;
+  isPinned: boolean;
+  onTogglePin: () => void;
+  pinShortcutKeys?: ShortcutKey[][] | null;
   archiveShortcutKeys?: ShortcutKey[][] | null;
 }
 
@@ -304,6 +321,9 @@ function WorkspaceRowBody({
   onCopyPath,
   onRename,
   onMarkAsRead,
+  isPinned,
+  onTogglePin,
+  pinShortcutKeys,
   archiveShortcutKeys,
 }: WorkspaceRowBodyProps) {
   const isTouchPlatform = platformIsNative;
@@ -389,6 +409,9 @@ function WorkspaceRowBody({
                   onCopyPath={onCopyPath}
                   onRename={onRename}
                   onMarkAsRead={onMarkAsRead}
+                  isPinned={isPinned}
+                  onTogglePin={onTogglePin}
+                  pinShortcutKeys={pinShortcutKeys}
                 />
               </SidebarWorkspaceRowContent>
             </Pressable>
@@ -415,6 +438,9 @@ function WorkspaceRowTrailingActions({
   onCopyBranchName,
   onCopyPath,
   onRename,
+  isPinned,
+  onTogglePin,
+  pinShortcutKeys,
 }: {
   workspace: SidebarWorkspaceEntry;
   isHovered: boolean;
@@ -431,6 +457,9 @@ function WorkspaceRowTrailingActions({
   onCopyBranchName?: () => void;
   onCopyPath?: () => void;
   onRename?: () => void;
+  isPinned: boolean;
+  onTogglePin: () => void;
+  pinShortcutKeys?: ShortcutKey[][] | null;
 }) {
   const { t } = useTranslation();
   const showShortcut = showShortcutBadge && shortcutNumber !== null;
@@ -463,6 +492,9 @@ function WorkspaceRowTrailingActions({
                 onCopyBranchName={onCopyBranchName}
                 onRename={onRename}
                 onMarkAsRead={onMarkAsRead}
+                isPinned={isPinned}
+                onTogglePin={onTogglePin}
+                pinShortcutKeys={pinShortcutKeys}
                 onArchive={onArchive}
                 archiveLabel={archiveLabel}
                 archiveStatus={archiveStatus}
@@ -483,6 +515,9 @@ function WorkspaceKebabMenu({
   onCopyBranchName,
   onRename,
   onMarkAsRead,
+  isPinned,
+  onTogglePin,
+  pinShortcutKeys,
   onArchive,
   archiveLabel,
   archiveStatus,
@@ -494,6 +529,9 @@ function WorkspaceKebabMenu({
   onCopyBranchName?: () => void;
   onRename?: () => void;
   onMarkAsRead?: () => void;
+  isPinned: boolean;
+  onTogglePin: () => void;
+  pinShortcutKeys?: ShortcutKey[][] | null;
   onArchive: () => void;
   archiveLabel?: string;
   archiveStatus?: "idle" | "pending" | "success";
@@ -504,6 +542,10 @@ function WorkspaceKebabMenu({
   const archiveTrailing = useMemo(
     () => (archiveShortcutKeys ? <Shortcut chord={archiveShortcutKeys} /> : null),
     [archiveShortcutKeys],
+  );
+  const pinTrailing = useMemo(
+    () => (pinShortcutKeys ? <Shortcut chord={pinShortcutKeys} /> : null),
+    [pinShortcutKeys],
   );
   return (
     <DropdownMenu>
@@ -553,6 +595,20 @@ function WorkspaceKebabMenu({
             Mark as read
           </DropdownMenuItem>
         ) : null}
+        <DropdownMenuItem
+          testID={`sidebar-workspace-menu-pin-${workspaceKey}`}
+          leading={
+            isPinned ? (
+              <ThemedPinOff size={14} uniProps={foregroundMutedColorMapping} />
+            ) : (
+              <ThemedPin size={14} uniProps={foregroundMutedColorMapping} />
+            )
+          }
+          trailing={pinTrailing}
+          onSelect={onTogglePin}
+        >
+          {t(isPinned ? "workspace.tabs.actions.unpinTarget" : "workspace.tabs.actions.pinTarget")}
+        </DropdownMenuItem>
         <DropdownMenuItem
           testID={`sidebar-workspace-menu-archive-${workspaceKey}`}
           leading={archiveLeadingIcon}

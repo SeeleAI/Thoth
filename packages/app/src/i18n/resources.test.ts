@@ -483,6 +483,10 @@ describe("translation resources", () => {
     expect(en.agentPanel.archived.unarchive).toBe("Unarchive");
     expect(en.desktop.quitting.title).toBe("Quitting Thoth...");
     expect(en.desktop.quitting.detail).toBe("Stopping the local daemon.");
+    expect(en.desktop.daemon.keepRunning.hint).toContain("Tasks and Schedules continue");
+    expect(en.desktop.daemon.keepRunning.hint).toContain(
+      "stops Scheduled Tasks and Background Tasks",
+    );
     expect(en.composer.attachments.dropImagesHere).toBe("Drop images here");
   });
 

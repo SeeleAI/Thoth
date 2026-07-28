@@ -144,6 +144,7 @@ const PROVIDER_ADAPTER_LOADERS: Record<string, ProviderAdapterLoader> = {
       logger,
       runtimeSettings,
       providerParams: options?.providerParams,
+      flavor: "pi",
     });
   },
   omp: async (logger, runtimeSettings, options) => {
@@ -156,6 +157,7 @@ const PROVIDER_ADAPTER_LOADERS: Record<string, ProviderAdapterLoader> = {
       ),
       providerParams: options?.providerParams ?? { sessionDir: "~/.omp/agent/sessions" },
       commandsRpcType: "get_available_commands",
+      flavor: "omp",
     });
   },
   mock: async (logger) => {

@@ -33,6 +33,10 @@ export function useLoadOlderAgentHistory({
   return {
     isLoadingOlder: timeline?.loadingOlder ?? false,
     hasOlder: timeline?.hasOlder ?? false,
+    progressKey:
+      timeline?.epoch && timeline.startCursor
+        ? `${timeline.epoch}:${timeline.startCursor.seq}`
+        : null,
     loadOlder,
   };
 }

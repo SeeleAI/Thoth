@@ -80,9 +80,11 @@ npm run paseo:verify-provenance -- --manifest <manifest.json> --classification <
 npm run paseo:check-boundaries -- --repo . --base <thoth-base-sha> --out <boundary-report.json>
 ```
 
-For the accepted v0.2.2 range, provenance must cover `393/393` commits, assess `143/143` architecture candidates,
-retain all `43/43` required candidates as architectural, and report zero pending reviews and failures. Generated
-JSON belongs under ignored `.agent-os/artifacts/paseo-sync/`; durable conclusions belong in the project ledgers.
+For the accepted v0.2.3 target-side set, provenance must cover `36/36` commits selected by
+`v0.2.2...v0.2.3 --right-only`, assess `12/12` architecture candidates, represent all four required candidates in
+architectural coherent groups, and report zero pending reviews and failures. Generated JSON belongs under ignored
+`.agent-os/artifacts/paseo-sync/`; durable conclusions belong in the project ledgers. The published v0.2.2 range
+remains historical evidence under `NTH-EV-071` and is not recomputed as part of the v0.2.3 target-side gate.
 
 ## Fast Thoth Product API Acceptance
 
@@ -193,9 +195,27 @@ npm run accept:thoth:appimage
 ```
 
 It rebuilds the AppImage and runs one real-window packaged journey. The report must include read-only Files,
-Changes, Browser automation, and Schedule surfaces. A Browser turn must first be observed leaving `idle` and then
-returning to `idle` before the smoke navigates to the Schedule page; an old idle snapshot cannot prove the newly
-submitted turn completed.
+Changes, Browser automation, Workspace-script start/stop with durable terminal/port receipts, a multi-chunk binary
+file read, and complete `Tasks | Schedules` management/navigation. A Browser turn must first be observed leaving
+`idle` and then returning to `idle` before the smoke navigates to the Schedule page; an old idle snapshot cannot
+prove the newly submitted turn completed. Keep localhost CDP/daemon endpoints outside external proxies. The smoke
+must wait for the default Tasks surface to hydrate and close it through the real UI before selecting an obscured
+Workspace-scripts control; force-click and Client-only Schedule acceptance are invalid.
+
+Transport changes also require the packaged hosted Relay journey:
+
+```bash
+NODE_USE_ENV_PROXY=1 \
+HTTP_PROXY=http://10.0.3.5:7899 \
+HTTPS_PROXY=http://10.0.3.5:7899 \
+NO_PROXY=127.0.0.1,localhost \
+npm run accept:thoth:relay
+```
+
+The proxy values above describe this repository environment, not product defaults. Node 24 requires
+`NODE_USE_ENV_PROXY=1` for `ws`/HTTPS to consume environment proxy variables. The report must prove hosted v3 E2EE,
+client and daemon restart recovery, and exact size/revision/SHA-256 for the five-chunk `1,048,649`-byte fixture;
+the command never deploys Relay.
 
 Claude Code, OpenCode and ACP must use the same Journey through their adapter capability contracts. Until an
 adapter supports session-scoped skills, semantic tools, turn identity and continuation, Thoth-on acceptance must

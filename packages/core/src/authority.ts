@@ -318,6 +318,7 @@ export function createTaskAuthority(input: CreateTaskAuthorityInput): TaskProjec
     goal: input.goal,
     constraints: [...input.constraints],
     acceptance: [...input.acceptance],
+    origin: null,
     status: "queued",
     summary: "Approved task queued for execution.",
     currentGoalId: firstGoal.id,

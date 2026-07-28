@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useMemo } from "react";
+import { forwardRef, useCallback, useMemo } from "react";
 import type { ReactNode, Ref } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -14,7 +14,12 @@ import {
 import type { TextInputProps } from "react-native";
 import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { getOverlayRoot, OVERLAY_Z } from "../lib/overlay-root";
+import {
+  getOverlayRoot,
+  OverlayLayerProvider,
+  useGlobalWebOverlayLayer,
+  useWebOverlayRegistration,
+} from "../lib/overlay-root";
 import {
   BottomSheetBackdrop,
   BottomSheetScrollView,
@@ -60,35 +65,7 @@ export interface SheetHeader {
   search?: SheetHeaderSearch;
 }
 
-type EscHandler = () => void;
-const escStack: EscHandler[] = [];
-let escListenerAttached = false;
 const ABSOLUTE_FILL_STYLE = { ...RNStyleSheet.absoluteFillObject };
-
-function handleEscKeyDown(event: KeyboardEvent) {
-  if (event.key !== "Escape") return;
-  const top = escStack[escStack.length - 1];
-  if (!top) return;
-  event.stopPropagation();
-  event.preventDefault();
-  top();
-}
-
-function pushEscHandler(handler: EscHandler): () => void {
-  escStack.push(handler);
-  if (!escListenerAttached && typeof window !== "undefined") {
-    window.addEventListener("keydown", handleEscKeyDown, true);
-    escListenerAttached = true;
-  }
-  return () => {
-    const index = escStack.lastIndexOf(handler);
-    if (index !== -1) escStack.splice(index, 1);
-    if (escStack.length === 0 && escListenerAttached && typeof window !== "undefined") {
-      window.removeEventListener("keydown", handleEscKeyDown, true);
-      escListenerAttached = false;
-    }
-  };
-}
 
 const styles = StyleSheet.create((theme) => ({
   desktopOverlay: {
@@ -97,7 +74,6 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     alignItems: "center",
     padding: theme.spacing[6],
-    zIndex: OVERLAY_Z.modal,
     pointerEvents: "auto" as const,
   },
   desktopCard: {
@@ -473,6 +449,7 @@ export function AdaptiveModalSheet({
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
+  const modalLayer = useGlobalWebOverlayLayer("modal", isWeb && !isMobile && visible);
   const insets = useSafeAreaInsets();
   const resolvedSnapPoints = useMemo(() => snapPoints ?? ["65%", "90%"], [snapPoints]);
   const compactSafeAreaPadding = useMemo(
@@ -534,11 +511,25 @@ export function AdaptiveModalSheet({
     () => [styles.desktopCard, desktopMaxWidth != null && { maxWidth: desktopMaxWidth }],
     [desktopMaxWidth],
   );
-
-  useEffect(() => {
-    if (!isWeb || isMobile || !visible) return;
-    return pushEscHandler(onClose);
-  }, [visible, isMobile, onClose]);
+  const desktopOverlayStyle = useMemo(
+    () => [styles.desktopOverlay, isWeb ? { zIndex: modalLayer } : null],
+    [modalLayer],
+  );
+  const handleWebOverlayKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return false;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return true;
+    },
+    [onClose],
+  );
+  const setWebOverlayScope = useWebOverlayRegistration({
+    active: isWeb && !isMobile && visible,
+    layer: modalLayer,
+    onKeyDown: handleWebOverlayKeyDown,
+  });
 
   if (isMobile) {
     return (
@@ -576,7 +567,7 @@ export function AdaptiveModalSheet({
   }
 
   const cardInner = (
-    <>
+    <OverlayLayerProvider layer={modalLayer}>
       <SheetHeaderView header={header} onClose={onClose} />
       {scrollable ? (
         <ScrollView
@@ -590,17 +581,25 @@ export function AdaptiveModalSheet({
         <View style={styles.desktopStaticContent}>{children}</View>
       )}
       {footer ? <View style={footerStyle}>{footer}</View> : null}
-    </>
+    </OverlayLayerProvider>
   );
 
   const desktopContent = (
-    <View style={styles.desktopOverlay} testID={testID}>
+    <View style={desktopOverlayStyle} testID={testID}>
       <Pressable
         accessibilityLabel={t("common.actions.dismiss")}
         style={ABSOLUTE_FILL_STYLE}
         onPress={onClose}
       />
-      <View style={desktopCardStyle}>{cardInner}</View>
+      <View
+        ref={setWebOverlayScope}
+        style={desktopCardStyle}
+        role="dialog"
+        aria-modal
+        tabIndex={-1}
+      >
+        {cardInner}
+      </View>
     </View>
   );
 

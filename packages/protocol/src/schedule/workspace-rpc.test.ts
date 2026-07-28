@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { ScheduleCreateRequestSchema, ScheduleListRequestSchema } from "./rpc-schemas.js";
+import {
+  ScheduleCreateRequestSchema,
+  ScheduleListRequestSchema,
+  ScheduleUpdateRequestSchema,
+} from "./rpc-schemas.js";
 
 describe("Workspace-scoped schedule RPC", () => {
   it("requires an explicit Workspace authority scope", () => {
@@ -22,5 +26,17 @@ describe("Workspace-scoped schedule RPC", () => {
       },
     });
     expect(parsed.target).toEqual({ type: "new-agent", config: { provider: "codex" } });
+  });
+
+  it("updates explicit Schedule isolation through the wire contract", () => {
+    expect(
+      ScheduleUpdateRequestSchema.parse({
+        type: "schedule/update",
+        requestId: "request-2",
+        workspaceId: "workspace-1",
+        scheduleId: "schedule-1",
+        newAgentConfig: { isolation: "worktree" },
+      }).newAgentConfig,
+    ).toEqual({ isolation: "worktree" });
   });
 });

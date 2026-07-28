@@ -9,8 +9,8 @@ import type {
   ProviderUsage,
   ProviderUsageDetail,
   ProviderUsageWindow,
-} from "../../../server/messages.js";
-import type { ProviderApiFetch, ProviderUsageFetcher } from "../provider.js";
+} from "@thoth/protocol/messages";
+import type { ProviderApiFetch, ProviderUsageReader } from "../provider.js";
 import {
   ApiNumberSchema,
   fetchProviderApi,
@@ -40,11 +40,23 @@ const ClaudeUsageWindowSchema = z.object({
   resets_at: z.string().optional(),
 });
 
+const ClaudeScopeLabelSchema = z
+  .object({ id: z.string().nullish(), display_name: z.string().nullish() })
+  .nullish();
+
+const ClaudeLimitSchema = z.object({
+  kind: z.string(),
+  percent: ApiNumberSchema.nullish(),
+  resets_at: z.string().nullish(),
+  scope: z.object({ model: ClaudeScopeLabelSchema, surface: ClaudeScopeLabelSchema }).nullish(),
+});
+
 const ClaudeUsageResponseSchema = z.object({
   five_hour: ClaudeUsageWindowSchema.nullish(),
   seven_day: ClaudeUsageWindowSchema.nullish(),
   seven_day_opus: ClaudeUsageWindowSchema.nullish(),
   seven_day_omelette: ClaudeUsageWindowSchema.nullish(),
+  limits: z.array(z.unknown()).nullish(),
   extra_usage: z
     .object({
       is_enabled: z.boolean().optional(),
@@ -60,6 +72,76 @@ const ClaudeTokenRefreshSchema = z.object({
 type ClaudeCredentials = z.infer<typeof ClaudeCredentialsSchema>;
 type ClaudeUsageResponse = z.infer<typeof ClaudeUsageResponseSchema>;
 type ClaudeTokenRefresh = z.infer<typeof ClaudeTokenRefreshSchema>;
+type ClaudeLimit = z.infer<typeof ClaudeLimitSchema>;
+
+interface ScopedLimit {
+  dimension: "model" | "surface";
+  id: string | null;
+  name: string;
+  usedPct: number | null;
+  resetsAt: string | null;
+}
+
+function normalizeScopeName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function sameScopedLimit(left: ScopedLimit, right: ScopedLimit): boolean {
+  if (left.dimension !== right.dimension) return false;
+  if (left.id && right.id) return left.id === right.id;
+  return normalizeScopeName(left.name) === normalizeScopeName(right.name);
+}
+
+function reconcileScopedLimits(legacy: ScopedLimit[], current: ScopedLimit[]): ScopedLimit[] {
+  const reconciled = [...legacy];
+  for (const limit of current) {
+    const index = reconciled.findIndex((candidate) => sameScopedLimit(candidate, limit));
+    if (index < 0) {
+      reconciled.push(limit);
+      continue;
+    }
+    const previous = reconciled[index]!;
+    reconciled[index] = {
+      ...limit,
+      usedPct: limit.usedPct ?? previous.usedPct,
+      resetsAt: limit.resetsAt ?? previous.resetsAt,
+    };
+  }
+  return reconciled;
+}
+
+function scopedLimitFromEntry(limit: ClaudeLimit): ScopedLimit | null {
+  for (const dimension of ["model", "surface"] as const) {
+    const scope = limit.scope?.[dimension];
+    const id = scope?.id?.trim() || null;
+    const name = scope?.display_name?.trim() || id;
+    if (name) {
+      return {
+        dimension,
+        id,
+        name,
+        usedPct: limit.percent ?? null,
+        resetsAt: limit.resets_at ?? null,
+      };
+    }
+  }
+  return null;
+}
+
+function scopedWindowId(limit: ScopedLimit): string {
+  return `weekly_${limit.dimension}_${limit.id ?? normalizeScopeName(limit.name)}`;
+}
+
+function uniqueWindowId(candidate: string, taken: Set<string>): string {
+  if (!taken.has(candidate)) return candidate;
+  for (let suffix = 2; ; suffix += 1) {
+    const next = `${candidate}_${suffix}`;
+    if (!taken.has(next)) return next;
+  }
+}
 
 interface ClaudeCredentialRecord {
   oauth: { accessToken: string } & NonNullable<ClaudeCredentials["claudeAiOauth"]>;
@@ -99,16 +181,18 @@ async function readClaudeKeychainCredentials(): Promise<unknown | null> {
   }
 }
 
-export class ClaudeQuotaProvider implements ProviderUsageFetcher {
+export class ClaudeQuotaProvider implements ProviderUsageReader {
   readonly providerId = "claude";
   readonly displayName = "Claude";
 
+  private readonly logger: Logger;
   private readonly claudeHome: string;
   private readonly readKeychainCredentials: () => Promise<unknown | null>;
   private readonly platform: typeof process.platform;
   private readonly fetchApi: ProviderApiFetch;
 
   constructor(options: ClaudeQuotaProviderOptions) {
+    this.logger = options.logger.child({ module: "claude-provider-usage-reader" });
     this.claudeHome =
       options.claudeHome || process.env["CLAUDE_HOME"] || join(homedir(), ".claude");
     this.readKeychainCredentials = options.claudeKeychainReader ?? readClaudeKeychainCredentials;
@@ -149,6 +233,7 @@ export class ClaudeQuotaProvider implements ProviderUsageFetcher {
     }
 
     const windows: ProviderUsageWindow[] = [];
+    const warnings: string[] = [];
     if (resp.five_hour) {
       windows.push(
         windowFromUsedPct({
@@ -171,28 +256,58 @@ export class ClaudeQuotaProvider implements ProviderUsageFetcher {
         }),
       );
     }
+    const legacyScoped: ScopedLimit[] = [];
     if (resp.seven_day_opus) {
-      windows.push(
-        windowFromUsedPct({
-          id: "weekly_opus",
-          label: "Weekly · Opus",
-          utilizationPct: resp.seven_day_opus.utilization,
-          resetsAt: resp.seven_day_opus.resets_at ?? null,
-          tone: "ok",
-        }),
-      );
+      legacyScoped.push({
+        dimension: "model",
+        id: null,
+        name: "Opus",
+        usedPct: resp.seven_day_opus.utilization,
+        resetsAt: resp.seven_day_opus.resets_at ?? null,
+      });
     }
     if (resp.seven_day_omelette) {
+      legacyScoped.push({
+        dimension: "model",
+        id: null,
+        name: "Omelette",
+        usedPct: resp.seven_day_omelette.utilization,
+        resetsAt: resp.seven_day_omelette.resets_at ?? null,
+      });
+    }
+    const currentScoped: ScopedLimit[] = [];
+    for (const entry of resp.limits ?? []) {
+      const parsed = ClaudeLimitSchema.safeParse(entry);
+      if (!parsed.success) {
+        warnings.push("Skipped one malformed Claude usage limit");
+        continue;
+      }
+      if (parsed.data.kind !== "weekly_scoped") continue;
+      const limit = scopedLimitFromEntry(parsed.data);
+      if (!limit) {
+        warnings.push("Skipped one Claude scoped usage limit without a model or surface name");
+        continue;
+      }
+      currentScoped.push(limit);
+    }
+    const takenWindowIds = new Set(windows.map((window) => window.id));
+    for (const limit of reconcileScopedLimits(legacyScoped, currentScoped)) {
+      const id = uniqueWindowId(scopedWindowId(limit), takenWindowIds);
+      takenWindowIds.add(id);
       windows.push(
         windowFromUsedPct({
-          id: "weekly_omelette",
-          label: "Weekly · Omelette",
-          utilizationPct: resp.seven_day_omelette.utilization,
-          resetsAt: resp.seven_day_omelette.resets_at ?? null,
+          id,
+          label: `Weekly · ${limit.name}`,
+          utilizationPct: limit.usedPct,
+          resetsAt: limit.resetsAt,
           tone: "ok",
         }),
       );
     }
+    if (windows.length === 0) {
+      warnings.push("Claude usage response parsed but produced no usage windows");
+    }
+    for (const warning of warnings) this.logger.warn({ warning }, warning);
 
     const details: ProviderUsageDetail[] = [];
     const extraUsageEnabled = resp.extra_usage?.is_enabled;
@@ -212,6 +327,7 @@ export class ClaudeQuotaProvider implements ProviderUsageFetcher {
       windows,
       balances: [],
       details,
+      warnings,
       error: null,
     };
   }

@@ -3,16 +3,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProviderUsage } from "../../server/messages.js";
-import type { ProviderUsageFetcher } from "./provider.js";
-import { ClaudeQuotaProvider } from "./providers/claude.js";
-import { CodexQuotaProvider } from "./providers/codex.js";
-import { CopilotQuotaProvider } from "./providers/copilot.js";
-import { CursorQuotaProvider } from "./providers/cursor.js";
-import { GrokQuotaProvider } from "./providers/grok.js";
-import { KimiQuotaProvider } from "./providers/kimi.js";
-import { MiniMaxQuotaProvider } from "./providers/minimax.js";
-import { ZaiQuotaProvider } from "./providers/zai.js";
+import type { ProviderUsage } from "@thoth/protocol/messages";
+import {
+  ClaudeQuotaProvider,
+  CodexQuotaProvider,
+  CopilotQuotaProvider,
+  CursorQuotaProvider,
+  GrokQuotaProvider,
+  KimiQuotaProvider,
+  MiniMaxQuotaProvider,
+  ZaiQuotaProvider,
+  type ProviderUsageReader,
+} from "@thoth/drivers/provider-usage";
 import { ProviderUsageService } from "./service.js";
 
 function writeClaudeCredentials(
@@ -123,7 +125,7 @@ function createLogger() {
   return logger as never;
 }
 
-function usageFetcher(usage: ProviderUsage): ProviderUsageFetcher {
+function usageReader(usage: ProviderUsage): ProviderUsageReader {
   return {
     providerId: usage.providerId,
     displayName: usage.displayName,
@@ -144,8 +146,8 @@ describe("ProviderUsageService", () => {
     const service = new ProviderUsageService({
       logger: createLogger(),
       now: () => Date.parse("2026-06-19T00:00:00.000Z"),
-      fetchers: [
-        usageFetcher({
+      readers: [
+        usageReader({
           providerId: "glm",
           displayName: "GLM coding plan",
           status: "available",
@@ -192,7 +194,7 @@ describe("ProviderUsageService", () => {
       logger: createLogger(),
       now: () => now,
       cacheTtlMs: 60_000,
-      fetchers: [
+      readers: [
         {
           providerId: "claude",
           displayName: "Claude",
@@ -226,7 +228,7 @@ describe("ProviderUsageService", () => {
     const service = new ProviderUsageService({
       logger: createLogger(),
       now: () => Date.parse("2026-06-19T00:00:00.000Z"),
-      fetchers: [
+      readers: [
         {
           providerId: "claude",
           displayName: "Claude",
@@ -261,7 +263,7 @@ describe("ProviderUsageService", () => {
     const service = new ProviderUsageService({
       logger: createLogger(),
       now: () => Date.parse("2026-06-19T00:00:00.000Z"),
-      fetchers: [
+      readers: [
         {
           providerId: "claude",
           displayName: "Claude",
@@ -269,7 +271,7 @@ describe("ProviderUsageService", () => {
             throw new Error("Claude auth expired");
           },
         },
-        usageFetcher({
+        usageReader({
           providerId: "codex",
           displayName: "Codex",
           status: "available",
@@ -302,9 +304,44 @@ describe("ProviderUsageService", () => {
       ],
     });
   });
+
+  it("preserves the last known good receipt when a later Provider read fails", async () => {
+    let fail = false;
+    const service = new ProviderUsageService({
+      logger: createLogger(),
+      cacheTtlMs: 0,
+      readers: [
+        {
+          providerId: "claude",
+          displayName: "Claude",
+          async fetchUsage() {
+            if (fail) throw new Error("temporary usage outage");
+            return {
+              providerId: "claude",
+              displayName: "Claude",
+              status: "available" as const,
+              planLabel: "Max",
+              windows: [{ id: "weekly", label: "Weekly", usedPct: 12 }],
+            };
+          },
+        },
+      ],
+    });
+
+    await service.listUsage();
+    fail = true;
+    const stale = await service.listUsage({ forceRefresh: true });
+    expect(stale.providers[0]).toMatchObject({
+      status: "available",
+      sourceLabel: "Last known good",
+      windows: [{ id: "weekly", usedPct: 12 }],
+      error: "temporary usage outage",
+      warnings: [expect.stringContaining("last-known-good")],
+    });
+  });
 });
 
-describe("real provider usage fetchers", () => {
+describe("real Provider usage readers", () => {
   let claudeHome: string;
   let codexHome: string;
   let homeDir: string;
@@ -370,7 +407,7 @@ describe("real provider usage fetchers", () => {
     return new ProviderUsageService({
       logger,
       now: () => Date.parse("2026-06-19T00:00:00.000Z"),
-      fetchers: [
+      readers: [
         new ClaudeQuotaProvider({
           logger,
           claudeHome,
@@ -425,13 +462,72 @@ describe("real provider usage fetchers", () => {
       windows: expect.arrayContaining([
         expect.objectContaining({ id: "five_hour", usedPct: 11 }),
         expect.objectContaining({ id: "weekly", usedPct: 1 }),
-        expect.objectContaining({ id: "weekly_opus", usedPct: 0.5 }),
+        expect.objectContaining({ id: "weekly_model_opus", usedPct: 0.5 }),
       ]),
     });
     expect(fetchApi).toHaveBeenCalledWith(
       "https://api.anthropic.com/api/oauth/usage",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it("reconciles Claude model and surface scoped weekly limits independently", async () => {
+    writeClaudeCredentials(claudeHome, "at_scoped");
+    fetchApi = mockFetch(
+      new Map([
+        [
+          "https://api.anthropic.com/api/oauth/usage",
+          () =>
+            jsonResponse({
+              seven_day_opus: { utilization: 0.5, resets_at: "2026-06-04T00:00:00Z" },
+              limits: [
+                {
+                  kind: "weekly_scoped",
+                  percent: 9,
+                  resets_at: "2026-06-05T00:00:00Z",
+                  scope: {
+                    model: { id: "claude-opus", display_name: "Opus" },
+                    surface: null,
+                  },
+                },
+                {
+                  kind: "weekly_scoped",
+                  percent: 0,
+                  resets_at: null,
+                  scope: { model: null, surface: { id: "code", display_name: "Code" } },
+                },
+                { percent: "malformed" },
+              ],
+            }),
+        ],
+      ]),
+    );
+
+    const claude = findProvider(await service().listUsage(), "claude");
+    expect(claude.windows).toEqual([
+      expect.objectContaining({
+        id: "weekly_model_claude-opus",
+        label: "Weekly · Opus",
+        usedPct: 9,
+      }),
+      expect.objectContaining({
+        id: "weekly_surface_code",
+        label: "Weekly · Code",
+        usedPct: 0,
+        remainingPct: 100,
+      }),
+    ]);
+    expect(claude.warnings).toEqual([expect.stringContaining("malformed")]);
+  });
+
+  it("returns a warning rather than silent success for parsed-empty Claude usage", async () => {
+    writeClaudeCredentials(claudeHome, "at_empty");
+    fetchApi = mockFetch(
+      new Map([["https://api.anthropic.com/api/oauth/usage", () => jsonResponse({ limits: [] })]]),
+    );
+    const claude = findProvider(await service().listUsage(), "claude");
+    expect(claude.windows).toEqual([]);
+    expect(claude.warnings).toEqual(["Claude usage response parsed but produced no usage windows"]);
   });
 
   it("returns unavailable Claude usage when credentials are missing", async () => {

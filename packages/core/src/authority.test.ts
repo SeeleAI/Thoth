@@ -436,6 +436,7 @@ describe("transitionAuthority", () => {
       now,
     });
     expect(task).toMatchObject({
+      origin: null,
       status: "queued",
       currentGoalId: deriveDurableGoalId({
         taskId: "task-created",
@@ -476,6 +477,7 @@ function taskProjection(patch: Partial<TaskProjection> = {}): TaskProjection {
     goal: "Goal",
     constraints: ["Constraint"],
     acceptance: ["Acceptance"],
+    origin: null,
     status: "running",
     summary: "Running",
     currentGoalId: "goal-1",

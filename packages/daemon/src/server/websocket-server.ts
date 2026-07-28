@@ -84,6 +84,15 @@ import {
 } from "@thoth/protocol/browser-automation/capabilities";
 import type { BrowserAutomationExecuteResponse } from "@thoth/protocol/browser-automation/rpc-schemas";
 import { BrowserToolsBroker, type BrowserHostDisconnectOptions } from "./browser-tools/broker.js";
+import {
+  APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS,
+  ApplicationSocketLease,
+  MAX_PHYSICAL_SOCKET_BUFFERED_BYTES,
+  outboundFrameByteLength,
+  physicalSocketHasCapacity,
+  sendBoundedPhysicalFrame,
+  sendBoundedPhysicalFrameAndWait,
+} from "./websocket/physical-socket.js";
 
 const WS_CLOSE_DAEMON_AUTH_FAILED = 4401;
 
@@ -285,8 +294,12 @@ function bufferFromWsData(data: Buffer | ArrayBuffer | Buffer[] | string): Buffe
 interface WebSocketLike {
   readyState: number;
   bufferedAmount?: number;
-  send: (data: string | Uint8Array | ArrayBuffer) => void;
+  send: (
+    data: string | Uint8Array | ArrayBuffer,
+    callback?: (error?: Error) => void,
+  ) => void | Promise<void>;
   close: (code?: number, reason?: string) => void;
+  terminate?: () => void;
   on: (event: "message" | "close" | "error", listener: (...args: unknown[]) => void) => void;
   once: (event: "close" | "error", listener: (...args: unknown[]) => void) => void;
 }
@@ -300,6 +313,13 @@ interface SessionConnection {
   sockets: Set<WebSocketLike>;
   externalDisconnectCleanupTimeout: ReturnType<typeof setTimeout> | null;
   unregisterBrowserHost: ((options?: BrowserHostDisconnectOptions) => void) | null;
+}
+
+interface ClosePhysicalSocketParams {
+  ws: WebSocketLike;
+  reason: "application_lease_expired" | "outbound_high_water";
+  logMessage: string;
+  logFields?: Record<string, unknown>;
 }
 
 const SLOW_REQUEST_THRESHOLD_MS = 500;
@@ -403,6 +423,8 @@ export class DaemonWebSocketServer {
   private readonly runtimeMetrics = new WebSocketRuntimeMetricsWindow();
   private lastRuntimeMetricsSnapshot: WebSocketRuntimeDiagnosticPayload | null = null;
   private runtimeMetricsInterval: ReturnType<typeof setInterval> | null = null;
+  private applicationSocketLeaseInterval: ReturnType<typeof setInterval> | null = null;
+  private readonly applicationSocketLease = new ApplicationSocketLease<WebSocketLike>();
   private eventLoopDelayMonitor: ReturnType<typeof monitorEventLoopDelay> | null = null;
   private unsubscribeDaemonConfigChange: (() => void) | null = null;
   private readonly providerUsageService: ProviderUsageService;
@@ -466,6 +488,7 @@ export class DaemonWebSocketServer {
       coordinator: WorkspaceTaskCoordinator;
     },
     browserToolsBroker?: BrowserToolsBroker,
+    workspaceServicePortRegistry?: WorkspaceServicePortRegistry,
   ) {
     this.logger = logger.child({ module: "websocket-server" });
     this.serverId = serverId;
@@ -500,9 +523,11 @@ export class DaemonWebSocketServer {
         this.logger.child({ component: "workspace-task-coordinator" }),
       );
     this.browserToolsBroker = browserToolsBroker ?? new BrowserToolsBroker({});
-    this.workspaceServicePortRegistry = new WorkspaceServicePortRegistry({
-      catalog: this.workspaceAuthorityManager.catalog,
-    });
+    this.workspaceServicePortRegistry =
+      workspaceServicePortRegistry ??
+      new WorkspaceServicePortRegistry({
+        catalog: this.workspaceAuthorityManager.catalog,
+      });
     this.worktreesRoot = daemonRuntimeConfig?.worktreesRoot;
     this.daemonConfigStore = daemonConfigStore;
     this.mcpBaseUrl = mcpBaseUrl;
@@ -548,6 +573,7 @@ export class DaemonWebSocketServer {
 
     this.wss = this.createWebSocketServer(server, wsConfig, auth);
     this.startRuntimeMetricsInterval();
+    this.startApplicationSocketLeaseInterval();
 
     this.logger.info("WebSocket server initialized on /ws");
   }
@@ -631,6 +657,20 @@ export class DaemonWebSocketServer {
     (runtimeMetricsInterval as unknown as { unref?: () => void }).unref?.();
   }
 
+  private startApplicationSocketLeaseInterval(): void {
+    const interval = setInterval(() => {
+      for (const ws of this.applicationSocketLease.listExpired()) {
+        this.closePhysicalSocket({
+          ws,
+          reason: "application_lease_expired",
+          logMessage: "Closing physical WebSocket with expired application lease",
+        });
+      }
+    }, APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS);
+    this.applicationSocketLeaseInterval = interval;
+    (interval as unknown as { unref?: () => void }).unref?.();
+  }
+
   // Main-loop stall visibility: terminal frames and agent traffic share one event
   // loop, so delay percentiles here are the ground truth for "the daemon is busy".
   private snapshotEventLoopDelay(): { p50Ms: number; p99Ms: number; maxMs: number } | null {
@@ -706,14 +746,7 @@ export class DaemonWebSocketServer {
   }
 
   public broadcast(message: WSOutboundMessage): void {
-    const payload = JSON.stringify(message);
-    for (const ws of this.sessions.keys()) {
-      // WebSocket.OPEN = 1
-      if (ws.readyState === 1) {
-        ws.send(payload);
-        this.runtimeMetrics.recordOutboundMessage(message, ws.bufferedAmount);
-      }
-    }
+    this.sendMessageToSockets(this.sessions.keys(), message);
   }
 
   public listActiveSessions(): Session[] {
@@ -750,6 +783,11 @@ export class DaemonWebSocketServer {
       clearInterval(this.runtimeMetricsInterval);
       this.runtimeMetricsInterval = null;
     }
+    if (this.applicationSocketLeaseInterval) {
+      clearInterval(this.applicationSocketLeaseInterval);
+      this.applicationSocketLeaseInterval = null;
+    }
+    this.applicationSocketLease.clear();
     this.flushRuntimeMetrics({ final: true });
     this.eventLoopDelayMonitor?.disable();
     this.eventLoopDelayMonitor = null;
@@ -822,29 +860,117 @@ export class DaemonWebSocketServer {
   }
 
   private sendToClient(ws: WebSocketLike, message: WSOutboundMessage): void {
-    // WebSocket.OPEN = 1. The check is a fast path; the socket can still
-    // transition to closed between here and ws.send(), so guard the send too —
-    // a synchronous throw here would propagate as an uncaughtException.
-    if (ws.readyState !== 1) {
+    this.sendMessageToSockets([ws], message);
+  }
+
+  private sendMessageToSockets(sockets: Iterable<WebSocketLike>, message: WSOutboundMessage): void {
+    const writableSockets = [...sockets].filter((ws) => this.ensureOutboundCapacity(ws, 0));
+    if (writableSockets.length === 0) {
       return;
     }
+
+    let payload: string;
     try {
-      ws.send(JSON.stringify(message));
-      this.runtimeMetrics.recordOutboundMessage(message, ws.bufferedAmount);
+      payload = JSON.stringify(message);
+    } catch (err) {
+      this.logger.warn({ err }, "ws_serialize_failed");
+      return;
+    }
+
+    const payloadBytes = outboundFrameByteLength(payload);
+    for (const ws of writableSockets) {
+      this.sendFrameToClient(ws, payload, payloadBytes, () => {
+        this.runtimeMetrics.recordOutboundMessage(message, ws.bufferedAmount);
+      });
+    }
+  }
+
+  private async sendBinaryToClientAndWait(ws: WebSocketLike, frame: Uint8Array): Promise<void> {
+    try {
+      const sent = await sendBoundedPhysicalFrameAndWait({
+        socket: ws,
+        frame,
+        onHighWater: () => this.closeAtOutboundHighWater(ws),
+      });
+      if (!sent) {
+        throw new Error("Physical WebSocket is not open");
+      }
+      this.runtimeMetrics.recordOutboundBinaryFrame(ws.bufferedAmount);
+    } catch (err) {
+      this.logger.warn({ err }, "ws_send_binary_failed");
+      throw err;
+    }
+  }
+
+  private sendFrameToClient(
+    ws: WebSocketLike,
+    frame: string | Uint8Array,
+    frameBytes: number,
+    recordSent: () => void,
+  ): void {
+    try {
+      const sent = sendBoundedPhysicalFrame({
+        socket: ws,
+        frame,
+        frameBytes,
+        onHighWater: () => this.closeAtOutboundHighWater(ws),
+      });
+      if (sent) recordSent();
     } catch (err) {
       this.logger.warn({ err }, "ws_send_failed");
     }
   }
 
-  private sendBinaryToClient(ws: WebSocketLike, frame: Uint8Array): void {
+  private ensureOutboundCapacity(ws: WebSocketLike, frameBytes: number): boolean {
+    if (ws.readyState !== 1) return false;
+    if (physicalSocketHasCapacity(ws, frameBytes)) return true;
+    this.closeAtOutboundHighWater(ws);
+    return false;
+  }
+
+  private closeAtOutboundHighWater(ws: WebSocketLike): void {
+    this.closePhysicalSocket({
+      ws,
+      reason: "outbound_high_water",
+      logMessage: "Closing physical WebSocket at outbound high-water mark",
+      logFields: {
+        bufferedAmount: ws.bufferedAmount,
+        maxBufferedBytes: MAX_PHYSICAL_SOCKET_BUFFERED_BYTES,
+      },
+    });
+  }
+
+  private closePhysicalSocket(params: ClosePhysicalSocketParams): void {
+    const { ws, reason, logMessage, logFields } = params;
+    this.applicationSocketLease.release(ws);
     if (ws.readyState !== 1) {
       return;
     }
+    if (reason === "application_lease_expired") {
+      this.incrementRuntimeCounter("applicationLeaseExpired");
+    } else {
+      this.incrementRuntimeCounter("outboundHighWaterClosed");
+    }
+    this.runtimeMetrics.recordTransportBufferedAmount(ws.bufferedAmount);
+    const identity = this.socketIdentities.get(ws);
+    this.logger.warn(
+      {
+        ...(identity ? toConnectionLogFields(identity) : {}),
+        ...logFields,
+      },
+      logMessage,
+    );
     try {
-      ws.send(frame);
-      this.runtimeMetrics.recordOutboundBinaryFrame(ws.bufferedAmount);
+      if (ws.terminate) {
+        ws.terminate();
+      } else {
+        ws.close();
+      }
     } catch (err) {
-      this.logger.warn({ err }, "ws_send_binary_failed");
+      this.logger.warn(
+        { err, ...(identity ? toConnectionLogFields(identity) : {}) },
+        "ws_close_failed",
+      );
     }
   }
 
@@ -854,10 +980,18 @@ export class DaemonWebSocketServer {
     }
   }
 
-  private sendBinaryToConnection(connection: SessionConnection, frame: Uint8Array): void {
-    for (const ws of connection.sockets) {
-      this.sendBinaryToClient(ws, frame);
+  private async sendBinaryToConnectionAndWait(
+    connection: SessionConnection,
+    frame: Uint8Array,
+    source?: object,
+  ): Promise<void> {
+    if (source && connection.sockets.has(source as WebSocketLike)) {
+      await this.sendBinaryToClientAndWait(source as WebSocketLike, frame);
+      return;
     }
+    await Promise.all(
+      [...connection.sockets].map((ws) => this.sendBinaryToClientAndWait(ws, frame)),
+    );
   }
 
   private async attachSocket(
@@ -929,17 +1063,21 @@ export class DaemonWebSocketServer {
       clientId,
       appVersion,
       clientCapabilities,
-      onMessage: (msg) => {
+      onMessage: (msg, source) => {
         if (!connection) {
+          return;
+        }
+        if (source && connection.sockets.has(source as WebSocketLike)) {
+          this.sendToClient(source as WebSocketLike, wrapSessionMessage(msg));
           return;
         }
         this.sendToConnection(connection, wrapSessionMessage(msg));
       },
-      onBinaryMessage: (frame) => {
+      onBinaryMessage: async (frame, source) => {
         if (!connection) {
           return;
         }
-        this.sendBinaryToConnection(connection, frame);
+        await this.sendBinaryToConnectionAndWait(connection, frame, source);
       },
       getTransportBufferedAmount: () => {
         if (!connection) {
@@ -1061,6 +1199,7 @@ export class DaemonWebSocketServer {
     }
 
     this.clearPendingConnection(ws);
+    this.applicationSocketLease.claim(ws);
     pending.identity.clientId = clientId;
     if (message.appVersion) {
       pending.identity.appVersion = message.appVersion;
@@ -1227,6 +1366,7 @@ export class DaemonWebSocketServer {
       error?: Error;
     },
   ): Promise<void> {
+    this.applicationSocketLease.release(ws);
     const identity = this.socketIdentities.get(ws);
     const identityFields = identity ? toConnectionLogFields(identity) : {};
     const pending = this.clearPendingConnection(ws);
@@ -1488,6 +1628,7 @@ export class DaemonWebSocketServer {
     if (!this.acceptingConnections) {
       return;
     }
+    this.applicationSocketLease.renew(ws);
     const activeConnection = this.sessions.get(ws);
     const pendingConnection = this.pendingConnections.get(ws);
     const log =
@@ -1523,6 +1664,7 @@ export class DaemonWebSocketServer {
       this.recordInboundMessageType(message.type);
 
       if (message.type === "ping") {
+        this.applicationSocketLease.claim(ws);
         this.sendToClient(ws, { type: "pong" });
         return;
       }
@@ -1588,7 +1730,7 @@ export class DaemonWebSocketServer {
       );
     }
     const startMs = performance.now();
-    await activeConnection.session.handleMessage(message.message);
+    await activeConnection.session.handleMessage(message.message, ws);
     const durationMs = performance.now() - startMs;
     this.recordRequestLatency(message.message.type, durationMs);
 

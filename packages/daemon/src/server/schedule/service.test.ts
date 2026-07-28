@@ -149,6 +149,7 @@ describe("ScheduleService", () => {
       output: "ran:Review new PRs",
     });
     const run = inspected.runs[0]!;
+    expect(run.workspaceId).toBe(WORKSPACE_ID);
     expect(run.taskId).toMatch(/^task-/);
     expect(run.executionId).toMatch(/^execution-/);
     const store = authority.forWorkspace(WORKSPACE_ID);
@@ -157,6 +158,12 @@ describe("ScheduleService", () => {
       workspaceId: WORKSPACE_ID,
       mode: "quick",
       status: "completed",
+      origin: {
+        type: "schedule",
+        ownerWorkspaceId: WORKSPACE_ID,
+        scheduleId: created.id,
+        runId: run.id,
+      },
     });
     expect(store.getExecution(run.executionId!)).toMatchObject({
       id: run.executionId,
@@ -235,10 +242,17 @@ describe("ScheduleService", () => {
     });
     expect(observedWorkspaceIds).toEqual([WORKSPACE_ID, worktreeId]);
     const run = completed.runs[0]!;
+    expect(run.workspaceId).toBe(worktreeId);
     expect(authority.forWorkspace(worktreeId).getTask(run.taskId!)).toMatchObject({
       id: run.taskId,
       workspaceId: worktreeId,
       status: "completed",
+      origin: {
+        type: "schedule",
+        ownerWorkspaceId: WORKSPACE_ID,
+        scheduleId: isolated.id,
+        runId: run.id,
+      },
     });
     expect(authority.forWorkspace(WORKSPACE_ID).getTask(run.taskId!)).toBeNull();
   });

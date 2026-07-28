@@ -13,7 +13,9 @@ import {
   type SessionInboundMessage,
   type SessionOutboundMessage,
   type GitSetupOptions,
+  type ListWorkspaceScriptsRequest,
   type StartWorkspaceScriptRequest,
+  type StopWorkspaceScriptRequest,
   type CloseItemsRequest,
   type DirectorySuggestionsRequest,
   type ProjectPlacementPayload,
@@ -348,6 +350,7 @@ export interface SessionRuntimeMetrics {
 type SessionRpcHandlers = {
   [Operation in ProtocolRpcOperation]: (
     message: ProtocolRpcRequest<Operation>,
+    source?: object,
   ) => void | Promise<void>;
 };
 
@@ -438,8 +441,8 @@ export interface SessionOptions {
   clientId: string;
   appVersion?: string | null;
   clientCapabilities?: Record<string, unknown> | null;
-  onMessage: (msg: SessionOutboundMessage) => void;
-  onBinaryMessage?: (frame: Uint8Array) => void;
+  onMessage: (msg: SessionOutboundMessage, source?: object) => void;
+  onBinaryMessage?: (frame: Uint8Array, source?: object) => void | Promise<void>;
   getTransportBufferedAmount?: () => number | null;
   onLifecycleIntent?: (intent: SessionLifecycleIntent) => void;
   logger: pino.Logger;
@@ -556,8 +559,10 @@ export class Session {
   private appVersion: string | null;
   private clientCapabilities: ReadonlySet<ClientCapability>;
   private readonly sessionId: string;
-  private readonly onMessage: (msg: SessionOutboundMessage) => void;
-  private readonly onBinaryMessage: ((frame: Uint8Array) => void) | null;
+  private readonly onMessage: (msg: SessionOutboundMessage, source?: object) => void;
+  private readonly onBinaryMessage:
+    | ((frame: Uint8Array, source?: object) => void | Promise<void>)
+    | null;
   private readonly getTransportBufferedAmount: () => number | null;
   private readonly onLifecycleIntent: ((intent: SessionLifecycleIntent) => void) | null;
   private readonly sessionLogger: pino.Logger;
@@ -686,8 +691,8 @@ export class Session {
     });
     this.workspaceFilesSession = new WorkspaceFilesSession({
       host: {
-        emit: (msg) => this.emit(msg),
-        emitBinary: (frame) => this.emitBinary(frame),
+        emit: (msg, source) => this.emit(msg, source),
+        emitBinary: (frame, source) => this.emitBinary(frame, source),
         hasBinaryChannel: () => this.onBinaryMessage !== null,
       },
       downloadTokenStore,
@@ -871,7 +876,11 @@ export class Session {
     this.terminalController = new TerminalSessionController({
       terminalManager,
       emit: (msg) => this.emit(msg),
-      emitBinary: (frame) => this.emitBinary(frame),
+      emitBinary: (frame) => {
+        void this.emitBinary(frame).catch((error) => {
+          this.sessionLogger.error({ err: error }, "Failed to emit terminal binary frame");
+        });
+      },
       hasBinaryChannel: () => this.onBinaryMessage !== null,
       isPathWithinRoot: (rootPath, candidatePath) => this.isPathWithinRoot(rootPath, candidatePath),
       sessionLogger: this.sessionLogger,
@@ -1443,7 +1452,8 @@ export class Session {
       restoreWorkspace: (msg) => this.handleRestoreWorkspaceRequest(msg),
       createWorkspace: (msg) => this.handleWorkspaceCreateRequest(msg),
       clearWorkspaceAttention: (msg) => this.handleWorkspaceClearAttentionRequest(msg),
-      requestFileExplorer: (msg) => this.workspaceFilesSession.handleFileExplorerRequest(msg),
+      requestFileExplorer: (msg, source) =>
+        this.workspaceFilesSession.handleFileExplorerRequest(msg, source),
       requestProjectIcon: (msg) => this.workspaceFilesSession.handleProjectIconRequest(msg),
       requestDownloadToken: (msg) => this.workspaceFilesSession.handleFileDownloadTokenRequest(msg),
       uploadFile: (msg) => this.workspaceFilesSession.handleFileUploadRequest(msg),
@@ -1468,7 +1478,9 @@ export class Session {
       unsubscribeTerminals: (msg) => this.terminalController.dispatch(msg),
       createTerminal: (msg) => this.terminalController.dispatch(msg),
       renameTerminal: (msg) => this.terminalController.dispatch(msg),
-      startWorkspaceScript: (msg) => this.handleStartWorkspaceScriptRequest(msg),
+      workspaceScriptList: (msg) => this.handleListWorkspaceScriptsRequest(msg),
+      workspaceScriptStart: (msg) => this.handleStartWorkspaceScriptRequest(msg),
+      workspaceScriptStop: (msg) => this.handleStopWorkspaceScriptRequest(msg),
       subscribeTerminal: (msg) => this.terminalController.dispatch(msg),
       unsubscribeTerminal: (msg) => this.terminalController.dispatch(msg),
       terminalInput: (msg) => this.terminalController.dispatch(msg),
@@ -1552,7 +1564,7 @@ export class Session {
   /**
    * Main entry point for processing session messages
    */
-  public async handleMessage(msg: SessionInboundMessage): Promise<void> {
+  public async handleMessage(msg: SessionInboundMessage, source?: object): Promise<void> {
     this.inflightRequests++;
     if (this.inflightRequests > this.peakInflightRequests) {
       this.peakInflightRequests = this.inflightRequests;
@@ -1566,7 +1578,7 @@ export class Session {
         "agent.session.inbound",
       );
       try {
-        await this.dispatchInboundMessage(msg);
+        await this.dispatchInboundMessage(msg, source);
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         this.sessionLogger.error({ err }, "Error handling message");
@@ -1575,45 +1587,51 @@ export class Session {
           "requestId" in msg && typeof msg.requestId === "string" ? msg.requestId : undefined;
         if (typeof requestId === "string") {
           try {
-            this.emit({
-              type: "rpc_error",
-              payload: {
-                requestId,
-                requestType: msg.type,
-                error: `Request failed: ${err.message}`,
-                code: "handler_error",
+            this.emit(
+              {
+                type: "rpc_error",
+                payload: {
+                  requestId,
+                  requestType: msg.type,
+                  error: `Request failed: ${err.message}`,
+                  code: "handler_error",
+                },
               },
-            });
+              source,
+            );
           } catch (emitError) {
             this.sessionLogger.error({ err: emitError }, "Failed to emit rpc_error");
           }
         }
 
-        this.emit({
-          type: "activity_log",
-          payload: {
-            id: uuidv4(),
-            timestamp: new Date(),
-            type: "error",
-            content: `Error: ${err.message}`,
+        this.emit(
+          {
+            type: "activity_log",
+            payload: {
+              id: uuidv4(),
+              timestamp: new Date(),
+              type: "error",
+              content: `Error: ${err.message}`,
+            },
           },
-        });
+          source,
+        );
       }
     } finally {
       this.inflightRequests--;
     }
   }
 
-  private async dispatchInboundMessage(msg: SessionInboundMessage): Promise<void> {
+  private async dispatchInboundMessage(msg: SessionInboundMessage, source?: object): Promise<void> {
     const operation = rpcRegistry.operationForRequestType(msg.type);
     if (!operation?.handlerKey) {
       throw new Error(`No RPC handler is registered for ${msg.type}`);
     }
     const handlers = this.rpcHandlers as unknown as Record<
       ProtocolRpcOperation,
-      (message: SessionInboundMessage) => void | Promise<void>
+      (message: SessionInboundMessage, source?: object) => void | Promise<void>
     >;
-    await handlers[operation.handlerKey as ProtocolRpcOperation](msg);
+    await handlers[operation.handlerKey as ProtocolRpcOperation](msg, source);
   }
 
   private async handleAgentProviderControlGetRequest(
@@ -5366,6 +5384,14 @@ export class Session {
     return this.workspaceScripts.start(request);
   }
 
+  private handleListWorkspaceScriptsRequest(request: ListWorkspaceScriptsRequest): Promise<void> {
+    return this.workspaceScripts.list(request);
+  }
+
+  private handleStopWorkspaceScriptRequest(request: StopWorkspaceScriptRequest): Promise<void> {
+    return this.workspaceScripts.stop(request);
+  }
+
   // COMPAT(desktopEditorBridge): added in v0.1.88, remove after 2026-12-03 once old clients no longer call daemon editor RPCs.
   private async handleLegacyListAvailableEditorsRequest(
     request: Extract<SessionInboundMessage, { type: "list_available_editors_request" }>,
@@ -6158,7 +6184,7 @@ export class Session {
   /**
    * Emit a message to the client
    */
-  private emit(msg: SessionOutboundMessage): void {
+  private emit(msg: SessionOutboundMessage, source?: object): void {
     // JSON.stringify(msg) is only computed when trace is enabled — it runs for
     // every outbound message otherwise, and trace is disabled by default.
     // Optional-chained because test logger stubs don't implement isLevelEnabled.
@@ -6171,17 +6197,21 @@ export class Session {
         "agent.session.outbound",
       );
     }
-    this.onMessage(msg);
+    if (source === undefined) {
+      this.onMessage(msg);
+    } else {
+      this.onMessage(msg, source);
+    }
   }
 
-  private emitBinary(frame: Uint8Array): void {
+  private async emitBinary(frame: Uint8Array, source?: object): Promise<void> {
     if (!this.onBinaryMessage) {
       return;
     }
-    try {
-      this.onBinaryMessage(frame);
-    } catch (error) {
-      this.sessionLogger.error({ err: error }, "Failed to emit binary frame");
+    if (source === undefined) {
+      await this.onBinaryMessage(frame);
+    } else {
+      await this.onBinaryMessage(frame, source);
     }
   }
 

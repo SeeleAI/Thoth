@@ -38,6 +38,7 @@ export type ScheduleTarget =
 
 export interface ScheduleRunRecord {
   id: string;
+  workspaceId: string | null;
   taskId: string | null;
   executionId: string | null;
   scheduledFor: string;

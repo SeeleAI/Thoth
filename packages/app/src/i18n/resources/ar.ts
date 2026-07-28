@@ -448,7 +448,7 @@ export const ar: TranslationResources = {
         terminal: "Terminal",
         browser: "المتصفح",
         agent: "Agent",
-        backgroundTasks: "Background tasks",
+        backgroundTasks: "Tasks",
         workspace: "Workspace",
       },
       switcher: {
@@ -460,6 +460,7 @@ export const ar: TranslationResources = {
         openFor: "فتح القائمة لـ{{label}}",
         copyResumeCommand: "نسخ أمر السيرة الذاتية",
         copyAgentId: "نسخ معرف الوكيل",
+        copyTerminalId: "نسخ معرّف الطرفية",
         copyFilePath: "Copy file path",
         rename: "إعادة تسمية",
         closeAbove: "إغلاق علامات التبويب أعلاه",
@@ -496,6 +497,7 @@ export const ar: TranslationResources = {
       toasts: {
         copyFailed: "فشل النسخ",
         agentIdCopiedLabel: "AgentID",
+        terminalIdCopiedLabel: "معرّف الطرفية",
         resumeCommandCopiedLabel: "أمر الاستئناف",
         filePathCopiedLabel: "File path",
         resumeIdUnavailable: "السيرة الذاتية ID غير متوفرة",
@@ -554,6 +556,7 @@ export const ar: TranslationResources = {
       title: "البرامج النصية",
       actions: {
         run: "يجري",
+        stop: "إيقاف",
         view: "منظر",
       },
       accessibility: {
@@ -561,11 +564,13 @@ export const ar: TranslationResources = {
         openAt: "افتح{{scriptName}}في{{label}}",
         viewTerminal: "عرض محطة{{scriptName}}",
         runScript: "قم بتشغيل البرنامج النصي{{scriptName}}",
+        stopScript: "أوقف البرنامج النصي {{scriptName}}",
         script: "البرنامج النصي{{scriptName}}",
       },
       states: {
         exitCode: "الخروج من{{code}}",
         startFailed: "فشل بدء تشغيل{{scriptName}}",
+        stopFailed: "فشل إيقاف {{scriptName}}",
       },
     },
     git: {
@@ -781,6 +786,7 @@ export const ar: TranslationResources = {
       closeSidebar: "إغلاق الشريط الجانبي",
     },
     sections: {
+      pinned: "مثبّت",
       sessions: "السجل",
     },
     worktreeSetup: {
@@ -823,6 +829,7 @@ export const ar: TranslationResources = {
       actions: {
         menu: "إجراءات Workspace",
         newWorkspace: "مساحة عمل جديدة",
+        pinWorkspace: "تثبيت مساحة العمل أو إلغاء تثبيتها",
         showMore: "عرض المزيد",
         showLess: "عرض أقل",
         createWorkspaceFor: "قم بإنشاء مساحة عمل جديدة لـ{{projectName}}",
@@ -919,7 +926,7 @@ export const ar: TranslationResources = {
       },
       keepRunning: {
         title: "استمر في تشغيل البرنامج الخفي بعد الإقلاع عن التدخين",
-        hint: "يستمر تشغيل Daemon عند إنهاء Thoth",
+        hint: "اترك هذا الخيار مفعّلًا لتستمر المهام والجداول بعد إغلاق Thoth. يؤدي تعطيله إلى إيقاف المهام المجدولة والمهام الخلفية عند الإغلاق.",
       },
       logs: {
         title: "ملف السجل",
@@ -1560,6 +1567,7 @@ export const ar: TranslationResources = {
       help: {
         openProject: "مشروع مفتوح",
         newWorkspace: "مساحة عمل جديدة",
+        pinWorkspace: "تثبيت مساحة العمل أو إلغاء تثبيتها",
         newWorktree: "شجرة عمل جديدة",
         archiveWorktree: "أرشفة شجرة العمل",
         newTab: "علامة تبويب جديدة",

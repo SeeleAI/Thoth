@@ -3,8 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Logger } from "pino";
 import { z } from "zod";
-import type { ProviderUsage, ProviderUsageWindow } from "../../../server/messages.js";
-import type { ProviderApiFetch, ProviderUsageFetcher } from "../provider.js";
+import type { ProviderUsage, ProviderUsageWindow } from "@thoth/protocol/messages";
+import type { ProviderApiFetch, ProviderUsageReader } from "../provider.js";
 import {
   ApiNumberSchema,
   ApiOptionalStringSchema,
@@ -144,7 +144,7 @@ function toWeeklyWindow(modelName: string, model: MiniMaxModelRemain): ProviderU
   });
 }
 
-export class MiniMaxQuotaProvider implements ProviderUsageFetcher {
+export class MiniMaxQuotaProvider implements ProviderUsageReader {
   readonly providerId = "minimax";
   readonly displayName = "MiniMax";
 

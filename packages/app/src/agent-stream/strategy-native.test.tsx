@@ -105,6 +105,7 @@ describe("createNativeStreamStrategy", () => {
           onNearHistoryStart: vi.fn(),
           isLoadingOlderHistory: false,
           hasOlderHistory: false,
+          olderHistoryProgressKey: null,
           scrollEnabled: true,
           listStyle: null,
           baseListContentContainerStyle: null,

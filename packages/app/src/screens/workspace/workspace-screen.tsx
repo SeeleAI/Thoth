@@ -113,7 +113,7 @@ import {
   WorkspaceTabOptionRow,
   type WorkspaceTabPresentation,
 } from "@/screens/workspace/workspace-tab-presentation";
-import { BackgroundTasksSurface } from "@/panels/background-tasks-panel";
+import { TasksSurface } from "@/panels/background-tasks-panel";
 import {
   BACKGROUND_TASKS_SURFACE_DEFAULT_WIDTH,
   clampBackgroundTasksSurfaceWidth,
@@ -393,6 +393,7 @@ interface MobileWorkspaceTabSwitcherProps {
   onSelectSwitcherTab: (key: string) => void;
   onCopyResumeCommand: (agentId: string) => Promise<void> | void;
   onCopyAgentId: (agentId: string) => Promise<void> | void;
+  onCopyTerminalId: (terminalId: string) => Promise<void> | void;
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
@@ -537,6 +538,7 @@ function MobileWorkspaceTabOption({
   onPress,
   onCopyResumeCommand,
   onCopyAgentId,
+  onCopyTerminalId,
   onCopyFilePath,
   onReloadAgent,
   onRenameTab,
@@ -555,6 +557,7 @@ function MobileWorkspaceTabOption({
   onPress: () => void;
   onCopyResumeCommand: (agentId: string) => Promise<void> | void;
   onCopyAgentId: (agentId: string) => Promise<void> | void;
+  onCopyTerminalId: (terminalId: string) => Promise<void> | void;
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
@@ -574,6 +577,7 @@ function MobileWorkspaceTabOption({
     menuTestIDBase,
     onCopyResumeCommand,
     onCopyAgentId,
+    onCopyTerminalId,
     onCopyFilePath,
     onReloadAgent,
     onRenameTab,
@@ -641,6 +645,7 @@ const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitcher({
   onSelectSwitcherTab,
   onCopyResumeCommand,
   onCopyAgentId,
+  onCopyTerminalId,
   onCopyFilePath,
   onReloadAgent,
   onRenameTab,
@@ -697,6 +702,7 @@ const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitcher({
           onPress={onPress}
           onCopyResumeCommand={onCopyResumeCommand}
           onCopyAgentId={onCopyAgentId}
+          onCopyTerminalId={onCopyTerminalId}
           onCopyFilePath={onCopyFilePath}
           onReloadAgent={onReloadAgent}
           onRenameTab={onRenameTab}
@@ -715,6 +721,7 @@ const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitcher({
       normalizedWorkspaceId,
       onCopyResumeCommand,
       onCopyAgentId,
+      onCopyTerminalId,
       onCopyFilePath,
       onReloadAgent,
       onRenameTab,
@@ -2723,6 +2730,19 @@ function WorkspaceScreenContent({
     [toast, t],
   );
 
+  const handleCopyTerminalId = useCallback(
+    async (terminalId: string) => {
+      if (!terminalId) return;
+      try {
+        await Clipboard.setStringAsync(terminalId);
+        toast.copied(t("workspace.tabs.toasts.terminalIdCopiedLabel"));
+      } catch {
+        toast.error(t("workspace.tabs.toasts.copyFailed"));
+      }
+    },
+    [toast, t],
+  );
+
   const handleCopyFilePath = useCallback(
     async (path: string) => {
       if (!path) return;
@@ -3567,6 +3587,7 @@ function WorkspaceScreenContent({
         onCloseTab={handleCloseTabById}
         onCopyResumeCommand={handleCopyResumeCommand}
         onCopyAgentId={handleCopyAgentId}
+        onCopyTerminalId={handleCopyTerminalId}
         onCopyFilePath={handleCopyFilePath}
         onReloadAgent={handleReloadAgent}
         onRenameTab={handleRenameTab}
@@ -3602,6 +3623,7 @@ function WorkspaceScreenContent({
     handleCloseTabById,
     handleCopyResumeCommand,
     handleCopyAgentId,
+    handleCopyTerminalId,
     handleCopyFilePath,
     handleReloadAgent,
     handleRenameTab,
@@ -3637,11 +3659,11 @@ function WorkspaceScreenContent({
           <View style={styles.backgroundTasksHeader}>
             <View style={styles.backgroundTasksHeaderTitle}>
               <ThemedListTodo size={16} uniProps={mutedColorMapping} />
-              <Text style={styles.backgroundTasksHeaderText}>Background Tasks</Text>
+              <Text style={styles.backgroundTasksHeaderText}>Tasks</Text>
             </View>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Close Background Tasks"
+              accessibilityLabel="Close Tasks"
               onPress={handleCloseBackgroundTasksSurface}
               style={styles.backgroundTasksCloseButton}
               testID="workspace-background-tasks-close"
@@ -3656,10 +3678,7 @@ function WorkspaceScreenContent({
           </View>
         ) : null}
         <View style={styles.backgroundTasksSurfaceBody}>
-          <BackgroundTasksSurface
-            serverId={normalizedServerId}
-            workspaceId={normalizedWorkspaceId}
-          />
+          <TasksSurface serverId={normalizedServerId} workspaceId={normalizedWorkspaceId} />
         </View>
       </View>
     ) : null;
@@ -3724,6 +3743,7 @@ function WorkspaceScreenContent({
           onSelectSwitcherTab={handleSelectSwitcherTab}
           onCopyResumeCommand={handleCopyResumeCommand}
           onCopyAgentId={handleCopyAgentId}
+          onCopyTerminalId={handleCopyTerminalId}
           onCopyFilePath={handleCopyFilePath}
           onReloadAgent={handleReloadAgent}
           onRenameTab={handleRenameTab}
@@ -3746,6 +3766,7 @@ function WorkspaceScreenContent({
           onCloseTab={handleCloseTabById}
           onCopyResumeCommand={handleCopyResumeCommand}
           onCopyAgentId={handleCopyAgentId}
+          onCopyTerminalId={handleCopyTerminalId}
           onCopyFilePath={handleCopyFilePath}
           onReloadAgent={handleReloadAgent}
           onRenameTab={handleRenameTab}

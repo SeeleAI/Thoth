@@ -848,6 +848,49 @@ or a replacement attempt fences the old generation.
 - Daemon PID locks carry heartbeat and instance fencing. Shutdown rejects new session/provider registrations before
   draining in-flight registration; failed initialization releases processes, handles, and leases.
 
+### Tasks, Schedules and Workspace scripts
+
+- `TaskProjection.origin` is nullable and, when present, identifies the owner Workspace, Schedule and run. A
+  Schedule run separately records nullable actual execution Workspace, Task and ExecutionAttempt identifiers.
+  These are canonical contract projections, not App-computed links; pre-v4 rows with unprovable execution
+  Workspace stay `null`.
+- The product presents one `Tasks` entry with `Tasks | Schedules`. The Tasks projection includes Loop, manual
+  background and Schedule-origin Tasks. Schedules management never creates a parallel list authority.
+- Protocol Registry and Client expose only Workspace-script list/start/stop. Workspace authority validates the
+  configured script; Host runtime SQLite stores the generation-fenced process/terminal/route/port receipt; the
+  in-memory process handle is rebuildable. Start/stop use the existing service-port `reserve -> spawn -> activate`
+  transaction and release every acquired resource on failure, abort or stop.
+- Provider tools do not accept `workspaceId`. ToolGateway derives Workspace, Agent, execution/turn and generation
+  from the current binding. Clarify may list only; eligible Quick/Loop execution requires explicit permission for
+  start/stop. Raw Thoth-off execution receives no RuntimeBundle tool.
+
+### Physical transport, E2EE and file streaming
+
+- One Daemon-owned physical socket carries a maximum 8 MiB queued-byte high-water and a 45-second application
+  lease scanned every 10 seconds. Valid application activity/heartbeat renews the current physical connection;
+  replacement sockets cannot be killed by a stale lease. Expiry closes only that socket and is reported in
+  diagnostics.
+- E2EE hello/ready negotiates `binaryCiphertext`. Negotiated text remains encrypted base64 text; negotiated binary
+  application payloads remain encrypted binary WebSocket frames. A legacy peer uses the one explicit base64
+  compatibility branch until the supported peer floor permits removal after `2027-01-27`. Frame identity comes
+  from the physical callback, never from decrypted UTF-8 guessing.
+- File transfer advertises size and optional revision from one read-only handle, then awaits independent 256 KiB
+  sends. Growth sends only the advertised prefix but a changed final revision aborts; shrink, overwrite,
+  premature EOF, read/send error or byte-count mismatch cannot emit or expose success. Client aggregates by
+  `requestId` and reveals no partial result.
+- Relay forwards opaque text/binary ciphertext and owns no plaintext, offline queue, Task state or global send
+  queue. Direct and Relay transports normalize `void | Promise<void>` send completion at the same boundary.
+
+### Provider usage and runtime ancestry
+
+- Drivers own the `ProviderUsageReader` SPI, credentials/API parsing, model/surface-scoped Claude windows, OMP
+  effort metadata and Provider-native ancestry. Daemon registers normalized readers, performs TTL cache/in-flight
+  deduplication and aggregates receipts without importing parsers or inspecting Provider identity.
+- Idle release uses a 30-minute policy. A running or pending managed/provider-native descendant pins its ancestor;
+  completed/canceled/error descendants do not. Parent close drains child events, and forced termination
+  canonicalizes any still-running child to canceled. Child traces remain bounded, nested, read-only Timeline data
+  and never create Agent, Task or Workspace authority.
+
 ### Stop and cancellation
 
 Stop order is fixed:
@@ -892,6 +935,9 @@ Other security rules:
 - Relay pairing credentials are not long-lived login tokens.
 - Provider auth is managed by the Provider's official control surface; Thoth does not fake auth tests.
 - Workspace file/path operations must pass daemon boundary validation.
+- HTTP service proxy and WebSocket upgrade share one `ForwardedAuthorityResolver`. Direct `Host` and
+  `X-Forwarded-*` input is untrusted; only a configured trusted peer may forward proto/host/port, and the result
+  must match registered route or configured `publicBaseUrl` authority with a valid non-conflicting port.
 
 ## Relay and multi-device sync
 

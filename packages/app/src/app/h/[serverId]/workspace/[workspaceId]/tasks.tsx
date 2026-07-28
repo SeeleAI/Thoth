@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { ArrowLeft, ListTodo } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { HostRouteBootstrapBoundary } from "@/components/host-route-bootstrap-boundary";
-import { BackgroundTasksSurface } from "@/panels/background-tasks-panel";
+import { TasksSurface } from "@/panels/background-tasks-panel";
 import { useBackgroundTasksSurfaceStore } from "@/stores/background-tasks-surface-store";
 import { buildHostWorkspaceRoute, decodeWorkspaceIdFromPathSegment } from "@/utils/host-routes";
 
@@ -26,15 +26,15 @@ function getParamValue(value: string | string[] | undefined): string {
   return "";
 }
 
-export default function BackgroundTasksRoute() {
+export default function TasksRoute() {
   return (
     <HostRouteBootstrapBoundary>
-      <BackgroundTasksRouteContent />
+      <TasksRouteContent />
     </HostRouteBootstrapBoundary>
   );
 }
 
-function BackgroundTasksRouteContent() {
+function TasksRouteContent() {
   const params = useLocalSearchParams<{
     serverId?: string | string[];
     workspaceId?: string | string[];
@@ -70,17 +70,17 @@ function BackgroundTasksRouteContent() {
           accessibilityLabel="Back to workspace"
           onPress={handleBack}
           style={styles.backButton}
-          testID="background-tasks-mobile-back"
+          testID="tasks-mobile-back"
         >
           <ThemedArrowLeft size={20} uniProps={mutedColorMapping} />
         </Pressable>
         <View style={styles.titleGroup}>
           <ThemedListTodo size={18} uniProps={mutedColorMapping} />
-          <Text style={styles.title}>Background Tasks</Text>
+          <Text style={styles.title}>Tasks</Text>
         </View>
       </View>
       <View style={styles.surface}>
-        <BackgroundTasksSurface serverId={serverId} workspaceId={workspaceId} />
+        <TasksSurface serverId={serverId} workspaceId={workspaceId} />
       </View>
     </View>
   );

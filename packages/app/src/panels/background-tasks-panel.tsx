@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { router } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import {
   CheckCircle2,
+  CalendarClock,
   Clock3,
   ListTodo,
   Pause,
@@ -21,12 +23,14 @@ import { ResizeHandle } from "@/components/resize-handle";
 import { isWeb } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { SchedulesPanel } from "@/panels/schedules-panel";
 import {
   buildBackgroundTasksSurfaceKey,
   clampBackgroundTasksListWidth,
   shouldStackBackgroundTasksSurface,
   useBackgroundTasksSurfaceStore,
 } from "@/stores/background-tasks-surface-store";
+import { buildHostWorkspaceTasksRoute } from "@/utils/host-routes";
 
 const BACKGROUND_TASKS_NARROW_DETAIL_HEADER_WIDTH = 520;
 const TIMELINE_PAGE_SIZE = 200;
@@ -219,7 +223,48 @@ function ActionButton({
   );
 }
 
-export function BackgroundTasksSurface({
+export function TasksSurface({ serverId, workspaceId }: { serverId: string; workspaceId: string }) {
+  const surfaceKey = buildBackgroundTasksSurfaceKey({ serverId, workspaceId });
+  const activeTab = useBackgroundTasksSurfaceStore(
+    (state) => state.byWorkspaceKey[surfaceKey]?.activeTab ?? "tasks",
+  );
+  const updateSurface = useBackgroundTasksSurfaceStore((state) => state.updateSurface);
+  return (
+    <View style={styles.tasksSurfaceRoot} testID="tasks-surface">
+      <View style={styles.tasksTabBar} accessibilityRole="tablist">
+        <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === "tasks" }}
+          testID="tasks-tab"
+          onPress={() => updateSurface({ serverId, workspaceId, activeTab: "tasks" })}
+          style={[styles.tasksTab, activeTab === "tasks" && styles.tasksTabActive]}
+        >
+          <ListTodo size={15} />
+          <Text style={styles.tasksTabText}>Tasks</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === "schedules" }}
+          testID="schedules-tab"
+          onPress={() => updateSurface({ serverId, workspaceId, activeTab: "schedules" })}
+          style={[styles.tasksTab, activeTab === "schedules" && styles.tasksTabActive]}
+        >
+          <CalendarClock size={15} />
+          <Text style={styles.tasksTabText}>Schedules</Text>
+        </Pressable>
+      </View>
+      <View style={styles.tasksTabContent}>
+        {activeTab === "tasks" ? (
+          <TaskManagementSurface serverId={serverId} workspaceId={workspaceId} />
+        ) : (
+          <SchedulesPanel serverId={serverId} workspaceId={workspaceId} />
+        )}
+      </View>
+    </View>
+  );
+}
+
+function TaskManagementSurface({
   serverId,
   workspaceId,
 }: {
@@ -620,6 +665,19 @@ export function BackgroundTasksSurface({
     [serverId, surfaceWidth, taskListResizeSizes, updateSurface, workspaceId],
   );
 
+  const handleOpenScheduleOrigin = useCallback(() => {
+    const origin = selectedTask?.origin;
+    if (!origin) return;
+    updateSurface({
+      serverId,
+      workspaceId: origin.ownerWorkspaceId,
+      open: true,
+      activeTab: "schedules",
+      selectedScheduleId: origin.scheduleId,
+    });
+    router.push(buildHostWorkspaceTasksRoute(serverId, origin.ownerWorkspaceId));
+  }, [selectedTask?.origin, serverId, updateSurface]);
+
   if (!client) {
     return (
       <View style={styles.emptyState}>
@@ -667,7 +725,12 @@ export function BackgroundTasksSurface({
               >
                 <Text style={styles.taskRowTitle}>{task.title}</Text>
                 <Text style={styles.taskRowMeta}>
-                  {task.mode === "loop" ? "Loop" : "Quick"} | {taskStatusLabel(task.status)}
+                  {task.origin?.type === "schedule"
+                    ? "Scheduled"
+                    : task.mode === "loop"
+                      ? "Loop"
+                      : "Quick"}{" "}
+                  | {taskStatusLabel(task.status)}
                 </Text>
                 <Text style={styles.taskRowSummary} numberOfLines={2}>
                   {task.summary}
@@ -702,6 +765,15 @@ export function BackgroundTasksSurface({
                 </Text>
               </View>
               <View style={styles.headerActions}>
+                {selectedTask.origin?.type === "schedule" ? (
+                  <ActionButton
+                    testID="background-task-open-schedule"
+                    label="Open Schedule"
+                    icon={<CalendarClock size={14} />}
+                    disabled={pendingAction !== null}
+                    onPress={handleOpenScheduleOrigin}
+                  />
+                ) : null}
                 <ActionButton
                   testID="background-task-resume"
                   label="Resume"
@@ -1059,6 +1131,32 @@ export function BackgroundTasksSurface({
 }
 
 const styles = StyleSheet.create((theme) => ({
+  tasksSurfaceRoot: { flex: 1, minHeight: 0, backgroundColor: theme.colors.surface0 },
+  tasksTabBar: {
+    minHeight: 42,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[3],
+    borderBottomWidth: theme.borderWidth[1],
+    borderBottomColor: theme.colors.border,
+  },
+  tasksTab: {
+    minHeight: 40,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[3],
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  tasksTabActive: { borderBottomColor: theme.colors.accentBright },
+  tasksTabText: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+  },
+  tasksTabContent: { flex: 1, minHeight: 0 },
   root: { flex: 1, flexDirection: "row", backgroundColor: theme.colors.surface0 },
   rootStacked: { flexDirection: "column" },
   sidebar: {

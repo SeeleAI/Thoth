@@ -64,7 +64,7 @@ import {
 import { useWindowControlsPadding } from "@/utils/desktop-window";
 import { canCloseLeftSidebarGesture } from "@/utils/sidebar-animation-state";
 import {
-  buildHostWorkspaceBackgroundTasksRoute,
+  buildHostWorkspaceTasksRoute,
   buildHostWorkspaceRoute,
   buildOpenProjectRoute,
   buildNewWorkspaceRoute,
@@ -244,7 +244,7 @@ export const LeftSidebar = memo(function LeftSidebar({
     (): SidebarLabels => ({
       addProject: t("sidebar.actions.addProject"),
       newWorkspace: t("sidebar.actions.newWorkspace"),
-      backgroundTasks: "Background tasks",
+      backgroundTasks: "Tasks",
       home: t("sidebar.actions.home"),
       settings: t("sidebar.actions.settings"),
       switchHost: t("sidebar.host.switchTitle"),
@@ -521,7 +521,7 @@ const SidebarBackgroundTasksHeaderRow = memo(function SidebarBackgroundTasksHead
     openSurface({ serverId: activeWorkspaceServerId, workspaceId: activeWorkspaceId });
     router.push(
       isCompactLayout
-        ? buildHostWorkspaceBackgroundTasksRoute(activeWorkspaceServerId, activeWorkspaceId)
+        ? buildHostWorkspaceTasksRoute(activeWorkspaceServerId, activeWorkspaceId)
         : buildHostWorkspaceRoute(activeWorkspaceServerId, activeWorkspaceId),
     );
   }, [activeWorkspaceId, activeWorkspaceServerId, isCompactLayout, onBeforeNavigate, openSurface]);
@@ -811,7 +811,7 @@ function MobileSidebar({
               />
               <SidebarBackgroundTasksHeaderRow
                 label={labels.backgroundTasks}
-                testID="sidebar-background-tasks"
+                testID="sidebar-tasks"
                 variant="compact"
                 onBeforeNavigate={closeSidebar}
               />
@@ -986,7 +986,7 @@ function DesktopSidebar({
             />
             <SidebarBackgroundTasksHeaderRow
               label={labels.backgroundTasks}
-              testID="sidebar-background-tasks"
+              testID="sidebar-tasks"
               variant="compact"
             />
             <SidebarHeaderRow

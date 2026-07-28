@@ -34,6 +34,7 @@ const SCHEDULE_MUTATION_LEASE_HEARTBEAT_MS = 10_000;
 const SCHEDULE_MUTATION_LEASE_RETRY_MS = 50;
 
 interface ScheduledAuthorityBinding {
+  workspaceId: string;
   taskId: string;
   executionId: string;
   generation: string;
@@ -491,6 +492,7 @@ export class ScheduleService {
     const runId = randomUUID();
     const runningRun: ScheduleRun = {
       id: runId,
+      workspaceId: null,
       taskId: null,
       executionId: null,
       scheduledFor: manual ? now.toISOString() : (schedule.nextRunAt ?? now.toISOString()),
@@ -519,7 +521,12 @@ export class ScheduleService {
           runId,
         );
       } catch (error) {
-        authorityBinding = await this.beginScheduledAuthority(workspaceId, scheduleWithRun, runId);
+        authorityBinding = await this.beginScheduledAuthority(
+          workspaceId,
+          scheduleWithRun,
+          runId,
+          workspaceId,
+        );
         this.recordRunAuthority(workspaceId, schedule.id, runId, authorityBinding);
         throw error;
       }
@@ -527,6 +534,7 @@ export class ScheduleService {
         executionWorkspaceId,
         scheduleWithRun,
         runId,
+        workspaceId,
       );
       this.recordRunAuthority(workspaceId, schedule.id, runId, authorityBinding);
       leaseHeartbeat = setInterval(() => {
@@ -598,6 +606,7 @@ export class ScheduleService {
     workspaceId: string,
     schedule: StoredSchedule,
     runId: string,
+    ownerWorkspaceId: string,
   ): Promise<ScheduledAuthorityBinding> {
     const store = this.authority.forWorkspace(workspaceId);
     const now = this.now().toISOString();
@@ -673,6 +682,7 @@ export class ScheduleService {
       providerProfileId,
       taskContract: {
         source: "schedule",
+        ownerWorkspaceId,
         scheduleId: schedule.id,
         runId,
         title: task.title,
@@ -735,7 +745,7 @@ export class ScheduleService {
         prompt: schedule.prompt,
       },
     });
-    return { taskId: registered.task.id, executionId, generation, store };
+    return { workspaceId, taskId: registered.task.id, executionId, generation, store };
   }
 
   private recordRunAuthority(
@@ -754,6 +764,7 @@ export class ScheduleService {
         run.id === runId
           ? {
               ...run,
+              workspaceId: binding.workspaceId,
               taskId: binding.taskId,
               executionId: binding.executionId,
             }

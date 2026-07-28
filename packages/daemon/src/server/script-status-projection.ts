@@ -98,10 +98,12 @@ function projectWorkspaceServiceState(params: {
 
 function buildConfiguredPlainScriptPayload(
   scriptName: string,
+  command: string,
   runtimeEntry: RuntimeEntry | null,
 ): WorkspaceScriptPayload {
   return {
     scriptName,
+    command,
     type: "script",
     hostname: scriptName,
     port: null,
@@ -122,7 +124,7 @@ function buildConfiguredScriptPayload(
 ): WorkspaceScriptPayload {
   const configIsService = isServiceScript(config);
   if (!configIsService) {
-    return buildConfiguredPlainScriptPayload(scriptName, runtimeEntry);
+    return buildConfiguredPlainScriptPayload(scriptName, config.command, runtimeEntry);
   }
 
   const type = "service";
@@ -150,6 +152,7 @@ function buildConfiguredScriptPayload(
 
   return {
     scriptName,
+    command: config.command,
     type,
     hostname,
     port: serviceState?.port ?? configuredPort,
@@ -194,6 +197,7 @@ function buildOrphanRuntimePayload(
 
   return {
     scriptName: runtimeEntry.scriptName,
+    command: null,
     type,
     hostname,
     port: type === "service" ? (serviceState?.port ?? null) : null,

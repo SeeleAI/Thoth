@@ -6677,6 +6677,332 @@ test("idle runtime collection skips internal, running, errored, and protected Ag
   }
 });
 
+test("idle runtime collection keeps every ancestor resident while a managed descendant runs", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-idle-managed-tree-"));
+  const ids = [
+    "00000000-0000-4000-8000-000000000129",
+    "00000000-0000-4000-8000-000000000130",
+    "00000000-0000-4000-8000-000000000131",
+    "00000000-0000-4000-8000-000000000132",
+  ];
+  const adapter = new IdleRuntimeAdapter();
+  const manager = new ExecutionService({
+    adapters: { codex: adapter },
+    logger,
+    idFactory: () => ids.shift()!,
+  });
+
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir });
+    const child = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      labels: { [PARENT_AGENT_ID_LABEL]: parent.id },
+    });
+    const grandchild = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      labels: { [PARENT_AGENT_ID_LABEL]: child.id },
+    });
+    const independent = await manager.createAgent({ provider: "codex", cwd: workdir });
+
+    adapter.createdThreads[2]?.pushEvent({
+      type: "turn_started",
+      provider: "codex",
+      turnId: "managed-grandchild-running",
+    });
+    await vi.waitFor(() => {
+      expect(manager.getAgent(grandchild.id)?.lifecycle).toBe("running");
+    });
+
+    const first = await manager.collectIdleAgentRuntimes({
+      cutoff: new Date(
+        Math.max(...manager.listAgents().map((agent) => agent.updatedAt.getTime())) + 1,
+      ),
+    });
+
+    expect(first.releasedAgentIds).toEqual([independent.id]);
+    expect(manager.hasRunnableSession(parent.id)).toBe(true);
+    expect(manager.hasRunnableSession(child.id)).toBe(true);
+    expect(manager.hasRunnableSession(grandchild.id)).toBe(true);
+
+    adapter.createdThreads[2]?.pushEvent({
+      type: "turn_completed",
+      provider: "codex",
+      turnId: "managed-grandchild-running",
+    });
+    await vi.waitFor(() => {
+      expect(manager.getAgent(grandchild.id)?.lifecycle).toBe("idle");
+    });
+    const second = await manager.collectIdleAgentRuntimes({
+      cutoff: new Date(
+        Math.max(...manager.listAgents().map((agent) => agent.updatedAt.getTime())) + 1,
+      ),
+    });
+
+    expect(new Set(second.releasedAgentIds)).toEqual(new Set([parent.id, child.id, grandchild.id]));
+  } finally {
+    for (const agent of manager.listAgents()) {
+      if (manager.hasRunnableSession(agent.id)) {
+        await manager.closeAgent(agent.id).catch(() => undefined);
+      }
+    }
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("idle runtime collection keeps a parent resident until its Provider-native child completes", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-idle-provider-child-"));
+  const ids = ["00000000-0000-4000-8000-000000000133", "00000000-0000-4000-8000-000000000134"];
+  const adapter = new IdleRuntimeAdapter();
+  const manager = new ExecutionService({
+    adapters: { codex: adapter },
+    logger,
+    idFactory: () => ids.shift()!,
+  });
+  const runningChild: AgentTimelineItem = {
+    type: "tool_call",
+    callId: "provider-native-child",
+    name: "spawn_agent",
+    status: "running",
+    error: null,
+    detail: {
+      type: "sub_agent",
+      childSessionId: "provider-child-thread",
+      description: "Review the parent work",
+      log: "reviewing",
+    },
+  };
+
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir });
+    const independent = await manager.createAgent({ provider: "codex", cwd: workdir });
+    adapter.createdThreads[0]?.pushEvent({
+      type: "timeline",
+      provider: "codex",
+      item: runningChild,
+    });
+    await vi.waitFor(() => {
+      expect(manager.getTimeline(parent.id)).toContainEqual(runningChild);
+    });
+
+    const first = await manager.collectIdleAgentRuntimes({
+      cutoff: new Date(
+        Math.max(...manager.listAgents().map((agent) => agent.updatedAt.getTime())) + 1,
+      ),
+    });
+
+    expect(first.releasedAgentIds).toEqual([independent.id]);
+    expect(manager.hasRunnableSession(parent.id)).toBe(true);
+
+    adapter.createdThreads[0]?.pushEvent({
+      type: "timeline",
+      provider: "codex",
+      item: { ...runningChild, status: "completed" },
+    });
+    await vi.waitFor(() => {
+      expect(manager.getTimeline(parent.id).at(-1)).toMatchObject({
+        type: "tool_call",
+        callId: "provider-native-child",
+        status: "completed",
+      });
+    });
+    const second = await manager.collectIdleAgentRuntimes({
+      cutoff: new Date((manager.getAgent(parent.id)?.updatedAt.getTime() ?? 0) + 1),
+    });
+
+    expect(second.releasedAgentIds).toEqual([parent.id]);
+  } finally {
+    for (const agent of manager.listAgents()) {
+      if (manager.hasRunnableSession(agent.id)) {
+        await manager.closeAgent(agent.id).catch(() => undefined);
+      }
+    }
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("closing a runtime durably cancels every still-running Provider-native child trace", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-close-provider-child-"));
+  const timeline = new SqliteAgentTimelineStore(workdir);
+  const adapter = new IdleRuntimeAdapter();
+  const manager = new ExecutionService({
+    adapters: { codex: adapter },
+    durableTimelineStore: timeline,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000135",
+  });
+
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir });
+    adapter.createdThreads[0]?.pushEvent({
+      type: "timeline",
+      provider: "codex",
+      item: {
+        type: "tool_call",
+        callId: "provider-native-child-close",
+        name: "spawn_agent",
+        status: "running",
+        error: null,
+        detail: {
+          type: "sub_agent",
+          childSessionId: "provider-child-thread-close",
+          log: "still running",
+        },
+      },
+    });
+    await vi.waitFor(() => {
+      expect(manager.getTimeline(parent.id)).toHaveLength(1);
+    });
+
+    await manager.closeAgent(parent.id);
+    await manager.flush();
+
+    const childUpdates = (await timeline.getCommittedRows(parent.id))
+      .map((row) => row.item)
+      .filter(
+        (item) =>
+          item.type === "tool_call" &&
+          item.callId === "provider-native-child-close" &&
+          item.detail.type === "sub_agent",
+      );
+    expect(childUpdates.map((item) => item.status)).toEqual(["running", "canceled"]);
+    expect(manager.listAgents()).toEqual([]);
+  } finally {
+    await manager.flush().catch(() => undefined);
+    timeline.close();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("idle collection waits for descendant registration and observes its initial running event", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-idle-registration-race-"));
+  const childCreationStarted = deferred<void>();
+  const childCreationAllowed = deferred<void>();
+  const ids = ["00000000-0000-4000-8000-000000000136", "00000000-0000-4000-8000-000000000137"];
+
+  class InitiallyRunningChildThread extends IdleRuntimeThread {
+    override subscribe(callback: (event: AgentStreamEvent) => void): () => void {
+      const unsubscribe = super.subscribe(callback);
+      callback({
+        type: "turn_started",
+        provider: "codex",
+        turnId: "child-registration-turn",
+      });
+      return unsubscribe;
+    }
+  }
+
+  class HeldChildRegistrationAdapter extends IdleRuntimeAdapter {
+    private creationCount = 0;
+
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
+      this.creationCount += 1;
+      if (this.creationCount === 1) {
+        return await super.createSession(config);
+      }
+      childCreationStarted.resolve(undefined);
+      await childCreationAllowed.promise;
+      const thread = new InitiallyRunningChildThread(config);
+      this.createdThreads.push(thread);
+      return thread;
+    }
+  }
+
+  const adapter = new HeldChildRegistrationAdapter();
+  const manager = new ExecutionService({
+    adapters: { codex: adapter },
+    logger,
+    idFactory: () => ids.shift()!,
+  });
+
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir });
+    const childPromise = manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      labels: { [PARENT_AGENT_ID_LABEL]: parent.id },
+    });
+    await childCreationStarted.promise;
+
+    let collectionSettled = false;
+    const collectionPromise = manager
+      .collectIdleAgentRuntimes({ cutoff: new Date(parent.updatedAt.getTime() + 1) })
+      .then((result) => {
+        collectionSettled = true;
+        return result;
+      });
+    await Promise.resolve();
+    expect(collectionSettled).toBe(false);
+
+    childCreationAllowed.resolve(undefined);
+    const [child, collection] = await Promise.all([childPromise, collectionPromise]);
+
+    expect(collection.releasedAgentIds).toEqual([]);
+    expect(manager.getAgent(parent.id)?.lifecycle).toBe("idle");
+    expect(manager.getAgent(child.id)?.lifecycle).toBe("running");
+    expect(manager.hasRunnableSession(parent.id)).toBe(true);
+  } finally {
+    childCreationAllowed.resolve(undefined);
+    for (const agent of manager.listAgents()) {
+      if (manager.hasRunnableSession(agent.id)) {
+        await manager.closeAgent(agent.id).catch(() => undefined);
+      }
+    }
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("hot reload records a canceled terminal update for a running Provider-native child", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-reload-provider-child-"));
+  const timeline = new SqliteAgentTimelineStore(workdir);
+  const adapter = new IdleRuntimeAdapter();
+  const manager = new ExecutionService({
+    adapters: { codex: adapter },
+    durableTimelineStore: timeline,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000138",
+  });
+
+  try {
+    const parent = await manager.createAgent({ provider: "codex", cwd: workdir });
+    adapter.createdThreads[0]?.pushEvent({
+      type: "timeline",
+      provider: "codex",
+      item: {
+        type: "tool_call",
+        callId: "provider-native-child-reload",
+        name: "spawn_agent",
+        status: "running",
+        error: null,
+        detail: {
+          type: "sub_agent",
+          childSessionId: "provider-child-thread-reload",
+          log: "running before reload",
+        },
+      },
+    });
+    await vi.waitFor(() => {
+      expect(manager.getTimeline(parent.id)).toHaveLength(1);
+    });
+
+    await manager.reloadAgentSession(parent.id);
+    await manager.flush();
+
+    expect(
+      manager
+        .getTimeline(parent.id)
+        .filter(
+          (item) => item.type === "tool_call" && item.callId === "provider-native-child-reload",
+        )
+        .map((item) => item.status),
+    ).toEqual(["running", "canceled"]);
+    expect(manager.getAgent(parent.id)?.lifecycle).toBe("idle");
+    expect(adapter.resumedThreads).toHaveLength(1);
+  } finally {
+    if (manager.hasRunnableSession("00000000-0000-4000-8000-000000000138")) {
+      await manager.closeAgent("00000000-0000-4000-8000-000000000138").catch(() => undefined);
+    }
+    await manager.flush().catch(() => undefined);
+    timeline.close();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("Provider-native subagent activity stays a bounded nested trace on its parent Agent", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "execution-service-provider-subagent-trace-"));
   const manager = new ExecutionService({

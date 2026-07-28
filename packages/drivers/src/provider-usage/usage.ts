@@ -3,7 +3,7 @@ import type {
   ProviderUsage,
   ProviderUsageBalance,
   ProviderUsageWindow,
-} from "../../server/messages.js";
+} from "@thoth/protocol/messages";
 import type { ProviderApiFetch } from "./provider.js";
 
 const PROVIDER_HTTP_TIMEOUT_MS = 15_000;
@@ -20,7 +20,7 @@ export const ApiOptionalStringSchema = z.preprocess(
 
 export function fetchProviderApi(
   fetchApi: ProviderApiFetch,
-  input: RequestInfo | URL,
+  input: Parameters<ProviderApiFetch>[0],
   init: RequestInit = {},
 ): Promise<Response> {
   return fetchApi(input, {

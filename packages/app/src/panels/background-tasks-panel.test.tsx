@@ -6,11 +6,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExecutionProjection, TaskProjection } from "@thoth/protocol/task-authority";
 import {
-  BackgroundTasksSurface,
-  shouldForwardLoopPhaseTimelineWheel,
-} from "./background-tasks-panel";
+  buildBackgroundTasksSurfaceKey,
+  useBackgroundTasksSurfaceStore,
+} from "@/stores/background-tasks-surface-store";
+import { TasksSurface, shouldForwardLoopPhaseTimelineWheel } from "./background-tasks-panel";
 
-const { clientMock, authorityListeners, theme } = vi.hoisted(() => ({
+const { clientMock, authorityListeners, routerPush, theme } = vi.hoisted(() => ({
   authorityListeners: new Set<(payload: any) => void>(),
   clientMock: {
     listTasks: vi.fn(),
@@ -24,6 +25,7 @@ const { clientMock, authorityListeners, theme } = vi.hoisted(() => ({
       return () => authorityListeners.delete(listener);
     }),
   },
+  routerPush: vi.fn(),
   theme: {
     spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
     borderRadius: { md: 8 },
@@ -60,6 +62,7 @@ vi.mock("lucide-react-native", () => {
   const Icon = (props: Record<string, unknown>) => React.createElement("span", props);
   return {
     CheckCircle2: Icon,
+    CalendarClock: Icon,
     Clock3: Icon,
     ListTodo: Icon,
     Pause: Icon,
@@ -73,6 +76,8 @@ vi.mock("lucide-react-native", () => {
 vi.mock("@/runtime/host-runtime", () => ({
   useHostRuntimeClient: () => clientMock,
 }));
+
+vi.mock("expo-router", () => ({ router: { push: routerPush } }));
 
 vi.mock("@/components/resize-handle", () => ({
   ResizeHandle: () => React.createElement("div", { "data-testid": "resize-handle" }),
@@ -105,6 +110,7 @@ function task(overrides: Partial<TaskProjection> = {}): TaskProjection {
       },
     ],
     latestReviewDirection: null,
+    origin: null,
     pendingDecision: null,
     budget: {
       strength: "light",
@@ -181,14 +187,15 @@ function installResponses(currentTask = task(), currentExecution = execution()):
 beforeEach(() => {
   vi.clearAllMocks();
   authorityListeners.clear();
+  useBackgroundTasksSurfaceStore.setState({ byWorkspaceKey: {} });
   installResponses();
 });
 
 afterEach(() => cleanup());
 
-describe("BackgroundTasksSurface", () => {
+describe("TasksSurface", () => {
   it("renders Task and Execution projections with the RuntimeBundle receipt", async () => {
-    render(<BackgroundTasksSurface serverId="server-1" workspaceId="workspace-1" />);
+    render(<TasksSurface serverId="server-1" workspaceId="workspace-1" />);
 
     expect(await screen.findByText("Verified task")).toBeTruthy();
     expect(await screen.findByText(/thoth\.loop.*attached.*sha256-loop/)).toBeTruthy();
@@ -216,7 +223,7 @@ describe("BackgroundTasksSurface", () => {
       error: null,
     });
 
-    render(<BackgroundTasksSurface serverId="server-1" workspaceId="workspace-1" />);
+    render(<TasksSurface serverId="server-1" workspaceId="workspace-1" />);
     const stop = await screen.findByTestId("background-task-stop");
     fireEvent.click(stop);
 
@@ -256,7 +263,7 @@ describe("BackgroundTasksSurface", () => {
       error: null,
     });
 
-    render(<BackgroundTasksSurface serverId="server-1" workspaceId="workspace-1" />);
+    render(<TasksSurface serverId="server-1" workspaceId="workspace-1" />);
     expect(await screen.findByText("Implement native Plan")).toBeTruthy();
     expect(screen.getByTestId("background-execution-approval-countdown").textContent).toMatch(
       /Automatic approval in (19|20)s/,
@@ -299,7 +306,7 @@ describe("BackgroundTasksSurface", () => {
     };
     installResponses(task(), execution({ latestApproval: approved }));
 
-    render(<BackgroundTasksSurface serverId="server-1" workspaceId="workspace-1" />);
+    render(<TasksSurface serverId="server-1" workspaceId="workspace-1" />);
 
     expect((await screen.findByTestId("background-execution-approval-result")).textContent).toBe(
       "Last approval: allow by daemon:auto-approval-timeout",
@@ -332,7 +339,7 @@ describe("BackgroundTasksSurface", () => {
       error: null,
     });
 
-    render(<BackgroundTasksSurface serverId="server-1" workspaceId="workspace-1" />);
+    render(<TasksSurface serverId="server-1" workspaceId="workspace-1" />);
     fireEvent.click(await screen.findByTestId("loop-user-decision-option-b"));
     fireEvent.click(screen.getByTestId("loop-user-decision-submit"));
 
@@ -350,7 +357,7 @@ describe("BackgroundTasksSurface", () => {
   });
 
   it("ignores authority updates from another Workspace", async () => {
-    render(<BackgroundTasksSurface serverId="server-1" workspaceId="workspace-1" />);
+    render(<TasksSurface serverId="server-1" workspaceId="workspace-1" />);
     await screen.findAllByText("Verified task");
     clientMock.listTasks.mockClear();
 
@@ -365,6 +372,34 @@ describe("BackgroundTasksSurface", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(clientMock.listTasks).not.toHaveBeenCalled();
+  });
+
+  it("navigates a scheduled Task back to its owner Workspace Schedule", async () => {
+    const scheduled = task({
+      origin: {
+        type: "schedule",
+        ownerWorkspaceId: "workspace-owner",
+        scheduleId: "schedule-1",
+        runId: "run-1",
+      },
+    });
+    installResponses(scheduled, execution());
+
+    render(<TasksSurface serverId="server-1" workspaceId="workspace-execution" />);
+    fireEvent.click(await screen.findByTestId("background-task-open-schedule"));
+
+    const key = buildBackgroundTasksSurfaceKey({
+      serverId: "server-1",
+      workspaceId: "workspace-owner",
+    });
+    expect(useBackgroundTasksSurfaceStore.getState().byWorkspaceKey[key]).toEqual(
+      expect.objectContaining({
+        open: true,
+        activeTab: "schedules",
+        selectedScheduleId: "schedule-1",
+      }),
+    );
+    expect(routerPush).toHaveBeenCalledWith("/h/server-1/workspace/workspace-owner/tasks");
   });
 });
 

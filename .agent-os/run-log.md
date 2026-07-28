@@ -4481,3 +4481,66 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - `NTH-EV-071` and `NTH-TD-048` are verified; terminal state is `published`. `NTH-TD-036` is again the sole top
   next action, remains doing at Stage 4 and retains exactly the independent `15,506`-LOC Cut B gap. This closeout
   is pushed only to `agent/dev/mvp`; `release/mvp-actions` stays at the published source to avoid a second Release.
+
+## 2026-07-28 [Paseo v0.2.3 organic integration authority and provenance opened]
+
+- Began approved `NTH-TD-049` in publish mode from clean development source
+  `48e73cb24c022182c3c55fce1b171f9a5816ebc5`. The existing fixed Beta remains at published source
+  `cf5067fa3835c498f3842a5b2e371d4cb3b25577`; `main` remains `e74c6e0d`, Release `360786111` is a non-draft
+  prerelease with exactly 26 desktop-only assets, and workflow `314811076` is active.
+- Official Paseo verification resolves annotated tag object `5f71b185` to `43cf858c`; v0.2.2 and v0.2.3 diverge
+  at `36f38245`, so the exact inventory is the 36 target-side commits selected by
+  `v0.2.2...v0.2.3 --right-only`. Current later Paseo `main=cbbf6c16` is excluded. The regenerated formal manifest
+  reports 36 commits, 211 paths, 12 architecture candidates and four required reviews.
+- A repository-local `git fetch` produced no response through the proxy and was interrupted after timeout; no
+  success was claimed. The same isolated `Royalvice` identity returned live GitHub API receipts for all three
+  branches, tag, Release, asset count and workflow. The tracked worktree remained clean before authority edits.
+- Recorded `NTH-REQ-029`, `NTH-AC-026`, `NTH-TD-049`, `NTH-EV-072` and concrete decisions `NTH-CD-089` through
+  `NTH-CD-096`. `NTH-TD-036` remains doing at Stage 4; the current production baseline is `310,933` LOC, translated
+  Cut B/final ceilings are `295,427` / `273,027`, and its independent gap remains `15,506`.
+- The coherent classification now uses publish intent; accepted/rejected architecture items reference their
+  concrete decisions. `npm run paseo:verify-provenance` passed with `36/36` commit coverage, all `12/12`
+  candidates assessed, all four required candidates represented architecturally, nine architectural coherent
+  groups, zero pending reviews and zero failures. The architecture gate is cleared and product integration may
+  begin through the recorded final Thoth paths.
+
+## 2026-07-28 [Paseo v0.2.3 organic integration reached local release readiness]
+
+- Reconstructed all approved capability groups through the current Thoth chain. The App now has one top-level
+  `Tasks` entry with `Tasks | Schedules`; Schedule create/edit/pause/resume/run-now/delete, cadence/timezone/
+  isolation/limits/history and both navigation directions use Workspace Schedule/Task/Execution authority.
+  Workspace-script list/start/stop uses semantic Client, Workspace command policy, ToolGateway scope/generation
+  fencing and durable process/terminal/route/service-port receipts. Protocol and storage changes are append-only
+  and legacy Schedule runs preserve unknown execution Workspace as `null`.
+- Physical sockets now own the 8 MiB high-water bound and 45-second application lease; negotiated binary E2EE and
+  one-handle/revision 256 KiB file streaming land as one path. Strict registered/trusted-proxy authority is shared
+  by HTTP and WebSocket. Provider usage/Claude scoped windows, OMP efforts and parent/child runtime residency are
+  Driver-owned; Daemon remains provider-neutral. The App/Mobile/Desktop regression set and default persistent
+  daemon behavior are integrated. Replaced start-only script RPCs, daemon Provider parsers and the old
+  `background-tasks` route were deleted; voice/Hub/writable-editor/Paseo release paths remain absent.
+- Focused/package verification passed: Protocol `49/438`, Relay `4/37`, Client `4/128`, Core `1/11`, Drivers
+  `47 passed + 3 skipped files / 595 passed + 21 skipped tests`, Daemon `200 files / 2,556 passed + 26 skipped`,
+  App `363/2,709`, Desktop `37 files / 300 passed + 5 skipped`, and CLI `30` unit plus `40/40` local/e2e files.
+  All affected package typechecks passed. Root Foundation, Provider Control, interaction regression, complete
+  Thoth and shared-`300s` refactor gates passed; the final refactor Stage 4 run completed in `158.934s`.
+- Real Web UI acceptance passed `1/1` in `42.3s`, including real script start/stop and complete Schedule UI with
+  two runs and bidirectional navigation. Android Debug APK passed at `273,165,007` bytes, package
+  `sh.thoth.debug`, SHA-256 `042b2e4a...770702`, with no `RECORD_AUDIO`. Real Codex
+  `UT-01-quick-direct-passthrough` passed in `28.82s`. Formal isolation retained Paseo PID `3597831` on `6767`
+  and no Thoth fallback.
+- The hosted Relay gate preserved a first reconnect failure caused by direct Cloudflare `ETIMEDOUT` after the
+  service had already negotiated v3 E2EE and binary frames. Re-running the same packaged smoke with Node 24's
+  explicit `NODE_USE_ENV_PROXY=1` support passed the full restart/recovery path and a `1,048,649`-byte, five-chunk
+  file with SHA-256 `a3f78a20...f361e`; no Relay deployment occurred. `NTH-EXP-072` records the distinction.
+- The complete AppImage command initially exposed proxy-contaminated localhost CDP, Tasks hydration/hit-testing,
+  asynchronous Files content and a stale storage-v3 assertion. Each failure was retained and repaired without
+  force-click, Client-only Schedule acceptance or weaker content checks. The final root command rebuilt a
+  `137,822,489`-byte AppImage, SHA-256 `55691516...e177`, and passed preload/renderer, Files/Changes, Browser,
+  Workspace scripts, five-chunk direct file transfer, full Schedule UI/navigation/Timeline and Release
+  `05775486` migration to storage/SQLite v4. `NTH-EXP-071` records these sequencing rules.
+- Current Skill fixtures, exact provenance and boundary pass: `36/36` commits, `12/12` candidates, nine
+  architectural groups, zero pending/failures, and `222` changed paths with zero blocking/review findings.
+  Production is `315,762` LOC, so `DeltaP23=4,829`; translated Cut B/final ceilings are `300,256` / `277,856`
+  and the independent `NTH-TD-036` gap remains exactly `15,506`. `NTH-TD-049` remains the sole top next action and
+  is not verified until the release-source SHA, exact-SHA workflow, 26 public assets and downloaded AppImage all
+  pass. No commit, push, tag or Release mutation has occurred in this local stage.

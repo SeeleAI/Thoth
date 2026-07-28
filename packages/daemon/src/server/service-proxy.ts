@@ -5,6 +5,11 @@ import { existsSync, unlinkSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import express, { type RequestHandler } from "express";
 import type { Logger } from "pino";
+import {
+  ForwardedAuthorityError,
+  ForwardedAuthorityResolver,
+  type TrustedProxiesConfig,
+} from "./forwarded-authority.js";
 
 export type ServiceProxyListenTarget =
   | { type: "tcp"; host: string; port: number }
@@ -61,6 +66,7 @@ export interface RegisterWorkspaceServiceInput extends WorkspaceServiceIdentity 
 interface HostClassificationRegistered {
   type: "registered-service";
   route: ServiceProxyRoute;
+  entry: ServiceProxyRouteEntry;
 }
 
 interface HostClassificationKnownMiss {
@@ -256,22 +262,48 @@ function stripHopByHopHeaders(
   return out;
 }
 
+function buildForwardedHeaders({
+  req,
+  route,
+  authorityResolver,
+}: {
+  req: IncomingMessage;
+  route: ServiceProxyRouteEntry;
+  authorityResolver: ForwardedAuthorityResolver;
+}): Record<string, string | string[]> {
+  const authority = authorityResolver.resolve(req, route);
+  const forwardedHeaders = stripHopByHopHeaders(req.headers);
+  for (const name of [
+    "host",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-port",
+    "x-forwarded-proto",
+  ]) {
+    delete forwardedHeaders[name];
+  }
+  forwardedHeaders.host = authority.host;
+  forwardedHeaders["x-forwarded-for"] = authority.for;
+  forwardedHeaders["x-forwarded-host"] = authority.host;
+  forwardedHeaders["x-forwarded-port"] = String(authority.port);
+  forwardedHeaders["x-forwarded-proto"] = authority.proto;
+  return forwardedHeaders;
+}
+
 function proxyHttpRequest({
   req,
   res,
   route,
   logger,
+  authorityResolver,
 }: {
   req: Parameters<RequestHandler>[0];
   res: Parameters<RequestHandler>[1];
-  route: ServiceProxyRoute;
+  route: ServiceProxyRouteEntry;
   logger: Logger;
+  authorityResolver: ForwardedAuthorityResolver;
 }): void {
-  const hostHeader = req.headers.host ?? route.hostname;
-  const forwardedHeaders = stripHopByHopHeaders(req.headers);
-  forwardedHeaders["x-forwarded-for"] = req.socket.remoteAddress ?? "127.0.0.1";
-  forwardedHeaders["x-forwarded-host"] = String(hostHeader).replace(/:\d+$/, "");
-  forwardedHeaders["x-forwarded-proto"] = req.protocol;
+  const forwardedHeaders = buildForwardedHeaders({ req, route, authorityResolver });
 
   const proxyReq = http.request(
     {
@@ -306,19 +338,17 @@ function proxyUpgradeRequest({
   head,
   route,
   logger,
+  authorityResolver,
 }: {
   req: IncomingMessage;
   socket: net.Socket;
   head: Buffer;
-  route: ServiceProxyRoute;
+  route: ServiceProxyRouteEntry;
   logger: Logger;
+  authorityResolver: ForwardedAuthorityResolver;
 }): void {
-  const hostHeader = req.headers.host ?? route.hostname;
+  const forwardedHeaders = buildForwardedHeaders({ req, route, authorityResolver });
   const targetSocket = net.connect({ host: "127.0.0.1", port: route.port }, () => {
-    const forwardedHeaders = stripHopByHopHeaders(req.headers);
-    forwardedHeaders["x-forwarded-for"] = req.socket.remoteAddress ?? "127.0.0.1";
-    forwardedHeaders["x-forwarded-host"] = String(hostHeader).replace(/:\d+$/, "");
-    forwardedHeaders["x-forwarded-proto"] = "http";
     forwardedHeaders.connection = "Upgrade";
     forwardedHeaders.upgrade = req.headers.upgrade ?? "websocket";
 
@@ -578,6 +608,7 @@ export class ServiceProxyRouteRegistry {
       return {
         type: "registered-service",
         route: { hostname: exactRoute.hostname, port: exactRoute.port },
+        entry: { ...exactRoute },
       };
     }
     if (hostname.endsWith(".localhost") && hostname.split(".")[0]?.includes("--")) {
@@ -706,9 +737,11 @@ export type ScriptRouteEntry = ServiceProxyRouteEntry;
 export function createScriptProxyMiddleware({
   routeStore,
   logger,
+  authorityResolver = new ForwardedAuthorityResolver([]),
 }: {
   routeStore: ServiceProxyRouteRegistry;
   logger: Logger;
+  authorityResolver?: ForwardedAuthorityResolver;
 }): RequestHandler {
   return (req, res, next) => {
     const classification = routeStore.classifyHost(req.headers.host);
@@ -720,7 +753,22 @@ export function createScriptProxyMiddleware({
       res.status(404).send("404 Not Found");
       return;
     }
-    proxyHttpRequest({ req, res, route: classification.route, logger });
+    try {
+      proxyHttpRequest({
+        req,
+        res,
+        route: classification.entry,
+        logger,
+        authorityResolver,
+      });
+    } catch (error) {
+      if (error instanceof ForwardedAuthorityError) {
+        logger.warn({ err: error }, "Service proxy: rejected forwarded authority");
+        res.status(400).send("400 Invalid forwarded authority");
+        return;
+      }
+      throw error;
+    }
   };
 }
 
@@ -728,10 +776,12 @@ export function createScriptProxyUpgradeHandler({
   routeStore,
   logger,
   passthroughUnknown = true,
+  authorityResolver = new ForwardedAuthorityResolver([]),
 }: {
   routeStore: ServiceProxyRouteRegistry;
   logger: Logger;
   passthroughUnknown?: boolean;
+  authorityResolver?: ForwardedAuthorityResolver;
 }): (req: IncomingMessage, socket: net.Socket, head: Buffer) => void {
   return (req, socket, head) => {
     const classification = routeStore.classifyHost(req.headers.host);
@@ -741,7 +791,25 @@ export function createScriptProxyUpgradeHandler({
       }
       return;
     }
-    proxyUpgradeRequest({ req, socket, head, route: classification.route, logger });
+    try {
+      proxyUpgradeRequest({
+        req,
+        socket,
+        head,
+        route: classification.entry,
+        logger,
+        authorityResolver,
+      });
+    } catch (error) {
+      if (error instanceof ForwardedAuthorityError) {
+        logger.warn({ err: error }, "Service proxy: rejected forwarded upgrade authority");
+        socket.end(
+          "HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 31\r\n\r\n400 Invalid forwarded authority",
+        );
+        return;
+      }
+      throw error;
+    }
   };
 }
 
@@ -788,23 +856,28 @@ export interface ServiceProxySubsystem {
 export function createServiceProxySubsystem({
   logger,
   publicBaseUrl,
+  trustedProxies = [],
 }: {
   logger: Logger;
   publicBaseUrl?: string | null;
+  trustedProxies?: TrustedProxiesConfig;
 }): ServiceProxySubsystem {
-  return new NodeServiceProxySubsystem(logger, publicBaseUrl ?? null);
+  return new NodeServiceProxySubsystem(logger, publicBaseUrl ?? null, trustedProxies);
 }
 
 class NodeServiceProxySubsystem implements ServiceProxySubsystem {
   private readonly routes: ServiceProxyRouteRegistry;
+  private readonly authorityResolver: ForwardedAuthorityResolver;
   private standaloneServer: ReturnType<typeof createHTTPServer> | null = null;
   private standaloneListenTarget: ServiceProxyListenTarget | null = null;
 
   constructor(
     private readonly logger: Logger,
     publicBaseUrl: string | null,
+    trustedProxies: TrustedProxiesConfig,
   ) {
     this.routes = new ServiceProxyRouteRegistry(publicBaseUrl);
+    this.authorityResolver = new ForwardedAuthorityResolver(trustedProxies);
   }
 
   registerWorkspaceService(input: RegisterWorkspaceServiceInput): ServiceProxyRouteEntry {
@@ -867,33 +940,22 @@ class NodeServiceProxySubsystem implements ServiceProxySubsystem {
   }
 
   middleware(): RequestHandler {
-    return (req, res, next) => {
-      const classification = this.routes.classifyHost(req.headers.host);
-      if (classification.type === "daemon") {
-        next();
-        return;
-      }
-      if (classification.type === "known-service-miss") {
-        res.status(404).send("404 Not Found");
-        return;
-      }
-      this.proxyHttpRequest(req, res, classification.route);
-    };
+    return createScriptProxyMiddleware({
+      routeStore: this.routes,
+      logger: this.logger,
+      authorityResolver: this.authorityResolver,
+    });
   }
 
   upgradeHandler(options: {
     passthroughUnknown: boolean;
   }): (req: IncomingMessage, socket: net.Socket, head: Buffer) => void {
-    return (req, socket, head) => {
-      const classification = this.routes.classifyHost(req.headers.host);
-      if (classification.type !== "registered-service") {
-        if (!options.passthroughUnknown) {
-          socket.destroy();
-        }
-        return;
-      }
-      this.proxyUpgradeRequest(req, socket, head, classification.route);
-    };
+    return createScriptProxyUpgradeHandler({
+      routeStore: this.routes,
+      logger: this.logger,
+      passthroughUnknown: options.passthroughUnknown,
+      authorityResolver: this.authorityResolver,
+    });
   }
 
   async startStandalone(options: {
@@ -903,7 +965,6 @@ class NodeServiceProxySubsystem implements ServiceProxySubsystem {
       return this.standaloneListenTarget ?? options.listenTarget;
     }
     const app = express();
-    app.set("trust proxy", true);
     app.use(this.middleware());
     app.use((_req, res) => {
       res.status(404).send("404 Not Found");
@@ -937,86 +998,6 @@ class NodeServiceProxySubsystem implements ServiceProxySubsystem {
     if (listenTarget?.type === "socket" && existsSync(listenTarget.path)) {
       unlinkSync(listenTarget.path);
     }
-  }
-
-  private proxyHttpRequest(
-    req: Parameters<RequestHandler>[0],
-    res: Parameters<RequestHandler>[1],
-    route: ServiceProxyRoute,
-  ): void {
-    const hostHeader = req.headers.host ?? route.hostname;
-    const forwardedHeaders = stripHopByHopHeaders(req.headers);
-    forwardedHeaders["x-forwarded-for"] = req.socket.remoteAddress ?? "127.0.0.1";
-    forwardedHeaders["x-forwarded-host"] = String(hostHeader).replace(/:\d+$/, "");
-    forwardedHeaders["x-forwarded-proto"] = req.protocol;
-
-    const proxyReq = http.request(
-      {
-        hostname: "127.0.0.1",
-        port: route.port,
-        path: req.originalUrl,
-        method: req.method,
-        headers: forwardedHeaders,
-      },
-      (proxyRes) => {
-        const responseHeaders = stripHopByHopHeaders(proxyRes.headers);
-        res.writeHead(proxyRes.statusCode ?? 502, responseHeaders);
-        proxyRes.pipe(res, { end: true });
-      },
-    );
-    proxyReq.on("error", (err) => {
-      this.logger.warn(
-        { err, hostname: route.hostname, port: route.port },
-        "Service proxy: upstream unreachable",
-      );
-      if (!res.headersSent) {
-        res.writeHead(502, { "content-type": "text/plain" });
-        res.end("502 Bad Gateway");
-      }
-    });
-    req.pipe(proxyReq, { end: true });
-  }
-
-  private proxyUpgradeRequest(
-    req: IncomingMessage,
-    socket: net.Socket,
-    head: Buffer,
-    route: ServiceProxyRoute,
-  ): void {
-    const hostHeader = req.headers.host ?? route.hostname;
-    const targetSocket = net.connect({ host: "127.0.0.1", port: route.port }, () => {
-      const forwardedHeaders = stripHopByHopHeaders(req.headers);
-      forwardedHeaders["x-forwarded-for"] = req.socket.remoteAddress ?? "127.0.0.1";
-      forwardedHeaders["x-forwarded-host"] = String(hostHeader).replace(/:\d+$/, "");
-      forwardedHeaders["x-forwarded-proto"] = "http";
-      forwardedHeaders.connection = "Upgrade";
-      forwardedHeaders.upgrade = req.headers.upgrade ?? "websocket";
-
-      const headerLines: string[] = [];
-      headerLines.push(`${req.method ?? "GET"} ${req.url ?? "/"} HTTP/${req.httpVersion}`);
-      for (const [key, value] of Object.entries(forwardedHeaders)) {
-        if (Array.isArray(value)) {
-          for (const v of value) headerLines.push(`${key}: ${v}`);
-        } else {
-          headerLines.push(`${key}: ${value}`);
-        }
-      }
-      headerLines.push("\r\n");
-      targetSocket.write(headerLines.join("\r\n"));
-      if (head.length > 0) targetSocket.write(head);
-      targetSocket.pipe(socket);
-      socket.pipe(targetSocket);
-    });
-    targetSocket.on("error", (err) => {
-      this.logger.warn(
-        { err, hostname: route.hostname, port: route.port },
-        "Service proxy: WebSocket upstream unreachable",
-      );
-      socket.end();
-    });
-    socket.on("error", () => {
-      targetSocket.destroy();
-    });
   }
 }
 

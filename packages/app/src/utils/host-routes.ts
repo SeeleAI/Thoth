@@ -290,7 +290,7 @@ export function parseHostWorkspaceRouteFromPathname(
   pathname: string,
 ): { serverId: string; workspaceId: string } | null {
   const pathOnly = stripSearchAndHash(pathname);
-  const match = pathOnly.match(/^\/h\/([^/]+)\/workspace\/([^/]+)(?:\/background-tasks)?\/?$/);
+  const match = pathOnly.match(/^\/h\/([^/]+)\/workspace\/([^/]+)(?:\/tasks)?\/?$/);
   if (!match) {
     return null;
   }
@@ -358,12 +358,12 @@ export function buildHostWorkspaceRoute(serverId: string, workspaceId: string) {
   return `/h/${encodeSegment(normalizedServerId)}/workspace/${encodeSegment(encodedWorkspaceId)}` as const;
 }
 
-export function buildHostWorkspaceBackgroundTasksRoute(serverId: string, workspaceId: string) {
+export function buildHostWorkspaceTasksRoute(serverId: string, workspaceId: string) {
   const base = buildHostWorkspaceRoute(serverId, workspaceId);
   if (base === "/") {
     return base;
   }
-  return `${base}/background-tasks` as const;
+  return `${base}/tasks` as const;
 }
 
 export function buildHostWorkspaceOpenRoute(

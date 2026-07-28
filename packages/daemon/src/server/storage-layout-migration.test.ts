@@ -50,14 +50,15 @@ describe("Thoth storage layout migration", () => {
       ...beforeMigrations,
       expect.objectContaining({ version: 5, checksum: "normalized-authority-v2" }),
       expect.objectContaining({ version: 6, checksum: "schedule-task-execution-v3" }),
+      expect.objectContaining({ version: 7, checksum: "schedule-run-workspace-v4" }),
     ]);
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(3);
-    expect(schemaVersion(authorityPath)).toBe(3);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(4);
+    expect(schemaVersion(authorityPath)).toBe(4);
     expect(hasTable(path.join(home, "catalog.sqlite"), "catalog_runtime_resource_leases")).toBe(
       true,
     );
     expect(tableColumns(authorityPath, "schedule_runs")).toEqual(
-      expect.arrayContaining(["task_id", "execution_id"]),
+      expect.arrayContaining(["workspace_id", "task_id", "execution_id"]),
     );
     expect(hasTable(authorityPath, "authority_events")).toBe(false);
     expect(existsSync(`${path.join(home, "catalog.sqlite")}.release-05775486.bak`)).toBe(true);
@@ -66,8 +67,8 @@ describe("Thoth storage layout migration", () => {
       false,
     );
     expect(JSON.parse(readFileSync(path.join(home, "storage-layout.json"), "utf8"))).toMatchObject({
-      version: 3,
-      schemaVersion: 3,
+      version: 4,
+      schemaVersion: 4,
       sourceRelease: "05775486",
       migrated: true,
       migrationState: "complete",
@@ -123,9 +124,9 @@ describe("Thoth storage layout migration", () => {
     const root = temporaryRoot("fresh");
     const home = path.join(root, ".thoth");
     await ensureThothStorageLayout(home, createTestLogger());
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(3);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(4);
     expect(JSON.parse(readFileSync(path.join(home, "storage-layout.json"), "utf8"))).toMatchObject({
-      version: 3,
+      version: 4,
       migrated: false,
       workspaceCount: 0,
     });
@@ -141,7 +142,7 @@ describe("Thoth storage layout migration", () => {
     await expect(ensureThothStorageLayout(home, createTestLogger())).resolves.toEqual({
       requiresProviderThreadFinalization: false,
     });
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(3);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(4);
     expect(readFileSync(attachment, "utf8")).toBe("pending desktop attachment\n");
   });
 
@@ -152,28 +153,61 @@ describe("Thoth storage layout migration", () => {
 
     await ensureThothStorageLayout(home, createTestLogger());
 
-    expect(schemaVersion(catalogPath)).toBe(3);
-    expect(schemaVersion(authorityPath)).toBe(3);
+    expect(schemaVersion(catalogPath)).toBe(4);
+    expect(schemaVersion(authorityPath)).toBe(4);
     expect(hasTable(catalogPath, "catalog_runtime_resource_leases")).toBe(true);
     expect(tableColumns(authorityPath, "schedule_runs")).toEqual(
-      expect.arrayContaining(["task_id", "execution_id"]),
+      expect.arrayContaining(["workspace_id", "task_id", "execution_id"]),
     );
     expect(scheduleRunAuthority(authorityPath, "run-v2")).toEqual({
+      workspace_id: null,
       task_id: null,
       execution_id: null,
     });
     expect(catalogMigrationRows(catalogPath)).toEqual([
       { version: 2, checksum: "normalized-catalog-v2" },
       { version: 3, checksum: "host-runtime-resources-v3" },
+      { version: 4, checksum: "schedule-run-workspace-v4-catalog" },
     ]);
     expect(
       migrationRows(authorityPath).map(({ version, checksum }) => ({ version, checksum })),
     ).toEqual([
       { version: 5, checksum: "normalized-authority-v2" },
       { version: 6, checksum: "schedule-task-execution-v3" },
+      { version: 7, checksum: "schedule-run-workspace-v4" },
     ]);
     expect(existsSync(`${catalogPath}.schema-v2.bak`)).toBe(true);
     expect(existsSync(`${authorityPath}.schema-v2.bak`)).toBe(true);
+  });
+
+  it("upgrades normalized schema v3 while preserving Task and Execution receipts", async () => {
+    const home = await normalizedV3Home();
+    const catalogPath = path.join(home, "catalog.sqlite");
+    const authorityPath = workspaceAuthorityPath(home);
+
+    await ensureThothStorageLayout(home, createTestLogger());
+
+    expect(schemaVersion(catalogPath)).toBe(4);
+    expect(schemaVersion(authorityPath)).toBe(4);
+    expect(scheduleRunAuthority(authorityPath, "run-v3")).toEqual({
+      workspace_id: null,
+      task_id: "task-v3",
+      execution_id: "execution-v3",
+    });
+    expect(catalogMigrationRows(catalogPath)).toEqual([
+      { version: 2, checksum: "normalized-catalog-v2" },
+      { version: 3, checksum: "host-runtime-resources-v3" },
+      { version: 4, checksum: "schedule-run-workspace-v4-catalog" },
+    ]);
+    expect(
+      migrationRows(authorityPath).map(({ version, checksum }) => ({ version, checksum })),
+    ).toEqual([
+      { version: 5, checksum: "normalized-authority-v2" },
+      { version: 6, checksum: "schedule-task-execution-v3" },
+      { version: 7, checksum: "schedule-run-workspace-v4" },
+    ]);
+    expect(existsSync(`${catalogPath}.schema-v3.bak`)).toBe(true);
+    expect(existsSync(`${authorityPath}.schema-v3.bak`)).toBe(true);
   });
 
   it("rolls back a failed normalized-v2 authority upgrade and succeeds on retry", async () => {
@@ -201,8 +235,9 @@ describe("Thoth storage layout migration", () => {
     await expect(ensureThothStorageLayout(home, createTestLogger())).resolves.toEqual({
       requiresProviderThreadFinalization: false,
     });
-    expect(schemaVersion(authorityPath)).toBe(3);
+    expect(schemaVersion(authorityPath)).toBe(4);
     expect(scheduleRunAuthority(authorityPath, "run-v2")).toEqual({
+      workspace_id: null,
       task_id: null,
       execution_id: null,
     });
@@ -212,13 +247,13 @@ describe("Thoth storage layout migration", () => {
     await withProcessPlatform("win32", async () => {
       const freshHome = path.join(temporaryRoot("windows-fresh"), ".thoth");
       await ensureThothStorageLayout(freshHome, createTestLogger());
-      expect(schemaVersion(path.join(freshHome, "catalog.sqlite"))).toBe(3);
+      expect(schemaVersion(path.join(freshHome, "catalog.sqlite"))).toBe(4);
 
       const migratedHome = releaseHome();
       const before = entityDigest(migratedHome);
       await ensureThothStorageLayout(migratedHome, createTestLogger());
       expect(entityDigest(migratedHome)).toBe(before);
-      expect(schemaVersion(workspaceAuthorityPath(migratedHome))).toBe(3);
+      expect(schemaVersion(workspaceAuthorityPath(migratedHome))).toBe(4);
     });
   });
 
@@ -240,7 +275,7 @@ describe("Thoth storage layout migration", () => {
     await expect(ensureThothStorageLayout(home, createTestLogger())).resolves.toEqual({
       requiresProviderThreadFinalization: false,
     });
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(3);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(4);
     expect(readFileSync(path.join(home, "server-id"), "utf8")).toBe("server-id\n");
   });
 
@@ -359,6 +394,7 @@ async function normalizedV2Home(): Promise<string> {
       DROP INDEX schedule_runs_task_execution;
       ALTER TABLE schedule_runs DROP COLUMN task_id;
       ALTER TABLE schedule_runs DROP COLUMN execution_id;
+      ALTER TABLE schedule_runs DROP COLUMN workspace_id;
       DELETE FROM authority_schema_migrations;
       INSERT INTO authority_schema_migrations(version, checksum, applied_at)
         VALUES (5, 'normalized-authority-v2', '${now}');
@@ -396,6 +432,95 @@ async function normalizedV2Home(): Promise<string> {
   writeFileSync(
     path.join(home, "storage-layout.json"),
     `${JSON.stringify({ version: 2, schemaVersion: 2, migrationState: "complete" })}\n`,
+  );
+  return home;
+}
+
+async function normalizedV3Home(): Promise<string> {
+  const root = temporaryRoot("normalized-v3");
+  const home = path.join(root, ".thoth");
+  const workspaceId = fixtureManifest.workspaceId;
+  const now = "2026-07-28T00:00:00.000Z";
+  await ensureThothStorageLayout(home, createTestLogger());
+
+  const catalogPath = path.join(home, "catalog.sqlite");
+  const catalog = new DatabaseSync(catalogPath);
+  try {
+    catalog
+      .prepare(
+        `INSERT INTO catalog_workspaces(
+           workspace_id, canonical_path, display_name, kind, created_at, updated_at
+         ) VALUES (?, ?, ?, 'workspace', ?, ?)`,
+      )
+      .run(workspaceId, path.join(root, "workspace"), "Normalized v3", now, now);
+    catalog.exec(`
+      DELETE FROM catalog_schema_migrations;
+      INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
+        VALUES (2, 'normalized-catalog-v2', '${now}');
+      INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
+        VALUES (3, 'host-runtime-resources-v3', '${now}');
+      PRAGMA user_version = 3;
+    `);
+  } finally {
+    catalog.close();
+  }
+
+  const authorityPath = workspaceAuthorityPath(home);
+  createWorkspaceDatabase(authorityPath, workspaceId);
+  const authority = new DatabaseSync(authorityPath);
+  try {
+    authority.exec(`
+      DROP INDEX schedule_runs_task_execution;
+      ALTER TABLE schedule_runs DROP COLUMN workspace_id;
+      DELETE FROM authority_schema_migrations;
+      INSERT INTO authority_schema_migrations(version, checksum, applied_at)
+        VALUES (5, 'normalized-authority-v2', '${now}');
+      INSERT INTO authority_schema_migrations(version, checksum, applied_at)
+        VALUES (6, 'schedule-task-execution-v3', '${now}');
+      PRAGMA user_version = 3;
+    `);
+    authority
+      .prepare(
+        `INSERT INTO schedules(
+           schedule_id, name, prompt, cadence_json, target_json, status,
+           created_at, updated_at, next_run_at, last_run_at, paused_at, expires_at, max_runs
+         ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, NULL, NULL, NULL, NULL)`,
+      )
+      .run(
+        "schedule-v3",
+        "Schema v3 schedule",
+        "Run from v3",
+        JSON.stringify({ type: "every", everyMs: 60_000 }),
+        JSON.stringify({ type: "agent", agentId: "agent-v3" }),
+        now,
+        now,
+        now,
+      );
+    authority
+      .prepare(
+        `INSERT INTO schedule_runs(
+           run_id, schedule_id, task_id, execution_id, scheduled_for, started_at, ended_at,
+           status, agent_id, output, error
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'succeeded', ?, ?, NULL)`,
+      )
+      .run(
+        "run-v3",
+        "schedule-v3",
+        "task-v3",
+        "execution-v3",
+        now,
+        now,
+        now,
+        "agent-v3",
+        "v3 output",
+      );
+  } finally {
+    authority.close();
+  }
+
+  writeFileSync(
+    path.join(home, "storage-layout.json"),
+    `${JSON.stringify({ version: 3, schemaVersion: 3, migrationState: "complete" })}\n`,
   );
   return home;
 }
@@ -462,12 +587,16 @@ function tableColumns(filePath: string, table: string): string[] {
 function scheduleRunAuthority(
   filePath: string,
   runId: string,
-): { task_id: string | null; execution_id: string | null } {
+): { workspace_id: string | null; task_id: string | null; execution_id: string | null } {
   const database = new DatabaseSync(filePath, { readOnly: true });
   try {
     return database
-      .prepare("SELECT task_id, execution_id FROM schedule_runs WHERE run_id = ?")
-      .get(runId) as { task_id: string | null; execution_id: string | null };
+      .prepare("SELECT workspace_id, task_id, execution_id FROM schedule_runs WHERE run_id = ?")
+      .get(runId) as {
+      workspace_id: string | null;
+      task_id: string | null;
+      execution_id: string | null;
+    };
   } finally {
     database.close();
   }
@@ -544,7 +673,8 @@ function entityDigest(home: string): string {
           .map((column) => column.name)
           .filter(
             (column) =>
-              name !== "schedule_runs" || (column !== "task_id" && column !== "execution_id"),
+              name !== "schedule_runs" ||
+              (column !== "workspace_id" && column !== "task_id" && column !== "execution_id"),
           );
         const primary = columns
           .filter((column) => column.pk > 0 && names.includes(column.name))

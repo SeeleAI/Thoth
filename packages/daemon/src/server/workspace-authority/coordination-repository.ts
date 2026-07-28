@@ -311,14 +311,15 @@ export class WorkspaceCoordinationRepository {
       this.database.prepare("DELETE FROM schedule_runs WHERE schedule_id = ?").run(schedule.id);
       const insertRun = this.database.prepare(
         `INSERT INTO schedule_runs(
-           run_id, schedule_id, scheduled_for, started_at, ended_at,
+           run_id, schedule_id, workspace_id, scheduled_for, started_at, ended_at,
            status, task_id, execution_id, agent_id, output, error
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const run of schedule.runs) {
         insertRun.run(
           run.id,
           schedule.id,
+          run.workspaceId ?? null,
           run.scheduledFor,
           run.startedAt,
           run.endedAt,
@@ -444,6 +445,7 @@ export class WorkspaceCoordinationRepository {
   private toScheduleRun(row: Record<string, unknown>): ScheduleRun {
     return ScheduleRunSchema.parse({
       id: row.run_id,
+      workspaceId: row.workspace_id ?? null,
       taskId: row.task_id ?? null,
       executionId: row.execution_id ?? null,
       scheduledFor: row.scheduled_for,

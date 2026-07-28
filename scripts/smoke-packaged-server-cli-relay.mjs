@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -11,6 +12,8 @@ import { ThothApiJourney } from "./acceptance/thoth-api-journey.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const JOURNEY_TIMEOUT_MS = 90_000;
+const RELAY_LARGE_FILE_NAME = "relay-large-file.bin";
+const RELAY_LARGE_FILE_SIZE = 1024 * 1024 + 73;
 
 function option(name, fallback) {
   const index = args.indexOf(name);
@@ -19,6 +22,37 @@ function option(name, fallback) {
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function seedRelayLargeFile(workspacePath) {
+  const bytes = Buffer.allocUnsafe(RELAY_LARGE_FILE_SIZE);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = (index * 29 + 11) % 256;
+  }
+  writeFileSync(path.join(workspacePath, RELAY_LARGE_FILE_NAME), bytes);
+  return {
+    size: bytes.byteLength,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+}
+
+async function verifyRelayLargeFile(client, workspacePath, expected) {
+  const received = await client.readFile(
+    workspacePath,
+    RELAY_LARGE_FILE_NAME,
+    "server-cli-relay-large-file",
+  );
+  invariant(received.size === expected.size, "Relay large-file advertised size changed");
+  invariant(received.bytes.byteLength === expected.size, "Relay large-file bytes were truncated");
+  const sha256 = createHash("sha256").update(received.bytes).digest("hex");
+  invariant(sha256 === expected.sha256, "Relay large-file SHA-256 mismatch");
+  return {
+    path: RELAY_LARGE_FILE_NAME,
+    size: received.size,
+    sha256,
+    revision: received.revision ?? null,
+    expectedChunkCount: Math.ceil(received.size / (256 * 1024)),
+  };
 }
 
 async function waitFor(read, timeoutMs, label) {
@@ -118,6 +152,11 @@ try {
   const workspaceId = workspaceResult.workspace.id;
 
   client = await harness.connectRelay();
+  const relayLargeFile = await verifyRelayLargeFile(
+    client,
+    harness.workspacePath,
+    seedRelayLargeFile(harness.workspacePath),
+  );
   let journey = new ThothApiJourney({
     client,
     timeoutMs: JOURNEY_TIMEOUT_MS,
@@ -331,6 +370,7 @@ try {
       .length,
     reviewCalls: toolCalls.filter((entry) => entry.tool === "thoth_loop_submit_review_verdict")
       .length,
+    largeFile: relayLargeFile,
   };
   harness.assertPairingSecretsAbsent([JSON.stringify(report)]);
 } catch (error) {

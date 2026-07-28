@@ -166,6 +166,25 @@ printf '%s\n' "$GITHUB_TOKEN" | THOTH_GH_CONFIG_DIR=.dev/gh-royalvice npm run gh
 
 The `.dev/gh*` directories are ignored and must never be staged.
 
+## Provider Authentication And Claude Reauthentication
+
+Provider authentication belongs to the Provider's official control surface. Thoth does not copy,
+refresh, or store Claude Code credentials in Workspace authority, Driver receipts, or `.thoth`.
+
+If a Claude login expires, reauthenticate with the official Claude Code CLI on the machine running
+the daemon, then start a new Claude Agent in Thoth. A running Claude session keeps the authentication
+context with which it started, so reauthentication does not silently replace that session's identity.
+After signing in, use Thoth's semantic CLI to recheck availability and the catalog:
+
+```bash
+claude
+npm run cli -- provider ls
+npm run cli -- provider models claude
+```
+
+The first command is Provider-owned authentication; the two `npm run cli` commands only query the
+Thoth daemon's Provider capability and model projections.
+
 Paseo synchronization uses the repository-local five-stage Skill and exact-SHA reports:
 
 ```bash
@@ -178,6 +197,21 @@ Raw clones and generated reports stay under ignored `.agent-os/upstreams/` and `
 changes require a concrete `NTH-CD-*` decision before product-source edits. Integration rebuilds the approved
 capability through the current Protocol / Client / Daemon / Core / Drivers / shell owners; it does not cherry-pick
 or preserve Paseo authority.
+
+The accepted v0.2.3 review is deliberately not the linear text range between tag commits because v0.2.2 and
+v0.2.3 diverge. Its exact source inventory is:
+
+```text
+v0.2.2...v0.2.3 --right-only
+merge base: 36f38245cab51bbe0b43b6ac42fd41aa757064d9
+target:     43cf858c3760679ec9be805ba8b903cdf20f7103
+commits:    36
+```
+
+Local AppImage automation uses localhost CDP and an isolated daemon. Do not inject an external proxy into that
+control path; unset proxy variables or include both `127.0.0.1` and `localhost` in `NO_PROXY`. Hosted Relay
+acceptance is different: on Node 24, set `NODE_USE_ENV_PROXY=1` together with this environment's HTTP(S) proxy so
+the `ws` stack actually uses it. These are execution-environment rules, not alternate product transports.
 
 Android packaging:
 

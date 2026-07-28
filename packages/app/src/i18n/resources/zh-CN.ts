@@ -460,6 +460,7 @@ export const zhCN: TranslationResources = {
         openFor: "打开 {{label}} 的菜单",
         copyResumeCommand: "复制恢复命令",
         copyAgentId: "复制 Agent ID",
+        copyTerminalId: "复制终端 ID",
         copyFilePath: "Copy file path",
         rename: "重命名",
         closeAbove: "关闭上方标签",
@@ -496,6 +497,7 @@ export const zhCN: TranslationResources = {
       toasts: {
         copyFailed: "复制失败",
         agentIdCopiedLabel: "Agent ID",
+        terminalIdCopiedLabel: "终端 ID",
         resumeCommandCopiedLabel: "恢复命令",
         filePathCopiedLabel: "File path",
         resumeIdUnavailable: "恢复 ID 不可用",
@@ -552,6 +554,7 @@ export const zhCN: TranslationResources = {
       title: "Scripts",
       actions: {
         run: "运行",
+        stop: "停止",
         view: "查看",
       },
       accessibility: {
@@ -559,11 +562,13 @@ export const zhCN: TranslationResources = {
         openAt: "在 {{label}} 打开 {{scriptName}}",
         viewTerminal: "查看 {{scriptName}} Terminal",
         runScript: "运行 {{scriptName}} script",
+        stopScript: "停止 {{scriptName}} script",
         script: "{{scriptName}} script",
       },
       states: {
         exitCode: "exit {{code}}",
         startFailed: "启动 {{scriptName}} 失败",
+        stopFailed: "停止 {{scriptName}} 失败",
       },
     },
     git: {
@@ -775,6 +780,7 @@ export const zhCN: TranslationResources = {
       closeSidebar: "关闭侧边栏",
     },
     sections: {
+      pinned: "已固定",
       sessions: "历史",
     },
     worktreeSetup: {
@@ -815,6 +821,7 @@ export const zhCN: TranslationResources = {
       actions: {
         menu: "Workspace 操作",
         newWorkspace: "新建 workspace",
+        pinWorkspace: "固定或取消固定 workspace",
         showMore: "显示更多",
         showLess: "收起",
         createWorkspaceFor: "为 {{projectName}} 新建 workspace",
@@ -909,7 +916,7 @@ export const zhCN: TranslationResources = {
       },
       keepRunning: {
         title: "退出后保持 daemon 运行",
-        hint: "退出 Thoth 后 daemon 会继续运行",
+        hint: "保持开启后，退出 Thoth 时任务和计划仍会继续运行；关闭后，退出会停止计划任务和后台任务。",
       },
       logs: {
         title: "日志文件",
@@ -1543,6 +1550,7 @@ export const zhCN: TranslationResources = {
       help: {
         openProject: "打开项目",
         newWorkspace: "新建 workspace",
+        pinWorkspace: "固定或取消固定 workspace",
         newWorktree: "新建 worktree",
         archiveWorktree: "归档 worktree",
         newTab: "新建标签",

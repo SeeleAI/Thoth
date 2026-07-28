@@ -34,6 +34,7 @@ export function createScheduleInspectSchema(
 
 export interface ScheduleLogRow {
   id: string;
+  workspaceId: string | null;
   taskId: string | null;
   executionId: string | null;
   status: string;
@@ -47,6 +48,7 @@ export const scheduleLogSchema: OutputSchema<ScheduleLogRow> = {
   idField: "id",
   columns: [
     { header: "RUN ID", field: "id", width: 14 },
+    { header: "WORKSPACE", field: "workspaceId", width: 18 },
     { header: "TASK ID", field: "taskId", width: 18 },
     { header: "EXECUTION ID", field: "executionId", width: 18 },
     { header: "STATUS", field: "status", width: 12 },
@@ -60,6 +62,7 @@ export const scheduleLogSchema: OutputSchema<ScheduleLogRow> = {
 export function toScheduleLogRow(run: ScheduleRunRecord): ScheduleLogRow {
   return {
     id: run.id,
+    workspaceId: run.workspaceId,
     taskId: run.taskId,
     executionId: run.executionId,
     status: run.status,

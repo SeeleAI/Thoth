@@ -3,8 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Logger } from "pino";
 import { z } from "zod";
-import type { ProviderUsage, ProviderUsageBalance } from "../../../server/messages.js";
-import type { ProviderApiFetch, ProviderUsageFetcher } from "../provider.js";
+import type { ProviderUsage, ProviderUsageBalance } from "@thoth/protocol/messages";
+import type { ProviderApiFetch, ProviderUsageReader } from "../provider.js";
 import {
   ApiNumberSchema,
   balanceToneFromRemaining,
@@ -38,7 +38,7 @@ interface GrokQuotaProviderOptions {
   fetch?: ProviderApiFetch;
 }
 
-export class GrokQuotaProvider implements ProviderUsageFetcher {
+export class GrokQuotaProvider implements ProviderUsageReader {
   readonly providerId = "grok";
   readonly displayName = "Grok";
 

@@ -47,6 +47,7 @@ function createCatalog(
     browserToolsBroker?: {
       execute: ReturnType<typeof vi.fn>;
     };
+    workspaceScripts?: Parameters<typeof createThothToolCatalog>[0]["workspaceScripts"];
   } = {},
 ) {
   const timeline: AgentTimelineItem[] = [];
@@ -164,6 +165,7 @@ function createCatalog(
     callerAgentId: "agent-1",
     callerAgentConfig: primaryAgent.config,
     toolGateway,
+    ...(input.workspaceScripts ? { workspaceScripts: input.workspaceScripts } : {}),
     ...(input.browserToolsBroker ? { browserToolsBroker: input.browserToolsBroker } : {}),
   });
   callerRegistered = true;
@@ -516,6 +518,124 @@ describe("Thoth runtime authority tools", () => {
     expect(catalog.getTool("thoth_submit_task_card")).toBeDefined();
     expect(catalog.getTool("thoth_submit_goals_card")).toBeDefined();
     expect(catalog.getTool("thoth_report_blocked")).toBeDefined();
+  });
+
+  it("derives Workspace script list scope from ToolGateway without accepting a provider workspaceId", async () => {
+    const listWorkspace = vi.fn(async (workspaceId: string) => ({
+      workspaceId,
+      scripts: [
+        {
+          scriptName: "web",
+          command: "npm run web",
+          type: "service" as const,
+          hostname: "web--repo.localhost",
+          port: 3000,
+          proxyUrl: "http://web--repo.localhost:6688",
+          lifecycle: "stopped" as const,
+          health: null,
+          exitCode: null,
+          terminalId: null,
+        },
+      ],
+      error: null,
+      errorCode: null,
+    }));
+    const { catalog } = createCatalog({
+      workspaceScripts: {
+        listWorkspace,
+        startWorkspace: vi.fn(),
+        stopWorkspace: vi.fn(),
+      },
+    });
+
+    const result = await catalog.executeTool(
+      "thoth_list_workspace_scripts",
+      {},
+      {
+        providerToolCall: {
+          provider: "codex",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          callId: "call-list-scripts",
+          toolName: "thoth_list_workspace_scripts",
+          isActiveProviderTurn: true,
+        },
+      },
+    );
+
+    expect(listWorkspace).toHaveBeenCalledWith("workspace-test");
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      scripts: [{ scriptName: "web" }],
+    });
+    await expect(
+      catalog.executeTool("thoth_list_workspace_scripts", { workspaceId: "workspace-other" }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects script mutation during Clarify and admits it only in user-approved Quick execution", async () => {
+    const startWorkspace = vi.fn(async (workspaceId: string, scriptName: string) => ({
+      workspaceId,
+      scriptName,
+      script: {
+        scriptName,
+        command: "npm run web",
+        type: "service" as const,
+        hostname: "web--repo.localhost",
+        port: 3000,
+        proxyUrl: "http://web--repo.localhost:6688",
+        lifecycle: "running" as const,
+        health: null,
+        exitCode: null,
+        terminalId: "terminal-web",
+      },
+      terminalId: "terminal-web",
+      error: null,
+      errorCode: null,
+    }));
+    const { catalog } = createCatalog({
+      workspaceScripts: {
+        listWorkspace: vi.fn(),
+        startWorkspace,
+        stopWorkspace: vi.fn(),
+      },
+    });
+    const context = {
+      providerToolCall: {
+        provider: "codex",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        callId: "call-start-script",
+        toolName: "thoth_start_workspace_script",
+        isActiveProviderTurn: true,
+      },
+    };
+
+    await expect(
+      catalog.executeTool("thoth_start_workspace_script", { scriptName: "web" }, context),
+    ).rejects.toThrow("permission_denied during Clarify");
+    expect(startWorkspace).not.toHaveBeenCalled();
+
+    const turn = currentAuthorityStore?.getActiveTurn("agent-1");
+    if (!turn) throw new Error("Missing active foreground turn");
+    currentAuthorityStore?.markLifecycle({
+      agentId: "agent-1",
+      turnId: turn.id,
+      generation: turn.generation,
+      lifecycle: "quick_exec",
+      reason: "quick_exec_started",
+      error: null,
+    });
+    const result = await catalog.executeTool(
+      "thoth_start_workspace_script",
+      { scriptName: "web" },
+      context,
+    );
+    expect(startWorkspace).toHaveBeenCalledWith("workspace-test", "web");
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      script: { scriptName: "web", lifecycle: "running" },
+    });
   });
 
   it("parks the provider after opening a Task Card", async () => {

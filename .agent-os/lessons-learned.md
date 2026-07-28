@@ -1799,3 +1799,48 @@ Observed on `2026-07-28` in exact-SHA workflow `30282306284`:
 Conclusion: fresh storage classification must be based on ownership, not merely on whether another shell created a
 path before the daemon. Keep the allowlist narrow, preserve unknown authority, and include the packaged renderer's
 startup ordering in Release gates.
+
+## `NTH-EXP-071` Packaged UI acceptance must isolate localhost control traffic and wait for hydrated surfaces
+
+Observed on `2026-07-28` during `NTH-TD-049`:
+
+1. The first complete AppImage command exported and packaged successfully, and Electron logged
+   `DevTools listening on ws://127.0.0.1:<port>`, but Playwright timed out connecting to CDP. The command had
+   injected the external HTTP proxy into the entire process. Re-running the already-built packaged smoke with
+   proxy variables removed and `NO_PROXY=127.0.0.1,localhost` connected immediately, proving the product window
+   was healthy and localhost control traffic had been contaminated by the test environment.
+2. The next run attempted the Workspace scripts button immediately after `page.goto()`. Desktop defaults the
+   Workspace `Tasks` surface open, but its persisted store hydrates after navigation. An instantaneous visibility
+   sample missed it; the subsequently mounted panel intercepted the click. The smoke now waits for the real Tasks
+   surface, closes it through `Close Tasks`, waits for it to leave the hit-test tree, then opens scripts. It does
+   not use force-click or bypass the UI.
+3. The read-only Files container can become visible before asynchronous file content arrives. The former immediate
+   text assertion failed intermittently even though the daemon returned the file. The acceptance now waits for the
+   exact `PACKAGED_UNCOMMITTED_CHANGE` marker in the same real pane. The final stale assertion expected storage
+   layout/schema v3 although the approved Schedule-run Workspace columns intentionally migrated it to v4; the
+   packaged check now requires the exact current v4 marker and both SQLite user versions.
+4. After these sequencing repairs, the full root `accept:thoth:appimage` rebuilt the candidate and passed every
+   real-window surface with exit code `0`.
+
+Conclusion: a packaged gate must distinguish process startup, renderer hydration and asynchronous projection
+readiness. Localhost CDP/daemon traffic must be excluded from external proxies, and a UI acceptance must perform
+the user's valid close/open sequence instead of sampling pre-hydration state or forcing an obscured control.
+
+## `NTH-EXP-072` Node WebSocket Relay smokes require explicit Node environment-proxy activation
+
+Observed on `2026-07-28` during `NTH-TD-049`:
+
+1. The first hosted Relay gate built and installed the internal Server CLI, paired successfully, negotiated v3
+   E2EE, transferred the new large file as seven encrypted binary frames and completed the core journey. After the
+   test deliberately closed the client, its reconnect phase failed after five attempts. Daemon logs showed direct
+   Cloudflare IPv4 `ETIMEDOUT` and unreachable IPv6; this was network egress, not a Relay contract rejection.
+2. Supplying `HTTP_PROXY` / `HTTPS_PROXY` alone is insufficient for Node's `ws`/HTTPS stack. Node `24.14.0` must
+   also receive `NODE_USE_ENV_PROXY=1`; localhost remains in `NO_PROXY`. With that explicit runtime switch, the
+   same packaged Server CLI and hosted endpoint completed the entire client-restart, daemon-restart, Card restore,
+   Task pause/resume/stop and multi-chunk transfer journey with exit code `0`.
+3. The successful report verifies `1,048,649` bytes, five `256 KiB` chunks, revision receipt and SHA-256
+   `a3f78a2060c5184ff17038b38a20581bec0684185a3a66f3e204e31c938f361e`. No Relay source or deployment changed.
+
+Conclusion: preserve the first external failure receipt, then classify it from transport logs. In restricted
+environments, activate Node's environment proxy explicitly; do not mislabel a successful hosted protocol as
+unsupported, deploy a substitute Relay, or weaken reconnect acceptance to avoid an egress failure.

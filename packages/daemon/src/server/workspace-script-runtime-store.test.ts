@@ -1,8 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  CatalogWorkspaceScriptRuntimeReceiptRepository,
   WorkspaceScriptRuntimeStore,
   type ScriptRuntimeEntry,
 } from "./workspace-script-runtime-store.js";
+import { WorkspaceCatalogStore } from "./workspace-authority/catalog-store.js";
+
+const temporaryHomes: string[] = [];
+
+afterEach(() => {
+  for (const home of temporaryHomes.splice(0)) rmSync(home, { recursive: true, force: true });
+});
 
 function createEntry(overrides: Partial<ScriptRuntimeEntry> = {}): ScriptRuntimeEntry {
   return {
@@ -17,6 +28,32 @@ function createEntry(overrides: Partial<ScriptRuntimeEntry> = {}): ScriptRuntime
 }
 
 describe("WorkspaceScriptRuntimeStore", () => {
+  it("persists receipts in Host catalog SQLite and marks stale running state stopped on restart", () => {
+    const home = mkdtempSync(join(tmpdir(), "thoth-script-runtime-"));
+    temporaryHomes.push(home);
+    const firstCatalog = new WorkspaceCatalogStore(home);
+    const first = new WorkspaceScriptRuntimeStore(
+      new CatalogWorkspaceScriptRuntimeReceiptRepository(firstCatalog),
+    );
+    first.set(createEntry());
+    firstCatalog.close();
+
+    const reopenedCatalog = new WorkspaceCatalogStore(home);
+    const reopened = new WorkspaceScriptRuntimeStore(
+      new CatalogWorkspaceScriptRuntimeReceiptRepository(reopenedCatalog),
+    );
+    expect(reopened.get({ workspaceId: "workspace-101", scriptName: "web" })).toEqual(
+      createEntry(),
+    );
+    expect(reopened.reconcileStaleRunningEntries()).toEqual([
+      createEntry({ lifecycle: "stopped" }),
+    ]);
+    expect(reopened.get({ workspaceId: "workspace-101", scriptName: "web" })).toEqual(
+      createEntry({ lifecycle: "stopped" }),
+    );
+    reopenedCatalog.close();
+  });
+
   it("stores and returns entries by workspace and script name", () => {
     const store = new WorkspaceScriptRuntimeStore();
     const entry = createEntry();
@@ -55,6 +92,37 @@ describe("WorkspaceScriptRuntimeStore", () => {
     expect(store.isRunning({ workspaceId: "workspace-101", scriptName: "web" })).toBe(true);
     expect(store.isRunning({ workspaceId: "workspace-101", scriptName: "typecheck" })).toBe(false);
     expect(store.isRunning({ workspaceId: "workspace-101", scriptName: "missing" })).toBe(false);
+  });
+
+  it("serializes lifecycle operations per Workspace and script without becoming runtime truth", async () => {
+    const store = new WorkspaceScriptRuntimeStore();
+    let releaseFirst!: () => void;
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const key = { workspaceId: "workspace-101", scriptName: "web" };
+    const first = store.runExclusiveOperation(key, async () => {
+      await firstBlocked;
+      return "first";
+    });
+    await Promise.resolve();
+
+    await expect(store.runExclusiveOperation(key, async () => "duplicate")).resolves.toEqual({
+      acquired: false,
+    });
+    await expect(
+      store.runExclusiveOperation(
+        { workspaceId: "workspace-101", scriptName: "api" },
+        async () => "independent",
+      ),
+    ).resolves.toEqual({ acquired: true, value: "independent" });
+
+    releaseFirst();
+    await expect(first).resolves.toEqual({ acquired: true, value: "first" });
+    await expect(store.runExclusiveOperation(key, async () => "next")).resolves.toEqual({
+      acquired: true,
+      value: "next",
+    });
   });
 
   it("removes individual entries", () => {

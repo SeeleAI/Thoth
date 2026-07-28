@@ -384,7 +384,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       workspaceId: agent.workspaceId,
       workspaceRoot,
     });
-    const { isLoadingOlder, hasOlder, loadOlder } = useLoadOlderAgentHistory({
+    const { isLoadingOlder, hasOlder, progressKey, loadOlder } = useLoadOlderAgentHistory({
       serverId: resolvedServerId,
       agentId,
       toast,
@@ -950,6 +950,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               onNearHistoryStart: loadOlder,
               isLoadingOlderHistory: isLoadingOlder,
               hasOlderHistory: hasOlder,
+              olderHistoryProgressKey: progressKey,
               scrollEnabled: streamScrollEnabled,
               listStyle: stylesheet.list,
               baseListContentContainerStyle: stylesheet.listContentContainer,

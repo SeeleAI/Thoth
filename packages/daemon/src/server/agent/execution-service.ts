@@ -543,6 +543,15 @@ export interface IdleAgentRuntimeCollectionResult {
   releasedAgentIds: string[];
 }
 
+interface AgentRuntimeResidencyIndex {
+  parentByAgentId: ReadonlyMap<string, string>;
+}
+
+interface AgentTreeResidency {
+  effectiveActivityAtMs: number;
+  hasActiveChildRuntime: boolean;
+}
+
 type ActiveManagedAgent =
   | ManagedAgentInitializing
   | ManagedAgentIdle
@@ -746,6 +755,7 @@ export class ExecutionService {
   private readonly backgroundTasks = new Set<Promise<void>>();
   private readonly agentRegistrationTasks = new Set<Promise<void>>();
   private readonly agentCloseTasks = new Map<string, Promise<void>>();
+  private agentTreeLifecycleTail: Promise<void> = Promise.resolve();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
@@ -1476,7 +1486,24 @@ export class ExecutionService {
     }
   }
 
+  private runAgentTreeLifecycleOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const task = this.agentTreeLifecycleTail.then(operation);
+    this.agentTreeLifecycleTail = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    return task;
+  }
+
   async collectIdleAgentRuntimes(
+    options: IdleAgentRuntimeCollectionOptions,
+  ): Promise<IdleAgentRuntimeCollectionResult> {
+    return this.runAgentTreeLifecycleOperation(() =>
+      this.collectIdleAgentRuntimesInternal(options),
+    );
+  }
+
+  private async collectIdleAgentRuntimesInternal(
     options: IdleAgentRuntimeCollectionOptions,
   ): Promise<IdleAgentRuntimeCollectionResult> {
     await this.drainQueuedSessionEvents();
@@ -1485,21 +1512,40 @@ export class ExecutionService {
 
     const protectedAgentIds = new Set(options.protectedAgentIds ?? []);
     const examinedAgentCount = this.agents.size;
+    const residencyIndex = await this.buildAgentRuntimeResidencyIndex();
     const candidateIds = [...this.agents.values()]
       .filter((agent) =>
-        this.isIdleRuntimeCollectionCandidate(agent, options.cutoff, protectedAgentIds),
+        this.isIdleRuntimeCollectionCandidate(
+          agent,
+          options.cutoff,
+          protectedAgentIds,
+          residencyIndex,
+        ),
       )
       .map((agent) => agent.id)
-      .sort();
+      .sort((left, right) => {
+        const depthDifference =
+          this.getManagedAgentTreeDepth(right, residencyIndex) -
+          this.getManagedAgentTreeDepth(left, residencyIndex);
+        return depthDifference || left.localeCompare(right);
+      });
     const releasedAgentIds: string[] = [];
 
     for (const agentId of candidateIds) {
       let released = false;
       const { task, started } = this.startAgentCloseTask(agentId, async () => {
+        let refreshedResidencyIndex = await this.buildAgentRuntimeResidencyIndex();
+        await this.drainQueuedSessionEventsForAgentTree(agentId, refreshedResidencyIndex);
+        refreshedResidencyIndex = await this.buildAgentRuntimeResidencyIndex();
         const current = this.agents.get(agentId);
         if (
           !current ||
-          !this.isIdleRuntimeCollectionCandidate(current, options.cutoff, protectedAgentIds)
+          !this.isIdleRuntimeCollectionCandidate(
+            current,
+            options.cutoff,
+            protectedAgentIds,
+            refreshedResidencyIndex,
+          )
         ) {
           return;
         }
@@ -1523,12 +1569,15 @@ export class ExecutionService {
     agent: LiveManagedAgent,
     cutoff: Date,
     protectedAgentIds: ReadonlySet<string>,
+    residencyIndex: AgentRuntimeResidencyIndex,
   ): boolean {
+    const residency = this.getAgentTreeResidency(agent, residencyIndex);
     return (
       agent.lifecycle === "idle" &&
       !agent.internal &&
       agent.persistence !== null &&
-      agent.updatedAt.getTime() <= cutoff.getTime() &&
+      residency.effectiveActivityAtMs <= cutoff.getTime() &&
+      !residency.hasActiveChildRuntime &&
       !protectedAgentIds.has(agent.id) &&
       !agent.pendingReplacement &&
       agent.activeForegroundTurnId === null &&
@@ -1538,6 +1587,201 @@ export class ExecutionService {
       !this.foregroundRuns.hasPendingRun(agent.id) &&
       !this.sessionEventTails.has(agent.id)
     );
+  }
+
+  private async buildAgentRuntimeResidencyIndex(): Promise<AgentRuntimeResidencyIndex> {
+    const parentByAgentId = new Map<string, string>();
+    if (this.registry) {
+      for (const record of await this.registry.list()) {
+        const parentAgentId = getParentAgentIdFromLabels(record.labels);
+        if (parentAgentId) {
+          parentByAgentId.set(record.id, parentAgentId);
+        }
+      }
+    }
+    for (const agent of this.agents.values()) {
+      const parentAgentId = getParentAgentIdFromLabels(agent.labels);
+      if (parentAgentId) {
+        parentByAgentId.set(agent.id, parentAgentId);
+      } else {
+        parentByAgentId.delete(agent.id);
+      }
+    }
+    return { parentByAgentId };
+  }
+
+  private getManagedAgentTreeDepth(
+    agentId: string,
+    residencyIndex: AgentRuntimeResidencyIndex,
+  ): number {
+    let depth = 0;
+    let currentAgentId = agentId;
+    const visited = new Set([agentId]);
+    while (true) {
+      const parentAgentId = residencyIndex.parentByAgentId.get(currentAgentId);
+      if (!parentAgentId || visited.has(parentAgentId)) {
+        return depth;
+      }
+      visited.add(parentAgentId);
+      currentAgentId = parentAgentId;
+      depth += 1;
+    }
+  }
+
+  private isManagedAgentDescendant(
+    agentId: string,
+    ancestorAgentId: string,
+    residencyIndex: AgentRuntimeResidencyIndex,
+  ): boolean {
+    let currentAgentId = agentId;
+    const visited = new Set([agentId]);
+    while (true) {
+      const parentAgentId = residencyIndex.parentByAgentId.get(currentAgentId);
+      if (!parentAgentId || visited.has(parentAgentId)) {
+        return false;
+      }
+      if (parentAgentId === ancestorAgentId) {
+        return true;
+      }
+      visited.add(parentAgentId);
+      currentAgentId = parentAgentId;
+    }
+  }
+
+  private getAgentTreeResidency(
+    rootAgent: LiveManagedAgent,
+    residencyIndex: AgentRuntimeResidencyIndex,
+  ): AgentTreeResidency {
+    let effectiveActivityAtMs = rootAgent.updatedAt.getTime();
+    let hasActiveChildRuntime = false;
+
+    for (const candidate of this.agents.values()) {
+      const isRoot = candidate.id === rootAgent.id;
+      if (!isRoot && !this.isManagedAgentDescendant(candidate.id, rootAgent.id, residencyIndex)) {
+        continue;
+      }
+
+      const providerNativeChildren = this.getRunningProviderNativeChildren(candidate.id);
+      const hasActiveManagedRuntime = !isRoot && this.isManagedRuntimeActive(candidate);
+      if (!hasActiveManagedRuntime && providerNativeChildren.length === 0) {
+        continue;
+      }
+
+      hasActiveChildRuntime = true;
+      effectiveActivityAtMs = Math.max(effectiveActivityAtMs, candidate.updatedAt.getTime());
+      for (const child of providerNativeChildren) {
+        effectiveActivityAtMs = Math.max(effectiveActivityAtMs, child.timestampMs);
+      }
+    }
+
+    return { effectiveActivityAtMs, hasActiveChildRuntime };
+  }
+
+  private isManagedRuntimeActive(agent: LiveManagedAgent): boolean {
+    if (agent.lifecycle === "error") {
+      return false;
+    }
+    return (
+      agent.lifecycle === "initializing" ||
+      agent.lifecycle === "running" ||
+      agent.activeForegroundTurnId !== null ||
+      agent.pendingReplacement ||
+      agent.pendingPermissions.size > 0 ||
+      agent.inFlightPermissionResponses.size > 0 ||
+      agent.bufferedPermissionResolutions.size > 0 ||
+      this.foregroundRuns.hasPendingRun(agent.id) ||
+      this.sessionEventTails.has(agent.id)
+    );
+  }
+
+  private getRunningProviderNativeChildren(agentId: string): Array<{
+    item: Extract<AgentTimelineItem, { type: "tool_call" }>;
+    timestampMs: number;
+  }> {
+    if (!this.timelineStore.has(agentId)) {
+      return [];
+    }
+
+    const latestByCallId = new Map<
+      string,
+      {
+        item: Extract<AgentTimelineItem, { type: "tool_call" }>;
+        timestampMs: number;
+      }
+    >();
+    for (const row of this.timelineStore.getRows(agentId)) {
+      if (row.item.type !== "tool_call" || row.item.detail.type !== "sub_agent") {
+        continue;
+      }
+      latestByCallId.set(row.item.callId, {
+        item: row.item,
+        timestampMs: Date.parse(row.timestamp),
+      });
+    }
+    return [...latestByCallId.values()].filter((entry) => entry.item.status === "running");
+  }
+
+  private cancelRunningProviderNativeChildren(agent: LiveManagedAgent): void {
+    const runningChildren = this.getRunningProviderNativeChildren(agent.id);
+    if (runningChildren.length === 0) {
+      return;
+    }
+
+    this.touchUpdatedAt(agent);
+    for (const { item } of runningChildren) {
+      const canceledItem: Extract<AgentTimelineItem, { type: "tool_call" }> = {
+        ...item,
+        status: "canceled",
+        error: null,
+      };
+      const row = this.recordTimeline(agent.id, canceledItem);
+      this.dispatchStream(
+        agent.id,
+        {
+          type: "timeline",
+          item: canceledItem,
+          provider: agent.provider,
+          ...(agent.activeForegroundTurnId ? { turnId: agent.activeForegroundTurnId } : {}),
+        },
+        {
+          seq: row.seq,
+          epoch: this.timelineStore.getEpoch(agent.id),
+          timestamp: row.timestamp,
+        },
+      );
+    }
+  }
+
+  private getLiveAgentTreeIds(
+    rootAgentId: string,
+    residencyIndex: AgentRuntimeResidencyIndex,
+  ): Set<string> {
+    const ids = new Set([rootAgentId]);
+    for (const agent of this.agents.values()) {
+      if (this.isManagedAgentDescendant(agent.id, rootAgentId, residencyIndex)) {
+        ids.add(agent.id);
+      }
+    }
+    return ids;
+  }
+
+  private async drainQueuedSessionEventsForAgentTree(
+    rootAgentId: string,
+    residencyIndex: AgentRuntimeResidencyIndex,
+  ): Promise<void> {
+    const treeAgentIds = this.getLiveAgentTreeIds(rootAgentId, residencyIndex);
+    while (true) {
+      const pending = [...treeAgentIds]
+        .map((agentId) => this.sessionEventTails.get(agentId))
+        .filter((task): task is Promise<void> => task !== undefined);
+      if (pending.length === 0) {
+        break;
+      }
+      await Promise.allSettled(pending);
+    }
+    for (const agentId of treeAgentIds) {
+      this.agentStreamCoalescer.flushFor(agentId);
+    }
   }
 
   private async drainQueuedSessionEvents(): Promise<void> {
@@ -1972,7 +2216,9 @@ export class ExecutionService {
       providerControlRevision?: number;
     },
   ): Promise<ManagedAgent> {
-    return this.trackAgentRegistrationOperation(this.createAgentInternal(config, agentId, options));
+    return this.trackAgentRegistrationOperation(
+      this.runAgentTreeLifecycleOperation(() => this.createAgentInternal(config, agentId, options)),
+    );
   }
 
   private async createAgentInternal(
@@ -2048,12 +2294,12 @@ export class ExecutionService {
     },
   ): Promise<ManagedAgent> {
     return this.trackAgentRegistrationOperation(
-      (async () => {
+      this.runAgentTreeLifecycleOperation(async () => {
         if (agentId) {
           await this.waitForAgentClose(agentId);
         }
         return await this.resumeAgentFromPersistenceInternal(handle, overrides, agentId, options);
-      })(),
+      }),
     );
   }
 
@@ -2111,7 +2357,9 @@ export class ExecutionService {
     workspaceId: string;
     labels?: Record<string, string>;
   }): Promise<ManagedAgent> {
-    return this.trackAgentRegistrationOperation(this.importProviderSessionInternal(input));
+    return this.trackAgentRegistrationOperation(
+      this.runAgentTreeLifecycleOperation(() => this.importProviderSessionInternal(input)),
+    );
   }
 
   private async importProviderSessionInternal(input: {
@@ -2197,7 +2445,9 @@ export class ExecutionService {
     options?: { rehydrateFromDisk?: boolean },
   ): Promise<ManagedAgent> {
     return this.trackAgentRegistrationOperation(
-      this.reloadAgentSessionInternal(agentId, overrides, options),
+      this.runAgentTreeLifecycleOperation(() =>
+        this.reloadAgentSessionInternal(agentId, overrides, options),
+      ),
     );
   }
 
@@ -2236,6 +2486,9 @@ export class ExecutionService {
     let handedToRegistration = false;
     try {
       this.assertAcceptingAgentRegistrations();
+      const residencyIndex = await this.buildAgentRuntimeResidencyIndex();
+      await this.drainQueuedSessionEventsForAgentTree(agentId, residencyIndex);
+      this.cancelRunningProviderNativeChildren(existing);
       const closedExisting = this.prepareAgentForClosure(existing, "agent reloaded");
       try {
         await this.persistSnapshot(closedExisting);
@@ -2328,8 +2581,10 @@ export class ExecutionService {
   }
 
   async closeAgent(agentId: string): Promise<void> {
-    const { task } = this.startAgentCloseTask(agentId, () => this.closeAgentInternal(agentId));
-    await task;
+    await this.runAgentTreeLifecycleOperation(async () => {
+      const { task } = this.startAgentCloseTask(agentId, () => this.closeAgentInternal(agentId));
+      await task;
+    });
   }
 
   private async closeAgentInternal(agentId: string): Promise<void> {
@@ -2341,6 +2596,9 @@ export class ExecutionService {
       this.requireAgent(agentId);
       return;
     }
+    const residencyIndex = await this.buildAgentRuntimeResidencyIndex();
+    await this.drainQueuedSessionEventsForAgentTree(agentId, residencyIndex);
+    this.cancelRunningProviderNativeChildren(agent);
     this.logger.trace(
       {
         agentId,

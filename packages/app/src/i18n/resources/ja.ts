@@ -453,7 +453,7 @@ export const ja: TranslationResources = {
         terminal: "ターミナル",
         browser: "ブラウザ",
         agent: "エージェント",
-        backgroundTasks: "Background tasks",
+        backgroundTasks: "Tasks",
         workspace: "ワークスペース",
       },
       switcher: {
@@ -465,6 +465,7 @@ export const ja: TranslationResources = {
         openFor: "{{label}}のメニューを開く",
         copyResumeCommand: "再開コマンドをコピー",
         copyAgentId: "エージェントIDをコピー",
+        copyTerminalId: "ターミナルIDをコピー",
         copyFilePath: "ファイルパスをコピー",
         rename: "名前を変更",
         closeAbove: "上のタブを閉じる",
@@ -502,6 +503,7 @@ export const ja: TranslationResources = {
       toasts: {
         copyFailed: "コピーに失敗しました",
         agentIdCopiedLabel: "エージェントID",
+        terminalIdCopiedLabel: "ターミナルID",
         resumeCommandCopiedLabel: "再開コマンド",
         filePathCopiedLabel: "ファイルパス",
         resumeIdUnavailable: "再開IDが利用できません",
@@ -559,6 +561,7 @@ export const ja: TranslationResources = {
       title: "スクリプト",
       actions: {
         run: "実行",
+        stop: "停止",
         view: "表示",
       },
       accessibility: {
@@ -566,11 +569,13 @@ export const ja: TranslationResources = {
         openAt: "{{label}}で{{scriptName}}を開く",
         viewTerminal: "{{scriptName}}ターミナルを表示",
         runScript: "{{scriptName}}スクリプトを実行",
+        stopScript: "{{scriptName}}スクリプトを停止",
         script: "{{scriptName}}スクリプト",
       },
       states: {
         exitCode: "終了コード: {{code}}",
         startFailed: "{{scriptName}}の起動に失敗しました",
+        stopFailed: "{{scriptName}}の停止に失敗しました",
       },
     },
     git: {
@@ -794,6 +799,7 @@ export const ja: TranslationResources = {
       closeSidebar: "サイドバーを閉じる",
     },
     sections: {
+      pinned: "ピン留め",
       sessions: "履歴",
     },
     worktreeSetup: {
@@ -836,6 +842,7 @@ export const ja: TranslationResources = {
       actions: {
         menu: "ワークスペースアクション",
         newWorkspace: "新しいワークスペース",
+        pinWorkspace: "ワークスペースをピン留めまたは解除",
         showMore: "さらに表示",
         showLess: "表示を減らす",
         createWorkspaceFor: "{{projectName}}の新しいワークスペースを作成",
@@ -932,7 +939,7 @@ export const ja: TranslationResources = {
       },
       keepRunning: {
         title: "終了後もデーモンを実行し続ける",
-        hint: "Thothを終了してもデーモンは実行し続けます",
+        hint: "オンにすると、Thoth の終了後もタスクとスケジュールが継続します。オフにすると、終了時にスケジュール済みタスクとバックグラウンドタスクが停止します。",
       },
       logs: {
         title: "ログファイル",
@@ -1578,6 +1585,7 @@ export const ja: TranslationResources = {
       help: {
         openProject: "プロジェクトを開く",
         newWorkspace: "新しいワークスペース",
+        pinWorkspace: "ワークスペースをピン留めまたは解除",
         newWorktree: "新しいワークツリー",
         archiveWorktree: "ワークツリーをアーカイブ",
         newTab: "新しいタブ",

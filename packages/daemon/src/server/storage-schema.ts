@@ -2,10 +2,10 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const STORAGE_LAYOUT_VERSION = 3;
-export const SQLITE_SCHEMA_VERSION = 3;
-export const CATALOG_MIGRATION_VERSION = 3;
-export const AUTHORITY_MIGRATION_VERSION = 6;
+export const STORAGE_LAYOUT_VERSION = 4;
+export const SQLITE_SCHEMA_VERSION = 4;
+export const CATALOG_MIGRATION_VERSION = 4;
+export const AUTHORITY_MIGRATION_VERSION = 7;
 export const STORAGE_LAYOUT_MARKER = "storage-layout.json";
 
 export function catalogDatabasePath(thothHome: string): string {
@@ -40,7 +40,7 @@ export function createCatalogDatabase(filePath: string): void {
     database
       .prepare(
         `INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
-         VALUES (?, 'host-runtime-resources-v3', ?)`,
+        VALUES (?, 'schedule-run-workspace-v4-catalog', ?)`,
       )
       .run(CATALOG_MIGRATION_VERSION, new Date().toISOString());
     database.exec("PRAGMA user_version = " + String(SQLITE_SCHEMA_VERSION));
@@ -58,7 +58,7 @@ export function createWorkspaceDatabase(filePath: string, workspaceId: string): 
     database
       .prepare(
         `INSERT INTO authority_schema_migrations(version, checksum, applied_at)
-         VALUES (?, 'schedule-task-execution-v3', ?)`,
+        VALUES (?, 'schedule-run-workspace-v4', ?)`,
       )
       .run(AUTHORITY_MIGRATION_VERSION, now);
     database
@@ -558,6 +558,7 @@ const WORKSPACE_SCHEMA = `
   CREATE TABLE schedule_runs (
     run_id TEXT PRIMARY KEY NOT NULL,
     schedule_id TEXT NOT NULL,
+    workspace_id TEXT,
     scheduled_for TEXT NOT NULL,
     started_at TEXT NOT NULL,
     ended_at TEXT,

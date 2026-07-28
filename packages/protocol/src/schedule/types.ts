@@ -52,6 +52,7 @@ export type ScheduleTarget = z.infer<typeof ScheduleTargetSchema>;
 
 export const ScheduleRunSchema = z.object({
   id: z.string(),
+  workspaceId: z.string().min(1).nullable().default(null),
   taskId: z.string().min(1).nullable().default(null),
   executionId: z.string().min(1).nullable().default(null),
   scheduledFor: z.string(),

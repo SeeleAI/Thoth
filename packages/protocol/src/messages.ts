@@ -2146,8 +2146,21 @@ export const RenameTerminalRequestSchema = z.object({
   requestId: z.string(),
 });
 
+export const ListWorkspaceScriptsRequestSchema = z.object({
+  type: z.literal("workspace.script.list.request"),
+  workspaceId: z.string(),
+  requestId: z.string(),
+});
+
 export const StartWorkspaceScriptRequestSchema = z.object({
-  type: z.literal("start_workspace_script_request"),
+  type: z.literal("workspace.script.start.request"),
+  workspaceId: z.string(),
+  scriptName: z.string(),
+  requestId: z.string(),
+});
+
+export const StopWorkspaceScriptRequestSchema = z.object({
+  type: z.literal("workspace.script.stop.request"),
   workspaceId: z.string(),
   scriptName: z.string(),
   requestId: z.string(),
@@ -2491,6 +2504,7 @@ export const WorkspaceScriptHealthSchema = z.enum(["healthy", "unhealthy"]);
 
 export const WorkspaceScriptPayloadSchema = z.object({
   scriptName: z.string(),
+  command: z.string().nullable().optional(),
   type: z.enum(["script", "service"]).optional().default("service"),
   hostname: z.string(),
   port: z.number().int().positive().nullable(),
@@ -2502,6 +2516,18 @@ export const WorkspaceScriptPayloadSchema = z.object({
   exitCode: z.number().nullable().optional().default(null),
   terminalId: z.string().nullable().optional().default(null),
 });
+
+export const WorkspaceScriptErrorCodeSchema = z.enum([
+  "workspace_not_found",
+  "script_not_found",
+  "unavailable",
+  "already_running",
+  "not_running",
+  "stale_generation",
+  "permission_denied",
+  "start_failed",
+  "stop_failed",
+]);
 
 const WorkspaceGitRuntimePayloadSchema = z
   .object({
@@ -2853,14 +2879,39 @@ export const ProjectAddResponseSchema = z.object({
   }),
 });
 
+export const ListWorkspaceScriptsResponseMessageSchema = z.object({
+  type: z.literal("workspace.script.list.response"),
+  payload: z.object({
+    requestId: z.string(),
+    workspaceId: z.string(),
+    scripts: z.array(WorkspaceScriptPayloadSchema),
+    error: z.string().nullable(),
+    errorCode: WorkspaceScriptErrorCodeSchema.nullable(),
+  }),
+});
+
 export const StartWorkspaceScriptResponseMessageSchema = z.object({
-  type: z.literal("start_workspace_script_response"),
+  type: z.literal("workspace.script.start.response"),
   payload: z.object({
     requestId: z.string(),
     workspaceId: z.string(),
     scriptName: z.string(),
     terminalId: z.string().nullable(),
     error: z.string().nullable(),
+    errorCode: WorkspaceScriptErrorCodeSchema.nullable(),
+    script: WorkspaceScriptPayloadSchema.nullable(),
+  }),
+});
+
+export const StopWorkspaceScriptResponseMessageSchema = z.object({
+  type: z.literal("workspace.script.stop.response"),
+  payload: z.object({
+    requestId: z.string(),
+    workspaceId: z.string(),
+    scriptName: z.string(),
+    error: z.string().nullable(),
+    errorCode: WorkspaceScriptErrorCodeSchema.nullable(),
+    script: WorkspaceScriptPayloadSchema.nullable(),
   }),
 });
 
@@ -4018,6 +4069,7 @@ export const ProviderUsageSchema = z.object({
   windows: z.array(ProviderUsageWindowSchema),
   balances: z.array(ProviderUsageBalanceSchema).optional(),
   details: z.array(ProviderUsageDetailSchema).optional(),
+  warnings: z.array(z.string()).optional(),
   error: z.string().nullable().optional(),
 });
 
@@ -4244,6 +4296,7 @@ export type WorkspaceProjectDescriptorPayload = z.infer<
 export type WorkspaceScriptLifecycle = z.infer<typeof WorkspaceScriptLifecycleSchema>;
 export type WorkspaceScriptHealth = z.infer<typeof WorkspaceScriptHealthSchema>;
 export type WorkspaceScriptPayload = z.infer<typeof WorkspaceScriptPayloadSchema>;
+export type WorkspaceScriptErrorCode = z.infer<typeof WorkspaceScriptErrorCodeSchema>;
 export type FetchAgentsResponseMessage = z.infer<typeof FetchAgentsResponseMessageSchema>;
 export type FetchAgentHistoryResponseMessage = z.infer<
   typeof FetchAgentHistoryResponseMessageSchema
@@ -4257,6 +4310,12 @@ export type ScriptStatusUpdateMessage = z.infer<typeof ScriptStatusUpdateMessage
 export type OpenProjectResponseMessage = z.infer<typeof OpenProjectResponseMessageSchema>;
 export type StartWorkspaceScriptResponseMessage = z.infer<
   typeof StartWorkspaceScriptResponseMessageSchema
+>;
+export type ListWorkspaceScriptsResponseMessage = z.infer<
+  typeof ListWorkspaceScriptsResponseMessageSchema
+>;
+export type StopWorkspaceScriptResponseMessage = z.infer<
+  typeof StopWorkspaceScriptResponseMessageSchema
 >;
 export type LegacyListAvailableEditorsResponseMessage = z.infer<
   typeof LegacyListAvailableEditorsResponseMessageSchema
@@ -4528,10 +4587,13 @@ export type CreateTerminalRequest = z.infer<typeof CreateTerminalRequestSchema>;
 export type CreateTerminalResponse = z.infer<typeof CreateTerminalResponseSchema>;
 export type RenameTerminalRequest = z.infer<typeof RenameTerminalRequestSchema>;
 export type RenameTerminalResponse = z.infer<typeof RenameTerminalResponseSchema>;
+export type ListWorkspaceScriptsRequest = z.infer<typeof ListWorkspaceScriptsRequestSchema>;
 export type StartWorkspaceScriptRequest = z.infer<typeof StartWorkspaceScriptRequestSchema>;
 export type StartWorkspaceScriptResponse = z.infer<
   typeof StartWorkspaceScriptResponseMessageSchema
 >;
+export type StopWorkspaceScriptRequest = z.infer<typeof StopWorkspaceScriptRequestSchema>;
+export type StopWorkspaceScriptResponse = z.infer<typeof StopWorkspaceScriptResponseMessageSchema>;
 export type SubscribeTerminalRequest = z.infer<typeof SubscribeTerminalRequestSchema>;
 export type SubscribeTerminalResponse = z.infer<typeof SubscribeTerminalResponseSchema>;
 export type UnsubscribeTerminalRequest = z.infer<typeof UnsubscribeTerminalRequestSchema>;
@@ -4923,9 +4985,17 @@ export const rpcRegistry = defineRpcRegistry({
     unsubscribeTerminals: subscription(UnsubscribeTerminalsRequestSchema, null),
     createTerminal: unary(CreateTerminalRequestSchema, CreateTerminalResponseSchema),
     renameTerminal: unary(RenameTerminalRequestSchema, RenameTerminalResponseSchema),
-    startWorkspaceScript: unary(
+    workspaceScriptList: unary(
+      ListWorkspaceScriptsRequestSchema,
+      ListWorkspaceScriptsResponseMessageSchema,
+    ),
+    workspaceScriptStart: unary(
       StartWorkspaceScriptRequestSchema,
       StartWorkspaceScriptResponseMessageSchema,
+    ),
+    workspaceScriptStop: unary(
+      StopWorkspaceScriptRequestSchema,
+      StopWorkspaceScriptResponseMessageSchema,
     ),
     subscribeTerminal: subscription(
       SubscribeTerminalRequestSchema,

@@ -6,7 +6,7 @@
 2. Nature: Thoth APP information architecture, runtime skill, runtime tool bridge, AgentTimeline, and authority card contract
 3. Scope: `packages/app`, `packages/desktop`, `packages/daemon`, `packages/drivers`, `packages/protocol`, `packages/client`
 4. Code contract: `packages/protocol/src/thoth-runtime-contract.ts`, `packages/protocol/src/agent-types.ts`, `packages/protocol/src/messages.ts`
-5. Status: canonical design authority; `NTH-CD-041` locks the restored Paseo production app surface, `NTH-CD-042` locks the Quick / Clarify / Loop phase split, `NTH-CD-045` locks the Loop background main path as Goals Card -> durable Task -> PlanExec / Review phases, `NTH-CD-053` locks one continuous foreground provider thread for each visible Agent, `NTH-CD-054` locks a frozen control snapshot for each send, `NTH-CD-060` upgrades the Runtime Tool Bridge to a shared HarnessAdapter + RuntimeBundle + ToolGateway for all providers/ACP, and `NTH-CD-077` through `NTH-CD-085` add Forge, scoped Browser automation, Workspace Schedule, bounded Timeline, Provider portfolio, read-only Files/Changes, Desktop lifecycle and durable Host resource leases without changing Workspace / Task / Execution authority.
+5. Status: canonical design authority; `NTH-CD-041` locks the restored Paseo production app surface, `NTH-CD-042` locks the Quick / Clarify / Loop phase split, `NTH-CD-045` locks the Loop background main path as Goals Card -> durable Task -> PlanExec / Review phases, `NTH-CD-053` locks one continuous foreground provider thread for each visible Agent, `NTH-CD-054` locks a frozen control snapshot for each send, `NTH-CD-060` upgrades the Runtime Tool Bridge to a shared HarnessAdapter + RuntimeBundle + ToolGateway for all providers/ACP, `NTH-CD-077` through `NTH-CD-085` add Forge, scoped Browser automation, Workspace Schedule, bounded Timeline, Provider portfolio, read-only Files/Changes, Desktop lifecycle and durable Host resource leases, and `NTH-CD-090` through `NTH-CD-095` complete `Tasks | Schedules`, scoped Workspace scripts, atomic transport, Driver-owned Provider/runtime behavior, strict forwarded authority and the persistent-daemon default without changing Workspace / Task / Execution authority.
 6. Replaced scope: this document supersedes the former three-view toy shell, assistant JSON/outputSchema packet, `submit_clarify_packet` main path, Workspace Secretary `liveEvents` summary stream, fake background running/review semantics, and the former Pyramid Plan / `registered_pending` semantics as the Loop main path. Old packet / state-code / golden materials may serve only as legacy/internal evidence or Loop-1 history and do not drive current Loop acceptance.
 
 ## 0. Current Highest-Level Contract
@@ -62,10 +62,17 @@
 3. Browser tools are Provider capabilities translated by Drivers and fenced by ToolGateway. Desktop owns trusted
    Chromium execution with one Host-wide persistent profile; every tab-scoped operation carries `browserId`, while
    App coordinates duplicate/replayed request IDs without becoming durable authority.
-4. Schedule belongs to Workspace authority. Every run exposes real `taskId` and `executionId`, and the App renders
-   the canonical Background Tasks/Timeline result rather than an optimistic local run.
+4. Schedule belongs to Workspace authority. The top-level entry is `Tasks`, with `Tasks | Schedules` tabs. Every
+   run exposes its owner Workspace, actual execution Workspace, real `taskId` and `executionId`; Schedule-to-Task
+   and Task-to-Schedule navigation comes from canonical origin receipts rather than App inference or an optimistic
+   local run. Legacy unknown execution Workspace remains visibly unavailable.
 5. Pin is a device-local presentation preference. Provider-suggested initial titles may be accepted, but a user
    rename is permanently authoritative over later suggestions.
+6. Workspace scripts are read and controlled only through semantic Client list/start/stop calls. The App renders
+   configured command identity, lifecycle, terminal, service port/proxy, health and typed errors; it never owns the
+   process, port lease or command authorization.
+7. Direct and Relay file reads expose one bounded transfer result after advertised size/revision validation. The
+   App cannot observe partial success, infer encrypted frame kind, or create a second file-transfer queue.
 
 ## 1. Core Judgment
 
@@ -298,7 +305,7 @@ Old Loop-2 `registered_pending` is retained only for legacy recovery compatibili
 Minimum UI after registration:
 
 1. The main timeline displays Goals approval / background task handoff.
-2. The Background Tasks list can view real Loop tasks.
+2. The `Tasks` tab can view real Loop, manual background and Schedule-origin Tasks.
 3. Task detail presents status by linear goals, with a spinner for the current goal/phase and the others grayed out.
 4. Phase detail embeds the corresponding PlanExec / Review agent's AgentTimeline.
 5. It remains recoverable after refresh, reconnection, and a mobile deep link.
@@ -352,6 +359,8 @@ The frontend may:
 6. Render read-only Files/Changes/commit history, scoped Browser tabs, and Workspace Schedule receipts returned by
    the semantic Client.
 7. Keep device-local pin, layout, draft checkpoint, focus, and scroll preferences that cannot alter daemon truth.
+8. Render and control Workspace scripts through the semantic list/start/stop API after the Tasks surface is closed
+   or arranged so the script control is interactable; never force an obscured control or call daemon internals.
 
 The frontend must not:
 
@@ -371,9 +380,10 @@ The frontend must not:
 `NTH-EV-030` code-verifies the merged Loop background implementation, but real-provider local/public
 acceptance is still pending.
 
-`NTH-EV-071` locally verifies the accepted operational surfaces through focused owner tests, all five root gates,
-real Web, Android Debug APK, real Codex runtime smoke, and one rebuilt AppImage real-window journey. Fixed-Beta
-workflow and downloaded-public-asset verification remain the publication boundary until that evidence is appended.
+`NTH-EV-071` verifies and publicly closes the Paseo v0.2.2 operational surfaces. `NTH-EV-072` locally verifies the
+v0.2.3 additions through focused owner tests, all five root gates, real Web Schedule/script interaction, Android
+Debug APK, real Codex, hosted Relay v3 E2EE/multi-chunk transfer, and one rebuilt AppImage real-window journey.
+The v0.2.3 exact-SHA workflow and downloaded-public-asset verification remain the publication boundary.
 
 1. The restored Paseo surface is the main path.
 2. Quick+none `hi` is a bare provider stream with no Clarify Card.
@@ -383,7 +393,8 @@ workflow and downloaded-public-asset verification remain the publication boundar
 6. Quick approvals continue into same-session `quick_exec`.
 7. `quick_exec` shows real Shell/Edit timeline rows.
 8. Loop approvals create a durable Loop task and enqueue the scheduler in the current main path.
-9. The Background Tasks list/detail exposes tasks, goals, PlanExec/Review phases, and embedded AgentTimeline.
+9. The `Tasks` list/detail exposes Loop, manual and Schedule-origin tasks, goals, PlanExec/Review phases, Schedule
+   origin navigation, and embedded AgentTimeline; the sibling `Schedules` tab owns Schedule management/history.
 10. Mobile deep-link recovery works.
 11. `npm --workspace=@thoth/app run test`, daemon focused tests, `npm run build:web`, `npm run check:foundation`, and `git diff --check` passed.
 12. Independent `codex exec` UI/runtime mental-model review passed.
@@ -393,7 +404,7 @@ Not fully verified yet:
 1. Real Codex local/public Loop background acceptance for PlanExec / Review execution.
 2. Golden/judge evidence for `thoth.loop` PlanExec / Review quality.
 3. Non-Codex provider runtime-tool adapters.
-4. Fixed-Beta exact-SHA workflow and downloaded public asset verification for the Paseo v0.2.2 integration.
+4. Fixed-Beta exact-SHA workflow and downloaded public asset verification for the Paseo v0.2.3 integration.
 
 ## 10. Minimal Next Implementation Order
 

@@ -452,7 +452,7 @@ export const ptBR: TranslationResources = {
         terminal: "Terminal",
         browser: "Navegador",
         agent: "Agente",
-        backgroundTasks: "Background tasks",
+        backgroundTasks: "Tasks",
         workspace: "Workspace",
       },
       switcher: {
@@ -464,6 +464,7 @@ export const ptBR: TranslationResources = {
         openFor: "Abrir menu de {{label}}",
         copyResumeCommand: "Copiar comando de retomada",
         copyAgentId: "Copiar ID do agente",
+        copyTerminalId: "Copiar ID do terminal",
         copyFilePath: "Copiar caminho do arquivo",
         rename: "Renomear",
         closeAbove: "Fechar abas acima",
@@ -500,6 +501,7 @@ export const ptBR: TranslationResources = {
       toasts: {
         copyFailed: "Falha ao copiar",
         agentIdCopiedLabel: "ID do agente",
+        terminalIdCopiedLabel: "ID do terminal",
         resumeCommandCopiedLabel: "comando de retomada",
         filePathCopiedLabel: "Caminho do arquivo",
         resumeIdUnavailable: "ID de retomada indisponível",
@@ -558,6 +560,7 @@ export const ptBR: TranslationResources = {
       title: "Scripts",
       actions: {
         run: "Executar",
+        stop: "Parar",
         view: "Ver",
       },
       accessibility: {
@@ -565,11 +568,13 @@ export const ptBR: TranslationResources = {
         openAt: "Abrir {{scriptName}} em {{label}}",
         viewTerminal: "Ver terminal de {{scriptName}}",
         runScript: "Executar script {{scriptName}}",
+        stopScript: "Parar script {{scriptName}}",
         script: "script {{scriptName}}",
       },
       states: {
         exitCode: "saída {{code}}",
         startFailed: "Falha ao iniciar {{scriptName}}",
+        stopFailed: "Falha ao parar {{scriptName}}",
       },
     },
     git: {
@@ -799,6 +804,7 @@ export const ptBR: TranslationResources = {
       closeSidebar: "Fechar barra lateral",
     },
     sections: {
+      pinned: "Fixados",
       sessions: "Histórico",
     },
     worktreeSetup: {
@@ -841,6 +847,7 @@ export const ptBR: TranslationResources = {
       actions: {
         menu: "Ações do workspace",
         newWorkspace: "Novo workspace",
+        pinWorkspace: "Fixar ou desafixar workspace",
         showMore: "Mostrar mais",
         showLess: "Mostrar menos",
         createWorkspaceFor: "Criar um novo workspace para {{projectName}}",
@@ -937,7 +944,7 @@ export const ptBR: TranslationResources = {
       },
       keepRunning: {
         title: "Manter daemon em execução ao sair",
-        hint: "O daemon continua em execução quando você sai do Thoth",
+        hint: "Mantenha esta opção ativada para que tarefas e agendamentos continuem após sair do Thoth. Desativá-la interrompe tarefas agendadas e em segundo plano ao sair.",
       },
       logs: {
         title: "Arquivo de log",
@@ -1586,6 +1593,7 @@ export const ptBR: TranslationResources = {
       help: {
         openProject: "Abrir projeto",
         newWorkspace: "Novo workspace",
+        pinWorkspace: "Fixar ou desafixar workspace",
         newWorktree: "Novo worktree",
         archiveWorktree: "Arquivar worktree",
         newTab: "Nova aba",

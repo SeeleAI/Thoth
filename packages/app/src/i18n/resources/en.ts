@@ -447,7 +447,7 @@ export const en = {
         workspaceSetup: "Workspace setup",
         terminal: "Terminal",
         browser: "Browser",
-        backgroundTasks: "Background tasks",
+        backgroundTasks: "Tasks",
         agent: "Agent",
         workspace: "Workspace",
       },
@@ -460,6 +460,7 @@ export const en = {
         openFor: "Open menu for {{label}}",
         copyResumeCommand: "Copy resume command",
         copyAgentId: "Copy agent id",
+        copyTerminalId: "Copy terminal ID",
         copyFilePath: "Copy file path",
         rename: "Rename",
         closeAbove: "Close tabs above",
@@ -496,6 +497,7 @@ export const en = {
       toasts: {
         copyFailed: "Copy failed",
         agentIdCopiedLabel: "Agent ID",
+        terminalIdCopiedLabel: "Terminal ID",
         resumeCommandCopiedLabel: "resume command",
         filePathCopiedLabel: "File path",
         resumeIdUnavailable: "Resume ID not available",
@@ -553,6 +555,7 @@ export const en = {
       title: "Scripts",
       actions: {
         run: "Run",
+        stop: "Stop",
         view: "View",
       },
       accessibility: {
@@ -560,11 +563,13 @@ export const en = {
         openAt: "Open {{scriptName}} at {{label}}",
         viewTerminal: "View {{scriptName}} terminal",
         runScript: "Run {{scriptName}} script",
+        stopScript: "Stop {{scriptName}} script",
         script: "{{scriptName}} script",
       },
       states: {
         exitCode: "exit {{code}}",
         startFailed: "Failed to start {{scriptName}}",
+        stopFailed: "Failed to stop {{scriptName}}",
       },
     },
     git: {
@@ -788,6 +793,7 @@ export const en = {
       closeSidebar: "Close sidebar",
     },
     sections: {
+      pinned: "Pinned",
       sessions: "History",
     },
     worktreeSetup: {
@@ -830,6 +836,7 @@ export const en = {
       actions: {
         menu: "Workspace actions",
         newWorkspace: "New workspace",
+        pinWorkspace: "Pin or unpin Workspace",
         showMore: "Show more",
         showLess: "Show less",
         createWorkspaceFor: "Create a new workspace for {{projectName}}",
@@ -926,7 +933,7 @@ export const en = {
       },
       keepRunning: {
         title: "Keep daemon running after quit",
-        hint: "Daemon keeps running when you quit Thoth",
+        hint: "Keep this on so Tasks and Schedules continue after you quit Thoth. Turning it off stops Scheduled Tasks and Background Tasks on quit.",
       },
       logs: {
         title: "Log file",
@@ -1567,6 +1574,7 @@ export const en = {
       help: {
         openProject: "Open project",
         newWorkspace: "New workspace",
+        pinWorkspace: "Pin or unpin Workspace",
         newWorktree: "New worktree",
         archiveWorktree: "Archive worktree",
         newTab: "New tab",

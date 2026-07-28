@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ACP_PROVIDER_ICON_SVGS } from "@/assets/acp-provider-icons";
 import { ACP_PROVIDER_CATALOG } from "@/data/acp-provider-catalog";
 import { buildAcpProviderConfigPatch, getAcpProviderCatalog } from "./use-acp-provider-catalog";
 
@@ -32,6 +33,11 @@ describe("ACP provider catalog", () => {
     for (const entry of entriesWithIcons) {
       expect(entry.iconSvg).toContain("<svg");
     }
+  });
+
+  it("keeps Pi on the native HarnessAdapter instead of offering an ACP duplicate", () => {
+    expect(ACP_PROVIDER_CATALOG.some((entry) => entry.id === "pi-acp")).toBe(false);
+    expect("pi-acp" in ACP_PROVIDER_ICON_SVGS).toBe(false);
   });
 
   it("uses PATH commands for entries that were binary distributions upstream", () => {

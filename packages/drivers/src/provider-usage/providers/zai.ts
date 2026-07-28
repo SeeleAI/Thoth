@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import { z } from "zod";
-import type { ProviderUsage, ProviderUsageDetail } from "../../../server/messages.js";
-import type { ProviderApiFetch, ProviderUsageFetcher } from "../provider.js";
+import type { ProviderUsage, ProviderUsageDetail } from "@thoth/protocol/messages";
+import type { ProviderApiFetch, ProviderUsageReader } from "../provider.js";
 import { ApiOptionalStringSchema, fetchProviderApi, unavailableUsage } from "../usage.js";
 
 const ZaiUsageResponseSchema = z.object({
@@ -22,7 +22,7 @@ interface ZaiQuotaProviderOptions {
   fetch?: ProviderApiFetch;
 }
 
-export class ZaiQuotaProvider implements ProviderUsageFetcher {
+export class ZaiQuotaProvider implements ProviderUsageReader {
   readonly providerId = "zai";
   readonly displayName = "Z.ai";
 

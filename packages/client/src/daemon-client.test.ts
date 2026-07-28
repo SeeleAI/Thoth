@@ -1816,6 +1816,7 @@ test("readFile resolves from binary file frames when the daemon supports them", 
         size: 5,
         encoding: "binary",
         modifiedAt: "2026-05-02T00:00:00.000Z",
+        revision: "1:2:5:3",
       },
     }),
   );
@@ -1840,8 +1841,162 @@ test("readFile resolves from binary file frames when the daemon supports them", 
     path: "logo.png",
     kind: "image",
     modifiedAt: "2026-05-02T00:00:00.000Z",
+    revision: "1:2:5:3",
   });
   expect(new TextDecoder().decode(result.bytes)).toBe("hello");
+});
+
+test("readFile rejects an incomplete binary transfer instead of exposing zero-filled bytes", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const responsePromise = client.readFile("/tmp/project", "partial.bin", "req-partial");
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId: "req-partial",
+      metadata: {
+        mime: "application/octet-stream",
+        size: 5,
+        encoding: "binary",
+        modifiedAt: "2026-05-02T00:00:00.000Z",
+      },
+    }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "req-partial",
+      payload: new Uint8Array([1, 2, 3]),
+    }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileEnd,
+      requestId: "req-partial",
+    }),
+  );
+
+  await expect(responsePromise).rejects.toThrow("File transfer ended at 3 bytes; expected 5 bytes");
+});
+
+test("readFile rejects a binary transfer as soon as chunks exceed the advertised size", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const responsePromise = client.readFile("/tmp/project", "overflow.bin", "req-overflow");
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId: "req-overflow",
+      metadata: {
+        mime: "application/octet-stream",
+        size: 2,
+        encoding: "binary",
+        modifiedAt: "2026-05-02T00:00:00.000Z",
+      },
+    }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "req-overflow",
+      payload: new Uint8Array([1, 2, 3]),
+    }),
+  );
+
+  await expect(responsePromise).rejects.toThrow("File transfer exceeded advertised size 2 bytes");
+});
+
+test("readFile aggregates interleaved binary transfers independently by requestId", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const first = client.readFile("/tmp/project", "first.bin", "req-first");
+  const second = client.readFile("/tmp/project", "second.bin", "req-second");
+  for (const [requestId, size] of [
+    ["req-first", 3],
+    ["req-second", 4],
+  ] as const) {
+    mock.triggerMessage(
+      encodeFileTransferFrame({
+        opcode: FileTransferOpcode.FileBegin,
+        requestId,
+        metadata: {
+          mime: "application/octet-stream",
+          size,
+          encoding: "binary",
+          modifiedAt: "2026-05-02T00:00:00.000Z",
+        },
+      }),
+    );
+  }
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "req-first",
+      payload: new Uint8Array([1]),
+    }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "req-second",
+      payload: new Uint8Array([4, 5, 6, 7]),
+    }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "req-first",
+      payload: new Uint8Array([2, 3]),
+    }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId: "req-second" }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId: "req-first" }),
+  );
+
+  await expect(first).resolves.toMatchObject({ bytes: new Uint8Array([1, 2, 3]), size: 3 });
+  await expect(second).resolves.toMatchObject({ bytes: new Uint8Array([4, 5, 6, 7]), size: 4 });
 });
 
 test("uploadFile sends metadata request and file bytes as binary chunks", async () => {

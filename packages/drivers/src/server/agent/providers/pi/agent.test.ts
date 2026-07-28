@@ -25,10 +25,11 @@ import {
 } from "@thoth/drivers/internal/server/agent/providers/pi/agent";
 import { FakePi } from "./test-utils/fake-pi.js";
 
-function createClient(pi = new FakePi()): PiHarnessAdapter {
+function createClient(pi = new FakePi(), flavor: "pi" | "omp" = "pi"): PiHarnessAdapter {
   return new PiHarnessAdapter({
     logger: pino({ level: "silent" }),
     runtime: pi,
+    flavor,
   });
 }
 
@@ -623,6 +624,17 @@ describe("PiHarnessThread", () => {
       "--extension",
       actualLaunch.extensionPaths[0],
     ]);
+  });
+
+  test("does not force medium when an OMP-flavored session has no explicit thinking selection", async () => {
+    const pi = new FakePi();
+    const client = createClient(pi, "omp");
+    await client.createSession(createConfig({ model: "openrouter/test/model" }));
+
+    expect(pi.recordedLaunches[0]).toMatchObject({
+      model: "openrouter/test/model",
+      thinkingOptionId: undefined,
+    });
   });
 
   test("resumes Pi sessions with daemon system prompts appended", async () => {

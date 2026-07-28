@@ -162,6 +162,23 @@ export class WorkspaceServicePortRegistry {
     return this.catalog.releaseRuntimeResource(leaseIdentity(lease, this.holderId));
   }
 
+  async releaseForWorkspaceScript(input: {
+    workspaceId: string;
+    scriptName: string;
+  }): Promise<boolean> {
+    const persisted = this.catalog.getRuntimeResourceLeaseByOwner({
+      resourceKind: RESOURCE_KIND,
+      workspaceId: input.workspaceId,
+      ownerKey: input.scriptName,
+    });
+    if (!persisted) return false;
+    const lease =
+      persisted.holderId === this.holderId
+        ? toWorkspaceServicePortLease(persisted)
+        : await this.recoverOrRenew(persisted);
+    return this.release(lease);
+  }
+
   private async reserve(input: {
     workspaceId: string;
     service: WorkspaceServicePortDeclaration;

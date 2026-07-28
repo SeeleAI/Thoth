@@ -1,4 +1,4 @@
-export type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface PiImageContent {
   type: "image";
@@ -65,6 +65,12 @@ export interface PiModel {
   id: string;
   name?: string;
   reasoning?: boolean;
+  thinking?: {
+    mode?: string;
+    efforts?: string[];
+    defaultLevel?: string;
+    effortMap?: Record<string, string>;
+  };
   contextWindow?: number;
   maxTokens?: number;
   api?: string;

@@ -3991,3 +3991,86 @@ Evidence on `2026-07-27` and `2026-07-28`:
 Conclusion: `NTH-AC-025` is satisfied, the exact Paseo range is organically integrated, `NTH-TD-048` is verified,
 and the fixed desktop-only Beta is `published` at source `cf5067fa3835c498f3842a5b2e371d4cb3b25577`. The sole top next
 action returns to `NTH-TD-036`; it remains doing at Stage 4 with its independent `15,506`-LOC Cut B gap unchanged.
+
+### `NTH-EV-072` Paseo v0.2.3 Organic Integration And Fixed-Beta Replacement
+
+Status: `in_progress`.
+
+1. The official annotated `v0.2.3` tag resolves through object
+   `5f71b185c3d170dec26ea00b91b52a550d510fcd` to commit
+   `43cf858c3760679ec9be805ba8b903cdf20f7103`. Paseo `v0.2.2` and `v0.2.3` diverge at
+   `36f38245cab51bbe0b43b6ac42fd41aa757064d9`; the exact target-side expression
+   `v0.2.2...v0.2.3 --right-only` contains 36 commits. Current later Paseo
+   `main=cbbf6c1684fb0415b7949e684d152f5f7453e769` is excluded.
+2. The formal schema-version-2 manifest was regenerated through `npm run paseo:inspect` with exit code `0` and
+   reports 36 commits, 211 changed paths, 12 architecture candidates and four required reviews. Ignored working
+   artifacts remain under `.agent-os/artifacts/paseo-sync/`.
+3. Repository-local GitHub identity is `Royalvice`. Live API truth on `2026-07-28` confirms development
+   `48e73cb24c022182c3c55fce1b171f9a5816ebc5`, release automation
+   `cf5067fa3835c498f3842a5b2e371d4cb3b25577`, unchanged `main=e74c6e0d`, direct fixed tag target
+   `cf5067fa`, public prerelease `360786111`, `draft=false`, `prerelease=true`, exactly 26 desktop-only assets and
+   active workflow `314811076`. A repository-local Git fetch timed out without output and was interrupted; its
+   result was not treated as success, and the same isolated identity supplied the API receipts.
+4. `NTH-CD-089` through `NTH-CD-096` record the user-approved exact range, Schedule information architecture,
+   Workspace-script ToolGateway path, atomic transport upgrade, Driver-owned Provider behavior, strict proxy
+   authority, Desktop lifecycle default and publication transaction. `NTH-TD-049` is temporarily the sole top
+   next action while `NTH-TD-036` remains doing at Stage 4 with an independent `15,506`-LOC gap.
+5. `npm run paseo:verify-provenance` passed with exit code `0`: publish intent, `36/36` commit coverage, `12/12`
+   architecture candidates, nine architectural coherent groups, zero pending reviews and zero failures. Every one
+   of the four required candidates is represented by an architectural group. The architecture gate is cleared.
+6. The accepted implementation is complete through the sole current ownership path. Protocol/Client append the
+   Schedule-run execution Workspace and Task Schedule origin, Workspace-script list/start/stop, negotiated binary
+   ciphertext and awaited file streaming. Daemon/Core own Workspace Schedule/Task/Execution transitions, durable
+   script process/terminal/route/port receipts, physical-socket leases, strict forwarded authority and storage-v4
+   migration. Drivers own Provider usage, OMP effort normalization and descendant runtime fencing. App/Desktop/CLI
+   remain semantic shells and expose `Tasks | Schedules`, scoped scripts and the approved interaction repairs.
+   Replaced start-only script RPCs, daemon Provider parsers and `background-tasks` route are absent; writable editor,
+   voice/Hub/Paseo distribution paths remain absent.
+7. Focused owner verification passed with exit code `0`: Protocol `49 files / 438 tests`; Relay `4 / 37`; Client
+   `4 / 128`; Core `1 / 11`; Drivers `47 passed + 3 skipped files`, `595 passed + 21 skipped tests`; Daemon
+   `200 files`, `2,556 passed + 26 skipped`; App `363 files / 2,709 tests`; Desktop `37 files`, `300 passed + 5
+skipped`; and CLI `30` unit tests plus `40/40` local/e2e files. Protocol, Relay, Client, Core, Drivers, Daemon,
+   App, Desktop and CLI typechecks passed. App remains above the pre-integration `332 files / 2,586 tests` floor.
+8. Current root evidence passed with exit code `0`: `npm run check:foundation`,
+   `npm run accept:provider-control:fast`, `npm run accept:interaction-regressions:fast`,
+   `npm run accept:thoth:fast`, and `npm run accept:refactor:fast`. The final refactor run completed Stage 4 in
+   `158.934s` under the unchanged shared `300s` limit. It required refreshing the declared Web dependency cache
+   and updating six visual goldens only after review proved every delta was the approved `Tasks` naming/tab change;
+   the final non-update visual run passed `3/3`.
+9. Real Web product acceptance passed with exit code `0` (`1 passed`, `42.3s`) through the actual App surface and
+   semantic Client. It started/stopped a committed Workspace service script with a real leased port, then created,
+   edited, paused, resumed, ran and deleted a Workspace Schedule. `run-on-create` and `run-now` produced real Tasks
+   and ExecutionAttempts, two run-history entries, Schedule-to-Task navigation and Task-to-Schedule reverse
+   navigation. A deterministic Provider transport fixture removed external uncertainty without bypassing the
+   public UI, Client, Protocol, Daemon or Workspace authority.
+10. Local mobile and Provider evidence passed. `npm run package:android:debug-apk` produced ignored
+    `app-debug.apk`, package `sh.thoth.debug`, `273,165,007` bytes, SHA-256
+    `042b2e4ad9cf46113385cb316d5dc2c13d6d22da4053bcf11896b4b854770702`; `aapt2` confirmed no
+    `android.permission.RECORD_AUDIO`. Real Codex `UT-01-quick-direct-passthrough` passed in an isolated Workspace
+    (`1 passed`, four skipped, `28.82s`) using existing Provider auth. Unavailable Providers remain represented by
+    capability/typed-unavailable tests rather than fake authentication.
+11. `npm run accept:thoth:relay` first built and installed the internal Server CLI successfully, then preserved a
+    network failure receipt: after the hosted Relay had already completed v3 E2EE, seven binary frames and the core
+    journey, a deliberate client restart encountered direct Cloudflare IPv4 `ETIMEDOUT`. Re-running the same formal
+    packaged Relay smoke with Node 24 environment-proxy support (`NODE_USE_ENV_PROXY=1`) passed with exit code `0`.
+    The final hosted report proves client and daemon restart recovery, Card restoration, Task pause/resume/stop,
+    Provider-thread continuity and a `1,048,649`-byte file sent in five `256 KiB` chunks with SHA-256
+    `a3f78a2060c5184ff17038b38a20581bec0684185a3a66f3e204e31c938f361e`. No Relay deployment occurred.
+12. The final formal `npm run accept:thoth:appimage` rebuilt the Linux AppImage and passed the complete real-window
+    journey with exit code `0`. The local candidate is `137,822,489` bytes with SHA-256
+    `556915168ba45759ec89daf762f3218742aa68c6ba904cc20ca37fc5b0a5e177`. The report proves preload/renderer,
+    read-only Files/Changes, Browser plus wrong-`browserId` rejection, Workspace-script UI start/stop with durable
+    terminal/port receipts, a `1,048,649`-byte five-chunk direct file transfer, `Tasks | Schedules` create/edit/
+    pause/resume/run-now/delete/history/bidirectional navigation, canonical Schedule Timeline, and lossless Release
+    `05775486` storage migration to layout/SQLite schema v4. Failure receipts for proxy-contaminated CDP, hydration
+    and asynchronous Files timing remain recorded rather than hidden.
+13. Formal closeout checks currently pass: sync-Skill fixtures; provenance `36/36`, `12/12`, nine architectural
+    groups, zero pending and zero failures; boundary report `222` changed paths with zero blocking/review findings;
+    `npm run smoke:isolation` with independent Paseo PID `3597831` still on `6767`; real Web build; format and diff
+    hygiene. Current production metrics are `315,762` physical LOC, `1,357,222` scanner tokens, `1,386,279` AST
+    nodes, `5,215` static imports and `165` runtime dependency edges. Therefore `DeltaP23=4,829`, translated Cut B
+    and final ceilings are `300,256` / `277,856`, and the independent `NTH-TD-036` gap remains exactly `15,506`.
+14. Local implementation and product verification are complete, but `NTH-EV-072` remains `in_progress` until the
+    release-source commit, both normal fast-forward pushes, exact-SHA workflow, fixed 26-asset Release replacement,
+    fresh public checksums/build identity and downloaded-public-AppImage product journey all pass. No publication
+    claim is made by this local evidence.

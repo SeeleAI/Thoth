@@ -4,7 +4,6 @@ import { WebSocket } from "ws";
 import type pino from "pino";
 import {
   createDaemonChannel,
-  type EncryptedChannel,
   type Transport as RelayTransport,
   type KeyPair,
 } from "@thoth/relay/e2ee";
@@ -14,6 +13,7 @@ import {
 } from "@thoth/protocol/daemon-endpoints";
 import type { RelayRegistrationMessage } from "./relay-credentials.js";
 import type { ExternalSocketMetadata } from "./websocket-server.js";
+import { createEncryptedRelaySocket } from "./websocket/encrypted-relay-socket.js";
 
 interface RelayTransportOptions {
   logger: pino.Logger;
@@ -35,8 +35,13 @@ export interface RelayTransportController {
 
 interface RelaySocketLike {
   readyState: number;
-  send: (data: string | Uint8Array | ArrayBuffer) => void;
+  bufferedAmount?: number;
+  send: (
+    data: string | Uint8Array | ArrayBuffer,
+    callback?: (error?: Error) => void,
+  ) => void | Promise<void>;
   close: (code?: number, reason?: string) => void;
+  terminate?: () => void;
   on: (event: "message" | "close" | "error", listener: (...args: unknown[]) => void) => void;
   once: (event: "close" | "error", listener: (...args: unknown[]) => void) => void;
 }
@@ -68,18 +73,6 @@ function createDefaultRelayWebSocket(url: string, protocols?: string[]): RelayWe
   return protocols
     ? new WebSocket(url, protocols, RELAY_WEBSOCKET_OPTIONS)
     : new WebSocket(url, RELAY_WEBSOCKET_OPTIONS);
-}
-
-function normalizeRelaySendPayload(data: string | Uint8Array | ArrayBuffer): string | ArrayBuffer {
-  if (typeof data === "string") return data;
-  if (data instanceof ArrayBuffer) return data;
-  if (ArrayBuffer.isView(data)) {
-    const view = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-    const out = new Uint8Array(view.byteLength);
-    out.set(view);
-    return out.buffer;
-  }
-  return String(data);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -488,7 +481,12 @@ async function attachEncryptedSocket(
         emitter.emit("error", error);
       },
     });
-    const encryptedSocket = createEncryptedSocket(channel, emitter);
+    const encryptedSocket = createEncryptedRelaySocket({
+      channel,
+      emitter,
+      getTransportBufferedAmount: () => socket.bufferedAmount,
+      terminateTransport: () => socket.terminate(),
+    });
     await attachSocket(encryptedSocket, metadata);
     attached = true;
     for (const message of pendingMessages) {
@@ -510,16 +508,28 @@ function createRelayTransportAdapter(
   logger: pino.Logger,
 ): RelayTransport {
   const relayTransport: RelayTransport = {
-    send: (data) => {
-      try {
-        socket.send(data);
-      } catch (err) {
-        // Socket likely transitioned to closed between checks; let onclose/onerror
-        // drive cleanup. Without this guard the synchronous throw would propagate
-        // up as an uncaughtException and take down the daemon.
-        logger.warn({ err }, "relay_socket_send_failed");
-      }
-    },
+    send: (data) =>
+      new Promise<void>((resolve, reject) => {
+        try {
+          const result = socket.send(data, (error) => {
+            if (!error) {
+              resolve();
+              return;
+            }
+            logger.warn({ err: error }, "relay_socket_send_failed");
+            reject(error);
+          });
+          if (result && typeof result.then === "function") {
+            result.then(resolve, reject);
+          } else if (socket.send.length < 2) {
+            resolve();
+          }
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          logger.warn({ err }, "relay_socket_send_failed");
+          reject(err);
+        }
+      }),
     close: (code?: number, reason?: string) => socket.close(code, reason),
     onmessage: null,
     onclose: null,
@@ -527,7 +537,8 @@ function createRelayTransportAdapter(
   };
 
   socket.on("message", (data, isBinary) => {
-    relayTransport.onmessage?.(normalizeMessageData(data, isBinary === true));
+    const binary = isBinary === true;
+    relayTransport.onmessage?.({ data: normalizeMessageData(data, binary), isBinary: binary });
   });
   socket.on("close", (code, reason) => {
     const closeCode = typeof code === "number" ? code : 1006;
@@ -538,42 +549,6 @@ function createRelayTransportAdapter(
   });
 
   return relayTransport;
-}
-
-function createEncryptedSocket(channel: EncryptedChannel, emitter: EventEmitter): RelaySocketLike {
-  let readyState = 1;
-
-  channel.setState("open");
-
-  const close = (code?: number, reason?: string) => {
-    if (readyState === 3) return;
-    readyState = 3;
-    channel.close(code, reason);
-  };
-
-  emitter.on("close", () => {
-    if (readyState === 3) return;
-    readyState = 3;
-  });
-
-  return {
-    get readyState() {
-      return readyState;
-    },
-    send: (data) => {
-      const outbound = normalizeRelaySendPayload(data);
-      void channel.send(outbound).catch((error) => {
-        emitter.emit("error", error);
-      });
-    },
-    close,
-    on: (event, listener) => {
-      emitter.on(event, listener);
-    },
-    once: (event, listener) => {
-      emitter.once(event, listener);
-    },
-  };
 }
 
 function normalizeMessageData(data: unknown, isBinary: boolean): string | ArrayBuffer {

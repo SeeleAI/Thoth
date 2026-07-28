@@ -40,6 +40,7 @@ import { ProjectPickerModal } from "@/components/project-picker-modal";
 import { ProviderSettingsHost } from "@/components/provider-settings-host";
 import { WorkspaceSetupDialog } from "@/components/workspace-setup-dialog";
 import { WorkspaceShortcutTargetsSubscriber } from "@/components/workspace-shortcut-targets-subscriber";
+import { WorkspacePinShortcutHandler } from "@/components/workspace-pin-shortcut-handler";
 import { FloatingPanelPortalHost } from "@/components/ui/floating-panel-portal";
 import { HostChooserModal, useHostChooser } from "@/hosts/host-chooser";
 import { getIsElectronRuntime, useIsCompactFormFactor } from "@/constants/layout";
@@ -498,6 +499,7 @@ function AppContainer({
       <ProjectPickerModal />
       <ProviderSettingsHost />
       <WorkspaceShortcutTargetsSubscriber enabled={keyboardShortcutsEnabled} />
+      <WorkspacePinShortcutHandler />
       <WorkspaceSetupDialog />
       <KeyboardShortcutsDialog />
       <QuittingOverlay />

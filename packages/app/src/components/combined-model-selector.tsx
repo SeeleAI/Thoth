@@ -18,6 +18,7 @@ import type { AgentProvider } from "@thoth/protocol/agent-types";
 import type { SheetHeader } from "@/components/adaptive-modal-sheet";
 import { useProviderSettingsStore } from "@/stores/provider-settings-store";
 import { Button } from "@/components/ui/button";
+import { useCurrentOverlayLayer } from "@/lib/overlay-root";
 const IS_WEB = platformIsWeb;
 
 import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
@@ -25,6 +26,40 @@ import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/com
 const EMPTY_COMBOBOX_OPTIONS: ComboboxOption[] = [];
 
 function noop() {}
+
+function ProviderSettingsAction({
+  accessibilityLabel,
+  provider,
+  serverId,
+}: {
+  accessibilityLabel: string;
+  provider: string;
+  serverId: string | null;
+}) {
+  const { theme } = useUnistyles();
+  const overlayParentLayer = useCurrentOverlayLayer();
+  const handlePress = useCallback(() => {
+    if (!serverId) return;
+    useProviderSettingsStore.getState().open({ serverId, provider, overlayParentLayer });
+  }, [overlayParentLayer, provider, serverId]);
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      disabled={!serverId}
+      hitSlop={8}
+      style={iconButtonStyle}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      testID={`selector-header-settings-${provider}`}
+    >
+      <Settings
+        size={theme.iconSize.sm}
+        color={!serverId ? theme.colors.border : theme.colors.foregroundMuted}
+      />
+    </Pressable>
+  );
+}
 
 function favoriteButtonStyle({
   hovered,
@@ -717,33 +752,19 @@ export function CombinedModelSelector({
     setSearchQuery(value);
   }, []);
 
-  const openProviderSettings = useCallback(() => {
-    if (!serverId || view.kind !== "provider") return;
-    useProviderSettingsStore.getState().open({ serverId, provider: view.providerId });
-  }, [serverId, view]);
-
   const sheetHeader = useMemo<SheetHeader>(() => {
     if (view.kind === "all") {
       return { title: t("modelSelector.title") };
     }
     const ProviderIconForView = getProviderIcon(view.providerId);
     const headerActions = (
-      <Pressable
-        onPress={openProviderSettings}
-        disabled={!serverId}
-        hitSlop={8}
-        style={iconButtonStyle}
-        accessibilityRole="button"
+      <ProviderSettingsAction
+        serverId={serverId ?? null}
+        provider={view.providerId}
         accessibilityLabel={t("modelSelector.openProviderSettings", {
           provider: view.providerLabel,
         })}
-        testID={`selector-header-settings-${view.providerId}`}
-      >
-        <Settings
-          size={theme.iconSize.sm}
-          color={!serverId ? theme.colors.border : theme.colors.foregroundMuted}
-        />
-      </Pressable>
+      />
     );
     return {
       title: view.providerLabel,
@@ -764,9 +785,6 @@ export function CombinedModelSelector({
     view,
     singleProviderView,
     serverId,
-    openProviderSettings,
-    theme.colors.border,
-    theme.colors.foregroundMuted,
     handleBackToAll,
     handleSearchQueryChange,
     searchResetKey,

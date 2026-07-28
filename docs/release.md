@@ -31,6 +31,18 @@ range `5fc53c57..b589599a`. It authorizes normal fast-forward pushes of one rele
 reverification. It does not authorize force push, `main`, Relay deployment, npm/store/mobile publication, or any
 operation on the independent Paseo service.
 
+`NTH-CD-096` renews the same narrow authorization on `2026-07-28` for the verified organic integration of Paseo
+v0.2.3's exact 36-commit target-side set plus the Workspace-owned Schedule App completion. It authorizes one
+release-source SHA to be normally fast-forwarded to `agent/dev/mvp` and `release/mvp-actions`, followed by the
+existing exact-SHA fixed-Beta workflow and fresh public-asset/AppImage verification. It does not authorize force
+push, merge/rebase, `main`, Relay deployment, npm/mobile/store/Nix/Docker publication or any operation on the
+independent Paseo service. A failed mandatory workflow leaves the existing fixed Release intact.
+
+The exact upstream receipt for that authorization is annotated tag object `5f71b185c3d170dec26ea00b91b52a550d510fcd`
+at commit `43cf858c3760679ec9be805ba8b903cdf20f7103`, selected by
+`v0.2.2...v0.2.3 --right-only` from merge base `36f38245cab51bbe0b43b6ac42fd41aa757064d9`.
+Later Paseo `main` is not part of the Release.
+
 ## MVP Beta Authority
 
 - Version: `0.0.0-mvp-beta`
@@ -109,6 +121,29 @@ timeout is not success: query the remote SHA before deciding whether retry is ne
 
 After public verification, the evidence-only closeout commit is pushed normally to `agent/dev/mvp` only;
 `release/mvp-actions` stays at the published release-source SHA so documentation does not trigger a second Release.
+
+For the v0.2.3 candidate, the release-source commit may be created only after current provenance/boundary,
+Foundation, Provider Control, interaction, complete Thoth, shared-`300s` refactor, real Web, Android Debug APK,
+real Codex, isolation, hosted Relay and rebuilt AppImage journeys are green. The AppImage report must include
+Workspace scripts, direct five-chunk file transfer and full `Tasks | Schedules` UI/navigation; the hosted Relay
+report must include v3 E2EE, restart recovery and the independent five-chunk digest.
+
+After workflow success, download public files into an ignored per-source directory and run the product journey
+against that downloaded executable, not the local or Actions artifact. Keep localhost CDP/daemon traffic outside
+external proxies:
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+  -u http_proxy -u https_proxy -u all_proxy \
+  NO_PROXY=127.0.0.1,localhost \
+  npm run smoke:packaged:appimage-thoth -- \
+  --appimage <public-download>/Thoth-x86_64.AppImage \
+  --output-dir <public-download>/journey
+```
+
+The final evidence must cross-check GitHub asset metadata, `BUILD-SOURCE.txt`, `MVP-UPDATE.json`, `SHA256SUMS`,
+local SHA-256 and extracted `resources/build-identity.json` against the exact release-source SHA and workflow ID.
+Only then may `NTH-TD-049` become verified and `NTH-TD-036` return as the sole top next action.
 
 The independent `SeeleAI/Thoth-Relay` deployment and any future production relay/web deployment are
 outside this release authorization.

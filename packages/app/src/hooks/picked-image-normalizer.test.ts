@@ -76,4 +76,28 @@ describe("native image attachment picker", () => {
     ]);
     expect(recordedUris).toEqual(["file:///photos/IMG_0001.HEIC"]);
   });
+
+  it("uses explicit native MIME metadata before a stale URI extension", async () => {
+    const { exportAsPng, recordedUris } = fakeExportAsPng();
+
+    const result = await normalizePickedImageAssetsWith(
+      [
+        {
+          uri: "file:///photos/screenshot.jpg",
+          mimeType: "image/png",
+          fileName: "screenshot.png",
+        },
+      ],
+      exportAsPng,
+    );
+
+    expect(result).toEqual([
+      {
+        source: { kind: "file_uri", uri: "file:///photos/screenshot.jpg" },
+        mimeType: "image/png",
+        fileName: "screenshot.png",
+      },
+    ]);
+    expect(recordedUris).toEqual([]);
+  });
 });

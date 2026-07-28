@@ -6,14 +6,15 @@ This file records the provenance, boundaries, and expected state of Thoth's curr
 
 1. Upstream project: Paseo
 2. Upstream repository: `https://github.com/getpaseo/paseo`
-3. Upstream reference: annotated tag `v0.2.2`
-4. Accepted upstream target: `b589599a8f21bcc9e4c911603082566ce320a3c8`
-5. Tag object: `4759a5baa8a1bf165f282a758081cb49e61a4630`
-6. Verification: official full clone, exact tag-object/commit resolution, ancestry from
-   `5fc53c576ef0d4dee55455ccc95660703f71b892`, and schema-version-2 manifest/provenance gates.
+3. Upstream reference: annotated tag `v0.2.3`
+4. Accepted upstream target: `43cf858c3760679ec9be805ba8b903cdf20f7103`
+5. Tag object: `5f71b185c3d170dec26ea00b91b52a550d510fcd`
+6. Verification: official Git objects, exact tag-object/commit resolution, divergent-tag merge base
+   `36f38245cab51bbe0b43b6ac42fd41aa757064d9`, target-side expression
+   `v0.2.2...v0.2.3 --right-only`, and schema-version-2 manifest/provenance gates.
 7. Source acquisition method: repository-local authenticated full clone; capabilities were reconstructed through
    current Thoth ownership rather than mechanically importing the range.
-8. Clone/cache reverified: `2026-07-27`
+8. Clone/cache reverified: `2026-07-28`
 9. Upstream license: `AGPL-3.0`
 10. Thoth active license after import: `AGPL-3.0-or-later`
 
@@ -133,6 +134,34 @@ Tracked `_paseo` seed directories have been promoted into formal source trees an
    fixed 26-asset desktop-only Beta replacement, public checksum/build-identity checks, and the downloaded AppImage
    product journey pass under verified `NTH-EV-071`. Published Thoth source is
    `cf5067fa3835c498f3842a5b2e371d4cb3b25577`; `NTH-TD-048` is verified.
+
+## Paseo v0.2.3 Organic Integration
+
+1. Previous accepted tag commit: `b589599a8f21bcc9e4c911603082566ce320a3c8`.
+2. Approved target: annotated tag `v0.2.3`, tag object
+   `5f71b185c3d170dec26ea00b91b52a550d510fcd`, commit
+   `43cf858c3760679ec9be805ba8b903cdf20f7103`.
+3. The tags diverge at merge base `36f38245cab51bbe0b43b6ac42fd41aa757064d9`. The exact review set is
+   `v0.2.2...v0.2.3 --right-only`: `36` target-side commits, `211` manifest paths, `12` architecture candidates
+   and four required architecture reviews. Later Paseo `main=cbbf6c1684fb0415b7949e684d152f5f7453e769`
+   and seven v0.2.2-only commits are excluded.
+4. `NTH-CD-089` through `NTH-CD-096` approve the exact range and selective adaptation of `Tasks | Schedules`,
+   scoped Workspace scripts, atomic physical-socket/E2EE/file-stream transport, Driver-owned Provider usage and
+   OMP capability parsing, child-runtime fencing, strict forwarded authority, Thoth's persistent-daemon default,
+   and the guarded fixed-Beta transaction. Writable Markdown editing, voice/audio, Hub/cloud truth, Paseo Relay
+   URLs, Nix/store/package topology, AgentManager and file-backed JSON authority remain deferred or rejected.
+5. The schema-version-2 classification contains `23` coherent groups and covers all `36/36` commits. It assesses
+   all `12/12` architecture candidates, retains nine architectural groups including every required candidate,
+   and reports zero pending reviews and zero failures. Merge-only
+   `8409e237ed14b95a2b06e2dc35ae693c9464a064` remains explicit bookkeeping rather than receiving fabricated paths.
+6. The accepted implementation is reconstructed through current Protocol, Client, Core, Daemon, Drivers, App,
+   Desktop and CLI ownership. It does not cherry-pick the target set, import Paseo authority, or add a second
+   production path. Working manifest, classification and boundary reports remain ignored under
+   `.agent-os/artifacts/paseo-sync/`.
+7. Local Stage 4 evidence under `NTH-EV-072` passes focused/package suites, all required root gates, real Web,
+   Android Debug APK, real Codex, isolation, hosted Relay v3 E2EE with multi-chunk binary transfer, and a rebuilt
+   AppImage real-window journey covering Workspace scripts and complete Schedule UI. Publication, public asset
+   verification and the downloaded-public-AppImage journey remain pending until Stage 5 completes.
 
 ## Follow-Up
 

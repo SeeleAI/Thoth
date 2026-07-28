@@ -1,7 +1,7 @@
 import type {
-  ProviderUsageFetcher,
-  ProviderUsageFetcherFactoryOptions,
-  ProviderUsageFetcherManifestEntry,
+  ProviderUsageReader,
+  ProviderUsageReaderFactoryOptions,
+  ProviderUsageReaderManifestEntry,
 } from "./provider.js";
 import { ClaudeQuotaProvider } from "./providers/claude.js";
 import { CodexQuotaProvider } from "./providers/codex.js";
@@ -12,7 +12,7 @@ import { KimiQuotaProvider } from "./providers/kimi.js";
 import { MiniMaxQuotaProvider } from "./providers/minimax.js";
 import { ZaiQuotaProvider } from "./providers/zai.js";
 
-export const PROVIDER_USAGE_FETCHERS: readonly ProviderUsageFetcherManifestEntry[] = [
+export const PROVIDER_USAGE_READERS: readonly ProviderUsageReaderManifestEntry[] = [
   {
     providerId: "claude",
     create: (options) =>
@@ -55,8 +55,8 @@ export const PROVIDER_USAGE_FETCHERS: readonly ProviderUsageFetcherManifestEntry
   },
 ];
 
-export function createProviderUsageFetchers(
-  options: ProviderUsageFetcherFactoryOptions,
-): ProviderUsageFetcher[] {
-  return PROVIDER_USAGE_FETCHERS.map((entry) => entry.create(options));
+export function createProviderUsageReaders(
+  options: ProviderUsageReaderFactoryOptions,
+): ProviderUsageReader[] {
+  return PROVIDER_USAGE_READERS.map((entry) => entry.create(options));
 }

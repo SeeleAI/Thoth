@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Logger } from "pino";
 import { z } from "zod";
-import type { ProviderUsage, ProviderUsageBalance } from "../../../server/messages.js";
-import type { ProviderApiFetch, ProviderUsageFetcher } from "../provider.js";
+import type { ProviderUsage, ProviderUsageBalance } from "@thoth/protocol/messages";
+import type { ProviderApiFetch, ProviderUsageReader } from "../provider.js";
 import {
   ApiNullableNumberSchema,
   balanceToneFromRemaining,
@@ -106,7 +106,7 @@ async function readCursorTokenFromSqlite(): Promise<string | null> {
   return null;
 }
 
-export class CursorQuotaProvider implements ProviderUsageFetcher {
+export class CursorQuotaProvider implements ProviderUsageReader {
   readonly providerId = "cursor";
   readonly displayName = "Cursor";
 

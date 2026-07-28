@@ -7,8 +7,8 @@ import type {
   ProviderUsage,
   ProviderUsageBalance,
   ProviderUsageWindow,
-} from "../../../server/messages.js";
-import type { ProviderApiFetch, ProviderUsageFetcher } from "../provider.js";
+} from "@thoth/protocol/messages";
+import type { ProviderApiFetch, ProviderUsageReader } from "../provider.js";
 import {
   ApiNumberSchema,
   balanceToneFromRemaining,
@@ -88,7 +88,7 @@ function codexWindow(
   };
 }
 
-export class CodexQuotaProvider implements ProviderUsageFetcher {
+export class CodexQuotaProvider implements ProviderUsageReader {
   readonly providerId = "codex";
   readonly displayName = "Codex";
 

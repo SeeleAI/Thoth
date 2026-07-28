@@ -453,7 +453,7 @@ export const ru: TranslationResources = {
         terminal: "Terminal",
         browser: "Браузер",
         agent: "Agent",
-        backgroundTasks: "Background tasks",
+        backgroundTasks: "Tasks",
         workspace: "Workspace",
       },
       switcher: {
@@ -465,6 +465,7 @@ export const ru: TranslationResources = {
         openFor: "Открыть меню для{{label}}",
         copyResumeCommand: "Копировать команду возобновления",
         copyAgentId: "Скопировать идентификатор агента",
+        copyTerminalId: "Копировать ID терминала",
         copyFilePath: "Copy file path",
         rename: "Переименовать",
         closeAbove: "Закрыть вкладки выше",
@@ -501,6 +502,7 @@ export const ru: TranslationResources = {
       toasts: {
         copyFailed: "Не удалось скопировать",
         agentIdCopiedLabel: "AgentID",
+        terminalIdCopiedLabel: "ID терминала",
         resumeCommandCopiedLabel: "команда возобновления",
         filePathCopiedLabel: "File path",
         resumeIdUnavailable: "Резюме ID недоступно",
@@ -560,6 +562,7 @@ export const ru: TranslationResources = {
       title: "Скрипты",
       actions: {
         run: "Бегать",
+        stop: "Остановить",
         view: "Вид",
       },
       accessibility: {
@@ -567,11 +570,13 @@ export const ru: TranslationResources = {
         openAt: "Откройте{{scriptName}}на{{label}}",
         viewTerminal: "Посмотреть терминал{{scriptName}}",
         runScript: "Запустите скрипт{{scriptName}}",
+        stopScript: "Остановить скрипт {{scriptName}}",
         script: "скрипт{{scriptName}}",
       },
       states: {
         exitCode: "выйти из{{code}}",
         startFailed: "Не удалось запустить{{scriptName}}",
+        stopFailed: "Не удалось остановить {{scriptName}}",
       },
     },
     git: {
@@ -801,6 +806,7 @@ export const ru: TranslationResources = {
       closeSidebar: "Закрыть боковую панель",
     },
     sections: {
+      pinned: "Закреплённые",
       sessions: "История",
     },
     worktreeSetup: {
@@ -843,6 +849,7 @@ export const ru: TranslationResources = {
       actions: {
         menu: "Действия Workspace",
         newWorkspace: "Новое рабочее пространство",
+        pinWorkspace: "Закрепить или открепить рабочую область",
         showMore: "Показать ещё",
         showLess: "Показать меньше",
         createWorkspaceFor: "Создайте новое рабочее пространство для{{projectName}}.",
@@ -939,7 +946,7 @@ export const ru: TranslationResources = {
       },
       keepRunning: {
         title: "Продолжать работу демона после выхода",
-        hint: "Daemon продолжает работать, когда вы выходите из Thoth",
+        hint: "Оставьте этот параметр включённым, чтобы задачи и расписания продолжали выполняться после выхода из Thoth. Отключение остановит запланированные и фоновые задачи при выходе.",
       },
       logs: {
         title: "Файл журнала",
@@ -1594,6 +1601,7 @@ export const ru: TranslationResources = {
       help: {
         openProject: "Открыть проект",
         newWorkspace: "Новое рабочее пространство",
+        pinWorkspace: "Закрепить или открепить рабочее пространство",
         newWorktree: "Новое рабочее дерево",
         archiveWorktree: "Архив рабочего дерева",
         newTab: "Новая вкладка",

@@ -453,7 +453,7 @@ export const fr: TranslationResources = {
         terminal: "Terminal",
         browser: "Navigateur",
         agent: "Agent",
-        backgroundTasks: "Background tasks",
+        backgroundTasks: "Tasks",
         workspace: "Workspace",
       },
       switcher: {
@@ -465,6 +465,7 @@ export const fr: TranslationResources = {
         openFor: "Ouvrir le menu pour{{label}}",
         copyResumeCommand: "Copier la commande de reprise",
         copyAgentId: "Copier l'identifiant de l'agent",
+        copyTerminalId: "Copier l'identifiant du terminal",
         copyFilePath: "Copy file path",
         rename: "Rebaptiser",
         closeAbove: "Fermer les onglets ci-dessus",
@@ -502,6 +503,7 @@ export const fr: TranslationResources = {
       toasts: {
         copyFailed: "Échec de la copie",
         agentIdCopiedLabel: "AgentID",
+        terminalIdCopiedLabel: "ID du terminal",
         resumeCommandCopiedLabel: "reprendre la commande",
         filePathCopiedLabel: "File path",
         resumeIdUnavailable: "ReprendreIDnon disponible",
@@ -561,6 +563,7 @@ export const fr: TranslationResources = {
       title: "Scripts",
       actions: {
         run: "Courir",
+        stop: "Arrêter",
         view: "Voir",
       },
       accessibility: {
@@ -568,11 +571,13 @@ export const fr: TranslationResources = {
         openAt: "Ouvrir{{scriptName}}à{{label}}",
         viewTerminal: "Voir le terminal{{scriptName}}",
         runScript: "Exécuter le script{{scriptName}}",
+        stopScript: "Arrêter le script {{scriptName}}",
         script: "Script{{scriptName}}",
       },
       states: {
         exitCode: "quitter{{code}}",
         startFailed: "Échec du démarrage de{{scriptName}}",
+        stopFailed: "Échec de l’arrêt de {{scriptName}}",
       },
     },
     git: {
@@ -808,6 +813,7 @@ export const fr: TranslationResources = {
       closeSidebar: "Fermer la barre latérale",
     },
     sections: {
+      pinned: "Épinglés",
       sessions: "Historique",
     },
     worktreeSetup: {
@@ -850,6 +856,7 @@ export const fr: TranslationResources = {
       actions: {
         menu: "ActionsWorkspace",
         newWorkspace: "Nouvel espace de travail",
+        pinWorkspace: "Épingler ou désépingler l’espace de travail",
         showMore: "Afficher plus",
         showLess: "Afficher moins",
         createWorkspaceFor: "Créer un nouvel espace de travail pour{{projectName}}",
@@ -946,7 +953,7 @@ export const fr: TranslationResources = {
       },
       keepRunning: {
         title: "Laisser le démon fonctionner après avoir quitté",
-        hint: "Daemoncontinue de fonctionner lorsque vous quittezThoth",
+        hint: "Laissez cette option activée pour que les tâches et les planifications continuent après avoir quitté Thoth. La désactiver arrête les tâches planifiées et en arrière-plan.",
       },
       logs: {
         title: "Fichier journal",
@@ -1603,6 +1610,7 @@ export const fr: TranslationResources = {
       help: {
         openProject: "Projet ouvert",
         newWorkspace: "Nouvel espace de travail",
+        pinWorkspace: "Épingler ou désépingler l’espace de travail",
         newWorktree: "Nouvel arbre de travail",
         archiveWorktree: "Arbre de travail d'archivage",
         newTab: "Nouvel onglet",

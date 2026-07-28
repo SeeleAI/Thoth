@@ -26,6 +26,10 @@
       "types": "./dist/agent-runtime.d.ts",
       "default": "./dist/agent-runtime.js"
     },
+    "./provider-usage": {
+      "types": "./dist/provider-usage/index.d.ts",
+      "default": "./dist/provider-usage/index.js"
+    },
     "./internal/*": {
       "types": "./dist/*.d.ts",
       "default": "./dist/*.js"

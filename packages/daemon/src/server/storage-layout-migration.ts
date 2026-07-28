@@ -116,7 +116,7 @@ export async function ensureThothStorageLayout(
   if (marker?.version === STORAGE_LAYOUT_VERSION) {
     return { requiresProviderThreadFinalization: false };
   }
-  if (marker && marker.version !== 1 && marker.version !== 2) {
+  if (marker && marker.version !== 1 && marker.version !== 2 && marker.version !== 3) {
     throw new Error(`Unsupported Thoth storage layout version: ${String(marker.version)}`);
   }
 
@@ -148,7 +148,7 @@ export async function ensureThothStorageLayout(
     writeMarker(markerPath, { migrated: true, workspaceCount: workspaceIds.length });
     logger.info(
       { sourceRelease: RELEASE_SOURCE, workspaceCount: workspaceIds.length },
-      "Migrated Thoth storage to normalized authority schema v3",
+      "Migrated Thoth storage to normalized authority schema v4",
     );
     return { requiresProviderThreadFinalization: false };
   } finally {
@@ -170,15 +170,18 @@ function migrateDatabase(
       validateDatabase(current, kind);
       return;
     }
-    if (version !== 0 && version !== 2) {
+    if (version !== 0 && version !== 2 && version !== 3) {
       throw new Error(`Unsupported SQLite schema ${version} at ${filePath}`);
     }
     if (version === 0) {
       requireTables(current, kind, 0);
       requireReleaseLedger(current, kind);
-    } else {
+    } else if (version === 2) {
       requireTables(current, kind, 2);
       requireNormalizedV2Ledger(current, kind);
+    } else {
+      requireTables(current, kind, 3);
+      requireNormalizedV3Ledger(current, kind);
     }
     if (existsSync(`${filePath}-wal`)) current.exec("PRAGMA wal_checkpoint(TRUNCATE);");
   } finally {
@@ -194,7 +197,8 @@ function migrateDatabase(
   copyFileSync(filePath, temporary);
   try {
     options.onPhase?.("copied", filePath);
-    const beforeDigest = semanticDigest(filePath, kind, 2);
+    const compatibilityVersion = sourceVersion === 3 ? 3 : 2;
+    const beforeDigest = semanticDigest(filePath, kind, compatibilityVersion);
     const candidate = new DatabaseSync(temporary, { enableForeignKeyConstraints: true });
     try {
       candidate.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; BEGIN IMMEDIATE;");
@@ -202,7 +206,7 @@ function migrateDatabase(
         if (sourceVersion === 0 && kind === "authority") {
           candidate.exec("DROP TABLE authority_events");
         }
-        applySchemaV3(candidate, kind);
+        applySchemaV4(candidate, kind);
         const migrationTable =
           kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations";
         const migrationVersion =
@@ -219,6 +223,18 @@ function migrateDatabase(
               new Date().toISOString(),
             );
         }
+        if (sourceVersion !== 3) {
+          candidate
+            .prepare(
+              `INSERT INTO ${migrationTable}(version, checksum, applied_at)
+               VALUES (?, ?, ?)`,
+            )
+            .run(
+              kind === "catalog" ? 3 : 6,
+              kind === "catalog" ? "host-runtime-resources-v3" : "schedule-task-execution-v3",
+              new Date().toISOString(),
+            );
+        }
         candidate
           .prepare(
             `INSERT INTO ${migrationTable}(version, checksum, applied_at)
@@ -226,7 +242,7 @@ function migrateDatabase(
           )
           .run(
             migrationVersion,
-            kind === "catalog" ? "host-runtime-resources-v3" : "schedule-task-execution-v3",
+            kind === "catalog" ? "schedule-run-workspace-v4-catalog" : "schedule-run-workspace-v4",
             new Date().toISOString(),
           );
         candidate.exec(`PRAGMA user_version = ${SQLITE_SCHEMA_VERSION}; COMMIT;`);
@@ -236,7 +252,7 @@ function migrateDatabase(
       }
       options.onPhase?.("transformed", filePath);
       validateDatabase(candidate, kind);
-      const afterDigest = semanticDigest(temporary, kind, 2);
+      const afterDigest = semanticDigest(temporary, kind, compatibilityVersion);
       if (afterDigest !== beforeDigest) {
         throw new Error(`Semantic digest changed while migrating ${filePath}`);
       }
@@ -268,7 +284,7 @@ function migrateDatabase(
   }
 }
 
-function applySchemaV3(database: DatabaseSync, kind: "catalog" | "authority"): void {
+function applySchemaV4(database: DatabaseSync, kind: "catalog" | "authority"): void {
   if (kind === "catalog") {
     database.exec(`
       CREATE TABLE IF NOT EXISTS catalog_runtime_resource_leases (
@@ -302,6 +318,9 @@ function applySchemaV3(database: DatabaseSync, kind: "catalog" | "authority"): v
   }
   if (!columns.has("execution_id")) {
     database.exec("ALTER TABLE schedule_runs ADD COLUMN execution_id TEXT;");
+  }
+  if (!columns.has("workspace_id")) {
+    database.exec("ALTER TABLE schedule_runs ADD COLUMN workspace_id TEXT;");
   }
   database.exec(`
     CREATE INDEX IF NOT EXISTS schedule_runs_task_execution
@@ -345,6 +364,27 @@ function requireNormalizedV2Ledger(database: DatabaseSync, kind: "catalog" | "au
   }
 }
 
+function requireNormalizedV3Ledger(database: DatabaseSync, kind: "catalog" | "authority"): void {
+  const table = kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations";
+  const expectedVersion = kind === "catalog" ? 3 : 6;
+  const expectedChecksum =
+    kind === "catalog" ? "host-runtime-resources-v3" : "schedule-task-execution-v3";
+  const rows = database
+    .prepare(`SELECT version, checksum FROM ${table} ORDER BY version`)
+    .all() as Array<{ version: number; checksum: string }>;
+  const latest = rows.at(-1);
+  if (
+    !latest ||
+    latest.version !== expectedVersion ||
+    latest.checksum !== expectedChecksum ||
+    rows.some((row) => row.version > expectedVersion)
+  ) {
+    throw new Error(
+      `Unsupported ${kind} normalized-v3 migration ledger; the original database was preserved`,
+    );
+  }
+}
+
 function validateDatabase(database: DatabaseSync, kind: "catalog" | "authority"): void {
   requireTables(database, kind);
   if (kind === "authority" && hasTable(database, "authority_events")) {
@@ -364,10 +404,10 @@ function validateDatabase(database: DatabaseSync, kind: "catalog" | "authority")
 function requireTables(
   database: DatabaseSync,
   kind: "catalog" | "authority",
-  sourceVersion: 0 | 2 | 3 = 3,
+  sourceVersion: 0 | 2 | 3 | 4 = 4,
 ): void {
   const required =
-    kind === "catalog" && sourceVersion !== 3
+    kind === "catalog" && sourceVersion < 3
       ? CATALOG_V2_REQUIRED_TABLES
       : kind === "catalog"
         ? CATALOG_REQUIRED_TABLES
@@ -386,7 +426,7 @@ function requireTables(
 function semanticDigest(
   filePath: string,
   kind: "catalog" | "authority",
-  compatibilityVersion?: 2,
+  compatibilityVersion?: 2 | 3,
 ): string {
   const database = new DatabaseSync(filePath, { readOnly: true });
   try {
@@ -414,10 +454,12 @@ function semanticDigest(
         .map((column) => column.name)
         .filter(
           (column) =>
-            compatibilityVersion !== 2 ||
             kind !== "authority" ||
             name !== "schedule_runs" ||
-            (column !== "task_id" && column !== "execution_id"),
+            (compatibilityVersion !== 2 && compatibilityVersion !== 3) ||
+            (compatibilityVersion === 2
+              ? column !== "task_id" && column !== "execution_id" && column !== "workspace_id"
+              : column !== "workspace_id"),
         );
       const primary = columns
         .filter((column) => column.pk > 0 && names.includes(column.name))

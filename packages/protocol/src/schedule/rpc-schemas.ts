@@ -87,6 +87,7 @@ const ScheduleUpdateNewAgentConfigSchema = z.object({
   provider: z.string().trim().min(1).optional(),
   model: z.string().trim().min(1).nullable().optional(),
   modeId: z.string().trim().min(1).nullable().optional(),
+  isolation: z.enum(["same-workspace", "worktree"]).optional(),
 });
 
 export const ScheduleUpdateRequestSchema = z.object({

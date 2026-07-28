@@ -463,6 +463,17 @@ Clarify levels:
     mutation lease by default; a separate worktree Workspace exists only after an explicit user choice.
 14. Idle release may free Provider runtime handles, but it must retain Agent, Task, Timeline, Card, HumanDecision,
     Evidence, and the opaque persistence receipt required for honest resume or replacement.
+15. The product entry is `Tasks`, with `Tasks` and `Schedules` as views over the same Workspace authority. A
+    Schedule run records its owner Workspace, actual execution Workspace, Task and ExecutionAttempt; legacy unknown
+    execution Workspace remains unavailable rather than being guessed.
+16. Workspace scripts are named Workspace capabilities. CLI, App and eligible Provider execution all call the same
+    semantic list/start/stop API; Workspace owns command authorization, ToolGateway owns execution scope, and Host
+    runtime persistence owns process, terminal, route and service-port receipts.
+17. Physical socket liveness, E2EE frame negotiation and file streaming form one transport boundary. Socket leases
+    and queued-byte limits apply to the physical connection; file transfer advertises one fixed size/revision and
+    awaits bounded chunks; Relay forwards only opaque ciphertext.
+18. Provider quota parsing, model-specific effort metadata and provider-native child ancestry are Driver concerns.
+    Daemon consumes normalized capability/usage/residency receipts and never branches on Provider identity.
 
 ### 13.6 Reporting Constraints
 

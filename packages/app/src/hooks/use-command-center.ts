@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useKeyboardShortcutsStore } from "@/stores/keyboard-shortcuts-store";
 import { keyboardActionDispatcher } from "@/keyboard/keyboard-action-dispatcher";
 import { useAggregatedAgents, type AggregatedAgent } from "@/hooks/use-aggregated-agents";
+import equal from "fast-deep-equal";
 import { useOpenProjectPicker } from "@/hooks/use-open-project-picker";
 import {
   clearCommandCenterFocusRestoreElement,
@@ -25,10 +26,18 @@ import {
   useCommandCenterModelContributions,
   type CommandCenterModelChoice,
 } from "@/command-center/model-registry";
+import {
+  projectCommandCenterWorkspaceItems,
+  type CommandCenterWorkspaceItem,
+  type CommandCenterWorkspaceSource,
+} from "@/command-center/workspace-results";
+import { useAuthorityProjections } from "@/projection/projection-context";
+import { useHosts } from "@/runtime/host-runtime";
 
 const EMPTY_AGENTS: AggregatedAgent[] = [];
 const EMPTY_ACTION_ITEMS: CommandCenterActionItem[] = [];
 const EMPTY_MODEL_ITEMS: CommandCenterModelChoice[] = [];
+const EMPTY_WORKSPACE_ITEMS: CommandCenterWorkspaceItem[] = [];
 const EMPTY_COMMAND_CENTER_ITEMS: CommandCenterItem[] = [];
 
 function isMatch(agent: AggregatedAgent, query: string): boolean {
@@ -124,6 +133,10 @@ export type CommandCenterItem =
       agent: AggregatedAgent;
     }
   | {
+      kind: "workspace";
+      workspace: CommandCenterWorkspaceItem;
+    }
+  | {
       kind: "model";
       model: CommandCenterModelChoice;
     };
@@ -161,7 +174,41 @@ export function useCommandCenter() {
   const [activeIndex, setActiveIndex] = useState(0);
 
   const { agents } = useAggregatedAgents();
+  const hosts = useHosts();
   const modelContributions = useCommandCenterModelContributions();
+
+  const workspaceSources = useAuthorityProjections((store) => {
+    const serverLabelById = new Map(hosts.map((host) => [host.serverId, host.label] as const));
+    const results: CommandCenterWorkspaceSource[] = [];
+    for (const host of hosts) {
+      const projection = store.getSnapshot(host.serverId);
+      for (const workspace of projection.workspaces.values()) {
+        if (workspace.archivingAt) continue;
+        results.push({
+          serverId: host.serverId,
+          serverLabel: serverLabelById.get(host.serverId) ?? host.serverId,
+          workspaceId: workspace.id,
+          title: workspace.title ?? workspace.name,
+          projectName:
+            workspace.projectCustomName ?? workspace.projectDisplayName ?? workspace.projectId,
+          branch: workspace.gitRuntime?.currentBranch ?? null,
+          workspaceDirectory: workspace.workspaceDirectory,
+        });
+      }
+    }
+    return results;
+  }, equal);
+
+  const workspaceItems = useMemo(() => {
+    if (!open || workspaceSources.length === 0) {
+      return EMPTY_WORKSPACE_ITEMS;
+    }
+    return projectCommandCenterWorkspaceItems({
+      workspaces: workspaceSources,
+      query,
+      showHost: hosts.length > 1,
+    });
+  }, [hosts.length, open, query, workspaceSources]);
 
   const agentResults = useMemo(() => {
     if (!open || agents.length === 0) {
@@ -224,6 +271,12 @@ export function useCommandCenter() {
         model,
       });
     }
+    for (const workspace of workspaceItems) {
+      next.push({
+        kind: "workspace",
+        workspace,
+      });
+    }
     for (const agent of agentResults) {
       next.push({
         kind: "agent",
@@ -231,7 +284,7 @@ export function useCommandCenter() {
       });
     }
     return next;
-  }, [actionItems, agentResults, modelItems, open]);
+  }, [actionItems, agentResults, modelItems, open, workspaceItems]);
 
   const handleClose = useCallback(() => {
     setOpen(false);
@@ -251,6 +304,16 @@ export function useCommandCenter() {
       });
     },
     [pathname, setOpen],
+  );
+
+  const handleSelectWorkspace = useCallback(
+    (workspace: CommandCenterWorkspaceItem) => {
+      didNavigateRef.current = true;
+      clearCommandCenterFocusRestoreElement();
+      setOpen(false);
+      router.push(workspace.route);
+    },
+    [setOpen],
   );
 
   const openProjectPicker = useOpenProjectPicker();
@@ -291,9 +354,13 @@ export function useCommandCenter() {
         handleSelectModel(item.model);
         return;
       }
+      if (item.kind === "workspace") {
+        handleSelectWorkspace(item.workspace);
+        return;
+      }
       handleSelectAgent(item.agent);
     },
-    [handleSelectAction, handleSelectAgent, handleSelectModel],
+    [handleSelectAction, handleSelectAgent, handleSelectModel, handleSelectWorkspace],
   );
 
   useEffect(() => {

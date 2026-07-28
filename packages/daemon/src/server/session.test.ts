@@ -538,6 +538,7 @@ describe("file explorer binary responses", () => {
         size: 5,
         encoding: "binary",
         modifiedAt: expect.any(String),
+        revision: expect.any(String),
       },
       payload: new Uint8Array(),
     });
@@ -4069,6 +4070,13 @@ describe("session thoth worktree creation handling", () => {
 
 describe("session workspace script handling", () => {
   test("passes service-owned git metadata into workspace script spawning", async () => {
+    const workspaceDirectory = realpathSync(
+      mkdtempSync(join(tmpdir(), "thoth-session-workspace-script-")),
+    );
+    writeFileSync(
+      join(workspaceDirectory, "thoth.json"),
+      JSON.stringify({ scripts: { api: { command: "npm run api", type: "script" } } }),
+    );
     const messages: unknown[] = [];
     const workspaceGitService = {
       peekSnapshot: vi.fn(() => null),
@@ -4083,7 +4091,7 @@ describe("session workspace script handling", () => {
     const workspaceRegistry = {
       get: vi.fn().mockResolvedValue({
         workspaceId: "workspace-1",
-        cwd: "/tmp/repo",
+        cwd: workspaceDirectory,
       }),
     };
     spawnMocks.spawnWorkspaceScript.mockResolvedValue({
@@ -4098,42 +4106,57 @@ describe("session workspace script handling", () => {
         subscribeTerminalWorkspaceContributionChanged: vi.fn(() => () => {}),
       },
       serviceProxy: { listRoutesForWorkspace: vi.fn(() => []) },
-      scriptRuntimeStore: { listForWorkspace: vi.fn(() => []) },
-      getDaemonTcpPort: () => 6767,
+      scriptRuntimeStore: {
+        listForWorkspace: vi.fn(() => []),
+        runExclusiveOperation: vi.fn(async (_key, operation: () => Promise<unknown>) => ({
+          acquired: true as const,
+          value: await operation(),
+        })),
+      },
+      getDaemonTcpPort: () => 6688,
       getDaemonTcpHost: () => "127.0.0.1",
       messages,
     });
 
-    await asSessionInternals(session).handleStartWorkspaceScriptRequest({
-      type: "start_workspace_script_request",
-      workspaceId: "workspace-1",
-      scriptName: "api",
-      requestId: "request-script",
-    });
-
-    expect(workspaceGitService.getWorkspaceGitMetadata).toHaveBeenCalledTimes(1);
-    expect(workspaceGitService.getWorkspaceGitMetadata).toHaveBeenCalledWith("/tmp/repo");
-    expect(spawnMocks.spawnWorkspaceScript).toHaveBeenCalledWith(
-      expect.objectContaining({
-        repoRoot: "/tmp/repo",
+    try {
+      await asSessionInternals(session).handleStartWorkspaceScriptRequest({
+        type: "workspace.script.start.request",
         workspaceId: "workspace-1",
-        projectSlug: "thoth",
-        branchName: "feature/service-scripts",
         scriptName: "api",
-        daemonPort: 6767,
-        daemonListenHost: "127.0.0.1",
-      }),
-    );
-    expect(messages).toContainEqual({
-      type: "start_workspace_script_response",
-      payload: {
         requestId: "request-script",
-        workspaceId: "workspace-1",
-        scriptName: "api",
-        terminalId: "terminal-1",
-        error: null,
-      },
-    });
+      });
+
+      expect(workspaceGitService.getWorkspaceGitMetadata).toHaveBeenCalledTimes(1);
+      expect(workspaceGitService.getWorkspaceGitMetadata).toHaveBeenCalledWith(workspaceDirectory);
+      expect(spawnMocks.spawnWorkspaceScript).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repoRoot: workspaceDirectory,
+          workspaceId: "workspace-1",
+          projectSlug: "thoth",
+          branchName: "feature/service-scripts",
+          scriptName: "api",
+          daemonPort: 6688,
+          daemonListenHost: "127.0.0.1",
+        }),
+      );
+      expect(messages).toContainEqual({
+        type: "workspace.script.start.response",
+        payload: {
+          requestId: "request-script",
+          workspaceId: "workspace-1",
+          scriptName: "api",
+          terminalId: "terminal-1",
+          error: null,
+          errorCode: null,
+          script: expect.objectContaining({
+            scriptName: "api",
+            command: "npm run api",
+          }),
+        },
+      });
+    } finally {
+      rmSync(workspaceDirectory, { recursive: true, force: true });
+    }
   });
 });
 

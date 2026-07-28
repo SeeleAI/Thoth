@@ -15,6 +15,8 @@ export interface WebSocketRuntimeCounters {
   missingConnectionForMessage: number;
   unexpectedHelloOnActiveConnection: number;
   relayExternalSocketAttached: number;
+  applicationLeaseExpired: number;
+  outboundHighWaterClosed: number;
   originRejected: number;
   hostRejected: number;
 }
@@ -124,6 +126,10 @@ export class WebSocketRuntimeMetricsWindow {
     this.recordBufferedAmount(bufferedAmount);
   }
 
+  recordTransportBufferedAmount(bufferedAmount?: number): void {
+    this.recordBufferedAmount(bufferedAmount);
+  }
+
   recordRequestLatency(type: string, durationMs: number): void {
     let latencies = this.requestLatencies.get(type);
     if (!latencies) {
@@ -230,6 +236,8 @@ function createRuntimeCounters(): WebSocketRuntimeCounters {
     missingConnectionForMessage: 0,
     unexpectedHelloOnActiveConnection: 0,
     relayExternalSocketAttached: 0,
+    applicationLeaseExpired: 0,
+    outboundHighWaterClosed: 0,
     originRejected: 0,
     hostRejected: 0,
   };

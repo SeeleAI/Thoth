@@ -121,6 +121,7 @@ const SHORTCUT_HELP_SECTION_LABEL_KEYS: Record<ShortcutSectionId, string> = {
 const SHORTCUT_HELP_LABEL_KEYS: Record<string, string> = {
   "new-agent": "settings.shortcuts.help.openProject",
   "new-workspace": "settings.shortcuts.help.newWorkspace",
+  "pin-workspace": "settings.shortcuts.help.pinWorkspace",
   "new-worktree": "settings.shortcuts.help.newWorktree",
   "archive-worktree": "settings.shortcuts.help.archiveWorktree",
   "workspace-tab-new": "settings.shortcuts.help.newTab",
@@ -212,6 +213,32 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
       section: "projects",
       label: "New workspace",
       keys: ["mod", "N"],
+    },
+  },
+
+  // --- Pin active Workspace ---
+  {
+    id: "workspace-pin-cmd-shift-p-mac",
+    action: "workspace.pin",
+    combo: "Cmd+Shift+P",
+    when: { mac: true, commandCenter: false },
+    help: {
+      id: "pin-workspace",
+      section: "projects",
+      label: "Pin or unpin Workspace",
+      keys: ["mod", "shift", "P"],
+    },
+  },
+  {
+    id: "workspace-pin-ctrl-shift-p-non-mac",
+    action: "workspace.pin",
+    combo: "Ctrl+Shift+P",
+    when: { mac: false, commandCenter: false, terminal: false },
+    help: {
+      id: "pin-workspace",
+      section: "projects",
+      label: "Pin or unpin Workspace",
+      keys: ["mod", "shift", "P"],
     },
   },
 

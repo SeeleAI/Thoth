@@ -283,6 +283,7 @@ export interface FileReadResult {
   path: string;
   kind: LegacyFileExplorerFilePayload["kind"];
   modifiedAt: string;
+  revision?: string;
 }
 export interface FileUploadInput {
   fileName: string;
@@ -498,6 +499,7 @@ export interface CreateScheduleOptions {
         type: "new-agent";
         config: {
           provider: AgentProvider;
+          isolation?: "same-workspace" | "worktree";
           modeId?: string;
           model?: string;
           thinkingOptionId?: string;
@@ -525,6 +527,7 @@ export interface UpdateScheduleNewAgentConfig {
   provider?: string;
   model?: string | null;
   modeId?: string | null;
+  isolation?: "same-workspace" | "worktree";
 }
 export interface UpdateScheduleOptions {
   workspaceId: string;
@@ -593,6 +596,8 @@ interface BinaryFileTransferState extends PendingBinaryFileRead {
     { opcode: typeof FileTransferOpcode.FileBegin }
   >["metadata"]["encoding"];
   modifiedAt: string;
+  revision?: string;
+  bytesReceived: number;
   chunks: Uint8Array[];
 }
 
@@ -838,6 +843,33 @@ function objectRpc<const Operation extends RpcResponseOperation>(options: {
   });
 }
 
+function renamedObjectRpc<
+  const Method extends string,
+  const Operation extends RpcResponseOperation,
+>(options: {
+  clientMethod: Method;
+  operation: Operation;
+  timeout?: number;
+}): ClientRpcBinding<
+  Method,
+  Operation,
+  [input: RpcObjectInput<Operation>],
+  RpcResponsePayload<Operation>
+> {
+  return {
+    clientMethod: options.clientMethod,
+    operation: options.operation,
+    invoke(client, [input]) {
+      const { requestId, ...body } = input;
+      return client[RPC_INVOKE](options.operation, {
+        body: body as RpcRequestBody<Operation>,
+        requestId,
+        timeout: options.timeout,
+      });
+    },
+  };
+}
+
 function requestIdRpc<const Operation extends RpcResponseOperation>(options: {
   clientMethod: Operation;
   timeout?: number;
@@ -975,9 +1007,17 @@ const clientRpcBindings = {
   resolveForge: objectRpc({ clientMethod: "resolveForge" }),
   cloneWorkspace: objectRpc({ clientMethod: "cloneWorkspace", timeout: 5 * 60_000 }),
   addProject: positionalRpc({ clientMethod: "addProject", fields: ["cwd"] }),
-  startWorkspaceScript: positionalRpc({
+  workspaceScriptList: renamedObjectRpc({
+    clientMethod: "listWorkspaceScripts",
+    operation: "workspaceScriptList",
+  }),
+  workspaceScriptStart: renamedObjectRpc({
     clientMethod: "startWorkspaceScript",
-    fields: ["workspaceId", "scriptName"],
+    operation: "workspaceScriptStart",
+  }),
+  workspaceScriptStop: renamedObjectRpc({
+    clientMethod: "stopWorkspaceScript",
+    operation: "workspaceScriptStop",
   }),
   archiveWorkspace: positionalRpc({
     clientMethod: "archiveWorkspace",
@@ -1735,7 +1775,7 @@ const clientRpcBindings = {
 } as const;
 
 type ClientRpcMethods = {
-  [Method in keyof typeof clientRpcBindings]: (typeof clientRpcBindings)[Method] extends {
+  [Binding in (typeof clientRpcBindings)[keyof typeof clientRpcBindings] as Binding["clientMethod"]]: Binding extends {
     invoke(client: RpcClientInvoker, args: infer Args extends unknown[]): Promise<infer Result>;
   }
     ? (...args: Args) => Promise<Result>
@@ -3396,6 +3436,8 @@ class DaemonClientRuntime {
         size: frame.metadata.size,
         encoding: frame.metadata.encoding,
         modifiedAt: frame.metadata.modifiedAt,
+        revision: frame.metadata.revision,
+        bytesReceived: 0,
         chunks: [],
       });
       return;
@@ -3407,7 +3449,26 @@ class DaemonClientRuntime {
     }
 
     if (frame.opcode === FileTransferOpcode.FileChunk) {
+      const nextBytesReceived = transfer.bytesReceived + frame.payload.byteLength;
+      if (nextBytesReceived > transfer.size) {
+        this.failBinaryFileTransfer(
+          frame.requestId,
+          transfer,
+          `File transfer exceeded advertised size ${transfer.size} bytes`,
+        );
+        return;
+      }
       transfer.chunks.push(frame.payload);
+      transfer.bytesReceived = nextBytesReceived;
+      return;
+    }
+
+    if (transfer.bytesReceived !== transfer.size) {
+      this.failBinaryFileTransfer(
+        frame.requestId,
+        transfer,
+        `File transfer ended at ${transfer.bytesReceived} bytes; expected ${transfer.size} bytes`,
+      );
       return;
     }
 
@@ -3420,6 +3481,7 @@ class DaemonClientRuntime {
       path: transfer.path,
       kind: binaryFileKind(transfer.mime, transfer.encoding),
       modifiedAt: transfer.modifiedAt,
+      ...(transfer.revision ? { revision: transfer.revision } : {}),
     });
     this.handleSessionMessage({
       type: "file_explorer_response",
@@ -3431,6 +3493,27 @@ class DaemonClientRuntime {
         file: null,
         error: null,
         requestId: frame.requestId,
+      },
+    });
+  }
+
+  private failBinaryFileTransfer(
+    requestId: string,
+    transfer: BinaryFileTransferState,
+    error: string,
+  ): void {
+    this.activeBinaryFileTransfers.delete(requestId);
+    this.completedBinaryFileReads.delete(requestId);
+    this.handleSessionMessage({
+      type: "file_explorer_response",
+      payload: {
+        cwd: transfer.cwd,
+        path: transfer.path,
+        mode: "file",
+        directory: null,
+        file: null,
+        error,
+        requestId,
       },
     });
   }

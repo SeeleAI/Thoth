@@ -42,6 +42,21 @@ not published to the npm registry.
 
 The bundle is an Actions artifact only and has no public Release installation URL.
 
+The current transport acceptance installs that archive into an isolated prefix and connects it to the existing
+hosted Relay without deploying the Relay:
+
+```bash
+NODE_USE_ENV_PROXY=1 \
+HTTP_PROXY=http://10.0.3.5:7899 \
+HTTPS_PROXY=http://10.0.3.5:7899 \
+NO_PROXY=127.0.0.1,localhost \
+npm run accept:thoth:relay
+```
+
+In this environment, Node 24's `ws`/HTTPS stack requires `NODE_USE_ENV_PROXY=1` in addition to proxy variables.
+The packaged report must prove v3 E2EE, restart recovery and the exact multi-chunk large-file digest. It may not
+substitute a local Relay or mutate the independent hosted deployment.
+
 ## Android Debug APK
 
 Android Debug APK is the required local mobile artifact for the first-day infrastructure gate.
@@ -201,12 +216,14 @@ only for migration compatibility with older published clients.
 Current verified local artifact:
 
 - Path: `/mnt/cfs/5vr0p6/yzy/thoth/packages/desktop/release/Thoth-x86_64.AppImage`
-- sha256: `3e31b309d1e8a1ecd61e1d7bda149f420446f256d8e086499050d217a6a789ad`
-- Bytes: `137793946`
+- sha256: `556915168ba45759ec89daf762f3218742aa68c6ba904cc20ca37fc5b0a5e177`
+- Bytes: `137822489`
 - Version: `0.0.0-mvp-beta`
 - Packaged smoke: passed with an isolated desktop-managed daemon on a temporary port; the real window verified
-  preload/renderer, read-only Files/Changes, Browser automation with typed wrong-`browserId` rejection, and a
-  Schedule run with real Task/Execution IDs and canonical Timeline events
+  preload/renderer, read-only Files/Changes, Browser automation with typed wrong-`browserId` rejection,
+  Workspace-script UI start/stop with durable terminal/service-port receipts, a `1,048,649`-byte five-chunk file
+  transfer, complete `Tasks | Schedules` create/edit/pause/resume/run-now/delete/history and bidirectional
+  navigation, canonical Schedule Timeline events, and lossless Release storage migration to layout/schema v4
 
 `packages/desktop/release/` is local artifact output and must not be committed.
 

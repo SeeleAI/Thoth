@@ -199,4 +199,17 @@ describe("WebSocketRuntimeMetricsWindow", () => {
     expect(secondSnapshot.inboundSessionRequestTypesTop).toEqual([]);
     expect(secondSnapshot.latency).toEqual([]);
   });
+
+  it("records physical socket lease and high-water diagnostics", () => {
+    const { metrics } = createMetricsWindow();
+    metrics.incrementCounter("applicationLeaseExpired");
+    metrics.incrementCounter("outboundHighWaterClosed");
+    metrics.recordTransportBufferedAmount(8 * 1024 * 1024);
+
+    const snapshot = metrics.snapshotAndReset();
+
+    expect(snapshot.counters.applicationLeaseExpired).toBe(1);
+    expect(snapshot.counters.outboundHighWaterClosed).toBe(1);
+    expect(snapshot.bufferedAmount.max).toBe(8 * 1024 * 1024);
+  });
 });

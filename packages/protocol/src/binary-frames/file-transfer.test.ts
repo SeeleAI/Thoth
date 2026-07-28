@@ -26,6 +26,7 @@ describe("file transfer binary frames", () => {
         size: 6,
         encoding: "binary",
         modifiedAt: "2026-05-02T00:00:00.000Z",
+        revision: "6:1777680000000:42",
       },
     });
     const requestId = encoder.encode("req-1");
@@ -35,6 +36,7 @@ describe("file transfer binary frames", () => {
         size: 6,
         encoding: "binary",
         modifiedAt: "2026-05-02T00:00:00.000Z",
+        revision: "6:1777680000000:42",
       }),
     );
 
@@ -55,6 +57,7 @@ describe("file transfer binary frames", () => {
         size: 6,
         encoding: "binary",
         modifiedAt: "2026-05-02T00:00:00.000Z",
+        revision: "6:1777680000000:42",
       },
       payload: new Uint8Array(),
     });
