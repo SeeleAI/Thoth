@@ -91,6 +91,27 @@ npm, Nix, and Docker outputs. After publication, verification downloads `BUILD-S
 `SHA256SUMS`, and `Thoth-x86_64.AppImage` from the public Release rather than reusing workflow or local files; size,
 SHA-256, source commit, update manifest, embedded build identity, and the complete packaged journey must agree.
 
+## Current Published Receipt
+
+The current fixed Beta was published from source `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1` by exact-SHA workflow
+`30383055325` (`MVP Beta Release` run `33`). All 11 mandatory jobs passed. Public prerelease `361273193` and direct
+tag `v0.0.0-mvp-beta` target that exact source, are non-draft/prerelease, and expose exactly 26 desktop-only assets.
+
+Fresh public downloads verify:
+
+- `BUILD-SOURCE.txt`: `89` bytes,
+  `0af0b4e2743aba7fb0de12dd79c49f7771215c19a4f32132244d817dbab51eac`
+- `MVP-UPDATE.json`: `2,455` bytes,
+  `b53db387763604a3b1695fb3aad0e3c4e8375dcbc39d0b2a8ef1fa12fc1d3fe4`
+- `SHA256SUMS`: `2,418` bytes,
+  `c3f9d329aca9b61e2de2ee4ecc3c524d4c9bd17a4f966fd2b03efea1a4d1918d`
+- `Thoth-x86_64.AppImage`: `137,822,613` bytes,
+  `b287f036cfe4d6de7c4c18a284a68998fc9232b187e86e42691de555c3252b21`
+
+The source metadata, schema-1 update manifest, checksum file and extracted `resources/build-identity.json` agree
+on the source/workflow. The downloaded AppImage completed the real-window `Tasks | Schedules`, Workspace-script,
+five-chunk file-transfer, Files/Changes, Browser and Desktop bridge journey with `ok=true`.
+
 ## Credentials And GitHub Operations
 
 All repository GitHub operations use the Royalvice repository-local configuration:

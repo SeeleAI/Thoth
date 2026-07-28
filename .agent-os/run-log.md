@@ -4544,3 +4544,40 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   and the independent `NTH-TD-036` gap remains exactly `15,506`. `NTH-TD-049` remains the sole top next action and
   is not verified until the release-source SHA, exact-SHA workflow, 26 public assets and downloaded AppImage all
   pass. No commit, push, tag or Release mutation has occurred in this local stage.
+
+## 2026-07-28 [Paseo v0.2.3 organic integration published and publicly reverified]
+
+- Created atomic release-source commit `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1`
+  (`feat: organically integrate Paseo v0.2.3`) and normally fast-forwarded both authorized branches to that exact
+  SHA. The first development-branch push attempt omitted `THOTH_GH_CONFIG_DIR`, was rejected by the isolated helper
+  and fell through to an unavailable editor askpass; the remote remained at the audited old SHA. The retry used
+  explicit repository-local `Royalvice` credentials, disabled askpass and succeeded without force, merge or rebase.
+- Exact-SHA workflow `30383055325` (`MVP Beta Release` workflow `314811076`, run `33`) completed successfully.
+  Its 11 successful jobs were preflight `90355410082`; Linux Desktop `90358702132`; macOS x64/arm64
+  `90358702193` / `90358702225`; Server CLI `90358702226`; Windows Desktop `90358702255`; Linux/macOS/Windows
+  CLI smokes `90359273569` / `90359273597` / `90359273664`; hosted Relay `90359273593`; and publish
+  `90361615180`.
+- Fixed public prerelease `361273193` was published at `2026-07-28T17:54:55Z`. Direct tag
+  `v0.0.0-mvp-beta`, Release target and `release/mvp-actions` resolve to `eaa1aa5f`; `draft=false`,
+  `prerelease=true` and the Release contains exactly 26 desktop-only assets with no APK, iOS, public Server CLI,
+  npm, Nix or Docker output.
+- Fresh public downloads under ignored `.dev/release-verification/eaa1aa5f.../` agree on source and workflow.
+  `BUILD-SOURCE.txt` is `89` bytes / `0af0b4e2...1eac`; `MVP-UPDATE.json` is `2,455` bytes /
+  `b53db387...3fe4`; `SHA256SUMS` is `2,418` bytes / `c3f9d329...918d`; and `Thoth-x86_64.AppImage` is
+  `137,822,613` bytes / `b287f036...2b21`. The checksum file, schema-1 update manifest and extracted
+  `resources/build-identity.json` all identify `eaa1aa5f` and workflow `30383055325`.
+- The freshly downloaded AppImage passed the complete formal real-window journey with exit code `0` and
+  `ok=true`. Files/Changes, Browser plus typed wrong-ID rejection, Workspace-script UI start/stop, durable
+  terminal/port receipts, a `1,048,649`-byte five-chunk direct file, full Schedule
+  create/edit/pause/resume/run-now/delete, Schedule Timeline and both navigation directions passed through the
+  public product.
+- Final read-only GitHub closeout used repository-local `Royalvice` identity. One initial query batch omitted the
+  config environment and exited `4` without mutation; the corrected batch passed with exit `0` and reconfirmed
+  development/release branches, tag, Release, workflow, every job and unchanged `main=e74c6e0d`. Independent Relay
+  source remains `317bcda46571ae0ae508f4d892759eff779d9d73` with protocol-3 health; Paseo tag object `5f71b185` still
+  targets `43cf858c`; Paseo PID `3597831` still owns `127.0.0.1:6767`. No Relay/Web deployment, npm/mobile/store,
+  Nix/Docker publication or Paseo operation occurred.
+- `NTH-EV-072` and `NTH-TD-049` are verified; terminal state is `published`. `NTH-TD-036` is again the sole top
+  next action, remains doing at Stage 4 and retains exactly the independent `15,506`-LOC Cut B gap. This
+  evidence-only closeout is pushed only to `agent/dev/mvp`; `release/mvp-actions` stays at the published source to
+  avoid a second Release.

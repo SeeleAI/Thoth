@@ -158,10 +158,13 @@ Tracked `_paseo` seed directories have been promoted into formal source trees an
    Desktop and CLI ownership. It does not cherry-pick the target set, import Paseo authority, or add a second
    production path. Working manifest, classification and boundary reports remain ignored under
    `.agent-os/artifacts/paseo-sync/`.
-7. Local Stage 4 evidence under `NTH-EV-072` passes focused/package suites, all required root gates, real Web,
-   Android Debug APK, real Codex, isolation, hosted Relay v3 E2EE with multi-chunk binary transfer, and a rebuilt
-   AppImage real-window journey covering Workspace scripts and complete Schedule UI. Publication, public asset
-   verification and the downloaded-public-AppImage journey remain pending until Stage 5 completes.
+7. `NTH-EV-072` verifies the complete integration and publication. Published source
+   `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1` completed exact-SHA workflow `30383055325` and all 11 mandatory
+   native/packaged/CLI/Relay/publish jobs. Fixed prerelease `361273193` and direct tag `v0.0.0-mvp-beta` target
+   that source and expose exactly 26 desktop-only assets. Fresh public checksum, update-manifest and embedded
+   build-identity checks agree; the `137,822,613`-byte downloaded AppImage with SHA-256
+   `b287f036cfe4d6de7c4c18a284a68998fc9232b187e86e42691de555c3252b21` passed the complete real-window
+   Workspace-script, five-chunk transfer and `Tasks | Schedules` journey. `NTH-TD-049` is verified.
 
 ## Follow-Up
 

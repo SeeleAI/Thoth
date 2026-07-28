@@ -3994,7 +3994,7 @@ action returns to `NTH-TD-036`; it remains doing at Stage 4 with its independent
 
 ### `NTH-EV-072` Paseo v0.2.3 Organic Integration And Fixed-Beta Replacement
 
-Status: `in_progress`.
+Status: `verified`.
 
 1. The official annotated `v0.2.3` tag resolves through object
    `5f71b185c3d170dec26ea00b91b52a550d510fcd` to commit
@@ -4070,7 +4070,40 @@ skipped`; and CLI `30` unit tests plus `40/40` local/e2e files. Protocol, Relay,
     hygiene. Current production metrics are `315,762` physical LOC, `1,357,222` scanner tokens, `1,386,279` AST
     nodes, `5,215` static imports and `165` runtime dependency edges. Therefore `DeltaP23=4,829`, translated Cut B
     and final ceilings are `300,256` / `277,856`, and the independent `NTH-TD-036` gap remains exactly `15,506`.
-14. Local implementation and product verification are complete, but `NTH-EV-072` remains `in_progress` until the
-    release-source commit, both normal fast-forward pushes, exact-SHA workflow, fixed 26-asset Release replacement,
-    fresh public checksums/build identity and downloaded-public-AppImage product journey all pass. No publication
-    claim is made by this local evidence.
+14. Release-source commit `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1`
+    (`feat: organically integrate Paseo v0.2.3`) was normally fast-forwarded to both authorized branches.
+    Exact-SHA workflow `30383055325` (`MVP Beta Release` workflow `314811076`, run `33`) completed with
+    `status=completed`, `conclusion=success` and the same head SHA. All 11 mandatory jobs passed: preflight
+    `90355410082`; Linux Desktop `90358702132`; macOS x64/arm64 `90358702193` / `90358702225`; Server CLI
+    `90358702226`; Windows Desktop `90358702255`; Linux/macOS/Windows Server CLI smokes `90359273569` /
+    `90359273597` / `90359273664`; hosted Relay `90359273593`; and publish `90361615180`.
+15. Fixed public prerelease `361273193` was published at `2026-07-28T17:54:55Z`. Direct tag
+    `v0.0.0-mvp-beta`, Release target and `release/mvp-actions` all resolve to `eaa1aa5f`; `draft=false`,
+    `prerelease=true`, and the asset manifest contains exactly 26 desktop-only files. It contains no APK, iOS
+    package, public Server CLI archive, npm, Nix or Docker output.
+16. Fresh public downloads under ignored
+    `.dev/release-verification/eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1/` passed independent size and SHA-256
+    checks: `BUILD-SOURCE.txt` is `89` bytes /
+    `0af0b4e2743aba7fb0de12dd79c49f7771215c19a4f32132244d817dbab51eac`; `MVP-UPDATE.json` is `2,455`
+    bytes / `b53db387763604a3b1695fb3aad0e3c4e8375dcbc39d0b2a8ef1fa12fc1d3fe4`; `SHA256SUMS` is `2,418` bytes /
+    `c3f9d329aca9b61e2de2ee4ecc3c524d4c9bd17a4f966fd2b03efea1a4d1918d`; and `Thoth-x86_64.AppImage` is
+    `137,822,613` bytes / `b287f036cfe4d6de7c4c18a284a68998fc9232b187e86e42691de555c3252b21`.
+    `BUILD-SOURCE.txt` records the fixed tag, exact source and workflow; schema-1 `MVP-UPDATE.json` records the
+    same source/workflow and exactly six preferred native installers; `SHA256SUMS` agrees with the local digests;
+    and extracted `resources/build-identity.json` contains the exact source commit.
+17. The freshly downloaded public AppImage passed the complete real-window journey with exit code `0` and
+    `ok=true`. The renderer/preload bridge, read-only Files/Changes, typed Browser rejection, Workspace-script UI
+    start/stop and durable receipts passed. The direct file transfer delivered `1,048,649` bytes in five chunks.
+    The Schedule was created, run on create, edited, paused, resumed and run now through the UI; its Task and
+    ExecutionAttempt succeeded, canonical Timeline events were present, and both Schedule-to-Task and
+    Task-to-Schedule navigation passed.
+18. Final non-target receipts remain unchanged: `main=e74c6e0de8a110d5e07249880d0e4e4f0ceab691`; independent Relay
+    source `317bcda46571ae0ae508f4d892759eff779d9d73` and protocol-3 health were not deployed or mutated; official
+    Paseo tag object `5f71b185c3d170dec26ea00b91b52a550d510fcd` still targets
+    `43cf858c3760679ec9be805ba8b903cdf20f7103`; and independent Paseo PID `3597831` remains on
+    `127.0.0.1:6767`. No npm, Android/iOS/store, Nix/Docker, Web or Relay publication occurred.
+
+Conclusion: `NTH-AC-026` is satisfied, the exact Paseo v0.2.3 target-side set is organically integrated,
+`NTH-TD-049` is verified, and the fixed desktop-only Beta is `published` at source
+`eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1`. The sole top next action returns to `NTH-TD-036`; it remains doing
+at Stage 4 with its independent `15,506`-LOC Cut B gap unchanged.

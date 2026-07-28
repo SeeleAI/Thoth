@@ -227,6 +227,22 @@ Current verified local artifact:
 
 `packages/desktop/release/` is local artifact output and must not be committed.
 
+Current verified public artifact:
+
+- Source: `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1`
+- Workflow: `30383055325`
+- Release: `v0.0.0-mvp-beta` / `361273193`
+- Public-download path:
+  `/mnt/cfs/5vr0p6/yzy/thoth/.dev/release-verification/eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1/Thoth-x86_64.AppImage`
+- sha256: `b287f036cfe4d6de7c4c18a284a68998fc9232b187e86e42691de555c3252b21`
+- Bytes: `137822613`
+- Embedded build identity: `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1`
+- Public packaged smoke: passed with `ok=true` and the same real-window Files/Changes, Browser, Workspace-script,
+  five-chunk file-transfer and complete `Tasks | Schedules` UI/navigation contract as the local candidate
+
+The public artifact is the publication authority. It is downloaded from the GitHub Release and is not reused from
+the local build or workflow artifact.
+
 ## Runtime Isolation Packaging Rule
 
 Packaged desktop smoke, Android debug builds and web preview must not stop or reuse the reserved local legacy daemon on `127.0.0.1:6767`. Thoth direct daemon defaults to `127.0.0.1:6688`; packaged smoke should use an isolated temporary home and port when it launches a managed daemon.

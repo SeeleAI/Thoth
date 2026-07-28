@@ -3,27 +3,22 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-049`
+2. Top next action: `NTH-TD-036`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. The Paseo v0.2.3 target-side architecture review is resolved by `NTH-CD-089` through
-   `NTH-CD-096`; current schema-version-2 publish provenance passes `36/36` commits, `12/12` architecture
-   candidates, all four required candidates architectural, zero pending reviews and zero failures. Product
-   implementation and required local product journeys pass; guarded publication and public revalidation remain.
-5. Current branch: `agent/dev/mvp`. Published source `cf5067fa3835c498f3842a5b2e371d4cb3b25577` is the exact target of
-   `release/mvp-actions`, direct tag `v0.0.0-mvp-beta`, and public prerelease `360786111`; the Release contains
-   exactly 26 desktop-only assets. The development branch carries the evidence-only closeout above the published
-   lineage without advancing the Release branch. Remote `main` remains unchanged at
+4. Active blockers: none. `NTH-EV-072` verifies the exact Paseo v0.2.3 target-side integration, all local gates,
+   exact-SHA workflow, fixed Release replacement, public checksums/build identity and downloaded AppImage journey.
+   `NTH-TD-049` is verified; `NTH-TD-036` resumes as the sole top next action.
+5. Current branch: `agent/dev/mvp`. Published source `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1` is the exact target
+   of `release/mvp-actions`, direct tag `v0.0.0-mvp-beta`, and public prerelease `361273193`; the Release contains
+   exactly 26 desktop-only assets. The development branch carries this evidence-only closeout above the published
+   source without advancing the Release branch. Remote `main` remains unchanged at
    `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
-6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-EV-071` verifies the published
-   v0.2.2 integration at `cf5067fa`; development HEAD `48e73cb` adds only its evidence closeout. `NTH-TD-049`
-   temporarily owns the approved v0.2.3 organic integration and guarded fixed-Beta replacement. Its exact target is
-   annotated tag commit `43cf858c` over the 36-commit target-side set from merge base `36f38245`; later Paseo
-   `main` is excluded. `Tasks | Schedules`, scoped Workspace scripts, atomic socket/E2EE/file streaming,
-   Driver-owned Provider usage/OMP/runtime policy, strict forwarded authority and approved App/Desktop repairs are
-   implemented through the sole canonical owners. Focused/package suites, all five root gates, real Web, Android,
-   real Codex, isolation, hosted Relay and rebuilt AppImage journeys pass. Production is `315,762` LOC with
-   translated Cut B/final ceilings `300,256` / `277,856`. `NTH-TD-036` stays doing at Stage 4 and retains its
-   independent `15,506`-LOC gap. Stage 5 source commit, workflow and public-asset verification remain pending.
+6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-EV-072` verifies that the exact
+   divergent target ending at Paseo `43cf858c` is organically integrated and published at `eaa1aa5f`. Current
+   `Tasks | Schedules`, scoped Workspace scripts, atomic socket/E2EE/file streaming, Driver-owned Provider
+   usage/OMP/runtime policy, strict forwarded authority and approved App/Desktop repairs all terminate in the
+   canonical owners. Production is `315,762` LOC with translated Cut B/final ceilings `300,256` / `277,856`.
+   `NTH-TD-036` stays doing at Stage 4 and retains its independent `15,506`-LOC gap.
 
 ## Objective Summary
 
@@ -40,14 +35,13 @@
 
 ## Top Next Action
 
-`NTH-TD-049` `[doing]`: Organically integrate the exact Paseo v0.2.3 target-side set, complete the Workspace-owned
-`Tasks | Schedules` App capability, verify every accepted behavior through current Thoth ownership, and replace the
-fixed desktop-only Beta through one exact-SHA workflow and public-download product revalidation.
+`NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition,
+Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path while
+preserving the exact public behavior and independent `15,506`-LOC Cut B gap.
 
 ## Active Blockers
 
-None. The user resolved the v0.2.3 architecture and publication choices in `NTH-CD-089` through `NTH-CD-096`, and
-the exact publish classification now passes formal provenance with zero pending reviews or failures. `NTH-TD-036`
+None. `NTH-EV-072` verifies the completed v0.2.3 publication and public download revalidation. `NTH-TD-036`
 remains open by design at Stage 4 with a preserved `15,506`-LOC Cut B gap and is not verified or waived.
 
 ## Recent Important Changes
@@ -147,12 +141,12 @@ remains open by design at Stage 4 with a preserved `15,506`-LOC Cut B gap and is
 93. `NTH-CD-076` through `NTH-CD-088`: The user approved the exact Paseo v0.2.2 range, selective Forge/Browser/Schedule/Timeline/Provider/Desktop/Files/App adaptation, persistent service-port leases, explicit rejected/deferred boundaries, Cut B metric translation and the guarded fixed-Beta publication transaction.
 94. `NTH-EV-071`: Paseo v0.2.2 is organically integrated and published at `cf5067fa`. Exact provenance covers `393/393` commits, `143/143` architecture candidates and all `43/43` required architectural candidates with zero pending reviews or failures. Corrective workflow `30318942696`, all native/packaged/CLI/Relay jobs, the exact 26-asset desktop-only fixed Beta, public checksums/build identity and the downloaded AppImage product journey passed. `NTH-TD-048` is verified; `NTH-TD-036` is the sole top next action with its `15,506`-LOC gap unchanged.
 95. `NTH-CD-089` through `NTH-CD-096`: The user approved the exact divergent Paseo v0.2.3 target-side set, `Tasks | Schedules` completion, scoped Workspace scripts, atomic transport upgrade, Driver-owned Provider usage/capabilities, strict forwarded authority, persistent daemon default and the guarded fixed-Beta publication transaction.
-96. `NTH-EV-072`: Paseo v0.2.3 integration evidence is in progress. Official tag/range and remote truth are pinned;
-    publish provenance passes `36/36`, `12/12`, every required candidate architectural, zero pending and zero
-    failures. The organic implementation, owner/package suites, all five root gates, real Web, Android Debug APK,
-    real Codex, isolation, hosted Relay v3 E2EE/multi-chunk transfer and rebuilt AppImage real-window journey pass.
-    Production is `315,762` LOC and the boundary report has zero findings. Exact-SHA workflow, fixed public assets
-    and downloaded-public-AppImage verification remain pending, so the terminal state is not yet `published`.
+96. `NTH-EV-072`: Paseo v0.2.3 is organically integrated and published at `eaa1aa5f`. Exact target-side provenance
+    covers `36/36` commits and `12/12` architecture candidates with all required candidates architectural, zero
+    pending reviews and zero failures. Workflow `30383055325`, all 11 native/packaged/CLI/Relay/publish jobs, the
+    exact 26-asset desktop-only fixed Beta, public checksums/build identity and the downloaded AppImage
+    `Tasks | Schedules`/scripts/five-chunk journey passed. `NTH-TD-049` is verified; `NTH-TD-036` is the sole top
+    next action with its `15,506`-LOC gap unchanged.
 
 ## Read Next
 

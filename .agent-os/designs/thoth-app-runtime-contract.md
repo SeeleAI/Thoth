@@ -380,10 +380,10 @@ The frontend must not:
 `NTH-EV-030` code-verifies the merged Loop background implementation, but real-provider local/public
 acceptance is still pending.
 
-`NTH-EV-071` verifies and publicly closes the Paseo v0.2.2 operational surfaces. `NTH-EV-072` locally verifies the
-v0.2.3 additions through focused owner tests, all five root gates, real Web Schedule/script interaction, Android
-Debug APK, real Codex, hosted Relay v3 E2EE/multi-chunk transfer, and one rebuilt AppImage real-window journey.
-The v0.2.3 exact-SHA workflow and downloaded-public-asset verification remain the publication boundary.
+`NTH-EV-071` verifies and publicly closes the Paseo v0.2.2 operational surfaces. `NTH-EV-072` verifies and publicly
+closes the v0.2.3 additions through focused owner tests, all five root gates, real Web Schedule/script interaction,
+Android Debug APK, real Codex, hosted Relay v3 E2EE/multi-chunk transfer, exact-SHA native publication and a
+downloaded-public-AppImage real-window journey.
 
 1. The restored Paseo surface is the main path.
 2. Quick+none `hi` is a bare provider stream with no Clarify Card.
