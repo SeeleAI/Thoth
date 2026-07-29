@@ -4171,7 +4171,7 @@ Status: `verified`.
 
 ### `NTH-EV-074` Provider Interaction Fixed-Beta Publication
 
-Status: `release_ready`.
+Status: `verified`.
 
 1. `NTH-EV-073` verifies the complete same-session Provider-interaction correction on clean base
    `d801b8e9e1e200f65bd94532e537f673c7e9567b`. The final local candidate passed owner suites, real Codex,
@@ -4215,6 +4215,29 @@ Status: `release_ready`.
     files and `2,713/2,713` tests; Desktop and Drivers typechecks/suites; fixed Release contract; formatting;
     repository validation; `git diff --check`; rebuilt AppImage; hosted Relay; and formal isolation. Isolation kept
     Paseo PID `3597831` on `127.0.0.1:6767` while no Thoth daemon occupied `6688`.
-11. Pending receipts: two normal fast-forward pushes of the corrective release-source SHA; new matching workflow
-    and all mandatory jobs; fixed Release/tag and 26-asset replacement; fresh public downloads and checksums;
-    downloaded AppImage product journey; final non-target audit and development-only evidence closeout.
+11. Corrective source `d898f25f087f3d997fb027df355013a3d600f94e`
+    (`fix(release): preserve packaged provider resume state`) was normally fast-forwarded to both authorized
+    branches. The first development push attempt lacked `THOTH_GH_CONFIG_DIR` and exited `128` before obtaining a
+    username; API verification proved the remote remained at `c03d60cd`, after which the same push with the full
+    repository-local environment succeeded. No force, merge, rebase or `main` mutation occurred.
+12. Exact-SHA workflow `30459786832` completed with `success` at the corrective source. All 11 jobs passed:
+    preflight `90602540907`; macOS x64 `90606248602`; Server CLI `90606248632`; Linux `90606248694`; macOS arm64
+    `90606248706`; Windows `90606252900`; hosted Relay `90606912965`; macOS/Windows/Ubuntu CLI smokes
+    `90606913039` / `90606913056` / `90606913788`; and publish `90609908398`. The former macOS x64 and Relay
+    failure paths both passed in their original mandatory jobs.
+13. Fixed public prerelease `361828099` and direct tag `v0.0.0-mvp-beta` target exactly `d898f25f`; `draft=false`,
+    `prerelease=true`, and the Release has exactly 26 desktop-only assets. It contains no APK, iOS, public Server
+    CLI, npm, Nix or Docker output.
+14. Fresh Release downloads under ignored `.dev/release-verification/d898f25f.../` match GitHub metadata and
+    `SHA256SUMS`: `BUILD-SOURCE.txt` is `89` bytes / `e08551c3...f0ede`; `MVP-UPDATE.json` is `2,455` bytes /
+    `64ba48f5...57bad`; `SHA256SUMS` is `2,418` bytes / `5b456f26...6cc5c`; and `Thoth-x86_64.AppImage` is
+    `137,826,536` bytes / `ec90e3f8...ebca8`. Source metadata, workflow `30459786832`, update manifest and extracted
+    `resources/build-identity.json` all agree on `d898f25f`.
+15. The freshly downloaded public AppImage passed with exit `0` and `ok=true`. Its real window clicked Provider
+    Features Plan, answered native question id `target` with array `['Local']`, opened Implement only after the
+    completed Plan and completed on the same Provider thread `scripted-thread-3953698`. Existing Files/Changes,
+    Browser, Workspace scripts, five-chunk file transfer and full `Tasks | Schedules` UI/navigation also passed.
+16. Final non-target audit passed: `main=e74c6e0d`; independent Relay remains
+    `317bcda46571ae0ae508f4d892759eff779d9d73`; formal isolation retained Paseo PID `3597831` on `6767` and no
+    Thoth daemon on `6688`. No Relay/Web deployment, npm/mobile/store/Nix/Docker publication or Paseo operation
+    occurred. Terminal result is `published`.

@@ -213,7 +213,7 @@ install strategy: NSIS on Windows, DMG on macOS, atomic AppImage replacement, or
 installer for DEB/RPM. New clients do not consume `latest*.yml`; those files remain Release assets
 only for migration compatibility with older published clients.
 
-Current verified local artifact (unpublished candidate):
+Current verified local pre-publication artifact:
 
 - Path: `/mnt/cfs/5vr0p6/yzy/thoth/packages/desktop/release/Thoth-x86_64.AppImage`
 - sha256: `ba878cdabaf1bd5f9488d1241f2491d012834d075f0b5d0c69cf55b188403059`
@@ -228,24 +228,24 @@ Current verified local artifact (unpublished candidate):
   storage migration to layout/schema v5
 - Report: `/mnt/cfs/5vr0p6/yzy/thoth/.dev/packaged-appimage-thoth-flow/report.json`
 
-This candidate includes the corrective release-path changes after exact-SHA workflow `30453064159` failed before
-publish. It is local verification evidence only and does not replace or describe the current public fixed Beta
-below.
+This local artifact includes the corrective release-path changes after exact-SHA workflow `30453064159` failed.
+It is retained as pre-publication evidence only; the downloaded public artifact below is publication authority.
 
 `packages/desktop/release/` is local artifact output and must not be committed.
 
 Current verified public artifact:
 
-- Source: `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1`
-- Workflow: `30383055325`
-- Release: `v0.0.0-mvp-beta` / `361273193`
+- Source: `d898f25f087f3d997fb027df355013a3d600f94e`
+- Workflow: `30459786832`
+- Release: `v0.0.0-mvp-beta` / `361828099`
 - Public-download path:
-  `/mnt/cfs/5vr0p6/yzy/thoth/.dev/release-verification/eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1/Thoth-x86_64.AppImage`
-- sha256: `b287f036cfe4d6de7c4c18a284a68998fc9232b187e86e42691de555c3252b21`
-- Bytes: `137822613`
-- Embedded build identity: `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1`
-- Public packaged smoke: passed with `ok=true` and the same real-window Files/Changes, Browser, Workspace-script,
-  five-chunk file-transfer and complete `Tasks | Schedules` UI/navigation contract as the local candidate
+  `/mnt/cfs/5vr0p6/yzy/thoth/.dev/release-verification/d898f25f087f3d997fb027df355013a3d600f94e/Thoth-x86_64.AppImage`
+- sha256: `ec90e3f8f860b5e918bf035630df3f2121a91b0c039355e164bdfd3a569ebca8`
+- Bytes: `137826536`
+- Embedded build identity: `d898f25f087f3d997fb027df355013a3d600f94e`
+- Public packaged smoke: passed with `ok=true`, Provider Features Plan, native question id `target`, answer array
+  `['Local']`, completed-Plan-only Implement, same-thread implementation and the existing Files/Changes, Browser,
+  Workspace-script, five-chunk file-transfer and complete `Tasks | Schedules` UI/navigation contract
 
 The public artifact is the publication authority. It is downloaded from the GitHub Release and is not reused from
 the local build or workflow artifact.

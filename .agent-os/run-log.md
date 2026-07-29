@@ -4672,3 +4672,29 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   Thoth daemon on `6688`.
 - Corrective exact-SHA pushes, a new workflow, public download checks and downloaded-AppImage acceptance remain
   pending. The failed workflow will not be rerun as a substitute for a new source SHA.
+
+## 2026-07-29 [Provider interaction fixed Beta published and publicly reverified]
+
+- Created corrective release-source commit `d898f25f087f3d997fb027df355013a3d600f94e`
+  (`fix(release): preserve packaged provider resume state`). The first development push invocation omitted
+  `THOTH_GH_CONFIG_DIR` and exited `128` before credential acquisition; GitHub still reported `c03d60cd`. Retrying
+  with the complete repository-local `Royalvice` environment normally fast-forwarded `agent/dev/mvp`, followed by
+  a normal fast-forward of `release/mvp-actions`. No force, merge, rebase or `main` mutation occurred.
+- Exact-SHA workflow `30459786832` completed successfully at `d898f25f`. All 11 jobs passed: preflight
+  `90602540907`; macOS x64 `90606248602`; Server CLI `90606248632`; Linux `90606248694`; macOS arm64
+  `90606248706`; Windows `90606252900`; hosted Relay `90606912965`; macOS/Windows/Ubuntu CLI smokes
+  `90606913039` / `90606913056` / `90606913788`; and publish `90609908398`.
+- Fixed public prerelease `361828099` and direct tag `v0.0.0-mvp-beta` now target exactly `d898f25f`, are
+  non-draft/prerelease, and expose exactly 26 desktop-only assets. No APK, iOS, public Server CLI, npm, Nix or
+  Docker asset was published.
+- Fresh public downloads under ignored `.dev/release-verification/d898f25f.../` agree across GitHub metadata,
+  `BUILD-SOURCE.txt`, schema-1 `MVP-UPDATE.json`, `SHA256SUMS` and extracted build identity. The AppImage is
+  `137,826,536` bytes with SHA-256 `ec90e3f8...ebca8`; source is `d898f25f` and workflow is `30459786832`.
+- The downloaded AppImage real-window journey passed with exit `0` and `ok=true`: Provider Features Plan, native
+  question id `target`, answer array `['Local']`, completed-Plan-only Implement and same-thread continuation on
+  `scripted-thread-3953698`, plus Files/Changes, Browser, Workspace scripts, five-chunk file transfer and complete
+  `Tasks | Schedules` UI/navigation.
+- Final isolation retained Paseo PID `3597831` on `6767` and no Thoth daemon on `6688`. Independent Relay remains
+  at `317bcda4`; `main` remains `e74c6e0d`. No Relay/Web deployment, npm/mobile/store/Nix/Docker publication or
+  Paseo operation occurred. `NTH-EV-074` and `NTH-TD-051` are verified; terminal state is `published`.
+  `NTH-TD-036` is again the sole top action, remains doing at Stage 4 and retains its `15,506`-LOC gap.

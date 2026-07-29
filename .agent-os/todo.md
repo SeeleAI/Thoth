@@ -238,16 +238,15 @@ None.
   isolation, Foundation and the final `173.751s` refactor gate passed. No commit, push, tag, Release or deployment
   was performed.
 
-28. `NTH-TD-051` `[doing]`: Publish the verified Provider-interaction correction as an in-place replacement of the fixed desktop-only MVP Beta.
+28. `NTH-TD-051` `[verified]`: Publish the verified Provider-interaction correction as an in-place replacement of the fixed desktop-only MVP Beta.
 
 - Scope: create one atomic release-source commit, normally fast-forward `agent/dev/mvp` and `release/mvp-actions` to the exact SHA, wait for the existing mandatory workflow, verify the fixed 26-asset prerelease from fresh public downloads, run the downloaded AppImage real-window journey, and close evidence only on the development branch.
 - Related: `NTH-REQ-031`, `NTH-AC-028`, `NTH-CD-099`, `NTH-EV-073`, `NTH-EV-074`, `NTH-TD-036`, `NTH-TD-050`
-- Verification: In progress. Release source `c03d60cd` reached both authorized branches, but workflow
-  `30453064159` failed before publish on a partial PID-lock JSON race and an external Provider-fixture catalog
-  restart gap; the old 26-asset Release remains safe at `eaa1aa5f`. Both corrective paths now pass focused tests,
-  hosted Relay, rebuilt AppImage acceptance and all local promotion gates. Publication still requires both
-  authorized branches at the corrective source SHA, a new exact-SHA workflow, public assets and
-  downloaded-AppImage receipts.
+- Verification: See `NTH-EV-074`. Corrective source `d898f25f` completed exact-SHA workflow `30459786832`; all 11
+  mandatory jobs passed, including the repaired macOS x64 and hosted Relay paths. Fixed prerelease `361828099`
+  exposes exactly 26 desktop-only assets, and the checksum/build-identity-verified downloaded AppImage passed the
+  complete Provider Plan/question/Implement same-thread and existing product journey. Terminal state is
+  `published`; `NTH-TD-036` is again the sole top action and remains doing at Stage 4.
 
 ## Abandoned
 

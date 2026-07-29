@@ -101,38 +101,41 @@ SHA-256, source commit, update manifest, embedded build identity, and the comple
 
 ## Current Published Receipt
 
-The current fixed Beta was published from source `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1` by exact-SHA workflow
-`30383055325` (`MVP Beta Release` run `33`). All 11 mandatory jobs passed. Public prerelease `361273193` and direct
+The current fixed Beta was published from source `d898f25f087f3d997fb027df355013a3d600f94e` by exact-SHA workflow
+`30459786832`. All 11 mandatory jobs passed. Public prerelease `361828099` and direct
 tag `v0.0.0-mvp-beta` target that exact source, are non-draft/prerelease, and expose exactly 26 desktop-only assets.
 
 Fresh public downloads verify:
 
 - `BUILD-SOURCE.txt`: `89` bytes,
-  `0af0b4e2743aba7fb0de12dd79c49f7771215c19a4f32132244d817dbab51eac`
+  `e08551c3b3e685f9eb5c89f1686bde900d9bcdeb7149e4ce625e4511b66f0ede`
 - `MVP-UPDATE.json`: `2,455` bytes,
-  `b53db387763604a3b1695fb3aad0e3c4e8375dcbc39d0b2a8ef1fa12fc1d3fe4`
+  `64ba48f57393188265583c9ca8ebd796d4373bbb983ae65e633d4a9053c57bad`
 - `SHA256SUMS`: `2,418` bytes,
-  `c3f9d329aca9b61e2de2ee4ecc3c524d4c9bd17a4f966fd2b03efea1a4d1918d`
-- `Thoth-x86_64.AppImage`: `137,822,613` bytes,
-  `b287f036cfe4d6de7c4c18a284a68998fc9232b187e86e42691de555c3252b21`
+  `5b456f265efbcd8218080cd5783c4d1b64fe60010726cb9e0677bb3e2fb6cc5c`
+- `Thoth-x86_64.AppImage`: `137,826,536` bytes,
+  `ec90e3f8f860b5e918bf035630df3f2121a91b0c039355e164bdfd3a569ebca8`
 
 The source metadata, schema-1 update manifest, checksum file and extracted `resources/build-identity.json` agree
-on the source/workflow. The downloaded AppImage completed the real-window `Tasks | Schedules`, Workspace-script,
-five-chunk file-transfer, Files/Changes, Browser and Desktop bridge journey with `ok=true`.
+on the source/workflow. The downloaded AppImage completed the real-window Provider Plan/question/Implement
+same-thread, `Tasks | Schedules`, Workspace-script, five-chunk file-transfer, Files/Changes, Browser and Desktop
+bridge journey with `ok=true`.
 
-## Corrective Unpublished Candidate
+## Provider Interaction Replacement History
 
-Provider-interaction release source `c03d60cd14cd4ee330d30a38b0007807eb410a3d` is on both authorized branches,
-but exact-SHA workflow `30453064159` failed before publish. macOS x64 exposed a partial PID-lock JSON read, and the
-hosted Relay journey exposed lost native-thread tool-catalog state in the external scripted Provider after daemon
-restart. Publish was skipped, so the public Release remains safely at `eaa1aa5f` with its prior 26 assets.
+Provider-interaction release source `c03d60cd14cd4ee330d30a38b0007807eb410a3d` was pushed to both authorized
+branches, but exact-SHA workflow `30453064159` failed before publish. macOS x64 exposed a partial PID-lock JSON
+read, and the hosted Relay journey exposed lost native-thread tool-catalog state in the external scripted Provider
+after daemon restart. Publish was skipped, so the prior public Release remained safely at `eaa1aa5f` with its 26
+assets during that failed attempt.
 
 Both corrective paths now pass focused tests, the complete hosted Relay journey and a rebuilt local AppImage
 real-window journey. The local candidate is `137,830,605` bytes with SHA-256
 `ba878cdabaf1bd5f9488d1241f2491d012834d075f0b5d0c69cf55b188403059`. It includes same-thread Provider Plan,
 structured question id `target`, answer array `['Local']`, completed-Plan-only Implement and all prior packaged
-surfaces. All local promotion gates now pass. It remains unpublished evidence; `NTH-EV-074` becomes verified only
-after a new corrective exact-SHA workflow and fresh public downloads pass.
+surfaces. Corrective source `d898f25f` then passed exact-SHA workflow `30459786832`, replaced the fixed Release and
+passed fresh public-download and downloaded-AppImage verification. The failed predecessor remains evidence and is
+not treated as a successful publication.
 
 ## Credentials And GitHub Operations
 
