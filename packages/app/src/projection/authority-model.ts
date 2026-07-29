@@ -7,6 +7,7 @@ import type {
   AgentPersistenceHandle,
   AgentProvider,
   AgentUsage,
+  ProviderQuestionProjection,
 } from "@thoth/protocol/agent-types";
 import type {
   AgentProviderControl,
@@ -43,6 +44,7 @@ export interface Agent {
   currentModeId: string | null;
   availableModes: AgentMode[];
   pendingPermissions: AgentPermissionRequest[];
+  pendingProviderQuestions: ProviderQuestionProjection[];
   persistence: AgentPersistenceHandle | null;
   runtimeInfo?: AgentRuntimeInfo;
   lastUsage?: AgentUsage;

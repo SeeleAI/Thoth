@@ -1,67 +1,85 @@
 import { describe, expect, it } from "vitest";
 import {
-  NO_HARNESS_CAPABILITIES,
   THOTH_RUNTIME_BUNDLE_CATALOG,
   defineHarnessCapabilities,
   loadRuntimeBundle,
 } from "@thoth/drivers/harness";
-import { readThothRuntimeToolsConfig } from "./thoth-runtime-tools-config.js";
 import { provisionForegroundThothSession } from "./foreground-thoth-session-provisioner.js";
 
 const clarifyBundle = loadRuntimeBundle("thoth.clarify", THOTH_RUNTIME_BUNDLE_CATALOG);
 
 describe("foreground Thoth session provisioner", () => {
-  it("attaches the immutable Clarify bundle before a capable foreground thread starts", () => {
+  it("does not inject the Clarify bundle into a new foreground Agent config", () => {
     const config = provisionForegroundThothSession({
       config: { provider: "codex", cwd: "/workspace" },
       capabilities: defineHarnessCapabilities({ toolAttachment: ["native"] }),
       bundle: clarifyBundle,
     });
 
-    expect(readThothRuntimeToolsConfig(config)).toEqual({ enabled: true, scope: "clarify" });
-    expect(config.systemPrompt).toContain(clarifyBundle.digest);
-    expect(config.extra?.thothRuntimeAttachment).toEqual({
-      bundleId: "thoth.clarify",
-      bundleDigest: clarifyBundle.digest,
-      instructionAttachment: "system",
-      toolAttachment: "native",
-    });
+    expect(config).toEqual({ provider: "codex", cwd: "/workspace" });
     expect(JSON.stringify(config)).not.toContain("provider-sessions");
   });
 
-  it("does not contaminate internal sessions or adapters without semantic tools", () => {
-    const internal = { provider: "codex" as const, cwd: "/workspace", internal: true };
-    const unsupported = { provider: "future-provider" as const, cwd: "/workspace" };
+  it("removes only a provenance-matched generated suffix and preserves the user prompt", () => {
+    const marker = `[Thoth RuntimeBundle ${clarifyBundle.id} ${clarifyBundle.digest}]`;
+    const generated = [
+      marker,
+      "The following RuntimeBundle is session-scoped capability. Apply it only when the current daemon-authorized turn activates Thoth; raw turns must remain normal provider conversation.",
+      clarifyBundle.instructions,
+    ].join("\n\n");
+    const config = provisionForegroundThothSession({
+      config: {
+        provider: "codex",
+        cwd: "/workspace",
+        systemPrompt: `Keep my own instruction.\n\n${generated}`,
+        extra: {
+          keep: "user-value",
+          thothRuntimeTools: { enabled: true, scope: "clarify" },
+          thothRuntimeAttachment: {
+            bundleId: clarifyBundle.id,
+            bundleDigest: clarifyBundle.digest,
+          },
+        },
+      },
+      capabilities: defineHarnessCapabilities({ toolAttachment: ["native"] }),
+      bundle: clarifyBundle,
+    });
 
+    expect(config.systemPrompt).toBe("Keep my own instruction.");
+    expect(config.extra).toEqual({ keep: "user-value" });
     expect(
       provisionForegroundThothSession({
-        config: internal,
-        capabilities: defineHarnessCapabilities({ toolAttachment: ["mcp"] }),
+        config,
+        capabilities: defineHarnessCapabilities({ toolAttachment: ["native"] }),
         bundle: clarifyBundle,
       }),
-    ).toBe(internal);
-    expect(
-      provisionForegroundThothSession({
-        config: unsupported,
-        capabilities: NO_HARNESS_CAPABILITIES,
-        bundle: clarifyBundle,
-      }),
-    ).toBe(unsupported);
+    ).toEqual(config);
   });
 
-  it("chooses ACP and MCP attachment receipts without inspecting provider identity", () => {
-    const acp = provisionForegroundThothSession({
-      config: { provider: "future-acp", cwd: "/workspace" },
-      capabilities: defineHarnessCapabilities({ toolAttachment: ["acp"] }),
-      bundle: clarifyBundle,
-    });
-    const mcp = provisionForegroundThothSession({
-      config: { provider: "future-mcp", cwd: "/workspace" },
-      capabilities: defineHarnessCapabilities({ toolAttachment: ["mcp"] }),
+  it("retains an ambiguous user prompt and records a typed migration blocker", () => {
+    const marker = `[Thoth RuntimeBundle ${clarifyBundle.id} ${clarifyBundle.digest}]`;
+    const config = provisionForegroundThothSession({
+      config: {
+        provider: "codex",
+        cwd: "/workspace",
+        systemPrompt: `User text before ${marker} and user text after`,
+        extra: {
+          thothRuntimeTools: { enabled: true, scope: "clarify" },
+          thothRuntimeAttachment: {
+            bundleId: clarifyBundle.id,
+            bundleDigest: clarifyBundle.digest,
+          },
+        },
+      },
+      capabilities: defineHarnessCapabilities({ toolAttachment: ["native"] }),
       bundle: clarifyBundle,
     });
 
-    expect(acp.extra?.thothRuntimeAttachment).toMatchObject({ toolAttachment: "acp" });
-    expect(mcp.extra?.thothRuntimeAttachment).toMatchObject({ toolAttachment: "mcp" });
+    expect(config.systemPrompt).toBe(`User text before ${marker} and user text after`);
+    expect(config.extra).toEqual({
+      thothRuntimeMigrationBlocker: expect.objectContaining({
+        code: "THOTH_RUNTIME_PROMPT_PROVENANCE_UNVERIFIED",
+      }),
+    });
   });
 });

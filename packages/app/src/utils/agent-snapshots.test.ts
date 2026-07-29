@@ -28,6 +28,7 @@ function createSnapshot(
     currentModeId: input.currentModeId ?? null,
     availableModes: input.availableModes ?? [],
     pendingPermissions: input.pendingPermissions ?? [],
+    pendingProviderQuestions: input.pendingProviderQuestions ?? [],
     persistence: input.persistence ?? null,
     title: input.title ?? null,
     ...(input.providerControl ? { providerControl: input.providerControl } : {}),

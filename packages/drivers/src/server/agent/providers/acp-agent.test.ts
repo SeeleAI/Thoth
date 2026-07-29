@@ -724,7 +724,7 @@ describe("ACP selection validity helpers", () => {
 });
 
 describe("ACPHarnessThread Zed parity", () => {
-  test("provider run mode writes the advertised native ACP Plan mode and restores the prior mode", async () => {
+  test("provider run mode stays unsupported when ACP has no completed native Plan item", async () => {
     const session = createSessionWithConfig();
     const fixture = prepareConfiguredOverrideSession(session, {
       currentMode: "default",
@@ -735,23 +735,23 @@ describe("ACPHarnessThread Zed parity", () => {
     });
 
     await expect(session.applyProviderRunMode?.("plan")).resolves.toEqual({
-      capability: { kind: "native" },
-      nativeModeId: "session/plan",
+      capability: {
+        kind: "unsupported",
+        reason: "ACP adapter does not expose a completed native Plan item.",
+      },
+      nativeModeId: null,
     });
-    expect(fixture.setSessionMode).toHaveBeenLastCalledWith({
-      sessionId: "session-1",
-      modeId: "session/plan",
-    });
-    expect(await session.getCurrentMode()).toBe("session/plan");
+    expect(fixture.setSessionMode).not.toHaveBeenCalled();
+    expect(await session.getCurrentMode()).toBe("default");
 
     await expect(session.applyProviderRunMode?.("default")).resolves.toEqual({
-      capability: { kind: "native" },
+      capability: {
+        kind: "unsupported",
+        reason: "ACP adapter does not expose a completed native Plan item.",
+      },
       nativeModeId: "default",
     });
-    expect(fixture.setSessionMode).toHaveBeenLastCalledWith({
-      sessionId: "session-1",
-      modeId: "default",
-    });
+    expect(fixture.setSessionMode).not.toHaveBeenCalled();
     expect(await session.getCurrentMode()).toBe("default");
   });
 
@@ -765,7 +765,7 @@ describe("ACPHarnessThread Zed parity", () => {
     await expect(session.applyProviderRunMode?.("plan")).resolves.toEqual({
       capability: {
         kind: "unsupported",
-        reason: "claude-acp does not expose a native ACP Plan mode.",
+        reason: "ACP adapter does not expose a completed native Plan item.",
       },
       nativeModeId: null,
     });
@@ -1445,7 +1445,7 @@ describe("ACPHarnessAdapter modelTransformer", () => {
       modes: [],
       planCapability: {
         kind: "unsupported",
-        reason: "pi does not expose a native ACP Plan mode.",
+        reason: "ACP adapter does not expose a completed native Plan item.",
       },
     });
   });
@@ -1549,7 +1549,7 @@ describe("ACPHarnessAdapter sessionResponseTransformer", () => {
       ],
       planCapability: {
         kind: "unsupported",
-        reason: "claude-acp does not expose a native ACP Plan mode.",
+        reason: "ACP adapter does not expose a completed native Plan item.",
       },
     });
   });
@@ -1631,7 +1631,7 @@ describe("ACPHarnessAdapter fetchCatalog", () => {
       modes: [],
       planCapability: {
         kind: "unsupported",
-        reason: "pi does not expose a native ACP Plan mode.",
+        reason: "ACP adapter does not expose a completed native Plan item.",
       },
     });
   });

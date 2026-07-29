@@ -84,6 +84,7 @@ function createAgentPayload(input: {
     currentModeId: null,
     availableModes: [],
     pendingPermissions: [],
+    pendingProviderQuestions: [],
     persistence: null,
     title: input.title ?? null,
     labels: {},

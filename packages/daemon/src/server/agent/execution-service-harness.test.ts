@@ -178,6 +178,53 @@ class ScriptedHarnessThread implements HarnessThread {
     });
   }
 
+  emitPlan(text: string, itemId = "plan-item-1"): void {
+    const turnId = this.requireActiveTurn();
+    const bytes = Buffer.byteLength(text, "utf8");
+    this.emit({
+      type: "provider_plan_completed",
+      provider: this.provider,
+      plan: {
+        providerThreadId: this.id,
+        providerTurnId: turnId,
+        itemId,
+        text,
+        originalBytes: bytes,
+        retainedBytes: bytes,
+      },
+      turnId,
+    });
+  }
+
+  emitProviderQuestion(agentId: string, interactionId = "question-1"): void {
+    const turnId = this.requireActiveTurn();
+    this.emit({
+      type: "provider_question_requested",
+      provider: this.provider,
+      question: {
+        interactionId,
+        agentId,
+        providerThreadId: this.id,
+        providerTurnId: turnId,
+        providerItemId: interactionId,
+        revision: 0,
+        questions: [
+          {
+            id: "target",
+            header: "Target",
+            prompt: "Choose a target",
+            options: [{ value: "a", label: "A" }],
+            selectionMode: "single",
+            allowOther: false,
+            secret: false,
+          },
+        ],
+        expiresAt: null,
+      },
+      turnId,
+    });
+  }
+
   emitCompleted(): void {
     const turnId = this.requireActiveTurn();
     this.emit({ type: "turn_completed", provider: this.provider, turnId });
@@ -274,6 +321,12 @@ async function startExecution(
     generation: `generation-${executionId}`,
     prompt: "Execute the approved task.",
     attachment: fixture.attachment,
+    activation: {
+      bundleId: RUNTIME_BUNDLE.id,
+      bundleDigest: RUNTIME_BUNDLE.digest,
+      scope: "loop_planexec",
+      generation: `generation-${executionId}`,
+    },
     runMode,
     runModeReceipt,
   };
@@ -301,7 +354,7 @@ async function waitForControl(
 }
 
 describe("ExecutionService Harness conformance", () => {
-  it("captures native Plan, creates one Implement approval, replays events and continues on the same thread", async () => {
+  it("accepts only a completed native Plan item and continues implementation on the same thread", async () => {
     const fixture = await createFixture();
     const descriptor = await startExecution(fixture, "plan", "execution-plan");
     const received: HarnessExecutionEvent[] = [];
@@ -311,15 +364,24 @@ describe("ExecutionService Harness conformance", () => {
       type: "assistant_message",
       text: "1. Inspect reality\n2. Implement and verify",
     });
+    fixture.session.emitPlan("1. Inspect reality\n2. Implement and verify");
     fixture.session.emitCompleted();
 
-    const control = await waitForControl(received, "plan_ready");
+    const control = await waitForControl(received, "plan_completed");
     expect(control).toMatchObject({
-      type: "plan_ready",
-      plan: "1. Inspect reality\n2. Implement and verify",
-      approval: { kind: "implement", autoApproveEligible: true },
+      type: "plan_completed",
+      plan: { text: "1. Inspect reality\n2. Implement and verify" },
     });
-    if (control.type !== "plan_ready") throw new Error("Expected native Plan control");
+    if (control.type !== "plan_completed") throw new Error("Expected native Plan control");
+    expect(
+      received.some(
+        (event) =>
+          event.control?.type === "plan_completed" &&
+          event.payload &&
+          typeof event.payload === "object" &&
+          (event.payload as { type?: unknown }).type === "timeline",
+      ),
+    ).toBe(false);
 
     const replayed: HarnessExecutionEvent[] = [];
     fixture.service.subscribeHarnessEvents("codex", descriptor, (event) => replayed.push(event));
@@ -333,39 +395,44 @@ describe("ExecutionService Harness conformance", () => {
     );
     expect(afterFirstCursor).toEqual(received.slice(1));
 
-    const resolution = await fixture.service.resolveHarnessApproval("codex", {
+    fixture.service.resolveHarnessPlanInteraction(descriptor, "implement");
+    const runModeReceipt = await fixture.service.prepareHarnessRunMode("codex", {
       thread: fixture.thread,
-      execution: descriptor,
-      approvalId: control.approval.id,
-      decision: "implement",
+      mode: "default",
     });
-    expect(resolution.runModeReceipt).toMatchObject({
+    expect(runModeReceipt).toMatchObject({
       requestedMode: "default",
       status: "applied",
     });
-    expect(resolution.followUpPrompt).toContain("Implement the approved native plan now");
-    expect(resolution.followUpPrompt).toContain("Inspect reality");
     expect(fixture.session.modeCalls).toEqual(["plan", "default"]);
 
+    const implementationPrompt =
+      "Implement the approved native Plan now.\n\n1. Inspect reality\n2. Implement and verify";
     const continuation = await fixture.service.continueHarnessExecution("codex", {
       thread: fixture.thread,
       execution: {
         executionId: descriptor.id,
         generation: "generation-execution-plan",
-        prompt: resolution.followUpPrompt,
+        prompt: implementationPrompt,
         attachment: fixture.attachment,
+        activation: {
+          bundleId: RUNTIME_BUNDLE.id,
+          bundleDigest: RUNTIME_BUNDLE.digest,
+          scope: "loop_planexec",
+          generation: "generation-execution-plan",
+        },
         runMode: "default",
-        runModeReceipt: resolution.runModeReceipt!,
+        runModeReceipt,
       },
     });
     await waitForTurn(fixture.session, 2);
     expect(continuation.threadId).toBe(fixture.thread.id);
     expect(fixture.adapter.createCount).toBe(1);
-    expect(fixture.session.prompts[1]).toContain("Implement the approved native plan now");
+    expect(fixture.session.prompts[1]).toContain("Implement the approved native Plan now");
     fixture.session.emitCompleted();
   });
 
-  it("binds an id-only provider Implement approval to the captured native Plan", async () => {
+  it("rejects a permission-shaped Plan even when assistant or tool text resembles a Plan", async () => {
     const fixture = await createFixture();
     const descriptor = await startExecution(fixture, "plan", "execution-explicit-plan");
     const received: HarnessExecutionEvent[] = [];
@@ -390,28 +457,13 @@ describe("ExecutionService Harness conformance", () => {
       metadata: { planId: "plan-1" },
     });
 
-    const control = await waitForControl(received, "plan_ready");
+    const control = await waitForControl(received, "plan_invalid");
     expect(control).toMatchObject({
-      type: "plan_ready",
-      plan: "Inspect authority, then implement and verify.",
-      approval: { id: "implement-plan-1", kind: "implement" },
+      type: "plan_invalid",
+      reason: "Provider emitted a permission-shaped Plan instead of a completed native Plan item.",
     });
-    if (control.type !== "plan_ready") throw new Error("Expected explicit Plan control");
-
-    const resolution = await fixture.service.resolveHarnessApproval("codex", {
-      thread: fixture.thread,
-      execution: descriptor,
-      approvalId: control.approval.id,
-      decision: "implement",
-    });
-    expect(fixture.session.permissionResponses).toEqual([
-      {
-        requestId: "implement-plan-1",
-        response: { behavior: "allow", selectedActionId: "implement" },
-      },
-    ]);
-    expect(resolution.followUpPrompt).toContain("Inspect authority, then implement and verify.");
-    expect(fixture.session.modeCalls).toEqual(["plan", "default"]);
+    expect(fixture.session.permissionResponses).toEqual([]);
+    expect(fixture.session.modeCalls).toEqual(["plan"]);
     fixture.session.emitCompleted();
   });
 
@@ -425,7 +477,7 @@ describe("ExecutionService Harness conformance", () => {
 
     await expect(waitForControl(received, "plan_invalid")).resolves.toMatchObject({
       type: "plan_invalid",
-      reason: "Native Plan completed without usable plan content.",
+      reason: "PROVIDER_PLAN_MISSING",
     });
   });
 
@@ -436,12 +488,9 @@ describe("ExecutionService Harness conformance", () => {
     const received: HarnessExecutionEvent[] = [];
     fixture.service.subscribeHarnessEvents("codex", descriptor, (event) => received.push(event));
 
-    fixture.session.emitPermission({
-      id: "question-1",
-      name: "Question",
-      kind: "question",
-      title: "Choose a product direction",
-    });
+    const harnessAgentId = fixture.thread.persistence?.agentId;
+    if (typeof harnessAgentId !== "string") throw new Error("Harness Agent binding is missing");
+    fixture.session.emitProviderQuestion(harnessAgentId, "question-1");
     fixture.session.emitPermission({
       id: "tool-1",
       name: "Shell",

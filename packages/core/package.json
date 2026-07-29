@@ -18,6 +18,10 @@
     "./authority": {
       "types": "./dist/authority.d.ts",
       "default": "./dist/authority.js"
+    },
+    "./provider-turn-interaction": {
+      "types": "./dist/provider-turn-interaction.d.ts",
+      "default": "./dist/provider-turn-interaction.js"
     }
   },
   "scripts": {

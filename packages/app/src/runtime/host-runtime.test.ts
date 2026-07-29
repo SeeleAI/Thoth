@@ -214,6 +214,7 @@ function makeFetchAgentsEntry(input: {
       currentModeId: null,
       availableModes: [],
       pendingPermissions: [],
+      pendingProviderQuestions: [],
       persistence: null,
       title: input.title ?? null,
       cwd: input.cwd,

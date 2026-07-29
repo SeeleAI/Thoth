@@ -68,6 +68,17 @@ function questionEvent(questionOverrides: Record<string, unknown> = {}): unknown
   };
 }
 
+function questionRepliedEvent(): unknown {
+  return {
+    type: "question.replied",
+    properties: {
+      sessionID: "session-1",
+      requestID: "question-1",
+      answers: [["Proceed"]],
+    },
+  };
+}
+
 describe("OpenCode auto_accept feature", () => {
   test("lists discovered OpenCode modes without injecting defaults", async () => {
     const { runtime } = mockOpenCodeClient({
@@ -275,11 +286,14 @@ describe("OpenCode auto_accept feature", () => {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
-    const session = await client.createSession({
-      provider: "opencode",
-      cwd: "/tmp/project",
-      featureValues: { auto_accept: true },
-    });
+    const session = await client.createSession(
+      {
+        provider: "opencode",
+        cwd: "/tmp/project",
+        featureValues: { auto_accept: true },
+      },
+      { agentId: "agent-opencode-question" },
+    );
     session.subscribe((event) => receivedEvents.push(event));
 
     await session.run("Run verification");
@@ -306,28 +320,32 @@ describe("OpenCode auto_accept feature", () => {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
-    const session = await client.createSession({
-      provider: "opencode",
-      cwd: "/tmp/project",
-      featureValues: { auto_accept: true },
-    });
+    const session = await client.createSession(
+      {
+        provider: "opencode",
+        cwd: "/tmp/project",
+        featureValues: { auto_accept: true },
+      },
+      { agentId: "agent-opencode-question" },
+    );
     session.subscribe((event) => receivedEvents.push(event));
 
     await session.run("Ask a question");
 
-    expect(receivedEvents.filter((event) => event.type === "permission_requested")).toEqual([
+    expect(receivedEvents.filter((event) => event.type === "provider_question_requested")).toEqual([
       expect.objectContaining({
-        request: expect.objectContaining({
-          id: "question-1",
-          kind: "question",
+        question: expect.objectContaining({
+          interactionId: "question-1",
+          agentId: "agent-opencode-question",
+          questions: [expect.objectContaining({ id: "question-1:0" })],
         }),
       }),
     ]);
-    expect(session.getPendingPermissions()).toHaveLength(1);
+    expect(session.getPendingPermissions()).toEqual([]);
 
-    await session.respondToPermission("question-1", {
-      behavior: "allow",
-      updatedInput: { answers: { Decision: "Proceed" } },
+    await session.respondToProviderQuestion?.("question-1", {
+      type: "answer",
+      answers: [{ questionId: "question-1:0", values: ["Proceed"] }],
     });
 
     expect(openCodeClient.calls.questionReply).toHaveLength(1);
@@ -342,7 +360,41 @@ describe("OpenCode auto_accept feature", () => {
     await session.close();
   });
 
-  test("surfaces OpenCode questions with a free-write answer option", async () => {
+  test("clears a pending question when OpenCode resolves it outside Thoth", async () => {
+    const { runtime } = mockOpenCodeClient({
+      events: [questionEvent(), questionRepliedEvent(), idleEvent()],
+    });
+    const receivedEvents: AgentStreamEvent[] = [];
+
+    const client = new OpenCodeHarnessAdapter(createTestLogger(), undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const session = await client.createSession(
+      { provider: "opencode", cwd: "/tmp/project" },
+      { agentId: "agent-opencode-external-question" },
+    );
+    session.subscribe((event) => receivedEvents.push(event));
+
+    await session.run("Ask and resolve a question externally");
+
+    expect(receivedEvents.filter((event) => event.type === "provider_question_resolved")).toEqual([
+      expect.objectContaining({
+        interactionId: "question-1",
+        status: "answered",
+      }),
+    ]);
+    await expect(
+      session.respondToProviderQuestion?.("question-1", {
+        type: "answer",
+        answers: [{ questionId: "question-1:0", values: ["Proceed"] }],
+      }),
+    ).rejects.toThrow("No pending OpenCode Provider question");
+
+    await session.close();
+  });
+
+  test("preserves OpenCode closed-option questions without a free-write fallback", async () => {
     const { openCodeClient, runtime } = mockOpenCodeClient({
       events: [questionEvent({ custom: false }), idleEvent()],
     });
@@ -352,43 +404,52 @@ describe("OpenCode auto_accept feature", () => {
       serverManager: runtime,
       createClient: runtime.createClient,
     });
-    const session = await client.createSession({
-      provider: "opencode",
-      cwd: "/tmp/project",
-    });
+    const session = await client.createSession(
+      {
+        provider: "opencode",
+        cwd: "/tmp/project",
+      },
+      { agentId: "agent-opencode-closed-question" },
+    );
     session.subscribe((event) => receivedEvents.push(event));
 
     await session.run("Ask a question");
 
-    expect(receivedEvents.filter((event) => event.type === "permission_requested")).toEqual([
+    expect(receivedEvents.filter((event) => event.type === "provider_question_requested")).toEqual([
       expect.objectContaining({
-        request: expect.objectContaining({
-          id: "question-1",
-          kind: "question",
-          input: {
-            questions: [
-              {
-                question: "Which option should OpenCode use?",
-                header: "Decision",
-                options: [{ label: "Proceed", description: "Continue with the change" }],
-                allowOther: true,
-              },
-            ],
-          },
+        question: expect.objectContaining({
+          interactionId: "question-1",
+          questions: [
+            {
+              id: "question-1:0",
+              header: "Decision",
+              prompt: "Which option should OpenCode use?",
+              options: [
+                {
+                  value: "Proceed",
+                  label: "Proceed",
+                  description: "Continue with the change",
+                },
+              ],
+              selectionMode: "single",
+              allowOther: false,
+              secret: false,
+            },
+          ],
         }),
       }),
     ]);
 
-    await session.respondToPermission("question-1", {
-      behavior: "allow",
-      updatedInput: { answers: { Decision: "Use another answer" } },
+    await session.respondToProviderQuestion?.("question-1", {
+      type: "answer",
+      answers: [{ questionId: "question-1:0", values: ["Proceed"] }],
     });
 
     expect(openCodeClient.calls.questionReply).toEqual([
       {
         requestID: "question-1",
         directory: "/tmp/project",
-        answers: [["Use another answer"]],
+        answers: [["Proceed"]],
       },
     ]);
 

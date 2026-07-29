@@ -37,6 +37,7 @@ import {
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { asInternals as castInternals, createStub } from "../../../test-utils/class-mocks.js";
 import { buildProviderRegistry } from "@thoth/drivers/internal/server/agent/provider-registry";
+import { loadRuntimeBundle, THOTH_RUNTIME_BUNDLE_CATALOG } from "@thoth/drivers/harness";
 
 interface CollaborationModeRecord {
   name: string;
@@ -50,7 +51,7 @@ interface CodexSessionTestAccess {
   ensureThreadLoaded(): Promise<void>;
   ensureThread(): Promise<void>;
   handleDynamicToolCall(params: unknown): Promise<unknown>;
-  handleToolApprovalRequest(params: unknown): Promise<unknown>;
+  handleUserInputRequest(params: unknown): Promise<unknown>;
   handleNotification(method: string, params: unknown): void;
   loadPersistedHistory(): Promise<void>;
   refreshResolvedCollaborationMode(): void;
@@ -100,6 +101,7 @@ function createSession(
     false,
     options.goalsEnabled === true,
     options.autoReviewEnabled === true,
+    "test-agent",
   ) as CodexTestSession;
   session.connected = true;
   session.currentThreadId = "test-thread";
@@ -691,7 +693,7 @@ describe("Codex app-server provider", () => {
     });
   });
 
-  test("reattaches Thoth semantic dynamic tools when resuming a persisted thread", async () => {
+  test("resumes a persisted thread without sending undeclared dynamicTools", async () => {
     const requests: Array<{ method: string; params: unknown }> = [];
     const fakeClient: CodexClientLike = {
       async request(method: string, params?: unknown) {
@@ -722,13 +724,7 @@ describe("Codex app-server provider", () => {
     await asInternals(session).ensureThreadLoaded();
 
     const resumeCall = requests.find((request) => request.method === "thread/resume");
-    expect(resumeCall?.params).toEqual({
-      threadId: "persisted-tool-thread",
-      dynamicTools: [
-        expect.objectContaining({ name: "thoth_submit_clarify_card" }),
-        expect.objectContaining({ name: "browser_list_tabs" }),
-      ],
-    });
+    expect(resumeCall?.params).toEqual({ threadId: "persisted-tool-thread" });
   });
 
   test("does not pass Thoth runtime tool flags through Codex config", async () => {
@@ -791,7 +787,6 @@ describe("Codex app-server provider", () => {
     const session = new CodexHarnessThread(
       createConfig({
         thinkingOptionId: "medium",
-        extra: { thothRuntimeTools: { enabled: true, scope: "clarify_audit" } },
       }),
       null,
       createTestLogger(),
@@ -831,7 +826,6 @@ describe("Codex app-server provider", () => {
     const session = new CodexHarnessThread(
       createConfig({
         thinkingOptionId: "medium",
-        extra: { thothRuntimeTools: { enabled: true, scope: "contract_audit" } },
       }),
       null,
       createTestLogger(),
@@ -1562,6 +1556,73 @@ describe("Codex app-server provider", () => {
     );
   });
 
+  test("activates the canonical RuntimeBundle as one native Skill block for only that turn", async () => {
+    const session = createSession({
+      systemPrompt: "User-owned system prompt.",
+      daemonAppendSystemPrompt: "Daemon append instructions.",
+    });
+    const request = vi.fn(async (method: string) => {
+      if (method === "thread/loaded/list") {
+        return { data: ["test-thread"] };
+      }
+      if (method === "turn/start") {
+        return {};
+      }
+      throw new Error(`Unexpected request: ${method}`);
+    });
+    session.activeForegroundTurnId = null;
+    session.client = createStub<CodexClientLike>({ request });
+    const bundle = loadRuntimeBundle("thoth.clarify", THOTH_RUNTIME_BUNDLE_CATALOG);
+
+    await session.startTurn("Clarify this goal.", {
+      runtimeBundleActivation: {
+        bundleId: bundle.id,
+        bundleDigest: bundle.digest,
+        scope: "clarify",
+        generation: "generation-1",
+      },
+    });
+
+    const activatedStart = request.mock.calls.find(([method]) => method === "turn/start")?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(activatedStart?.input).toEqual([
+      {
+        type: "skill",
+        name: "thoth.clarify",
+        path: expect.stringMatching(/runtime-skills[\\/]thoth-clarify[\\/]SKILL\.md$/),
+      },
+      {
+        type: "text",
+        text: "Clarify this goal.",
+        text_elements: [],
+      },
+    ]);
+    expect(activatedStart?.developerInstructions).toBe(
+      "User-owned system prompt.\n\nDaemon append instructions.",
+    );
+    expect(String(activatedStart?.developerInstructions)).not.toContain(bundle.digest);
+    expect(String(activatedStart?.developerInstructions)).not.toContain("## Runtime Tools");
+
+    session.activeForegroundTurnId = null;
+    request.mockClear();
+    await session.startTurn("Continue raw without Thoth.", { runtimeBundleActivation: null });
+
+    const rawStart = request.mock.calls.find(([method]) => method === "turn/start")?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(rawStart?.threadId).toBe("test-thread");
+    expect(rawStart?.input).toEqual([
+      {
+        type: "text",
+        text: "Continue raw without Thoth.",
+        text_elements: [],
+      },
+    ]);
+    expect(JSON.stringify(rawStart)).not.toContain("thoth.clarify");
+    expect(JSON.stringify(rawStart)).not.toContain(bundle.digest);
+  });
+
   test("resolves Codex skill slash commands into app-server skill input", async () => {
     const session = createSession();
     const request = vi.fn(async (method: string) => {
@@ -1853,12 +1914,12 @@ describe("Codex app-server provider", () => {
     expect(env.THOTH_TEST_FLAG).toBe(launchContext.env?.THOTH_TEST_FLAG);
   });
 
-  test("projects request_user_input into a question permission and running timeline tool call", () => {
+  test("projects request_user_input into a Provider question and running timeline tool call", () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
 
-    void asInternals(session).handleToolApprovalRequest({
+    void asInternals(session).handleUserInputRequest({
       itemId: "call-question-1",
       threadId: "thread-1",
       turnId: "turn-1",
@@ -1901,46 +1962,35 @@ describe("Codex app-server provider", () => {
         },
       },
       {
-        type: "permission_requested",
+        type: "provider_question_requested",
         provider: "codex",
         turnId: "test-turn",
-        request: {
-          id: "permission-call-question-1",
-          provider: "codex",
-          name: "request_user_input",
-          kind: "question",
-          title: "Question",
-          detail: {
-            type: "plain_text",
-            text: "Drink: Which drink do you want?\nOptions: Coffee, Tea",
-            icon: "brain",
-          },
-          input: {
-            questions: [
-              {
-                id: "favorite_drink",
-                header: "Drink",
-                question: "Which drink do you want?",
-                options: [{ label: "Coffee", description: "Default" }, { label: "Tea" }],
-              },
-            ],
-          },
-          metadata: {
-            itemId: "call-question-1",
-            threadId: "thread-1",
-            turnId: "turn-1",
-            questions: [
-              {
-                id: "favorite_drink",
-                header: "Drink",
-                question: "Which drink do you want?",
-                options: [{ label: "Coffee", description: "Default" }, { label: "Tea" }],
-              },
-            ],
-          },
+        question: {
+          interactionId: "provider-question-call-question-1",
+          agentId: "test-agent",
+          providerThreadId: "thread-1",
+          providerTurnId: "turn-1",
+          providerItemId: "call-question-1",
+          revision: 0,
+          questions: [
+            {
+              id: "favorite_drink",
+              header: "Drink",
+              prompt: "Which drink do you want?",
+              options: [
+                { value: "Coffee", label: "Coffee", description: "Default" },
+                { value: "Tea", label: "Tea" },
+              ],
+              selectionMode: "single",
+              allowOther: false,
+              secret: false,
+            },
+          ],
+          expiresAt: null,
         },
       },
     ]);
+    expect(session.getPendingPermissions()).toEqual([]);
   });
 
   test("converts Codex collab agent notifications through the normal timeline path", () => {
@@ -2594,12 +2644,12 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
-  test("maps question responses from headers back to question ids and completes the tool call", async () => {
+  test("maps structured question-id answers without persisting answer values", async () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
 
-    const pendingResponse = asInternals(session).handleToolApprovalRequest({
+    const pendingResponse = asInternals(session).handleUserInputRequest({
       itemId: "call-question-2",
       threadId: "thread-1",
       turnId: "turn-1",
@@ -2613,13 +2663,9 @@ describe("Codex app-server provider", () => {
       ],
     });
 
-    await session.respondToPermission("permission-call-question-2", {
-      behavior: "allow",
-      updatedInput: {
-        answers: {
-          Drink: "Tea",
-        },
-      },
+    await session.respondToProviderQuestion?.("provider-question-call-question-2", {
+      type: "answer",
+      answers: [{ questionId: "favorite_drink", values: ["Tea"] }],
     });
 
     await expect(pendingResponse).resolves.toEqual({
@@ -2628,20 +2674,6 @@ describe("Codex app-server provider", () => {
       },
     });
     expect(events.at(-2)).toEqual({
-      type: "permission_resolved",
-      provider: "codex",
-      turnId: "test-turn",
-      requestId: "permission-call-question-2",
-      resolution: {
-        behavior: "allow",
-        updatedInput: {
-          answers: {
-            Drink: "Tea",
-          },
-        },
-      },
-    });
-    expect(events.at(-1)).toEqual({
       type: "timeline",
       provider: "codex",
       turnId: "test-turn",
@@ -2653,7 +2685,7 @@ describe("Codex app-server provider", () => {
         error: null,
         detail: {
           type: "plain_text",
-          text: "Drink: Which drink do you want?\nOptions: Coffee, Tea\n\nAnswers:\n\nfavorite_drink: Tea",
+          text: "Drink: Which drink do you want?\nOptions: Coffee, Tea",
           icon: "brain",
         },
         metadata: {
@@ -2665,15 +2697,101 @@ describe("Codex app-server provider", () => {
               options: [{ label: "Coffee" }, { label: "Tea" }],
             },
           ],
-          answers: {
-            favorite_drink: ["Tea"],
-          },
+          resolution: "answered",
         },
       },
     });
+    expect(events.at(-1)).toEqual({
+      type: "provider_question_resolved",
+      provider: "codex",
+      turnId: "test-turn",
+      interactionId: "provider-question-call-question-2",
+      status: "answered",
+    });
   });
 
-  test("emits a synthetic plan approval permission after a successful Codex plan turn", async () => {
+  test("expires request_user_input with empty answers and never selects an option", async () => {
+    vi.useFakeTimers();
+    try {
+      const session = createSession();
+      const events: AgentStreamEvent[] = [];
+      session.subscribe((event) => events.push(event));
+
+      const pendingResponse = asInternals(session).handleUserInputRequest({
+        itemId: "call-question-timeout",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        autoResolutionMs: 500,
+        questions: [
+          {
+            id: "target",
+            header: "Target",
+            question: "Choose a target",
+            options: [{ label: "Local" }, { label: "CI" }],
+          },
+        ],
+      });
+
+      await vi.advanceTimersByTimeAsync(500);
+
+      await expect(pendingResponse).resolves.toEqual({ answers: {} });
+      expect(events.at(-1)).toEqual({
+        type: "provider_question_resolved",
+        provider: "codex",
+        turnId: "test-turn",
+        interactionId: "provider-question-call-question-timeout",
+        status: "expired",
+      });
+      expect(JSON.stringify(events)).not.toContain('"answers":["Local"]');
+      await expect(
+        session.respondToProviderQuestion?.("provider-question-call-question-timeout", {
+          type: "answer",
+          answers: [{ questionId: "target", values: ["Local"] }],
+        }),
+      ).rejects.toThrow("No pending Codex Provider question");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("keeps secret question answers only in the native response call stack", async () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    const secret = "correct horse battery staple";
+
+    const pendingResponse = asInternals(session).handleUserInputRequest({
+      itemId: "call-question-secret",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      questions: [
+        {
+          id: "token",
+          header: "Token",
+          question: "Enter the temporary token",
+          options: [],
+          isSecret: true,
+          isOther: true,
+        },
+      ],
+    });
+    await session.respondToProviderQuestion?.("provider-question-call-question-secret", {
+      type: "answer",
+      answers: [{ questionId: "token", values: [secret] }],
+    });
+
+    await expect(pendingResponse).resolves.toEqual({
+      answers: { token: { answers: [secret] } },
+    });
+    expect(JSON.stringify(events)).not.toContain(secret);
+    expect(events.at(-1)).toMatchObject({
+      type: "provider_question_resolved",
+      interactionId: "provider-question-call-question-secret",
+      status: "answered",
+    });
+  });
+
+  test("emits Plan progress without synthesizing completion or Implement approval", async () => {
     const session = createSession({
       featureValues: { fast_mode: true },
     });
@@ -2682,9 +2800,13 @@ describe("Codex app-server provider", () => {
     session.subscribe((event) => events.push(event));
 
     asInternals(session).handleNotification("turn/started", {
+      threadId: "test-thread",
       turn: { id: "turn-plan-1" },
     });
     asInternals(session).handleNotification("turn/plan/updated", {
+      threadId: "test-thread",
+      turnId: "turn-plan-1",
+      explanation: null,
       plan: [
         { step: "Inspect the existing auth flow", status: "completed" },
         { step: "Implement the button behavior", status: "pending" },
@@ -2694,44 +2816,28 @@ describe("Codex app-server provider", () => {
       turn: { status: "completed", error: null },
     });
 
-    expect(
-      events.filter(
-        (event) =>
-          event.type === "timeline" &&
-          event.item.type === "tool_call" &&
-          event.item.detail.type === "plan",
-      ),
-    ).toHaveLength(1);
-    expect(events.at(-2)).toEqual({
-      type: "permission_requested",
+    expect(events).toContainEqual({
+      type: "provider_plan_progress",
       provider: "codex",
       turnId: "test-turn",
-      request: expect.objectContaining({
-        provider: "codex",
-        name: "CodexPlanApproval",
-        kind: "plan",
-        title: "Plan",
-        input: {
-          planId: expect.stringMatching(/^plan:/u),
-        },
-        actions: [
-          expect.objectContaining({
-            id: "reject",
-            label: "Reject",
-            behavior: "deny",
-          }),
-          expect.objectContaining({
-            id: "implement",
-            label: "Implement",
-            behavior: "allow",
-          }),
+      progress: {
+        providerThreadId: "test-thread",
+        providerTurnId: "turn-plan-1",
+        itemId: "plan-progress:turn-plan-1",
+        explanation: null,
+        steps: [
+          { text: "Inspect the existing auth flow", status: "completed" },
+          { text: "Implement the button behavior", status: "pending" },
         ],
-      }),
+      },
     });
+    expect(events.some((event) => event.type === "provider_plan_completed")).toBe(false);
+    expect(events.some((event) => event.type === "permission_requested")).toBe(false);
     expect(events.at(-1)).toEqual({
       type: "turn_completed",
       provider: "codex",
       turnId: "test-turn",
+      providerTurnId: "turn-plan-1",
       usage: undefined,
     });
   });
@@ -2755,7 +2861,7 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
-  test("persists the final Codex plan thread item before plan approval", async () => {
+  test("emits only a typed completed native Plan item for Daemon ownership", async () => {
     const session = createSession({
       featureValues: { fast_mode: true },
     });
@@ -2764,9 +2870,11 @@ describe("Codex app-server provider", () => {
     session.subscribe((event) => events.push(event));
 
     asInternals(session).handleNotification("turn/started", {
+      threadId: "test-thread",
       turn: { id: "turn-plan-thread-item" },
     });
     asInternals(session).handleNotification("item/completed", {
+      threadId: "test-thread",
       item: {
         id: "plan-item-1",
         type: "plan",
@@ -2777,36 +2885,45 @@ describe("Codex app-server provider", () => {
       turn: { status: "completed", error: null },
     });
 
+    expect(events).toContainEqual({
+      type: "provider_plan_completed",
+      provider: "codex",
+      turnId: "test-turn",
+      plan: {
+        providerThreadId: "test-thread",
+        providerTurnId: "turn-plan-thread-item",
+        itemId: "plan-item-1",
+        text: "- Inspect README\n- Add a short note",
+        originalBytes: 35,
+        retainedBytes: 35,
+      },
+    });
+    expect(events.some((event) => event.type === "permission_requested")).toBe(false);
     expect(
-      events.filter(
+      events.some(
         (event) =>
           event.type === "timeline" &&
           event.item.type === "tool_call" &&
           event.item.detail.type === "plan",
       ),
-    ).toHaveLength(1);
-    expect(events.at(-2)).toEqual({
-      type: "permission_requested",
+    ).toBe(false);
+    expect(events.at(-1)).toEqual({
+      type: "turn_completed",
       provider: "codex",
       turnId: "test-turn",
-      request: expect.objectContaining({
-        provider: "codex",
-        name: "CodexPlanApproval",
-        kind: "plan",
-        input: {
-          planId: "plan-item-1",
-        },
-      }),
+      providerTurnId: "turn-plan-thread-item",
+      usage: undefined,
     });
   });
 
-  test("promotes native Plan assistant output to one durable Plan result", async () => {
+  test("keeps assistant output ordinary text while native Plan mode is active", async () => {
     const session = createSession({ featureValues: { fast_mode: true } });
     await enableNativePlanMode(session);
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
 
     asInternals(session).handleNotification("turn/started", {
+      threadId: "test-thread",
       turn: { id: "turn-plan-assistant" },
     });
     asInternals(session).handleNotification("item/agentMessage/delta", {
@@ -2814,6 +2931,7 @@ describe("Codex app-server provider", () => {
       delta: "Plan:\n- Inspect\n- Implement",
     });
     asInternals(session).handleNotification("item/completed", {
+      threadId: "test-thread",
       item: {
         id: "assistant-plan-1",
         type: "agentMessage",
@@ -2828,24 +2946,9 @@ describe("Codex app-server provider", () => {
       events.filter(
         (event) => event.type === "timeline" && event.item.type === "assistant_message",
       ),
-    ).toHaveLength(0);
-    expect(
-      events.filter(
-        (event) =>
-          event.type === "timeline" &&
-          event.item.type === "tool_call" &&
-          event.item.detail.type === "plan",
-      ),
     ).toHaveLength(1);
-    expect(events.at(-2)).toEqual(
-      expect.objectContaining({
-        type: "permission_requested",
-        request: expect.objectContaining({
-          kind: "plan",
-          input: { planId: "plan:turn-plan-assistant" },
-        }),
-      }),
-    );
+    expect(events.some((event) => event.type === "provider_plan_completed")).toBe(false);
+    expect(events.some((event) => event.type === "permission_requested")).toBe(false);
   });
 
   test("emits imageView thread items as assistant markdown images using the path", () => {
@@ -3221,36 +3324,13 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
-  test("approving a synthetic Codex plan permission disables plan mode, preserves fast mode, and returns follow-up prompt", async () => {
+  test("lets the Daemon leave Plan mode while preserving fast mode", async () => {
     const session = createSession({
       featureValues: { fast_mode: true },
     });
     await enableNativePlanMode(session);
-    const events: AgentStreamEvent[] = [];
-    session.subscribe((event) => events.push(event));
-
-    asInternals(session).handleNotification("turn/started", {
-      turn: { id: "turn-plan-2" },
-    });
-    asInternals(session).handleNotification("turn/plan/updated", {
-      plan: [{ step: "Implement the new flow", status: "pending" }],
-    });
-    asInternals(session).handleNotification("turn/completed", {
-      turn: { status: "completed", error: null },
-    });
-
-    const request = events.find(
-      (event): event is Extract<AgentStreamEvent, { type: "permission_requested" }> =>
-        event.type === "permission_requested" && event.request.kind === "plan",
-    );
-    expect(request).toBeDefined();
-    if (!request) {
-      throw new Error("Expected synthetic plan approval permission");
-    }
-
-    const result = await session.respondToPermission(request.request.id, {
-      behavior: "allow",
-      selectedActionId: "implement",
+    await expect(session.applyProviderRunMode?.("default")).resolves.toMatchObject({
+      capability: { kind: "native" },
     });
 
     expect(asInternals(session).serviceTier).toBe("fast");
@@ -3259,54 +3339,14 @@ describe("Codex app-server provider", () => {
       plan_mode: false,
       fast_mode: true,
     });
-    // The session returns the follow-up prompt instead of calling startTurn directly.
-    // The caller (session/ExecutionService) is responsible for sending it through streamAgent.
-    expect(result).toBeDefined();
-    expect(result!.followUpPrompt).toEqual(
-      expect.stringContaining("The user approved the plan. Implement it now."),
-    );
-    expect(events.at(-1)).toEqual({
-      type: "permission_resolved",
-      provider: "codex",
-      requestId: request.request.id,
-      resolution: {
-        behavior: "allow",
-        selectedActionId: "implement",
-      },
-    });
   });
 
-  test("approving a synthetic Codex plan permission keeps fast mode disabled when it started disabled", async () => {
+  test("lets the Daemon leave Plan mode while keeping fast mode disabled", async () => {
     const session = createSession({
       featureValues: { fast_mode: false },
     });
     await enableNativePlanMode(session);
-    const events: AgentStreamEvent[] = [];
-    session.subscribe((event) => events.push(event));
-
-    asInternals(session).handleNotification("turn/started", {
-      turn: { id: "turn-plan-3" },
-    });
-    asInternals(session).handleNotification("turn/plan/updated", {
-      plan: [{ step: "Implement the safe flow", status: "pending" }],
-    });
-    asInternals(session).handleNotification("turn/completed", {
-      turn: { status: "completed", error: null },
-    });
-
-    const request = events.find(
-      (event): event is Extract<AgentStreamEvent, { type: "permission_requested" }> =>
-        event.type === "permission_requested" && event.request.kind === "plan",
-    );
-    expect(request).toBeDefined();
-    if (!request) {
-      throw new Error("Expected synthetic plan approval permission");
-    }
-
-    const result = await session.respondToPermission(request.request.id, {
-      behavior: "allow",
-      selectedActionId: "implement",
-    });
+    await session.applyProviderRunMode?.("default");
 
     expect(asInternals(session).serviceTier).toBeNull();
     expect(asInternals(session).planModeEnabled).toBe(false);
@@ -3314,12 +3354,9 @@ describe("Codex app-server provider", () => {
       plan_mode: false,
       fast_mode: false,
     });
-    expect(result?.followUpPrompt).toEqual(
-      expect.stringContaining("The user approved the plan. Implement it now."),
-    );
   });
 
-  test("follow-up implementation turn keeps fast service tier and switches back to code collaboration mode", async () => {
+  test("Daemon-started implementation turn keeps the thread, fast tier and code collaboration mode", async () => {
     const session = createSession({
       featureValues: { fast_mode: true },
     });
@@ -3337,39 +3374,13 @@ describe("Codex app-server provider", () => {
     session.activeForegroundTurnId = null;
     session.client = createStub<CodexClientLike>({ request });
 
-    const events: AgentStreamEvent[] = [];
-    session.subscribe((event) => events.push(event));
-
-    asInternals(session).handleNotification("turn/started", {
-      turn: { id: "turn-plan-4" },
-    });
-    asInternals(session).handleNotification("turn/plan/updated", {
-      plan: [{ step: "Implement the fast flow", status: "pending" }],
-    });
-    asInternals(session).handleNotification("turn/completed", {
-      turn: { status: "completed", error: null },
-    });
-
-    const permissionRequest = events.find(
-      (event): event is Extract<AgentStreamEvent, { type: "permission_requested" }> =>
-        event.type === "permission_requested" && event.request.kind === "plan",
-    );
-    expect(permissionRequest).toBeDefined();
-    if (!permissionRequest) {
-      throw new Error("Expected synthetic plan approval permission");
-    }
-
-    const result = await session.respondToPermission(permissionRequest.request.id, {
-      behavior: "allow",
-      selectedActionId: "implement",
-    });
-    expect(result?.followUpPrompt).toEqual(expect.any(String));
-
-    await session.startTurn(result!.followUpPrompt!);
+    await session.applyProviderRunMode?.("default");
+    await session.startTurn("Implement the approved Plan.");
 
     const turnStartCall = request.mock.calls.find(([method]) => method === "turn/start");
     expect(turnStartCall?.[1]).toEqual(
       expect.objectContaining({
+        threadId: "test-thread",
         serviceTier: "fast",
         collaborationMode: expect.objectContaining({
           mode: "code",

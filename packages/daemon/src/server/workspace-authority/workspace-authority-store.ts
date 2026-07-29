@@ -447,9 +447,11 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
             `INSERT INTO turns(
              turn_id, agent_id, task_id, provider_thread_id, generation, status, turn_kind,
              controls_json, provider_run_mode, provider_mode_receipt_json,
+             provider_plan_receipt_json, provider_interaction_json, provider_interaction_revision,
              source_message_id, workspace_path, user_text_digest,
              provider_turn_id, background_task_id, error, created_at, updated_at
-           ) VALUES (?, ?, NULL, NULL, ?, 'running', ?, ?, ?, NULL, ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
+           ) VALUES (?, ?, NULL, NULL, ?, 'running', ?, ?, ?, NULL, NULL, NULL, 0,
+             ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
           )
           .run(
             turnId,
@@ -913,6 +915,48 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
           .run(JSON.stringify(receipt), nowIso(), input.turnId, input.agentId, input.generation);
         if (updated.changes !== 1) {
           throw new WorkspaceAuthorityConflictError("Foreground turn changed before mode receipt.");
+        }
+        return this.getForegroundTurnInTransaction(input.turnId)!;
+      },
+      () => true,
+    );
+  }
+
+  recordForegroundProviderInteraction(input: {
+    agentId: string;
+    turnId: string;
+    generation: string;
+    expectedRevision: number;
+    interaction: import("@thoth/core").ProviderTurnInteractionState;
+    planReceipt?: import("@thoth/protocol/agent-types").ProviderPlanCompleted | null;
+  }): ForegroundTurnAuthorityRecord {
+    return this.transaction(
+      () => {
+        const updated = this.database
+          .prepare(
+            `UPDATE turns SET
+               provider_interaction_json = ?,
+               provider_interaction_revision = provider_interaction_revision + 1,
+               provider_plan_receipt_json = COALESCE(?, provider_plan_receipt_json),
+               updated_at = ?
+             WHERE turn_id = ? AND agent_id = ? AND generation = ?
+               AND provider_interaction_revision = ?`,
+          )
+          .run(
+            JSON.stringify(input.interaction),
+            input.planReceipt === undefined || input.planReceipt === null
+              ? null
+              : JSON.stringify(input.planReceipt),
+            nowIso(),
+            input.turnId,
+            input.agentId,
+            input.generation,
+            input.expectedRevision,
+          );
+        if (updated.changes !== 1) {
+          throw new WorkspaceAuthorityConflictError(
+            "Foreground Provider interaction changed before the event was committed.",
+          );
         }
         return this.getForegroundTurnInTransaction(input.turnId)!;
       },
@@ -2582,6 +2626,79 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     return result;
   }
 
+  getProviderQuestionCommandResult(input: {
+    agentId: string;
+    interactionId: string;
+    commandId: string;
+  }): { revision: number; result: unknown } | null {
+    const row = this.database
+      .prepare(
+        `SELECT aggregate_type, aggregate_id, command_kind, result_revision, result_json
+           FROM authority_commands WHERE command_id = ?`,
+      )
+      .get(input.commandId) as
+      | {
+          aggregate_type: string;
+          aggregate_id: string;
+          command_kind: string;
+          result_revision: number;
+          result_json: string;
+        }
+      | undefined;
+    if (!row) return null;
+    if (
+      row.aggregate_type !== "agent" ||
+      row.aggregate_id !== input.agentId ||
+      row.command_kind !== `provider_question:${input.interactionId}`
+    ) {
+      throw new WorkspaceAuthorityConflictError(
+        `Command ${input.commandId} already belongs to another authority action`,
+      );
+    }
+    return { revision: row.result_revision, result: JSON.parse(row.result_json) as unknown };
+  }
+
+  recordProviderQuestionCommand(input: {
+    agentId: string;
+    interactionId: string;
+    commandId: string;
+    resultRevision: number;
+    result: unknown;
+    receipt: {
+      resolutionType: "answer" | "dismiss";
+      answeredQuestionIds: string[];
+      nonSecretAnswerDigest: string | null;
+      secretQuestionCount: number;
+    };
+  }): { revision: number; result: unknown; duplicate: boolean } {
+    let output!: { revision: number; result: unknown; duplicate: boolean };
+    this.transaction(() => {
+      const existing = this.getProviderQuestionCommandResult(input);
+      if (existing) {
+        output = { ...existing, duplicate: true };
+        return;
+      }
+      const stored = { result: input.result, receipt: input.receipt };
+      this.database
+        .prepare(
+          `INSERT INTO authority_commands(
+             command_id, aggregate_type, aggregate_id, command_kind,
+             result_revision, result_json, created_at
+           ) VALUES (?, 'agent', ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.commandId,
+          input.agentId,
+          `provider_question:${input.interactionId}`,
+          input.resultRevision,
+          JSON.stringify(stored),
+          nowIso(),
+        );
+      output = { revision: input.resultRevision, result: stored, duplicate: false };
+    });
+    return output;
+  }
+
   settleStop(input: {
     taskId: string;
     executionId: string | null;
@@ -3195,6 +3312,22 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
               JSON.parse(row.provider_mode_receipt_json) as unknown,
             )
           : null,
+      providerPlanReceipt:
+        typeof row.provider_plan_receipt_json === "string"
+          ? (JSON.parse(
+              row.provider_plan_receipt_json,
+            ) as import("@thoth/protocol/agent-types").ProviderPlanCompleted)
+          : null,
+      providerInteraction:
+        typeof row.provider_interaction_json === "string"
+          ? (JSON.parse(
+              row.provider_interaction_json,
+            ) as import("@thoth/core").ProviderTurnInteractionState)
+          : null,
+      providerInteractionRevision:
+        typeof row.provider_interaction_revision === "number"
+          ? row.provider_interaction_revision
+          : 0,
       sourceMessageId: typeof row.source_message_id === "string" ? row.source_message_id : null,
       workspaceId: this.workspaceId,
       workspacePath:

@@ -4581,3 +4581,65 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   next action, remains doing at Stage 4 and retains exactly the independent `15,506`-LOC Cut B gap. This
   evidence-only closeout is pushed only to `agent/dev/mvp`; `release/mvp-actions` stays at the published source to
   avoid a second Release.
+
+## 2026-07-29 [Same-session native Plan and Provider-question decoupling opened]
+
+- Began approved `NTH-TD-050` from clean `agent/dev/mvp@d801b8e9e1e200f65bd94532e537f673c7e9567b`.
+- Recorded `NTH-REQ-030`, `NTH-AC-027`, `NTH-CD-097`, `NTH-CD-098` and WIP evidence `NTH-EV-073` before product
+  source changes. `NTH-TD-036` remains doing at Stage 4 and will resume as the sole top action only after this
+  correction is verified.
+- The accepted boundary keeps one native Provider session for a visible Agent, treats prior Clarify use as normal
+  session history, activates RuntimeBundles only on authorized turns, preserves Provider-native questions as
+  structured interactions and permits Implement only from a completed native Plan item. No commit, push, Release
+  or deployment is authorized in this workstream.
+
+## 2026-07-29 [Same-session native Plan and Provider-question decoupling verified]
+
+- Completed `NTH-TD-050` on the uncommitted baseline `d801b8e9`. RuntimeBundle activation is now turn-scoped;
+  Codex uses one digest-verified native Skill block on Thoth turns and none on raw/native-Plan turns. A stable
+  session tool catalog is fenced by current ToolGateway Workspace/Agent/provider-turn/generation/scope authority.
+- Added the Provider-neutral Core interaction reducer, Protocol/Client question API, native completed-Plan events,
+  Daemon-owned Implement CAS and schema-v5 interaction/Plan receipts. Removed session-level Clarify config truth,
+  Driver synthetic Plan approval, assistant/progress/delta Plan synthesis, permission-shaped questions, header
+  matching, comma splitting and first-option fallback.
+- Same-thread Codex runtime-tool resume probe passed on thread
+  `019fac44-d6c9-7db2-a4ab-2360c2414dbd` with one tool call before and after resume. Real daemon Codex Plan E2E
+  passed `1/1` in `145.77s`, including Thoth Clarify, Thoth-off native question, completed Plan, Daemon Implement
+  and `REAL_NATIVE_PLAN_IMPLEMENTED` on the same thread.
+- The first real-Web launch exposed two test-infrastructure failures: a zero-file metadata fork created an empty
+  `projects/` directory that storage migration correctly rejected, and Metro dev emitted raw `import.meta.env` in
+  a classic bundle. The fork now creates no empty metadata directories. The formally required built-Web product
+  path passed the real-provider UI spec `1/1` in `44.4s`, clicking Provider Features Plan, QuestionFormCard,
+  PlanCard and Implement on native thread `019fad82-9d0f-7530-aa45-9b3477588d8c`. A final fresh-export rerun also
+  passed `1/1`; `.dev/codex-plan-question-real-web.json` records `unexpected=0`, `73.062s` total and `55.736s` for
+  the same real UI test.
+- `npm run accept:thoth:appimage` rebuilt the local candidate and passed with exit `0`. Ignored report
+  `.dev/packaged-appimage-thoth-flow/report.json` records 16 hot-switch turns, same-thread Provider Plan,
+  question id `target`, answer array `["Local"]`, completed-Plan-only Implement, schema-v5 migration and all prior
+  packaged Files/Changes/Browser/scripts/large-file/Tasks/Schedules surfaces. Candidate SHA-256 is
+  `babb5596ce24cbe111d37ee6d8a82191ef1292510e000814afc7ea3253fbd054` over `137,830,579` bytes.
+- Final App passed `365/365` files and `2,713/2,713` tests; Desktop passed `37/37` files and `300` tests plus `5`
+  skipped. Provider Plan tabs passed `18.800s`, Provider Control `45.433s`, interaction `27.552s`, complete Thoth
+  `100.192s`, and Foundation passed `66 + 438 + 37 + 128`. After the final allowance and handbook update,
+  Foundation passed again and the shared-`300s` Refactor gate passed in `173.751s`, with the current source metrics,
+  fresh Web export, complete Thoth and visual/TUI contracts. Isolation and diff hygiene passed; the independent
+  Paseo PID still owns `127.0.0.1:6767` and Thoth `6688` was not taken over.
+- Current production metrics are `316,951` LOC, `1,353,705` tokens, `1,391,743` AST nodes, `5,221` imports and
+  `165` runtime dependency edges. `DeltaP50=1,189` translates the Cut B/final ceilings to `301,445` / `279,045`
+  while preserving the independent `15,506`-LOC gap. `NTH-EV-073` and `NTH-TD-050` are verified;
+  `NTH-TD-036` is again the sole top action at Stage 4. No commit, push, tag, Release or deployment occurred.
+
+## 2026-07-29 [Provider interaction fixed-Beta publication opened]
+
+- The user explicitly authorized committing, pushing and replacing the fixed Beta. Recorded `NTH-REQ-031`,
+  `NTH-AC-028`, `NTH-CD-099`, `NTH-TD-051` and release-ready `NTH-EV-074`; `NTH-TD-036` remains doing at Stage 4
+  while `NTH-TD-051` temporarily becomes the sole top action.
+- Repository-local `Royalvice` authentication and live GitHub preflight passed. Remote development is the audited
+  base `d801b8e9`; release automation, fixed tag and public Release `361273193` target `eaa1aa5f`; `main` remains
+  `e74c6e0d`; the Release is non-draft/prerelease with exactly 26 assets; workflow `30383055325` remains successful.
+- A combined fetch refreshed all branch refs but refused to overwrite the checkout's stale local fixed tag. The
+  current remote tag was then fetched non-destructively into `refs/remotes/origin/release-tags/` and verified at
+  `eaa1aa5f`. No tag or Release mutation occurred. Both audited branches retain normal fast-forward ancestry.
+- Publication remains pending the atomic release-source commit, two normal pushes, exact-SHA workflow, public
+  26-asset replacement, fresh downloads and downloaded-AppImage real-window reverification. The old fixed Release
+  remains intact during this transaction.

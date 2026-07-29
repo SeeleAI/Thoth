@@ -58,6 +58,15 @@ export interface ToolResultSink {
   }): boolean;
 }
 
+export class ThothRuntimeInactiveError extends Error {
+  readonly code = "THOTH_RUNTIME_INACTIVE";
+
+  constructor(message = "Thoth RuntimeBundle is inactive for this provider turn") {
+    super(message);
+    this.name = "ThothRuntimeInactiveError";
+  }
+}
+
 /** Generation-scoped semantic tool gateway shared by native, MCP and ACP transports. */
 export class ToolGateway {
   private readonly bindings = new Map<string, ExecutionToolBinding>();
@@ -150,9 +159,9 @@ export class ToolGateway {
     context: ThothToolExecutionContext;
   }): void {
     const fence = this.foreground.get(input.agentId);
-    if (!fence) throw new Error("No active Agent-scoped Thoth turn owns this tool call");
+    if (!fence) throw new ThothRuntimeInactiveError();
     if (fence.kind === "raw_provider") {
-      throw new Error("Thoth authority tools are disabled for this raw provider turn");
+      throw new ThothRuntimeInactiveError();
     }
     this.assertCurrentProviderTurn(input.agentId, fence, input.context);
   }

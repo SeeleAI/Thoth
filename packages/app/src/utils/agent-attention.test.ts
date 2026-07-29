@@ -24,6 +24,7 @@ function createAgent(input: Partial<Agent> & Pick<Agent, "id">): Agent {
     currentModeId: null,
     availableModes: [],
     pendingPermissions: [],
+    pendingProviderQuestions: [],
     persistence: null,
     title: null,
     cwd: "/repo/worktree",

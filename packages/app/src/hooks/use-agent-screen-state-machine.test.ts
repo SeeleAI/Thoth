@@ -32,6 +32,7 @@ function createAgent(id: string): Agent {
     currentModeId: null,
     availableModes: [],
     pendingPermissions: [],
+    pendingProviderQuestions: [],
     persistence: null,
     runtimeInfo: {
       provider: "claude",

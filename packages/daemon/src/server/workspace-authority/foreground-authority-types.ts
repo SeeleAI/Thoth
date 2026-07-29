@@ -8,6 +8,8 @@ import type {
   ThothTurnControlSnapshot,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type { ProviderRunMode, ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
+import type { ProviderPlanCompleted } from "@thoth/protocol/agent-types";
+import type { ProviderTurnInteractionState } from "@thoth/core";
 import type {
   AgentMessageDeliveryMode,
   AgentQueuedTurn,
@@ -50,6 +52,9 @@ export interface ForegroundTurnAuthorityRecord {
   controls: ThothTurnControlSnapshot | null;
   providerRunMode: ProviderRunMode;
   providerRunModeReceipt: ProviderRunModeReceipt | null;
+  providerPlanReceipt: ProviderPlanCompleted | null;
+  providerInteraction: ProviderTurnInteractionState | null;
+  providerInteractionRevision: number;
   sourceMessageId: string | null;
   workspaceId: string;
   workspacePath: string;

@@ -254,9 +254,14 @@ typed unavailable result for later resume without terminating an already-running
 be deleted.
 
 Provider-native Plan is a capability-based Harness contract, not prompt simulation. A `plan` execution must
-produce a verifiable run-mode receipt; a Provider without native Plan support may still be used for raw/Quick, but must honestly report Plan
-and Loop as unsupported. Authority for the Plan feature belongs to the visible Agent, and capability truth comes from the live Harness session;
-it is displayed in the App under `Provider Features` and does not create a separate Run Mode product path.
+produce a verifiable run-mode receipt; a Provider without native Plan support may still be used for raw/Quick,
+but must honestly report Plan and Loop as unsupported. Authority for the Plan feature belongs to the visible
+Agent, and capability truth comes from the live Harness session; it is displayed in the App under `Provider
+Features` and does not create a separate Run Mode product path. Plan progress is presentation only. Exactly one
+bounded completed native Plan item may enter the Daemon interaction reducer and create one Daemon-owned Implement
+approval. Provider questions suspend that reducer through a dedicated typed question path; assistant prose,
+streamed deltas, Driver approvals and turn completion are never Plan authority. Implement returns the same native
+session to Provider default mode and starts the continuation turn without minting a replacement thread.
 
 ### `packages/app` - Expo mobile and web shell
 
@@ -524,7 +529,7 @@ with string rules.
 - instructions and runtime tool attachment;
 - execution start/event stream/replay/settlement；
 - cooperative/forceful interrupt；
-- permission, question, and native Plan approval;
+- permission, structured Provider-question, and native Plan progress/completion translation;
 - attachment and native anchor receipts；
 - legacy provider session offline adoption。
 
@@ -547,9 +552,13 @@ RuntimeBundle {
 }
 ```
 
-Before execution, the Daemon resolves the bundle, verifies its digest, selects instruction/tool attachment declared supported by the Adapter,
-and first persists the `RuntimeAttachmentReceipt`. The same digest is stored only once; Task/Attempt reference the receipt rather than copying the Skill
-directory, Prompt packet, or Provider home into the Workspace.
+Before each Thoth-enabled execution, the Daemon resolves the bundle, verifies its digest and sends one internal
+`RuntimeBundleActivation` containing bundle id, canonical digest, semantic scope and generation. A supporting
+Adapter translates that activation into one Provider-native Skill block for that turn. Raw/default/native-Plan
+turns carry no activation. RuntimeBundle instructions, digest and activation markers never become session-level
+`AgentSessionConfig.systemPrompt` or generated developer instructions. The same digest is stored only once;
+Task/Attempt references its attachment receipt rather than copying the Skill directory, Prompt packet, or Provider
+home into the Workspace.
 
 `SKILL.md` is a built-in behavioral instruction artifact; the runtime packet carries only this round's data. Business contracts do not identify tool calls through pseudo-packets in preset
 prompts; structured tool schemas and ToolGateway are the callback boundary.
@@ -572,6 +581,12 @@ Provider tool call
 `taskId`, `stateId`, generation, or phase submitted in Provider payloads cannot be trusted directly; Gateway uses the current active
 execution binding as authority. Late, duplicate, out-of-scope, or old-generation callbacks must be idempotently rejected and must not restore an old
 Turn, overwrite a new decision, or create a phantom Card.
+
+A visible session may register a stable semantic tool catalog at Provider thread creation so a later turn can
+enable Thoth without changing sessions. Catalog membership is capability, not authorization. When no current
+RuntimeBundle activation is bound, remembered tool calls fail with typed `THOTH_RUNTIME_INACTIVE` before reaching
+Workspace authority. Resume uses the Provider's retained thread catalog; unsupported resume parameters,
+replacement sessions and hidden compatibility routers are forbidden.
 
 ### Native tools, MCP and ACP
 
@@ -917,15 +932,21 @@ the reason to attempt evidence. The system must not silently fall back to a copi
 
 Permissions have three distinct levels and must not be conflated:
 
-| Boundary                              | Authority                             | Rule                                                                                                           |
-| ------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Provider tool/file/command permission | Provider + daemon approval controller | Retain the original request and resolve by policy or user decision                                             |
-| Provider question                     | Provider Harness                      | Normalize presentation; never answer automatically via a background approval timer                             |
-| Thoth Card / contract decision        | Workspace HumanDecision               | Must be submitted by the user or an explicit Card command; never auto-approved as ordinary Provider permission |
+| Boundary                              | Authority                             | Rule                                                                                                               |
+| ------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Provider tool/file/command permission | Provider + daemon approval controller | Retain the original request and resolve by policy or user decision                                                 |
+| Provider question                     | Provider Harness + Daemon interaction | Dedicated question-id/array API; never reinterpret as permission, Plan, Clarify Card, or timed first-option answer |
+| Thoth Card / contract decision        | Workspace HumanDecision               | Must be submitted by the user or an explicit Card command; never auto-approved as ordinary Provider permission     |
 
 Eligible Provider approvals for background PlanExec, Review, and audit have a durable 20-second human window, after which the
 daemon actor approves them only once through CAS, including policy-compliant write permission. Provider questions and Thoth authority
 Cards are never auto-approved. Permissions for ordinary foreground Agents continue to follow user/Provider policy.
+
+Provider-question answers exist in plaintext only on the current App -> Daemon -> Driver call stack. Durable
+receipts retain resolved status, question ids, counts and redacted digests; secret values never enter Timeline,
+snapshot, SQLite, logs or error text. A pending question blocks Plan completion and terminal success. After daemon
+restart it is restored only when the Driver can recover the exact live native handler; otherwise it expires and the
+turn must be rerun.
 
 Other security rules:
 

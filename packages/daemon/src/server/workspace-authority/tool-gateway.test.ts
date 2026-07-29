@@ -80,7 +80,7 @@ describe("foreground turn fence", () => {
     expect(gateway.getActiveForegroundAuthorityTurnId("agent-1")).toBeNull();
     expect(() =>
       gateway.assertForegroundAuthorityTurn({ agentId: "agent-1", context: {} }),
-    ).toThrow("disabled for this raw provider turn");
+    ).toThrow(expect.objectContaining({ code: "THOTH_RUNTIME_INACTIVE" }));
     expect(() =>
       gateway.assertForegroundContextTurn({
         agentId: "agent-1",

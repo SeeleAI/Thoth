@@ -52,6 +52,9 @@ import {
   type AgentPromptInput,
   type AgentProvider,
   type ProviderMessageAnchorReceipt,
+  type ProviderPlanCompleted,
+  type ProviderQuestionProjection,
+  type ProviderQuestionResolution,
   type ProviderRewindScope,
   type AgentRunOptions,
   type AgentRunResult,
@@ -61,6 +64,7 @@ import {
   type AgentTimelineItem,
   type AgentUsage,
   type AgentRuntimeInfo,
+  type ThothToolRuntimeScope,
   type ImportedTimelineEntry,
   type ImportableProviderSession,
   type ListImportableSessionsOptions,
@@ -86,19 +90,20 @@ import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
 import { isSystemInjectedEnvelope } from "./agent-prompt.js";
 import { stripInternalThothMcpServer, withRuntimeThothMcpServer } from "./runtime-mcp-config.js";
 import { resolveCreateAgentTitles } from "./create-agent-title.js";
-import {
-  readThothRuntimeToolsConfig,
-  withThothRuntimeTools,
-  type ThothRuntimeToolScope,
-} from "./thoth-runtime-tools-config.js";
 import type { ThothToolCatalogFactory } from "@thoth/drivers/agent-runtime";
 import type { ForegroundThothSessionProvisioner } from "./foreground-thoth-session-provisioner.js";
 import type { ToolGateway } from "../workspace-authority/tool-gateway.js";
 import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
+import {
+  createProviderTurnInteractionState,
+  reduceProviderTurnInteraction,
+  validateProviderQuestionResolution,
+  type ProviderTurnInteractionState,
+} from "@thoth/core";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
-const HARNESS_TOOL_SCOPES = new Set<ThothRuntimeToolScope>([
+const HARNESS_TOOL_SCOPES = new Set<ThothToolRuntimeScope>([
   "clarify",
   "clarify_audit",
   "contract_audit",
@@ -172,25 +177,22 @@ interface ManagedHarnessExecution {
   settled: Promise<void>;
   resolveSettled: () => void;
   mode: ProviderRunMode;
-  planParts: string[];
-  planReady: boolean;
+  interaction: ProviderTurnInteractionState | null;
 }
 
 interface ManagedHarnessApproval {
   threadId: string;
   executionId: string;
   request: HarnessApprovalRequest;
-  synthetic: boolean;
-  plan: string | null;
 }
 
-function readHarnessToolScope(binding: HarnessRuntimeToolBinding): ThothRuntimeToolScope {
+function readHarnessToolScope(binding: HarnessRuntimeToolBinding): ThothToolRuntimeScope {
   const catalog = asHarnessRecord(binding.catalog);
   const scope = readHarnessString(catalog?.scope);
-  if (!scope || !HARNESS_TOOL_SCOPES.has(scope as ThothRuntimeToolScope)) {
+  if (!scope || !HARNESS_TOOL_SCOPES.has(scope as ThothToolRuntimeScope)) {
     throw new Error(`Unsupported RuntimeBundle phase scope: ${String(catalog?.scope)}`);
   }
-  return scope as ThothRuntimeToolScope;
+  return scope as ThothToolRuntimeScope;
 }
 
 function toHarnessPrompt(input: unknown): AgentPromptInput {
@@ -204,24 +206,6 @@ function asHarnessRecord(value: unknown): Record<string, unknown> | null {
 
 function readHarnessString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function readHarnessPlan(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  const record = asHarnessRecord(value);
-  if (!record) return "";
-  if (record.type === "assistant_message") return readHarnessString(record.text) ?? "";
-  const detail = asHarnessRecord(record.detail);
-  if (detail?.type === "plan") return readHarnessString(detail.text) ?? "";
-  const input = asHarnessRecord(record.input);
-  const metadata = asHarnessRecord(record.metadata);
-  return (
-    readHarnessString(record.plan) ??
-    readHarnessString(input?.plan) ??
-    readHarnessString(metadata?.planText) ??
-    readHarnessString(record.text) ??
-    ""
-  );
 }
 
 function toHarnessApproval(request: Record<string, unknown> | null): HarnessApprovalRequest {
@@ -248,27 +232,6 @@ function toHarnessApproval(request: Record<string, unknown> | null): HarnessAppr
     displayed: request ?? {},
     autoApproveEligible: kind !== "question",
   };
-}
-
-function syntheticHarnessPlanApproval(executionId: string, plan: string): HarnessApprovalRequest {
-  return {
-    id: `harness-plan-${executionId}`,
-    kind: "implement",
-    title: "Implement plan",
-    description: "The provider completed its native Plan and is ready to implement it.",
-    displayed: { plan },
-    autoApproveEligible: true,
-  };
-}
-
-function buildHarnessImplementationPrompt(plan: string): string {
-  return [
-    "Implement the approved native plan now in this same provider thread.",
-    "Preserve the approved task contract, inspect current workspace reality, and verify the result.",
-    plan ? `Approved plan:\n${plan}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
 }
 
 function formatProviderList(providers: readonly string[]): string {
@@ -452,6 +415,8 @@ interface ManagedAgentBase {
   providerRunMode: ProviderRunMode;
   providerControlRevision: number;
   config: AgentSessionConfig;
+  /** Runtime-only catalog scope; never serialized into AgentSessionConfig. */
+  runtimeBundleScope: ThothToolRuntimeScope | null;
   runtimeInfo?: AgentRuntimeInfo;
   createdAt: Date;
   updatedAt: Date;
@@ -459,6 +424,7 @@ interface ManagedAgentBase {
   features?: AgentFeature[];
   currentModeId: string | null;
   pendingPermissions: Map<string, AgentPermissionRequest>;
+  pendingProviderQuestions: Map<string, ProviderQuestionProjection>;
   bufferedPermissionResolutions: Map<
     string,
     Extract<AgentStreamEvent, { type: "permission_resolved" }>
@@ -986,7 +952,26 @@ export class ExecutionService {
       }
       await previous.settled;
     }
-    return this.startHarnessRun(thread, input.execution);
+    return this.startHarnessRun(thread, input.execution, previous?.interaction ?? null);
+  }
+
+  resolveHarnessPlanInteraction(
+    execution: HarnessExecutionDescriptor,
+    decision: "allow" | "deny" | "implement",
+  ): void {
+    const state = this.harnessExecutions.get(execution.id);
+    if (!state?.interaction) {
+      throw new Error(`Execution ${execution.id} has no completed native Plan interaction`);
+    }
+    const transition = reduceProviderTurnInteraction(state.interaction, {
+      type: decision === "deny" ? "implementation_rejected" : "implementation_approved",
+    });
+    state.interaction = transition.state;
+    if (!transition.accepted) {
+      throw Object.assign(new Error(transition.errorCode ?? "Provider Plan sequence invalid"), {
+        code: transition.errorCode,
+      });
+    }
   }
 
   async resolveHarnessApproval(
@@ -1011,29 +996,12 @@ export class ExecutionService {
       throw new Error(`Harness approval ${input.approvalId} is not pending for this execution`);
     }
 
-    let followUpPrompt: unknown | null = null;
-    if (approval.synthetic) {
-      if (input.decision !== "deny") {
-        followUpPrompt = buildHarnessImplementationPrompt(approval.plan ?? "");
-      }
-    } else {
-      const result = await this.respondToPermission(thread.agentId, input.approvalId, {
-        behavior: input.decision === "deny" ? "deny" : "allow",
-        ...(input.decision === "implement" ? { selectedActionId: "implement" } : {}),
-      });
-      followUpPrompt = result?.followUpPrompt ?? null;
-    }
-
-    let runModeReceipt: ProviderRunModeReceipt | null = null;
-    if (approval.request.kind === "implement" && input.decision !== "deny") {
-      runModeReceipt = await this.prepareHarnessRunMode(adapterId, {
-        thread: input.thread,
-        mode: "default",
-      });
-      if (followUpPrompt === null && approval.plan) {
-        followUpPrompt = buildHarnessImplementationPrompt(approval.plan);
-      }
-    }
+    const result = await this.respondToPermission(thread.agentId, input.approvalId, {
+      behavior: input.decision === "deny" ? "deny" : "allow",
+      ...(input.decision === "implement" ? { selectedActionId: "implement" } : {}),
+    });
+    const followUpPrompt = result?.followUpPrompt ?? null;
+    const runModeReceipt: ProviderRunModeReceipt | null = null;
     this.harnessApprovals.delete(input.approvalId);
     return {
       approvalId: input.approvalId,
@@ -1178,18 +1146,13 @@ export class ExecutionService {
       throw new Error(`Provider thread ${thread.descriptor.id} has no RuntimeBundle receipt`);
     }
     const profile = thread.input.profile as Partial<AgentSessionConfig>;
-    const config = withThothRuntimeTools(
-      {
-        ...profile,
-        provider: thread.descriptor.adapterId,
-        cwd: thread.input.workspacePath,
-        internal: true,
-        systemPrompt: [profile.systemPrompt, thread.bundle.instructions]
-          .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-          .join("\n\n"),
-      } as AgentSessionConfig,
-      { enabled: true, scope: readHarnessToolScope(thread.tools) },
-    );
+    const runtimeBundleScope = readHarnessToolScope(thread.tools);
+    const config = {
+      ...profile,
+      provider: thread.descriptor.adapterId,
+      cwd: thread.input.workspacePath,
+      internal: true,
+    } as AgentSessionConfig;
     const providerHandle = thread.descriptor.persistence?.providerHandle as
       | AgentPersistenceHandle
       | null
@@ -1198,11 +1161,13 @@ export class ExecutionService {
     const agent = providerHandle
       ? await this.resumeAgentFromPersistence(providerHandle, config, thread.agentId, {
           workspaceId: thread.input.workspaceId,
+          runtimeBundleScope,
           labels,
         })
       : await this.createAgent(config, thread.agentId, {
           labels,
           workspaceId: thread.input.workspaceId,
+          runtimeBundleScope,
           persistSession: true,
           persistInternal: true,
         });
@@ -1217,6 +1182,7 @@ export class ExecutionService {
   private startHarnessRun(
     thread: ManagedHarnessThread,
     execution: HarnessExecutionInput,
+    interaction: ProviderTurnInteractionState | null = null,
   ): HarnessExecutionDescriptor {
     const descriptor: HarnessExecutionDescriptor = {
       id: execution.executionId,
@@ -1236,13 +1202,14 @@ export class ExecutionService {
       settled,
       resolveSettled,
       mode: execution.runMode,
-      planParts: [],
-      planReady: false,
+      interaction,
     };
     this.harnessExecutions.set(descriptor.id, state);
     void this.consumeHarnessEvents(
       state,
-      this.streamAgent(thread.agentId, toHarnessPrompt(execution.prompt)),
+      this.streamAgent(thread.agentId, toHarnessPrompt(execution.prompt), {
+        runtimeBundleActivation: execution.activation,
+      }),
     );
     return descriptor;
   }
@@ -1290,80 +1257,198 @@ export class ExecutionService {
   ): HarnessExecutionEvent[] {
     const payload = asHarnessRecord(event.payload);
     const type = readHarnessString(payload?.type);
-    if (type === "timeline") {
-      const plan = readHarnessPlan(payload?.item);
-      if (plan) state.planParts.push(plan);
-    }
-    if (type === "permission_requested") {
-      const request = asHarnessRecord(payload?.request);
-      if (readHarnessString(request?.kind) === "question") {
-        return [{ ...event, control: { type: "provider_question", request: payload?.request } }];
+    if (type === "provider_question_requested") {
+      const streamEvent = event.payload as Extract<
+        AgentStreamEvent,
+        { type: "provider_question_requested" }
+      >;
+      if (state.mode === "plan") {
+        state.interaction ??= createProviderTurnInteractionState({
+          providerThreadId: streamEvent.question.providerThreadId,
+          providerTurnId: streamEvent.question.providerTurnId,
+        });
+        const transition = reduceProviderTurnInteraction(state.interaction, {
+          type: "question_requested",
+          providerThreadId: streamEvent.question.providerThreadId,
+          providerTurnId: streamEvent.question.providerTurnId,
+          interactionId: streamEvent.question.interactionId,
+        });
+        state.interaction = transition.state;
+        if (!transition.accepted) {
+          return [
+            {
+              ...event,
+              control: {
+                type: "plan_invalid",
+                reason: transition.errorCode ?? "Provider question sequence was invalid.",
+              },
+            },
+          ];
+        }
       }
-      const approval = toHarnessApproval(request);
-      const plan =
-        approval.kind === "implement"
-          ? readHarnessPlan(approval.displayed) || state.planParts.join("\n\n")
-          : null;
-      this.harnessApprovals.set(approval.id, {
-        threadId: state.threadId,
-        executionId: state.descriptor.id,
-        request: approval,
-        synthetic: false,
-        plan,
+      return [
+        {
+          ...event,
+          control: { type: "provider_question", question: streamEvent.question },
+        },
+      ];
+    }
+    if (type === "provider_question_resolved" && state.interaction) {
+      const streamEvent = event.payload as Extract<
+        AgentStreamEvent,
+        { type: "provider_question_resolved" }
+      >;
+      const transition = reduceProviderTurnInteraction(state.interaction, {
+        type: "question_resolved",
+        providerThreadId: state.interaction.providerThreadId,
+        providerTurnId: state.interaction.providerTurnId,
+        interactionId: streamEvent.interactionId,
+        resolution: streamEvent.status,
       });
-      if (approval.kind === "implement") {
-        state.planReady = Boolean(plan);
-        if (!plan) this.harnessApprovals.delete(approval.id);
-        return [
-          {
-            ...event,
-            control: plan
-              ? { type: "plan_ready", plan, approval }
-              : {
-                  type: "plan_invalid",
-                  reason: "Native Plan completed without usable plan content.",
-                },
-          },
-        ];
-      }
-      return [{ ...event, control: { type: "approval_requested", approval } }];
-    }
-    if (type === "turn_completed" && state.mode === "plan" && !state.planReady) {
-      const plan = state.planParts
-        .map((part) => part.trim())
-        .filter(Boolean)
-        .join("\n\n");
-      if (!plan) {
+      state.interaction = transition.state;
+      if (!transition.accepted) {
         return [
           {
             ...event,
             control: {
               type: "plan_invalid",
-              reason: "Native Plan completed without usable plan content.",
+              reason: transition.errorCode ?? "Provider question resolution was invalid.",
             },
           },
         ];
       }
-      const approval = syntheticHarnessPlanApproval(state.descriptor.id, plan);
-      state.planReady = true;
+      return [event];
+    }
+    if (type === "provider_plan_completed") {
+      const streamEvent = event.payload as Extract<
+        AgentStreamEvent,
+        { type: "provider_plan_completed" }
+      >;
+      if (state.mode !== "plan") {
+        return [
+          {
+            ...event,
+            control: {
+              type: "plan_invalid",
+              reason: "Completed native Plan arrived outside Provider Plan mode.",
+            },
+          },
+        ];
+      }
+      const actualBytes = Buffer.byteLength(streamEvent.plan.text, "utf8");
+      if (
+        streamEvent.plan.originalBytes !== actualBytes ||
+        streamEvent.plan.retainedBytes !== actualBytes
+      ) {
+        return [
+          {
+            ...event,
+            control: {
+              type: "plan_invalid",
+              reason: "Completed native Plan byte receipt does not match its retained text.",
+            },
+          },
+        ];
+      }
+      state.interaction ??= createProviderTurnInteractionState({
+        providerThreadId: streamEvent.plan.providerThreadId,
+        providerTurnId: streamEvent.plan.providerTurnId,
+      });
+      const transition = reduceProviderTurnInteraction(state.interaction, {
+        type: "plan_completed",
+        providerThreadId: streamEvent.plan.providerThreadId,
+        providerTurnId: streamEvent.plan.providerTurnId,
+        itemId: streamEvent.plan.itemId,
+        byteLength: actualBytes,
+      });
+      state.interaction = transition.state;
+      return [
+        {
+          ...event,
+          control: transition.accepted
+            ? { type: "plan_completed", plan: streamEvent.plan }
+            : {
+                type: "plan_invalid",
+                reason: transition.errorCode ?? "Completed native Plan was rejected.",
+              },
+        },
+      ];
+    }
+    if (type === "permission_requested") {
+      const request = asHarnessRecord(payload?.request);
+      const legacyKind = readHarnessString(request?.kind);
+      if (legacyKind === "question" || legacyKind === "plan") {
+        return [
+          {
+            ...event,
+            control: {
+              type: "plan_invalid",
+              reason:
+                legacyKind === "question"
+                  ? "Provider emitted a permission-shaped question instead of a structured Provider question."
+                  : "Provider emitted a permission-shaped Plan instead of a completed native Plan item.",
+            },
+          },
+        ];
+      }
+      const approval = toHarnessApproval(request);
       this.harnessApprovals.set(approval.id, {
         threadId: state.threadId,
         executionId: state.descriptor.id,
         request: approval,
-        synthetic: true,
-        plan,
       });
-      return [
-        {
-          id: `${event.id}:plan-ready`,
-          executionId: event.executionId,
-          nativeCursor: event.nativeCursor,
-          occurredAt: event.occurredAt,
-          payload: { type: "harness_plan_ready" },
-          control: { type: "plan_ready", plan, approval },
-        },
-        event,
-      ];
+      return [{ ...event, control: { type: "approval_requested", approval } }];
+    }
+    if (
+      (type === "turn_completed" || type === "turn_failed" || type === "turn_canceled") &&
+      state.interaction?.phase === "implementing"
+    ) {
+      const transition = reduceProviderTurnInteraction(state.interaction, {
+        type: "implementation_settled",
+      });
+      state.interaction = transition.state;
+      if (!transition.accepted) {
+        return [
+          {
+            ...event,
+            control: {
+              type: "plan_invalid",
+              reason: transition.errorCode ?? "Provider Plan implementation did not settle.",
+            },
+          },
+        ];
+      }
+      return [event];
+    }
+    if (type === "turn_completed" && state.mode === "plan") {
+      if (!state.interaction) {
+        return [
+          {
+            ...event,
+            control: {
+              type: "plan_invalid",
+              reason: "PROVIDER_PLAN_MISSING",
+            },
+          },
+        ];
+      }
+      const transition = reduceProviderTurnInteraction(state.interaction, {
+        type: "turn_completed",
+        providerThreadId: state.interaction.providerThreadId,
+        providerTurnId: state.interaction.providerTurnId,
+      });
+      state.interaction = transition.state;
+      return transition.accepted
+        ? [event]
+        : [
+            {
+              ...event,
+              control: {
+                type: "plan_invalid",
+                reason: transition.errorCode ?? "Native Plan terminal sequence was invalid.",
+              },
+            },
+          ];
     }
     return [event];
   }
@@ -2160,6 +2245,7 @@ export class ExecutionService {
       providerRunMode: record.providerRunMode,
       providerControlRevision: record.providerControlRevision,
       config: buildStoredAgentConfig(record),
+      runtimeBundleScope: null,
       runtimeInfo: record.runtimeInfo
         ? {
             provider: record.runtimeInfo.provider,
@@ -2180,6 +2266,7 @@ export class ExecutionService {
       availableModes: [],
       currentModeId: record.lastModeId ?? null,
       pendingPermissions: new Map(),
+      pendingProviderQuestions: new Map(),
       bufferedPermissionResolutions: new Map(),
       inFlightPermissionResponses: new Set(),
       pendingReplacement: false,
@@ -2212,6 +2299,7 @@ export class ExecutionService {
       persistInternal?: boolean;
       initialTitle?: string | null;
       workspaceId?: string;
+      runtimeBundleScope?: ThothToolRuntimeScope;
       providerRunMode?: ProviderRunMode;
       providerControlRevision?: number;
     },
@@ -2232,6 +2320,7 @@ export class ExecutionService {
       persistInternal?: boolean;
       initialTitle?: string | null;
       workspaceId?: string;
+      runtimeBundleScope?: ThothToolRuntimeScope;
       providerRunMode?: ProviderRunMode;
       providerControlRevision?: number;
     },
@@ -2248,6 +2337,7 @@ export class ExecutionService {
       client,
       launchConfig,
       options?.env,
+      options?.runtimeBundleScope,
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const createOptions = this.buildCreateSessionOptions(options);
@@ -2256,6 +2346,7 @@ export class ExecutionService {
       labels: options?.labels,
       initialTitle: options?.initialTitle,
       workspaceId: options?.workspaceId,
+      runtimeBundleScope: options?.runtimeBundleScope,
       providerRunMode: options?.providerRunMode,
       providerControlRevision: options?.providerControlRevision,
     });
@@ -2288,6 +2379,7 @@ export class ExecutionService {
       lastUserMessageAt?: Date | null;
       labels?: Record<string, string>;
       workspaceId?: string;
+      runtimeBundleScope?: ThothToolRuntimeScope;
       historyOnly?: boolean;
       providerRunMode?: ProviderRunMode;
       providerControlRevision?: number;
@@ -2313,6 +2405,7 @@ export class ExecutionService {
       lastUserMessageAt?: Date | null;
       labels?: Record<string, string>;
       workspaceId?: string;
+      runtimeBundleScope?: ThothToolRuntimeScope;
       historyOnly?: boolean;
       providerRunMode?: ProviderRunMode;
       providerControlRevision?: number;
@@ -2342,7 +2435,13 @@ export class ExecutionService {
         `Provider '${handle.provider}' is not available. Please ensure the CLI is installed.`,
       );
     }
-    const launchContext = await this.buildLaunchContext(resolvedAgentId, client, launchConfig);
+    const launchContext = await this.buildLaunchContext(
+      resolvedAgentId,
+      client,
+      launchConfig,
+      undefined,
+      options?.runtimeBundleScope,
+    );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const session = await client.resumeSession(handle, providerLaunchConfig, launchContext, {
       historyOnly: options?.historyOnly === true,
@@ -2403,12 +2502,6 @@ export class ExecutionService {
           extra: {
             ...(storedConfig.extra ?? {}),
             ...(imported.config.extra ?? {}),
-            // Provisioned runtime tools are a daemon launch contract. Provider import metadata
-            // may omit unknown extra fields, but that must not make the already-mounted thread
-            // look incapable on its first Thoth turn.
-            ...(storedConfig.extra?.thothRuntimeTools
-              ? { thothRuntimeTools: storedConfig.extra.thothRuntimeTools }
-              : {}),
           },
         }),
       );
@@ -2729,6 +2822,7 @@ export class ExecutionService {
         providerRunMode: record.providerRunMode,
         providerControlRevision: record.providerControlRevision,
         config: buildStoredAgentConfig(record),
+        runtimeBundleScope: null,
         runtimeInfo: undefined,
         lifecycle: "closed",
         createdAt: new Date(record.createdAt),
@@ -2737,6 +2831,7 @@ export class ExecutionService {
         features: record.features,
         currentModeId: record.lastModeId ?? null,
         pendingPermissions: new Map(),
+        pendingProviderQuestions: new Map(),
         bufferedPermissionResolutions: new Map(),
         inFlightPermissionResponses: new Set(),
         pendingReplacement: false,
@@ -3560,6 +3655,14 @@ export class ExecutionService {
     response: AgentPermissionResponse,
   ): Promise<AgentPermissionResult | void> {
     const agent = this.requireAgent(agentId);
+    if (agent.pendingPermissions.get(requestId)?.kind === "plan") {
+      throw Object.assign(
+        new Error(
+          "Provider-owned Plan approval is unavailable; completed native Plans require Daemon authority.",
+        ),
+        { code: "PROVIDER_PLAN_AUTHORITY_INVALID" },
+      );
+    }
     agent.inFlightPermissionResponses.add(requestId);
 
     try {
@@ -3587,6 +3690,124 @@ export class ExecutionService {
       agent.inFlightPermissionResponses.delete(requestId);
       agent.bufferedPermissionResolutions.delete(requestId);
     }
+  }
+
+  async respondToProviderQuestion(
+    agentId: string,
+    interactionId: string,
+    resolution: ProviderQuestionResolution,
+  ): Promise<void> {
+    const agent = this.requireSessionAgent(agentId);
+    const pending = agent.pendingProviderQuestions.get(interactionId);
+    if (!pending || pending.agentId !== agentId) {
+      const error = new Error(
+        `Provider question ${interactionId} is no longer pending for Agent ${agentId}`,
+      );
+      Object.assign(error, { code: "PROVIDER_QUESTION_NOT_FOUND" });
+      throw error;
+    }
+    if (!agent.session.respondToProviderQuestion) {
+      const error = new Error("Provider session cannot answer structured questions");
+      Object.assign(error, { code: "PROVIDER_QUESTION_UNAVAILABLE" });
+      throw error;
+    }
+
+    const validation = validateProviderQuestionResolution(pending, resolution);
+    if (!validation.accepted) {
+      const error = new Error("Provider question response failed structured validation");
+      Object.assign(error, { code: validation.errorCode });
+      throw error;
+    }
+
+    await agent.session.respondToProviderQuestion(interactionId, resolution);
+    agent.pendingProviderQuestions.delete(interactionId);
+    this.touchUpdatedAt(agent);
+    this.emitState(agent);
+  }
+
+  async openDaemonPlanApproval(input: {
+    agentId: string;
+    turnId: string;
+    generation: string;
+    plan: ProviderPlanCompleted;
+  }): Promise<AgentPermissionRequest> {
+    const agent = this.requireSessionAgent(input.agentId);
+    if (agent.pendingProviderQuestions.size > 0) {
+      throw Object.assign(
+        new Error("A Provider question is still pending for this native Plan turn."),
+        { code: "PROVIDER_QUESTION_PENDING" },
+      );
+    }
+    const requestId = `daemon-plan:${input.turnId}:${input.plan.itemId}`;
+    const existing = agent.pendingPermissions.get(requestId);
+    if (existing) return existing;
+    const request: AgentPermissionRequest = {
+      id: requestId,
+      provider: agent.provider,
+      name: "Implement native Plan",
+      kind: "plan",
+      title: "Implement plan",
+      description: "The Provider completed its native Plan and is ready to implement it.",
+      input: { plan: input.plan.text },
+      detail: { type: "plan", text: input.plan.text },
+      actions: [
+        {
+          id: "reject",
+          label: "Reject",
+          behavior: "deny",
+          variant: "danger",
+          intent: "dismiss",
+        },
+        {
+          id: "implement",
+          label: "Implement",
+          behavior: "allow",
+          variant: "primary",
+          intent: "implement",
+        },
+      ],
+      metadata: {
+        owner: "thoth-daemon",
+        authority: "provider-plan",
+        turnId: input.turnId,
+        generation: input.generation,
+        providerThreadId: input.plan.providerThreadId,
+        providerTurnId: input.plan.providerTurnId,
+        providerItemId: input.plan.itemId,
+        planText: input.plan.text,
+      },
+    };
+    await this.handleStreamEvent(agent, {
+      type: "permission_requested",
+      provider: agent.provider,
+      request,
+    });
+    await this.persistSnapshot(agent);
+    return request;
+  }
+
+  async resolveDaemonPlanApproval(
+    agentId: string,
+    requestId: string,
+    response: AgentPermissionResponse,
+  ): Promise<void> {
+    const agent = this.requireSessionAgent(agentId);
+    const request = agent.pendingPermissions.get(requestId);
+    if (
+      !request ||
+      request.kind !== "plan" ||
+      request.metadata?.owner !== "thoth-daemon" ||
+      request.metadata?.authority !== "provider-plan"
+    ) {
+      throw new Error(`Daemon Plan approval ${requestId} is not pending for Agent ${agentId}`);
+    }
+    await this.handleStreamEvent(agent, {
+      type: "permission_resolved",
+      provider: agent.provider,
+      requestId,
+      resolution: response,
+    });
+    await this.persistSnapshot(agent);
   }
 
   async cancelAgentRun(agentId: string): Promise<boolean> {
@@ -4126,6 +4347,7 @@ export class ExecutionService {
       initialTitle?: string | null;
       publishWhenReady?: boolean;
       workspaceId?: string;
+      runtimeBundleScope?: ThothToolRuntimeScope;
       providerRunMode?: ProviderRunMode;
       providerControlRevision?: number;
     },
@@ -4297,6 +4519,7 @@ export class ExecutionService {
           attention?: AttentionState;
           persistence?: AgentPersistenceHandle;
           workspaceId?: string;
+          runtimeBundleScope?: ThothToolRuntimeScope;
           providerRunMode?: ProviderRunMode;
           providerControlRevision?: number;
         }
@@ -4313,6 +4536,8 @@ export class ExecutionService {
       providerRunMode: options?.providerRunMode ?? "default",
       providerControlRevision: options?.providerControlRevision ?? 0,
       config,
+      runtimeBundleScope:
+        options?.runtimeBundleScope ?? (config.internal === true ? null : "clarify"),
       runtimeInfo: undefined,
       lifecycle: "initializing",
       createdAt: options?.createdAt ?? now,
@@ -4320,6 +4545,7 @@ export class ExecutionService {
       availableModes: [],
       currentModeId: null,
       pendingPermissions: new Map<string, AgentPermissionRequest>(),
+      pendingProviderQuestions: new Map<string, ProviderQuestionProjection>(),
       bufferedPermissionResolutions: new Map(),
       inFlightPermissionResponses: new Set(),
       pendingReplacement: false,
@@ -4999,6 +5225,12 @@ export class ExecutionService {
       case "permission_resolved":
         this.onStreamPermissionResolved({ agent, event, options, flags });
         return undefined;
+      case "provider_question_requested":
+        this.onStreamProviderQuestionRequested(agent, event);
+        return undefined;
+      case "provider_question_resolved":
+        this.onStreamProviderQuestionResolved(agent, event);
+        return undefined;
       default:
         return undefined;
     }
@@ -5077,6 +5309,7 @@ export class ExecutionService {
     );
     agent.lastUsage = event.usage;
     agent.lastError = undefined;
+    this.expirePendingProviderQuestions(agent, event.provider);
     if (!isForegroundEvent && agent.lifecycle !== "idle" && !agent.pendingReplacement) {
       (agent as ActiveManagedAgent).lifecycle = "idle";
       this.emitState(agent);
@@ -5118,6 +5351,7 @@ export class ExecutionService {
       options,
     );
     this.resolvePendingPermissionsForAgent(agent, event.provider, options, "Turn failed");
+    this.expirePendingProviderQuestions(agent, event.provider);
     if (!isForegroundEvent) {
       this.emitState(agent);
     }
@@ -5152,6 +5386,7 @@ export class ExecutionService {
     }
     agent.lastError = undefined;
     this.resolvePendingPermissionsForAgent(agent, event.provider, options, "Interrupted");
+    this.expirePendingProviderQuestions(agent, event.provider);
     if (!isForegroundEvent) {
       this.emitState(agent);
     }
@@ -5208,6 +5443,32 @@ export class ExecutionService {
     this.emitState(agent);
   }
 
+  private onStreamProviderQuestionRequested(
+    agent: ActiveManagedAgent,
+    event: Extract<AgentStreamEvent, { type: "provider_question_requested" }>,
+  ): void {
+    if (event.question.agentId !== agent.id) {
+      throw new Error("Provider question Agent binding does not match the active session");
+    }
+    if (agent.pendingProviderQuestions.has(event.question.interactionId)) {
+      throw new Error(`Duplicate Provider question '${event.question.interactionId}'`);
+    }
+    const hadPendingInteraction = agent.pendingProviderQuestions.size > 0;
+    agent.pendingProviderQuestions.set(event.question.interactionId, event.question);
+    if (!hadPendingInteraction && !agent.internal) {
+      this.broadcastAgentAttention(agent, "permission");
+    }
+    this.emitState(agent);
+  }
+
+  private onStreamProviderQuestionResolved(
+    agent: ActiveManagedAgent,
+    event: Extract<AgentStreamEvent, { type: "provider_question_resolved" }>,
+  ): void {
+    agent.pendingProviderQuestions.delete(event.interactionId);
+    this.emitState(agent);
+  }
+
   private resolvePendingPermissionsForAgent(
     agent: ActiveManagedAgent,
     provider: AgentProvider,
@@ -5224,6 +5485,18 @@ export class ExecutionService {
           resolution: { behavior: "deny", message },
         });
       }
+    }
+  }
+
+  private expirePendingProviderQuestions(agent: ActiveManagedAgent, provider: AgentProvider): void {
+    for (const interactionId of agent.pendingProviderQuestions.keys()) {
+      agent.pendingProviderQuestions.delete(interactionId);
+      this.dispatchStream(agent.id, {
+        type: "provider_question_resolved",
+        provider,
+        interactionId,
+        status: "expired",
+      });
     }
   }
 
@@ -5693,6 +5966,7 @@ export class ExecutionService {
     client: HarnessAdapter,
     launchConfig: AgentSessionConfig,
     env?: Record<string, string>,
+    requestedRuntimeScope?: ThothToolRuntimeScope,
   ): Promise<AgentLaunchContext> {
     const context: AgentLaunchContext = {
       agentId,
@@ -5701,22 +5975,21 @@ export class ExecutionService {
         THOTH_AGENT_ID: agentId,
       },
     };
+    const runtimeScope =
+      requestedRuntimeScope ?? (launchConfig.internal === true ? undefined : "clarify");
     if (
       this.thothToolsEnabled &&
       client.harnessCapabilities.toolAttachment.includes("native") &&
-      this.shouldUseNativeThothTools(launchConfig) &&
+      runtimeScope !== undefined &&
       this.thothToolCatalogFactory
     ) {
       context.thothTools = await this.thothToolCatalogFactory({
         callerAgentId: agentId,
         callerAgentConfig: launchConfig,
+        runtimeScope,
       });
     }
     return context;
-  }
-
-  private shouldUseNativeThothTools(config: AgentSessionConfig): boolean {
-    return readThothRuntimeToolsConfig(config)?.enabled === true;
   }
 
   private resolveProviderLaunchConfig(

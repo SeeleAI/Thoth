@@ -1066,6 +1066,7 @@ export async function createThothDaemon(
     worktreesRoot: config.worktreesRoot,
     callerAgentId: runtime.callerAgentId,
     callerAgentConfig: runtime.callerAgentConfig,
+    runtimeScope: runtime.runtimeScope,
     workspaceAuthorityManager,
     toolGateway: workspaceTaskCoordinator.toolGateway,
     browserToolsBroker,
@@ -1082,9 +1083,8 @@ export async function createThothDaemon(
       bundle: clarifyRuntimeBundle,
     }),
   );
-  // Native Thoth runtime tools are provider-session tools, not MCP injection.
-  // Whether a specific agent sees them is guarded by AgentSessionConfig.extra;
-  // the MCP setting only controls the generic /mcp/agents URL injection below.
+  // Native Thoth runtime tools are a stable provider-session capability catalog.
+  // Current-turn authority is derived from ToolGateway bindings, never Agent config.
   executionService.setThothToolsEnabled(true);
 
   const mcpEnabled = config.mcpEnabled ?? true;
@@ -1093,8 +1093,12 @@ export async function createThothDaemon(
     const agentMcpRoute = "/mcp/agents";
 
     const createAgentMcpSession = async (callerAgentId?: string) => {
+      const caller = callerAgentId ? executionService.getAgent(callerAgentId) : null;
       const agentMcpServer = await createAgentMcpServer(
-        createAgentToolHostDependencies({ callerAgentId }),
+        createAgentToolHostDependencies({
+          callerAgentId,
+          ...(caller?.runtimeBundleScope ? { runtimeScope: caller.runtimeBundleScope } : {}),
+        }),
       );
 
       // Stateless mode: each HTTP request builds a fresh server + transport that is

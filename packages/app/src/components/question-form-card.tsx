@@ -1,507 +1,369 @@
-import { useState, useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
-  View,
+  ActivityIndicator,
+  Pressable,
   Text,
   TextInput,
-  Pressable,
-  ActivityIndicator,
+  View,
   type PressableStateCallbackType,
 } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { useIsCompactFormFactor } from "@/constants/layout";
 import { Check, X } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
-import type { PendingPermission } from "@/types/shared";
-import type { AgentPermissionResponse } from "@thoth/protocol/agent-types";
-import { isWeb } from "@/constants/platform";
+import type {
+  ProviderQuestionItem,
+  ProviderQuestionOption,
+  ProviderQuestionProjection,
+  ProviderQuestionResolution,
+} from "@thoth/protocol/agent-types";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import {
   areQuestionsAnswered,
-  buildQuestionFormAnswers,
+  buildProviderQuestionResolution,
   isQuestionAnswered,
-  parseQuestionFormQuestions,
   questionShowsTextInput,
-  resolveDismissLabel,
-  shouldSubmitEmptyOnDismiss,
-  type QuestionFormQuestion,
-  type QuestionOption,
 } from "./question-form-card-core";
 
 interface QuestionFormCardProps {
-  permission: PendingPermission;
-  onRespond: (response: AgentPermissionResponse) => void;
+  question: ProviderQuestionProjection;
+  onRespond: (resolution: ProviderQuestionResolution) => Promise<void>;
   isResponding: boolean;
-}
-
-const IS_WEB = isWeb;
-
-function getQuestionInputPlaceholder({
-  question,
-  answerPlaceholder,
-  otherPlaceholder,
-}: {
-  question: QuestionFormQuestion;
-  answerPlaceholder: string;
-  otherPlaceholder: string;
-}): string {
-  return (
-    question.placeholder ?? (question.options.length === 0 ? answerPlaceholder : otherPlaceholder)
-  );
-}
-
-interface QuestionOptionRowProps {
-  qIndex: number;
-  optIndex: number;
-  option: QuestionOption;
-  isSelected: boolean;
-  multiSelect: boolean;
-  isResponding: boolean;
-  onToggle: (qIndex: number, optIndex: number, multiSelect: boolean) => void;
+  error: string | null;
 }
 
 function QuestionOptionRow({
-  qIndex,
-  optIndex,
+  questionId,
   option,
-  isSelected,
-  multiSelect,
-  isResponding,
+  selected,
+  disabled,
   onToggle,
-}: QuestionOptionRowProps) {
+}: {
+  questionId: string;
+  option: ProviderQuestionOption;
+  selected: boolean;
+  disabled: boolean;
+  onToggle: (questionId: string, value: string) => void;
+}) {
   const { theme } = useUnistyles();
-
-  const handlePress = useCallback(() => {
-    onToggle(qIndex, optIndex, multiSelect);
-  }, [onToggle, qIndex, optIndex, multiSelect]);
-
-  const pressableStyle = useCallback(
+  const handlePress = useCallback(
+    () => onToggle(questionId, option.value),
+    [onToggle, option.value, questionId],
+  );
+  const style = useCallback(
     ({ pressed, hovered }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.optionItem,
-      (Boolean(hovered) || isSelected) && {
-        backgroundColor: theme.colors.surface2,
-      },
-      pressed && styles.optionItemPressed,
+      (selected || Boolean(hovered)) && { backgroundColor: theme.colors.surface2 },
+      pressed && styles.pressed,
     ],
-    [isSelected, theme.colors.surface2],
+    [selected, theme.colors.surface2],
   );
-
-  const optionLabelStyle = useMemo(
-    () => [styles.optionLabel, { color: theme.colors.foreground }],
-    [theme.colors.foreground],
-  );
-  const optionDescriptionStyle = useMemo(
-    () => [styles.optionDescription, { color: theme.colors.foregroundMuted }],
-    [theme.colors.foregroundMuted],
-  );
-  const accessibilityState = useMemo(() => ({ selected: isSelected }), [isSelected]);
-
   return (
     <Pressable
-      style={pressableStyle}
+      style={style}
       onPress={handlePress}
-      disabled={isResponding}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={option.label}
-      accessibilityState={accessibilityState}
-      aria-selected={isSelected}
+      accessibilityState={{ selected }}
+      aria-selected={selected}
+      testID={`question-form-option-${questionId}-${option.value}`}
     >
-      <View style={styles.optionItemContent}>
+      <View style={styles.optionContent}>
         <View style={styles.optionTextBlock}>
-          <Text style={optionLabelStyle}>{option.label}</Text>
+          <Text style={[styles.optionLabel, { color: theme.colors.foreground }]}>
+            {option.label}
+          </Text>
           {option.description ? (
-            <Text style={optionDescriptionStyle}>{option.description}</Text>
+            <Text style={[styles.optionDescription, { color: theme.colors.foregroundMuted }]}>
+              {option.description}
+            </Text>
           ) : null}
         </View>
-        {isSelected ? (
-          <View style={styles.optionCheckSlot}>
-            <Check size={16} color={theme.colors.foregroundMuted} />
-          </View>
-        ) : null}
+        {selected ? <Check size={16} color={theme.colors.foregroundMuted} /> : null}
       </View>
     </Pressable>
   );
 }
 
-interface QuestionNavButtonProps {
-  index: number;
-  total: number;
-  isActive: boolean;
-  isResponding: boolean;
-  onSelect: (index: number) => void;
-}
-
 function QuestionNavButton({
   index,
   total,
-  isActive,
-  isResponding,
+  active,
+  disabled,
   onSelect,
-}: QuestionNavButtonProps) {
+}: {
+  index: number;
+  total: number;
+  active: boolean;
+  disabled: boolean;
+  onSelect: (index: number) => void;
+}) {
   const { theme } = useUnistyles();
-  const accessibilityState = useMemo(() => ({ selected: isActive }), [isActive]);
-  const handlePress = useCallback(() => {
-    onSelect(index);
-  }, [index, onSelect]);
-  const pressableStyle = useCallback(
-    ({ pressed, hovered }: PressableStateCallbackType & { hovered?: boolean }) => {
-      return [
-        styles.questionNavButton,
-        {
-          backgroundColor:
-            isActive || Boolean(hovered) ? theme.colors.surface2 : theme.colors.surface1,
-          borderColor: isActive ? theme.colors.foregroundMuted : theme.colors.border,
-        },
-        pressed && styles.optionItemPressed,
-      ];
-    },
+  const handlePress = useCallback(() => onSelect(index), [index, onSelect]);
+  const style = useCallback(
+    ({ pressed, hovered }: PressableStateCallbackType & { hovered?: boolean }) => [
+      styles.navButton,
+      {
+        backgroundColor: active || Boolean(hovered) ? theme.colors.surface2 : theme.colors.surface1,
+        borderColor: active ? theme.colors.foregroundMuted : theme.colors.border,
+      },
+      pressed && styles.pressed,
+    ],
     [
-      isActive,
+      active,
       theme.colors.border,
       theme.colors.foregroundMuted,
       theme.colors.surface1,
       theme.colors.surface2,
     ],
   );
-  const textStyle = useMemo(
-    () => [
-      styles.questionNavText,
-      { color: isActive ? theme.colors.foreground : theme.colors.foregroundMuted },
-    ],
-    [isActive, theme.colors.foreground, theme.colors.foregroundMuted],
-  );
-
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Question ${index + 1} of ${total}`}
-      accessibilityState={accessibilityState}
-      aria-selected={isActive}
+      accessibilityState={{ selected: active }}
+      aria-selected={active}
       testID={`question-form-question-nav-${index + 1}`}
-      style={pressableStyle}
+      style={style}
       onPress={handlePress}
-      disabled={isResponding}
+      disabled={disabled}
     >
-      <Text style={textStyle}>{index + 1}</Text>
+      <Text
+        style={[
+          styles.navText,
+          { color: active ? theme.colors.foreground : theme.colors.foregroundMuted },
+        ]}
+      >
+        {index + 1}
+      </Text>
     </Pressable>
   );
 }
 
-interface QuestionOtherInputProps {
-  qIndex: number;
-  accessibilityLabel: string;
-  value: string;
-  placeholder: string;
-  isResponding: boolean;
-  onChange: (qIndex: number, text: string) => void;
-  onSubmit: () => void;
-}
-
-function QuestionOtherInput({
-  qIndex,
-  accessibilityLabel,
+function OtherInput({
+  question,
   value,
-  placeholder,
-  isResponding,
+  disabled,
   onChange,
   onSubmit,
-}: QuestionOtherInputProps) {
+}: {
+  question: ProviderQuestionItem;
+  value: string;
+  disabled: boolean;
+  onChange: (questionId: string, text: string) => void;
+  onSubmit: () => void;
+}) {
   const { theme } = useUnistyles();
+  const { t } = useTranslation();
   const handleChange = useCallback(
-    (text: string) => {
-      onChange(qIndex, text);
-    },
-    [onChange, qIndex],
+    (text: string) => onChange(question.id, text),
+    [onChange, question.id],
   );
-  const otherInputStyle = useMemo(
-    () =>
-      [
+  return (
+    <TextInput
+      style={[
         styles.otherInput,
         {
           borderColor: value.length > 0 ? theme.colors.borderAccent : theme.colors.border,
           color: theme.colors.foreground,
           backgroundColor: theme.colors.surface2,
         },
-        IS_WEB ? { outlineStyle: "none", outlineWidth: 0, outlineColor: "transparent" } : null,
-      ] as const,
-    [
-      value.length,
-      theme.colors.borderAccent,
-      theme.colors.border,
-      theme.colors.foreground,
-      theme.colors.surface2,
-    ],
-  );
-  return (
-    <TextInput
-      // @ts-expect-error - outlineStyle is web-only
-      style={otherInputStyle}
-      accessibilityLabel={accessibilityLabel}
-      placeholder={placeholder}
+      ]}
+      accessibilityLabel={question.prompt}
+      placeholder={
+        question.options.length === 0
+          ? t("message.question.answerPlaceholder")
+          : t("message.question.otherPlaceholder")
+      }
       placeholderTextColor={theme.colors.foregroundMuted}
       value={value}
       onChangeText={handleChange}
       onSubmitEditing={onSubmit}
-      editable={!isResponding}
+      editable={!disabled}
       blurOnSubmit={false}
+      secureTextEntry={question.secret}
+      testID={`question-form-other-${question.id}`}
     />
   );
 }
 
-export function QuestionFormCard({ permission, onRespond, isResponding }: QuestionFormCardProps) {
+export function QuestionFormCard({
+  question: projection,
+  onRespond,
+  isResponding,
+  error,
+}: QuestionFormCardProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
-  const questions = useMemo(
-    () => parseQuestionFormQuestions(permission.request.input),
-    [permission.request.input],
-  );
-
-  const [selections, setSelections] = useState<Record<number, Set<number>>>({});
-  const [otherTexts, setOtherTexts] = useState<Record<number, string>>({});
+  const questions = projection.questions;
+  const [selections, setSelections] = useState<Record<string, Set<string>>>({});
+  const [otherTexts, setOtherTexts] = useState<Record<string, string>>({});
+  const [activeIndex, setActiveIndex] = useState(0);
   const [respondingAction, setRespondingAction] = useState<"submit" | "dismiss" | null>(null);
-  const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
+
+  const activeQuestion = questions[Math.min(activeIndex, questions.length - 1)]!;
+  const activeAnswered = isQuestionAnswered(activeQuestion, selections, otherTexts);
+  const allAnswered = areQuestionsAnswered(questions, selections, otherTexts);
+  const isLastQuestion = activeIndex >= questions.length - 1;
 
   const toggleOption = useCallback(
-    (qIndex: number, optIndex: number, multiSelect: boolean) => {
-      const current = selections[qIndex] ?? new Set<number>();
-      const next = new Set(current);
-      if (multiSelect) {
-        if (next.has(optIndex)) {
-          next.delete(optIndex);
+    (questionId: string, value: string) => {
+      const item = questions.find((candidate) => candidate.id === questionId);
+      if (!item) return;
+      setSelections((current) => {
+        const nextValues = new Set(current[questionId] ?? []);
+        if (item.selectionMode === "multiple") {
+          if (nextValues.has(value)) nextValues.delete(value);
+          else nextValues.add(value);
         } else {
-          next.add(optIndex);
+          const alreadySelected = nextValues.has(value);
+          nextValues.clear();
+          if (!alreadySelected) nextValues.add(value);
         }
-      } else if (next.has(optIndex)) {
-        next.clear();
-      } else {
-        next.clear();
-        next.add(optIndex);
-      }
-
-      setSelections((prev) => ({ ...prev, [qIndex]: next }));
-      setOtherTexts((prev) => {
-        if (!prev[qIndex]) return prev;
-        const nextTexts = { ...prev };
-        delete nextTexts[qIndex];
-        return nextTexts;
+        return { ...current, [questionId]: nextValues };
       });
-
-      if (!multiSelect && next.size > 0 && qIndex === activeQuestionIndex && questions) {
-        setActiveQuestionIndex(Math.min(qIndex + 1, questions.length - 1));
+      setOtherTexts((current) => {
+        if (!current[questionId]) return current;
+        const next = { ...current };
+        delete next[questionId];
+        return next;
+      });
+      if (item.selectionMode === "single" && activeQuestion.id === questionId) {
+        setActiveIndex((index) => Math.min(index + 1, questions.length - 1));
       }
     },
-    [activeQuestionIndex, questions, selections],
+    [activeQuestion.id, questions],
   );
 
-  const setOtherText = useCallback((qIndex: number, text: string) => {
-    setOtherTexts((prev) => ({ ...prev, [qIndex]: text }));
+  const setOtherText = useCallback((questionId: string, text: string) => {
+    setOtherTexts((current) => ({ ...current, [questionId]: text }));
     if (text.length > 0) {
-      setSelections((prev) => {
-        if (!prev[qIndex] || prev[qIndex].size === 0) return prev;
-        return { ...prev, [qIndex]: new Set<number>() };
-      });
+      setSelections((current) => ({ ...current, [questionId]: new Set<string>() }));
     }
   }, []);
 
-  const allAnswered = areQuestionsAnswered(questions, selections, otherTexts);
-  const resolvedActiveQuestionIndex = questions
-    ? Math.min(activeQuestionIndex, questions.length - 1)
-    : 0;
-  const activeQuestion = questions?.[resolvedActiveQuestionIndex];
-  const activeQuestionAnswered = activeQuestion
-    ? isQuestionAnswered(activeQuestion, resolvedActiveQuestionIndex, selections, otherTexts)
-    : false;
-  const isLastQuestion = questions ? resolvedActiveQuestionIndex === questions.length - 1 : true;
-
-  const handleSubmit = useCallback(() => {
-    if (!questions || !allAnswered || isResponding) return;
+  const submit = useCallback(async () => {
+    if (!allAnswered || isResponding) return;
     setRespondingAction("submit");
-    onRespond({
-      behavior: "allow",
-      updatedInput: {
-        ...permission.request.input,
-        answers: buildQuestionFormAnswers(questions, selections, otherTexts),
-      },
-    });
-  }, [
-    questions,
-    allAnswered,
-    isResponding,
-    selections,
-    otherTexts,
-    onRespond,
-    permission.request.input,
-  ]);
+    try {
+      await onRespond(buildProviderQuestionResolution(questions, selections, otherTexts));
+    } catch {
+      setRespondingAction(null);
+    }
+  }, [allAnswered, isResponding, onRespond, otherTexts, questions, selections]);
 
-  const handleDeny = useCallback(() => {
-    if (!questions) return;
+  const dismiss = useCallback(async () => {
+    if (isResponding) return;
     setRespondingAction("dismiss");
-    if (shouldSubmitEmptyOnDismiss(questions)) {
-      onRespond({
-        behavior: "allow",
-        updatedInput: {
-          ...permission.request.input,
-          answers: buildQuestionFormAnswers(questions, selections, otherTexts),
-        },
-      });
-      return;
+    try {
+      await onRespond({ type: "dismiss" });
+    } catch {
+      setRespondingAction(null);
     }
-    onRespond({
-      behavior: "deny",
-      message: "Dismissed by user",
-    });
-  }, [questions, onRespond, otherTexts, permission.request.input, selections]);
+  }, [isResponding, onRespond]);
 
-  const handleSelectQuestion = useCallback((index: number) => {
-    setActiveQuestionIndex(index);
-  }, []);
-
-  const handlePrimaryAction = useCallback(() => {
+  const primaryAction = useCallback(() => {
     if (!isLastQuestion) {
-      if (!activeQuestionAnswered || isResponding) return;
-      setActiveQuestionIndex((index) => Math.min(index + 1, (questions?.length ?? 1) - 1));
+      if (!activeAnswered || isResponding) return;
+      setActiveIndex((index) => Math.min(index + 1, questions.length - 1));
       return;
     }
-    handleSubmit();
-  }, [activeQuestionAnswered, handleSubmit, isLastQuestion, isResponding, questions?.length]);
+    void submit();
+  }, [activeAnswered, isLastQuestion, isResponding, questions.length, submit]);
 
-  const dismissButtonStyle = useCallback(
-    ({ pressed, hovered }: PressableStateCallbackType & { hovered?: boolean }) => [
-      styles.actionButton,
-      {
-        backgroundColor: hovered ? theme.colors.surface2 : theme.colors.surface1,
-        borderColor: theme.colors.borderAccent,
-      },
-      pressed && styles.optionItemPressed,
-    ],
-    [theme.colors.surface2, theme.colors.surface1, theme.colors.borderAccent],
-  );
-
-  const primaryDisabled = isResponding || (isLastQuestion ? !allAnswered : !activeQuestionAnswered);
-  const primaryActionLabel = isLastQuestion
-    ? t("message.question.submit")
-    : t("message.question.next");
-  const submitButtonStyle = useCallback(
-    ({ pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
-      styles.actionButton,
-      {
-        backgroundColor: theme.colors.accent,
-        borderColor: theme.colors.accent,
-        opacity: primaryDisabled ? 0.5 : 1,
-      },
-      pressed && !primaryDisabled ? styles.optionItemPressed : null,
-    ],
-    [primaryDisabled, theme.colors.accent],
-  );
-
-  const containerStyle = useMemo(
-    () => [
-      styles.container,
-      {
-        backgroundColor: theme.colors.surface1,
-        borderColor: theme.colors.border,
-      },
-    ],
-    [theme.colors.surface1, theme.colors.border],
-  );
-  const questionTextStyle = useMemo(
-    () => [styles.questionText, { color: theme.colors.foreground }],
-    [theme.colors.foreground],
-  );
-  const questionNavStyle = useMemo(
-    () => [styles.questionNav, isMobile && styles.questionNavMobile],
-    [isMobile],
-  );
-  const actionsContainerStyle = useMemo(
-    () => [styles.actionsContainer, !isMobile && styles.actionsContainerDesktop],
-    [isMobile],
-  );
-  const dismissActionTextStyle = useMemo(
-    () => [styles.actionText, { color: theme.colors.foregroundMuted }],
-    [theme.colors.foregroundMuted],
-  );
-  const submitActionTextColor = theme.colors.accentForeground;
-  const submitActionTextStyle = useMemo(
-    () => [styles.actionText, { color: submitActionTextColor }],
-    [submitActionTextColor],
-  );
-
-  if (!questions) {
-    return null;
-  }
-
-  const dismissLabel = resolveDismissLabel(questions, t("common.actions.dismiss"));
-  const selected = selections[resolvedActiveQuestionIndex] ?? new Set<number>();
-  const otherText = otherTexts[resolvedActiveQuestionIndex] ?? "";
-  const showTextInput = activeQuestion ? questionShowsTextInput(activeQuestion) : false;
+  const primaryDisabled = isResponding || (isLastQuestion ? !allAnswered : !activeAnswered);
+  const selected = selections[activeQuestion.id] ?? new Set<string>();
+  const otherText = otherTexts[activeQuestion.id] ?? "";
 
   return (
-    <View style={containerStyle} testID="question-form-card">
-      <View style={styles.questionTopRow}>
-        <View style={styles.questionHeader}>
-          <Text testID="question-form-current-question" style={questionTextStyle}>
-            {activeQuestion?.question}
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: theme.colors.surface1, borderColor: theme.colors.border },
+      ]}
+      testID="question-form-card"
+    >
+      <View style={styles.topRow}>
+        <View style={styles.header}>
+          {activeQuestion.header ? (
+            <Text style={[styles.eyebrow, { color: theme.colors.foregroundMuted }]}>
+              {activeQuestion.header}
+            </Text>
+          ) : null}
+          <Text
+            testID="question-form-current-question"
+            style={[styles.questionText, { color: theme.colors.foreground }]}
+          >
+            {activeQuestion.prompt}
           </Text>
         </View>
-        <View style={questionNavStyle} testID="question-form-question-nav">
-          {questions.map((question, qIndex) => {
-            const isActive = qIndex === resolvedActiveQuestionIndex;
-            return (
-              <QuestionNavButton
-                key={question.header}
-                index={qIndex}
-                total={questions.length}
-                isActive={isActive}
-                isResponding={isResponding}
-                onSelect={handleSelectQuestion}
-              />
-            );
-          })}
+        <View
+          style={[styles.nav, isMobile && styles.navMobile]}
+          testID="question-form-question-nav"
+        >
+          {questions.map((item, index) => (
+            <QuestionNavButton
+              key={item.id}
+              index={index}
+              total={questions.length}
+              active={index === activeIndex}
+              disabled={isResponding}
+              onSelect={setActiveIndex}
+            />
+          ))}
         </View>
       </View>
 
-      {activeQuestion ? (
-        <View key={activeQuestion.question} style={styles.questionBlock}>
-          {activeQuestion.options.length > 0 ? (
-            <View style={styles.optionsWrap}>
-              {activeQuestion.options.map((opt, optIndex) => (
-                <QuestionOptionRow
-                  key={opt.label}
-                  qIndex={resolvedActiveQuestionIndex}
-                  optIndex={optIndex}
-                  option={opt}
-                  isSelected={selected.has(optIndex)}
-                  multiSelect={activeQuestion.multiSelect}
-                  isResponding={isResponding}
-                  onToggle={toggleOption}
-                />
-              ))}
-            </View>
-          ) : null}
-          {showTextInput ? (
-            <QuestionOtherInput
-              qIndex={resolvedActiveQuestionIndex}
-              accessibilityLabel={activeQuestion.question}
-              value={otherText}
-              placeholder={getQuestionInputPlaceholder({
-                question: activeQuestion,
-                answerPlaceholder: t("message.question.answerPlaceholder"),
-                otherPlaceholder: t("message.question.otherPlaceholder"),
-              })}
-              isResponding={isResponding}
-              onChange={setOtherText}
-              onSubmit={handlePrimaryAction}
-            />
-          ) : null}
-        </View>
+      <View key={activeQuestion.id} style={styles.questionBlock}>
+        {activeQuestion.options.length > 0 ? (
+          <View style={styles.optionsWrap}>
+            {activeQuestion.options.map((option, index) => (
+              <QuestionOptionRow
+                key={`${option.value}:${index}`}
+                questionId={activeQuestion.id}
+                option={option}
+                selected={selected.has(option.value)}
+                disabled={isResponding}
+                onToggle={toggleOption}
+              />
+            ))}
+          </View>
+        ) : null}
+        {questionShowsTextInput(activeQuestion) ? (
+          <OtherInput
+            question={activeQuestion}
+            value={otherText}
+            disabled={isResponding}
+            onChange={setOtherText}
+            onSubmit={primaryAction}
+          />
+        ) : null}
+      </View>
+
+      {error ? (
+        <Text
+          testID="question-form-error"
+          style={[styles.error, { color: theme.colors.destructive }]}
+        >
+          {error}
+        </Text>
       ) : null}
 
-      <View style={actionsContainerStyle}>
+      <View style={[styles.actions, !isMobile && styles.actionsDesktop]}>
         <Pressable
-          style={dismissButtonStyle}
-          onPress={handleDeny}
+          style={({ pressed, hovered }: PressableStateCallbackType & { hovered?: boolean }) => [
+            styles.actionButton,
+            {
+              backgroundColor: hovered ? theme.colors.surface2 : theme.colors.surface1,
+              borderColor: theme.colors.borderAccent,
+            },
+            pressed && styles.pressed,
+          ]}
+          onPress={() => void dismiss()}
           disabled={isResponding}
           accessibilityRole="button"
-          accessibilityLabel={dismissLabel}
+          accessibilityLabel={t("common.actions.dismiss")}
           testID="question-form-dismiss"
         >
           {respondingAction === "dismiss" ? (
@@ -509,25 +371,38 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
           ) : (
             <View style={styles.actionContent}>
               <X size={14} color={theme.colors.foregroundMuted} />
-              <Text style={dismissActionTextStyle}>{dismissLabel}</Text>
+              <Text style={[styles.actionText, { color: theme.colors.foregroundMuted }]}>
+                {t("common.actions.dismiss")}
+              </Text>
             </View>
           )}
         </Pressable>
-
         <Pressable
-          style={submitButtonStyle}
-          onPress={handlePrimaryAction}
+          style={({ pressed }) => [
+            styles.actionButton,
+            {
+              backgroundColor: theme.colors.accent,
+              borderColor: theme.colors.accent,
+              opacity: primaryDisabled ? 0.5 : 1,
+            },
+            pressed && !primaryDisabled ? styles.pressed : null,
+          ]}
+          onPress={primaryAction}
           disabled={primaryDisabled}
           accessibilityRole="button"
-          accessibilityLabel={primaryActionLabel}
+          accessibilityLabel={
+            isLastQuestion ? t("message.question.submit") : t("message.question.next")
+          }
           testID="question-form-primary-action"
         >
           {respondingAction === "submit" ? (
             <ActivityIndicator size="small" color={theme.colors.accentForeground} />
           ) : (
             <View style={styles.actionContent}>
-              <Check size={14} color={submitActionTextColor} />
-              <Text style={submitActionTextStyle}>{primaryActionLabel}</Text>
+              <Check size={14} color={theme.colors.accentForeground} />
+              <Text style={[styles.actionText, { color: theme.colors.accentForeground }]}>
+                {isLastQuestion ? t("message.question.submit") : t("message.question.next")}
+              </Text>
             </View>
           )}
         </Pressable>
@@ -543,53 +418,21 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: 1,
     gap: theme.spacing[3],
   },
-  questionBlock: {
-    gap: theme.spacing[2],
-  },
-  questionTopRow: {
+  topRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     gap: theme.spacing[3],
   },
-  questionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
-    paddingBottom: theme.spacing[1],
-    flex: 1,
-  },
+  header: { flex: 1, gap: theme.spacing[1], paddingHorizontal: theme.spacing[3] },
+  eyebrow: { fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.medium },
   questionText: {
-    flex: 1,
     fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.medium,
     lineHeight: 22,
   },
-  optionsWrap: {
-    gap: theme.spacing[1],
-  },
-  questionNav: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: theme.spacing[1],
-  },
-  questionNavMobile: {
-    paddingRight: theme.spacing[1],
-  },
-  questionNavButton: {
-    minWidth: 28,
-    height: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 999,
-    borderWidth: theme.borderWidth[1],
-  },
-  questionNavText: {
-    fontSize: theme.fontSize.xs,
-    fontWeight: "700",
-  },
+  questionBlock: { gap: theme.spacing[2] },
+  optionsWrap: { gap: theme.spacing[1] },
   optionItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -597,32 +440,21 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[2],
     borderRadius: theme.borderRadius.md,
   },
-  optionItemPressed: {
-    opacity: 0.9,
-  },
-  optionItemContent: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-  },
-  optionTextBlock: {
-    flex: 1,
-    gap: 2,
-  },
-  optionLabel: {
-    fontSize: theme.fontSize.sm,
-  },
-  optionDescription: {
-    fontSize: theme.fontSize.xs,
-    lineHeight: 16,
-  },
-  optionCheckSlot: {
-    width: 16,
+  optionContent: { flex: 1, flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
+  optionTextBlock: { flex: 1, gap: 2 },
+  optionLabel: { fontSize: theme.fontSize.sm },
+  optionDescription: { fontSize: theme.fontSize.xs, lineHeight: 16 },
+  nav: { flexDirection: "row", alignItems: "center", gap: theme.spacing[1] },
+  navMobile: { paddingRight: theme.spacing[1] },
+  navButton: {
+    minWidth: 28,
+    height: 28,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: "auto",
+    borderRadius: 999,
+    borderWidth: theme.borderWidth[1],
   },
+  navText: { fontSize: theme.fontSize.xs, fontWeight: "700" },
   otherInput: {
     borderWidth: 1,
     borderRadius: theme.borderRadius.lg,
@@ -630,14 +462,9 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[3],
     fontSize: theme.fontSize.sm,
   },
-  actionsContainer: {
-    gap: theme.spacing[2],
-  },
-  actionsContainerDesktop: {
-    flexDirection: "row",
-    justifyContent: "flex-start",
-    alignItems: "center",
-  },
+  error: { fontSize: theme.fontSize.sm, paddingHorizontal: theme.spacing[3] },
+  actions: { gap: theme.spacing[2] },
+  actionsDesktop: { flexDirection: "row", alignItems: "center" },
   actionButton: {
     paddingVertical: theme.spacing[2],
     paddingHorizontal: theme.spacing[3],
@@ -645,12 +472,7 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     borderWidth: theme.borderWidth[1],
   },
-  actionContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-  },
-  actionText: {
-    fontSize: theme.fontSize.sm,
-  },
+  actionContent: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
+  actionText: { fontSize: theme.fontSize.sm },
+  pressed: { opacity: 0.9 },
 }));

@@ -1510,12 +1510,7 @@ test("createAgent passes native Thoth tools through launch context without inter
   const snapshot = await manager.createAgent({
     provider: "codex",
     cwd: workdir,
-    extra: {
-      thothRuntimeTools: {
-        enabled: true,
-        scope: "clarify",
-      },
-    },
+    extra: { providerVisibleOption: "keep-me" },
     mcpServers: {
       custom: {
         type: "stdio",
@@ -1526,9 +1521,9 @@ test("createAgent passes native Thoth tools through launch context without inter
 
   expect(client.lastLaunchContext?.thothTools).toBe(thothTools);
   expect(capturedToolContext?.callerAgentId).toBe(snapshot.id);
-  expect(capturedToolContext?.callerAgentConfig?.extra?.thothRuntimeTools).toMatchObject({
-    enabled: true,
-    scope: "clarify",
+  expect(capturedToolContext?.runtimeScope).toBe("clarify");
+  expect(capturedToolContext?.callerAgentConfig?.extra).toEqual({
+    providerVisibleOption: "keep-me",
   });
   expect(client.lastConfig?.mcpServers).toEqual({
     custom: {
@@ -1552,7 +1547,7 @@ test("createAgent passes native Thoth tools through launch context without inter
   });
 });
 
-test("createAgent provisions foreground Thoth tools before provider session creation", async () => {
+test("createAgent mounts stable Thoth tools without persisting a turn scope", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
   const thothTools: ThothToolCatalog = {
@@ -1584,18 +1579,11 @@ test("createAgent provisions foreground Thoth tools before provider session crea
     registry: storage,
     logger,
     thothToolCatalogFactory: () => thothTools,
-    foregroundThothSessionProvisioner: ({ config }) => ({
-      ...config,
-      extra: {
-        ...(config.extra ?? {}),
-        thothRuntimeTools: { enabled: true, scope: "clarify" },
-      },
-    }),
   });
 
   const agent = await manager.createAgent({ provider: "codex", cwd: workdir });
 
-  expect(agent.config.extra?.thothRuntimeTools).toEqual({ enabled: true, scope: "clarify" });
+  expect(agent.config.extra).toBeUndefined();
   expect(client.lastLaunchContext?.thothTools).toBe(thothTools);
   rmSync(workdir, { recursive: true, force: true });
 });
@@ -2112,12 +2100,7 @@ test("resumeAgentFromPersistence keeps metadata config, applies overrides, and p
     {
       cwd: workdir,
       systemPrompt: "new prompt",
-      extra: {
-        thothRuntimeTools: {
-          enabled: true,
-          scope: "loop_planexec",
-        },
-      },
+      extra: { providerVisibleOption: "keep-me" },
       mcpServers: {
         thoth: {
           type: "stdio",
@@ -5898,12 +5881,12 @@ test("permission request notifies once without forcing unread attention state", 
   expect(attentionReasons).toContain("permission");
 });
 
-test("respondToPermission updates currentModeId after plan approval", async () => {
+test("respondToPermission rejects Provider-owned Plan approval", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
 
-  // Create a session that simulates plan approval mode change
+  // A legacy Provider-owned Plan request must not bypass Daemon Plan authority.
   let sessionMode = "plan";
   class PlanModeTestSession implements HarnessThread {
     readonly provider = "codex" as const;
@@ -6022,22 +6005,16 @@ test("respondToPermission updates currentModeId after plan approval", async () =
   };
   agent.pendingPermissions.set(permissionRequest.id, permissionRequest);
 
-  // Approve the plan permission
-  await manager.respondToPermission(snapshot.id, "perm-123", {
-    behavior: "allow",
-  });
-
-  // The session's mode has changed to "acceptEdits" internally
-  // The manager should have updated currentModeId to reflect this
-  const updatedAgent = manager.getAgent(snapshot.id);
-  expect(updatedAgent?.currentModeId).toBe("acceptEdits");
-
-  await manager.flush();
-  const persisted = await storage.get(snapshot.id);
-  expect(persisted?.lastModeId).toBe("acceptEdits");
+  await expect(
+    manager.respondToPermission(snapshot.id, "perm-123", {
+      behavior: "allow",
+    }),
+  ).rejects.toMatchObject({ code: "PROVIDER_PLAN_AUTHORITY_INVALID" });
+  expect(manager.getAgent(snapshot.id)?.currentModeId).toBe("plan");
+  expect(manager.getAgent(snapshot.id)?.pendingPermissions.has("perm-123")).toBe(true);
 });
 
-test("respondToPermission refreshes features and runtime info after provider-managed plan approval", async () => {
+test("respondToPermission refreshes features and runtime info after an ordinary Provider permission", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "execution-service-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
@@ -6052,9 +6029,9 @@ test("respondToPermission refreshes features and runtime info after provider-man
       {
         id: "perm-plan-1",
         provider: "codex" as const,
-        name: "CodexPlanApproval",
-        kind: "plan" as const,
-        input: { plan: "- Implement the feature" },
+        name: "CodexCommandApproval",
+        kind: "tool" as const,
+        input: { command: "npm test" },
       },
     ];
 
@@ -6117,9 +6094,9 @@ test("respondToPermission refreshes features and runtime info after provider-man
   agent.pendingPermissions.set("perm-plan-1", {
     id: "perm-plan-1",
     provider: "codex",
-    name: "CodexPlanApproval",
-    kind: "plan",
-    input: { plan: "- Implement the feature" },
+    name: "CodexCommandApproval",
+    kind: "tool",
+    input: { command: "npm test" },
   });
 
   await manager.respondToPermission(snapshot.id, "perm-plan-1", {
@@ -6159,9 +6136,9 @@ test("respondToPermission emits refreshed state before permission_resolved", asy
       {
         id: "perm-order-1",
         provider: "codex" as const,
-        name: "ExitPlanMode",
-        kind: "plan" as const,
-        input: { plan: "- Do the work" },
+        name: "CodexCommandApproval",
+        kind: "tool" as const,
+        input: { command: "npm test" },
       },
     ];
 

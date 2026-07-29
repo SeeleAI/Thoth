@@ -116,7 +116,13 @@ export async function ensureThothStorageLayout(
   if (marker?.version === STORAGE_LAYOUT_VERSION) {
     return { requiresProviderThreadFinalization: false };
   }
-  if (marker && marker.version !== 1 && marker.version !== 2 && marker.version !== 3) {
+  if (
+    marker &&
+    marker.version !== 1 &&
+    marker.version !== 2 &&
+    marker.version !== 3 &&
+    marker.version !== 4
+  ) {
     throw new Error(`Unsupported Thoth storage layout version: ${String(marker.version)}`);
   }
 
@@ -148,7 +154,7 @@ export async function ensureThothStorageLayout(
     writeMarker(markerPath, { migrated: true, workspaceCount: workspaceIds.length });
     logger.info(
       { sourceRelease: RELEASE_SOURCE, workspaceCount: workspaceIds.length },
-      "Migrated Thoth storage to normalized authority schema v4",
+      "Migrated Thoth storage to normalized authority schema v5",
     );
     return { requiresProviderThreadFinalization: false };
   } finally {
@@ -170,7 +176,7 @@ function migrateDatabase(
       validateDatabase(current, kind);
       return;
     }
-    if (version !== 0 && version !== 2 && version !== 3) {
+    if (version !== 0 && version !== 2 && version !== 3 && version !== 4) {
       throw new Error(`Unsupported SQLite schema ${version} at ${filePath}`);
     }
     if (version === 0) {
@@ -179,9 +185,12 @@ function migrateDatabase(
     } else if (version === 2) {
       requireTables(current, kind, 2);
       requireNormalizedV2Ledger(current, kind);
-    } else {
+    } else if (version === 3) {
       requireTables(current, kind, 3);
       requireNormalizedV3Ledger(current, kind);
+    } else {
+      requireTables(current, kind, 4);
+      requireNormalizedV4Ledger(current, kind);
     }
     if (existsSync(`${filePath}-wal`)) current.exec("PRAGMA wal_checkpoint(TRUNCATE);");
   } finally {
@@ -197,7 +206,7 @@ function migrateDatabase(
   copyFileSync(filePath, temporary);
   try {
     options.onPhase?.("copied", filePath);
-    const compatibilityVersion = sourceVersion === 3 ? 3 : 2;
+    const compatibilityVersion = sourceVersion === 4 ? 4 : sourceVersion === 3 ? 3 : 2;
     const beforeDigest = semanticDigest(filePath, kind, compatibilityVersion);
     const candidate = new DatabaseSync(temporary, { enableForeignKeyConstraints: true });
     try {
@@ -206,7 +215,7 @@ function migrateDatabase(
         if (sourceVersion === 0 && kind === "authority") {
           candidate.exec("DROP TABLE authority_events");
         }
-        applySchemaV4(candidate, kind);
+        applySchemaV5(candidate, kind);
         const migrationTable =
           kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations";
         const migrationVersion =
@@ -223,7 +232,7 @@ function migrateDatabase(
               new Date().toISOString(),
             );
         }
-        if (sourceVersion !== 3) {
+        if (sourceVersion < 3) {
           candidate
             .prepare(
               `INSERT INTO ${migrationTable}(version, checksum, applied_at)
@@ -235,6 +244,20 @@ function migrateDatabase(
               new Date().toISOString(),
             );
         }
+        if (sourceVersion < 4) {
+          candidate
+            .prepare(
+              `INSERT INTO ${migrationTable}(version, checksum, applied_at)
+               VALUES (?, ?, ?)`,
+            )
+            .run(
+              kind === "catalog" ? 4 : 7,
+              kind === "catalog"
+                ? "schedule-run-workspace-v4-catalog"
+                : "schedule-run-workspace-v4",
+              new Date().toISOString(),
+            );
+        }
         candidate
           .prepare(
             `INSERT INTO ${migrationTable}(version, checksum, applied_at)
@@ -242,7 +265,9 @@ function migrateDatabase(
           )
           .run(
             migrationVersion,
-            kind === "catalog" ? "schedule-run-workspace-v4-catalog" : "schedule-run-workspace-v4",
+            kind === "catalog"
+              ? "provider-turn-interaction-v5-catalog"
+              : "provider-turn-interaction-v5",
             new Date().toISOString(),
           );
         candidate.exec(`PRAGMA user_version = ${SQLITE_SCHEMA_VERSION}; COMMIT;`);
@@ -284,7 +309,7 @@ function migrateDatabase(
   }
 }
 
-function applySchemaV4(database: DatabaseSync, kind: "catalog" | "authority"): void {
+function applySchemaV5(database: DatabaseSync, kind: "catalog" | "authority"): void {
   if (kind === "catalog") {
     database.exec(`
       CREATE TABLE IF NOT EXISTS catalog_runtime_resource_leases (
@@ -321,6 +346,22 @@ function applySchemaV4(database: DatabaseSync, kind: "catalog" | "authority"): v
   }
   if (!columns.has("workspace_id")) {
     database.exec("ALTER TABLE schedule_runs ADD COLUMN workspace_id TEXT;");
+  }
+  const turnColumns = new Set(
+    (database.prepare("PRAGMA table_info(turns)").all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    ),
+  );
+  if (!turnColumns.has("provider_plan_receipt_json")) {
+    database.exec("ALTER TABLE turns ADD COLUMN provider_plan_receipt_json TEXT;");
+  }
+  if (!turnColumns.has("provider_interaction_json")) {
+    database.exec("ALTER TABLE turns ADD COLUMN provider_interaction_json TEXT;");
+  }
+  if (!turnColumns.has("provider_interaction_revision")) {
+    database.exec(
+      "ALTER TABLE turns ADD COLUMN provider_interaction_revision INTEGER NOT NULL DEFAULT 0;",
+    );
   }
   database.exec(`
     CREATE INDEX IF NOT EXISTS schedule_runs_task_execution
@@ -385,6 +426,27 @@ function requireNormalizedV3Ledger(database: DatabaseSync, kind: "catalog" | "au
   }
 }
 
+function requireNormalizedV4Ledger(database: DatabaseSync, kind: "catalog" | "authority"): void {
+  const table = kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations";
+  const expectedVersion = kind === "catalog" ? 4 : 7;
+  const expectedChecksum =
+    kind === "catalog" ? "schedule-run-workspace-v4-catalog" : "schedule-run-workspace-v4";
+  const rows = database
+    .prepare(`SELECT version, checksum FROM ${table} ORDER BY version`)
+    .all() as Array<{ version: number; checksum: string }>;
+  const latest = rows.at(-1);
+  if (
+    !latest ||
+    latest.version !== expectedVersion ||
+    latest.checksum !== expectedChecksum ||
+    rows.some((row) => row.version > expectedVersion)
+  ) {
+    throw new Error(
+      `Unsupported ${kind} normalized-v4 migration ledger; the original database was preserved`,
+    );
+  }
+}
+
 function validateDatabase(database: DatabaseSync, kind: "catalog" | "authority"): void {
   requireTables(database, kind);
   if (kind === "authority" && hasTable(database, "authority_events")) {
@@ -404,7 +466,7 @@ function validateDatabase(database: DatabaseSync, kind: "catalog" | "authority")
 function requireTables(
   database: DatabaseSync,
   kind: "catalog" | "authority",
-  sourceVersion: 0 | 2 | 3 | 4 = 4,
+  sourceVersion: 0 | 2 | 3 | 4 | 5 = 5,
 ): void {
   const required =
     kind === "catalog" && sourceVersion < 3
@@ -426,7 +488,7 @@ function requireTables(
 function semanticDigest(
   filePath: string,
   kind: "catalog" | "authority",
-  compatibilityVersion?: 2 | 3,
+  compatibilityVersion?: 2 | 3 | 4,
 ): string {
   const database = new DatabaseSync(filePath, { readOnly: true });
   try {
@@ -452,15 +514,26 @@ function semanticDigest(
       }>;
       const names = columns
         .map((column) => column.name)
-        .filter(
-          (column) =>
-            kind !== "authority" ||
-            name !== "schedule_runs" ||
-            (compatibilityVersion !== 2 && compatibilityVersion !== 3) ||
-            (compatibilityVersion === 2
-              ? column !== "task_id" && column !== "execution_id" && column !== "workspace_id"
-              : column !== "workspace_id"),
-        );
+        .filter((column) => {
+          if (kind !== "authority") return true;
+          if (
+            name === "turns" &&
+            compatibilityVersion !== undefined &&
+            [
+              "provider_plan_receipt_json",
+              "provider_interaction_json",
+              "provider_interaction_revision",
+            ].includes(column)
+          ) {
+            return false;
+          }
+          if (name !== "schedule_runs") return true;
+          if (compatibilityVersion === 2) {
+            return column !== "task_id" && column !== "execution_id" && column !== "workspace_id";
+          }
+          if (compatibilityVersion === 3) return column !== "workspace_id";
+          return true;
+        });
       const primary = columns
         .filter((column) => column.pk > 0 && names.includes(column.name))
         .sort((left, right) => left.pk - right.pk)

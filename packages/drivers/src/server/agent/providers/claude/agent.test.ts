@@ -8,9 +8,8 @@ import { createTestLogger } from "../../../../test-utils/test-logger.js";
 import * as executableUtils from "@thoth/drivers/internal/executable-resolution/executable-resolution";
 import {
   ClaudeHarnessAdapter,
+  buildClaudeProviderQuestionBinding,
   convertClaudeHistoryEntry,
-  normalizeClaudeAskUserQuestionRequestInput,
-  normalizeClaudeAskUserQuestionUpdatedInput,
   toClaudeSdkMcpConfig,
 } from "@thoth/drivers/internal/server/agent/providers/claude/agent";
 import { streamSession } from "../test-utils/session-stream-adapter.js";
@@ -729,226 +728,101 @@ describe("ClaudeHarnessThread features", () => {
   });
 });
 
-describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
-  test("marks Claude AskUserQuestion options as allowing other answers", () => {
-    expect(
-      normalizeClaudeAskUserQuestionRequestInput("AskUserQuestion", {
+describe("Claude structured Provider questions", () => {
+  test("projects native questions by stable id rather than repeated header", () => {
+    const binding = buildClaudeProviderQuestionBinding({
+      requestId: "question-1",
+      agentId: "agent-1",
+      providerThreadId: "thread-1",
+      providerTurnId: "turn-1",
+      providerItemId: "tool-1",
+      nativeInput: {
         questions: [
           {
             question: "Which provider should I use?",
-            header: "Provider",
-            options: [
-              { label: "Claude", description: "Use Claude Code" },
-              { label: "Codex", description: "Use Codex" },
-            ],
+            header: "Choice",
+            options: [{ label: "Claude", description: "Use Claude Code" }],
             multiSelect: false,
           },
-        ],
-      }),
-    ).toEqual({
-      questions: [
-        {
-          question: "Which provider should I use?",
-          header: "Provider",
-          options: [
-            { label: "Claude", description: "Use Claude Code" },
-            { label: "Codex", description: "Use Codex" },
-          ],
-          multiSelect: false,
-          allowOther: true,
-        },
-      ],
-    });
-  });
-
-  test("maps frontend header-keyed answers to Claude question text keys", () => {
-    expect(
-      normalizeClaudeAskUserQuestionUpdatedInput(
-        {
-          questions: [
-            {
-              question: "Which provider should I use?",
-              header: "Provider",
-              options: [],
-              multiSelect: false,
-            },
-          ],
-          answers: { Provider: "Claude" },
-        },
-        undefined,
-      ),
-    ).toEqual({
-      questions: [
-        {
-          question: "Which provider should I use?",
-          header: "Provider",
-          options: [],
-          multiSelect: false,
-        },
-      ],
-      answers: { "Which provider should I use?": "Claude" },
-    });
-  });
-
-  test("uses fallback request questions when response only includes answers", () => {
-    expect(
-      normalizeClaudeAskUserQuestionUpdatedInput(
-        {
-          answers: { Provider: "Codex" },
-        },
-        {
-          questions: [
-            {
-              question: "Which provider should I use?",
-              header: "Provider",
-              options: [],
-              multiSelect: false,
-            },
-          ],
-        },
-      ),
-    ).toEqual({
-      questions: [
-        {
-          question: "Which provider should I use?",
-          header: "Provider",
-          options: [],
-          multiSelect: false,
-        },
-      ],
-      answers: { "Which provider should I use?": "Codex" },
-    });
-  });
-
-  test("respondToPermission preserves full question input when UI returns answers-only payload", async () => {
-    const client = new ClaudeHarnessAdapter({
-      logger: createTestLogger(),
-      resolveBinary: async () => "/test/claude/bin",
-    });
-    const session = await client.createSession({
-      provider: "claude",
-      cwd: process.cwd(),
-    });
-
-    const request = {
-      id: "permission-question-1",
-      provider: "claude",
-      name: "AskUserQuestion",
-      kind: "question",
-      input: {
-        questions: [
           {
-            question: "Which provider should I use?",
-            header: "Provider",
-            options: [],
-            multiSelect: false,
+            question: "Which surfaces should I verify?",
+            header: "Choice",
+            options: [{ label: "Web" }, { label: "Desktop" }],
+            multiSelect: true,
           },
         ],
       },
-    };
-
-    const resultPromise = new Promise<unknown>((resolve, reject) => {
-      (
-        session as unknown as {
-          pendingPermissions: Map<
-            string,
-            {
-              request: typeof request;
-              resolve: (value: unknown) => void;
-              reject: (error: Error) => void;
-            }
-          >;
-        }
-      ).pendingPermissions.set(request.id, {
-        request,
-        resolve,
-        reject,
-      });
     });
 
-    try {
-      await session.respondToPermission(request.id, {
-        behavior: "allow",
-        updatedInput: {
-          answers: { Provider: "Claude" },
-        },
-      });
-
-      await expect(resultPromise).resolves.toEqual({
-        behavior: "allow",
-        updatedInput: {
-          questions: [
-            {
-              question: "Which provider should I use?",
-              header: "Provider",
-              options: [],
-              multiSelect: false,
-            },
-          ],
-          answers: { "Which provider should I use?": "Claude" },
-        },
-        updatedPermissions: undefined,
-      });
-    } finally {
-      await session.close();
-    }
+    expect(binding?.projection).toMatchObject({
+      interactionId: "question-1",
+      questions: [
+        { id: "question-1:0", header: "Choice", selectionMode: "single", allowOther: true },
+        { id: "question-1:1", header: "Choice", selectionMode: "multiple", allowOther: true },
+      ],
+    });
   });
 
-  test("respondToPermission maps other answer text back to Claude question keys", async () => {
+  test("answers through the typed question path and preserves native question text keys", async () => {
     const client = new ClaudeHarnessAdapter({
       logger: createTestLogger(),
       resolveBinary: async () => "/test/claude/bin",
     });
-    const session = await client.createSession({
-      provider: "claude",
-      cwd: process.cwd(),
-    });
+    const session = await client.createSession(
+      { provider: "claude", cwd: process.cwd() },
+      { agentId: "agent-claude-question" },
+    );
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    const internal = session as unknown as {
+      claudeSessionId: string;
+      activeForegroundTurnId: string;
+      handlePermissionRequest: (
+        name: string,
+        input: Record<string, unknown>,
+        options: Record<string, unknown>,
+      ) => Promise<unknown>;
+    };
+    internal.claudeSessionId = "thread-claude-question";
+    internal.activeForegroundTurnId = "turn-claude-question";
 
-    const request = {
-      id: "permission-question-2",
-      provider: "claude",
-      name: "AskUserQuestion",
-      kind: "question",
-      input: normalizeClaudeAskUserQuestionRequestInput("AskUserQuestion", {
+    const resultPromise = internal.handlePermissionRequest(
+      "AskUserQuestion",
+      {
         questions: [
           {
             question: "Which provider should I use?",
-            header: "Provider",
-            options: [
-              { label: "Claude", description: "Use Claude Code" },
-              { label: "Codex", description: "Use Codex" },
-            ],
+            header: "Choice",
+            options: [{ label: "Claude" }, { label: "Codex" }],
             multiSelect: false,
           },
+          {
+            question: "Which surfaces should I verify?",
+            header: "Choice",
+            options: [{ label: "Web" }, { label: "Desktop" }],
+            multiSelect: true,
+          },
         ],
-      }),
-    };
-
-    const resultPromise = new Promise<unknown>((resolve, reject) => {
-      (
-        session as unknown as {
-          pendingPermissions: Map<
-            string,
-            {
-              request: typeof request;
-              resolve: (value: unknown) => void;
-              reject: (error: Error) => void;
-            }
-          >;
-        }
-      ).pendingPermissions.set(request.id, {
-        request,
-        resolve,
-        reject,
-      });
-    });
+      },
+      { toolUseID: "tool-question-1" },
+    );
 
     try {
-      await session.respondToPermission(request.id, {
-        behavior: "allow",
-        updatedInput: {
-          answers: { Provider: "Use both" },
-        },
+      const requested = events.find(
+        (event): event is Extract<AgentStreamEvent, { type: "provider_question_requested" }> =>
+          event.type === "provider_question_requested",
+      );
+      expect(requested?.question.questions.map((question) => question.id)).toEqual([
+        expect.stringMatching(/^permission-.*:0$/),
+        expect.stringMatching(/^permission-.*:1$/),
+      ]);
+      if (!requested) throw new Error("Expected Claude Provider question");
+      await session.respondToProviderQuestion?.(requested.question.interactionId, {
+        type: "answer",
+        answers: [
+          { questionId: requested.question.questions[0]!.id, values: ["Claude"] },
+          { questionId: requested.question.questions[1]!.id, values: ["Web", "Desktop"] },
+        ],
       });
 
       await expect(resultPromise).resolves.toEqual({
@@ -957,18 +831,24 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
           questions: [
             {
               question: "Which provider should I use?",
-              header: "Provider",
-              options: [
-                { label: "Claude", description: "Use Claude Code" },
-                { label: "Codex", description: "Use Codex" },
-              ],
+              header: "Choice",
+              options: [{ label: "Claude" }, { label: "Codex" }],
               multiSelect: false,
             },
+            {
+              question: "Which surfaces should I verify?",
+              header: "Choice",
+              options: [{ label: "Web" }, { label: "Desktop" }],
+              multiSelect: true,
+            },
           ],
-          answers: { "Which provider should I use?": "Use both" },
+          answers: {
+            "Which provider should I use?": "Claude",
+            "Which surfaces should I verify?": "Web, Desktop",
+          },
         },
-        updatedPermissions: undefined,
       });
+      expect(events.some((event) => event.type === "permission_requested")).toBe(false);
     } finally {
       await session.close();
     }

@@ -23,6 +23,7 @@ function createAgent(status: Agent["status"]): Agent {
     currentModeId: null,
     availableModes: [],
     pendingPermissions: [],
+    pendingProviderQuestions: [],
     persistence: null,
     title: "Agent",
     cwd: "/tmp",

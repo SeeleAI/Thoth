@@ -7,6 +7,7 @@ import {
   type HarnessCapabilities,
   type HarnessExecutionDescriptor,
   type HarnessExecutionEvent,
+  type HarnessExecutionInput,
   type HarnessThreadDescriptor,
   type RuntimeAttachmentReceipt,
 } from "@thoth/drivers/harness";
@@ -18,6 +19,7 @@ import type {
   TaskProjection,
 } from "@thoth/protocol/task-authority";
 import type { ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
+import type { ProviderPlanCompleted } from "@thoth/protocol/agent-types";
 import type {
   ThothLoopPlanExecResultInput,
   ThothLoopReportBlockedInput,
@@ -56,7 +58,7 @@ interface ActivePhase {
   semanticAccepted: boolean;
   receipt: RuntimeAttachmentReceipt;
   runModeReceipt: ProviderRunModeReceipt;
-  planReady: boolean;
+  completedPlan: ProviderPlanCompleted | null;
   providerSegmentRevision: number;
   eventTail: Promise<void>;
 }
@@ -288,6 +290,57 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     }
 
     try {
+      if (input.approval.kind === "implement") {
+        if (!active.completedPlan) {
+          throw new Error("The completed native Plan receipt is unavailable.");
+        }
+        this.executionService.resolveHarnessPlanInteraction(active.descriptor, decision);
+        if (decision === "deny") {
+          await this.finishPhase(active);
+          return;
+        }
+        const runModeReceipt = await this.executionService.prepareHarnessRunMode(active.adapterId, {
+          thread: active.thread,
+          mode: "default",
+        });
+        if (runModeReceipt.status !== "applied") {
+          throw new Error(
+            runModeReceipt.reason ?? "Provider did not return to default mode for implementation.",
+          );
+        }
+        active.runModeReceipt = runModeReceipt;
+        store.appendTimeline({
+          executionId: active.executionId,
+          item: { type: "provider_mode_receipt", receipt: runModeReceipt },
+        });
+        const currentTask = store.getTask(active.taskId);
+        const currentExecution = store.getExecution(active.executionId);
+        if (
+          !currentTask ||
+          !currentExecution ||
+          currentTask.currentExecutionId !== active.executionId ||
+          currentTask.status !== "running" ||
+          currentExecution.generation !== active.generation ||
+          currentExecution.status !== "implementing"
+        ) {
+          await this.executionService
+            .interruptHarnessExecution(active.adapterId, active.descriptor)
+            .catch(() => undefined);
+          return;
+        }
+        await this.launchProviderContinuation(active, {
+          prompt: [
+            "Implement the approved native Plan now in this same Provider thread.",
+            "Preserve the approved Task contract, inspect current workspace reality, and verify the result.",
+            `Approved Plan:\n${active.completedPlan.text}`,
+          ].join("\n\n"),
+          runMode: "default",
+          runModeReceipt,
+          purpose: "implementation",
+        });
+        return;
+      }
+
       const resolution = await this.executionService.resolveHarnessApproval(active.adapterId, {
         thread: active.thread,
         execution: active.descriptor,
@@ -300,8 +353,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
       }
       const currentTask = store.getTask(active.taskId);
       const currentExecution = store.getExecution(active.executionId);
-      const expectedStatus =
-        input.approval.kind === "implement" ? "implementing" : "awaiting_provider";
+      const expectedStatus = "awaiting_provider";
       if (
         !currentTask ||
         !currentExecution ||
@@ -481,6 +533,11 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
       }
       const adapterId = profile.adapterId;
       const capabilities = await this.executionService.getHarnessCapabilities(adapterId);
+      if (capabilities.runtimeBundleActivation !== "native_skill") {
+        throw new Error(
+          `HarnessAdapter ${adapterId} does not support same-session per-turn RuntimeBundle activation`,
+        );
+      }
       const workspace = this.authority.catalog.getWorkspace(task.workspaceId);
       if (!workspace) {
         throw new Error(`Workspace ${task.workspaceId} is missing from catalog`);
@@ -605,7 +662,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         semanticAccepted: false,
         receipt,
         runModeReceipt,
-        planReady: false,
+        completedPlan: null,
         providerSegmentRevision: 1,
         eventTail: Promise.resolve(),
       };
@@ -619,12 +676,18 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         generation,
         phase,
       });
-      const executionInput = {
+      const executionInput: HarnessExecutionInput = {
         executionId,
         generation,
         prompt:
           phase === "planexec" ? planExecPrompt(context, goalId) : reviewPrompt(context, goalId),
         attachment: receipt,
+        activation: {
+          bundleId: this.loopBundle.id,
+          bundleDigest: this.loopBundle.digest,
+          scope: phase === "planexec" ? "loop_planexec" : "loop_review",
+          generation,
+        },
         runMode,
         runModeReceipt,
       };
@@ -724,7 +787,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     }
     if (event.control) {
       switch (event.control.type) {
-        case "plan_ready":
+        case "plan_completed": {
           if (active.phase !== "planexec") {
             store.interruptExecution({
               executionId: active.executionId,
@@ -734,9 +797,20 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
             await this.finishPhase(active);
             return;
           }
-          active.planReady = true;
-          await this.openBackgroundApproval(active, event.control.approval);
+          active.completedPlan = event.control.plan;
+          await this.openBackgroundApproval(active, {
+            id: `daemon-plan:${active.executionId}:${event.control.plan.itemId}`,
+            kind: "implement",
+            title: "Implement plan",
+            description: "The Provider completed its native Plan and is ready to implement it.",
+            displayed: {
+              plan: event.control.plan.text,
+              receipt: event.control.plan,
+            },
+            autoApproveEligible: true,
+          });
           return;
+        }
         case "plan_invalid":
           store.interruptExecution({
             executionId: active.executionId,
@@ -773,7 +847,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     if (!terminal) {
       return;
     }
-    if (providerSegmentPurpose === "planning" && active.planReady) {
+    if (providerSegmentPurpose === "planning" && active.completedPlan) {
       return;
     }
     const execution = store.getExecution(active.executionId);
@@ -905,6 +979,12 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         generation: active.generation,
         prompt: input.prompt,
         attachment: active.receipt,
+        activation: {
+          bundleId: this.loopBundle.id,
+          bundleDigest: this.loopBundle.digest,
+          scope: active.phase === "planexec" ? "loop_planexec" : "loop_review",
+          generation: active.generation,
+        },
         runMode: input.runMode,
         runModeReceipt: input.runModeReceipt,
       },

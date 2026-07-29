@@ -1,6 +1,6 @@
 import type { AgentTimelineEntry } from "@thoth/protocol/agent-types";
 import type {
-  AgentSnapshotPayload,
+  AgentSnapshotPayloadInput,
   FetchAgentTimelineResponseMessage,
   ProjectPlacementPayload,
   WorkspaceDescriptorPayload,
@@ -13,6 +13,7 @@ import { resolvePendingAgentMessages } from "./pending-agent-messages";
 import type { Agent, EmptyProjectDescriptor, WorkspaceDescriptor } from "./authority-model";
 import type { AgentThothState } from "@thoth/protocol/thoth/rpc-schemas";
 import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
+import type { AgentDirectorySnapshotEntry } from "@/utils/agent-directory-sync";
 import { resolveProjectPlacement } from "@/utils/project-placement";
 import { normalizeEmptyProjectDescriptor, normalizeWorkspaceDescriptor } from "./authority-model";
 import { patchWorkspaceScripts } from "@/contexts/session-workspace-scripts";
@@ -26,7 +27,6 @@ import {
   buildLegacyDaemonWorkspaceSnapshot,
   shouldUseLegacyDaemonWorkspaceDirectory,
 } from "@/workspace/legacy-daemon-workspaces";
-import type { FetchAgentsEntry } from "@thoth/client/internal/daemon-client";
 import { normalizeWorkspacePath } from "@/utils/workspace-identity";
 import { setWorkspaceRestoreStatus } from "@/query/workspace-restore-state";
 
@@ -355,7 +355,7 @@ export class DaemonProjectionService {
   private readonly activeAgents = new Set<string>();
   private readonly catchUpTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly catchUpRequests = new Map<string, Promise<unknown>>();
-  private lastAgentEntries: FetchAgentsEntry[] = [];
+  private lastAgentEntries: AgentDirectorySnapshotEntry[] = [];
   private generation = 0;
 
   constructor(
@@ -589,7 +589,7 @@ export class DaemonProjectionService {
       status: "loading",
     });
     try {
-      const entries: FetchAgentsEntry[] = [];
+      const entries: AgentDirectorySnapshotEntry[] = [];
       let cursor: string | null = null;
       let subscribe = true;
       while (true) {
@@ -771,7 +771,10 @@ export class DaemonProjectionService {
     });
   }
 
-  acceptAgentSnapshot(snapshot: AgentSnapshotPayload, project?: ProjectPlacementPayload): Agent {
+  acceptAgentSnapshot(
+    snapshot: AgentSnapshotPayloadInput,
+    project?: ProjectPlacementPayload,
+  ): Agent {
     const serverId = this.serverId;
     if (!serverId) throw new Error("Projection service is not attached");
     const current = this.store.getSnapshot(serverId).agents.get(snapshot.id);
@@ -923,7 +926,7 @@ function resolveWorkspaceIdByDirectory(
 
 function normalizeAgentEntries(
   serverId: string,
-  entries: readonly FetchAgentsEntry[],
+  entries: readonly AgentDirectorySnapshotEntry[],
 ): Map<string, Agent> {
   const agents = new Map<string, Agent>();
   for (const entry of entries) {

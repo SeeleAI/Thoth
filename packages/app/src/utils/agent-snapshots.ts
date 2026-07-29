@@ -1,4 +1,4 @@
-import type { AgentSnapshotPayload } from "@thoth/protocol/messages";
+import type { AgentSnapshotPayloadInput } from "@thoth/protocol/messages";
 import type { AgentPermissionRequest } from "@thoth/protocol/agent-types";
 import { getParentAgentIdFromLabels } from "@thoth/protocol/agent-labels";
 
@@ -16,7 +16,7 @@ export function derivePendingPermissionKey(
   return `${agentId}:${fallbackId}`;
 }
 
-export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayload, serverId: string) {
+export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayloadInput, serverId: string) {
   const createdAt = new Date(snapshot.createdAt);
   const updatedAt = new Date(snapshot.updatedAt);
   const lastUserMessageAt = snapshot.lastUserMessageAt
@@ -50,6 +50,7 @@ export function normalizeAgentSnapshot(snapshot: AgentSnapshotPayload, serverId:
     currentModeId: snapshot.currentModeId,
     availableModes: snapshot.availableModes ?? [],
     pendingPermissions: snapshot.pendingPermissions ?? [],
+    pendingProviderQuestions: snapshot.pendingProviderQuestions ?? [],
     persistence: snapshot.persistence ?? null,
     runtimeInfo: snapshot.runtimeInfo,
     lastUsage: snapshot.lastUsage,

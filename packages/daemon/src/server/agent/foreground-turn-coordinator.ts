@@ -4,6 +4,11 @@ import type { AgentAttachment, ThothTurnAck, ThothTurnSnapshot } from "@thoth/pr
 import type { ProviderRunMode, ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
 import type { AgentMessageDeliveryMode } from "@thoth/protocol/agent-turn-queue";
 import type { TaskContextReference } from "@thoth/protocol/task-authority";
+import {
+  createProviderTurnInteractionState,
+  reduceProviderTurnInteraction,
+  type ProviderTurnInteractionEvent,
+} from "@thoth/core";
 import type {
   AgentThothCardAnswerRequest,
   AgentThothCardAnswerResponse,
@@ -22,9 +27,9 @@ import type {
   AgentRunOptions,
   AgentStreamEvent,
 } from "@thoth/drivers/agent-runtime";
+import { THOTH_RUNTIME_BUNDLE_CATALOG, loadRuntimeBundle } from "@thoth/drivers/harness";
 import { ensureAgentLoaded } from "./agent-loading.js";
 import { formatSystemNotificationPrompt } from "./agent-prompt.js";
-import { readThothRuntimeToolsConfig } from "./thoth-runtime-tools-config.js";
 import {
   type ForegroundAuthorityCard,
   type ForegroundCardAuthorityRecord,
@@ -37,6 +42,7 @@ import type { TaskContextBroker } from "../workspace-authority/task-context-brok
 
 const USER_CANCELED_SUMMARY = "已中断当前请求，可继续输入。";
 const BACKGROUND_HANDOFF_SUMMARY = "后台任务已注册；前台会话可以继续新的对话。";
+const CLARIFY_RUNTIME_BUNDLE = loadRuntimeBundle("thoth.clarify", THOTH_RUNTIME_BUNDLE_CATALOG);
 
 interface StartForegroundTurnInput {
   agentId: string;
@@ -343,6 +349,16 @@ function buildQuickExecutionPrompt(input: {
   );
 }
 
+function buildProviderPlanImplementationPrompt(plan: string): string {
+  return formatSystemNotificationPrompt(
+    [
+      "Implement the approved native Plan now in this same Provider session.",
+      "Preserve the current user request, inspect current workspace reality, and verify the result.",
+      `Approved Plan:\n${plan}`,
+    ].join("\n\n"),
+  );
+}
+
 function continuationKey(cards: ForegroundCardAuthorityRecord[]): string | null {
   const latestGoal = cards.filter((card) => card.kind === "goal_card").at(-1);
   if (latestGoal?.status === "answered") {
@@ -473,8 +489,13 @@ export class ForegroundTurnCoordinator {
     }
 
     if (kind === "thoth") {
-      const runtime = readThothRuntimeToolsConfig(agent.config);
-      if (runtime?.scope !== "clarify") {
+      const capabilities = await this.options.executionService.getHarnessCapabilities(
+        agent.provider,
+      );
+      if (
+        capabilities.runtimeBundleActivation !== "native_skill" ||
+        capabilities.toolAttachment.length === 0
+      ) {
         const state = this.options.authorityStore.markLifecycle({
           agentId: agent.id,
           turnId: started.turn.id,
@@ -482,11 +503,11 @@ export class ForegroundTurnCoordinator {
           lifecycle: "unsupported",
           reason: "turn_interrupted",
           error:
-            "The selected provider session does not support Agent-scoped Thoth semantic tools.",
+            "The selected provider session does not support same-session per-turn RuntimeBundle activation.",
         });
         throw new Error(
           state?.error ??
-            "The selected provider session does not support Agent-scoped Thoth semantic tools.",
+            "The selected provider session does not support same-session per-turn RuntimeBundle activation.",
         );
       }
       if (input.messageId) {
@@ -606,22 +627,47 @@ export class ForegroundTurnCoordinator {
     if (!turn || !request) {
       return false;
     }
-    const result = await this.options.executionService.respondToPermission(
-      agentId,
-      requestId,
-      response,
-    );
-    if (request.kind === "plan") {
+    const daemonPlanApproval =
+      request.kind === "plan" &&
+      request.metadata?.owner === "thoth-daemon" &&
+      request.metadata?.authority === "provider-plan";
+    if (daemonPlanApproval) {
+      const current = this.options.authorityStore.getTurn(turn.id) ?? turn;
+      if (
+        request.metadata?.turnId !== current.id ||
+        request.metadata?.generation !== current.generation ||
+        !current.providerInteraction ||
+        !current.providerPlanReceipt
+      ) {
+        throw new Error("The Daemon Plan approval no longer matches its foreground authority.");
+      }
+      const transition = reduceProviderTurnInteraction(current.providerInteraction, {
+        type: response.behavior === "deny" ? "implementation_rejected" : "implementation_approved",
+      });
+      if (!transition.accepted) {
+        throw Object.assign(new Error(transition.errorCode ?? "Provider Plan sequence invalid"), {
+          code: transition.errorCode,
+        });
+      }
+      const updated = this.options.authorityStore.recordProviderInteraction({
+        agentId,
+        turnId: current.id,
+        generation: current.generation,
+        expectedRevision: current.providerInteractionRevision,
+        interaction: transition.state,
+      });
+      await this.options.executionService.resolveDaemonPlanApproval(agentId, requestId, response);
       if (response.behavior === "deny") {
         this.options.toolGateway.endForegroundTurn({ agentId, generation: turn.generation });
         this.options.authorityStore.markLifecycle({
           agentId,
           turnId: turn.id,
           generation: turn.generation,
-          lifecycle: "interrupted",
-          reason: "turn_interrupted",
-          error: "The native Plan was not approved for implementation.",
+          lifecycle: "done",
+          reason: "turn_completed",
+          error: null,
         });
+        void this.drainQueue(agentId);
         return true;
       }
       await this.options.executionService.prepareAgentRunMode(agentId, "default");
@@ -633,7 +679,19 @@ export class ForegroundTurnCoordinator {
         reason: "turn_started",
         error: null,
       });
+      this.startProviderRun(
+        updated,
+        buildProviderPlanImplementationPrompt(current.providerPlanReceipt.text),
+        { replace: false, structured: false },
+      );
+      return true;
     }
+
+    const result = await this.options.executionService.respondToPermission(
+      agentId,
+      requestId,
+      response,
+    );
     if (result?.followUpPrompt) {
       const current = this.options.authorityStore.getTurn(turn.id) ?? turn;
       const cards = this.options.authorityStore.listCardsForTurn(current.id);
@@ -804,10 +862,22 @@ export class ForegroundTurnCoordinator {
       kind: input.structured ? "thoth_clarify" : "raw_provider",
       foregroundTurnId: turn.id,
     });
+    const runOptions: AgentRunOptions = {
+      ...(input.runOptions ?? {}),
+      runtimeBundleActivation:
+        turn.kind === "thoth"
+          ? {
+              bundleId: CLARIFY_RUNTIME_BUNDLE.id,
+              bundleDigest: CLARIFY_RUNTIME_BUNDLE.digest,
+              scope: "clarify",
+              generation: turn.generation,
+            }
+          : null,
+    };
     const events =
       input.replace && this.options.executionService.hasInFlightRun(turn.agentId)
-        ? this.options.executionService.replaceAgentRun(turn.agentId, prompt, input.runOptions)
-        : this.options.executionService.streamAgent(turn.agentId, prompt, input.runOptions);
+        ? this.options.executionService.replaceAgentRun(turn.agentId, prompt, runOptions)
+        : this.options.executionService.streamAgent(turn.agentId, prompt, runOptions);
     void this.consumeProviderRun({ turn, token, events, structured: input.structured });
   }
 
@@ -837,17 +907,92 @@ export class ForegroundTurnCoordinator {
               providerTurnId,
             });
           }
+          const current = this.options.authorityStore.getTurn(input.turn.id) ?? input.turn;
+          if (current.providerRunMode === "plan" && !current.providerInteraction) {
+            const agent = this.options.executionService.getAgent(input.turn.agentId);
+            const providerThreadId =
+              agent?.persistence?.nativeHandle ?? agent?.persistence?.sessionId ?? null;
+            if (!providerThreadId || !providerTurnId) {
+              throw Object.assign(
+                new Error("Native Plan turn is missing Provider thread or turn identity."),
+                { code: "PROVIDER_TURN_MISMATCH" },
+              );
+            }
+            this.options.authorityStore.recordProviderInteraction({
+              agentId: current.agentId,
+              turnId: current.id,
+              generation: current.generation,
+              expectedRevision: current.providerInteractionRevision,
+              interaction: createProviderTurnInteractionState({
+                providerThreadId,
+                providerTurnId,
+              }),
+            });
+          }
         }
-        if (event.type === "permission_requested" && event.request.kind === "plan") {
-          this.options.authorityStore.markLifecycle({
-            agentId: input.turn.agentId,
-            turnId: input.turn.id,
-            generation: input.turn.generation,
-            lifecycle: "awaiting_implementation",
-            reason: "turn_started",
+        const interactionTurn = this.options.authorityStore.getTurn(input.turn.id) ?? input.turn;
+        if (event.type === "provider_question_requested" && interactionTurn.providerInteraction) {
+          this.commitProviderInteraction(
+            interactionTurn,
+            {
+              type: "question_requested",
+              providerThreadId: event.question.providerThreadId,
+              providerTurnId: event.question.providerTurnId,
+              interactionId: event.question.interactionId,
+            },
+            null,
+          );
+        } else if (
+          event.type === "provider_question_resolved" &&
+          interactionTurn.providerInteraction
+        ) {
+          this.commitProviderInteraction(
+            interactionTurn,
+            {
+              type: "question_resolved",
+              providerThreadId: interactionTurn.providerInteraction.providerThreadId,
+              providerTurnId: interactionTurn.providerInteraction.providerTurnId,
+              interactionId: event.interactionId,
+              resolution: event.status,
+            },
+            null,
+          );
+        } else if (event.type === "provider_plan_completed") {
+          if (!interactionTurn.providerInteraction) {
+            throw Object.assign(
+              new Error("Completed native Plan arrived without an active Plan interaction."),
+              { code: "PROVIDER_PLAN_SEQUENCE_INVALID" },
+            );
+          }
+          const actualBytes = Buffer.byteLength(event.plan.text, "utf8");
+          if (
+            event.plan.originalBytes !== actualBytes ||
+            event.plan.retainedBytes !== actualBytes
+          ) {
+            throw Object.assign(
+              new Error("Completed native Plan byte receipt does not match its retained text."),
+              { code: "PROVIDER_PLAN_SEQUENCE_INVALID" },
+            );
+          }
+          const updated = this.commitProviderInteraction(
+            interactionTurn,
+            {
+              type: "plan_completed",
+              providerThreadId: event.plan.providerThreadId,
+              providerTurnId: event.plan.providerTurnId,
+              itemId: event.plan.itemId,
+              byteLength: actualBytes,
+            },
+            event.plan,
+          );
+          await this.options.executionService.appendTimelineItem(updated.agentId, {
+            type: "tool_call",
+            callId: event.plan.itemId,
+            name: "Plan",
+            status: "completed",
+            detail: { type: "plan", text: event.plan.text },
             error: null,
           });
-          continue;
         }
         if (
           event.type !== "turn_completed" &&
@@ -874,6 +1019,10 @@ export class ForegroundTurnCoordinator {
           return;
         }
         if (event.type === "turn_failed" || event.type === "turn_canceled") {
+          const current = this.options.authorityStore.getTurn(input.turn.id) ?? input.turn;
+          if (current.providerInteraction?.phase === "implementing") {
+            this.commitProviderInteraction(current, { type: "implementation_settled" }, null);
+          }
           this.options.authorityStore.markLifecycle({
             agentId: input.turn.agentId,
             turnId: input.turn.id,
@@ -884,6 +1033,52 @@ export class ForegroundTurnCoordinator {
               event.type === "turn_failed" ? event.error : event.reason || "Provider turn canceled",
           });
           void this.drainQueue(input.turn.agentId);
+          return;
+        }
+        const current = this.options.authorityStore.getTurn(input.turn.id) ?? input.turn;
+        if (current.providerInteraction?.phase === "implementing") {
+          this.commitProviderInteraction(current, { type: "implementation_settled" }, null);
+        } else if (current.providerRunMode === "plan") {
+          if (!current.providerInteraction) {
+            throw Object.assign(
+              new Error("Native Plan turn completed without an interaction receipt."),
+              { code: "PROVIDER_PLAN_MISSING" },
+            );
+          }
+          if (!event.providerTurnId) {
+            throw Object.assign(
+              new Error("Native Plan terminal event is missing Provider turn identity."),
+              { code: "PROVIDER_TURN_MISMATCH" },
+            );
+          }
+          const completed = this.commitProviderInteraction(
+            current,
+            {
+              type: "turn_completed",
+              providerThreadId: current.providerInteraction.providerThreadId,
+              providerTurnId: event.providerTurnId,
+            },
+            null,
+          );
+          if (!completed.providerPlanReceipt) {
+            throw Object.assign(new Error("Native Plan completed without a durable receipt."), {
+              code: "PROVIDER_PLAN_MISSING",
+            });
+          }
+          this.options.authorityStore.markLifecycle({
+            agentId: completed.agentId,
+            turnId: completed.id,
+            generation: completed.generation,
+            lifecycle: "awaiting_implementation",
+            reason: "turn_started",
+            error: null,
+          });
+          await this.options.executionService.openDaemonPlanApproval({
+            agentId: completed.agentId,
+            turnId: completed.id,
+            generation: completed.generation,
+            plan: completed.providerPlanReceipt,
+          });
           return;
         }
         if (!input.structured || state.lifecycle === "quick_exec") {
@@ -903,7 +1098,8 @@ export class ForegroundTurnCoordinator {
         return;
       }
     } catch (error) {
-      if (this.activeRunTokens.get(input.turn.agentId) !== input.token) {
+      const currentToken = this.activeRunTokens.get(input.turn.agentId);
+      if (currentToken && currentToken !== input.token) {
         return;
       }
       this.activeRunTokens.delete(input.turn.agentId);
@@ -921,6 +1117,34 @@ export class ForegroundTurnCoordinator {
       });
       void this.drainQueue(input.turn.agentId);
     }
+  }
+
+  private commitProviderInteraction(
+    turn: ForegroundTurnAuthorityRecord,
+    event: ProviderTurnInteractionEvent,
+    planReceipt: import("@thoth/protocol/agent-types").ProviderPlanCompleted | null,
+  ): ForegroundTurnAuthorityRecord {
+    if (!turn.providerInteraction) {
+      throw Object.assign(new Error("Foreground turn has no Provider interaction state."), {
+        code: "PROVIDER_PLAN_SEQUENCE_INVALID",
+      });
+    }
+    const transition = reduceProviderTurnInteraction(turn.providerInteraction, event);
+    const updated = this.options.authorityStore.recordProviderInteraction({
+      agentId: turn.agentId,
+      turnId: turn.id,
+      generation: turn.generation,
+      expectedRevision: turn.providerInteractionRevision,
+      interaction: transition.state,
+      ...(planReceipt ? { planReceipt } : {}),
+    });
+    if (!transition.accepted) {
+      throw Object.assign(
+        new Error(transition.errorCode ?? "Provider interaction sequence was rejected."),
+        { code: transition.errorCode },
+      );
+    }
+    return updated;
   }
 
   private async launchAuthorityContinuation(turn: ForegroundTurnAuthorityRecord): Promise<void> {
@@ -1139,6 +1363,45 @@ export class ForegroundTurnCoordinator {
       return;
     }
     if (this.options.executionService.hasInFlightRun(agentId)) {
+      return;
+    }
+    if (turn.providerInteraction?.phase === "awaiting_provider_question") {
+      const expired = reduceProviderTurnInteraction(turn.providerInteraction, {
+        type: "question_resolved",
+        providerThreadId: turn.providerInteraction.providerThreadId,
+        providerTurnId: turn.providerInteraction.providerTurnId,
+        interactionId: turn.providerInteraction.pendingQuestionId!,
+        resolution: "expired",
+      });
+      this.options.authorityStore.recordProviderInteraction({
+        agentId,
+        turnId: turn.id,
+        generation: turn.generation,
+        expectedRevision: turn.providerInteractionRevision,
+        interaction: expired.state,
+      });
+      this.options.authorityStore.markLifecycle({
+        agentId,
+        turnId: turn.id,
+        generation: turn.generation,
+        lifecycle: "interrupted",
+        reason: "turn_interrupted",
+        error:
+          "The live Provider question handler was lost during restart; rerun the native Plan turn.",
+      });
+      return;
+    }
+    if (
+      state.lifecycle === "awaiting_implementation" &&
+      turn.providerInteraction?.phase === "awaiting_implementation" &&
+      turn.providerPlanReceipt
+    ) {
+      await this.options.executionService.openDaemonPlanApproval({
+        agentId,
+        turnId: turn.id,
+        generation: turn.generation,
+        plan: turn.providerPlanReceipt,
+      });
       return;
     }
     const cards = this.options.authorityStore.listCardsForTurn(turn.id);

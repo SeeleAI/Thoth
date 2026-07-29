@@ -35,6 +35,7 @@ function agentSnapshot(patch: Partial<AgentSnapshotPayload> = {}): AgentSnapshot
     currentModeId: null,
     availableModes: [],
     pendingPermissions: [],
+    pendingProviderQuestions: [],
     persistence: null,
     title: "Agent",
     labels: {},

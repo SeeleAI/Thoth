@@ -15,6 +15,7 @@ interface ProviderTransportContractCase {
   toolAttachment: HarnessToolAttachment;
   eventReplay: "cursor" | "live_only";
   plan: ProviderPlanCapability;
+  runtimeBundleActivation: "native_skill" | "unsupported";
 }
 
 const logger = pino({ level: "silent" });
@@ -27,6 +28,7 @@ function createCases(): ProviderTransportContractCase[] {
       toolAttachment: "native",
       eventReplay: "cursor",
       plan: { kind: "native" },
+      runtimeBundleActivation: "native_skill",
     },
     {
       id: "claude-sdk",
@@ -36,14 +38,22 @@ function createCases(): ProviderTransportContractCase[] {
       }),
       toolAttachment: "mcp",
       eventReplay: "live_only",
-      plan: { kind: "native" },
+      plan: {
+        kind: "unsupported",
+        reason: "Claude ExitPlanMode does not expose a completed native Plan item.",
+      },
+      runtimeBundleActivation: "unsupported",
     },
     {
       id: "opencode-server",
       client: new OpenCodeHarnessAdapter(logger),
       toolAttachment: "mcp",
       eventReplay: "live_only",
-      plan: { kind: "native" },
+      plan: {
+        kind: "unsupported",
+        reason: "OpenCode does not expose a completed native Plan item.",
+      },
+      runtimeBundleActivation: "unsupported",
     },
     {
       id: "pi-rpc",
@@ -51,6 +61,7 @@ function createCases(): ProviderTransportContractCase[] {
       toolAttachment: "mcp",
       eventReplay: "live_only",
       plan: { kind: "unsupported", reason: "Pi does not expose a native Plan mode." },
+      runtimeBundleActivation: "unsupported",
     },
     {
       id: "generic-acp-process",
@@ -61,7 +72,11 @@ function createCases(): ProviderTransportContractCase[] {
       }),
       toolAttachment: "mcp",
       eventReplay: "live_only",
-      plan: { kind: "native" },
+      plan: {
+        kind: "unsupported",
+        reason: "ACP plan modes do not expose a completed native Plan item.",
+      },
+      runtimeBundleActivation: "unsupported",
     },
   ];
 }
@@ -77,6 +92,7 @@ describe("provider native transport capability receipts", () => {
       permissions: "interactive",
       threadPersistence: "native",
       nativeRetention: "provider_owned",
+      runtimeBundleActivation: entry.runtimeBundleActivation,
       plan: entry.plan,
     });
   });

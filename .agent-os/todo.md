@@ -48,8 +48,8 @@
 ## Doing
 
 1. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
-   - Acceptance: no public semantic or UX change; no VCS/Provider/RPC/authority/performance work; App suite remains at least `331 files / 2,582 tests`; after the approved `NTH-CD-087` capability translation, Stage 5 source is at most `295,427` production LOC with tokens/AST/imports below Stage 4 and dependencies no higher; the shared `300s` gate passes.
-   - Current result: after the approved v0.2.3 capability delta, production is `315,762` LOC, `1,357,222` tokens, `1,386,279` AST nodes, `5,215` imports and `165` runtime dependency edges. `DeltaP23=4,829` translates the prior `295,427` Cut B ceiling to `300,256` and the final ceiling to `277,856` without counting new capability as refactor regression or progress. The remaining independent gap is exactly `15,506` LOC; Stage stays 4 and `NTH-TD-036` remains open.
+   - Acceptance: no public semantic or UX change; no VCS/Provider/RPC/authority/performance work; App suite remains at least `331 files / 2,582 tests`; after the approved `NTH-CD-087`, `NTH-CD-097` and `NTH-CD-098` capability translation, Stage 5 source is at most `301,445` production LOC with tokens/AST/imports below Stage 4 and dependencies no higher; the shared `300s` gate passes.
+   - Current result: after the approved Provider interaction correction, production is `316,951` LOC, `1,353,705` tokens, `1,391,743` AST nodes, `5,221` imports and `165` runtime dependency edges. `DeltaP50=1,189` translates the prior `300,256` Cut B ceiling to `301,445` and the final ceiling to `279,045` without counting new capability as refactor regression or progress. The remaining independent gap is exactly `15,506` LOC; Stage stays 4 and `NTH-TD-036` remains open.
    - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-057`
 2. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
    - Goal: Keep restored Paseo surface and Codex dynamicTools path, but make Clarify behave like a pending authority decision lifecycle with intelligent timeline badges and model-submitted frontier ledger.
@@ -229,6 +229,20 @@ None.
 - Scope: reconstruct the approved `Tasks | Schedules` information architecture, Workspace-script semantic control, Provider usage/OMP/runtime ownership, atomic socket/E2EE/file streaming, strict forwarded authority and App/Desktop repairs through current Thoth owners while preserving every rejected/deferred boundary.
 - Related: `NTH-REQ-029`, `NTH-AC-026`, `NTH-CD-089`, `NTH-CD-090`, `NTH-CD-091`, `NTH-CD-092`, `NTH-CD-093`, `NTH-CD-094`, `NTH-CD-095`, `NTH-CD-096`, `NTH-EV-072`, `NTH-EXP-071`, `NTH-EXP-072`, `NTH-TD-036`
 - Verification: See `NTH-EV-072`. Provenance passed `36/36` and `12/12` with all required candidates architectural, zero pending and zero failures; every local gate and product journey passed; source `eaa1aa5f` completed exact-SHA workflow `30383055325`; the fixed prerelease exposes exactly 26 desktop-only assets; and the checksum/build-identity-verified public AppImage passed the complete `Tasks | Schedules`, scripts and five-chunk product journey.
+
+27. `NTH-TD-050` `[verified]`: Decouple turn-scoped Thoth RuntimeBundle activation from Provider-native Plan and Provider questions while preserving one native session per visible Agent.
+
+- Scope: remove session-level Clarify prompt contamination; add Provider-neutral per-turn Skill activation, structured Provider-question response, typed completed-Plan authority, Daemon-owned Implement approval, exact migration and same-session real-product acceptance.
+- Related: `NTH-REQ-030`, `NTH-AC-027`, `NTH-CD-053`, `NTH-CD-061`, `NTH-CD-064`, `NTH-CD-065`, `NTH-CD-097`, `NTH-CD-098`, `NTH-EV-073`, `NTH-TD-036`
+- Verification: See `NTH-EV-073`. Deterministic owners, real Codex, built-Web UI, local AppImage real-window UI,
+  isolation, Foundation and the final `173.751s` refactor gate passed. No commit, push, tag, Release or deployment
+  was performed.
+
+28. `NTH-TD-051` `[doing]`: Publish the verified Provider-interaction correction as an in-place replacement of the fixed desktop-only MVP Beta.
+
+- Scope: create one atomic release-source commit, normally fast-forward `agent/dev/mvp` and `release/mvp-actions` to the exact SHA, wait for the existing mandatory workflow, verify the fixed 26-asset prerelease from fresh public downloads, run the downloaded AppImage real-window journey, and close evidence only on the development branch.
+- Related: `NTH-REQ-031`, `NTH-AC-028`, `NTH-CD-099`, `NTH-EV-073`, `NTH-EV-074`, `NTH-TD-036`, `NTH-TD-050`
+- Verification: In progress. Local implementation, owner suites, real Codex, built-Web UI, AppImage, Foundation, shared Refactor, isolation and pre-push remote drift checks are green. Publication still requires the exact release-source commit, workflow, public asset and downloaded-AppImage receipts.
 
 ## Abandoned
 

@@ -1,11 +1,11 @@
-import type { FetchAgentsEntry } from "@thoth/client/internal/daemon-client";
+import type { AgentSnapshotPayloadInput, ProjectPlacementPayload } from "@thoth/protocol/messages";
 import type { Agent } from "@/projection/authority-model";
 import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 import { resolveProjectPlacement } from "@/utils/project-placement";
 
 export function buildAgentDirectoryState(input: {
   serverId: string;
-  entries: FetchAgentsEntry[];
+  entries: readonly AgentDirectorySnapshotEntry[];
 }): { agents: Map<string, Agent> } {
   const agents = new Map<string, Agent>();
   for (const entry of input.entries) {
@@ -19,4 +19,9 @@ export function buildAgentDirectoryState(input: {
     });
   }
   return { agents };
+}
+
+export interface AgentDirectorySnapshotEntry {
+  agent: AgentSnapshotPayloadInput;
+  project: ProjectPlacementPayload;
 }

@@ -679,7 +679,10 @@ export class ACPHarnessAdapter implements HarnessAdapter {
   readonly capabilities: AgentCapabilityFlags;
   readonly harnessCapabilities = defineHarnessCapabilities({
     toolAttachment: ["mcp"],
-    plan: { kind: "native" },
+    plan: {
+      kind: "unsupported",
+      reason: "ACP plan modes do not expose a completed native Plan item.",
+    },
   });
 
   protected readonly logger: Logger;
@@ -848,12 +851,10 @@ export class ACPHarnessAdapter implements HarnessAdapter {
         return {
           models: this.modelTransformer ? this.modelTransformer(models) : models,
           modes: modeInfo.modes,
-          planCapability: findACPPlanMode(modeInfo.modes)
-            ? ({ kind: "native" } as const)
-            : {
-                kind: "unsupported" as const,
-                reason: `${this.provider} does not expose a native ACP Plan mode.`,
-              },
+          planCapability: {
+            kind: "unsupported" as const,
+            reason: "ACP adapter does not expose a completed native Plan item.",
+          },
         };
       })();
 
@@ -1270,10 +1271,6 @@ export class ACPHarnessThread implements HarnessThread, ACPClient {
   private readonly launchEnv?: Record<string, string>;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private readonly pendingPermissions = new Map<string, PendingPermission>();
-  private readonly syntheticPlanPermissions = new Map<string, AgentPermissionRequest>();
-  private providerRunMode: "default" | "plan" = "default";
-  private planResumeMode: string | null = null;
-  private planTextParts: string[] = [];
   private readonly messageAssemblies = new Map<string, MessageAssemblyState>();
   private readonly submittedUserMessageIds = new Set<string>();
   private activeSubmittedUserMessage: SubmittedUserMessageEcho | null = null;
@@ -1463,7 +1460,6 @@ export class ACPHarnessThread implements HarnessThread, ACPClient {
     const turnId = randomUUID();
     const messageId = options?.messageId ?? randomUUID();
     this.activeForegroundTurnId = turnId;
-    this.planTextParts = [];
     this.activeSubmittedUserMessage = null;
     this.emitBootstrapThreadEvent();
     this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
@@ -1529,41 +1525,15 @@ export class ACPHarnessThread implements HarnessThread, ACPClient {
   }
 
   async getProviderRunModeCapability() {
-    return findACPPlanMode(this.availableModes)
-      ? ({ kind: "native" } as const)
-      : ({
-          kind: "unsupported",
-          reason: `${this.provider} does not expose a native ACP Plan mode.`,
-        } as const);
+    return {
+      kind: "unsupported",
+      reason: "ACP adapter does not expose a completed native Plan item.",
+    } as const;
   }
 
   async applyProviderRunMode(mode: "default" | "plan") {
     const capability = await this.getProviderRunModeCapability();
-    const planMode = findACPPlanMode(this.availableModes);
-    if (mode === "plan") {
-      if (!planMode || capability.kind !== "native") {
-        return { capability, nativeModeId: null };
-      }
-      if (this.currentMode !== planMode.id) {
-        this.planResumeMode = this.currentMode;
-        await this.setMode(planMode.id);
-      }
-      this.providerRunMode = "plan";
-      return { capability, nativeModeId: planMode.id };
-    }
-
-    if (planMode && this.currentMode === planMode.id) {
-      const implementationMode =
-        (this.planResumeMode &&
-        this.availableModes.some((candidate) => candidate.id === this.planResumeMode)
-          ? this.planResumeMode
-          : this.availableModes.find((candidate) => candidate.id !== planMode.id)?.id) ?? null;
-      if (implementationMode) {
-        await this.setMode(implementationMode);
-      }
-    }
-    this.providerRunMode = "default";
-    return { capability, nativeModeId: this.currentMode };
+    return { capability, nativeModeId: mode === "default" ? this.currentMode : null };
   }
 
   async getCurrentMode(): Promise<string | null> {
@@ -1974,37 +1944,13 @@ export class ACPHarnessThread implements HarnessThread, ACPClient {
   }
 
   getPendingPermissions(): AgentPermissionRequest[] {
-    return [
-      ...Array.from(this.pendingPermissions.values(), (entry) => entry.request),
-      ...this.syntheticPlanPermissions.values(),
-    ];
+    return Array.from(this.pendingPermissions.values(), (entry) => entry.request);
   }
 
   async respondToPermission(
     requestId: string,
     response: AgentPermissionResponse,
   ): Promise<AgentPermissionResult | void> {
-    const synthetic = this.syntheticPlanPermissions.get(requestId);
-    if (synthetic) {
-      this.syntheticPlanPermissions.delete(requestId);
-      this.pushEvent({
-        type: "permission_resolved",
-        provider: this.provider,
-        requestId,
-        resolution: response,
-      });
-      if (response.behavior === "deny") {
-        return;
-      }
-      await this.applyProviderRunMode("default");
-      const plan =
-        typeof synthetic.metadata?.planText === "string" ? synthetic.metadata.planText : "";
-      return {
-        followUpPrompt: ["Implement the approved native plan now in this same ACP session.", plan]
-          .filter(Boolean)
-          .join("\n\n"),
-      };
-    }
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) {
       throw new Error(`No pending permission request with id '${requestId}'`);
@@ -2665,10 +2611,6 @@ export class ACPHarnessThread implements HarnessThread, ACPClient {
   }
 
   private pushEvent(event: AgentStreamEvent): void {
-    if (event.type === "timeline" && event.item.type === "assistant_message") {
-      const text = event.item.text.trim();
-      if (text) this.planTextParts.push(text);
-    }
     this.logger.trace(
       {
         agentId: this.agentId,
@@ -2720,46 +2662,6 @@ export class ACPHarnessThread implements HarnessThread, ACPClient {
   private finishTurn(
     event: Extract<AgentStreamEvent, { type: "turn_completed" | "turn_failed" | "turn_canceled" }>,
   ): void {
-    if (event.type === "turn_completed" && this.providerRunMode === "plan") {
-      const plan = this.planTextParts.join("\n\n").trim();
-      if (!plan) {
-        event = {
-          type: "turn_failed",
-          provider: this.provider,
-          error: "Native Plan completed without usable plan content.",
-          turnId: event.turnId,
-        };
-      } else {
-        const requestId = `acp-plan-${randomUUID()}`;
-        const request: AgentPermissionRequest = {
-          id: requestId,
-          provider: this.provider,
-          name: "ACPPlanApproval",
-          kind: "plan",
-          title: "Plan",
-          description: "Review the native ACP plan before implementation starts.",
-          input: { plan },
-          actions: [
-            { id: "reject", label: "Reject", behavior: "deny", variant: "secondary" },
-            {
-              id: "implement",
-              label: "Implement",
-              behavior: "allow",
-              variant: "primary",
-              intent: "implement",
-            },
-          ],
-          metadata: { source: "provider_run_mode_plan", planText: plan },
-        };
-        this.syntheticPlanPermissions.set(requestId, request);
-        this.pushEvent({
-          type: "permission_requested",
-          provider: this.provider,
-          request,
-          turnId: event.turnId,
-        });
-      }
-    }
     this.activeForegroundTurnId = null;
     if (this.activeSubmittedUserMessage?.turnId === event.turnId) {
       this.activeSubmittedUserMessage = null;

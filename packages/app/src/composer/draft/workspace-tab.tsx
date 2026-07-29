@@ -34,7 +34,7 @@ import {
   validateDraftSubmission,
 } from "@/composer/draft/workspace-tab-core";
 import type { AgentCapabilityFlags } from "@thoth/protocol/agent-types";
-import type { AgentSnapshotPayload, ThothTurnSnapshot } from "@thoth/protocol/messages";
+import type { AgentSnapshotPayloadInput, ThothTurnSnapshot } from "@thoth/protocol/messages";
 import type { ProviderRunMode } from "@thoth/protocol/provider-control";
 import type { DaemonClient } from "@thoth/client/internal/daemon-client";
 import type { AttachmentMetadata, WorkspaceComposerAttachment } from "@/attachments/types";
@@ -148,7 +148,7 @@ async function submitDraftCreateRequest(input: {
   };
   hostDisconnectedMessage: string;
   selectModelMessage: string;
-}): Promise<{ agentId: string | null; result: AgentSnapshotPayload }> {
+}): Promise<{ agentId: string | null; result: AgentSnapshotPayloadInput }> {
   const {
     attempt,
     text,
@@ -253,6 +253,7 @@ function buildDraftAgentSnapshot(input: {
     currentModeId: modeId,
     availableModes: [],
     pendingPermissions: [],
+    pendingProviderQuestions: [],
     persistence: null,
     runtimeInfo: { provider, sessionId: null, model, modeId },
     title: "Agent",
@@ -308,7 +309,7 @@ interface WorkspaceDraftAgentTabProps {
   draftId: string;
   initialSetup?: WorkspaceDraftTabSetup;
   isPaneFocused: boolean;
-  onCreated: (snapshot: AgentSnapshotPayload) => void;
+  onCreated: (snapshot: AgentSnapshotPayloadInput) => void;
   onOpenWorkspaceFile: (request: WorkspaceFileOpenRequest) => void;
   onOpenImportSheet?: () => void;
 }
@@ -480,7 +481,7 @@ export function WorkspaceDraftAgentTab({
     draftAgent,
     handleCreateFromInput,
     continueCreateFromAttempt,
-  } = useDraftAgentCreateFlow<Agent, AgentSnapshotPayload>({
+  } = useDraftAgentCreateFlow<Agent, AgentSnapshotPayloadInput>({
     draftId,
     getPendingServerId: () => serverId,
     initialAttempt: initialCreateAttempt,

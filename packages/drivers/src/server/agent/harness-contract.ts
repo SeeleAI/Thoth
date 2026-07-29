@@ -1,5 +1,14 @@
 import type { Options as ClaudeAgentOptions } from "@anthropic-ai/claude-agent-sdk";
-import type { AgentProviderNotice } from "@thoth/protocol/agent-types";
+import type {
+  AgentProviderNotice,
+  ProviderPlanCompleted,
+  ProviderPlanProgress,
+  ProviderPlanStep,
+  ProviderQuestionItem,
+  ProviderQuestionOption,
+  ProviderQuestionProjection,
+  ProviderQuestionResolution,
+} from "@thoth/protocol/agent-types";
 import type { AgentAttachment } from "@thoth/protocol/messages";
 import type { TaskProjection } from "@thoth/protocol/task-authority";
 import type {
@@ -11,7 +20,16 @@ import type { ThothToolCatalog } from "./tools/types.js";
 import type { HarnessCapabilities } from "../../harness/index.js";
 import type { ProviderPlanCapability, ProviderRunMode } from "@thoth/protocol/provider-control";
 
-export type { AgentProviderNotice };
+export type {
+  AgentProviderNotice,
+  ProviderPlanCompleted,
+  ProviderPlanProgress,
+  ProviderPlanStep,
+  ProviderQuestionItem,
+  ProviderQuestionOption,
+  ProviderQuestionProjection,
+  ProviderQuestionResolution,
+};
 
 export type AgentProvider = string;
 
@@ -218,6 +236,7 @@ export interface AgentRunOptions {
   resumeFrom?: AgentPersistenceHandle;
   maxThinkingTokens?: number;
   messageId?: string;
+  runtimeBundleActivation?: import("../../harness/types.js").RuntimeBundleActivation | null;
 }
 
 export interface AgentUsage {
@@ -456,6 +475,31 @@ export type AgentStreamEvent = (
       turnId?: string;
     }
   | {
+      type: "provider_plan_progress";
+      provider: AgentProvider;
+      progress: ProviderPlanProgress;
+      turnId?: string;
+    }
+  | {
+      type: "provider_plan_completed";
+      provider: AgentProvider;
+      plan: ProviderPlanCompleted;
+      turnId?: string;
+    }
+  | {
+      type: "provider_question_requested";
+      provider: AgentProvider;
+      question: ProviderQuestionProjection;
+      turnId?: string;
+    }
+  | {
+      type: "provider_question_resolved";
+      provider: AgentProvider;
+      interactionId: string;
+      status: "answered" | "dismissed" | "expired";
+      turnId?: string;
+    }
+  | {
       type: "attention_required";
       provider: AgentProvider;
       reason: "finished" | "error" | "permission";
@@ -683,6 +727,10 @@ export interface HarnessPermissionCapability {
     requestId: string,
     response: AgentPermissionResponse,
   ): Promise<AgentPermissionResult | void>;
+  respondToProviderQuestion?(
+    interactionId: string,
+    resolution: ProviderQuestionResolution,
+  ): Promise<void>;
 }
 
 export interface HarnessThreadLifecycleCapability {

@@ -1,8 +1,4 @@
-import type {
-  DaemonClient,
-  FetchAgentHistoryEntry,
-  FetchAgentHistoryOptions,
-} from "@thoth/client/internal/daemon-client";
+import type { DaemonClient, FetchAgentHistoryOptions } from "@thoth/client/internal/daemon-client";
 import {
   normalizeWorkspaceOpaqueId,
   resolveWorkspaceMapKeyByIdentity,
@@ -89,7 +85,7 @@ function focusWorkspaceAgentTab(input: {
 
 function upsertHistoryEntries(input: {
   serverId: string;
-  entries: FetchAgentHistoryEntry[];
+  entries: Awaited<ReturnType<DaemonClient["fetchAgentHistory"]>>["entries"];
 }): Agent[] {
   if (input.entries.length === 0) {
     return [];

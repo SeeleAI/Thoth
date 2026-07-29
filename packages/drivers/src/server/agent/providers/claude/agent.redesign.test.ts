@@ -1008,7 +1008,7 @@ test("preserves bypass capability across query restarts triggered by thinking ch
   }
 });
 
-test("plan approval exposes a resume-bypass action and can return to bypassPermissions", async () => {
+test("ExitPlanMode remains an ordinary mode permission when completed Plan authority is unavailable", async () => {
   const queryMock = createBaseQueryMock(vi.fn(async () => ({ done: true, value: undefined })));
   sdkQueryFactory.mockImplementation(() => queryMock);
 
@@ -1036,33 +1036,11 @@ test("plan approval exposes a resume-bypass action and can return to bypassPermi
 
     const requestEvent = events.find(
       (event): event is Extract<AgentStreamEvent, { type: "permission_requested" }> =>
-        event.type === "permission_requested" && event.request.kind === "plan",
+        event.type === "permission_requested" && event.request.kind === "mode",
     );
 
     expect(requestEvent).toBeDefined();
-    expect(requestEvent?.request.actions).toEqual([
-      {
-        id: "reject",
-        label: "Reject",
-        behavior: "deny",
-        variant: "danger",
-        intent: "dismiss",
-      },
-      {
-        id: "implement",
-        label: "Implement",
-        behavior: "allow",
-        variant: "primary",
-        intent: "implement",
-      },
-      {
-        id: "implement_resume",
-        label: "Implement with Bypass",
-        behavior: "allow",
-        variant: "secondary",
-        intent: "implement_resume",
-      },
-    ]);
+    expect(requestEvent?.request.actions).toBeUndefined();
 
     if (!requestEvent) {
       throw new Error("Expected plan permission request");
@@ -1070,21 +1048,20 @@ test("plan approval exposes a resume-bypass action and can return to bypassPermi
 
     await session.respondToPermission(requestEvent.request.id, {
       behavior: "allow",
-      selectedActionId: "implement_resume",
     });
 
     await expect(pendingResolution).resolves.toMatchObject({
       behavior: "allow",
       updatedInput: { plan: "- Implement the approved plan" },
     });
-    expect(queryMock.setPermissionMode).toHaveBeenLastCalledWith("bypassPermissions");
-    expect(await session.getCurrentMode()).toBe("bypassPermissions");
+    expect(queryMock.setPermissionMode).toHaveBeenLastCalledWith("plan");
+    expect(await session.getCurrentMode()).toBe("plan");
   } finally {
     await session.close();
   }
 });
 
-test("provider run mode uses Claude native plan permission mode and restores implementation mode", async () => {
+test("provider run mode is unsupported without a completed Claude Plan item", async () => {
   const queryMock = createBaseQueryMock(vi.fn(async () => ({ done: true, value: undefined })));
   sdkQueryFactory.mockImplementation(() => queryMock);
   const session = await createSession();
@@ -1092,13 +1069,19 @@ test("provider run mode uses Claude native plan permission mode and restores imp
   try {
     await session.setMode("acceptEdits");
     await expect(session.applyProviderRunMode?.("plan")).resolves.toEqual({
-      capability: { kind: "native" },
-      nativeModeId: "plan",
+      capability: {
+        kind: "unsupported",
+        reason: "Claude ExitPlanMode does not expose a completed native Plan item.",
+      },
+      nativeModeId: null,
     });
-    expect(queryMock.setPermissionMode).toHaveBeenLastCalledWith("plan");
+    expect(queryMock.setPermissionMode).toHaveBeenLastCalledWith("acceptEdits");
 
     await expect(session.applyProviderRunMode?.("default")).resolves.toEqual({
-      capability: { kind: "native" },
+      capability: {
+        kind: "unsupported",
+        reason: "Claude ExitPlanMode does not expose a completed native Plan item.",
+      },
       nativeModeId: "acceptEdits",
     });
     expect(queryMock.setPermissionMode).toHaveBeenLastCalledWith("acceptEdits");

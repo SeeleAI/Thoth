@@ -10,6 +10,7 @@ export interface HarnessCapabilityInput {
   permissions?: HarnessCapabilities["permissions"];
   threadPersistence?: HarnessCapabilities["threadPersistence"];
   nativeRetention?: HarnessCapabilities["nativeRetention"];
+  runtimeBundleActivation?: HarnessCapabilities["runtimeBundleActivation"];
   plan?: ProviderPlanCapability;
 }
 
@@ -24,6 +25,7 @@ export function defineHarnessCapabilities(input: HarnessCapabilityInput): Harnes
     permissions: input.permissions ?? "interactive",
     threadPersistence: input.threadPersistence ?? "native",
     nativeRetention: input.nativeRetention ?? "provider_owned",
+    runtimeBundleActivation: input.runtimeBundleActivation ?? "unsupported",
     plan:
       input.plan ??
       ({ kind: "unsupported", reason: "Provider adapter does not expose native Plan." } as const),
@@ -37,5 +39,6 @@ export const NO_HARNESS_CAPABILITIES = defineHarnessCapabilities({
   eventReplay: "live_only",
   threadPersistence: "none",
   nativeRetention: "adapter_owned",
+  runtimeBundleActivation: "unsupported",
   plan: { kind: "unsupported", reason: "Provider adapter does not expose native Plan." },
 });

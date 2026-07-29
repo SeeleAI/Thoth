@@ -158,6 +158,7 @@ function createAgent(input: Partial<ThothAgent> = {}): ThothAgent {
     currentModeId: null,
     availableModes: [],
     pendingPermissions: [],
+    pendingProviderQuestions: [],
     persistence: null,
     title: null,
     labels: {},

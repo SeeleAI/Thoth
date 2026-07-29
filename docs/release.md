@@ -38,6 +38,14 @@ existing exact-SHA fixed-Beta workflow and fresh public-asset/AppImage verificat
 push, merge/rebase, `main`, Relay deployment, npm/mobile/store/Nix/Docker publication or any operation on the
 independent Paseo service. A failed mandatory workflow leaves the existing fixed Release intact.
 
+`NTH-CD-099` renews the same narrow authorization on `2026-07-29` for the verified same-session RuntimeBundle,
+Provider-native Plan and structured Provider-question correction. It authorizes one exact release-source SHA to be
+normally fast-forwarded to `agent/dev/mvp` and `release/mvp-actions`, followed by the existing fixed-Beta workflow
+and fresh public AppImage verification. The downloaded AppImage must exercise Provider Features Plan, the native
+QuestionFormCard, completed-Plan-only Implement and same-thread continuation. It does not authorize force push,
+merge/rebase, `main`, Relay deployment, npm/mobile/store/Nix/Docker publication or any operation on independent
+Paseo. A failed mandatory workflow leaves the existing fixed Release intact.
+
 The exact upstream receipt for that authorization is annotated tag object `5f71b185c3d170dec26ea00b91b52a550d510fcd`
 at commit `43cf858c3760679ec9be805ba8b903cdf20f7103`, selected by
 `v0.2.2...v0.2.3 --right-only` from merge base `36f38245cab51bbe0b43b6ac42fd41aa757064d9`.
@@ -112,6 +120,16 @@ The source metadata, schema-1 update manifest, checksum file and extracted `reso
 on the source/workflow. The downloaded AppImage completed the real-window `Tasks | Schedules`, Workspace-script,
 five-chunk file-transfer, Files/Changes, Browser and Desktop bridge journey with `ok=true`.
 
+## Authorized Unpublished Candidate
+
+The current Provider-interaction correction is release-ready on base
+`d801b8e9e1e200f65bd94532e537f673c7e9567b` but is not yet the public Release. Local verification includes one
+native Provider session across Thoth hot switching, structured question-id array answers, completed-native-Plan
+authority, Daemon-owned Implement, real Codex, built-Web UI and a real-window AppImage journey. The local AppImage
+is `137,830,579` bytes with SHA-256
+`babb5596ce24cbe111d37ee6d8a82191ef1292510e000814afc7ea3253fbd054`; it is candidate evidence, not a public
+asset. `NTH-EV-074` becomes verified only after the exact release-source workflow and fresh public downloads pass.
+
 ## Credentials And GitHub Operations
 
 All repository GitHub operations use the Royalvice repository-local configuration:
@@ -143,11 +161,12 @@ timeout is not success: query the remote SHA before deciding whether retry is ne
 After public verification, the evidence-only closeout commit is pushed normally to `agent/dev/mvp` only;
 `release/mvp-actions` stays at the published release-source SHA so documentation does not trigger a second Release.
 
-For the v0.2.3 candidate, the release-source commit may be created only after current provenance/boundary,
-Foundation, Provider Control, interaction, complete Thoth, shared-`300s` refactor, real Web, Android Debug APK,
-real Codex, isolation, hosted Relay and rebuilt AppImage journeys are green. The AppImage report must include
-Workspace scripts, direct five-chunk file transfer and full `Tasks | Schedules` UI/navigation; the hosted Relay
-report must include v3 E2EE, restart recovery and the independent five-chunk digest.
+For the Provider-interaction candidate, the release-source commit may be created only after Foundation, Provider
+Control, interaction, complete Thoth, shared-`300s` Refactor, real Codex, real built-Web, isolation and rebuilt
+AppImage journeys are green. The AppImage report must preserve Workspace scripts, direct five-chunk file transfer,
+full `Tasks | Schedules` UI/navigation and add Provider Features Plan, native question-id array response,
+completed-Plan-only Implement and same-thread continuation. The workflow must retain the existing hosted Relay and
+internal Server CLI gates even though this correction does not deploy Relay or publish Server CLI.
 
 After workflow success, download public files into an ignored per-source directory and run the product journey
 against that downloaded executable, not the local or Actions artifact. Keep localhost CDP/daemon traffic outside
@@ -164,7 +183,7 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
 
 The final evidence must cross-check GitHub asset metadata, `BUILD-SOURCE.txt`, `MVP-UPDATE.json`, `SHA256SUMS`,
 local SHA-256 and extracted `resources/build-identity.json` against the exact release-source SHA and workflow ID.
-Only then may `NTH-TD-049` become verified and `NTH-TD-036` return as the sole top next action.
+Only then may `NTH-TD-051` become verified and `NTH-TD-036` return as the sole top next action.
 
 The independent `SeeleAI/Thoth-Relay` deployment and any future production relay/web deployment are
 outside this release authorization.

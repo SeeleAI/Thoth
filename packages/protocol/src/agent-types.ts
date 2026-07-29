@@ -179,6 +179,62 @@ export interface AgentRunOptions {
   maxThinkingTokens?: number;
 }
 
+export interface ProviderPlanStep {
+  text: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
+export interface ProviderPlanProgress {
+  providerThreadId: string;
+  providerTurnId: string;
+  itemId: string;
+  steps: ProviderPlanStep[];
+  explanation: string | null;
+}
+
+export interface ProviderPlanCompleted {
+  providerThreadId: string;
+  providerTurnId: string;
+  itemId: string;
+  text: string;
+  originalBytes: number;
+  retainedBytes: number;
+}
+
+export interface ProviderQuestionOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface ProviderQuestionItem {
+  id: string;
+  header: string;
+  prompt: string;
+  options: ProviderQuestionOption[];
+  selectionMode: "single" | "multiple";
+  allowOther: boolean;
+  secret: boolean;
+}
+
+export interface ProviderQuestionProjection {
+  interactionId: string;
+  agentId: string;
+  providerThreadId: string;
+  providerTurnId: string;
+  providerItemId: string;
+  revision: number;
+  questions: ProviderQuestionItem[];
+  expiresAt: string | null;
+}
+
+export type ProviderQuestionResolution =
+  | {
+      type: "answer";
+      answers: Array<{ questionId: string; values: string[] }>;
+    }
+  | { type: "dismiss" };
+
 export interface AgentUsage {
   inputTokens?: number;
   cachedInputTokens?: number;
@@ -429,6 +485,31 @@ export type AgentStreamEvent =
       provider: AgentProvider;
       requestId: string;
       resolution: AgentPermissionResponse;
+      turnId?: string;
+    }
+  | {
+      type: "provider_plan_progress";
+      provider: AgentProvider;
+      progress: ProviderPlanProgress;
+      turnId?: string;
+    }
+  | {
+      type: "provider_plan_completed";
+      provider: AgentProvider;
+      plan: ProviderPlanCompleted;
+      turnId?: string;
+    }
+  | {
+      type: "provider_question_requested";
+      provider: AgentProvider;
+      question: ProviderQuestionProjection;
+      turnId?: string;
+    }
+  | {
+      type: "provider_question_resolved";
+      provider: AgentProvider;
+      interactionId: string;
+      status: "answered" | "dismissed" | "expired";
       turnId?: string;
     }
   | {

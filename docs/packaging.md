@@ -213,17 +213,23 @@ install strategy: NSIS on Windows, DMG on macOS, atomic AppImage replacement, or
 installer for DEB/RPM. New clients do not consume `latest*.yml`; those files remain Release assets
 only for migration compatibility with older published clients.
 
-Current verified local artifact:
+Current verified local artifact (unpublished candidate):
 
 - Path: `/mnt/cfs/5vr0p6/yzy/thoth/packages/desktop/release/Thoth-x86_64.AppImage`
-- sha256: `556915168ba45759ec89daf762f3218742aa68c6ba904cc20ca37fc5b0a5e177`
-- Bytes: `137822489`
+- sha256: `babb5596ce24cbe111d37ee6d8a82191ef1292510e000814afc7ea3253fbd054`
+- Bytes: `137830579`
 - Version: `0.0.0-mvp-beta`
 - Packaged smoke: passed with an isolated desktop-managed daemon on a temporary port; the real window verified
   preload/renderer, read-only Files/Changes, Browser automation with typed wrong-`browserId` rejection,
   Workspace-script UI start/stop with durable terminal/service-port receipts, a `1,048,649`-byte five-chunk file
   transfer, complete `Tasks | Schedules` create/edit/pause/resume/run-now/delete/history and bidirectional
-  navigation, canonical Schedule Timeline events, and lossless Release storage migration to layout/schema v4
+  navigation, canonical Schedule Timeline events, Provider Features Plan activation, native question id `target`
+  with answer array `["Local"]`, completed-Plan-only Implement, same-thread implementation, and lossless Release
+  storage migration to layout/schema v5
+- Report: `/mnt/cfs/5vr0p6/yzy/thoth/.dev/packaged-appimage-thoth-flow/report.json`
+
+This candidate was built from the current uncommitted correction and is local verification evidence only. It does
+not replace or describe the current public fixed Beta below.
 
 `packages/desktop/release/` is local artifact output and must not be committed.
 

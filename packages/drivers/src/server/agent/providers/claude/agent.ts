@@ -56,7 +56,6 @@ import {
 
 import {
   getAgentStreamEventTurnId,
-  type AgentPermissionAction,
   type AgentCapabilityFlags,
   type HarnessAdapter,
   type AgentCreateSessionOptions,
@@ -88,6 +87,8 @@ import {
   type McpServerConfig,
   type ProviderCatalog,
   type ProviderMessageAnchorReceipt,
+  type ProviderQuestionProjection,
+  type ProviderQuestionResolution,
 } from "../../harness-contract.js";
 import { importSessionFromPersistence } from "../../provider-session-import.js";
 import {
@@ -103,6 +104,7 @@ import { terminateWithTreeKill } from "../../../../utils/tree-kill.js";
 import { execCommand } from "../../../../utils/spawn.js";
 import { composeSystemPromptParts } from "../../system-prompt.js";
 import { defineHarnessCapabilities } from "@thoth/drivers/harness";
+import { validateProviderQuestionResolution } from "../../provider-question.js";
 
 const fsPromises = promises;
 const CLAUDE_SETTING_SOURCES: NonNullable<ClaudeOptions["settingSources"]> = [
@@ -115,98 +117,90 @@ function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
-export function normalizeClaudeAskUserQuestionRequestInput(
-  toolName: string,
-  input: AgentMetadata,
-): AgentMetadata {
-  if (toolName !== "AskUserQuestion" || !Array.isArray(input.questions)) {
-    return input;
-  }
+interface ClaudeProviderQuestionBinding {
+  projection: ProviderQuestionProjection;
+  nativeInput: AgentMetadata;
+  nativeQuestionTextById: ReadonlyMap<string, string>;
+}
 
-  // Claude Code's AskUserQuestion schema says "Other" is host-provided, not a
-  // model-supplied option. Thoth's shared question UI uses allowOther for that
-  // freeform answer path.
-  return {
-    ...input,
-    questions: input.questions.map((item) => {
-      if (!isMetadata(item)) {
-        return item;
-      }
-      return {
-        ...item,
+export function buildClaudeProviderQuestionBinding(input: {
+  requestId: string;
+  agentId: string;
+  providerThreadId: string;
+  providerTurnId: string;
+  providerItemId: string;
+  nativeInput: AgentMetadata;
+}): ClaudeProviderQuestionBinding | null {
+  if (!Array.isArray(input.nativeInput.questions)) {
+    return null;
+  }
+  const nativeQuestionTextById = new Map<string, string>();
+  const questions = input.nativeInput.questions.flatMap((rawQuestion, index) => {
+    if (!isMetadata(rawQuestion)) return [];
+    const prompt = readNonEmptyString(rawQuestion.question);
+    const header = readNonEmptyString(rawQuestion.header);
+    if (!prompt || !header) return [];
+    const questionId = readNonEmptyString(rawQuestion.id) ?? `${input.requestId}:${index}`;
+    const options = Array.isArray(rawQuestion.options)
+      ? rawQuestion.options.flatMap((rawOption) => {
+          if (!isMetadata(rawOption)) return [];
+          const label = readNonEmptyString(rawOption.label);
+          if (!label) return [];
+          const description = readNonEmptyString(rawOption.description);
+          return [{ value: label, label, ...(description ? { description } : {}) }];
+        })
+      : [];
+    nativeQuestionTextById.set(questionId, prompt);
+    return [
+      {
+        id: questionId,
+        header,
+        prompt,
+        options,
+        selectionMode:
+          rawQuestion.multiSelect === true ? ("multiple" as const) : ("single" as const),
         allowOther: true,
-      };
-    }),
+        secret: rawQuestion.secret === true || rawQuestion.isSecret === true,
+      },
+    ];
+  });
+  if (questions.length === 0 || nativeQuestionTextById.size !== questions.length) {
+    return null;
+  }
+  return {
+    projection: {
+      interactionId: input.requestId,
+      agentId: input.agentId,
+      providerThreadId: input.providerThreadId,
+      providerTurnId: input.providerTurnId,
+      providerItemId: input.providerItemId,
+      revision: 0,
+      questions,
+      expiresAt: null,
+    },
+    nativeInput: input.nativeInput,
+    nativeQuestionTextById,
   };
 }
 
-function stripClaudeAskUserQuestionUiMetadata(input: AgentMetadata): AgentMetadata {
-  if (!Array.isArray(input.questions)) {
-    return input;
+function encodeClaudeProviderQuestionResolution(
+  binding: ClaudeProviderQuestionBinding,
+  resolution: ProviderQuestionResolution,
+): PermissionResult {
+  if (resolution.type === "dismiss") {
+    return { behavior: "deny", message: "Provider question dismissed" };
   }
-
-  return {
-    ...input,
-    questions: input.questions.map((item) => {
-      if (!isMetadata(item) || !("allowOther" in item)) {
-        return item;
-      }
-      const itemForClaude: AgentMetadata = { ...item };
-      delete itemForClaude.allowOther;
-      return itemForClaude;
-    }),
-  };
-}
-
-export function normalizeClaudeAskUserQuestionUpdatedInput(
-  updatedInput: AgentMetadata | undefined,
-  fallbackInput: AgentMetadata | undefined,
-): AgentMetadata {
-  const fallback = isMetadata(fallbackInput) ? fallbackInput : {};
-  const base = isMetadata(updatedInput) ? updatedInput : {};
-  // Thoth's shared question UI serializes answers by question header, but Claude's
-  // AskUserQuestion tool expects answer keys to match the full question text. Merge
-  // the original request payload back in so provider callbacks that only return
-  // `{ answers }` still satisfy Claude's full tool input schema.
-  const merged = stripClaudeAskUserQuestionUiMetadata({ ...fallback, ...base });
-  const questions =
-    (Array.isArray(base.questions) ? base.questions : null) ??
-    (Array.isArray(fallback.questions) ? fallback.questions : null);
-  const answers = isMetadata(base.answers) ? base.answers : null;
-
-  if (!questions || !answers) {
-    return merged;
-  }
-
-  const normalizedAnswers: Record<string, string> = {};
-  for (const item of questions) {
-    const question = isMetadata(item) ? item : null;
-    if (!question) {
-      continue;
+  const valuesById = validateProviderQuestionResolution(binding.projection, resolution);
+  const answers: Record<string, string> = {};
+  for (const question of binding.projection.questions) {
+    const nativeQuestionText = binding.nativeQuestionTextById.get(question.id);
+    const values = valuesById.get(question.id);
+    if (!nativeQuestionText || !values) {
+      throw new Error(`Claude Provider question binding '${question.id}' is incomplete`);
     }
-
-    const questionText = readNonEmptyString(question.question);
-    if (!questionText) {
-      continue;
-    }
-
-    const header = readNonEmptyString(question.header);
-    const answer =
-      readNonEmptyString(answers[questionText]) ??
-      (header ? readNonEmptyString(answers[header]) : null);
-    if (answer) {
-      normalizedAnswers[questionText] = answer;
-    }
+    answers[nativeQuestionText] = values.join(", ");
   }
-
-  if (Object.keys(normalizedAnswers).length === 0) {
-    return merged;
-  }
-
-  return {
-    ...merged,
-    answers: normalizedAnswers,
-  };
+  return { behavior: "allow", updatedInput: { ...binding.nativeInput, answers } };
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -767,6 +761,13 @@ interface PendingPermission {
   cleanup?: () => void;
 }
 
+interface PendingProviderQuestion {
+  binding: ClaudeProviderQuestionBinding;
+  resolve: (result: PermissionResult) => void;
+  reject: (error: Error) => void;
+  cleanup?: () => void;
+}
+
 type ToolUseClassification = "generic" | "command" | "file_change";
 interface ToolUseCacheEntry {
   id: string;
@@ -980,52 +981,9 @@ function isPermissionUpdate(value: AgentPermissionUpdate): value is PermissionUp
   return Array.isArray(rules) && typeof behavior === "string" && typeof destination === "string";
 }
 
-function resolvePermissionKind(
-  toolName: string,
-  input: Record<string, unknown>,
-): AgentPermissionRequestKind {
-  if (toolName === "ExitPlanMode") return "plan";
-  if (toolName === "AskUserQuestion" && Array.isArray(input.questions)) {
-    return "question";
-  }
+function resolvePermissionKind(toolName: string): AgentPermissionRequestKind {
+  if (toolName === "ExitPlanMode") return "mode";
   return "tool";
-}
-
-function getClaudeModeLabel(modeId: PermissionMode): string {
-  return DEFAULT_MODES.find((mode) => mode.id === modeId)?.label ?? modeId;
-}
-
-function buildClaudePlanPermissionActions(
-  resumeMode: PermissionMode | null,
-): AgentPermissionAction[] {
-  const actions: AgentPermissionAction[] = [
-    {
-      id: "reject",
-      label: "Reject",
-      behavior: "deny",
-      variant: "danger",
-      intent: "dismiss",
-    },
-    {
-      id: "implement",
-      label: "Implement",
-      behavior: "allow",
-      variant: "primary",
-      intent: "implement",
-    },
-  ];
-
-  if (resumeMode === "bypassPermissions") {
-    actions.push({
-      id: "implement_resume",
-      label: `Implement with ${getClaudeModeLabel(resumeMode)}`,
-      behavior: "allow",
-      variant: "secondary",
-      intent: "implement_resume",
-    });
-  }
-
-  return actions;
 }
 
 interface TimelineFragment {
@@ -1407,7 +1365,10 @@ export class ClaudeHarnessAdapter implements HarnessAdapter {
   readonly capabilities = CLAUDE_CAPABILITIES;
   readonly harnessCapabilities = defineHarnessCapabilities({
     toolAttachment: ["mcp"],
-    plan: { kind: "native" },
+    plan: {
+      kind: "unsupported",
+      reason: "Claude ExitPlanMode does not expose a completed native Plan item.",
+    },
   });
 
   private readonly defaults?: { agents?: Record<string, AgentDefinition> };
@@ -1497,7 +1458,10 @@ export class ClaudeHarnessAdapter implements HarnessAdapter {
       models,
       modes,
       defaultModeId: modes.some((mode) => mode.id === "auto") ? "auto" : "default",
-      planCapability: { kind: "native" },
+      planCapability: {
+        kind: "unsupported",
+        reason: "Claude ExitPlanMode does not expose a completed native Plan item.",
+      },
     };
   }
 
@@ -1949,12 +1913,12 @@ class ClaudeHarnessThread implements HarnessThread {
   private claudeSessionId: string | null;
   private persistence: AgentPersistenceHandle | null;
   private currentMode: PermissionMode;
-  private planResumeMode: PermissionMode | null = null;
   private availableModes: AgentMode[] = DEFAULT_MODES;
   private toolUseCache = new Map<string, ToolUseCacheEntry>();
   private toolUseIndexToId = new Map<number, string>();
   private toolUseInputBuffers = new Map<string, string>();
   private pendingPermissions = new Map<string, PendingPermission>();
+  private pendingProviderQuestions = new Map<string, PendingProviderQuestion>();
   private activeForegroundTurnId: string | null = null;
   private autonomousTurn: AutonomousTurnState | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
@@ -2020,9 +1984,6 @@ class ClaudeHarnessThread implements HarnessThread {
     }
 
     this.currentMode = isPermissionMode(config.modeId) ? config.modeId : "default";
-    if (this.currentMode !== "plan") {
-      this.planResumeMode = this.currentMode;
-    }
   }
 
   get id(): string | null {
@@ -2204,18 +2165,17 @@ class ClaudeHarnessThread implements HarnessThread {
   }
 
   async getProviderRunModeCapability() {
-    return { kind: "native" } as const;
+    return {
+      kind: "unsupported",
+      reason: "Claude ExitPlanMode does not expose a completed native Plan item.",
+    } as const;
   }
 
   async applyProviderRunMode(mode: "default" | "plan") {
-    if (mode === "plan") {
-      await this.setMode("plan");
-    } else if (this.currentMode === "plan") {
-      await this.setMode(this.planResumeMode ?? "default");
-    }
+    const capability = await this.getProviderRunModeCapability();
     return {
-      capability: { kind: "native" } as const,
-      nativeModeId: this.currentMode,
+      capability,
+      nativeModeId: mode === "default" ? this.currentMode : null,
     };
   }
 
@@ -2234,16 +2194,8 @@ class ClaudeHarnessThread implements HarnessThread {
 
     const normalized = isPermissionMode(modeId) ? modeId : "default";
     assertClaudeAutoModeEligible(normalized, this.buildSdkEnv(this.config.extra?.claude));
-    const previousMode = this.currentMode;
     const activeQuery = await this.ensureQuery();
     await activeQuery.setPermissionMode(normalized);
-    if (normalized === "plan") {
-      if (previousMode !== "plan") {
-        this.planResumeMode = previousMode;
-      }
-    } else {
-      this.planResumeMode = normalized;
-    }
     this.currentMode = normalized;
   }
 
@@ -2325,36 +2277,9 @@ class ClaudeHarnessThread implements HarnessThread {
     pending.cleanup?.();
 
     if (response.behavior === "allow") {
-      if (pending.request.kind === "plan") {
-        const selectedActionId = response.selectedActionId;
-        const shouldResumePriorMode =
-          selectedActionId === "implement_resume" && this.planResumeMode === "bypassPermissions";
-        const targetMode: PermissionMode = shouldResumePriorMode
-          ? "bypassPermissions"
-          : "acceptEdits";
-        await this.setMode(targetMode);
-        this.pushToolCall(
-          mapClaudeCompletedToolCall({
-            name: "plan_approval",
-            callId: pending.request.id,
-            input: pending.request.input ?? null,
-            output: {
-              approved: true,
-              actionId: selectedActionId ?? "implement",
-            },
-          }),
-        );
-      }
-      const updatedInput =
-        pending.request.kind === "question"
-          ? normalizeClaudeAskUserQuestionUpdatedInput(
-              response.updatedInput,
-              pending.request.input ?? undefined,
-            )
-          : (response.updatedInput ?? pending.request.input ?? {});
       const result: PermissionResult = {
         behavior: "allow",
-        updatedInput,
+        updatedInput: response.updatedInput ?? pending.request.input ?? {},
         updatedPermissions: this.normalizePermissionUpdates(response.updatedPermissions),
       };
       pending.resolve(result);
@@ -2386,6 +2311,27 @@ class ClaudeHarnessThread implements HarnessThread {
       provider: "claude",
       requestId,
       resolution: response,
+    });
+  }
+
+  async respondToProviderQuestion(
+    interactionId: string,
+    resolution: ProviderQuestionResolution,
+  ): Promise<void> {
+    const pending = this.pendingProviderQuestions.get(interactionId);
+    if (!pending) {
+      throw new Error(`No pending Claude Provider question with id '${interactionId}'`);
+    }
+    const result = encodeClaudeProviderQuestionResolution(pending.binding, resolution);
+    this.pendingProviderQuestions.delete(interactionId);
+    pending.cleanup?.();
+    pending.resolve(result);
+    this.pushEvent({
+      type: "provider_question_resolved",
+      provider: "claude",
+      interactionId,
+      status: resolution.type === "answer" ? "answered" : "dismissed",
+      providerTurnId: pending.binding.projection.providerTurnId,
     });
   }
 
@@ -4037,9 +3983,6 @@ class ClaudeHarnessThread implements HarnessThread {
     }
     this.availableModes = DEFAULT_MODES;
     this.currentMode = message.permissionMode;
-    if (this.currentMode !== "plan") {
-      this.planResumeMode = this.currentMode;
-    }
     this.persistence = null;
     if (message.model) {
       const normalizedRuntimeModel = normalizeClaudeRuntimeModelId(message.model);
@@ -4091,14 +4034,53 @@ class ClaudeHarnessThread implements HarnessThread {
     options,
   ): Promise<PermissionResult> => {
     const requestId = `permission-${randomUUID()}`;
-    const kind = resolvePermissionKind(toolName, input);
-    const requestInput = normalizeClaudeAskUserQuestionRequestInput(toolName, input);
+    if (toolName === "AskUserQuestion" && Array.isArray(input.questions)) {
+      const providerTurnId = this.activeForegroundTurnId ?? this.autonomousTurn?.id ?? null;
+      const providerThreadId = this.claudeSessionId ?? this.persistence?.sessionId ?? null;
+      if (!this.agentId || !providerThreadId || !providerTurnId) {
+        throw Object.assign(
+          new Error("Claude Provider question is missing its Agent, thread, or turn binding"),
+          { code: "PROVIDER_QUESTION_UNAVAILABLE" },
+        );
+      }
+      const binding = buildClaudeProviderQuestionBinding({
+        requestId,
+        agentId: this.agentId,
+        providerThreadId,
+        providerTurnId,
+        providerItemId: options.toolUseID ?? requestId,
+        nativeInput: input,
+      });
+      if (!binding) {
+        throw Object.assign(new Error("Claude AskUserQuestion contained no valid questions"), {
+          code: "PROVIDER_QUESTION_INVALID_RESPONSE",
+        });
+      }
+      this.pushEvent({
+        type: "provider_question_requested",
+        provider: "claude",
+        question: binding.projection,
+        providerTurnId,
+      });
+      return await new Promise<PermissionResult>((resolve, reject) => {
+        const cleanup = () => options.signal?.removeEventListener("abort", abortHandler);
+        const abortHandler = () => {
+          this.pendingProviderQuestions.delete(requestId);
+          cleanup();
+          reject(new Error("Provider question aborted"));
+        };
+        if (options.signal?.aborted) {
+          abortHandler();
+          return;
+        }
+        options.signal?.addEventListener("abort", abortHandler, { once: true });
+        this.pendingProviderQuestions.set(requestId, { binding, resolve, reject, cleanup });
+      });
+    }
+    const kind = resolvePermissionKind(toolName);
     const metadata: AgentMetadata = {};
     if (options.toolUseID) {
       metadata.toolUseId = options.toolUseID;
-    }
-    if (toolName === "ExitPlanMode" && typeof input.plan === "string") {
-      metadata.planText = input.plan;
     }
     const toolDetail =
       kind === "tool"
@@ -4115,12 +4097,11 @@ class ClaudeHarnessThread implements HarnessThread {
       provider: "claude",
       name: toolName,
       kind,
-      input: requestInput,
+      input,
       detail: toolDetail,
       suggestions: options.suggestions?.map((suggestion) => ({
         ...suggestion,
       })),
-      actions: kind === "plan" ? buildClaudePlanPermissionActions(this.planResumeMode) : undefined,
       metadata: Object.keys(metadata).length ? metadata : undefined,
     };
 
@@ -4243,6 +4224,11 @@ class ClaudeHarnessThread implements HarnessThread {
       pending.cleanup?.();
       pending.reject(error);
       this.pendingPermissions.delete(id);
+    }
+    for (const [id, pending] of this.pendingProviderQuestions) {
+      pending.cleanup?.();
+      pending.reject(error);
+      this.pendingProviderQuestions.delete(id);
     }
   }
 

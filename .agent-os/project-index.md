@@ -3,11 +3,10 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-036`
+2. Top next action: `NTH-TD-051`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. `NTH-EV-072` verifies the exact Paseo v0.2.3 target-side integration, all local gates,
-   exact-SHA workflow, fixed Release replacement, public checksums/build identity and downloaded AppImage journey.
-   `NTH-TD-049` is verified; `NTH-TD-036` resumes as the sole top next action.
+4. Active blockers: none. `NTH-TD-050` and `NTH-EV-073` are verified; `NTH-CD-099` authorizes fixed-Beta
+   publication, and `NTH-TD-051` is the sole top action until public assets and the downloaded AppImage pass.
 5. Current branch: `agent/dev/mvp`. Published source `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1` is the exact target
    of `release/mvp-actions`, direct tag `v0.0.0-mvp-beta`, and public prerelease `361273193`; the Release contains
    exactly 26 desktop-only assets. The development branch carries this evidence-only closeout above the published
@@ -17,8 +16,11 @@
    divergent target ending at Paseo `43cf858c` is organically integrated and published at `eaa1aa5f`. Current
    `Tasks | Schedules`, scoped Workspace scripts, atomic socket/E2EE/file streaming, Driver-owned Provider
    usage/OMP/runtime policy, strict forwarded authority and approved App/Desktop repairs all terminate in the
-   canonical owners. Production is `315,762` LOC with translated Cut B/final ceilings `300,256` / `277,856`.
-   `NTH-TD-036` stays doing at Stage 4 and retains its independent `15,506`-LOC gap.
+   canonical owners. `NTH-EV-073` verifies one visible Agent session with turn-scoped RuntimeBundle activation,
+   typed Provider questions, completed-native-Plan authority and Daemon-owned same-thread Implement. Production
+   is `316,951` LOC with translated Cut B/final ceilings `301,445` / `279,045`. `NTH-TD-036` stays doing at Stage
+   4 and retains its independent `15,506`-LOC gap. The correction is local and uncommitted; the published fixed
+   Beta remains source `eaa1aa5f`. The verified correction is `release_ready` but not yet committed or published.
 
 ## Objective Summary
 
@@ -35,14 +37,16 @@
 
 ## Top Next Action
 
-`NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition,
-Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path while
-preserving the exact public behavior and independent `15,506`-LOC Cut B gap.
+`NTH-TD-051` `[doing]`: Publish the verified Provider-interaction correction through one exact release-source SHA,
+the existing fixed-Beta workflow, 26 public desktop-only assets and a freshly downloaded AppImage product journey.
+After public verification, restore `NTH-TD-036` as the sole top action without changing its Stage 4 status or
+independent `15,506`-LOC gap.
 
 ## Active Blockers
 
-None. `NTH-EV-072` verifies the completed v0.2.3 publication and public download revalidation. `NTH-TD-036`
-remains open by design at Stage 4 with a preserved `15,506`-LOC Cut B gap and is not verified or waived.
+None. Repository-local authentication and remote drift checks passed. The current public fixed Beta remains intact
+at `eaa1aa5f` until the new exact-SHA workflow succeeds. `NTH-TD-036` remains open by design at Stage 4 with a
+preserved `15,506`-LOC Cut B gap.
 
 ## Recent Important Changes
 
@@ -147,6 +151,19 @@ remains open by design at Stage 4 with a preserved `15,506`-LOC Cut B gap and is
     exact 26-asset desktop-only fixed Beta, public checksums/build identity and the downloaded AppImage
     `Tasks | Schedules`/scripts/five-chunk journey passed. `NTH-TD-049` is verified; `NTH-TD-036` is the sole top
     next action with its `15,506`-LOC gap unchanged.
+97. `NTH-CD-097` and `NTH-CD-098`: One visible Agent retains one native Provider session while RuntimeBundle
+    activation is per turn, Provider questions use a dedicated typed path, completed native Plan is the only Plan
+    authority, and Daemon alone owns Implement continuation.
+98. `NTH-EV-073`: Deterministic owners, real Codex, built-Web UI and local AppImage real-window acceptance prove
+    `raw -> Thoth -> raw Plan -> native question -> completed Plan -> Implement` without replacement threads,
+    leaked RuntimeBundle instructions, synthetic Plan or permission-shaped questions. `NTH-TD-050` is verified;
+    `NTH-TD-036` is again the sole top action.
+99. `NTH-CD-099`: The user authorized one normal exact-SHA fixed-Beta replacement for the verified Provider
+    interaction correction, with the old Release protected until every mandatory job succeeds and public
+    downloaded-AppImage reverification required before completion.
+100. `NTH-EV-074`: Local release readiness and live remote preflight are recorded. Publication is in progress;
+     `NTH-TD-051` is the sole top action until workflow, 26-asset public Release and downloaded AppImage evidence
+     pass.
 
 ## Read Next
 

@@ -12,7 +12,6 @@ import {
   type TextPartInput as OpenCodeTextPartInput,
 } from "@opencode-ai/sdk/v2/client";
 import fs from "node:fs/promises";
-import { randomUUID } from "node:crypto";
 import { createPathEquivalenceMatcher } from "../../../utils/path.js";
 import pLimit from "p-limit";
 import type { Logger } from "pino";
@@ -43,6 +42,8 @@ import {
   type AgentTimelineItem,
   type AgentUsage,
   type ProviderMessageAnchorReceipt,
+  type ProviderQuestionProjection,
+  type ProviderQuestionResolution,
   type FetchCatalogOptions,
   type ImportableProviderSession,
   type ImportProviderSessionContext,
@@ -90,6 +91,7 @@ import { normalizeProviderReplayTimestamp } from "../provider-history-timestamps
 import { revertOpenCodeConversationAndFiles } from "./opencode/rewind.js";
 import type { ManagedProviderProcessPort } from "../../../host/ports.js";
 import { defineHarnessCapabilities } from "@thoth/drivers/harness";
+import { validateProviderQuestionResolution } from "../provider-question.js";
 
 const OPENCODE_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
@@ -1178,7 +1180,10 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   readonly capabilities = OPENCODE_CAPABILITIES;
   readonly harnessCapabilities = defineHarnessCapabilities({
     toolAttachment: ["mcp"],
-    plan: { kind: "native" },
+    plan: {
+      kind: "unsupported",
+      reason: "OpenCode does not expose a completed native Plan item.",
+    },
   });
   readonly resolveCreateConfig = resolveOpenCodeCreateConfig;
   readonly isCreateConfigUnattended = isOpenCodeCreateConfigUnattended;
@@ -1328,9 +1333,10 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
       return {
         models,
         modes,
-        planCapability: modes.some((mode) => mode.id === "plan")
-          ? { kind: "native" }
-          : { kind: "unsupported", reason: "OpenCode does not expose its native plan mode." },
+        planCapability: {
+          kind: "unsupported",
+          reason: "OpenCode does not expose a completed native Plan item.",
+        },
       };
     } finally {
       acquisition.release();
@@ -1570,6 +1576,8 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
 
 export interface OpenCodeEventTranslationState {
   sessionId: string;
+  agentId?: string;
+  providerTurnId?: string;
   cwd?: string;
   messageRoles: Map<string, OpenCodeMessageRole>;
   pendingUserMessageText?: string | null;
@@ -1903,6 +1911,10 @@ export function translateOpenCodeEvent(
       break;
     case "question.asked":
       appendOpenCodeQuestionAsked(event, state, events);
+      break;
+    case "question.replied":
+    case "question.rejected":
+      appendOpenCodeQuestionResolved(event, state, events);
       break;
     case "todo.updated":
       if (event.properties.sessionID === state.sessionId) {
@@ -2543,22 +2555,28 @@ function appendOpenCodeQuestionAsked(
   if (event.properties.sessionID !== state.sessionId) {
     return;
   }
-  const questions = event.properties.questions.flatMap((q) => {
+  if (!state.agentId || !state.providerTurnId) {
+    return;
+  }
+  const questions = event.properties.questions.flatMap((q, index) => {
     if (!q.question || !q.header) {
       return [];
     }
     const options =
       q.options?.map((o) => ({
+        value: o.label,
         label: o.label,
         ...(o.description ? { description: o.description } : {}),
       })) ?? [];
     return [
       {
-        question: q.question,
+        id: `${event.properties.id}:${index}`,
         header: q.header,
+        prompt: q.question,
         options,
-        ...(q.multiple === true ? { multiSelect: true } : {}),
-        allowOther: true,
+        selectionMode: q.multiple === true ? ("multiple" as const) : ("single" as const),
+        allowOther: q.custom !== false,
+        secret: false,
       },
     ];
   });
@@ -2568,20 +2586,36 @@ function appendOpenCodeQuestionAsked(
   }
 
   events.push({
-    type: "permission_requested",
+    type: "provider_question_requested",
     provider: "opencode",
-    request: {
-      id: event.properties.id,
-      provider: "opencode",
-      name: "question",
-      kind: "question",
-      title: "Question",
-      input: { questions },
-      metadata: {
-        source: "opencode_question",
-        ...event.properties.tool,
-      },
+    question: {
+      interactionId: event.properties.id,
+      agentId: state.agentId,
+      providerThreadId: state.sessionId,
+      providerTurnId: state.providerTurnId,
+      providerItemId: event.properties.tool?.callID ?? event.properties.id,
+      revision: 0,
+      questions,
+      expiresAt: null,
     },
+    providerTurnId: state.providerTurnId,
+  });
+}
+
+function appendOpenCodeQuestionResolved(
+  event: Extract<OpenCodeEvent, { type: "question.replied" | "question.rejected" }>,
+  state: OpenCodeEventTranslationState,
+  events: AgentStreamEvent[],
+): void {
+  if (event.properties.sessionID !== state.sessionId) {
+    return;
+  }
+  events.push({
+    type: "provider_question_resolved",
+    provider: "opencode",
+    interactionId: event.properties.requestID,
+    status: event.type === "question.replied" ? "answered" : "dismissed",
+    ...(state.providerTurnId ? { turnId: state.providerTurnId } : {}),
   });
 }
 
@@ -2714,6 +2748,7 @@ class OpenCodeHarnessThread implements HarnessThread {
   private currentMode: string = "default";
   private autoAcceptEnabled = false;
   private pendingPermissions = new Map<string, AgentPermissionRequest>();
+  private pendingProviderQuestions = new Map<string, ProviderQuestionProjection>();
   private abortController: AbortController | null = null;
   private pendingAbortPromise: Promise<void> | null = null;
   private accumulatedUsage: AgentUsage = {};
@@ -2742,8 +2777,6 @@ class OpenCodeHarnessThread implements HarnessThread {
   private subAgentCallIdByChildSessionId = new Map<string, string>();
   private pendingChildToolPartsBySessionId = new Map<string, OpenCodeToolPartEventPart[]>();
   private selectedModelContextWindowMaxTokens: number | undefined;
-  private providerRunMode: "default" | "plan" = "default";
-  private planTextParts: string[] = [];
   private releaseServer: (() => void) | null;
   private eventStreamAbortController: AbortController | null = null;
   private eventStreamReady: Deferred<void> | null = null;
@@ -2911,7 +2944,6 @@ class OpenCodeHarnessThread implements HarnessThread {
     await this.awaitPendingAbortBeforeStartingTurn();
 
     this.runningToolCalls.clear();
-    this.planTextParts = [];
     this.subAgentsByCallId.clear();
     this.subAgentCallIdByChildSessionId.clear();
     this.pendingChildToolPartsBySessionId.clear();
@@ -3266,56 +3298,12 @@ class OpenCodeHarnessThread implements HarnessThread {
       if (e.type === "timeline" && e.item.type === "tool_call") {
         this.trackToolCall(e.item);
       }
-      if (e.type === "timeline" && e.item.type === "assistant_message") {
-        const text = e.item.text.trim();
-        if (text) this.planTextParts.push(text);
-      }
       const terminalEvent = toTerminalTurnEvent(e);
       if (terminalEvent) {
         this.traceOpenCode("provider.opencode.event.terminal", {
           turnId,
           type: terminalEvent.type,
         });
-        if (terminalEvent.type === "turn_completed" && this.providerRunMode === "plan") {
-          const plan = this.planTextParts.join("\n\n").trim();
-          if (!plan) {
-            this.finishForegroundTurn(
-              {
-                type: "turn_failed",
-                provider: "opencode",
-                error: "Native Plan completed without usable plan content.",
-              },
-              turnId,
-            );
-            return;
-          }
-          const requestId = `opencode-plan-${randomUUID()}`;
-          const request: AgentPermissionRequest = {
-            id: requestId,
-            provider: "opencode",
-            name: "OpenCodePlanApproval",
-            kind: "plan",
-            title: "Plan",
-            description: "Review the native OpenCode plan before implementation starts.",
-            input: { plan },
-            actions: [
-              { id: "reject", label: "Reject", behavior: "deny", variant: "secondary" },
-              {
-                id: "implement",
-                label: "Implement",
-                behavior: "allow",
-                variant: "primary",
-                intent: "implement",
-              },
-            ],
-            metadata: { source: "provider_run_mode_plan", planText: plan },
-          };
-          this.pendingPermissions.set(requestId, request);
-          this.notifySubscribers(
-            { type: "permission_requested", provider: "opencode", request },
-            turnId,
-          );
-        }
         this.finishForegroundTurn(terminalEvent, turnId);
         return;
       }
@@ -3464,24 +3452,18 @@ class OpenCodeHarnessThread implements HarnessThread {
   }
 
   async getProviderRunModeCapability() {
-    const modes = await this.getAvailableModes();
-    return modes.some((mode) => mode.id === "plan")
-      ? ({ kind: "native" } as const)
-      : ({
-          kind: "unsupported",
-          reason: "OpenCode does not expose its native plan mode.",
-        } as const);
+    return {
+      kind: "unsupported",
+      reason: "OpenCode does not expose a completed native Plan item.",
+    } as const;
   }
 
   async applyProviderRunMode(mode: "default" | "plan") {
     const capability = await this.getProviderRunModeCapability();
-    if (mode === "plan" && capability.kind !== "native") {
-      return { capability, nativeModeId: null };
-    }
-    const nativeModeId = mode === "plan" ? "plan" : OPENCODE_BUILD_MODE_ID;
-    await this.setMode(nativeModeId);
-    this.providerRunMode = mode;
-    return { capability, nativeModeId };
+    return {
+      capability,
+      nativeModeId: mode === "default" ? this.currentMode : null,
+    };
   }
 
   async getCurrentMode(): Promise<string | null> {
@@ -3530,55 +3512,6 @@ class OpenCodeHarnessThread implements HarnessThread {
       throw new Error(`No pending permission request with id '${requestId}'`);
     }
 
-    if (pending.kind === "question") {
-      if (response.behavior === "deny") {
-        await this.client.question.reject({
-          requestID: requestId,
-          directory: this.config.cwd,
-        });
-      } else {
-        const answersRecord = readOpenCodeRecord(response.updatedInput?.answers);
-        const questions = Array.isArray(pending.input?.questions) ? pending.input.questions : [];
-        const answers = questions.map((item) => {
-          const header = readNonEmptyString(readOpenCodeRecord(item)?.header);
-          const rawAnswer = header ? readNonEmptyString(answersRecord?.[header]) : null;
-          if (!rawAnswer) {
-            return [];
-          }
-          return rawAnswer
-            .split(",")
-            .map((entry) => entry.trim())
-            .filter((entry) => entry.length > 0);
-        });
-
-        await this.client.question.reply({
-          requestID: requestId,
-          directory: this.config.cwd,
-          answers,
-        });
-      }
-
-      this.pendingPermissions.delete(requestId);
-      return;
-    }
-
-    if (pending.kind === "plan" && pending.metadata?.source === "provider_run_mode_plan") {
-      this.pendingPermissions.delete(requestId);
-      if (response.behavior === "deny") {
-        return;
-      }
-      await this.applyProviderRunMode("default");
-      const plan = typeof pending.metadata.planText === "string" ? pending.metadata.planText : "";
-      return {
-        followUpPrompt: [
-          "Implement the approved native plan now in this same OpenCode session.",
-          plan,
-        ]
-          .filter(Boolean)
-          .join("\n\n"),
-      };
-    }
-
     const reply = resolveOpenCodePermissionReply(response);
     await this.client.permission.reply({
       requestID: requestId,
@@ -3588,6 +3521,39 @@ class OpenCodeHarnessThread implements HarnessThread {
     });
 
     this.pendingPermissions.delete(requestId);
+  }
+
+  async respondToProviderQuestion(
+    interactionId: string,
+    resolution: ProviderQuestionResolution,
+  ): Promise<void> {
+    const projection = this.pendingProviderQuestions.get(interactionId);
+    if (!projection) {
+      throw new Error(`No pending OpenCode Provider question with id '${interactionId}'`);
+    }
+    const answersById = validateProviderQuestionResolution(projection, resolution);
+    if (resolution.type === "dismiss") {
+      await this.client.question.reject({
+        requestID: interactionId,
+        directory: this.config.cwd,
+      });
+    } else {
+      await this.client.question.reply({
+        requestID: interactionId,
+        directory: this.config.cwd,
+        answers: projection.questions.map((question) => [...(answersById.get(question.id) ?? [])]),
+      });
+    }
+    this.pendingProviderQuestions.delete(interactionId);
+    this.notifySubscribers(
+      {
+        type: "provider_question_resolved",
+        provider: "opencode",
+        interactionId,
+        status: resolution.type === "answer" ? "answered" : "dismissed",
+      },
+      projection.providerTurnId,
+    );
   }
 
   describePersistence(): AgentPersistenceHandle | null {
@@ -3614,6 +3580,7 @@ class OpenCodeHarnessThread implements HarnessThread {
       this.eventStreamAbortController?.abort();
       this.eventStreamAbortController = null;
       this.eventStreamReady = null;
+      this.pendingProviderQuestions.clear();
       this.subscribers.clear();
       await reconcileOpenCodeSessionClose({
         client: this.client,
@@ -3765,6 +3732,8 @@ class OpenCodeHarnessThread implements HarnessThread {
   private async translateEvent(event: OpenCodeEvent): Promise<AgentStreamEvent[]> {
     const translated = translateOpenCodeEvent(event, {
       sessionId: this.sessionId,
+      agentId: this.agentId,
+      providerTurnId: this.activeForegroundTurnId ?? undefined,
       cwd: this.config.cwd,
       messageRoles: this.messageRoles,
       pendingUserMessageText: this.pendingUserMessageText,
@@ -3798,6 +3767,18 @@ class OpenCodeHarnessThread implements HarnessThread {
     }
 
     for (const translatedEvent of translated) {
+      if (translatedEvent.type === "provider_question_requested") {
+        this.pendingProviderQuestions.set(
+          translatedEvent.question.interactionId,
+          translatedEvent.question,
+        );
+      }
+      if (translatedEvent.type === "provider_question_resolved") {
+        if (!this.pendingProviderQuestions.has(translatedEvent.interactionId)) {
+          continue;
+        }
+        this.pendingProviderQuestions.delete(translatedEvent.interactionId);
+      }
       if (translatedEvent.type === "permission_requested") {
         const autoApproved = await this.tryAutoApproveToolPermission(translatedEvent.request);
         if (autoApproved) {

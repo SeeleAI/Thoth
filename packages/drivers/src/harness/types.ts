@@ -3,6 +3,10 @@ import type {
   ProviderRunMode,
   ProviderRunModeReceipt,
 } from "@thoth/protocol/provider-control";
+import type {
+  ProviderPlanCompleted,
+  ProviderQuestionProjection,
+} from "@thoth/protocol/agent-types";
 
 export type HarnessInstructionAttachment = "developer" | "system" | "session_prompt";
 
@@ -17,6 +21,7 @@ export interface HarnessCapabilities {
   permissions: "interactive" | "unattended";
   threadPersistence: "native" | "adapter_owned" | "none";
   nativeRetention: "provider_owned" | "adapter_owned";
+  runtimeBundleActivation: "native_skill" | "unsupported";
   plan: ProviderPlanCapability;
 }
 
@@ -35,6 +40,13 @@ export interface RuntimeBundle {
   tools: readonly RuntimeBundleTool[];
   scopes: readonly string[];
   sourceName: string;
+}
+
+export interface RuntimeBundleActivation {
+  bundleId: RuntimeBundle["id"];
+  bundleDigest: RuntimeBundle["digest"];
+  scope: "clarify" | "clarify_audit" | "contract_audit" | "loop_planexec" | "loop_review";
+  generation: string;
 }
 
 export interface HarnessThreadDescriptor {
@@ -87,10 +99,10 @@ export interface HarnessApprovalRequest {
 }
 
 export type HarnessExecutionControlEvent =
-  | { type: "plan_ready"; plan: string; approval: HarnessApprovalRequest }
+  | { type: "plan_completed"; plan: ProviderPlanCompleted }
   | { type: "plan_invalid"; reason: string }
   | { type: "approval_requested"; approval: HarnessApprovalRequest }
-  | { type: "provider_question"; request: unknown };
+  | { type: "provider_question"; question: ProviderQuestionProjection };
 
 export interface HarnessApprovalResolution {
   approvalId: string;
@@ -111,6 +123,7 @@ export interface HarnessExecutionInput {
   generation: string;
   prompt: unknown;
   attachment: RuntimeAttachmentReceipt | null;
+  activation: RuntimeBundleActivation;
   runMode: ProviderRunMode;
   runModeReceipt: ProviderRunModeReceipt;
 }

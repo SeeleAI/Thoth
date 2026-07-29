@@ -119,12 +119,20 @@ Provider-neutral bridge responsibilities:
 
 Current Codex adapter responsibilities:
 
-1. For a Workspace Secretary provider thread that supports native tools, register session-level `dynamicTools` at thread/start so that the same topic can subsequently enter a Thoth turn from a raw Provider turn without switching sessions.
-2. Handle `item/tool/call`.
-3. Accept only semantic tools allowed by the current phase: the Clarify phase uses `thoth_submit_clarify_card`, `thoth_submit_task_card`, `thoth_submit_goals_card`, and `thoth_report_blocked`; the Loop phase uses PlanExec / Review / blocked tools. `thoth_submit_pyramid_plan` is legacy only.
-4. Return `DynamicToolCallResponse`.
-5. Even when a raw `Quick + none` turn occurs in a thread with session-level tools already registered, it must be rejected by the daemon's per-turn authority fence; it cannot create a card, pending decision, Task/Goals authority, or Loop task.
-6. In a Clarify structured session, treat Codex native `request_user_input` as a violating question path and repair or block it rather than converting it into a Thoth card.
+1. For a visible Agent thread that supports native tools, register a stable `dynamicTools` catalog at `thread/start`
+   so the same thread can later enter a Thoth turn without replacement.
+2. Translate one digest-verified `RuntimeBundleActivation` into one native Skill input block on each authorized
+   Thoth turn; send no Skill block or RuntimeBundle developer instructions on raw/default/native-Plan turns.
+3. Handle `item/tool/call` through ToolGateway and accept only the tools allowed by the current activation scope.
+   `thoth_submit_pyramid_plan` remains legacy only.
+4. Handle native `item/tool/requestUserInput` as a dedicated Provider interaction keyed by original question ids;
+   it is never a permission request or Thoth Card.
+5. Translate Plan progress for presentation and completed `type:"plan"` items for Daemon authority. Never promote
+   assistant prose, delta streams or terminal completion into Plan.
+6. Even when a raw turn remembers the stable catalog, ToolGateway must return `THOTH_RUNTIME_INACTIVE`; it cannot
+   create a Card, Task, Schedule, Workspace or other authority.
+7. In an activated Clarify turn, native `request_user_input` is a violating question path and must be repaired or
+   blocked rather than converted into a Thoth Clarify Card.
 
 Claude/OpenCode direction:
 
@@ -278,7 +286,9 @@ Goals Card must include the complete Clarify transcript plus confirmed Task Card
 3. Do not create a Thoth authority card, Task/Goals authority, or Loop task.
 4. The provider's session-level tool catalog may remain available for future Thoth turns; the daemon must reject any remembered Thoth authority tool call according to the current raw-turn fence.
 5. Ordinary assistant text, reasoning, tools, and permissions are displayed through AgentTimeline.
-6. If the bare provider itself triggers Provider-native `request_user_input`, render it according to the native Paseo permission/question lifecycle.
+6. If the bare Provider triggers a native question, render `QuestionFormCard` from
+   `pendingProviderQuestions` and answer it through `respondProviderQuestion` with the original question ids and
+   string arrays. Do not route it through permission or Clarify authority.
 
 ### 6.2 Quick + clarify
 
@@ -292,7 +302,23 @@ Goals Card must include the complete Clarify transcript plus confirmed Task Card
 
 After both cards are confirmed, enter `quick_exec` in the same topic/provider session; do not register a background task.
 
-### 6.3 Loop
+### 6.3 Provider-native Plan
+
+Provider-native Plan is an Agent-scoped Provider feature independent from Thoth mode:
+
+1. Selecting Plan changes only the next Provider run mode on the same native session; it does not activate a
+   RuntimeBundle or create a second Agent/thread.
+2. Native questions suspend the Provider turn and render a dedicated QuestionFormCard. While any question is
+   pending, PlanCard and Implement are absent.
+3. Plan progress and deltas may update read-only progress presentation. Only a completed bounded native Plan item
+   is persisted as the Plan receipt and may open one Daemon-owned Implement approval.
+4. Implement/Reject use Daemon CAS. Implement returns Provider mode to default and continues on the same native
+   session; duplicate clicks cannot create a second implementation turn. Reject leaves the completed Plan visible
+   but starts no execution.
+5. Missing, stale, wrong-thread, duplicate or oversized Plan events fail with typed errors. Secret question answers
+   never enter Timeline, snapshot, SQLite or logs.
+
+### 6.4 Loop
 
 Loop path after `NTH-CD-045`:
 
@@ -318,15 +344,16 @@ Minimum UI after registration:
 The daemon performs only mechanical authority work and no semantic intelligence:
 
 1. Select the bare stream or runtime tool bridge according to Mode / Clarify / phase.
-2. Register Codex `dynamicTools`.
-3. Validate tool input schemas.
-4. Validate phase transitions.
-5. Validate Task / Goals provenance.
-6. Validate the user approval gate.
-7. Persist pending decisions and authority events.
-8. Broadcast AgentTimeline updates.
-9. Return the user's answer to the provider runtime.
-10. Display honestly blocked for unsupported bridges.
+2. Register stable Provider tool capability and bind per-turn RuntimeBundle activation.
+3. Validate tool input schemas and ToolGateway scope/generation.
+4. Reduce typed Provider question and completed-Plan events without Provider-name branching.
+5. Validate phase transitions.
+6. Validate Task / Goals provenance.
+7. Validate the user approval gate.
+8. Persist pending decisions and authority events.
+9. Broadcast AgentTimeline updates.
+10. Return the user's structured answer to the live Provider handler without persisting plaintext secrets.
+11. Display honestly blocked for unsupported bridges.
 
 The daemon must not:
 

@@ -121,6 +121,23 @@ THOTH_DAEMON_PROXY_TARGET=127.0.0.1:6688 HOST=0.0.0.0 PORT=8082 npm run serve:we
 with the local Thoth daemon WebSocket proxy enabled.
 The public mapped URL for this machine is `http://180.76.242.105:8148/`.
 
+Real-provider UI acceptance must use a freshly built static Web export, not a Metro development
+bundle or a direct Client call in place of the product surface. Run it against an isolated daemon,
+Provider home and Workspace, and keep localhost outside any external proxy:
+
+```bash
+npm run build:web
+HOST=127.0.0.1 PORT=<isolated-port> npm run serve:web
+E2E_BASE_URL=http://127.0.0.1:<isolated-port> \
+NO_PROXY=127.0.0.1,localhost \
+no_proxy=127.0.0.1,localhost \
+npm --workspace=@thoth/app run test:e2e:real -- codex-plan-question.real.spec.ts
+```
+
+A zero-file metadata fork for a new isolated `THOTH_HOME` must remain genuinely empty. Test setup
+must not create empty authority directories such as `projects/`, because their presence correctly
+identifies an existing home to storage migration and invalidates fresh-home acceptance.
+
 ## Standard Commands
 
 Run commands through root npm scripts:

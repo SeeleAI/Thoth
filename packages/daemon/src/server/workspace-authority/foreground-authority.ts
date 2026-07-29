@@ -130,6 +130,21 @@ export class WorkspaceForegroundAuthority {
     return store.recordForegroundRunModeReceipt(input);
   }
 
+  recordProviderInteraction(input: {
+    agentId: string;
+    turnId: string;
+    generation: string;
+    expectedRevision: number;
+    interaction: import("@thoth/core").ProviderTurnInteractionState;
+    planReceipt?: import("@thoth/protocol/agent-types").ProviderPlanCompleted | null;
+  }): ForegroundTurnAuthorityRecord {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) {
+      throw new Error(`Agent ${input.agentId} is not bound to a Workspace authority`);
+    }
+    return store.recordForegroundProviderInteraction(input);
+  }
+
   openCard(input: {
     agentId: string;
     turnId: string;

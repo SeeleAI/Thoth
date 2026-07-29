@@ -1,8 +1,11 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { TerminalActivity } from "@thoth/protocol/terminal-activity";
 import { connectDaemonClient } from "./daemon-client-loader";
 import { createTempDirectory, createTempGitRepo } from "./workspace";
+
+const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 export interface SeedWorkspaceDescriptor {
   id: string;
@@ -132,9 +135,16 @@ export interface SeedDaemonClient {
     timeout?: number,
   ): Promise<{ status: string; final?: { lastError?: string | null } | null }>;
   archiveAgent(agentId: string): Promise<{ archivedAt: string }>;
-  fetchAgent(options: {
-    agentId: string;
-  }): Promise<{ agent: { id: string; archivedAt?: string | null } } | null>;
+  fetchAgent(options: { agentId: string }): Promise<{
+    agent: {
+      id: string;
+      status?: string;
+      archivedAt?: string | null;
+      pendingProviderQuestions?: Array<{ interactionId: string }>;
+      persistence?: { sessionId: string; nativeHandle?: string } | null;
+      runtimeInfo?: { sessionId: string | null };
+    };
+  } | null>;
   getLastServerInfoMessage(): {
     features?: { projectAdd?: boolean; worktreeRestore?: boolean } | null;
   } | null;
@@ -223,7 +233,7 @@ export async function seedWorkspace(options: {
 }
 
 function loadAppVersion(): string {
-  const packageJsonPath = path.resolve(__dirname, "../../package.json");
+  const packageJsonPath = path.resolve(currentDirectory, "../../package.json");
   const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version?: unknown };
   if (typeof packageJson.version !== "string" || packageJson.version.length === 0) {
     throw new Error(`Missing app version in ${packageJsonPath}`);

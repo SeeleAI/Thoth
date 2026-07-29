@@ -25,12 +25,15 @@ import type {
   ImportProviderSessionContext,
   ImportProviderSessionInput,
   ProviderCatalog,
+  ProviderQuestionProjection,
+  ProviderQuestionResolution,
   ToolCallDetail,
   ToolCallTimelineItem,
 } from "../harness-contract.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import { getAgentProviderDefinition } from "@thoth/protocol/provider-manifest";
 import { NO_HARNESS_CAPABILITIES } from "@thoth/drivers/harness";
+import { validateProviderQuestionResolution } from "../provider-question.js";
 
 export const MOCK_LOAD_TEST_PROVIDER_ID = "mock";
 export const MOCK_LOAD_TEST_DEFAULT_MODEL_ID = "five-minute-stream";
@@ -147,10 +150,6 @@ interface MockQuestionPromptQuestion {
 
 interface MockQuestionPromptRequest {
   questions: MockQuestionPromptQuestion[];
-}
-
-function shouldEmitPlanApprovalPrompt(prompt: AgentPromptInput): boolean {
-  return /emit\s+(?:a\s+)?synthetic\s+plan\s+approval/i.test(promptToText(prompt));
 }
 
 function parseMockQuestionPrompt(prompt: AgentPromptInput): MockQuestionPromptRequest | null {
@@ -510,19 +509,20 @@ export class MockHarnessAdapter implements HarnessAdapter {
 
   async createSession(
     config: AgentSessionConfig,
-    _launchContext?: AgentLaunchContext,
+    launchContext?: AgentLaunchContext,
   ): Promise<HarnessThread> {
     return new MockHarnessThread({
       config,
       sessionId: randomUUID(),
       logger: this.logger,
+      agentId: launchContext?.agentId,
     });
   }
 
   async resumeSession(
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
-    _launchContext?: AgentLaunchContext,
+    launchContext?: AgentLaunchContext,
   ): Promise<HarnessThread> {
     const metadata = (handle.metadata ?? {}) as Partial<AgentSessionConfig>;
     return new MockHarnessThread({
@@ -534,6 +534,7 @@ export class MockHarnessAdapter implements HarnessAdapter {
       },
       sessionId: handle.sessionId,
       logger: this.logger,
+      agentId: launchContext?.agentId,
     });
   }
 
@@ -578,13 +579,21 @@ export class MockHarnessThread implements HarnessThread {
   private readonly logger?: Logger;
   private activeTurn: ActiveTurn | null = null;
   private pendingPermissions = new Map<string, AgentPermissionRequest>();
+  private pendingProviderQuestions = new Map<string, ProviderQuestionProjection>();
+  private readonly agentId: string;
   private modeId: string | null;
   private modelId: string | null;
   private readonly rewindError: string | null;
 
-  constructor(options: { config: AgentSessionConfig; sessionId: string; logger?: Logger }) {
+  constructor(options: {
+    config: AgentSessionConfig;
+    sessionId: string;
+    logger?: Logger;
+    agentId?: string;
+  }) {
     this.id = options.sessionId;
     this.logger = options.logger;
+    this.agentId = options.agentId ?? `mock-agent:${options.sessionId}`;
     this.modeId = options.config.modeId ?? MOCK_LOAD_TEST_MODE_ID;
     this.modelId = options.config.model ?? MOCK_LOAD_TEST_DEFAULT_MODEL_ID;
     this.rewindError =
@@ -656,8 +665,6 @@ export class MockHarnessThread implements HarnessThread {
     const structuredBranchName = parseStructuredBranchNamePrompt(prompt);
     if (structuredBranchName) {
       this.scheduleStructuredJsonTurn(turn, structuredBranchName);
-    } else if (shouldEmitPlanApprovalPrompt(prompt)) {
-      this.schedulePlanApprovalTurn(turn);
     } else if (questionPrompt) {
       this.scheduleQuestionPromptTurn(turn, questionPrompt);
     } else if (largePayload) {
@@ -728,14 +735,32 @@ export class MockHarnessThread implements HarnessThread {
     });
 
     if (turn) {
-      this.finishTurnWithText(
-        turn,
-        request.kind === "question"
-          ? "Synthetic questions resolved"
-          : "Synthetic plan approval resolved",
-      );
+      this.finishTurnWithText(turn, "Synthetic permission resolved");
     }
     return undefined;
+  }
+
+  async respondToProviderQuestion(
+    interactionId: string,
+    resolution: ProviderQuestionResolution,
+  ): Promise<void> {
+    const question = this.pendingProviderQuestions.get(interactionId);
+    if (!question) {
+      throw new Error(`No pending mock Provider question with id '${interactionId}'`);
+    }
+    validateProviderQuestionResolution(question, resolution);
+    this.pendingProviderQuestions.delete(interactionId);
+    const turn = this.activeTurn;
+    this.emit({
+      type: "provider_question_resolved",
+      provider: this.provider,
+      interactionId,
+      status: resolution.type === "answer" ? "answered" : "dismissed",
+      ...(turn ? { turnId: turn.turnId, providerTurnId: turn.turnId } : {}),
+    });
+    if (turn) {
+      this.finishTurnWithText(turn, "Synthetic questions resolved");
+    }
   }
 
   describePersistence(): AgentPersistenceHandle | null {
@@ -754,6 +779,7 @@ export class MockHarnessThread implements HarnessThread {
     if (!turn) {
       return;
     }
+    this.pendingProviderQuestions.clear();
     this.clearTurnTimer(turn);
     this.activeTurn = null;
     const event: AgentStreamEvent = {
@@ -773,6 +799,7 @@ export class MockHarnessThread implements HarnessThread {
 
   async close(): Promise<void> {
     await this.interrupt();
+    this.pendingProviderQuestions.clear();
     this.listeners.clear();
   }
 
@@ -823,13 +850,6 @@ export class MockHarnessThread implements HarnessThread {
   private scheduleStressTurn(turn: ActiveTurn, stress: AgentStreamStressRequest): void {
     turn.timer = setTimeout(() => {
       this.emitStressTurn(turn, stress);
-    }, 0);
-    turn.timer.unref?.();
-  }
-
-  private schedulePlanApprovalTurn(turn: ActiveTurn): void {
-    turn.timer = setTimeout(() => {
-      this.emitPlanApprovalTurn(turn);
     }, 0);
     turn.timer.unref?.();
   }
@@ -889,58 +909,6 @@ export class MockHarnessThread implements HarnessThread {
     });
   }
 
-  private emitPlanApprovalTurn(turn: ActiveTurn): void {
-    if (this.activeTurn !== turn) {
-      return;
-    }
-
-    this.clearTurnTimer(turn);
-    this.emit({
-      type: "turn_started",
-      provider: this.provider,
-      turnId: turn.turnId,
-    });
-
-    const request: AgentPermissionRequest = {
-      id: `mock-plan-${turn.turnId}`,
-      provider: this.provider,
-      name: "MockPlanApproval",
-      kind: "plan",
-      title: "Plan",
-      description: "Review the proposed plan before implementation starts.",
-      input: {
-        plan: "1. Add the README note.\n2. Keep the change scoped.\n3. Verify the diff.",
-      },
-      actions: [
-        {
-          id: "implement",
-          label: "Implement",
-          behavior: "allow",
-          variant: "primary",
-          intent: "implement",
-        },
-        {
-          id: "dismiss",
-          label: "Dismiss",
-          behavior: "deny",
-          variant: "secondary",
-          intent: "dismiss",
-        },
-      ],
-      metadata: {
-        source: "mock_plan_approval",
-      },
-    };
-
-    this.pendingPermissions.set(request.id, request);
-    this.emit({
-      type: "permission_requested",
-      provider: this.provider,
-      request,
-      turnId: turn.turnId,
-    });
-  }
-
   private emitQuestionPromptTurn(
     turn: ActiveTurn,
     questionPrompt: MockQuestionPromptRequest,
@@ -956,26 +924,37 @@ export class MockHarnessThread implements HarnessThread {
       turnId: turn.turnId,
     });
 
-    const request: AgentPermissionRequest = {
-      id: `mock-questions-${turn.turnId}`,
-      provider: this.provider,
-      name: "MockQuestions",
-      kind: "question",
-      title: "Questions",
-      input: {
-        questions: questionPrompt.questions,
-      },
-      metadata: {
-        source: "mock_questions",
-      },
+    const interactionId = `mock-questions-${turn.turnId}`;
+    const question: ProviderQuestionProjection = {
+      interactionId,
+      agentId: this.agentId,
+      providerThreadId: this.id,
+      providerTurnId: turn.turnId,
+      providerItemId: interactionId,
+      revision: 0,
+      questions: questionPrompt.questions.map((item, index) => ({
+        id: `${interactionId}:${index}`,
+        header: item.header,
+        prompt: item.question,
+        options: item.options.map((option) => ({
+          value: option.label,
+          label: option.label,
+          ...(option.description ? { description: option.description } : {}),
+        })),
+        selectionMode: item.multiSelect ? "multiple" : "single",
+        allowOther: item.allowOther === true || item.options.length === 0,
+        secret: false,
+      })),
+      expiresAt: null,
     };
 
-    this.pendingPermissions.set(request.id, request);
+    this.pendingProviderQuestions.set(interactionId, question);
     this.emit({
-      type: "permission_requested",
+      type: "provider_question_requested",
       provider: this.provider,
-      request,
+      question,
       turnId: turn.turnId,
+      providerTurnId: turn.turnId,
     });
   }
 

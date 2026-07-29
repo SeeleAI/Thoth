@@ -279,9 +279,10 @@ describe("shared messages stream parsing", () => {
           request: {
             id: "perm-1",
             provider: "codex",
-            name: "CodexPlanApproval",
+            name: "Implement native Plan",
             kind: "plan",
             input: { plan: "- step 1" },
+            metadata: { owner: "thoth-daemon", authority: "provider-plan" },
             actions: [
               {
                 id: "reject",

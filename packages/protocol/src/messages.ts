@@ -261,6 +261,10 @@ import type {
   AgentMode,
   AgentPermissionRequest,
   AgentPermissionResponse,
+  ProviderPlanCompleted,
+  ProviderPlanProgress,
+  ProviderQuestionProjection,
+  ProviderQuestionResolution,
   AgentPersistenceHandle,
   ProviderStatus,
   AgentRuntimeInfo,
@@ -271,6 +275,69 @@ import type {
   ToolCallTimelineItem,
   AgentUsage,
 } from "./agent-types.js";
+
+const ProviderPlanStepSchema = z.object({
+  text: z.string(),
+  status: z.enum(["pending", "in_progress", "completed"]),
+});
+
+const ProviderPlanProgressSchema: z.ZodType<ProviderPlanProgress> = z.object({
+  providerThreadId: z.string().min(1),
+  providerTurnId: z.string().min(1),
+  itemId: z.string().min(1),
+  steps: z.array(ProviderPlanStepSchema),
+  explanation: z.string().nullable(),
+});
+
+const ProviderPlanCompletedSchema: z.ZodType<ProviderPlanCompleted> = z.object({
+  providerThreadId: z.string().min(1),
+  providerTurnId: z.string().min(1),
+  itemId: z.string().min(1),
+  text: z.string().min(1),
+  originalBytes: z.number().int().nonnegative(),
+  retainedBytes: z.number().int().nonnegative(),
+});
+
+const ProviderQuestionItemSchema = z.object({
+  id: z.string().min(1),
+  header: z.string().min(1),
+  prompt: z.string().min(1),
+  options: z.array(
+    z.object({
+      value: z.string(),
+      label: z.string(),
+      description: z.string().optional(),
+    }),
+  ),
+  selectionMode: z.enum(["single", "multiple"]),
+  allowOther: z.boolean(),
+  secret: z.boolean(),
+});
+
+export const ProviderQuestionProjectionSchema: z.ZodType<ProviderQuestionProjection> = z.object({
+  interactionId: z.string().min(1),
+  agentId: z.string().min(1),
+  providerThreadId: z.string().min(1),
+  providerTurnId: z.string().min(1),
+  providerItemId: z.string().min(1),
+  revision: z.number().int().nonnegative(),
+  questions: z.array(ProviderQuestionItemSchema).min(1),
+  expiresAt: z.string().nullable(),
+});
+
+export const ProviderQuestionResolutionSchema: z.ZodType<ProviderQuestionResolution> =
+  z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("answer"),
+      answers: z.array(
+        z.object({
+          questionId: z.string().min(1),
+          values: z.array(z.string()),
+        }),
+      ),
+    }),
+    z.object({ type: z.literal("dismiss") }),
+  ]);
 
 export const AgentStatusSchema = z.enum(AGENT_LIFECYCLE_STATUSES);
 
@@ -743,6 +810,27 @@ export const AgentStreamEventPayloadSchema = z.discriminatedUnion("type", [
     resolution: AgentPermissionResponseSchema,
   }),
   z.object({
+    type: z.literal("provider_plan_progress"),
+    provider: AgentProviderSchema,
+    progress: ProviderPlanProgressSchema,
+  }),
+  z.object({
+    type: z.literal("provider_plan_completed"),
+    provider: AgentProviderSchema,
+    plan: ProviderPlanCompletedSchema,
+  }),
+  z.object({
+    type: z.literal("provider_question_requested"),
+    provider: AgentProviderSchema,
+    question: ProviderQuestionProjectionSchema,
+  }),
+  z.object({
+    type: z.literal("provider_question_resolved"),
+    provider: AgentProviderSchema,
+    interactionId: z.string().min(1),
+    status: z.enum(["answered", "dismissed", "expired"]),
+  }),
+  z.object({
     type: z.literal("attention_required"),
     provider: AgentProviderSchema,
     reason: z.enum(["finished", "error", "permission"]),
@@ -799,6 +887,7 @@ export const AgentSnapshotPayloadSchema = z.object({
   currentModeId: z.string().nullable(),
   availableModes: z.array(AgentModeSchema),
   pendingPermissions: z.array(AgentPermissionRequestPayloadSchema),
+  pendingProviderQuestions: z.array(ProviderQuestionProjectionSchema).default([]),
   persistence: AgentPersistenceHandleSchema.nullable(),
   runtimeInfo: AgentRuntimeInfoSchema.optional(),
   lastUsage: AgentUsageSchema.optional(),
@@ -815,6 +904,14 @@ export const AgentSnapshotPayloadSchema = z.object({
 });
 
 export type AgentSnapshotPayload = z.infer<typeof AgentSnapshotPayloadSchema>;
+/**
+ * Backward-compatible wire input accepted by Agent snapshot parsers. Defaults such as
+ * `pendingProviderQuestions` are materialized by the schema before snapshots enter
+ * application authority projections.
+ */
+export type AgentSnapshotPayloadInput = Omit<AgentSnapshotPayload, "pendingProviderQuestions"> & {
+  pendingProviderQuestions?: AgentSnapshotPayload["pendingProviderQuestions"];
+};
 
 export const AgentListItemPayloadSchema = z.object({
   id: z.string(),
@@ -1559,6 +1656,37 @@ export const AgentPermissionResponseMessageSchema = z.object({
   agentId: z.string(),
   requestId: z.string(),
   response: AgentPermissionResponseSchema,
+});
+
+export const AgentProviderQuestionRespondRequestSchema = z.object({
+  type: z.literal("agent.provider_question.respond.request"),
+  requestId: z.string().min(1),
+  agentId: z.string().min(1),
+  interactionId: z.string().min(1),
+  expectedRevision: z.number().int().nonnegative(),
+  commandId: z.string().min(1),
+  resolution: ProviderQuestionResolutionSchema,
+});
+
+export const AgentProviderQuestionRespondResponseSchema = z.object({
+  type: z.literal("agent.provider_question.respond.response"),
+  payload: z.object({
+    requestId: z.string().min(1),
+    agentId: z.string().min(1),
+    interactionId: z.string().min(1),
+    accepted: z.boolean(),
+    conflict: z.boolean(),
+    revision: z.number().int().nonnegative(),
+    errorCode: z
+      .enum([
+        "PROVIDER_QUESTION_NOT_FOUND",
+        "PROVIDER_QUESTION_STALE",
+        "PROVIDER_QUESTION_INVALID_RESPONSE",
+        "PROVIDER_QUESTION_UNAVAILABLE",
+      ])
+      .nullable(),
+    error: z.string().nullable(),
+  }),
 });
 
 const CheckoutErrorCodeSchema = z.enum([
@@ -4469,6 +4597,12 @@ export type SetAgentThinkingRequestMessage = z.infer<typeof SetAgentThinkingRequ
 export type SetAgentFeatureRequestMessage = z.infer<typeof SetAgentFeatureRequestMessageSchema>;
 export type AgentDetachRequestMessage = z.infer<typeof AgentDetachRequestMessageSchema>;
 export type AgentPermissionResponseMessage = z.infer<typeof AgentPermissionResponseMessageSchema>;
+export type AgentProviderQuestionRespondRequest = z.infer<
+  typeof AgentProviderQuestionRespondRequestSchema
+>;
+export type AgentProviderQuestionRespondResponse = z.infer<
+  typeof AgentProviderQuestionRespondResponseSchema
+>;
 export type CheckoutStatusRequest = z.infer<typeof CheckoutStatusRequestSchema>;
 export type CheckoutStatusResponse = z.infer<typeof CheckoutStatusResponseSchema>;
 export type CheckoutStatusUpdate = z.infer<typeof CheckoutStatusUpdateSchema>;
@@ -4890,6 +5024,10 @@ export const rpcRegistry = defineRpcRegistry({
     respondToPermission: unary(
       AgentPermissionResponseMessageSchema,
       AgentPermissionResolvedMessageSchema,
+    ),
+    respondProviderQuestion: unary(
+      AgentProviderQuestionRespondRequestSchema,
+      AgentProviderQuestionRespondResponseSchema,
     ),
     getCheckoutStatus: unary(CheckoutStatusRequestSchema, CheckoutStatusResponseSchema),
     subscribeCheckoutDiff: subscription(

@@ -1,6 +1,5 @@
 import {
   getAgentStreamEventTurnId,
-  type AgentPermissionAction,
   type AgentCapabilityFlags,
   type HarnessAdapter,
   type AgentCreateSessionOptions,
@@ -35,6 +34,8 @@ import {
   type ProviderCatalog,
   type ProviderControlLaunchContext,
   type ProviderMessageAnchorReceipt,
+  type ProviderQuestionProjection,
+  type ProviderQuestionResolution,
 } from "../harness-contract.js";
 import { THOTH_RUNTIME_TOOL_NAMES } from "@thoth/protocol/thoth-runtime-contract";
 import { BROWSER_AUTOMATION_TOOL_NAMES } from "@thoth/protocol/browser-automation/rpc-schemas";
@@ -43,13 +44,16 @@ import { importSessionFromPersistence } from "../provider-session-import.js";
 import type { Logger } from "pino";
 
 import type { ChildProcess, ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
-import { defineHarnessCapabilities } from "@thoth/drivers/harness";
+import {
+  defineHarnessCapabilities,
+  loadRuntimeBundle,
+  THOTH_RUNTIME_BUNDLE_CATALOG,
+} from "@thoth/drivers/harness";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
 import { curateAgentActivity } from "../activity-curator.js";
@@ -100,6 +104,8 @@ import {
 import { runProviderTurn } from "./provider-runner.js";
 import { SETTING_APPLIES_NEXT_TURN_NOTICE } from "../provider-notices.js";
 import type { ProviderWorkspacePort } from "../../../host/ports.js";
+import { loadRuntimeSkillArtifact } from "../../../clarify/contract.js";
+import { validateProviderQuestionResolution } from "../provider-question.js";
 
 function assertChildWithPipes(
   child: ChildProcess,
@@ -138,9 +144,6 @@ const CODEX_TOOL_THREAD_ITEM_TYPES = new Set([
   "collabAgentToolCall",
 ]);
 const CODEX_CONTEXT_COMPACTION_TYPE = "contextCompaction";
-const CODEX_PLAN_IMPLEMENTATION_PROMPT_PREFIX =
-  "The user approved the plan. Implement it now. Do not restate or revise the plan unless blocked.";
-
 // Codex's experimental `goals` feature ships in 0.128.0+. Older binaries reject
 // `--enable goals` at launch, so we gate by version and silently skip the flag
 // (and the /goal slash command) when the binary is too old.
@@ -936,54 +939,6 @@ export function mapCodexPlanToToolCall(params: {
   };
 }
 
-function buildPlanPermissionActions(options?: {
-  includeResumeAction?: boolean;
-  resumeLabel?: string;
-}): AgentPermissionAction[] {
-  const actions: AgentPermissionAction[] = [
-    {
-      id: "reject",
-      label: "Reject",
-      behavior: "deny",
-      variant: "danger",
-      intent: "dismiss",
-    },
-    {
-      id: "implement",
-      label: "Implement",
-      behavior: "allow",
-      variant: "primary",
-      intent: "implement",
-    },
-  ];
-
-  if (options?.includeResumeAction && options.resumeLabel) {
-    actions.push({
-      id: "implement_resume",
-      label: options.resumeLabel,
-      behavior: "allow",
-      variant: "secondary",
-      intent: "implement_resume",
-    });
-  }
-
-  return actions;
-}
-
-function buildCodexPlanImplementationPrompt(planText: string): string {
-  const normalizedPlan = normalizePlanMarkdown(planText);
-  if (!normalizedPlan) {
-    return `${CODEX_PLAN_IMPLEMENTATION_PROMPT_PREFIX} Make the required code changes and verify them.`;
-  }
-
-  return [
-    CODEX_PLAN_IMPLEMENTATION_PROMPT_PREFIX,
-    "Approved plan:",
-    normalizedPlan,
-    "Carry out the work, make the necessary code changes, and verify the result.",
-  ].join("\n\n");
-}
-
 interface CodexQuestionOption {
   label: string;
   description?: string;
@@ -1136,12 +1091,18 @@ function dynamicToolResultText(result: ThothToolResult): string {
 
 function dynamicToolErrorResult(error: unknown): CodexDynamicToolCallResponse {
   const message = error instanceof Error ? error.message : String(error);
+  const code =
+    error !== null &&
+    typeof error === "object" &&
+    typeof (error as { code?: unknown }).code === "string"
+      ? (error as { code: string }).code
+      : null;
   return {
     success: false,
     contentItems: [
       {
         type: "inputText",
-        text: `The requested authority action was rejected by Thoth: ${message}`,
+        text: `The requested authority action was rejected by Thoth${code ? ` [${code}]` : ""}: ${message}`,
       },
     ],
   };
@@ -1164,20 +1125,10 @@ export function mapCodexQuestionRequestToToolCall(params: {
   callId: string;
   questions: CodexQuestionPrompt[];
   status: ToolCallTimelineItem["status"];
-  answers?: Record<string, string[]>;
+  resolution?: "answered" | "dismissed" | "expired";
   error?: unknown;
 }): ToolCallTimelineItem {
   const formattedQuestions = formatCodexQuestionPrompts(params.questions);
-  const formattedAnswers =
-    params.answers && Object.keys(params.answers).length > 0
-      ? Object.entries(params.answers)
-          .map(([id, values]) => `${id}: ${values.join(", ")}`)
-          .join("\n")
-      : null;
-  const detailText =
-    params.status === "completed" && formattedAnswers
-      ? [formattedQuestions, "Answers:", formattedAnswers].filter(Boolean).join("\n\n")
-      : formattedQuestions;
 
   const base = {
     type: "tool_call" as const,
@@ -1185,12 +1136,12 @@ export function mapCodexQuestionRequestToToolCall(params: {
     name: "request_user_input",
     detail: {
       type: "plain_text" as const,
-      text: detailText,
+      text: formattedQuestions,
       icon: "brain" as const,
     },
     metadata: {
       questions: params.questions,
-      ...(params.answers ? { answers: params.answers } : {}),
+      ...(params.resolution ? { resolution: params.resolution } : {}),
     },
   };
 
@@ -1222,41 +1173,16 @@ export function mapCodexQuestionRequestToToolCall(params: {
   };
 }
 
-function mapCodexQuestionResponseByHeader(params: {
-  questions: CodexQuestionPrompt[];
-  response: AgentPermissionResponse;
-}): Record<string, { answers: string[] }> | null {
-  if (params.response.behavior !== "allow") {
-    return null;
-  }
-  const updatedInputRecord = toObjectRecord(params.response.updatedInput);
-  const answersRecord = toObjectRecord(updatedInputRecord?.answers);
-  if (!answersRecord) {
-    return null;
-  }
-
+function encodeCodexQuestionResolution(params: {
+  projection: ProviderQuestionProjection;
+  resolution: ProviderQuestionResolution;
+}): Record<string, { answers: string[] }> {
+  const valuesById = validateProviderQuestionResolution(params.projection, params.resolution);
   const answers: Record<string, { answers: string[] }> = {};
-  for (const question of params.questions) {
-    const rawAnswer = answersRecord[question.header];
-    if (typeof rawAnswer !== "string") {
-      continue;
-    }
-    const normalizedAnswer = rawAnswer.trim();
-    if (!normalizedAnswer) {
-      continue;
-    }
-    const values = question.multiSelect
-      ? normalizedAnswer
-          .split(",")
-          .map((entry) => entry.trim())
-          .filter((entry) => entry.length > 0)
-      : [normalizedAnswer];
-    if (values.length > 0) {
-      answers[question.id] = { answers: values };
-    }
+  for (const [questionId, values] of valuesById) {
+    answers[questionId] = { answers: [...values] };
   }
-
-  return Object.keys(answers).length > 0 ? answers : null;
+  return answers;
 }
 
 interface CodexPatchFileChange {
@@ -1927,6 +1853,9 @@ const TurnCompletedNotificationSchema = z
 
 const TurnPlanUpdatedNotificationSchema = z
   .object({
+    threadId: z.string(),
+    turnId: z.string(),
+    explanation: z.string().nullable().optional(),
     plan: z.array(
       z
         .object({
@@ -2154,7 +2083,13 @@ type ParsedCodexNotification =
       errorMessage: string | null;
       threadId: string | null;
     }
-  | { kind: "plan_updated"; plan: Array<{ step: string | null; status: string | null }> }
+  | {
+      kind: "plan_updated";
+      threadId: string;
+      turnId: string;
+      explanation: string | null;
+      plan: Array<{ step: string | null; status: string | null }>;
+    }
   | { kind: "diff_updated"; diff: string }
   | { kind: "token_usage_updated"; tokenUsage: unknown }
   | { kind: "agent_message_delta"; itemId: string; delta: string; threadId: string | null }
@@ -2297,6 +2232,9 @@ const CodexNotificationSchema = z.union([
     .transform(
       ({ params }): ParsedCodexNotification => ({
         kind: "plan_updated",
+        threadId: params.threadId,
+        turnId: params.turnId,
+        explanation: params.explanation ?? null,
         plan: params.plan.map((entry) => ({
           step: entry.step ?? null,
           status: entry.status ?? null,
@@ -2960,9 +2898,16 @@ export class CodexHarnessThread implements HarnessThread {
     string,
     {
       resolve: (value: unknown) => void;
-      kind: "command" | "file" | "question" | "plan";
-      questions?: CodexQuestionPrompt[];
-      planText?: string;
+      kind: "command" | "file";
+    }
+  >();
+  private pendingProviderQuestionHandlers = new Map<
+    string,
+    {
+      resolve: (value: unknown) => void;
+      questions: CodexQuestionPrompt[];
+      projection: ProviderQuestionProjection;
+      autoResolveTimer: ReturnType<typeof setTimeout> | null;
     }
   >();
   private resolvedPermissionRequests = new Set<string>();
@@ -2984,7 +2929,6 @@ export class CodexHarnessThread implements HarnessThread {
   private warnedInvalidNotificationPayloads = new Set<string>();
   private warnedIncompleteEditToolCallIds = new Set<string>();
   private latestUsage: AgentUsage | undefined;
-  private latestPlanResult: { callId: string; text: string; turnId: string | null } | null = null;
   private readonly userMessageTurnIndexes = new Map<string, number>();
   private readonly userMessageTurnIds: string[] = [];
   private pendingManualCompactionStarts = 0;
@@ -3254,58 +3198,6 @@ export class CodexHarnessThread implements HarnessThread {
     this.cachedRuntimeInfo = null;
   }
 
-  private rememberPlanResult(item: ToolCallTimelineItem): void {
-    if (item.detail.type !== "plan") {
-      return;
-    }
-
-    this.latestPlanResult = {
-      callId: item.callId,
-      text: item.detail.text,
-      turnId: this.currentTurnId,
-    };
-  }
-
-  private emitSyntheticPlanApprovalRequest(planText: string, planId: string): void {
-    const requestId = `permission-${randomUUID()}`;
-    const request: AgentPermissionRequest = {
-      id: requestId,
-      provider: CODEX_PROVIDER,
-      name: "CodexPlanApproval",
-      kind: "plan",
-      title: "Plan",
-      description: "Review the proposed plan before implementation starts.",
-      input: { planId },
-      actions: buildPlanPermissionActions(),
-      metadata: {
-        planId,
-        source: "codex_plan_approval",
-      },
-    };
-
-    this.pendingPermissions.set(requestId, request);
-    this.pendingPermissionHandlers.set(requestId, {
-      resolve: () => undefined,
-      kind: "plan",
-      planText,
-    });
-    this.emitEvent({ type: "permission_requested", provider: CODEX_PROVIDER, request });
-  }
-
-  /**
-   * Prepare the session for plan implementation by disabling plan mode
-   * and returning the implementation prompt. The caller is responsible for
-   * starting the turn through the normal streamAgent path.
-   */
-  private preparePlanImplementation(params: { planText?: unknown }): string {
-    const planText =
-      typeof params.planText === "string" ? normalizePlanMarkdown(params.planText) : "";
-
-    this.applyFeatureValue("plan_mode", false);
-
-    return buildCodexPlanImplementationPrompt(planText);
-  }
-
   private registerRequestHandlers(): void {
     if (!this.client) return;
 
@@ -3316,12 +3208,12 @@ export class CodexHarnessThread implements HarnessThread {
       this.handleFileChangeApprovalRequest(params),
     );
     this.client.setRequestHandler("item/tool/requestUserInput", (params) =>
-      this.handleToolApprovalRequest(params),
+      this.handleUserInputRequest(params),
     );
     this.client.setRequestHandler("item/tool/call", (params) => this.handleDynamicToolCall(params));
     // Keep the legacy method name for older Codex builds.
     this.client.setRequestHandler("tool/requestUserInput", (params) =>
-      this.handleToolApprovalRequest(params),
+      this.handleUserInputRequest(params),
     );
   }
 
@@ -3369,15 +3261,10 @@ export class CodexHarnessThread implements HarnessThread {
       if (codexConfig) {
         params.config = codexConfig;
       }
-      const dynamicTools = buildThothDynamicToolSpecs(this.thothTools);
-      if (dynamicTools.length > 0) {
-        params.dynamicTools = dynamicTools;
-      }
       this.logger.info(
         {
           threadId: this.currentThreadId,
-          dynamicToolNames: dynamicTools.map((tool) => tool.name),
-          dynamicToolCount: dynamicTools.length,
+          dynamicToolResume: "provider-thread-retained",
         },
         "Resuming Codex app-server thread",
       );
@@ -3473,7 +3360,8 @@ export class CodexHarnessThread implements HarnessThread {
     hasDeveloperInstructions: boolean;
     hasCodexConfig: boolean;
   }> {
-    const input = await this.buildUserInput(prompt);
+    const effectivePrompt = this.activateRuntimeBundle(prompt, options?.runtimeBundleActivation);
+    const input = await this.buildUserInput(effectivePrompt);
     const preset = MODE_PRESETS[this.currentMode] ?? MODE_PRESETS[DEFAULT_CODEX_MODE_ID];
     const approvalPolicy = this.config.approvalPolicy ?? preset.approvalPolicy;
     const sandboxPolicyType = this.config.sandboxMode ?? preset.sandbox;
@@ -3534,6 +3422,28 @@ export class CodexHarnessThread implements HarnessThread {
       hasDeveloperInstructions: Boolean(developerInstructions),
       hasCodexConfig: Boolean(codexConfig),
     };
+  }
+
+  private activateRuntimeBundle(
+    prompt: CodexPromptInput,
+    activation: AgentRunOptions["runtimeBundleActivation"],
+  ): CodexPromptInput {
+    if (!activation) return prompt;
+    const bundle = loadRuntimeBundle(activation.bundleId, THOTH_RUNTIME_BUNDLE_CATALOG);
+    const artifact = loadRuntimeSkillArtifact(activation.bundleId);
+    if (bundle.digest !== activation.bundleDigest) {
+      throw new Error(
+        `RuntimeBundle digest mismatch for ${activation.bundleId}: expected ${activation.bundleDigest}, got ${bundle.digest}`,
+      );
+    }
+    const skill: CodexSkillPromptBlock = {
+      type: "skill",
+      name: artifact.frontmatter.name,
+      path: artifact.path,
+    };
+    return typeof prompt === "string"
+      ? [skill, { type: "text", text: prompt }]
+      : [skill, ...prompt.filter((block) => block.type !== "skill" || block.name !== skill.name)];
   }
 
   private logTurnStartSummary({
@@ -3817,10 +3727,6 @@ export class CodexHarnessThread implements HarnessThread {
     }
     const pendingRequest = this.pendingPermissions.get(requestId) ?? null;
 
-    if (pending.kind === "plan") {
-      return this.handlePlanPermissionResponse({ requestId, response, pending, pendingRequest });
-    }
-
     this.pendingPermissionHandlers.delete(requestId);
     this.pendingPermissions.delete(requestId);
     this.resolvedPermissionRequests.add(requestId);
@@ -3841,91 +3747,72 @@ export class CodexHarnessThread implements HarnessThread {
       return;
     }
 
-    if (pending.kind === "file") {
-      pending.resolve({ decision: resolvePermissionDecision(response) });
-      return;
+    pending.resolve({ decision: resolvePermissionDecision(response) });
+  }
+
+  async respondToProviderQuestion(
+    interactionId: string,
+    resolution: ProviderQuestionResolution,
+  ): Promise<void> {
+    const pending = this.pendingProviderQuestionHandlers.get(interactionId);
+    if (!pending) {
+      throw new Error(`No pending Codex Provider question with id '${interactionId}'`);
     }
 
-    const questions = pending.questions ?? [];
-    const itemId =
-      typeof pendingRequest?.metadata?.itemId === "string"
-        ? pendingRequest.metadata.itemId
-        : requestId;
-    if (response.behavior === "allow") {
-      const mappedAnswers = mapCodexQuestionResponseByHeader({
-        questions,
-        response,
-      });
-      const answers =
-        mappedAnswers ??
-        Object.fromEntries(
-          questions
-            .map((question) => {
-              const fallback = question.options[0]?.label?.trim();
-              return fallback ? [question.id, { answers: [fallback] }] : null;
-            })
-            .filter((entry): entry is [string, { answers: string[] }] => entry !== null),
-        );
-      this.emitEvent({
-        type: "timeline",
-        provider: CODEX_PROVIDER,
-        item: mapCodexQuestionRequestToToolCall({
-          callId: itemId,
-          questions,
-          status: "completed",
-          answers: Object.fromEntries(
-            Object.entries(answers).map(([id, value]) => [id, value.answers]),
-          ),
-        }),
-      });
-      pending.resolve({ answers });
-      return;
+    // Validate before removing the live app-server handler. Invalid answers must
+    // leave the native request and the App card pending for a corrected retry.
+    const answers = encodeCodexQuestionResolution({
+      projection: pending.projection,
+      resolution,
+    });
+    this.pendingProviderQuestionHandlers.delete(interactionId);
+    if (pending.autoResolveTimer) {
+      clearTimeout(pending.autoResolveTimer);
     }
 
+    const status = resolution.type === "answer" ? "answered" : "dismissed";
     this.emitEvent({
       type: "timeline",
       provider: CODEX_PROVIDER,
       item: mapCodexQuestionRequestToToolCall({
-        callId: itemId,
-        questions,
-        status: response.interrupt ? "canceled" : "failed",
-        error: { message: response.message ?? "Question dismissed" },
+        callId: pending.projection.providerItemId,
+        questions: pending.questions,
+        status: resolution.type === "answer" ? "completed" : "canceled",
+        resolution: status,
       }),
     });
-    pending.resolve({ answers: {} });
+    this.emitEvent({
+      type: "provider_question_resolved",
+      provider: CODEX_PROVIDER,
+      interactionId,
+      status,
+    });
+    pending.resolve({ answers });
   }
 
-  private handlePlanPermissionResponse(params: {
-    requestId: string;
-    response: AgentPermissionResponse;
-    pending: {
-      resolve: (value: unknown) => void;
-      kind: "command" | "file" | "question" | "plan";
-      questions?: CodexQuestionPrompt[];
-      planText?: string;
-    };
-    pendingRequest: AgentPermissionRequest | null;
-  }): AgentPermissionResult | void {
-    const { requestId, response, pending, pendingRequest } = params;
-    let followUpPrompt: string | undefined;
-    if (response.behavior === "allow") {
-      followUpPrompt = this.preparePlanImplementation({
-        planText: pending.planText ?? pendingRequest?.metadata?.planText,
-      });
+  private expireProviderQuestion(interactionId: string): void {
+    const pending = this.pendingProviderQuestionHandlers.get(interactionId);
+    if (!pending) {
+      return;
     }
-
-    this.pendingPermissionHandlers.delete(requestId);
-    this.pendingPermissions.delete(requestId);
-    this.resolvedPermissionRequests.add(requestId);
+    this.pendingProviderQuestionHandlers.delete(interactionId);
     this.emitEvent({
-      type: "permission_resolved",
+      type: "timeline",
       provider: CODEX_PROVIDER,
-      requestId,
-      resolution: response,
+      item: mapCodexQuestionRequestToToolCall({
+        callId: pending.projection.providerItemId,
+        questions: pending.questions,
+        status: "canceled",
+        resolution: "expired",
+      }),
     });
-    if (followUpPrompt) {
-      return { followUpPrompt };
-    }
+    this.emitEvent({
+      type: "provider_question_resolved",
+      provider: CODEX_PROVIDER,
+      interactionId,
+      status: "expired",
+    });
+    pending.resolve({ answers: {} });
   }
 
   private emitDeniedToolCallTimelineEvent(params: {
@@ -4048,6 +3935,13 @@ export class CodexHarnessThread implements HarnessThread {
       pending.resolve({ decision: "cancel" });
     }
     this.pendingPermissionHandlers.clear();
+    for (const pending of this.pendingProviderQuestionHandlers.values()) {
+      if (pending.autoResolveTimer) {
+        clearTimeout(pending.autoResolveTimer);
+      }
+      pending.resolve({ answers: {} });
+    }
+    this.pendingProviderQuestionHandlers.clear();
     this.pendingPermissions.clear();
     this.resolvedPermissionRequests.clear();
     this.subscribers.clear();
@@ -4623,9 +4517,6 @@ export class CodexHarnessThread implements HarnessThread {
         this.emitSubAgentActivityUpdate(subAgentCallId, "running");
         return;
       }
-      if (this.planModeEnabled) {
-        return;
-      }
       const isFirstDeltaForItem = prev.length === 0;
       this.emitEvent({
         type: "timeline",
@@ -4720,31 +4611,21 @@ export class CodexHarnessThread implements HarnessThread {
         type: "turn_failed",
         provider: CODEX_PROVIDER,
         error: parsed.errorMessage ?? "Codex turn failed",
+        ...(this.currentTurnId ? { providerTurnId: this.currentTurnId } : {}),
       });
     } else if (parsed.status === "interrupted") {
-      this.emitEvent({ type: "turn_canceled", provider: CODEX_PROVIDER, reason: "interrupted" });
+      this.emitEvent({
+        type: "turn_canceled",
+        provider: CODEX_PROVIDER,
+        reason: "interrupted",
+        ...(this.currentTurnId ? { providerTurnId: this.currentTurnId } : {}),
+      });
     } else {
-      if (this.planModeEnabled && this.latestPlanResult?.text) {
-        const finalPlanItem = mapCodexPlanToToolCall({
-          callId: this.latestPlanResult.callId,
-          text: this.latestPlanResult.text,
-        });
-        if (finalPlanItem) {
-          this.emitEvent({
-            type: "timeline",
-            provider: CODEX_PROVIDER,
-            item: finalPlanItem,
-          });
-        }
-        this.emitSyntheticPlanApprovalRequest(
-          this.latestPlanResult.text,
-          this.latestPlanResult.callId,
-        );
-      }
       this.emitEvent({
         type: "turn_completed",
         provider: CODEX_PROVIDER,
         usage: this.latestUsage,
+        ...(this.currentTurnId ? { providerTurnId: this.currentTurnId } : {}),
       });
     }
     this.activeForegroundTurnId = null;
@@ -4752,7 +4633,6 @@ export class CodexHarnessThread implements HarnessThread {
   }
 
   private resetTurnTrackingState(): void {
-    this.latestPlanResult = null;
     this.emittedItemStartedIds.clear();
     this.emittedItemCompletedIds.clear();
     this.emittedExecCommandStartedCallIds.clear();
@@ -4770,24 +4650,27 @@ export class CodexHarnessThread implements HarnessThread {
   private handlePlanUpdatedNotification(
     parsed: Extract<ParsedCodexNotification, { kind: "plan_updated" }>,
   ): void {
-    const timelineItem = mapCodexPlanToToolCall({
-      callId: `plan:${this.currentTurnId ?? this.currentThreadId ?? "current"}`,
-      text: planStepsToMarkdown(
-        parsed.plan.map((entry) => ({
-          step: entry.step ?? "",
-          status: entry.status ?? "pending",
-        })),
-      ),
+    this.emitEvent({
+      type: "provider_plan_progress",
+      provider: CODEX_PROVIDER,
+      progress: {
+        providerThreadId: parsed.threadId,
+        providerTurnId: parsed.turnId,
+        itemId: `plan-progress:${parsed.turnId}`,
+        explanation: parsed.explanation,
+        steps: parsed.plan.flatMap((entry) => {
+          const text = entry.step?.trim();
+          if (!text) return [];
+          const status =
+            entry.status === "inProgress"
+              ? "in_progress"
+              : entry.status === "completed"
+                ? "completed"
+                : "pending";
+          return [{ text, status }];
+        }),
+      },
     });
-    if (timelineItem) {
-      this.rememberPlanResult(timelineItem);
-      // Plan mode persists the final remembered plan exactly once when the
-      // provider turn completes, immediately before the Implement permission.
-      if (this.planModeEnabled) {
-        return;
-      }
-      this.emitEvent({ type: "timeline", provider: CODEX_PROVIDER, item: timelineItem });
-    }
   }
 
   private handleTokenUsageUpdatedNotification(
@@ -5028,21 +4911,6 @@ export class CodexHarnessThread implements HarnessThread {
     if (this.shouldSkipCompletedThreadItem(timelineItem, normalizedItemType, itemId)) {
       return;
     }
-    if (this.planModeEnabled && timelineItem.type === "assistant_message") {
-      const planItem = mapCodexPlanToToolCall({
-        callId: `plan:${this.currentTurnId ?? this.currentThreadId ?? "current"}`,
-        text: timelineItem.text,
-      });
-      if (planItem) {
-        this.rememberPlanResult(planItem);
-      }
-      if (itemId) {
-        this.pendingAgentMessages.delete(itemId);
-        this.emittedItemCompletedIds.add(itemId);
-        this.emittedItemStartedIds.delete(itemId);
-      }
-      return;
-    }
     if (this.consumeStreamedTextCompletion(timelineItem, itemId)) {
       if (timelineItem.type === "assistant_message") {
         this.pendingAssistantMessageBoundary = true;
@@ -5057,10 +4925,25 @@ export class CodexHarnessThread implements HarnessThread {
     if (timelineItem.type === "tool_call") {
       this.registerSubAgentToolCall(timelineItem, parsed.item);
       if (timelineItem.detail.type === "plan") {
-        this.rememberPlanResult(timelineItem);
-        // Codex can surface plans both as turn/plan updates and as completed
-        // thread items. Plan mode persists only the final remembered version.
         if (this.planModeEnabled) {
+          const providerThreadId = parsed.threadId ?? this.currentThreadId;
+          const providerTurnId = this.currentTurnId;
+          if (!providerThreadId || !providerTurnId) {
+            throw new Error("Completed Codex Plan is missing thread or turn identity");
+          }
+          const bytes = Buffer.byteLength(timelineItem.detail.text, "utf8");
+          this.emitEvent({
+            type: "provider_plan_completed",
+            provider: CODEX_PROVIDER,
+            plan: {
+              providerThreadId,
+              providerTurnId,
+              itemId: timelineItem.callId,
+              text: timelineItem.detail.text,
+              originalBytes: bytes,
+              retainedBytes: bytes,
+            },
+          });
           return;
         }
       }
@@ -5442,38 +5325,49 @@ export class CodexHarnessThread implements HarnessThread {
     });
   }
 
-  private handleToolApprovalRequest(params: unknown): Promise<unknown> {
+  private handleUserInputRequest(params: unknown): Promise<unknown> {
     const parsed = z
       .object({
         itemId: z.string(),
         threadId: z.string(),
         turnId: z.string(),
         questions: z.array(z.unknown()),
+        autoResolutionMs: z.number().int().nonnegative().nullable().optional(),
       })
       .parse(params);
-    const requestId = `permission-${parsed.itemId}`;
+    const requestId = `provider-question-${parsed.itemId}`;
     const questions = normalizeCodexQuestionPrompts(parsed.questions);
-    const request: AgentPermissionRequest = {
-      id: requestId,
-      provider: CODEX_PROVIDER,
-      name: "request_user_input",
-      kind: "question",
-      title: "Question",
-      description: undefined,
-      detail: {
-        type: "plain_text",
-        text: formatCodexQuestionPrompts(questions),
-        icon: "brain",
-      },
-      input: { questions },
-      metadata: {
-        itemId: parsed.itemId,
-        threadId: parsed.threadId,
-        turnId: parsed.turnId,
-        questions,
-      },
+    if (questions.length === 0) {
+      throw new Error("Codex request_user_input contained no valid questions");
+    }
+    if (!this.agentId) {
+      throw new Error("Codex Provider question requires an Agent-scoped session binding");
+    }
+    const projection: ProviderQuestionProjection = {
+      interactionId: requestId,
+      agentId: this.agentId,
+      providerThreadId: parsed.threadId,
+      providerTurnId: parsed.turnId,
+      providerItemId: parsed.itemId,
+      revision: 0,
+      questions: questions.map((question) => ({
+        id: question.id,
+        header: question.header,
+        prompt: question.question,
+        options: question.options.map((option) => ({
+          value: option.label,
+          label: option.label,
+          ...(option.description ? { description: option.description } : {}),
+        })),
+        selectionMode: question.multiSelect ? "multiple" : "single",
+        allowOther: question.isOther === true || question.options.length === 0,
+        secret: question.isSecret === true,
+      })),
+      expiresAt:
+        typeof parsed.autoResolutionMs === "number"
+          ? new Date(Date.now() + parsed.autoResolutionMs).toISOString()
+          : null,
     };
-    this.pendingPermissions.set(requestId, request);
     this.emitEvent({
       type: "timeline",
       provider: CODEX_PROVIDER,
@@ -5483,13 +5377,26 @@ export class CodexHarnessThread implements HarnessThread {
         status: "running",
       }),
     });
-    this.emitEvent({ type: "permission_requested", provider: CODEX_PROVIDER, request });
+    this.emitEvent({
+      type: "provider_question_requested",
+      provider: CODEX_PROVIDER,
+      question: projection,
+    });
     return new Promise((resolve) => {
-      this.pendingPermissionHandlers.set(requestId, {
+      const pending = {
         resolve,
-        kind: "question",
         questions,
-      });
+        projection,
+        autoResolveTimer: null as ReturnType<typeof setTimeout> | null,
+      };
+      this.pendingProviderQuestionHandlers.set(requestId, pending);
+      if (typeof parsed.autoResolutionMs === "number") {
+        pending.autoResolveTimer = setTimeout(
+          () => this.expireProviderQuestion(requestId),
+          parsed.autoResolutionMs,
+        );
+        pending.autoResolveTimer.unref?.();
+      }
     });
   }
 
@@ -5554,6 +5461,7 @@ export class CodexHarnessAdapter implements HarnessAdapter {
   readonly harnessCapabilities = defineHarnessCapabilities({
     toolAttachment: ["native"],
     eventReplay: "cursor",
+    runtimeBundleActivation: "native_skill",
     plan: { kind: "native" },
   });
   private goalsEnabledPromise: Promise<boolean> | null = null;

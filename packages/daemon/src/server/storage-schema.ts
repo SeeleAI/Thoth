@@ -2,10 +2,10 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const STORAGE_LAYOUT_VERSION = 4;
-export const SQLITE_SCHEMA_VERSION = 4;
-export const CATALOG_MIGRATION_VERSION = 4;
-export const AUTHORITY_MIGRATION_VERSION = 7;
+export const STORAGE_LAYOUT_VERSION = 5;
+export const SQLITE_SCHEMA_VERSION = 5;
+export const CATALOG_MIGRATION_VERSION = 5;
+export const AUTHORITY_MIGRATION_VERSION = 8;
 export const STORAGE_LAYOUT_MARKER = "storage-layout.json";
 
 export function catalogDatabasePath(thothHome: string): string {
@@ -40,7 +40,7 @@ export function createCatalogDatabase(filePath: string): void {
     database
       .prepare(
         `INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
-        VALUES (?, 'schedule-run-workspace-v4-catalog', ?)`,
+        VALUES (?, 'provider-turn-interaction-v5-catalog', ?)`,
       )
       .run(CATALOG_MIGRATION_VERSION, new Date().toISOString());
     database.exec("PRAGMA user_version = " + String(SQLITE_SCHEMA_VERSION));
@@ -58,7 +58,7 @@ export function createWorkspaceDatabase(filePath: string, workspaceId: string): 
     database
       .prepare(
         `INSERT INTO authority_schema_migrations(version, checksum, applied_at)
-        VALUES (?, 'schedule-run-workspace-v4', ?)`,
+        VALUES (?, 'provider-turn-interaction-v5', ?)`,
       )
       .run(AUTHORITY_MIGRATION_VERSION, now);
     database
@@ -256,6 +256,9 @@ const WORKSPACE_SCHEMA = `
     controls_json TEXT,
     provider_run_mode TEXT NOT NULL DEFAULT 'default',
     provider_mode_receipt_json TEXT,
+    provider_plan_receipt_json TEXT,
+    provider_interaction_json TEXT,
+    provider_interaction_revision INTEGER NOT NULL DEFAULT 0,
     source_message_id TEXT,
     workspace_path TEXT,
     user_text_digest TEXT,

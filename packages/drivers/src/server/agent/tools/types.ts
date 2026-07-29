@@ -48,9 +48,18 @@ export interface ThothToolRuntimeCallerConfig {
   extra?: Record<string, unknown>;
 }
 
+export type ThothToolRuntimeScope =
+  | "clarify"
+  | "clarify_audit"
+  | "contract_audit"
+  | "loop_planexec"
+  | "loop_review";
+
 export interface ThothToolRuntimeContext {
   callerAgentId?: string;
   callerAgentConfig?: ThothToolRuntimeCallerConfig;
+  /** Runtime-only catalog shape. It is never persisted in AgentSessionConfig. */
+  runtimeScope?: ThothToolRuntimeScope;
 }
 
 export type ThothToolCatalogFactory = (

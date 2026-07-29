@@ -66,7 +66,9 @@ async function createSession(pi = new FakePi()): Promise<{
   events: SessionEvents;
 }> {
   const client = createClient(pi);
-  const session = (await client.createSession(createConfig())) as PiHarnessThread;
+  const session = (await client.createSession(createConfig(), {
+    agentId: "agent-pi-question",
+  })) as PiHarnessThread;
   const events = new SessionEvents(session);
   return { pi, session, events };
 }
@@ -174,6 +176,24 @@ class SessionEvents {
     );
   }
 
+  nextProviderQuestionRequest(): Promise<
+    Extract<AgentStreamEvent, { type: "provider_question_requested" }>
+  > {
+    return this.nextEvent(
+      (event): event is Extract<AgentStreamEvent, { type: "provider_question_requested" }> =>
+        event.type === "provider_question_requested",
+    );
+  }
+
+  nextProviderQuestionResolution(): Promise<
+    Extract<AgentStreamEvent, { type: "provider_question_resolved" }>
+  > {
+    return this.nextEvent(
+      (event): event is Extract<AgentStreamEvent, { type: "provider_question_resolved" }> =>
+        event.type === "provider_question_resolved",
+    );
+  }
+
   nextTimelineEvent(): Promise<Extract<AgentStreamEvent, { type: "timeline" }>> {
     return this.nextEvent(
       (event): event is Extract<AgentStreamEvent, { type: "timeline" }> =>
@@ -198,7 +218,7 @@ class SessionEvents {
 }
 
 describe("PiHarnessThread", () => {
-  test("bridges Pi RPC select extension UI requests through question permissions", async () => {
+  test("bridges Pi RPC select extension UI requests through Provider questions", async () => {
     const { pi, session, events } = await createSession();
     const fakeSession = pi.latestSession();
 
@@ -211,42 +231,44 @@ describe("PiHarnessThread", () => {
       options: ["A", "B"],
     });
 
-    const permission = await events.nextPermissionRequest();
-    expect(permission.request).toMatchObject({
-      id: "ui-1",
-      provider: "pi",
-      kind: "question",
-      title: "Pick one",
-      input: {
-        questions: [
-          {
-            question: "Pick one",
-            header: "Response",
-            options: [{ label: "A" }, { label: "B" }],
-            multiSelect: false,
-          },
-        ],
-      },
-      metadata: { extensionUiMethod: "select" },
+    const question = await events.nextProviderQuestionRequest();
+    expect(question.question).toMatchObject({
+      interactionId: "ui-1",
+      agentId: "agent-pi-question",
+      questions: [
+        {
+          id: "ui-1:response",
+          header: "Response",
+          prompt: "Pick one",
+          options: [
+            { value: "A", label: "A" },
+            { value: "B", label: "B" },
+          ],
+          selectionMode: "single",
+          allowOther: false,
+          secret: false,
+        },
+      ],
     });
-    expect(session.getPendingPermissions()).toHaveLength(1);
+    expect(session.getPendingPermissions()).toEqual([]);
 
-    await session.respondToPermission("ui-1", {
-      behavior: "allow",
-      updatedInput: { answers: { Response: "B" } },
+    await session.respondToProviderQuestion?.("ui-1", {
+      type: "answer",
+      answers: [{ questionId: "ui-1:response", values: ["B"] }],
     });
 
     expect(fakeSession.extensionUiResponses).toEqual([{ id: "ui-1", response: { value: "B" } }]);
     expect(session.getPendingPermissions()).toEqual([]);
-    await expect(events.nextPermissionResolution()).resolves.toMatchObject({
-      requestId: "ui-1",
-      resolution: { behavior: "allow" },
+    await expect(events.nextProviderQuestionResolution()).resolves.toMatchObject({
+      interactionId: "ui-1",
+      status: "answered",
     });
   });
 
   test("bridges Pi RPC input and confirm extension UI responses", async () => {
     const { pi, session, events } = await createSession();
     const fakeSession = pi.latestSession();
+    await session.startTurn("ask");
 
     fakeSession.emit({
       type: "extension_ui_request",
@@ -255,10 +277,10 @@ describe("PiHarnessThread", () => {
       title: "Your name",
       placeholder: "name",
     });
-    await events.nextPermissionRequest();
-    await session.respondToPermission("input-1", {
-      behavior: "allow",
-      updatedInput: { answers: { Response: "Ada" } },
+    await events.nextProviderQuestionRequest();
+    await session.respondToProviderQuestion?.("input-1", {
+      type: "answer",
+      answers: [{ questionId: "input-1:response", values: ["Ada"] }],
     });
 
     fakeSession.emit({
@@ -267,10 +289,10 @@ describe("PiHarnessThread", () => {
       method: "confirm",
       title: "Proceed?",
     });
-    await events.nextPermissionRequest();
-    await session.respondToPermission("confirm-1", {
-      behavior: "allow",
-      updatedInput: { answers: { Response: "No" } },
+    await events.nextProviderQuestionRequest();
+    await session.respondToProviderQuestion?.("confirm-1", {
+      type: "answer",
+      answers: [{ questionId: "confirm-1:response", values: ["No"] }],
     });
 
     expect(fakeSession.extensionUiResponses).toEqual([
@@ -282,6 +304,7 @@ describe("PiHarnessThread", () => {
   test("marks optional Pi RPC input prompts as skippable", async () => {
     const { pi, session, events } = await createSession();
     const fakeSession = pi.latestSession();
+    await session.startTurn("ask");
 
     fakeSession.emit({
       type: "extension_ui_request",
@@ -291,37 +314,32 @@ describe("PiHarnessThread", () => {
       placeholder: "Optional comment (press Enter to skip)...",
     });
 
-    const permission = await events.nextPermissionRequest();
-    expect(permission.request).toMatchObject({
-      title: "Optional comment",
-      input: {
-        questions: [
-          {
-            question: "Optional comment",
-            header: "Response",
-            options: [],
-            multiSelect: false,
-            placeholder: "Optional comment (press Enter to skip)...",
-            allowEmpty: true,
-            dismissLabel: "Skip",
-          },
-        ],
-      },
+    const question = await events.nextProviderQuestionRequest();
+    expect(question.question).toMatchObject({
+      questions: [
+        {
+          id: "comment-1:response",
+          prompt: "Optional comment",
+          options: [],
+          selectionMode: "single",
+          allowOther: true,
+        },
+      ],
     });
 
-    await session.respondToPermission("comment-1", {
-      behavior: "allow",
-      updatedInput: { answers: { Response: "" } },
+    await session.respondToProviderQuestion?.("comment-1", {
+      type: "dismiss",
     });
 
     expect(fakeSession.extensionUiResponses).toEqual([
-      { id: "comment-1", response: { value: "" } },
+      { id: "comment-1", response: { cancelled: true } },
     ]);
   });
 
-  test("combines Pi ask_user select and optional comment into one permission", async () => {
+  test("combines Pi ask_user select and optional comment into one Provider question", async () => {
     const { pi, session, events } = await createSession();
     const fakeSession = pi.latestSession();
+    await session.startTurn("ask");
 
     fakeSession.emit({
       type: "tool_execution_start",
@@ -342,40 +360,21 @@ describe("PiHarnessThread", () => {
       options: ["A", "B"],
     });
 
-    const permission = await events.nextPermissionRequest();
-    expect(permission.request).toMatchObject({
-      id: "select-1",
-      name: "Pi ask_user",
-      kind: "question",
-      title: "Pick one",
-      input: {
-        questions: [
-          {
-            question: "Pick one",
-            header: "Response",
-            options: [{ label: "A" }, { label: "B" }],
-            multiSelect: false,
-          },
-          {
-            question: "Optional comment",
-            header: "Comment",
-            options: [],
-            multiSelect: false,
-            placeholder: "Optional comment (press Enter to skip)...",
-            allowEmpty: true,
-          },
-        ],
-      },
-      metadata: {
-        combinedAskUser: "ask_user_select_optional_comment",
-        answerHeader: "Response",
-        commentHeader: "Comment",
-      },
+    const question = await events.nextProviderQuestionRequest();
+    expect(question.question).toMatchObject({
+      interactionId: "select-1",
+      questions: [
+        { id: "select-1:response", prompt: "Pick one", selectionMode: "single" },
+        { id: "select-1:comment", prompt: "Optional comment", selectionMode: "single" },
+      ],
     });
 
-    await session.respondToPermission("select-1", {
-      behavior: "allow",
-      updatedInput: { answers: { Response: "B", Comment: "Looks good" } },
+    await session.respondToProviderQuestion?.("select-1", {
+      type: "answer",
+      answers: [
+        { questionId: "select-1:response", values: ["B"] },
+        { questionId: "select-1:comment", values: ["Looks good"] },
+      ],
     });
 
     expect(fakeSession.extensionUiResponses).toEqual([
@@ -398,9 +397,10 @@ describe("PiHarnessThread", () => {
     expect(session.getPendingPermissions()).toEqual([]);
   });
 
-  test("cancels Pi RPC extension UI dialogs when question permission is denied", async () => {
+  test("dismisses Pi RPC extension UI dialogs without inventing an answer", async () => {
     const { pi, session, events } = await createSession();
     const fakeSession = pi.latestSession();
+    await session.startTurn("ask");
 
     fakeSession.emit({
       type: "extension_ui_request",
@@ -409,11 +409,10 @@ describe("PiHarnessThread", () => {
       title: "Pick one",
       options: ["A", "B"],
     });
-    await events.nextPermissionRequest();
+    await events.nextProviderQuestionRequest();
 
-    await session.respondToPermission("ui-cancel", {
-      behavior: "deny",
-      message: "Dismissed by user",
+    await session.respondToProviderQuestion?.("ui-cancel", {
+      type: "dismiss",
     });
 
     expect(fakeSession.extensionUiResponses).toEqual([

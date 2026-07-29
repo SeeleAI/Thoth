@@ -44,12 +44,14 @@ import type {
   ThothConfigRaw,
   ThothConfigRevision,
   WorkspaceCreateRequest,
+  AgentProviderQuestionRespondResponse,
 } from "@thoth/protocol/messages";
 import type {
   AgentPermissionRequest,
   AgentPermissionResponse,
   AgentPersistenceHandle,
   AgentProvider,
+  ProviderQuestionResolution,
   AgentSessionConfig,
 } from "@thoth/protocol/agent-types";
 import type { AgentThothStateUpdate } from "@thoth/protocol/thoth/rpc-schemas";
@@ -2996,6 +2998,40 @@ class DaemonClientRuntime {
         return msg.payload;
       },
     });
+  }
+
+  async respondProviderQuestion(input: {
+    agentId: string;
+    interactionId: string;
+    expectedRevision: number;
+    commandId: string;
+    resolution: ProviderQuestionResolution;
+    requestId?: string;
+    timeout?: number;
+  }): Promise<AgentProviderQuestionRespondResponse["payload"]> {
+    return this[RPC_INVOKE]("respondProviderQuestion", {
+      body: {
+        agentId: input.agentId,
+        interactionId: input.interactionId,
+        expectedRevision: input.expectedRevision,
+        commandId: input.commandId,
+        resolution: input.resolution,
+      },
+      requestId: input.requestId,
+      timeout: input.timeout,
+    });
+  }
+
+  async respondProviderQuestionAndWait(input: {
+    agentId: string;
+    interactionId: string;
+    expectedRevision: number;
+    commandId: string;
+    resolution: ProviderQuestionResolution;
+    requestId?: string;
+    timeout?: number;
+  }): Promise<AgentProviderQuestionRespondResponse["payload"]> {
+    return this.respondProviderQuestion(input);
   }
 
   // ============================================================================

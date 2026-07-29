@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "decision": "NTH-CD-087",
+  "decision": "NTH-CD-087/NTH-CD-097/NTH-CD-098",
   "thothBase": "265c4af9a45d6272ce4d3a107546b90541779983",
   "paseoRanges": [
     "5fc53c576ef0d4dee55455ccc95660703f71b892..b589599a8f21bcc9e4c911603082566ce320a3c8",
@@ -19,17 +19,17 @@
     "runtimeDependencyEdges": 164
   },
   "postSync": {
-    "physicalLines": 315762,
-    "scannerTokens": 1357222,
-    "astNodes": 1386279,
-    "staticImportEdges": 5215,
+    "physicalLines": 316951,
+    "scannerTokens": 1353705,
+    "astNodes": 1391743,
+    "staticImportEdges": 5221,
     "runtimeDependencyEdges": 165
   },
   "metrics": {
-    "physicalLines": 19325,
-    "scannerTokens": 84787,
-    "astNodes": 85669,
-    "staticImportEdges": 223,
+    "physicalLines": 20514,
+    "scannerTokens": 81270,
+    "astNodes": 91133,
+    "staticImportEdges": 229,
     "runtimeDependencyEdges": 1
   },
   "v0.2.3Delta": {
@@ -57,12 +57,37 @@
       "runtimeDependencyEdges": 1
     }
   },
+  "providerInteractionDelta": {
+    "thothBase": "d801b8e9e1e200f65bd94532e537f673c7e9567b",
+    "decisions": ["NTH-CD-097", "NTH-CD-098"],
+    "preSync": {
+      "physicalLines": 315762,
+      "scannerTokens": 1357222,
+      "astNodes": 1386279,
+      "staticImportEdges": 5215,
+      "runtimeDependencyEdges": 165
+    },
+    "postSync": {
+      "physicalLines": 316951,
+      "scannerTokens": 1353705,
+      "astNodes": 1391743,
+      "staticImportEdges": 5221,
+      "runtimeDependencyEdges": 165
+    },
+    "metrics": {
+      "physicalLines": 1189,
+      "scannerTokens": -3517,
+      "astNodes": 5464,
+      "staticImportEdges": 6,
+      "runtimeDependencyEdges": 0
+    }
+  },
   "publicSurfaceRemovals": {
     "wireTypes": ["start_workspace_script_request", "start_workspace_script_response"],
     "timelineTypes": ["start_workspace_script_request", "start_workspace_script_response"]
   },
   "translatedTargets": {
-    "cutBCeilingPhysicalLines": 300256,
-    "finalCeilingPhysicalLines": 277856
+    "cutBCeilingPhysicalLines": 301445,
+    "finalCeilingPhysicalLines": 279045
   }
 }

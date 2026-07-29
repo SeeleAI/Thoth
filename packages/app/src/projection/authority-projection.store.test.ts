@@ -58,6 +58,7 @@ function agent(patch: Partial<Agent> = {}): Agent {
     currentModeId: null,
     availableModes: [],
     pendingPermissions: [],
+    pendingProviderQuestions: [],
     persistence: null,
     title: "Agent",
     cwd: "/repo",

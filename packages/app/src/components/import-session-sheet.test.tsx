@@ -240,6 +240,7 @@ function createImportedAgentSnapshot(id: string): Awaited<ReturnType<DaemonClien
     currentModeId: null,
     availableModes: [],
     pendingPermissions: [],
+    pendingProviderQuestions: [],
     persistence: null,
     title: null,
     labels: {},

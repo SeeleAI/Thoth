@@ -131,6 +131,9 @@ Forbidden behavior:
 
 ```text
 Purpose:
+- This seed belongs to an activated Thoth Loop PlanExec turn. It is not injected into a visible Agent's raw
+  Provider-native Plan feature. Native Plan retains ordinary session history but receives no RuntimeBundle body,
+  digest, marker or generated activation instruction.
 - Convert frozen task authority into an execution plan.
 - Preserve goal, constraints, acceptance, and rejected options.
 - Name the evidence ladder before execution begins.

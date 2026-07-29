@@ -4107,3 +4107,86 @@ Conclusion: `NTH-AC-026` is satisfied, the exact Paseo v0.2.3 target-side set is
 `NTH-TD-049` is verified, and the fixed desktop-only Beta is `published` at source
 `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1`. The sole top next action returns to `NTH-TD-036`; it remains doing
 at Stage 4 with its independent `15,506`-LOC Cut B gap unchanged.
+
+### `NTH-EV-073` Same-Session RuntimeBundle, Native Plan And Provider Question Decoupling
+
+Status: `verified`.
+
+1. The implementation baseline is clean `agent/dev/mvp@d801b8e9e1e200f65bd94532e537f673c7e9567b`.
+2. `NTH-CD-097` and `NTH-CD-098` preserve one native Provider session and assign per-turn activation,
+   Provider event translation, ToolGateway fencing and Daemon interaction authority to their canonical owners.
+3. Local Codex `0.144.1` schemas establish that `thread/start` accepts `dynamicTools`, `turn/start` accepts native
+   Skill input and collaboration mode, `thread/resume` does not declare `dynamicTools`, request-user-input answers
+   are keyed by question id, and only a completed Plan item is authoritative. The isolated resume probe passed:
+   `{"ok":true,"threadId":"019fac44-d6c9-7db2-a4ab-2360c2414dbd","beforeCalls":1,"afterCalls":1}`.
+4. Drivers now verify RuntimeBundle activations against the canonical bundle digest domain before loading the
+   Skill artifact. Raw/native-Plan turns carry no activation or generated RuntimeBundle developer instructions;
+   each Thoth turn carries exactly one native Skill block. The session catalog is stable capability only, and
+   ToolGateway rejects raw, stale, wrong-generation and wrong-scope callbacks with `THOTH_RUNTIME_INACTIVE`
+   before any Card, Task or Workspace mutation.
+5. Core owns the pure `ProviderTurnInteraction` reducer. Protocol/Client expose typed Plan progress/completion and
+   `respondProviderQuestion`; Drivers translate native ids and answer arrays; Daemon schema v5 persists bounded
+   interaction/Plan receipts and alone creates/resolves Implement. Provider-owned Plan approval, assistant-text
+   synthesis, `planParts`, progress/delta promotion, header matching, comma splitting and first-option fallback are
+   absent or typed rejected.
+6. Isolated candidate homes contained zero persisted legacy Agent configs. The deterministic migration suite proves
+   one provenance-matched generated suffix is removed idempotently while preserving the user prompt, and one
+   ambiguous prompt remains byte-for-byte intact with `THOTH_RUNTIME_PROMPT_PROVENANCE_UNVERIFIED`. Existing native
+   Provider history is never rewritten. Secret-answer tests prove only question ids, counts and redacted digests
+   enter command receipts; plaintext is absent from Timeline, snapshot, SQLite and logs.
+7. Owner suites passed: Protocol `49/438`; Core `2/18`; Drivers `48` files passed plus `3` skipped, `604` tests
+   passed plus `21` skipped; Client `4/128`; foreground public API `1/16`; Daemon unit `199` files / `2,556` tests
+   plus `26` skipped; App `365/365` files and `2,713/2,713` tests; Desktop `37/37` files and `300` tests passed plus
+   `5` skipped. App remains above the published `363 files / 2,709 tests` floor.
+8. Real native Codex passed through `npm --workspace=@thoth/daemon run test:e2e:real:plan`: `1/1` in `145.77s`.
+   One thread produced a Thoth Clarify Card, was canceled, entered raw native Plan, emitted native
+   `request_user_input`, accepted the original question id with a string array, produced completed `type:"plan"`,
+   opened Daemon-owned Implement and completed `REAL_NATIVE_PLAN_IMPLEMENTED` on the same thread.
+9. Built-Web real UI acceptance passed `1/1` in `44.4s` using the isolated real-provider Playwright project and
+   native thread `019fad82-9d0f-7530-aa45-9b3477588d8c`. Every product action after seed used the UI: Provider
+   Features Plan, QuestionFormCard Local answer, completed PlanCard and Implement. The card was absent before the
+   native question resolved, the Plan contained `Local` rather than Clarify flow text, and implementation retained
+   the same thread. The direct Metro-dev attempt is preserved as a non-product failure receipt because a dependency
+   emitted raw `import.meta.env` into a classic script; the formally required static `npm run build:web` product
+   path passed and was used for acceptance. A final fresh-export rerun also passed `1/1`; ignored JSON report
+   `.dev/codex-plan-question-real-web.json` records `expected=1`, `unexpected=0`, a `73.062s` run and a `55.736s`
+   passing test.
+10. `npm run accept:thoth:appimage` rebuilt `/mnt/cfs/5vr0p6/yzy/thoth/packages/desktop/release/Thoth-x86_64.AppImage`
+    (`137,830,579` bytes, SHA-256 `babb5596ce24cbe111d37ee6d8a82191ef1292510e000814afc7ea3253fbd054`)
+    and passed the real Electron window journey. Ignored report
+    `.dev/packaged-appimage-thoth-flow/report.json` records `hotSwitchTurnCount=16`, same thread
+    `scripted-thread-3636616`, Provider Features activation, native question id `target`, answer array `["Local"]`,
+    completed-Plan-only Implement, `PACKAGED_NATIVE_PLAN_IMPLEMENTED`, schema-v5 migration and all existing
+    Files/Changes/Browser/scripts/large-file/Tasks/Schedules surfaces.
+11. Final root gates passed with current exit code `0`: Provider Plan tabs `18.800s`; Provider Control `45.433s`;
+    interaction regressions `27.552s`; complete Thoth `100.192s`; and Foundation (`66` Highlight, `438` Protocol,
+    `37` Relay, `128` Client). After the final allowance and handbook update, Foundation passed again and the
+    shared-`300s` `accept:refactor:fast` passed Stage 4 in `173.751s`, including current source metrics, a fresh Web
+    export, Provider Plan tabs in `18.780s`, interaction regressions in `28.577s` and complete Thoth in `96.055s`.
+    App typecheck, App/Daemon/Desktop suites, AppImage, `npm run smoke:isolation` and `git diff --check` also passed.
+12. Production is `316,951` LOC, `1,353,705` scanner tokens, `1,391,743` AST nodes, `5,221` imports and `165`
+    runtime dependency edges. `DeltaP50=1,189` translates Cut B/final ceilings to `301,445` / `279,045` under
+    `NTH-CD-087`; the independent `NTH-TD-036` gap remains exactly `15,506`. No commit, push, tag, Release,
+    deployment, user-daemon takeover or operation on Paseo `127.0.0.1:6767` occurred.
+
+### `NTH-EV-074` Provider Interaction Fixed-Beta Publication
+
+Status: `release_ready`.
+
+1. `NTH-EV-073` verifies the complete same-session Provider-interaction correction on clean base
+   `d801b8e9e1e200f65bd94532e537f673c7e9567b`. The final local candidate passed owner suites, real Codex,
+   built-Web UI, local AppImage real-window acceptance, Foundation, Stage 4 Refactor in `173.751s`, isolation,
+   formatting, repository validation, source metrics and diff hygiene.
+2. The user explicitly authorized commit, normal branch pushes and fixed-Beta replacement on `2026-07-29` through
+   `NTH-CD-099`. This authority excludes force push, merge/rebase, `main`, Relay deployment, npm/mobile/store/Nix/
+   Docker publication and any operation on independent Paseo.
+3. Repository-local `Royalvice` authentication passed. Live pre-push GitHub truth is
+   `agent/dev/mvp=d801b8e9`, `release/mvp-actions=eaa1aa5f`, `main=e74c6e0d`; fixed tag and public prerelease
+   `361273193` target `eaa1aa5f`, with `draft=false`, `prerelease=true`, exactly 26 assets and prior workflow
+   `30383055325` successful. The release branch remains an ancestor of the audited development base.
+4. The local tag ref is a stale checkout ref from an older fixed-Beta replacement. The current remote fixed tag was
+   fetched non-destructively into `refs/remotes/origin/release-tags/v0.0.0-mvp-beta` and resolves to `eaa1aa5f`;
+   no local or remote tag was moved during preflight.
+5. Pending receipts: exact release-source commit and two fast-forward pushes; matching workflow and all mandatory
+   jobs; fixed Release/tag and 26-asset replacement; fresh public downloads and checksums; downloaded AppImage
+   product journey; final non-target audit and development-only evidence closeout.

@@ -11,18 +11,22 @@ import {
   MockHarnessAdapter,
 } from "@thoth/drivers/internal/server/agent/providers/mock-load-test-agent";
 
-type PermissionRequestedEvent = Extract<AgentStreamEvent, { type: "permission_requested" }>;
+type ProviderQuestionRequestedEvent = Extract<
+  AgentStreamEvent,
+  { type: "provider_question_requested" }
+>;
 
-function expectSinglePermissionRequest(events: AgentStreamEvent[]): PermissionRequestedEvent {
-  const permissions = events.filter(
-    (event): event is PermissionRequestedEvent => event.type === "permission_requested",
+function expectSingleProviderQuestion(events: AgentStreamEvent[]): ProviderQuestionRequestedEvent {
+  const questions = events.filter(
+    (event): event is ProviderQuestionRequestedEvent =>
+      event.type === "provider_question_requested",
   );
-  expect(permissions).toHaveLength(1);
-  const [permission] = permissions;
-  if (!permission) {
-    throw new Error("permission request missing");
+  expect(questions).toHaveLength(1);
+  const [question] = questions;
+  if (!question) {
+    throw new Error("Provider question missing");
   }
-  return permission;
+  return question;
 }
 
 describe("MockHarnessAdapter", () => {
@@ -182,48 +186,51 @@ describe("MockHarnessAdapter", () => {
   test("emits the free-write question scenario selected by prompt", async () => {
     vi.useFakeTimers();
     const client = new MockHarnessAdapter();
-    const session = await client.createSession({
-      provider: "mock",
-      cwd: process.cwd(),
-      model: "ten-second-stream",
-    });
+    const session = await client.createSession(
+      {
+        provider: "mock",
+        cwd: process.cwd(),
+        model: "ten-second-stream",
+      },
+      { agentId: "agent-mock-question" },
+    );
     const events: AgentStreamEvent[] = [];
     const unsubscribe = session.subscribe((event) => events.push(event));
 
     const resultPromise = session.run("Emit synthetic questions: two free-write questions.");
     await vi.advanceTimersByTimeAsync(0);
 
-    const permission = expectSinglePermissionRequest(events);
-    expect(permission.request).toMatchObject({
-      provider: "mock",
-      name: "MockQuestions",
-      kind: "question",
-      input: {
-        questions: [
-          {
-            question: "What is the GitHub private repo URL to push to?",
-            header: "repoUrl",
-            options: [],
-            multiSelect: false,
-          },
-          {
-            question: "What should the first commit message be?",
-            header: "commitMessage",
-            options: [],
-            multiSelect: false,
-          },
-        ],
-      },
+    const requested = expectSingleProviderQuestion(events);
+    expect(requested.question).toMatchObject({
+      agentId: "agent-mock-question",
+      questions: [
+        {
+          header: "repoUrl",
+          prompt: "What is the GitHub private repo URL to push to?",
+          options: [],
+          selectionMode: "single",
+        },
+        {
+          header: "commitMessage",
+          prompt: "What should the first commit message be?",
+          options: [],
+          selectionMode: "single",
+        },
+      ],
     });
 
-    await session.respondToPermission(permission.request.id, {
-      behavior: "allow",
-      updatedInput: {
-        answers: {
-          repoUrl: "git@github.com:user/private-repo.git",
-          commitMessage: "Initialize private repo",
+    await session.respondToProviderQuestion?.(requested.question.interactionId, {
+      type: "answer",
+      answers: [
+        {
+          questionId: requested.question.questions[0]!.id,
+          values: ["git@github.com:user/private-repo.git"],
         },
-      },
+        {
+          questionId: requested.question.questions[1]!.id,
+          values: ["Initialize private repo"],
+        },
+      ],
     });
     await expect(resultPromise).resolves.toMatchObject({
       sessionId: session.id,

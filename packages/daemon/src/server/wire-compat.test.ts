@@ -119,6 +119,7 @@ class InMemoryExecutionService {
       currentModeId: null,
       availableModes: [],
       pendingPermissions: new Map(),
+      pendingProviderQuestions: new Map(),
       bufferedPermissionResolutions: new Map(),
       inFlightPermissionResponses: new Set(),
       pendingReplacement: false,

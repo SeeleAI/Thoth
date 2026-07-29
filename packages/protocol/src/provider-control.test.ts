@@ -78,7 +78,9 @@ describe("Agent provider control protocol", () => {
       title: null,
       labels: {},
     };
-    expect(AgentSnapshotPayloadSchema.parse(base).providerControl).toBeUndefined();
+    const legacy = AgentSnapshotPayloadSchema.parse(base);
+    expect(legacy.providerControl).toBeUndefined();
+    expect(legacy.pendingProviderQuestions).toEqual([]);
     expect(
       AgentSnapshotPayloadSchema.parse({
         ...base,

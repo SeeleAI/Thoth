@@ -13,7 +13,7 @@ import {
   FileTransferOpcode,
   type FileTransferFrame,
 } from "@thoth/protocol/binary-frames/index";
-import { Session } from "./session.js";
+import { Session, providerQuestionResolutionReceipt } from "./session.js";
 import { DownloadTokenStore } from "./file-download/token-store.js";
 import { StructuredAgentFallbackError } from "./agent/agent-response-loop.js";
 import type { ExecutionServiceEvent, ManagedAgent } from "./agent/execution-service.js";
@@ -211,6 +211,56 @@ function createClosedManagedAgent(input: {
     activeForegroundTurnId: null,
   };
 }
+
+describe("Provider question answer receipts", () => {
+  test("stores only non-secret digest metadata and never answer plaintext", () => {
+    const question = {
+      interactionId: "question-1",
+      agentId: "agent-1",
+      providerThreadId: "thread-1",
+      providerTurnId: "turn-1",
+      providerItemId: "item-1",
+      revision: 0,
+      questions: [
+        {
+          id: "public",
+          header: "Public",
+          prompt: "Public answer",
+          options: [],
+          selectionMode: "single" as const,
+          allowOther: true,
+          secret: false,
+        },
+        {
+          id: "secret",
+          header: "Secret",
+          prompt: "Secret answer",
+          options: [],
+          selectionMode: "single" as const,
+          allowOther: true,
+          secret: true,
+        },
+      ],
+      expiresAt: null,
+    };
+    const receipt = providerQuestionResolutionReceipt(question, {
+      type: "answer",
+      answers: [
+        { questionId: "public", values: ["public-answer-value"] },
+        { questionId: "secret", values: ["correct horse battery staple"] },
+      ],
+    });
+
+    expect(receipt).toMatchObject({
+      resolutionType: "answer",
+      answeredQuestionIds: ["public", "secret"],
+      secretQuestionCount: 1,
+    });
+    expect(receipt.nonSecretAnswerDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(receipt)).not.toContain("public-answer-value");
+    expect(JSON.stringify(receipt)).not.toContain("correct horse battery staple");
+  });
+});
 
 describe("internal Task execution visibility", () => {
   test("never exposes internal provider Agents through the foreground stream surface", async () => {

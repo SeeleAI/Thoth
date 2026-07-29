@@ -51,14 +51,22 @@ describe("Thoth storage layout migration", () => {
       expect.objectContaining({ version: 5, checksum: "normalized-authority-v2" }),
       expect.objectContaining({ version: 6, checksum: "schedule-task-execution-v3" }),
       expect.objectContaining({ version: 7, checksum: "schedule-run-workspace-v4" }),
+      expect.objectContaining({ version: 8, checksum: "provider-turn-interaction-v5" }),
     ]);
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(4);
-    expect(schemaVersion(authorityPath)).toBe(4);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(5);
+    expect(schemaVersion(authorityPath)).toBe(5);
     expect(hasTable(path.join(home, "catalog.sqlite"), "catalog_runtime_resource_leases")).toBe(
       true,
     );
     expect(tableColumns(authorityPath, "schedule_runs")).toEqual(
       expect.arrayContaining(["workspace_id", "task_id", "execution_id"]),
+    );
+    expect(tableColumns(authorityPath, "turns")).toEqual(
+      expect.arrayContaining([
+        "provider_plan_receipt_json",
+        "provider_interaction_json",
+        "provider_interaction_revision",
+      ]),
     );
     expect(hasTable(authorityPath, "authority_events")).toBe(false);
     expect(existsSync(`${path.join(home, "catalog.sqlite")}.release-05775486.bak`)).toBe(true);
@@ -67,8 +75,8 @@ describe("Thoth storage layout migration", () => {
       false,
     );
     expect(JSON.parse(readFileSync(path.join(home, "storage-layout.json"), "utf8"))).toMatchObject({
-      version: 4,
-      schemaVersion: 4,
+      version: 5,
+      schemaVersion: 5,
       sourceRelease: "05775486",
       migrated: true,
       migrationState: "complete",
@@ -124,9 +132,9 @@ describe("Thoth storage layout migration", () => {
     const root = temporaryRoot("fresh");
     const home = path.join(root, ".thoth");
     await ensureThothStorageLayout(home, createTestLogger());
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(4);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(5);
     expect(JSON.parse(readFileSync(path.join(home, "storage-layout.json"), "utf8"))).toMatchObject({
-      version: 4,
+      version: 5,
       migrated: false,
       workspaceCount: 0,
     });
@@ -142,7 +150,7 @@ describe("Thoth storage layout migration", () => {
     await expect(ensureThothStorageLayout(home, createTestLogger())).resolves.toEqual({
       requiresProviderThreadFinalization: false,
     });
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(4);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(5);
     expect(readFileSync(attachment, "utf8")).toBe("pending desktop attachment\n");
   });
 
@@ -153,8 +161,8 @@ describe("Thoth storage layout migration", () => {
 
     await ensureThothStorageLayout(home, createTestLogger());
 
-    expect(schemaVersion(catalogPath)).toBe(4);
-    expect(schemaVersion(authorityPath)).toBe(4);
+    expect(schemaVersion(catalogPath)).toBe(5);
+    expect(schemaVersion(authorityPath)).toBe(5);
     expect(hasTable(catalogPath, "catalog_runtime_resource_leases")).toBe(true);
     expect(tableColumns(authorityPath, "schedule_runs")).toEqual(
       expect.arrayContaining(["workspace_id", "task_id", "execution_id"]),
@@ -168,6 +176,7 @@ describe("Thoth storage layout migration", () => {
       { version: 2, checksum: "normalized-catalog-v2" },
       { version: 3, checksum: "host-runtime-resources-v3" },
       { version: 4, checksum: "schedule-run-workspace-v4-catalog" },
+      { version: 5, checksum: "provider-turn-interaction-v5-catalog" },
     ]);
     expect(
       migrationRows(authorityPath).map(({ version, checksum }) => ({ version, checksum })),
@@ -175,6 +184,7 @@ describe("Thoth storage layout migration", () => {
       { version: 5, checksum: "normalized-authority-v2" },
       { version: 6, checksum: "schedule-task-execution-v3" },
       { version: 7, checksum: "schedule-run-workspace-v4" },
+      { version: 8, checksum: "provider-turn-interaction-v5" },
     ]);
     expect(existsSync(`${catalogPath}.schema-v2.bak`)).toBe(true);
     expect(existsSync(`${authorityPath}.schema-v2.bak`)).toBe(true);
@@ -187,8 +197,8 @@ describe("Thoth storage layout migration", () => {
 
     await ensureThothStorageLayout(home, createTestLogger());
 
-    expect(schemaVersion(catalogPath)).toBe(4);
-    expect(schemaVersion(authorityPath)).toBe(4);
+    expect(schemaVersion(catalogPath)).toBe(5);
+    expect(schemaVersion(authorityPath)).toBe(5);
     expect(scheduleRunAuthority(authorityPath, "run-v3")).toEqual({
       workspace_id: null,
       task_id: "task-v3",
@@ -198,6 +208,7 @@ describe("Thoth storage layout migration", () => {
       { version: 2, checksum: "normalized-catalog-v2" },
       { version: 3, checksum: "host-runtime-resources-v3" },
       { version: 4, checksum: "schedule-run-workspace-v4-catalog" },
+      { version: 5, checksum: "provider-turn-interaction-v5-catalog" },
     ]);
     expect(
       migrationRows(authorityPath).map(({ version, checksum }) => ({ version, checksum })),
@@ -205,9 +216,37 @@ describe("Thoth storage layout migration", () => {
       { version: 5, checksum: "normalized-authority-v2" },
       { version: 6, checksum: "schedule-task-execution-v3" },
       { version: 7, checksum: "schedule-run-workspace-v4" },
+      { version: 8, checksum: "provider-turn-interaction-v5" },
     ]);
     expect(existsSync(`${catalogPath}.schema-v3.bak`)).toBe(true);
     expect(existsSync(`${authorityPath}.schema-v3.bak`)).toBe(true);
+  });
+
+  it("upgrades normalized schema v4 with legacy foreground turns defaulted losslessly", async () => {
+    const home = await normalizedV4Home();
+    const catalogPath = path.join(home, "catalog.sqlite");
+    const authorityPath = workspaceAuthorityPath(home);
+
+    await ensureThothStorageLayout(home, createTestLogger());
+
+    expect(schemaVersion(catalogPath)).toBe(5);
+    expect(schemaVersion(authorityPath)).toBe(5);
+    expect(foregroundTurnInteractionDefaults(authorityPath, "turn-v4")).toEqual({
+      provider_plan_receipt_json: null,
+      provider_interaction_json: null,
+      provider_interaction_revision: 0,
+    });
+    expect(catalogMigrationRows(catalogPath).at(-1)).toEqual({
+      version: 5,
+      checksum: "provider-turn-interaction-v5-catalog",
+    });
+    expect(
+      migrationRows(authorityPath)
+        .map(({ version, checksum }) => ({ version, checksum }))
+        .at(-1),
+    ).toEqual({ version: 8, checksum: "provider-turn-interaction-v5" });
+    expect(existsSync(`${catalogPath}.schema-v4.bak`)).toBe(true);
+    expect(existsSync(`${authorityPath}.schema-v4.bak`)).toBe(true);
   });
 
   it("rolls back a failed normalized-v2 authority upgrade and succeeds on retry", async () => {
@@ -235,7 +274,7 @@ describe("Thoth storage layout migration", () => {
     await expect(ensureThothStorageLayout(home, createTestLogger())).resolves.toEqual({
       requiresProviderThreadFinalization: false,
     });
-    expect(schemaVersion(authorityPath)).toBe(4);
+    expect(schemaVersion(authorityPath)).toBe(5);
     expect(scheduleRunAuthority(authorityPath, "run-v2")).toEqual({
       workspace_id: null,
       task_id: null,
@@ -247,13 +286,13 @@ describe("Thoth storage layout migration", () => {
     await withProcessPlatform("win32", async () => {
       const freshHome = path.join(temporaryRoot("windows-fresh"), ".thoth");
       await ensureThothStorageLayout(freshHome, createTestLogger());
-      expect(schemaVersion(path.join(freshHome, "catalog.sqlite"))).toBe(4);
+      expect(schemaVersion(path.join(freshHome, "catalog.sqlite"))).toBe(5);
 
       const migratedHome = releaseHome();
       const before = entityDigest(migratedHome);
       await ensureThothStorageLayout(migratedHome, createTestLogger());
       expect(entityDigest(migratedHome)).toBe(before);
-      expect(schemaVersion(workspaceAuthorityPath(migratedHome))).toBe(4);
+      expect(schemaVersion(workspaceAuthorityPath(migratedHome))).toBe(5);
     });
   });
 
@@ -275,7 +314,7 @@ describe("Thoth storage layout migration", () => {
     await expect(ensureThothStorageLayout(home, createTestLogger())).resolves.toEqual({
       requiresProviderThreadFinalization: false,
     });
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(4);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(5);
     expect(readFileSync(path.join(home, "server-id"), "utf8")).toBe("server-id\n");
   });
 
@@ -525,6 +564,74 @@ async function normalizedV3Home(): Promise<string> {
   return home;
 }
 
+async function normalizedV4Home(): Promise<string> {
+  const root = temporaryRoot("normalized-v4");
+  const home = path.join(root, ".thoth");
+  const workspaceId = fixtureManifest.workspaceId;
+  const now = "2026-07-29T00:00:00.000Z";
+  await ensureThothStorageLayout(home, createTestLogger());
+
+  const catalogPath = path.join(home, "catalog.sqlite");
+  const catalog = new DatabaseSync(catalogPath);
+  try {
+    catalog
+      .prepare(
+        `INSERT INTO catalog_workspaces(
+           workspace_id, canonical_path, display_name, kind, created_at, updated_at
+         ) VALUES (?, ?, ?, 'workspace', ?, ?)`,
+      )
+      .run(workspaceId, path.join(root, "workspace"), "Normalized v4", now, now);
+    catalog.exec(`
+      DELETE FROM catalog_schema_migrations;
+      INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
+        VALUES (2, 'normalized-catalog-v2', '${now}');
+      INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
+        VALUES (3, 'host-runtime-resources-v3', '${now}');
+      INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
+        VALUES (4, 'schedule-run-workspace-v4-catalog', '${now}');
+      PRAGMA user_version = 4;
+    `);
+  } finally {
+    catalog.close();
+  }
+
+  const authorityPath = workspaceAuthorityPath(home);
+  createWorkspaceDatabase(authorityPath, workspaceId);
+  const authority = new DatabaseSync(authorityPath);
+  try {
+    authority.exec(`
+      ALTER TABLE turns DROP COLUMN provider_plan_receipt_json;
+      ALTER TABLE turns DROP COLUMN provider_interaction_json;
+      ALTER TABLE turns DROP COLUMN provider_interaction_revision;
+      DELETE FROM authority_schema_migrations;
+      INSERT INTO authority_schema_migrations(version, checksum, applied_at)
+        VALUES (5, 'normalized-authority-v2', '${now}');
+      INSERT INTO authority_schema_migrations(version, checksum, applied_at)
+        VALUES (6, 'schedule-task-execution-v3', '${now}');
+      INSERT INTO authority_schema_migrations(version, checksum, applied_at)
+        VALUES (7, 'schedule-run-workspace-v4', '${now}');
+      INSERT INTO agents(
+        agent_id, visible, authority_revision, thoth_lifecycle, created_at, updated_at
+      ) VALUES ('agent-v4', 1, 1, 'done', '${now}', '${now}');
+      INSERT INTO turns(
+        turn_id, agent_id, generation, status, turn_kind, provider_run_mode,
+        workspace_path, created_at, updated_at
+      ) VALUES (
+        'turn-v4', 'agent-v4', 'generation-v4', 'done', 'raw', 'default',
+        '/tmp/workspace-v4', '${now}', '${now}'
+      );
+      PRAGMA user_version = 4;
+    `);
+  } finally {
+    authority.close();
+  }
+  writeFileSync(
+    path.join(home, "storage-layout.json"),
+    `${JSON.stringify({ version: 4, schemaVersion: 4, migrationState: "complete" })}\n`,
+  );
+  return home;
+}
+
 async function withProcessPlatform<T>(
   platform: NodeJS.Platform,
   operation: () => Promise<T>,
@@ -602,6 +709,21 @@ function scheduleRunAuthority(
   }
 }
 
+function foregroundTurnInteractionDefaults(filePath: string, turnId: string): unknown {
+  const database = new DatabaseSync(filePath, { readOnly: true });
+  try {
+    return database
+      .prepare(
+        `SELECT provider_plan_receipt_json, provider_interaction_json,
+                provider_interaction_revision
+           FROM turns WHERE turn_id = ?`,
+      )
+      .get(turnId);
+  } finally {
+    database.close();
+  }
+}
+
 function catalogMigrationRows(filePath: string): Array<{ version: number; checksum: string }> {
   const database = new DatabaseSync(filePath, { readOnly: true });
   try {
@@ -673,8 +795,14 @@ function entityDigest(home: string): string {
           .map((column) => column.name)
           .filter(
             (column) =>
-              name !== "schedule_runs" ||
-              (column !== "workspace_id" && column !== "task_id" && column !== "execution_id"),
+              (name !== "schedule_runs" ||
+                (column !== "workspace_id" && column !== "task_id" && column !== "execution_id")) &&
+              (name !== "turns" ||
+                ![
+                  "provider_plan_receipt_json",
+                  "provider_interaction_json",
+                  "provider_interaction_revision",
+                ].includes(column)),
           );
         const primary = columns
           .filter((column) => column.pk > 0 && names.includes(column.name))

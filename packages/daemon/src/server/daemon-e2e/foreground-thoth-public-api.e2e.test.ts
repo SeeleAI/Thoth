@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonClient } from "../test-utils/index.js";
 import { createTestThothDaemon, type TestThothDaemon } from "../test-utils/thoth-daemon.js";
@@ -22,6 +23,8 @@ import type {
   AgentRunOptions,
   AgentRunResult,
   AgentRuntimeInfo,
+  ProviderQuestionProjection,
+  ProviderQuestionResolution,
   HarnessThread,
   AgentSessionConfig,
   AgentStreamEvent,
@@ -36,7 +39,6 @@ import type {
 import { defineHarnessCapabilities } from "@thoth/drivers/harness";
 import { experimental_createMCPClient } from "ai";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { readThothRuntimeToolsConfig } from "../agent/thoth-runtime-tools-config.js";
 import type { HarnessToolAttachment } from "@thoth/drivers/harness";
 
 const capabilities: AgentCapabilityFlags = {
@@ -83,6 +85,11 @@ class ScriptedThothSession implements HarnessThread {
   private mcpClient: Promise<ScriptedMcpClient> | null = null;
   private providerRunMode: "default" | "plan" = "default";
   private readonly pendingPermissions = new Map<string, AgentPermissionRequest>();
+  private readonly pendingProviderQuestions = new Map<
+    string,
+    { projection: ProviderQuestionProjection; resolve: () => void }
+  >();
+  readonly providerQuestionResponses: ProviderQuestionResolution[] = [];
   readonly receivedPrompts: string[] = [];
 
   constructor(
@@ -119,7 +126,15 @@ class ScriptedThothSession implements HarnessThread {
     const turnId = `${this.id}-turn-${++this.turnOrdinal}`;
     this.activeTurnId = turnId;
     this.receivedPrompts.push(typeof prompt === "string" ? prompt : JSON.stringify(prompt));
-    queueMicrotask(() => void this.runActor(prompt, turnId, options?.messageId));
+    queueMicrotask(
+      () =>
+        void this.runActor(
+          prompt,
+          turnId,
+          options?.messageId,
+          options?.runtimeBundleActivation?.scope ?? null,
+        ),
+    );
     return { turnId };
   }
 
@@ -190,6 +205,34 @@ class ScriptedThothSession implements HarnessThread {
     }
   }
 
+  async respondToProviderQuestion(
+    interactionId: string,
+    resolution: ProviderQuestionResolution,
+  ): Promise<void> {
+    const pending = this.pendingProviderQuestions.get(interactionId);
+    if (!pending) throw new Error(`Unknown scripted Provider question ${interactionId}`);
+    if (
+      resolution.type === "answer" &&
+      (resolution.answers.length !== 1 ||
+        resolution.answers[0]?.questionId !== pending.projection.questions[0]?.id ||
+        resolution.answers[0].values.length !== 1)
+    ) {
+      throw Object.assign(new Error("Invalid scripted Provider question response"), {
+        code: "PROVIDER_QUESTION_INVALID_RESPONSE",
+      });
+    }
+    this.pendingProviderQuestions.delete(interactionId);
+    this.providerQuestionResponses.push(resolution);
+    this.emit({
+      type: "provider_question_resolved",
+      provider: this.provider,
+      interactionId,
+      status: resolution.type === "answer" ? "answered" : "dismissed",
+      turnId: this.activeTurnId ?? undefined,
+    });
+    pending.resolve();
+  }
+
   describePersistence(): AgentPersistenceHandle {
     return { provider: this.provider, sessionId: this.id, metadata: { threadId: this.id } };
   }
@@ -223,6 +266,13 @@ class ScriptedThothSession implements HarnessThread {
 
   async close(): Promise<void> {
     this.closed = true;
+    if (this.actor.simulateQuestionHandlerLossOnClose && this.pendingProviderQuestions.size > 0) {
+      this.pendingProviderQuestions.clear();
+      this.subscribers.clear();
+      return;
+    }
+    for (const pending of this.pendingProviderQuestions.values()) pending.resolve();
+    this.pendingProviderQuestions.clear();
     await this.interrupt();
     await (await this.mcpClient)?.close().catch(() => undefined);
     this.subscribers.clear();
@@ -273,6 +323,7 @@ class ScriptedThothSession implements HarnessThread {
     prompt: AgentPromptInput,
     turnId: string,
     canonicalMessageId?: string,
+    runtimeScope?: string | null,
   ): Promise<void> {
     this.emit({ type: "thread_started", provider: this.provider, sessionId: this.id });
     this.emit({
@@ -295,8 +346,51 @@ class ScriptedThothSession implements HarnessThread {
       });
     }
     try {
-      const scope = readThothRuntimeToolsConfig(this.config)?.scope ?? null;
       if (this.providerRunMode === "plan") {
+        if (JSON.stringify(prompt).includes("PLAN_WITH_QUESTION")) {
+          const interactionId = `${turnId}-question`;
+          const projection: ProviderQuestionProjection = {
+            interactionId,
+            agentId:
+              typeof this.config.title === "string" && this.config.title.startsWith("agent:")
+                ? this.config.title.slice("agent:".length)
+                : "",
+            providerThreadId: this.id,
+            providerTurnId: turnId,
+            providerItemId: interactionId,
+            revision: 0,
+            questions: [
+              {
+                id: "target",
+                header: "Target",
+                prompt: "Choose the implementation target",
+                options: [
+                  { value: "local", label: "Local" },
+                  { value: "ci", label: "CI" },
+                ],
+                selectionMode: "single",
+                allowOther: false,
+                secret: false,
+              },
+            ],
+            expiresAt: null,
+          };
+          const agentId = this.actor.agentIdForSession(this.id);
+          projection.agentId = agentId;
+          await new Promise<void>((resolvePromise) => {
+            this.pendingProviderQuestions.set(interactionId, {
+              projection,
+              resolve: resolvePromise,
+            });
+            this.emit({
+              type: "provider_question_requested",
+              provider: this.provider,
+              question: projection,
+              turnId,
+              providerTurnId: turnId,
+            });
+          });
+        }
         const plan = [
           "Inspect the current Workspace state.",
           "Implement the approved Goal in this same provider thread.",
@@ -309,35 +403,28 @@ class ScriptedThothSession implements HarnessThread {
           providerTurnId: turnId,
           item: { type: "assistant_message", text: plan },
         });
-        const request: AgentPermissionRequest = {
-          id: `${turnId}-implement`,
+        const bytes = Buffer.byteLength(plan, "utf8");
+        const completedPlanEvent = {
+          type: "provider_plan_completed",
           provider: this.provider,
-          name: "ScriptedNativePlanApproval",
-          kind: "plan",
-          title: "Plan",
-          description: "Review the provider-native Plan before implementation.",
-          input: { plan },
-          actions: [
-            { id: "reject", label: "Reject", behavior: "deny", variant: "secondary" },
-            {
-              id: "implement",
-              label: "Implement",
-              behavior: "allow",
-              variant: "primary",
-              intent: "implement",
-            },
-          ],
-          metadata: { source: "scripted_native_plan", planText: plan },
-        };
-        this.pendingPermissions.set(request.id, request);
-        this.emit({
-          type: "permission_requested",
-          provider: this.provider,
-          request,
+          plan: {
+            providerThreadId: this.id,
+            providerTurnId: turnId,
+            itemId: `${turnId}-plan`,
+            text: plan,
+            originalBytes: JSON.stringify(prompt).includes("PLAN_BYTE_MISMATCH")
+              ? bytes + 1
+              : bytes,
+            retainedBytes: bytes,
+          },
           turnId,
           providerTurnId: turnId,
-        });
-      } else if (scope === "clarify_audit") {
+        } as const;
+        this.emit(completedPlanEvent);
+        if (JSON.stringify(prompt).includes("PLAN_DUPLICATE")) {
+          this.emit(completedPlanEvent);
+        }
+      } else if (runtimeScope === "clarify_audit") {
         await this.callTool(
           "thoth_submit_clarify_convergence_audit",
           {
@@ -349,11 +436,11 @@ class ScriptedThothSession implements HarnessThread {
           },
           turnId,
         );
-      } else if (scope === "loop_planexec") {
+      } else if (runtimeScope === "loop_planexec") {
         const input = this.actor.script.planExec[this.actor.takePlanExecIndex()];
         if (!input) throw new Error("unexpected PlanExec attempt");
         await this.callTool("thoth_loop_submit_planexec_result", input, turnId);
-      } else if (scope === "loop_review") {
+      } else if (runtimeScope === "loop_review") {
         const index = this.actor.takeReviewIndex();
         const independent = this.actor.script.reviewIndependent[index];
         const verdict = this.actor.script.review[index];
@@ -361,7 +448,7 @@ class ScriptedThothSession implements HarnessThread {
         await this.callTool("thoth_loop_submit_review_independent_assessment", independent, turnId);
         await this.callTool("thoth_loop_submit_review_verdict", verdict, turnId);
       } else if (
-        scope === "clarify" &&
+        runtimeScope === "clarify" &&
         JSON.stringify(prompt).includes("Follow the installed thoth.clarify skill")
       ) {
         for (;;) {
@@ -423,20 +510,28 @@ class ScriptedThothClient implements HarnessAdapter {
   private taskTaken = false;
   private goalsTaken = false;
   private readonly toolCallsByTransport = new Map<HarnessToolAttachment, number>();
+  private readonly agentIdsBySession = new Map<string, string>();
   readonly toolReceipts: string[] = [];
+  readonly simulateQuestionHandlerLossOnClose: boolean;
 
   constructor(
     readonly script: ThothRealProviderFlowScript,
-    options: { provider?: string; transport?: HarnessToolAttachment } = {},
+    options: {
+      provider?: string;
+      transport?: HarnessToolAttachment;
+      simulateQuestionHandlerLossOnClose?: boolean;
+    } = {},
   ) {
     this.provider = options.provider ?? "codex";
     this.transport = options.transport ?? "native";
+    this.simulateQuestionHandlerLossOnClose = options.simulateQuestionHandlerLossOnClose ?? false;
     this.capabilities = {
       ...capabilities,
       supportsMcpServers: this.transport !== "native",
     };
     this.harnessCapabilities = defineHarnessCapabilities({
       toolAttachment: [this.transport],
+      runtimeBundleActivation: "native_skill",
       plan: { kind: "native" },
     });
   }
@@ -474,6 +569,12 @@ class ScriptedThothClient implements HarnessAdapter {
     this.toolCallsByTransport.set(transport, (this.toolCallsByTransport.get(transport) ?? 0) + 1);
   }
 
+  agentIdForSession(sessionId: string): string {
+    const agentId = this.agentIdsBySession.get(sessionId);
+    if (!agentId) throw new Error(`Scripted session ${sessionId} has no Agent binding`);
+    return agentId;
+  }
+
   recordToolReceipt(receipt: string): void {
     this.toolReceipts.push(receipt);
   }
@@ -503,6 +604,9 @@ class ScriptedThothClient implements HarnessAdapter {
       this,
     );
     this.sessions.push(session);
+    if (launchContext?.agentId) {
+      this.agentIdsBySession.set(session.id, launchContext.agentId);
+    }
     return session;
   }
 
@@ -1025,6 +1129,330 @@ describe("public foreground Thoth router", () => {
     expect(provider.sessions[0]).toBe(visibleSession);
     expect(visibleSession.turnCount).toBe(4);
   }, 30_000);
+
+  it("UT-02d keeps one thread across Thoth history, native question, completed Plan and Implement", async () => {
+    const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyRecovery;
+    const provider = new ScriptedThothClient(script);
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const cwd = mkdtempSync(join(tmpdir(), "thoth-public-plan-question-"));
+    workspaces.push(cwd);
+    const agent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd,
+      initialPrompt: "RAW_BEFORE_THOTH",
+      thoth: { enabled: false },
+      providerRunMode: "default",
+    });
+    await waitForAgentIdle(client, agent.id);
+    const visibleSession = provider.sessions[0]!;
+    const nativeThreadId = visibleSession.id;
+
+    await client.sendAgentMessage(agent.id, "THOTH_BEFORE_PLAN", {
+      thoth: {
+        enabled: true,
+        executionMode: "quick",
+        clarifyStrength: "light",
+      },
+      providerRunMode: "default",
+    });
+    await waitForPendingCard(client, agent.id, "clarify_card");
+    await client.cancelAgent(agent.id);
+
+    await client.sendAgentMessage(agent.id, "PLAN_WITH_QUESTION", {
+      thoth: { enabled: false },
+      providerRunMode: "plan",
+    });
+    const question = await waitFor(async () => {
+      const snapshot = await client!.fetchAgent({ agentId: agent.id });
+      return snapshot?.agent.pendingProviderQuestions?.[0] ?? null;
+    });
+    expect(question).toMatchObject({
+      agentId: agent.id,
+      providerThreadId: nativeThreadId,
+      questions: [{ id: "target", selectionMode: "single" }],
+    });
+    const whilePending = await client.fetchAgent({ agentId: agent.id });
+    expect(whilePending?.agent.pendingPermissions.some((item) => item.kind === "plan")).toBe(false);
+
+    const wrongAgent = await client.respondProviderQuestionAndWait({
+      agentId: "wrong-agent",
+      interactionId: question.interactionId,
+      expectedRevision: question.revision,
+      commandId: "ut02d-question-wrong-agent",
+      resolution: {
+        type: "answer",
+        answers: [{ questionId: "target", values: ["local"] }],
+      },
+    });
+    expect(wrongAgent).toMatchObject({
+      accepted: false,
+      errorCode: "PROVIDER_QUESTION_NOT_FOUND",
+    });
+    const staleRevision = await client.respondProviderQuestionAndWait({
+      agentId: agent.id,
+      interactionId: question.interactionId,
+      expectedRevision: question.revision + 1,
+      commandId: "ut02d-question-stale-revision",
+      resolution: {
+        type: "answer",
+        answers: [{ questionId: "target", values: ["local"] }],
+      },
+    });
+    expect(staleRevision).toMatchObject({
+      accepted: false,
+      conflict: true,
+      errorCode: "PROVIDER_QUESTION_STALE",
+    });
+    const invalidAnswer = await client.respondProviderQuestionAndWait({
+      agentId: agent.id,
+      interactionId: question.interactionId,
+      expectedRevision: question.revision,
+      commandId: "ut02d-question-invalid-answer",
+      resolution: { type: "answer", answers: [] },
+    });
+    expect(invalidAnswer).toMatchObject({
+      accepted: false,
+      conflict: false,
+      errorCode: "PROVIDER_QUESTION_INVALID_RESPONSE",
+    });
+    expect(
+      (await client.fetchAgent({ agentId: agent.id }))?.agent.pendingProviderQuestions,
+    ).toHaveLength(1);
+
+    const questionResult = await client.respondProviderQuestionAndWait({
+      agentId: agent.id,
+      interactionId: question.interactionId,
+      expectedRevision: question.revision,
+      commandId: "ut02d-question-answer",
+      resolution: {
+        type: "answer",
+        answers: [{ questionId: "target", values: ["local"] }],
+      },
+    });
+    expect(questionResult).toMatchObject({ accepted: true, conflict: false, error: null });
+    const duplicateQuestionResult = await client.respondProviderQuestionAndWait({
+      agentId: agent.id,
+      interactionId: question.interactionId,
+      expectedRevision: question.revision,
+      commandId: "ut02d-question-answer",
+      resolution: {
+        type: "answer",
+        answers: [{ questionId: "target", values: ["local"] }],
+      },
+    });
+    expect(duplicateQuestionResult).toMatchObject({
+      accepted: true,
+      conflict: false,
+      revision: question.revision + 1,
+    });
+    const reusedCommand = await client.respondProviderQuestionAndWait({
+      agentId: agent.id,
+      interactionId: "another-question",
+      expectedRevision: 0,
+      commandId: "ut02d-question-answer",
+      resolution: { type: "dismiss" },
+    });
+    expect(reusedCommand).toMatchObject({
+      accepted: false,
+      conflict: true,
+      errorCode: "PROVIDER_QUESTION_STALE",
+    });
+
+    const awaitingImplementation = await waitForThothLifecycle(
+      client,
+      agent.id,
+      "awaiting_implementation",
+    );
+    expect(awaitingImplementation.turn).toMatchObject({
+      kind: "raw",
+      providerRunMode: "plan",
+    });
+    const planPermission = await waitFor(async () => {
+      const snapshot = await client!.fetchAgent({ agentId: agent.id });
+      return snapshot?.agent.pendingPermissions.find((item) => item.kind === "plan") ?? null;
+    });
+    expect(planPermission.metadata).toMatchObject({
+      owner: "thoth-daemon",
+      authority: "provider-plan",
+    });
+    await client.respondToPermissionAndWait(
+      agent.id,
+      planPermission.id,
+      { behavior: "allow", selectedActionId: "implement" },
+      15_000,
+    );
+    await waitForThothLifecycle(client, agent.id, "done");
+    await waitForAgentIdle(client, agent.id);
+
+    await client.sendAgentMessage(agent.id, "RAW_AFTER_PLAN", {
+      thoth: { enabled: false },
+      providerRunMode: "default",
+    });
+    await waitForThothLifecycle(client, agent.id, "done");
+    await waitForAgentIdle(client, agent.id);
+    expect(provider.sessions).toHaveLength(1);
+    expect(provider.sessions[0]).toBe(visibleSession);
+    expect(visibleSession.id).toBe(nativeThreadId);
+    expect(visibleSession.providerQuestionResponses).toEqual([
+      {
+        type: "answer",
+        answers: [{ questionId: "target", values: ["local"] }],
+      },
+    ]);
+  }, 30_000);
+
+  it("UT-02e expires a native question whose live handler is lost across daemon restart", async () => {
+    const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyRecovery;
+    const provider = new ScriptedThothClient(script, {
+      simulateQuestionHandlerLossOnClose: true,
+    });
+    daemon = await createTestThothDaemon({
+      harnessAdapters: { codex: provider },
+      cleanup: false,
+    });
+    const thothHomeRoot = dirname(daemon.thothHome);
+    const firstStaticDir = daemon.staticDir;
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const cwd = mkdtempSync(join(tmpdir(), "thoth-provider-question-restart-"));
+    workspaces.push(cwd);
+    const agent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd,
+      initialPrompt: "RAW_BEFORE_QUESTION_RESTART",
+      thoth: { enabled: false },
+      providerRunMode: "default",
+    });
+    await waitForAgentIdle(client, agent.id);
+    await client.sendAgentMessage(agent.id, "PLAN_WITH_QUESTION", {
+      thoth: { enabled: false },
+      providerRunMode: "plan",
+    });
+    const question = await waitFor(async () => {
+      const snapshot = await client!.fetchAgent({ agentId: agent.id });
+      return snapshot?.agent.pendingProviderQuestions?.[0] ?? null;
+    });
+    expect(question.providerThreadId).toBe(provider.sessions[0]?.id);
+    const beforeRestart = await client.getAgentThothState(agent.id);
+    expect(beforeRestart.state.turn?.id).toBeTruthy();
+    expect(agent.workspaceId).toBeTruthy();
+
+    await client.close();
+    await daemon.close();
+    // The fixture daemon shuts down gracefully, while the recovery branch being
+    // exercised represents an abrupt process loss. Restore only the two lifecycle
+    // columns that graceful close advances; keep the durable question interaction
+    // exactly as written by the production authority path.
+    const authorityDb = new DatabaseSync(
+      join(daemon.thothHome, "workspaces", agent.workspaceId!, "authority.sqlite"),
+    );
+    authorityDb
+      .prepare("UPDATE turns SET status = 'running', error = NULL WHERE turn_id = ?")
+      .run(beforeRestart.state.turn!.id);
+    authorityDb
+      .prepare("UPDATE agents SET thoth_lifecycle = 'running', error = NULL WHERE agent_id = ?")
+      .run(agent.id);
+    authorityDb.close();
+    client = null;
+    daemon = null;
+    rmSync(firstStaticDir, { recursive: true, force: true });
+    daemon = await createTestThothDaemon({
+      harnessAdapters: { codex: provider },
+      thothHomeRoot,
+    });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const interrupted = await waitForThothLifecycle(client, agent.id, "interrupted");
+    expect(interrupted.turn?.error).toContain("live Provider question handler was lost");
+    expect(
+      (await client.fetchAgent({ agentId: agent.id }))?.agent.pendingProviderQuestions,
+    ).toEqual([]);
+
+    await client.sendAgentMessage(agent.id, "PLAN_WITH_QUESTION", {
+      thoth: { enabled: false },
+      providerRunMode: "plan",
+    });
+    const retriedQuestion = await waitFor(async () => {
+      const snapshot = await client!.fetchAgent({ agentId: agent.id });
+      return snapshot?.agent.pendingProviderQuestions?.[0] ?? null;
+    });
+    expect(retriedQuestion.interactionId).not.toBe(question.interactionId);
+    const dismissed = await client.respondProviderQuestionAndWait({
+      agentId: agent.id,
+      interactionId: retriedQuestion.interactionId,
+      expectedRevision: retriedQuestion.revision,
+      commandId: "ut02e-dismiss-retried-question",
+      resolution: { type: "dismiss" },
+    });
+    expect(dismissed).toMatchObject({ accepted: true, conflict: false });
+    await waitForThothLifecycle(client, agent.id, "awaiting_implementation");
+    const planPermission = await waitFor(async () => {
+      const snapshot = await client!.fetchAgent({ agentId: agent.id });
+      return snapshot?.agent.pendingPermissions.find((item) => item.kind === "plan") ?? null;
+    });
+    await client.respondToPermissionAndWait(agent.id, planPermission.id, { behavior: "deny" });
+    await waitForThothLifecycle(client, agent.id, "done");
+  }, 60_000);
+
+  it.each([
+    {
+      prompt: "PLAN_BYTE_MISMATCH",
+      error: "Completed native Plan byte receipt does not match its retained text.",
+    },
+    {
+      prompt: "PLAN_DUPLICATE",
+      error: "PROVIDER_PLAN_DUPLICATE",
+    },
+  ])("rejects invalid completed Plan authority for $prompt", async ({ prompt, error }) => {
+    const provider = new ScriptedThothClient(THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickDirect);
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const cwd = mkdtempSync(join(tmpdir(), "thoth-public-invalid-plan-"));
+    workspaces.push(cwd);
+    const agent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd,
+      initialPrompt: "RAW_BEFORE_INVALID_PLAN",
+      thoth: { enabled: false },
+      providerRunMode: "default",
+    });
+    await waitForAgentIdle(client, agent.id);
+    await client.sendAgentMessage(agent.id, prompt, {
+      thoth: { enabled: false },
+      providerRunMode: "plan",
+    });
+    const interrupted = await waitForThothLifecycle(client, agent.id, "interrupted");
+    expect(interrupted.turn?.error).toContain(error);
+    const snapshot = await client.fetchAgent({ agentId: agent.id });
+    expect(
+      snapshot?.agent.pendingPermissions.some((permission) => permission.kind === "plan"),
+    ).toBe(false);
+  });
 
   it("UT-03 preserves an open Card across daemon restart, then cancels and resumes on the same Agent", async () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyRecovery;

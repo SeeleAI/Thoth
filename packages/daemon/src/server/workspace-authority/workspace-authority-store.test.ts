@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { RuntimeAttachmentReceipt } from "@thoth/drivers/harness";
 import { WorkspaceCatalogStore } from "./catalog-store.js";
 import { WorkspaceAuthorityStore } from "./workspace-authority-store.js";
+import { createProviderTurnInteractionState, reduceProviderTurnInteraction } from "@thoth/core";
 
 const roots: string[] = [];
 
@@ -76,6 +77,70 @@ afterEach(() => {
 });
 
 describe("WorkspaceAuthorityStore", () => {
+  it("keeps Provider question command receipts idempotent and free of answer plaintext", () => {
+    const { root, store, catalog } = createStore();
+    const result = {
+      agentId: "agent_visible",
+      interactionId: "question-1",
+      accepted: true,
+      conflict: false,
+      revision: 1,
+      errorCode: null,
+      error: null,
+    };
+    const receipt = {
+      resolutionType: "answer" as const,
+      answeredQuestionIds: ["public", "secret"],
+      nonSecretAnswerDigest: "sha256-digest-only",
+      secretQuestionCount: 1,
+    };
+
+    expect(
+      store.recordProviderQuestionCommand({
+        agentId: "agent_visible",
+        interactionId: "question-1",
+        commandId: "provider-question-command-1",
+        resultRevision: 1,
+        result,
+        receipt,
+      }),
+    ).toMatchObject({ duplicate: false, revision: 1 });
+    expect(
+      store.recordProviderQuestionCommand({
+        agentId: "agent_visible",
+        interactionId: "question-1",
+        commandId: "provider-question-command-1",
+        resultRevision: 99,
+        result: { ignored: "correct horse battery staple" },
+        receipt: { ...receipt, nonSecretAnswerDigest: "ignored-public-answer" },
+      }),
+    ).toMatchObject({ duplicate: true, revision: 1 });
+    expect(() =>
+      store.getProviderQuestionCommandResult({
+        agentId: "agent_visible",
+        interactionId: "question-2",
+        commandId: "provider-question-command-1",
+      }),
+    ).toThrow(/another authority action/);
+
+    const dbPath = path.join(root, "workspaces", "wks_test", "authority.sqlite");
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    const row = db
+      .prepare("SELECT result_json FROM authority_commands WHERE command_id = ?")
+      .get("provider-question-command-1") as { result_json: string };
+    db.close();
+    expect(JSON.parse(row.result_json)).toEqual({ result, receipt });
+    store.close();
+    catalog.close();
+    const authorityFiles = readdirSync(path.dirname(dbPath))
+      .filter((name) => name.startsWith("authority.sqlite"))
+      .map((name) => readFileSync(path.join(path.dirname(dbPath), name)));
+    for (const sqliteBytes of authorityFiles) {
+      expect(sqliteBytes.includes(Buffer.from("correct horse battery staple"))).toBe(false);
+      expect(sqliteBytes.includes(Buffer.from("ignored-public-answer"))).toBe(false);
+    }
+  });
+
   it("stores Agent provider control with CAS and command idempotency", () => {
     const { store } = createStore();
     store.upsertAgentRecord({
@@ -588,6 +653,76 @@ describe("WorkspaceAuthorityStore", () => {
     expect(duplicate.duplicate).toBe(true);
     expect(duplicate.decision.id).toBe(first.decision.id);
     expect(store.getForegroundState("agent_visible").revision).toBe(started.state.revision + 1);
+    store.close();
+    catalog.close();
+  });
+
+  it("CAS-fences Provider interaction and completed Plan receipts on the foreground turn", () => {
+    const { workspaceId, catalog, store } = createStore();
+    const started = store.startForegroundTurn({
+      agentId: "agent_plan",
+      kind: "raw",
+      sourceMessageId: "message_plan",
+      workspaceId,
+      workspacePath: "/workspace",
+      userText: "Plan this change.",
+      providerRunMode: "plan",
+    });
+    const running = createProviderTurnInteractionState({
+      providerThreadId: "thread-plan",
+      providerTurnId: "turn-plan",
+    });
+    const first = store.recordForegroundProviderInteraction({
+      agentId: "agent_plan",
+      turnId: started.turn.id,
+      generation: started.turn.generation,
+      expectedRevision: 0,
+      interaction: running,
+    });
+    expect(first).toMatchObject({
+      providerInteraction: running,
+      providerInteractionRevision: 1,
+      providerPlanReceipt: null,
+    });
+    expect(() =>
+      store.recordForegroundProviderInteraction({
+        agentId: "agent_plan",
+        turnId: started.turn.id,
+        generation: started.turn.generation,
+        expectedRevision: 0,
+        interaction: running,
+      }),
+    ).toThrow(/interaction changed/);
+
+    const text = "Inspect, implement, and verify.";
+    const planned = reduceProviderTurnInteraction(running, {
+      type: "plan_completed",
+      providerThreadId: "thread-plan",
+      providerTurnId: "turn-plan",
+      itemId: "plan-item",
+      byteLength: Buffer.byteLength(text, "utf8"),
+    }).state;
+    const receipt = {
+      providerThreadId: "thread-plan",
+      providerTurnId: "turn-plan",
+      itemId: "plan-item",
+      text,
+      originalBytes: Buffer.byteLength(text, "utf8"),
+      retainedBytes: Buffer.byteLength(text, "utf8"),
+    };
+    const second = store.recordForegroundProviderInteraction({
+      agentId: "agent_plan",
+      turnId: started.turn.id,
+      generation: started.turn.generation,
+      expectedRevision: 1,
+      interaction: planned,
+      planReceipt: receipt,
+    });
+    expect(second).toMatchObject({
+      providerInteraction: planned,
+      providerInteractionRevision: 2,
+      providerPlanReceipt: receipt,
+    });
     store.close();
     catalog.close();
   });

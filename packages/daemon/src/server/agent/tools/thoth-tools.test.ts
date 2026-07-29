@@ -65,16 +65,6 @@ function createCatalog(
     config: {
       provider: "codex",
       cwd: "/tmp/thoth-tool-test",
-      extra: {
-        thothRuntimeTools: {
-          enabled: true,
-          scope: input.enableLoopRuntimeTools
-            ? input.loopPhase === "review"
-              ? "loop_review"
-              : "loop_planexec"
-            : "clarify",
-        },
-      },
     },
   } as ManagedAgent;
   let callerRegistered = input.callerAvailableAfterCatalogCreation !== true;
@@ -164,6 +154,11 @@ function createCatalog(
     workspaceAuthorityManager: authorityManager,
     callerAgentId: "agent-1",
     callerAgentConfig: primaryAgent.config,
+    runtimeScope: input.enableLoopRuntimeTools
+      ? input.loopPhase === "review"
+        ? "loop_review"
+        : "loop_planexec"
+      : "clarify",
     toolGateway,
     ...(input.workspaceScripts ? { workspaceScripts: input.workspaceScripts } : {}),
     ...(input.browserToolsBroker ? { browserToolsBroker: input.browserToolsBroker } : {}),
@@ -491,7 +486,10 @@ describe("Thoth runtime authority tools", () => {
           },
         },
       ),
-    ).rejects.toThrow("disabled for this raw provider turn");
+    ).rejects.toMatchObject({
+      code: "THOTH_RUNTIME_INACTIVE",
+      message: "Thoth RuntimeBundle is inactive for this provider turn",
+    });
 
     expect(currentAuthorityStore?.listAllCards()).toEqual([]);
     expect(timeline).toEqual([]);
@@ -509,9 +507,8 @@ describe("Thoth runtime authority tools", () => {
       providerSnapshotManager: {} as ProviderSnapshotManager,
       logger: createTestLogger(),
       callerAgentId: "agent-launching",
-      callerAgentConfig: {
-        extra: { thothRuntimeTools: { enabled: true, scope: "clarify" } },
-      },
+      callerAgentConfig: { provider: "codex", cwd: "/tmp/thoth-tool-test" },
+      runtimeScope: "clarify",
     });
 
     expect(catalog.getTool("thoth_submit_clarify_card")).toBeDefined();

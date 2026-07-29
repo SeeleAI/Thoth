@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ensureValidJson } from "../../json-utils.js";
 import type { Logger } from "pino";
+import { THOTH_RUNTIME_BUNDLE_CATALOG, loadRuntimeBundle } from "@thoth/drivers/harness";
 
 import type { AgentMode, AgentProvider, AgentTimelineItem } from "@thoth/drivers/agent-runtime";
 import type { ExecutionService, WaitForAgentResult } from "../execution-service.js";
@@ -100,10 +101,6 @@ import type {
 } from "@thoth/protocol/thoth/rpc-schemas";
 import { sendPromptToAgent, setupFinishNotification } from "../agent-prompt.js";
 import { respondToAgentPermission } from "../permission-response.js";
-import {
-  readThothRuntimeToolsConfig,
-  withThothRuntimeTools,
-} from "../thoth-runtime-tools-config.js";
 import { createRuntimeAuthorityDecision } from "../runtime-tool-decisions.js";
 import {
   WorkspaceForegroundAuthority,
@@ -133,10 +130,13 @@ import type {
   ThothToolDefinition,
   ThothToolExecutionContext,
   ThothToolResult,
+  ThothToolRuntimeScope,
   ThothToolRuntimeCallerConfig,
 } from "@thoth/drivers/agent-runtime";
 import { registerBrowserTools } from "../../browser-tools/tools.js";
 import type { BrowserToolsBroker } from "../../browser-tools/broker.js";
+
+const CLARIFY_RUNTIME_BUNDLE = loadRuntimeBundle("thoth.clarify", THOTH_RUNTIME_BUNDLE_CATALOG);
 
 export interface ThothToolHostDependencies {
   executionService: ExecutionService;
@@ -171,6 +171,7 @@ export interface ThothToolHostDependencies {
    * is not registered yet when native provider tools are mounted.
    */
   callerAgentConfig?: ThothToolRuntimeCallerConfig;
+  runtimeScope?: ThothToolRuntimeScope;
   logger: Logger;
   workspaceAuthorityManager?: WorkspaceAuthorityManager;
   toolGateway?: ToolGateway;
@@ -685,9 +686,9 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
   // provider session. Read the caller lazily for handlers that need a live
   // session, otherwise a valid Clarify -> Task transition falsely loses its
   // independent audit capability.
-  const initialToolCallerAgent = callerAgentId ? executionService.getAgent(callerAgentId) : null;
-  const toolCallerConfig = initialToolCallerAgent?.config ?? options.callerAgentConfig;
-  const runtimeTools = toolCallerConfig ? readThothRuntimeToolsConfig(toolCallerConfig) : null;
+  const runtimeTools = options.runtimeScope
+    ? ({ enabled: true, scope: options.runtimeScope } as const)
+    : null;
   const enableClarifyRuntimeTools = runtimeTools?.scope === "clarify";
   const enableClarifyAuditTools = runtimeTools?.scope === "clarify_audit";
   const enableContractAuditTools = runtimeTools?.scope === "contract_audit";
@@ -757,9 +758,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           // authority submissions. Their handlers apply the stricter
           // Workspace/Agent/generation capability fence and remain available
           // during raw Provider turns.
-        } else if (name === "thoth_get_bound_task_progress") {
-          requireToolGateway().assertForegroundContextTurn({ agentId: callerAgentId, context });
-        } else {
+        } else if (name.startsWith("thoth_")) {
           requireToolGateway().assertForegroundAuthorityTurn({ agentId: callerAgentId, context });
         }
       }
@@ -936,36 +935,28 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     clarifyTranscript: string;
   }): Promise<ClarifyConvergenceAudit> => {
     const toolCallerAgent = callerAgentId ? executionService.getAgent(callerAgentId) : null;
-    if (
-      !toolCallerAgent ||
-      readThothRuntimeToolsConfig(toolCallerAgent.config)?.scope !== "clarify"
-    ) {
+    if (!toolCallerAgent || runtimeTools?.scope !== "clarify") {
       throw new Error(
         "Clarify convergence audit requires an active provider runtime-tools session.",
       );
     }
     const auditAgent = await executionService.createAgent(
-      withThothRuntimeTools(
-        {
-          provider: toolCallerAgent.provider,
-          cwd: toolCallerAgent.cwd,
-          internal: true,
-          ...(toolCallerAgent.config.model ? { model: toolCallerAgent.config.model } : {}),
-          modeId: "auto",
-          ...(toolCallerAgent.config.thinkingOptionId
-            ? { thinkingOptionId: toolCallerAgent.config.thinkingOptionId }
-            : {}),
-          systemPrompt:
-            "You are an independent Thoth Clarify convergence auditor. Do not ask the user questions and do not write files. Judge whether a candidate Task Card is grounded by the supplied frontier ledger and transcript. Call thoth_submit_clarify_convergence_audit exactly once with proceed, revise_frontier, or blocked.",
-        },
-        {
-          enabled: true,
-          scope: "clarify_audit",
-        },
-      ),
+      {
+        provider: toolCallerAgent.provider,
+        cwd: toolCallerAgent.cwd,
+        internal: true,
+        ...(toolCallerAgent.config.model ? { model: toolCallerAgent.config.model } : {}),
+        modeId: "auto",
+        ...(toolCallerAgent.config.thinkingOptionId
+          ? { thinkingOptionId: toolCallerAgent.config.thinkingOptionId }
+          : {}),
+        systemPrompt:
+          "You are an independent Thoth Clarify convergence auditor. Do not ask the user questions and do not write files. Judge whether a candidate Task Card is grounded by the supplied frontier ledger and transcript. Call thoth_submit_clarify_convergence_audit exactly once with proceed, revise_frontier, or blocked.",
+      },
       undefined,
       {
         labels: { surface: "thoth-clarify-audit", sourceAgentId: toolCallerAgent.id },
+        runtimeBundleScope: "clarify_audit",
         persistSession: true,
         persistInternal: true,
         initialTitle: "Clarify convergence audit",
@@ -983,7 +974,14 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     ].join("\n\n");
     void (async () => {
       try {
-        for await (const event of executionService.streamAgent(auditAgent.id, prompt)) {
+        for await (const event of executionService.streamAgent(auditAgent.id, prompt, {
+          runtimeBundleActivation: {
+            bundleId: CLARIFY_RUNTIME_BUNDLE.id,
+            bundleDigest: CLARIFY_RUNTIME_BUNDLE.digest,
+            scope: "clarify_audit",
+            generation: auditAgent.id,
+          },
+        })) {
           if (event.type === "turn_failed") {
             rejectClarifyConvergenceAudit(auditAgent.id, event.error);
             return;

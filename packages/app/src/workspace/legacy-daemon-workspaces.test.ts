@@ -37,6 +37,7 @@ function legacyAgent(input: {
       currentModeId: null,
       availableModes: [],
       pendingPermissions: [],
+      pendingProviderQuestions: [],
       persistence: null,
       title: null,
       labels: {},

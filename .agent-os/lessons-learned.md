@@ -1844,3 +1844,29 @@ Observed on `2026-07-28` during `NTH-TD-049`:
 Conclusion: preserve the first external failure receipt, then classify it from transport logs. In restricted
 environments, activate Node's environment proxy explicitly; do not mislabel a successful hosted protocol as
 unsupported, deploy a substitute Relay, or weaken reconnect acceptance to avoid an egress failure.
+
+## `NTH-EXP-073` Provider interaction identifiers and RuntimeBundle digests have distinct authority domains
+
+Observed on `2026-07-29` during `NTH-TD-050`:
+
+1. The first real Codex Thoth turn failed before producing a Card because the Driver compared the Daemon's
+   canonical RuntimeBundle digest with the raw `SKILL.md` source digest. Both hashes were valid but represented
+   different domains. The Driver now verifies activation with `loadRuntimeBundle()` and only then resolves the
+   native Skill artifact path; tests require one Skill block on a Thoth turn and none on the following raw turn.
+2. The next real run produced the native question and completed Plan, but Implement did not open. The common event
+   wrapper had overwritten the native Provider turn id with a Driver-local lifecycle id such as `codex-turn-0`.
+   Core correctly rejected the completed Plan with `PROVIDER_TURN_MISMATCH`. Codex terminal events now carry an
+   explicit `providerTurnId`, and the coordinator refuses to substitute a local lifecycle id.
+3. Source review then found a residual second authority: generic `respondToPermission()` still accepted
+   Provider-owned `kind="plan"` approvals even though current Drivers no longer created them. The path now returns
+   `PROVIDER_PLAN_AUTHORITY_INVALID`; only Daemon `openDaemonPlanApproval` / `resolveDaemonPlanApproval` can create
+   and settle Implement.
+4. Real-Web infrastructure exposed two separate non-product failures. A metadata fork with zero copied files
+   created an empty `projects/` directory and made a fresh home look like unsupported legacy authority; the helper
+   now creates target directories lazily. Metro dev emitted raw `import.meta.env` in a classic script, so the
+   formally required static `build:web` product artifact—not the broken dev bundle—was used for real UI evidence.
+
+Conclusion: never compare hashes or ids merely because their string shapes match. RuntimeBundle receipt digest,
+Skill source digest, Driver lifecycle id and native Provider turn id are separate domains and must remain explicit.
+Test infrastructure must also preserve fresh-home semantics and must not replace a verified product build with an
+accidentally incompatible development bundler.

@@ -52,6 +52,66 @@ if (composer.includes("daemonConfig?.providerControl")) {
   failures.push("Composer still freezes Plan from global daemon config");
 }
 
+const codexAdapter = read("packages/drivers/src/server/agent/providers/codex-app-server-agent.ts");
+for (const forbidden of [
+  "emitSyntheticPlanApprovalRequest",
+  "CodexPlanApproval",
+  "preparePlanImplementation",
+  "latestPlanResult",
+]) {
+  if (codexAdapter.includes(forbidden)) {
+    failures.push(`Codex still owns removed Plan authority path ${forbidden}`);
+  }
+}
+for (const required of [
+  'type: "provider_plan_completed"',
+  'type: "provider_question_requested"',
+  'type: "skill"',
+  "THOTH_RUNTIME_BUNDLE_CATALOG",
+]) {
+  if (!codexAdapter.includes(required)) {
+    failures.push(`Codex native Plan bridge is missing ${required}`);
+  }
+}
+
+const executionService = read("packages/daemon/src/server/agent/execution-service.ts");
+for (const required of [
+  "PROVIDER_PLAN_AUTHORITY_INVALID",
+  "openDaemonPlanApproval",
+  "resolveDaemonPlanApproval",
+]) {
+  if (!executionService.includes(required)) {
+    failures.push(`Daemon Plan authority is missing ${required}`);
+  }
+}
+for (const forbidden of ["planParts", "plan_ready"]) {
+  if (executionService.includes(forbidden)) {
+    failures.push(`ExecutionService still owns removed Plan synthesis ${forbidden}`);
+  }
+}
+
+const foregroundCoordinator = read(
+  "packages/daemon/src/server/agent/foreground-turn-coordinator.ts",
+);
+if (!foregroundCoordinator.includes("providerTurnId: event.providerTurnId")) {
+  failures.push("Plan terminal transition does not use the native Provider turn identity");
+}
+if (foregroundCoordinator.includes("event.turnId ?? current.providerInteraction.providerTurnId")) {
+  failures.push("Daemon lifecycle turn id can still masquerade as a native Provider turn id");
+}
+
+const daemonClient = read("packages/client/src/daemon-client.ts");
+if (!daemonClient.includes("respondProviderQuestion")) {
+  failures.push("Client is missing the typed Provider-question semantic API");
+}
+
+const agentStream = read("packages/app/src/agent-stream/view.tsx");
+for (const required of ["pendingProviderQuestions", "QuestionFormCard"]) {
+  if (!agentStream.includes(required)) {
+    failures.push(`App Provider-question presentation is missing ${required}`);
+  }
+}
+
 const workspaceScreen = read("packages/app/src/screens/workspace/workspace-screen.tsx");
 const closeTabPolicy = read("packages/app/src/subagents/close-tab-policy.ts");
 const agentVisibility = read("packages/app/src/workspace-tabs/agent-visibility.ts");

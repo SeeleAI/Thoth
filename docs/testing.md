@@ -164,6 +164,42 @@ npm run accept:thoth:fast
 This reuses the same runner, executes the complete foreground authority journey and adds storage migration, Task
 coordination, Task context and the wider App Task surface under the same hard deadline.
 
+## Native Provider Plan And Question Acceptance
+
+Provider-native Plan and Provider questions are one same-session interaction, but they are not Thoth Clarify or
+ordinary permission events. Deterministic owner tests must prove that raw/native-Plan turns carry no RuntimeBundle
+activation, each Thoth-on turn carries exactly one digest-verified native Skill block, remembered Thoth tools are
+inactive on raw turns, and only a completed native Plan item can create the Daemon-owned Implement approval.
+Assistant text, Plan progress, Plan deltas and terminal completion are never substitutes for that completed item.
+
+Run the isolated real Codex daemon flow through the formal real-provider entrypoint:
+
+```bash
+npm --workspace=@thoth/daemon run test:e2e:real:plan
+```
+
+The receipt must preserve one native thread across raw, Thoth Clarify, Thoth-off native Plan, structured
+`request_user_input`, Daemon-owned Implement and implementation. Answers are keyed by the original native question
+id and remain arrays; tests must not map by header, split comma-delimited values or select a default option.
+Unavailable authentication is a typed unavailable result, not fixture success.
+
+The corresponding real product UI journey uses a freshly built static Web export:
+
+```bash
+npm run build:web
+HOST=127.0.0.1 PORT=<isolated-port> npm run serve:web
+E2E_BASE_URL=http://127.0.0.1:<isolated-port> \
+NO_PROXY=127.0.0.1,localhost \
+no_proxy=127.0.0.1,localhost \
+npm --workspace=@thoth/app run test:e2e:real -- codex-plan-question.real.spec.ts
+```
+
+After isolated seed/setup, every acceptance action must use the product UI: select Plan under `Provider Features`,
+submit the prompt, answer `QuestionFormCard`, wait for the completed `PlanCard`, and click Implement. While a
+Provider question is pending, no PlanCard or Implement control may be visible. The final Plan must reflect the
+current user answer, and implementation must continue on the same native Provider thread. A Metro-dev bundle or
+direct semantic Client call cannot replace this built-Web UI evidence.
+
 ## Fast Interaction Regression Acceptance
 
 Use the dedicated interaction gate while changing foreground delivery, rewind identity or file preview:
@@ -196,11 +232,14 @@ npm run accept:thoth:appimage
 
 It rebuilds the AppImage and runs one real-window packaged journey. The report must include read-only Files,
 Changes, Browser automation, Workspace-script start/stop with durable terminal/port receipts, a multi-chunk binary
-file read, and complete `Tasks | Schedules` management/navigation. A Browser turn must first be observed leaving
-`idle` and then returning to `idle` before the smoke navigates to the Schedule page; an old idle snapshot cannot
-prove the newly submitted turn completed. Keep localhost CDP/daemon endpoints outside external proxies. The smoke
-must wait for the default Tasks surface to hydrate and close it through the real UI before selecting an obscured
-Workspace-scripts control; force-click and Client-only Schedule acceptance are invalid.
+file read, complete `Tasks | Schedules` management/navigation, and the native Plan/question sequence through
+`Provider Features -> QuestionFormCard -> PlanCard -> Implement`. The report must prove that the question answer
+uses its native id and string array, Implement appears only after the completed Plan item, and implementation keeps
+the same Provider thread. A Browser turn must first be observed leaving `idle` and then returning to `idle` before
+the smoke navigates to the Schedule page; an old idle snapshot cannot prove the newly submitted turn completed.
+Keep localhost CDP/daemon endpoints outside external proxies. The smoke must wait for the default Tasks surface to
+hydrate and close it through the real UI before selecting an obscured Workspace-scripts control; force-click,
+Client-only Schedule acceptance and Client-only Provider-question acceptance are invalid.
 
 Transport changes also require the packaged hosted Relay journey:
 

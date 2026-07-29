@@ -1,4 +1,5 @@
 import equal from "fast-deep-equal";
+import { createHash } from "node:crypto";
 import { v4 as uuidv4 } from "uuid";
 import { stat } from "node:fs/promises";
 import { basename, normalize, resolve, sep } from "path";
@@ -24,6 +25,7 @@ import {
   type ThothTurnAck,
   type ProtocolRpcOperation,
   type ProtocolRpcRequest,
+  type AgentProviderQuestionRespondResponse,
 } from "./messages.js";
 import type {
   TerminalManager,
@@ -112,6 +114,8 @@ import {
   type AgentPermissionResponse,
   type AgentPromptContentBlock,
   type AgentPromptInput,
+  type ProviderQuestionProjection,
+  type ProviderQuestionResolution,
   type AgentSessionConfig,
 } from "@thoth/drivers/agent-runtime";
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
@@ -189,6 +193,7 @@ import type {
 } from "./workspace-authority/index.js";
 import { TaskContextBroker } from "./workspace-authority/task-context-broker.js";
 import { WorkspaceForegroundAuthority } from "./workspace-authority/foreground-authority.js";
+import { WorkspaceAuthorityConflictError } from "./workspace-authority/workspace-authority-store.js";
 import { ScheduleService } from "./schedule/service.js";
 import { createGitHubService, type GitHubService } from "../services/github-service.js";
 import type { ProviderUsageService } from "../services/quota-fetcher/service.js";
@@ -239,6 +244,40 @@ function errorToFriendlyMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   return "Unknown error";
+}
+
+export function providerQuestionResolutionReceipt(
+  question: ProviderQuestionProjection,
+  resolution: ProviderQuestionResolution,
+): {
+  resolutionType: "answer" | "dismiss";
+  answeredQuestionIds: string[];
+  nonSecretAnswerDigest: string | null;
+  secretQuestionCount: number;
+} {
+  const secretIds = new Set(
+    question.questions.filter((item) => item.secret).map((item) => item.id),
+  );
+  if (resolution.type === "dismiss") {
+    return {
+      resolutionType: "dismiss",
+      answeredQuestionIds: [],
+      nonSecretAnswerDigest: null,
+      secretQuestionCount: secretIds.size,
+    };
+  }
+  const nonSecretAnswers = resolution.answers
+    .filter((answer) => !secretIds.has(answer.questionId))
+    .map((answer) => ({ questionId: answer.questionId, values: answer.values }));
+  return {
+    resolutionType: "answer",
+    answeredQuestionIds: resolution.answers.map((answer) => answer.questionId),
+    nonSecretAnswerDigest:
+      nonSecretAnswers.length === 0
+        ? null
+        : createHash("sha256").update(JSON.stringify(nonSecretAnswers)).digest("hex"),
+    secretQuestionCount: secretIds.size,
+  };
 }
 
 function resolveSubscriptionId(
@@ -624,6 +663,14 @@ export class Session {
   private readonly workspaceScripts: WorkspaceScriptsService;
   private readonly createAgentLifecycleDispatch: CreateAgentLifecycleDispatch;
   private readonly rpcHandlers: SessionRpcHandlers;
+  private readonly providerQuestionCommandResults = new Map<
+    string,
+    {
+      agentId: string;
+      interactionId: string;
+      result: Omit<AgentProviderQuestionRespondResponse["payload"], "requestId">;
+    }
+  >();
 
   constructor(options: SessionOptions) {
     const {
@@ -1410,6 +1457,7 @@ export class Session {
       rewindAgent: (msg) => this.handleAgentRewindRequest(msg),
       respondToPermission: (msg) =>
         this.handleAgentPermissionResponse(msg.agentId, msg.requestId, msg.response),
+      respondProviderQuestion: (msg) => this.handleProviderQuestionResponse(msg),
       getCheckoutStatus: (msg) => this.checkoutSession.handleStatusRequest(msg),
       subscribeCheckoutDiff: (msg) => this.checkoutSession.handleSubscribeDiffRequest(msg),
       unsubscribeCheckoutDiff: (msg) => this.checkoutSession.handleUnsubscribeDiffRequest(msg),
@@ -3528,6 +3576,164 @@ export class Session {
       });
       throw error;
     }
+  }
+
+  private async handleProviderQuestionResponse(
+    msg: Extract<SessionInboundMessage, { type: "agent.provider_question.respond.request" }>,
+  ): Promise<void> {
+    const authorityStore = this.workspaceAuthorityManager.forAgent(msg.agentId);
+    const duplicate = this.providerQuestionCommandResults.get(msg.commandId);
+    if (duplicate) {
+      if (duplicate.agentId === msg.agentId && duplicate.interactionId === msg.interactionId) {
+        this.emit({
+          type: "agent.provider_question.respond.response",
+          payload: { requestId: msg.requestId, ...duplicate.result },
+        });
+      } else {
+        this.emit({
+          type: "agent.provider_question.respond.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            interactionId: msg.interactionId,
+            accepted: false,
+            conflict: true,
+            revision: msg.expectedRevision,
+            errorCode: "PROVIDER_QUESTION_STALE",
+            error: "The command id already belongs to another Provider question.",
+          },
+        });
+      }
+      return;
+    }
+    let durable: ReturnType<
+      NonNullable<typeof authorityStore>["getProviderQuestionCommandResult"]
+    > = null;
+    try {
+      durable =
+        authorityStore?.getProviderQuestionCommandResult({
+          agentId: msg.agentId,
+          interactionId: msg.interactionId,
+          commandId: msg.commandId,
+        }) ?? null;
+    } catch (error) {
+      if (!(error instanceof WorkspaceAuthorityConflictError)) throw error;
+      this.emit({
+        type: "agent.provider_question.respond.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          interactionId: msg.interactionId,
+          accepted: false,
+          conflict: true,
+          revision: msg.expectedRevision,
+          errorCode: "PROVIDER_QUESTION_STALE",
+          error: "The command id already belongs to another Provider question.",
+        },
+      });
+      return;
+    }
+    if (durable) {
+      const stored = durable.result as {
+        result?: Omit<AgentProviderQuestionRespondResponse["payload"], "requestId">;
+      };
+      if (stored.result) {
+        this.emit({
+          type: "agent.provider_question.respond.response",
+          payload: { requestId: msg.requestId, ...stored.result },
+        });
+        return;
+      }
+    }
+    const agent = this.executionService.getAgent(msg.agentId);
+    const pending = agent?.pendingProviderQuestions.get(msg.interactionId) ?? null;
+    let result: Omit<AgentProviderQuestionRespondResponse["payload"], "requestId">;
+    if (!pending) {
+      result = {
+        agentId: msg.agentId,
+        interactionId: msg.interactionId,
+        accepted: false,
+        conflict: false,
+        revision: 0,
+        errorCode: "PROVIDER_QUESTION_NOT_FOUND",
+        error: "The Provider question is no longer pending.",
+      };
+    } else if (pending.agentId !== msg.agentId || pending.revision !== msg.expectedRevision) {
+      result = {
+        agentId: msg.agentId,
+        interactionId: msg.interactionId,
+        accepted: false,
+        conflict: true,
+        revision: pending.revision,
+        errorCode: "PROVIDER_QUESTION_STALE",
+        error: "The Provider question revision changed.",
+      };
+    } else {
+      try {
+        await this.executionService.respondToProviderQuestion(
+          msg.agentId,
+          msg.interactionId,
+          msg.resolution,
+        );
+        result = {
+          agentId: msg.agentId,
+          interactionId: msg.interactionId,
+          accepted: true,
+          conflict: false,
+          revision: pending.revision + 1,
+          errorCode: null,
+          error: null,
+        };
+      } catch (error) {
+        const code =
+          error !== null &&
+          typeof error === "object" &&
+          typeof (error as { code?: unknown }).code === "string"
+            ? (error as { code: string }).code
+            : "PROVIDER_QUESTION_UNAVAILABLE";
+        const errorCode =
+          code === "PROVIDER_QUESTION_INVALID_RESPONSE" ||
+          code === "PROVIDER_QUESTION_NOT_FOUND" ||
+          code === "PROVIDER_QUESTION_UNAVAILABLE"
+            ? code
+            : "PROVIDER_QUESTION_UNAVAILABLE";
+        this.sessionLogger.warn(
+          { agentId: msg.agentId, interactionId: msg.interactionId, errorCode },
+          "Provider question response was rejected",
+        );
+        result = {
+          agentId: msg.agentId,
+          interactionId: msg.interactionId,
+          accepted: false,
+          conflict: false,
+          revision: pending.revision,
+          errorCode,
+          error:
+            errorCode === "PROVIDER_QUESTION_INVALID_RESPONSE"
+              ? "The Provider question answer is invalid."
+              : "The Provider question cannot be answered by the live Provider turn.",
+        };
+      }
+    }
+    if (authorityStore && pending) {
+      authorityStore.recordProviderQuestionCommand({
+        agentId: msg.agentId,
+        interactionId: msg.interactionId,
+        commandId: msg.commandId,
+        resultRevision: result.revision,
+        result,
+        receipt: providerQuestionResolutionReceipt(pending, msg.resolution),
+      });
+    }
+    this.providerQuestionCommandResults.set(msg.commandId, {
+      agentId: msg.agentId,
+      interactionId: msg.interactionId,
+      result,
+    });
+    this.emit({
+      type: "agent.provider_question.respond.response",
+      payload: { requestId: msg.requestId, ...result },
+    });
   }
 
   private async handleDirectorySuggestionsRequest(msg: DirectorySuggestionsRequest): Promise<void> {

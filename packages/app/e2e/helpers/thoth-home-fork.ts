@@ -38,7 +38,6 @@ async function copyJsonTree(sourceDir: string, targetDir: string): Promise<CopyS
 
   const stats: CopyStats = { files: 0, bytes: 0, skippedMissing: [] };
   const entries = await readdir(sourceDir, { withFileTypes: true });
-  await mkdir(targetDir, { recursive: true });
 
   for (const entry of entries) {
     const sourcePath = path.join(sourceDir, entry.name);
@@ -73,7 +72,6 @@ async function copyProjectRegistryFiles(
   const stats: CopyStats = { files: 0, bytes: 0, skippedMissing: [] };
   const sourceProjectsDir = path.join(sourceHome, "projects");
   const targetProjectsDir = path.join(targetHome, "projects");
-  await mkdir(targetProjectsDir, { recursive: true });
 
   for (const fileName of ["projects.json", "workspaces.json"]) {
     const sourcePath = path.join(sourceProjectsDir, fileName);
@@ -82,6 +80,7 @@ async function copyProjectRegistryFiles(
       stats.skippedMissing.push(sourcePath);
       continue;
     }
+    await mkdir(targetProjectsDir, { recursive: true });
     await copyFile(sourcePath, targetPath);
     const fileStat = await stat(sourcePath);
     stats.files += 1;

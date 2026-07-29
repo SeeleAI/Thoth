@@ -30,6 +30,106 @@ async function waitForAssistantMarker(
   throw new Error(`Timed out waiting for assistant marker ${marker}`);
 }
 
+async function waitForProviderQuestion(client: DaemonClient, agentId: string) {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    const snapshot = await client.fetchAgent({ agentId });
+    const question = snapshot?.agent.pendingProviderQuestions?.[0];
+    if (question) return question;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error("Timed out waiting for native Provider question");
+}
+
+async function waitForThothLifecycle(
+  client: DaemonClient,
+  agentId: string,
+  lifecycle: "awaiting_card" | "awaiting_implementation" | "interrupted" | "canceled",
+) {
+  const deadline = Date.now() + 120_000;
+  let lastState: Awaited<ReturnType<DaemonClient["getAgentThothState"]>> | null = null;
+  while (Date.now() < deadline) {
+    const state = await client.getAgentThothState(agentId);
+    lastState = state;
+    if (state.state.lifecycle === lifecycle) return state.state;
+    if (
+      lifecycle === "awaiting_card" &&
+      ["done", "interrupted", "canceled", "unsupported"].includes(state.state.lifecycle)
+    ) {
+      throw new Error(
+        await formatAgentDiagnostics(
+          client,
+          agentId,
+          `Foreground turn settled as ${state.state.lifecycle} before producing a Clarify card`,
+          state,
+        ),
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(
+    await formatAgentDiagnostics(
+      client,
+      agentId,
+      `Timed out waiting for foreground lifecycle ${lifecycle}`,
+      lastState,
+    ),
+  );
+}
+
+async function waitForPlanPermission(client: DaemonClient, agentId: string) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const snapshot = await client.fetchAgent({ agentId });
+    const permission = snapshot?.agent.pendingPermissions.find((item) => item.kind === "plan");
+    if (permission) return permission;
+    const state = await client.getAgentThothState(agentId);
+    if (["interrupted", "canceled", "unsupported"].includes(state.state.lifecycle)) {
+      throw new Error(
+        await formatAgentDiagnostics(
+          client,
+          agentId,
+          `Plan turn settled as ${state.state.lifecycle} before opening Implement`,
+          state,
+        ),
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(
+    await formatAgentDiagnostics(
+      client,
+      agentId,
+      "Timed out waiting for Daemon-owned Implement permission",
+      await client.getAgentThothState(agentId),
+    ),
+  );
+}
+
+async function formatAgentDiagnostics(
+  client: DaemonClient,
+  agentId: string,
+  reason: string,
+  state: Awaited<ReturnType<DaemonClient["getAgentThothState"]>> | null,
+): Promise<string> {
+  const [snapshot, timeline] = await Promise.all([
+    client.fetchAgent({ agentId }).catch((error: unknown) => ({
+      diagnosticError: error instanceof Error ? error.message : String(error),
+    })),
+    fetchTimelineItems(client, agentId).catch((error: unknown) => [
+      {
+        diagnosticError: error instanceof Error ? error.message : String(error),
+      },
+    ]),
+  ]);
+  return [
+    reason,
+    `thothState=${JSON.stringify(state)}`,
+    `agentSnapshot=${JSON.stringify(snapshot)}`,
+    `timeline=${JSON.stringify(timeline)}`,
+  ].join("\n");
+}
+
 describe("daemon E2E (real codex) - native Plan", () => {
   let canRun = false;
   let daemon: TestThothDaemon | undefined;
@@ -69,56 +169,87 @@ describe("daemon E2E (real codex) - native Plan", () => {
       const created = await client.createAgent({
         cwd,
         title: "Real native Plan acceptance",
-        providerRunMode: "plan",
+        providerRunMode: "default",
         ...getNativeCodexProviderConfig(),
       });
       expect(created.providerControl).toMatchObject({
-        runMode: "plan",
+        runMode: "default",
         planCapability: { kind: "native" },
       });
       const threadId = created.persistence?.sessionId ?? created.runtimeInfo?.sessionId;
       expect(threadId).toBeTruthy();
+      await client.sendAgentMessage(
+        created.id,
+        [
+          "Use the active thoth.clarify Skill for this turn.",
+          "Ask one Clarify card choosing between keeping or changing a sample API.",
+          "Do not implement anything.",
+        ].join("\n"),
+        {
+          thoth: {
+            enabled: true,
+            executionMode: "quick",
+            clarifyStrength: "balanced",
+          },
+          providerRunMode: "default",
+        },
+      );
+      await waitForThothLifecycle(client, created.id, "awaiting_card");
+      await client.cancelAgent(created.id);
+      await waitForThothLifecycle(client, created.id, "canceled");
+
       const initialControl = await client.getAgentProviderControl(created.id, { refresh: true });
-      const defaultControl = await client.updateAgentProviderControl({
-        agentId: created.id,
-        runMode: "default",
-        expectedRevision: initialControl.revision,
-        commandId: "real-plan-default",
-      });
       const planControl = await client.updateAgentProviderControl({
         agentId: created.id,
         runMode: "plan",
-        expectedRevision: defaultControl.revision,
+        expectedRevision: initialControl.revision,
         commandId: "real-plan-native",
       });
-      expect(planControl).toMatchObject({ runMode: "plan", revision: 2 });
+      expect(planControl).toMatchObject({ runMode: "plan" });
 
       const send = await client.sendAgentMessage(
         created.id,
         [
-          "Use native Plan mode to plan a direct response.",
+          "Thoth is off for this turn. Use native Plan mode for the current goal only.",
+          "Before completing the Plan, call native request_user_input to ask which target to use: Local or CI.",
+          "After the structured answer, produce a Plan for reporting the selected target.",
           "After I approve Implement, reply exactly REAL_NATIVE_PLAN_IMPLEMENTED.",
-          "Do not use tools and do not modify files.",
+          "Do not modify files during the Plan turn.",
         ].join("\n"),
-        { providerRunMode: "plan" },
+        { thoth: { enabled: false }, providerRunMode: "plan" },
       );
       expect(send.turnAck?.providerRunModeReceipt).toMatchObject({
         requestedMode: "plan",
         status: "applied",
       });
-      await client.waitForFinish(created.id, TURN_TIMEOUT_MS);
+      const question = await waitForProviderQuestion(client, created.id);
+      expect(question.providerThreadId).toBe(threadId);
+      expect(question.questions).not.toHaveLength(0);
+      const nativeQuestion = question.questions[0]!;
+      const selectedValue = nativeQuestion.options[0]?.value;
+      if (!selectedValue) throw new Error("Native Provider question exposed no selectable option");
+      const selectedTarget = selectedValue.replace(/\s+\(Recommended\)$/iu, "");
+      const questionResult = await client.respondProviderQuestionAndWait({
+        agentId: created.id,
+        interactionId: question.interactionId,
+        expectedRevision: question.revision,
+        commandId: "real-native-plan-question",
+        resolution: {
+          type: "answer",
+          answers: [{ questionId: nativeQuestion.id, values: [selectedValue] }],
+        },
+        timeout: 30_000,
+      });
+      expect(questionResult).toMatchObject({ accepted: true, error: null });
+      await waitForThothLifecycle(client, created.id, "awaiting_implementation");
 
       const beforeImplement = await client.fetchAgent({ agentId: created.id });
-      const permission = beforeImplement?.agent.pendingPermissions.find(
-        (item) => item.kind === "plan",
-      );
+      const permission = await waitForPlanPermission(client, created.id);
       const beforeItems = await fetchTimelineItems(client, created.id);
-      if (!permission) {
-        throw new Error(
-          `Native Plan produced no implementation permission. pending=${JSON.stringify(beforeImplement?.agent.pendingPermissions)} timeline=${JSON.stringify(beforeItems)}`,
-        );
-      }
-      expect(permission.input).toEqual({ planId: expect.any(String) });
+      expect(beforeImplement?.agent.pendingProviderQuestions).toEqual([]);
+      expect(permission.input?.plan).toEqual(expect.any(String));
+      expect(String(permission.input?.plan)).toContain(selectedTarget);
+      expect(String(permission.input?.plan)).not.toContain("Clarify card");
       expect(
         beforeItems.filter((item) => item.type === "tool_call" && item.detail.type === "plan"),
       ).toHaveLength(1);

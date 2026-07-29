@@ -22,6 +22,7 @@ let nextServerRequestId = 1_000_000 + process.pid * 100;
 const pendingServerRequests = new Map();
 const activeTurns = new Set();
 let foregroundFlow = "core";
+let awaitingNativePlanImplementation = false;
 
 const clarifyCard = {
   title: "Packaged flow authority",
@@ -253,16 +254,11 @@ function resultFor(method, params) {
       record({ kind: "thread_start", threadId, dynamicToolNames, cwd: params?.cwd ?? null });
       return { thread: { id: threadId } };
     case "thread/resume":
-      dynamicToolNames = Array.isArray(params?.dynamicTools)
-        ? params.dynamicTools.map((tool) => tool.name).filter(Boolean)
-        : [];
       record({
         kind: "thread_resume",
         threadId: params?.threadId ?? threadId,
         dynamicToolNames,
       });
-      return { thread: { id: params?.threadId ?? threadId } };
-    case "thread/resume":
       return { thread: { id: params?.threadId ?? threadId, turns: [] } };
     case "thread/read":
       return { thread: { id: params?.threadId ?? threadId, turns: [] } };
@@ -277,6 +273,7 @@ function resultFor(method, params) {
         turnId,
         input: params?.input ?? null,
         dynamicToolNames,
+        collaborationMode: params?.collaborationMode ?? null,
       });
       setImmediate(() => void runTurn(params, turnId));
       return { turn: { id: turnId } };
@@ -323,6 +320,87 @@ function callTool(tool, argumentsValue, turnId) {
   return new Promise((resolve, reject) => {
     pendingServerRequests.set(id, { resolve, reject, tool });
   });
+}
+
+function requestUserInput(turnId) {
+  const id = nextServerRequestId++;
+  const itemId = `scripted-question-${process.pid}-${turnId}`;
+  record({ kind: "provider_question_request", threadId, turnId, itemId });
+  writeMessage({
+    jsonrpc: "2.0",
+    id,
+    method: "item/tool/requestUserInput",
+    params: {
+      threadId,
+      turnId,
+      itemId,
+      questions: [
+        {
+          id: "target",
+          header: "Target",
+          question: "Which target should the Plan report?",
+          options: [
+            { label: "Local", description: "Report the local target." },
+            { label: "CI", description: "Report the CI target." },
+          ],
+          multiSelect: false,
+          isOther: false,
+          isSecret: false,
+        },
+      ],
+    },
+  });
+  return new Promise((resolve, reject) => {
+    pendingServerRequests.set(id, { resolve, reject, tool: "request_user_input" });
+  });
+}
+
+function emitCompletedAssistantMessage(turnId, text) {
+  writeMessage({
+    method: "item/completed",
+    params: {
+      threadId,
+      turnId,
+      item: {
+        id: `scripted-agent-message-${process.pid}-${turnId}`,
+        type: "agentMessage",
+        text,
+      },
+    },
+  });
+}
+
+async function runNativePlanQuestion(turnId) {
+  const response = await requestUserInput(turnId);
+  const selectedTarget = response?.answers?.target?.answers?.[0];
+  if (selectedTarget !== "Local") {
+    throw new Error(`Expected structured Local answer, received ${JSON.stringify(response)}`);
+  }
+  const plan = [
+    "1. Inspect the selected Local target.",
+    "2. Report the Local target without changing files.",
+  ].join("\n");
+  record({
+    kind: "provider_question_answer",
+    threadId,
+    turnId,
+    questionId: "target",
+    values: [selectedTarget],
+  });
+  writeMessage({
+    method: "item/completed",
+    params: {
+      threadId,
+      turnId,
+      item: {
+        id: `scripted-native-plan-${process.pid}-${turnId}`,
+        type: "plan",
+        text: plan,
+      },
+    },
+  });
+  awaitingNativePlanImplementation = true;
+  record({ kind: "native_plan_completed", threadId, turnId, plan });
 }
 
 async function requireTool(tool, argumentsValue, turnId) {
@@ -420,7 +498,19 @@ async function runTurn(params, turnId) {
   try {
     const inputText = JSON.stringify(params?.input ?? null);
     if (inputText.includes("PACKAGED_LOOP_STOP")) foregroundFlow = "stop";
-    if (inputText.includes("PACKAGED_BROWSER_AUTOMATION")) {
+    if (awaitingNativePlanImplementation) {
+      if (params?.collaborationMode?.mode === "plan") {
+        throw new Error("Native Plan implementation did not return to Provider default mode");
+      }
+      awaitingNativePlanImplementation = false;
+      emitCompletedAssistantMessage(turnId, "PACKAGED_NATIVE_PLAN_IMPLEMENTED");
+      record({ kind: "native_plan_implemented", threadId, turnId });
+    } else if (inputText.includes("PACKAGED_NATIVE_PLAN_UI")) {
+      if (params?.collaborationMode?.mode !== "plan") {
+        throw new Error("PACKAGED_NATIVE_PLAN_UI did not start in native Plan mode");
+      }
+      await runNativePlanQuestion(turnId);
+    } else if (inputText.includes("PACKAGED_BROWSER_AUTOMATION")) {
       await runPackagedBrowserFlow(turnId);
     } else if (dynamicToolNames.includes("thoth_submit_clarify_convergence_audit")) {
       await requireTool(

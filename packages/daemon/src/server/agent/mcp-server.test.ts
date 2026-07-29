@@ -519,6 +519,7 @@ function createManagedAgent(overrides: Partial<ManagedAgent> = {}): ManagedAgent
     availableModes: [],
     features: [],
     pendingPermissions: new Map(),
+    pendingProviderQuestions: new Map(),
     persistence: null,
     labels: {},
     attention: { requiresAttention: false },

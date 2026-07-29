@@ -421,6 +421,111 @@ async function runScheduleSurfaceAcceptance({ client, page, serverId, workspaceI
   };
 }
 
+async function runNativePlanQuestionSurfaceAcceptance({
+  client,
+  page,
+  serverId,
+  workspaceId,
+  agentId,
+  expectedSessionId,
+}) {
+  const before = await client.fetchAgent({ agentId });
+  const beforeSessionId =
+    before?.agent.persistence?.sessionId ?? before?.agent.runtimeInfo?.sessionId ?? null;
+  assert(
+    beforeSessionId === expectedSessionId,
+    "Packaged Plan UI started on the wrong Provider thread",
+  );
+
+  const route = `thoth://app/h/${encodeURIComponent(serverId)}/workspace/${encodeURIComponent(workspaceId)}?open=${encodeURIComponent(`agent:${agentId}`)}`;
+  await page.goto(route);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await (await visibleTestId(page, "agent-provider-config", 60_000)).click();
+  await visibleTestId(page, "agent-provider-config-sheet", 30_000);
+  const planStatus = await visibleTestId(page, "provider-plan-feature-status", 120_000);
+  await waitFor(
+    async () => ((await planStatus.textContent())?.trim() === "Off" ? true : null),
+    120_000,
+    "packaged native Plan capability",
+  );
+  await (await visibleTestId(page, "provider-plan-feature", 30_000)).click();
+  await waitFor(
+    async () => ((await planStatus.textContent())?.trim() === "On" ? true : null),
+    30_000,
+    "packaged native Plan activation",
+  );
+  await page.keyboard.press("Escape");
+  await page
+    .getByTestId("agent-provider-config-sheet")
+    .waitFor({ state: "hidden", timeout: 30_000 });
+
+  const composer = page
+    .getByRole("textbox", { name: "Message agent..." })
+    .filter({ visible: true })
+    .first();
+  await composer.waitFor({ state: "visible", timeout: 30_000 });
+  await composer.fill(
+    [
+      "PACKAGED_NATIVE_PLAN_UI",
+      "Use native Plan mode for this turn.",
+      "Before completing the Plan, ask which target to report: Local or CI.",
+      "After I approve Implement, reply exactly PACKAGED_NATIVE_PLAN_IMPLEMENTED.",
+      "Do not modify files during the Plan turn.",
+    ].join("\n"),
+  );
+  await composer.press("Enter");
+
+  const questionCard = await visibleTestId(page, "question-form-card", 120_000);
+  assert(
+    (await page.getByTestId("permission-plan-card").filter({ visible: true }).count()) === 0,
+    "Packaged UI exposed Implement while a Provider question was pending",
+  );
+  await questionCard.getByRole("button", { name: "Local", exact: true }).click();
+  await (await visibleTestId(page, "question-form-primary-action", 30_000)).click();
+  await questionCard.waitFor({ state: "hidden", timeout: 30_000 });
+
+  const planCard = await visibleTestId(page, "permission-plan-card", 120_000);
+  const planText = (await planCard.textContent()) ?? "";
+  assert(planText.includes("Local"), "Packaged completed Plan omitted the structured Local answer");
+  assert(!planText.includes("Clarify card"), "Packaged native Plan inherited Clarify instructions");
+  await planCard.getByTestId("permission-request-accept").click();
+  const implemented = page
+    .getByTestId("assistant-message")
+    .filter({ hasText: "PACKAGED_NATIVE_PLAN_IMPLEMENTED", visible: true })
+    .first();
+  await implemented.waitFor({ state: "visible", timeout: 120_000 });
+  await waitFor(
+    async () => {
+      const snapshot = await client.fetchAgent({ agentId });
+      return snapshot?.agent.status === "idle" ? snapshot : null;
+    },
+    120_000,
+    "packaged native Plan implementation settlement",
+  );
+  const after = await client.fetchAgent({ agentId });
+  const afterSessionId =
+    after?.agent.persistence?.sessionId ?? after?.agent.runtimeInfo?.sessionId ?? null;
+  assert(
+    afterSessionId === expectedSessionId,
+    "Packaged Implement minted a replacement Provider thread",
+  );
+  assert(
+    (after?.agent.pendingProviderQuestions ?? []).length === 0,
+    "Packaged Provider question remained pending after structured submission",
+  );
+  return {
+    route,
+    providerThreadId: expectedSessionId,
+    sameThread: true,
+    activatedThroughProviderFeatures: true,
+    questionAnsweredThroughUi: true,
+    questionId: "target",
+    answerValues: ["Local"],
+    implementOpenedOnlyAfterCompletedPlan: true,
+    implementationMarker: "PACKAGED_NATIVE_PLAN_IMPLEMENTED",
+  };
+}
+
 async function waitFor(read, timeoutMs = 30_000, label = "condition") {
   const deadline = Date.now() + timeoutMs;
   let lastError = null;
@@ -580,8 +685,8 @@ function seedReleaseStorage(thothHome) {
 
 function inspectStorageMigration(thothHome, probe) {
   const marker = JSON.parse(readFileSync(path.join(thothHome, "storage-layout.json"), "utf8"));
-  assert(marker.version === 4, "Packaged Release storage did not activate layout v4");
-  assert(marker.schemaVersion === 4, "Packaged Release storage did not activate schema v4");
+  assert(marker.version === 5, "Packaged Release storage did not activate layout v5");
+  assert(marker.schemaVersion === 5, "Packaged Release storage did not activate schema v5");
   assert(
     marker.migrationState === "complete",
     "Packaged Release storage migration is not complete",
@@ -598,7 +703,7 @@ function inspectStorageMigration(thothHome, probe) {
   const agents = catalog.prepare("SELECT COUNT(*) AS count FROM catalog_agent_locator").get().count;
   const catalogSchemaVersion = catalog.prepare("PRAGMA user_version").get().user_version;
   catalog.close();
-  assert(catalogSchemaVersion === 4, "Packaged Release catalog did not activate SQLite schema v4");
+  assert(catalogSchemaVersion === 5, "Packaged Release catalog did not activate SQLite schema v5");
   assert(
     locator?.workspace_id === probe.workspaceId,
     "Release Agent is missing from the migrated global locator",
@@ -614,8 +719,8 @@ function inspectStorageMigration(thothHome, probe) {
   const authoritySchemaVersion = authority.prepare("PRAGMA user_version").get().user_version;
   authority.close();
   assert(
-    authoritySchemaVersion === 4,
-    "Packaged Release Workspace authority did not activate SQLite schema v4",
+    authoritySchemaVersion === 5,
+    "Packaged Release Workspace authority did not activate SQLite schema v5",
   );
   assert(
     timeline?.item_json === probe.itemJson,
@@ -1005,6 +1110,15 @@ async function main() {
       JSON.stringify(core.task, null, 2),
     );
 
+    productSurfacesReceipt.providerPlan = await runNativePlanQuestionSurfaceAcceptance({
+      client,
+      page,
+      serverId: desktopDaemon.serverId,
+      workspaceId: quickWorkspaceId,
+      agentId: core.agent.id,
+      expectedSessionId: core.sessionId,
+    });
+
     if (!realCodex) {
       await client.sendAgentMessage(core.agent.id, "PACKAGED_BROWSER_AUTOMATION", {
         thoth: { enabled: false },
@@ -1180,8 +1294,29 @@ async function main() {
         (entry) => entry.kind === "turn_start" && entry.threadId === quickThreadStart.threadId,
       ).length;
       assert(
-        visibleTurnCount === 14,
-        `Expected fourteen hot-switch, @Task, Browser and Stop-probe turns, received ${visibleTurnCount}`,
+        visibleTurnCount === 16,
+        `Expected sixteen hot-switch, Provider Plan, @Task, Browser and Stop-probe turns, received ${visibleTurnCount}`,
+      );
+      const nativeQuestion = capture.find(
+        (entry) =>
+          entry.kind === "provider_question_answer" && entry.threadId === quickThreadStart.threadId,
+      );
+      const nativePlan = capture.find(
+        (entry) =>
+          entry.kind === "native_plan_completed" && entry.threadId === quickThreadStart.threadId,
+      );
+      const nativeImplementation = capture.find(
+        (entry) =>
+          entry.kind === "native_plan_implemented" && entry.threadId === quickThreadStart.threadId,
+      );
+      assert(
+        nativeQuestion?.questionId === "target" &&
+          JSON.stringify(nativeQuestion.values) === JSON.stringify(["Local"]),
+        "Packaged Provider question did not preserve its native id and string-array answer",
+      );
+      assert(
+        nativePlan && nativeImplementation,
+        "Packaged completed Plan did not continue into same-thread implementation",
       );
       const browserFlow = capture.find(
         (entry) => entry.kind === "browser_flow" && entry.threadId === quickThreadStart.threadId,

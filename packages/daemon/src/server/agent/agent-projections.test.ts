@@ -78,6 +78,7 @@ function createManagedAgent(overrides: ManagedAgentOverrides = {}): ManagedAgent
     ],
     currentModeId: "plan",
     pendingPermissions: pendingPermissionsOverride ?? new Map<string, AgentPermissionRequest>(),
+    pendingProviderQuestions: new Map(),
     activeForegroundTurnId: activeForegroundTurnIdValue,
     foregroundTurnWaiters: new Set(),
     unsubscribeSession: null,
@@ -102,6 +103,7 @@ function createManagedAgent(overrides: ManagedAgentOverrides = {}): ManagedAgent
     lifecycle,
     config: agent.config,
     pendingPermissions: agent.pendingPermissions,
+    pendingProviderQuestions: agent.pendingProviderQuestions,
   };
 }
 

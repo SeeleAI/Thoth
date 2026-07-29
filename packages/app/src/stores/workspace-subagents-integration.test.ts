@@ -50,6 +50,7 @@ const AGENT_DEFAULTS: Agent = {
   currentModeId: null,
   availableModes: [],
   pendingPermissions: [],
+  pendingProviderQuestions: [],
   persistence: null,
   runtimeInfo: undefined,
   lastUsage: undefined,

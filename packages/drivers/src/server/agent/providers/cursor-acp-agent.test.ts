@@ -65,7 +65,7 @@ describe("CursorACPHarnessAdapter model discovery", () => {
       modes: [],
       planCapability: {
         kind: "unsupported",
-        reason: "acp does not expose a native ACP Plan mode.",
+        reason: "ACP adapter does not expose a completed native Plan item.",
       },
     });
   });
@@ -84,7 +84,7 @@ describe("CursorACPHarnessAdapter model discovery", () => {
       modes: [],
       planCapability: {
         kind: "unsupported",
-        reason: "acp does not expose a native ACP Plan mode.",
+        reason: "ACP adapter does not expose a completed native Plan item.",
       },
     });
   });

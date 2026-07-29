@@ -1,4 +1,3 @@
-import type { FetchAgentsEntry } from "@thoth/client/internal/daemon-client";
 import {
   deriveAgentStateBucket,
   getWorkspaceStateBucketPriority,
@@ -6,6 +5,7 @@ import {
 import type { Agent, WorkspaceDescriptor } from "@/projection/authority-model";
 import type { HostServerInfo } from "@/runtime/host-runtime";
 import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
+import type { AgentDirectorySnapshotEntry } from "@/utils/agent-directory-sync";
 import { resolveProjectPlacement } from "@/utils/project-placement";
 import { normalizeWorkspacePath } from "@/utils/workspace-identity";
 
@@ -22,7 +22,7 @@ export function shouldUseLegacyDaemonWorkspaceDirectory(
 
 export function buildLegacyDaemonWorkspaceSnapshot(input: {
   serverId: string;
-  entries: FetchAgentsEntry[];
+  entries: AgentDirectorySnapshotEntry[];
 }): LegacyDaemonWorkspaceSnapshot {
   const entries = stampWorkspaceIds(input.entries);
   const agents = new Map<string, Agent>();
@@ -39,14 +39,16 @@ export function buildLegacyDaemonWorkspaceSnapshot(input: {
   return { agents, workspaces: buildLegacyWorkspaces(entries) };
 }
 
-function stampWorkspaceIds(entries: FetchAgentsEntry[]): FetchAgentsEntry[] {
+function stampWorkspaceIds(entries: AgentDirectorySnapshotEntry[]): AgentDirectorySnapshotEntry[] {
   return entries.map((entry) => ({
     ...entry,
     agent: { ...entry.agent, workspaceId: resolveWorkspaceId(entry) },
   }));
 }
 
-function buildLegacyWorkspaces(entries: FetchAgentsEntry[]): Map<string, WorkspaceDescriptor> {
+function buildLegacyWorkspaces(
+  entries: AgentDirectorySnapshotEntry[],
+): Map<string, WorkspaceDescriptor> {
   const workspaces = new Map<string, WorkspaceDescriptor>();
   for (const entry of entries) {
     const workspaceId = entry.agent.workspaceId ?? resolveWorkspaceId(entry);
@@ -70,7 +72,7 @@ function buildLegacyWorkspaces(entries: FetchAgentsEntry[]): Map<string, Workspa
 }
 
 function createLegacyWorkspace(
-  entry: FetchAgentsEntry,
+  entry: AgentDirectorySnapshotEntry,
   status: WorkspaceDescriptor["status"],
   statusEnteredAt: Date | null,
 ): WorkspaceDescriptor {
@@ -120,7 +122,7 @@ function createLegacyWorkspace(
   };
 }
 
-function resolveWorkspaceId(entry: FetchAgentsEntry): string {
+function resolveWorkspaceId(entry: AgentDirectorySnapshotEntry): string {
   return (
     normalizeWorkspacePath(entry.project.checkout.cwd) ??
     normalizeWorkspacePath(entry.agent.cwd) ??
@@ -134,7 +136,7 @@ function workspaceDirectoryName(directory: string): string {
   return separator >= 0 ? trimmed.slice(separator + 1) : trimmed;
 }
 
-function parseAgentTimestamp(entry: FetchAgentsEntry): Date | null {
+function parseAgentTimestamp(entry: AgentDirectorySnapshotEntry): Date | null {
   const value = entry.agent.attentionTimestamp ?? entry.agent.updatedAt;
   if (!value) return null;
   const date = new Date(value);

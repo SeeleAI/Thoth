@@ -47,6 +47,8 @@ import type {
   AgentCapabilityFlags,
   AgentPermissionAction,
   AgentPermissionResponse,
+  ProviderQuestionProjection,
+  ProviderQuestionResolution,
 } from "@thoth/protocol/agent-types";
 import type { AgentScreenAgent } from "@/hooks/use-agent-screen-state-machine";
 import { useAuthorityProjection, useProjectionRuntime } from "@/projection/projection-context";
@@ -114,6 +116,10 @@ import {
   type TimelineRenderItem,
   type TimelineRenderLayout,
 } from "./timeline-view-registry";
+import {
+  filterVisibleProviderPermissions,
+  isDaemonProviderPlanPermission,
+} from "./provider-interaction-presentation";
 
 function renderLiveAuxiliaryNode(input: {
   pendingPermissions: ReactNode;
@@ -134,16 +140,69 @@ function renderLiveAuxiliaryNode(input: {
   );
 }
 
-function renderPendingPermissionsNode(input: {
+function ProviderQuestionRequestCard({
+  question,
+  client,
+}: {
+  question: ProviderQuestionProjection;
+  client: DaemonClient | null;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: async (resolution: ProviderQuestionResolution) => {
+      if (!client) throw new Error("Thoth host disconnected");
+      const result = await client.respondProviderQuestionAndWait({
+        agentId: question.agentId,
+        interactionId: question.interactionId,
+        expectedRevision: question.revision,
+        commandId: `provider-question:${generateMessageId()}`,
+        resolution,
+      });
+      if (!result.accepted || result.error) {
+        throw new Error(result.error ?? "The Provider question changed on another client.");
+      }
+    },
+    onMutate: () => setError(null),
+    onError: (cause) => setError(toErrorMessage(cause)),
+  });
+  const respond = useCallback(
+    async (resolution: ProviderQuestionResolution) => {
+      await mutation.mutateAsync(resolution);
+    },
+    [mutation],
+  );
+  return (
+    <QuestionFormCard
+      question={question}
+      onRespond={respond}
+      isResponding={mutation.isPending}
+      error={error}
+    />
+  );
+}
+
+function renderPendingInteractionsNode(input: {
   pendingPermissions: PendingPermission[];
+  pendingProviderQuestions: readonly ProviderQuestionProjection[];
   client: DaemonClient | null;
 }): ReactNode {
-  if (input.pendingPermissions.length === 0) {
+  if (input.pendingPermissions.length === 0 && input.pendingProviderQuestions.length === 0) {
     return null;
   }
+  const permissions = filterVisibleProviderPermissions(
+    input.pendingPermissions,
+    input.pendingProviderQuestions.length > 0,
+  );
   return (
     <View style={stylesheet.permissionsContainer}>
-      {input.pendingPermissions.map((permission) => (
+      {input.pendingProviderQuestions.map((question) => (
+        <ProviderQuestionRequestCard
+          key={question.interactionId}
+          question={question}
+          client={input.client}
+        />
+      ))}
+      {permissions.map((permission) => (
         <PermissionRequestCard key={permission.key} permission={permission} client={input.client} />
       ))}
     </View>
@@ -269,6 +328,7 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
 ];
 
 const EMPTY_STREAM_HEAD: TimelineRenderItem[] = [];
+const EMPTY_PROVIDER_QUESTIONS: readonly ProviderQuestionProjection[] = [];
 
 function buildChatHistoryAttachment(input: {
   draftId: string;
@@ -807,17 +867,23 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       () => Array.from(pendingPermissions.values()).filter((perm) => perm.agentId === agentId),
       [pendingPermissions, agentId],
     );
+    const pendingProviderQuestions = useAuthorityProjection(
+      resolvedServerId,
+      (projection) =>
+        projection.agents.get(agentId)?.pendingProviderQuestions ?? EMPTY_PROVIDER_QUESTIONS,
+    );
 
     const showRunningTurnFooter =
       shouldShowForegroundTurnSpinner(agentThothState, effectiveAgentStatus) ||
       baseRenderModel.turnTiming.isActive;
     const pendingPermissionsNode = useMemo(
       () =>
-        renderPendingPermissionsNode({
+        renderPendingInteractionsNode({
           pendingPermissions: pendingPermissionItems,
+          pendingProviderQuestions,
           client,
         }),
-      [client, pendingPermissionItems],
+      [client, pendingPermissionItems, pendingProviderQuestions],
     );
     const turnFooterNode = useMemo(
       () =>
@@ -1175,7 +1241,7 @@ function PermissionRequestCard({
   const isMobile = useIsCompactFormFactor();
 
   const { request } = permission;
-  const isPlanRequest = request.kind === "plan";
+  const isPlanRequest = isDaemonProviderPlanPermission(request);
   const title = isPlanRequest
     ? t("agentStream.permission.plan")
     : (request.title ?? request.name ?? t("agentStream.permission.required"));
@@ -1190,9 +1256,6 @@ function PermissionRequestCard({
     [request.detail, request.input],
   );
   const resolvedActions = useMemo((): AgentPermissionAction[] => {
-    if (request.kind === "question") {
-      return [];
-    }
     if (Array.isArray(request.actions) && request.actions.length > 0) {
       return request.actions;
     }
@@ -1298,16 +1361,6 @@ function PermissionRequestCard({
     ],
     [isMobile],
   );
-
-  if (request.kind === "question") {
-    return (
-      <QuestionFormCard
-        permission={permission}
-        onRespond={handleResponse}
-        isResponding={isResponding}
-      />
-    );
-  }
 
   const footer = (
     <>

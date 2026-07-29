@@ -28,6 +28,7 @@ function createAgent(overrides: Partial<Agent> = {}): Agent {
     currentModeId: "mode-current",
     availableModes: [],
     pendingPermissions: [],
+    pendingProviderQuestions: [],
     persistence: null,
     runtimeInfo: {
       provider: "codex",

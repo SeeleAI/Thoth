@@ -40,6 +40,7 @@ function makeAgent(input: {
     currentModeId: null,
     availableModes: [],
     pendingPermissions: [],
+    pendingProviderQuestions: [],
     persistence: null,
     runtimeInfo: {
       provider: "codex",
