@@ -14,7 +14,7 @@ if (!capturePath || !statePath) {
   process.exit(2);
 }
 
-const threadId = `scripted-thread-${process.pid}`;
+let threadId = `scripted-thread-${process.pid}`;
 let dynamicToolNames = [];
 let buffer = "";
 let turnOrdinal = 0;
@@ -212,11 +212,35 @@ function readSharedState() {
   }
 }
 
+function writeSharedState(state) {
+  fs.writeFileSync(statePath, JSON.stringify(state));
+}
+
+function persistDynamicToolNames(nativeThreadId, toolNames) {
+  const state = readSharedState();
+  const existing =
+    state.dynamicToolNamesByThreadId && typeof state.dynamicToolNamesByThreadId === "object"
+      ? state.dynamicToolNamesByThreadId
+      : {};
+  state.dynamicToolNamesByThreadId = {
+    ...existing,
+    [nativeThreadId]: [...toolNames],
+  };
+  writeSharedState(state);
+}
+
+function restoreDynamicToolNames(nativeThreadId) {
+  const stored = readSharedState().dynamicToolNamesByThreadId?.[nativeThreadId];
+  return Array.isArray(stored)
+    ? stored.filter((toolName) => typeof toolName === "string" && toolName.length > 0)
+    : [];
+}
+
 function takeSharedIndex(key) {
   const state = readSharedState();
   const index = Number.isInteger(state[key]) ? state[key] : 0;
   state[key] = index + 1;
-  fs.writeFileSync(statePath, JSON.stringify(state));
+  writeSharedState(state);
   return index;
 }
 
@@ -251,15 +275,21 @@ function resultFor(method, params) {
       dynamicToolNames = Array.isArray(params?.dynamicTools)
         ? params.dynamicTools.map((tool) => tool.name).filter(Boolean)
         : [];
+      persistDynamicToolNames(threadId, dynamicToolNames);
       record({ kind: "thread_start", threadId, dynamicToolNames, cwd: params?.cwd ?? null });
       return { thread: { id: threadId } };
-    case "thread/resume":
+    case "thread/resume": {
+      if (typeof params?.threadId === "string" && params.threadId.length > 0) {
+        threadId = params.threadId;
+      }
+      dynamicToolNames = restoreDynamicToolNames(threadId);
       record({
         kind: "thread_resume",
-        threadId: params?.threadId ?? threadId,
+        threadId,
         dynamicToolNames,
       });
-      return { thread: { id: params?.threadId ?? threadId, turns: [] } };
+      return { thread: { id: threadId, turns: [] } };
+    }
     case "thread/read":
       return { thread: { id: params?.threadId ?? threadId, turns: [] } };
     case "thread/loaded/list":

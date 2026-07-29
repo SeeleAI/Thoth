@@ -4180,13 +4180,41 @@ Status: `release_ready`.
 2. The user explicitly authorized commit, normal branch pushes and fixed-Beta replacement on `2026-07-29` through
    `NTH-CD-099`. This authority excludes force push, merge/rebase, `main`, Relay deployment, npm/mobile/store/Nix/
    Docker publication and any operation on independent Paseo.
-3. Repository-local `Royalvice` authentication passed. Live pre-push GitHub truth is
+3. Repository-local `Royalvice` authentication passed. Initial pre-push GitHub truth was
    `agent/dev/mvp=d801b8e9`, `release/mvp-actions=eaa1aa5f`, `main=e74c6e0d`; fixed tag and public prerelease
    `361273193` target `eaa1aa5f`, with `draft=false`, `prerelease=true`, exactly 26 assets and prior workflow
    `30383055325` successful. The release branch remains an ancestor of the audited development base.
 4. The local tag ref is a stale checkout ref from an older fixed-Beta replacement. The current remote fixed tag was
    fetched non-destructively into `refs/remotes/origin/release-tags/v0.0.0-mvp-beta` and resolves to `eaa1aa5f`;
    no local or remote tag was moved during preflight.
-5. Pending receipts: exact release-source commit and two fast-forward pushes; matching workflow and all mandatory
-   jobs; fixed Release/tag and 26-asset replacement; fresh public downloads and checksums; downloaded AppImage
-   product journey; final non-target audit and development-only evidence closeout.
+5. Atomic release-source commit `c03d60cd14cd4ee330d30a38b0007807eb410a3d`
+   (`fix(provider): decouple native plan and questions`) was normally fast-forwarded to both `agent/dev/mvp` and
+   `release/mvp-actions`. No force, merge, rebase or `main` mutation occurred.
+6. Exact-SHA workflow `30453064159` completed with `failure`. Preflight `90579647114`, Linux Desktop
+   `90582779766`, Windows Desktop `90582779832`, macOS arm64 Desktop `90582779740`, Server CLI `90582779771` and
+   all three Server CLI smokes passed. macOS x64 Desktop `90582779776` and hosted Relay `90583349364` failed;
+   publish `90585471551` was skipped. Public Release `361273193`, direct tag and all 26 prior assets remained
+   intact at `eaa1aa5f`.
+7. `NTH-EXP-074` identifies the macOS failure as a file-creation/write race: the cold CLI smoke parsed the PID
+   lock as soon as `open(..., "wx")` made it visible. `waitForJsonFile()` now retries empty/partial JSON within the
+   existing deadline and reports the last parse error on timeout. The behavior test writes `"{"` first and then
+   the complete lock; Desktop passes `37/37` files, `301` tests and `5` skipped.
+8. `NTH-EXP-075` identifies the Relay failure after daemon restart as an external scripted-Provider fidelity bug.
+   The new process resumed the same native thread but forgot its stable tool catalog. The fixture now persists the
+   catalog by native thread id on `thread/start`, restores it on `thread/resume`, keeps the original thread id for
+   turns/tool calls and never reads or sends resume-time `dynamicTools`. A cross-process Drivers test passes, and
+   the complete Drivers suite passes `49` files / `605` tests with `3` files / `21` tests skipped.
+9. The corrective candidate passes the hosted Relay journey with `ok=true`, including daemon restart, restored
+   Card-to-Task continuation and a `1,048,649`-byte five-chunk E2EE transfer. Rebuilt local AppImage
+   `ba878cdabaf1bd5f9488d1241f2491d012834d075f0b5d0c69cf55b188403059` (`137,830,605` bytes) passes with exit
+   `0`: Provider Features Plan, native question id `target`, `['Local']`, completed-Plan-only Implement and
+   same-thread implementation all pass alongside Files/Changes/Browser/scripts/Tasks/Schedules.
+10. Corrective promotion revalidation passes with current exit code `0`: Foundation with Highlight `66`, Protocol
+    `438`, Relay `37` and Client `128`; Provider Plan tabs `16.091s`; Provider Control `36.467s`; interaction
+    regressions `23.170s`; complete Thoth `85.915s`; shared-`300s` Refactor Stage 4 `150.565s`; App `365/365`
+    files and `2,713/2,713` tests; Desktop and Drivers typechecks/suites; fixed Release contract; formatting;
+    repository validation; `git diff --check`; rebuilt AppImage; hosted Relay; and formal isolation. Isolation kept
+    Paseo PID `3597831` on `127.0.0.1:6767` while no Thoth daemon occupied `6688`.
+11. Pending receipts: two normal fast-forward pushes of the corrective release-source SHA; new matching workflow
+    and all mandatory jobs; fixed Release/tag and 26-asset replacement; fresh public downloads and checksums;
+    downloaded AppImage product journey; final non-target audit and development-only evidence closeout.

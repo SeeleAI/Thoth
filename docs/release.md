@@ -120,15 +120,19 @@ The source metadata, schema-1 update manifest, checksum file and extracted `reso
 on the source/workflow. The downloaded AppImage completed the real-window `Tasks | Schedules`, Workspace-script,
 five-chunk file-transfer, Files/Changes, Browser and Desktop bridge journey with `ok=true`.
 
-## Authorized Unpublished Candidate
+## Corrective Unpublished Candidate
 
-The current Provider-interaction correction is release-ready on base
-`d801b8e9e1e200f65bd94532e537f673c7e9567b` but is not yet the public Release. Local verification includes one
-native Provider session across Thoth hot switching, structured question-id array answers, completed-native-Plan
-authority, Daemon-owned Implement, real Codex, built-Web UI and a real-window AppImage journey. The local AppImage
-is `137,830,579` bytes with SHA-256
-`babb5596ce24cbe111d37ee6d8a82191ef1292510e000814afc7ea3253fbd054`; it is candidate evidence, not a public
-asset. `NTH-EV-074` becomes verified only after the exact release-source workflow and fresh public downloads pass.
+Provider-interaction release source `c03d60cd14cd4ee330d30a38b0007807eb410a3d` is on both authorized branches,
+but exact-SHA workflow `30453064159` failed before publish. macOS x64 exposed a partial PID-lock JSON read, and the
+hosted Relay journey exposed lost native-thread tool-catalog state in the external scripted Provider after daemon
+restart. Publish was skipped, so the public Release remains safely at `eaa1aa5f` with its prior 26 assets.
+
+Both corrective paths now pass focused tests, the complete hosted Relay journey and a rebuilt local AppImage
+real-window journey. The local candidate is `137,830,605` bytes with SHA-256
+`ba878cdabaf1bd5f9488d1241f2491d012834d075f0b5d0c69cf55b188403059`. It includes same-thread Provider Plan,
+structured question id `target`, answer array `['Local']`, completed-Plan-only Implement and all prior packaged
+surfaces. All local promotion gates now pass. It remains unpublished evidence; `NTH-EV-074` becomes verified only
+after a new corrective exact-SHA workflow and fresh public downloads pass.
 
 ## Credentials And GitHub Operations
 

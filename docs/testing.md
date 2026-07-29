@@ -141,6 +141,11 @@ Provider transport fixtures live outside the Journey and may prescribe semantic 
 the real provider adapter and runtime-tool handlers; they may not insert Cards, tasks, phases or verdicts into
 authority storage.
 
+An external Provider fixture that models native thread resume must persist the stable tool/capability catalog by
+native thread id across fixture-process restart. `thread/resume` must restore Provider-owned state without reading
+or inventing undeclared resume-time `dynamicTools`; all resumed turns and tool calls must retain the original
+native thread id. The cross-process Drivers fixture test is the deterministic guard for this behavior.
+
 ## Fast Provider Control Acceptance
 
 Use the provider-control gate while changing native Plan, Implement transitions, background approvals or
@@ -255,6 +260,11 @@ The proxy values above describe this repository environment, not product default
 `NODE_USE_ENV_PROXY=1` for `ws`/HTTPS to consume environment proxy variables. The report must prove hosted v3 E2EE,
 client and daemon restart recovery, and exact size/revision/SHA-256 for the five-chunk `1,048,649`-byte fixture;
 the command never deploys Relay.
+
+Packaged Desktop cold-start checks consume the daemon PID lock as JSON authority. File existence alone is not
+readiness because exclusive creation precedes content write; the smoke must wait for parseable JSON within the
+existing deadline and then validate the PID shape. Tests must include an initially partial lock rather than assume
+an atomic create-and-write operation.
 
 Claude Code, OpenCode and ACP must use the same Journey through their adapter capability contracts. Until an
 adapter supports session-scoped skills, semantic tools, turn identity and continuation, Thoth-on acceptance must

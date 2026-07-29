@@ -1870,3 +1870,41 @@ Conclusion: never compare hashes or ids merely because their string shapes match
 Skill source digest, Driver lifecycle id and native Provider turn id are separate domains and must remain explicit.
 Test infrastructure must also preserve fresh-home semantics and must not replace a verified product build with an
 accidentally incompatible development bundler.
+
+## `NTH-EXP-074` A visible PID lock file is not yet a complete JSON lock receipt
+
+Observed on `2026-07-29` in macOS x64 Desktop job `90582779776` of exact-SHA workflow `30453064159`:
+
+1. The packaged cold-CLI smoke waited only for `thoth.pid` to exist and immediately called `JSON.parse`. Daemon
+   lock creation uses exclusive `open(..., "wx")` followed by a separate write, so another process can observe an
+   empty or partial file during that valid interval. The job failed with `Unexpected end of JSON input`; macOS
+   arm64 happened to pass the same code path.
+2. Retrying the whole workflow would leave the race intact. Changing daemon lock ownership or weakening the PID
+   assertion was also unnecessary. The smoke now waits for valid JSON within its existing 60-second deadline,
+   treating transient read/parse failures as not-ready and retaining the last parse error for a real timeout.
+3. A behavior test first writes `"{"`, completes the same file later and proves the helper waits for the complete
+   object. The packaged smoke still rejects a parsed object without a numeric PID.
+
+Conclusion: when creation and content publication are separate filesystem operations, existence is not readiness.
+Acceptance code must wait for the semantic receipt it consumes, while preserving the original deadline and final
+shape validation.
+
+## `NTH-EXP-075` External Provider fixtures must preserve native-thread capabilities across process restart
+
+Observed on `2026-07-29` in hosted Relay job `90583349364` of exact-SHA workflow `30453064159`:
+
+1. The Relay journey passed its initial Clarify/Quick/Loop chain, client restart and restored pending Card. After
+   daemon restart, a new scripted Codex process resumed the original native thread but started with an empty
+   `dynamicToolNames` array. It received the correct native Skill input, completed without calling the Task-card
+   tool and caused the client to time out waiting for the next Card.
+2. Product code correctly omitted `dynamicTools` from `thread/resume`, because the current Codex schema does not
+   declare that field and native thread capability retention belongs to the Provider. Adding an illegal resume
+   parameter or minting a replacement Provider thread would violate `NTH-CD-097`.
+3. The external fixture now records its stable catalog by native thread id at `thread/start` and restores it at
+   `thread/resume`. A cross-process test starts a thread in process A, resumes it in process B without tools in the
+   request, and proves the original thread id issues the semantic Clarify tool call. The full hosted Relay journey
+   then passes daemon restart and Card-to-Task continuation without deploying Relay.
+
+Conclusion: an external harness fixture must model Provider-owned durable native-thread capabilities, not daemon
+request accidents or process-local state. Resume fidelity is tested by killing the Provider process while keeping
+the native thread id and capability catalog stable.

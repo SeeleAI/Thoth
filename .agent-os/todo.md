@@ -242,7 +242,12 @@ None.
 
 - Scope: create one atomic release-source commit, normally fast-forward `agent/dev/mvp` and `release/mvp-actions` to the exact SHA, wait for the existing mandatory workflow, verify the fixed 26-asset prerelease from fresh public downloads, run the downloaded AppImage real-window journey, and close evidence only on the development branch.
 - Related: `NTH-REQ-031`, `NTH-AC-028`, `NTH-CD-099`, `NTH-EV-073`, `NTH-EV-074`, `NTH-TD-036`, `NTH-TD-050`
-- Verification: In progress. Local implementation, owner suites, real Codex, built-Web UI, AppImage, Foundation, shared Refactor, isolation and pre-push remote drift checks are green. Publication still requires the exact release-source commit, workflow, public asset and downloaded-AppImage receipts.
+- Verification: In progress. Release source `c03d60cd` reached both authorized branches, but workflow
+  `30453064159` failed before publish on a partial PID-lock JSON race and an external Provider-fixture catalog
+  restart gap; the old 26-asset Release remains safe at `eaa1aa5f`. Both corrective paths now pass focused tests,
+  hosted Relay, rebuilt AppImage acceptance and all local promotion gates. Publication still requires both
+  authorized branches at the corrective source SHA, a new exact-SHA workflow, public assets and
+  downloaded-AppImage receipts.
 
 ## Abandoned
 

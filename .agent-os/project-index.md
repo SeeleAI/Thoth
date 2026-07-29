@@ -5,12 +5,13 @@
 1. Objective: `NTH-OBJ-001`
 2. Top next action: `NTH-TD-051`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. `NTH-TD-050` and `NTH-EV-073` are verified; `NTH-CD-099` authorizes fixed-Beta
-   publication, and `NTH-TD-051` is the sole top action until public assets and the downloaded AppImage pass.
-5. Current branch: `agent/dev/mvp`. Published source `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1` is the exact target
-   of `release/mvp-actions`, direct tag `v0.0.0-mvp-beta`, and public prerelease `361273193`; the Release contains
-   exactly 26 desktop-only assets. The development branch carries this evidence-only closeout above the published
-   source without advancing the Release branch. Remote `main` remains unchanged at
+4. Active blockers: none external. The first exact-SHA publication workflow exposed two release-path defects.
+   Both corrective paths and every local promotion gate now pass; normal publication of the corrective source and
+   a new exact-SHA workflow remain pending. `NTH-TD-051` stays the sole top action.
+5. Current branch: `agent/dev/mvp`. Release-source commit `c03d60cd14cd4ee330d30a38b0007807eb410a3d` is on both authorized
+   branches, but workflow `30453064159` failed before publish. The protected public prerelease `361273193`, direct
+   tag `v0.0.0-mvp-beta` and all 26 desktop-only assets therefore still target the last published source
+   `eaa1aa5fd44c64e97823fa441d04ad3c3bf772d1`. Remote `main` remains unchanged at
    `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the only product path. `NTH-EV-072` verifies that the exact
    divergent target ending at Paseo `43cf858c` is organically integrated and published at `eaa1aa5f`. Current
@@ -19,8 +20,9 @@
    canonical owners. `NTH-EV-073` verifies one visible Agent session with turn-scoped RuntimeBundle activation,
    typed Provider questions, completed-native-Plan authority and Daemon-owned same-thread Implement. Production
    is `316,951` LOC with translated Cut B/final ceilings `301,445` / `279,045`. `NTH-TD-036` stays doing at Stage
-   4 and retains its independent `15,506`-LOC gap. The correction is local and uncommitted; the published fixed
-   Beta remains source `eaa1aa5f`. The verified correction is `release_ready` but not yet committed or published.
+   4 and retains its independent `15,506`-LOC gap. Local corrective changes make packaged PID-lock reads tolerant
+   of partial JSON and make the external scripted Provider retain native-thread tool catalogs across process
+   restart without illegal resume parameters. The corrective candidate is locally `release_ready` but not public.
 
 ## Objective Summary
 
@@ -44,8 +46,9 @@ independent `15,506`-LOC gap.
 
 ## Active Blockers
 
-None. Repository-local authentication and remote drift checks passed. The current public fixed Beta remains intact
-at `eaa1aa5f` until the new exact-SHA workflow succeeds. `NTH-TD-036` remains open by design at Stage 4 with a
+The first workflow is a preserved failed receipt, not a release candidate that may be rerun. The corrective source
+is locally `release_ready`; publication still requires a new exact-SHA workflow and public reverification. The
+current public fixed Beta remains intact at `eaa1aa5f`; `NTH-TD-036` remains open by design at Stage 4 with a
 preserved `15,506`-LOC Cut B gap.
 
 ## Recent Important Changes
@@ -161,9 +164,10 @@ preserved `15,506`-LOC Cut B gap.
 99. `NTH-CD-099`: The user authorized one normal exact-SHA fixed-Beta replacement for the verified Provider
     interaction correction, with the old Release protected until every mandatory job succeeds and public
     downloaded-AppImage reverification required before completion.
-100. `NTH-EV-074`: Local release readiness and live remote preflight are recorded. Publication is in progress;
-     `NTH-TD-051` is the sole top action until workflow, 26-asset public Release and downloaded AppImage evidence
-     pass.
+100. `NTH-EV-074`: Release source `c03d60cd` was normally pushed to both authorized branches. Exact-SHA workflow
+     `30453064159` preserved the old Release but failed macOS x64 packaged PID-lock parsing and hosted Relay
+     Provider-fixture restart. Corrective paths and all local promotion gates pass; publication remains in progress
+     until a new workflow, 26 public assets and downloaded AppImage pass.
 
 ## Read Next
 

@@ -4643,3 +4643,32 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - Publication remains pending the atomic release-source commit, two normal pushes, exact-SHA workflow, public
   26-asset replacement, fresh downloads and downloaded-AppImage real-window reverification. The old fixed Release
   remains intact during this transaction.
+
+## 2026-07-29 [First Provider-interaction workflow failed safely; corrective candidate verified locally]
+
+- Created release-source commit `c03d60cd14cd4ee330d30a38b0007807eb410a3d`
+  (`fix(provider): decouple native plan and questions`) and normally fast-forwarded both `agent/dev/mvp` and
+  `release/mvp-actions` to that exact SHA. No force, merge, rebase or `main` mutation occurred.
+- Exact-SHA workflow `30453064159` failed with two mandatory jobs after all other native Desktop, preflight,
+  Server CLI and CLI smoke jobs passed. macOS x64 Desktop job `90582779776` parsed a newly created but not yet
+  complete PID-lock JSON file. Hosted Relay job `90583349364` reached daemon restart, resumed the same native
+  thread in a new external fixture process, but the fixture had lost that thread's stable tool catalog. Publish
+  job `90585471551` was skipped; Release `361273193`, tag and all 26 assets remained at `eaa1aa5f`.
+- Added semantic JSON readiness to the packaged Desktop smoke and a partial-write behavior test. Added
+  Provider-owned native-thread catalog persistence to the scripted Codex fixture and a cross-process resume test;
+  product Codex resume remains schema-correct and does not send `dynamicTools`.
+- Focused Desktop and Drivers tests/typechecks pass; complete Desktop is `37/37` files with `301` passed and `5`
+  skipped, while complete Drivers is `49` passed / `3` skipped files and `605` passed / `21` skipped tests. The
+  fixed Release contract and formatting pass.
+- The hosted Relay journey passes with `ok=true`, same-thread daemon-restart Card-to-Task continuation and the
+  existing five-chunk E2EE file. `npm run accept:thoth:appimage` rebuilt the current source and passed with exit
+  `0`; the real window verified Provider Features Plan, question id `target`, answer array `['Local']`,
+  completed-Plan-only Implement and same-thread implementation plus every existing packaged product surface.
+  Corrective AppImage is `137,830,605` bytes with SHA-256 `ba878cda...03059`.
+- Corrective promotion revalidation passes with exit `0`: Foundation (`66 + 438 + 37 + 128`), Provider Plan tabs
+  `16.091s`, Provider Control `36.467s`, interaction regressions `23.170s`, complete Thoth `85.915s`, shared
+  Refactor Stage 4 `150.565s`, App `365/2,713`, hosted Relay, fixed Release contract, formatting, repository
+  validation, isolation and diff hygiene. Formal isolation retained Paseo PID `3597831` on `6767` and found no
+  Thoth daemon on `6688`.
+- Corrective exact-SHA pushes, a new workflow, public download checks and downloaded-AppImage acceptance remain
+  pending. The failed workflow will not be rerun as a substitute for a new source SHA.

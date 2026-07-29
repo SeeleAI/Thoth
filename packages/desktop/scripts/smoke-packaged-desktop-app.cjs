@@ -211,15 +211,26 @@ function reserveLocalTcpPort() {
   });
 }
 
-async function waitForFile(filePath, label) {
-  const deadline = Date.now() + SMOKE_TIMEOUT_MS;
+async function waitForJsonFile(
+  filePath,
+  label,
+  { timeoutMs = SMOKE_TIMEOUT_MS, pollIntervalMs = 250 } = {},
+) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
   while (Date.now() < deadline) {
-    if (fs.existsSync(filePath)) {
-      return fs.readFileSync(filePath, "utf8");
+    try {
+      if (fs.existsSync(filePath)) {
+        return JSON.parse(fs.readFileSync(filePath, "utf8"));
+      }
+    } catch (error) {
+      lastError = error;
     }
-    await delay(250);
+    await delay(pollIntervalMs);
   }
-  throw new Error(`Timed out waiting for ${label}: ${filePath}`);
+  const lastErrorMessage =
+    lastError instanceof Error ? `; last JSON error: ${lastError.message}` : "";
+  throw new Error(`Timed out waiting for ${label}: ${filePath}${lastErrorMessage}`);
 }
 
 async function waitForChildPids(parentPid) {
@@ -667,7 +678,7 @@ async function smokeColdCliDaemonStart({ appPath }) {
       label: "Bundled CLI shim cold daemon start",
     });
 
-    const pidInfo = JSON.parse(await waitForFile(pidPath, "cold CLI daemon pid file"));
+    const pidInfo = await waitForJsonFile(pidPath, "cold CLI daemon pid file");
     if (!pidInfo || typeof pidInfo.pid !== "number") {
       throw new Error(`Cold CLI daemon wrote invalid pid file: ${JSON.stringify(pidInfo)}`);
     }
@@ -906,6 +917,7 @@ async function smokePackagedDesktopApp({ appPath }) {
 
 module.exports = {
   smokePackagedDesktopApp,
+  waitForJsonFile,
 };
 
 if (require.main === module) {
