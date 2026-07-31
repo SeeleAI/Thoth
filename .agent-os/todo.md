@@ -50,8 +50,10 @@
 1. `NTH-TD-052` `[doing]`: Replace Clarify and Loop with the Decision Map, single Intent Contract and target-anchored Working Set architecture, migrate schema v5 to v6, and publish the verified fixed desktop Beta.
    - Acceptance: `NTH-AC-029`; no Task/Goals runtime path, no provider-name branch, no prompt/Skill fallback, no duplicate truth, and no release before fast/full/packaged/public verification.
    - Progress: Protocol, schema-v6 migration, Harness, daemon, App, CLI, packaged AppImage, real Codex, hosted Relay,
-     cognition judges and local promotion gates are complete under `NTH-EV-075`. The candidate is locally
-     `release_ready`; exact-SHA push, Actions, fixed Release replacement and public-download reverification remain.
+     cognition judges and local promotion gates are complete under `NTH-EV-075`. First exact-SHA workflow
+     `30601495104` failed safely because one CLI Schedule test allowed only 3 seconds for asynchronous Task
+     authority under four-way CI load. The formal 30-second authority deadline and failure diagnostics pass the
+     exact `40/40` concurrent suite; corrective commit, Actions and public reverification remain.
    - Related: `NTH-REQ-032`, `NTH-AC-029`, `NTH-CD-060`, `NTH-CD-100`, `NTH-CD-101`, `NTH-CD-102`, `NTH-TD-036`
 2. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
    - Acceptance: no public semantic or UX change; no VCS/Provider/RPC/authority/performance work; App suite remains at least `331 files / 2,582 tests`; after the approved capability translations through `NTH-CD-100` through `NTH-CD-102`, Stage 5 source is at most `304,618` production LOC with tokens/AST/imports below Stage 4 and dependencies no higher; the shared `300s` gate passes.

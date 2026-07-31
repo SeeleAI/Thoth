@@ -4296,3 +4296,12 @@ Status: `in_progress`; local state is `release_ready` and public publication evi
 13. Repository-local `Royalvice` preflight confirms development `6b04aa36`, release automation `d898f25f`,
     `main=e74c6e0d`, direct fixed tag `d898f25f` and public prerelease `361828099` at the same source with exactly
     26 assets. Release source is an ancestor of development HEAD. No remote mutation occurred during preflight.
+14. Source `eacb2b6df0983f0b19f3fd83d4657938b435c73e` was normally fast-forwarded to both authorized branches.
+    Exact-SHA workflow `30601495104` failed in preflight job `91064968161`: clean install, Foundation, release
+    runtime, App, Daemon, foreground, adapters and Desktop passed, while CLI was `39/40`. All build, Relay and
+    publish jobs were skipped; the fixed tag, Release `361828099` and 26 assets remain at `d898f25f`.
+15. `31-task-schedule` had a 3-second polling loop for asynchronously created Task authority while the same file's
+    other authority waits use 30 seconds. The product path and focused test passed locally. The observer now uses
+    the common 30-second semantic deadline, preserves the exact `taskId` assertion and emits final logs/inspect/
+    Task-list evidence on failure. The focused test passes, and the exact four-way CLI suite passes `40/40` in
+    `180.3s`, with `31-task-schedule` completing in `35.2s`. Corrective exact-SHA publication remains pending.

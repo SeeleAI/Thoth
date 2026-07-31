@@ -1988,3 +1988,21 @@ Observed on `2026-07-31` during final hosted Relay acceptance:
 
 Conclusion: retain transient transport failure evidence, but require the full E2EE product journey for promotion.
 A health endpoint is diagnostic context, not a substitute for end-to-end acceptance.
+
+## `NTH-EXP-081` Asynchronous authority tests need semantic deadlines, not local-speed poll counts
+
+Observed on `2026-07-31` in preflight job `91064968161` of exact-SHA workflow `30601495104`:
+
+1. Clean install, Foundation, release runtime, complete App/Daemon, foreground, adapters and Desktop all passed.
+   CLI passed `39/40`; `31-task-schedule` failed because the first Schedule run did not expose a `taskId` within
+   `30` polls separated by `100ms`.
+2. This was an accidental 3-second observer limit, not the test's declared 30-second authority deadline. The same
+   product path and focused test passed locally, while the hosted runner was executing four independent CLI daemon
+   fixtures concurrently. Increasing a product retry or skipping the Task assertion would have hidden the domain.
+3. The observer now uses one explicit 30-second deadline and retains its canonical Task assertion. A true timeout
+   includes the last Schedule logs, Schedule inspection and Workspace Task list. The focused test and exact
+   four-way complete CLI suite then passed `40/40`; the affected file completed in `35.2s` and the suite in
+   `180.3s`.
+
+Conclusion: eventual authority should be awaited by a shared semantic deadline and diagnosed from final authority
+receipts. Fixed iteration counts silently encode machine speed and become flaky when independent tests share CPU.

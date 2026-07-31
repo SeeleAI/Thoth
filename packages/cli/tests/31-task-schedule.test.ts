@@ -150,9 +150,12 @@ try {
   const waitForScheduleAuthority = async (
     scheduleId: string,
   ): Promise<{ scheduleId: string; taskId: string }> => {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    const deadline = Date.now() + 30_000;
+    let lastRuns = "[]";
+    while (Date.now() < deadline) {
       const logs = await ctx.thoth(scopedSchedule(["schedule", "logs", scheduleId, "--json"]));
       assert.strictEqual(logs.exitCode, 0, logs.stderr);
+      lastRuns = logs.stdout.trim();
       const runs = JSON.parse(logs.stdout) as Array<{ taskId?: string | null }>;
       const authorityRun = runs.find((run) => typeof run.taskId === "string");
       if (authorityRun?.taskId) {
@@ -160,7 +163,17 @@ try {
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    throw new Error(`Schedule ${scheduleId} did not create Task/Execution authority`);
+
+    const inspected = await ctx.thoth(
+      scopedSchedule(["schedule", "inspect", scheduleId, "--json"]),
+    );
+    const tasks = await ctx.thoth(["task", "list", "--workspace", workspaceId, "--json"]);
+    throw new Error(
+      `Schedule ${scheduleId} did not create Task authority within 30s. ` +
+        `Last logs: ${lastRuns.slice(-4_000)}; ` +
+        `inspect: ${(inspected.stdout || inspected.stderr).trim().slice(-4_000)}; ` +
+        `tasks: ${(tasks.stdout || tasks.stderr).trim().slice(-4_000)}`,
+    );
   };
   {
     console.log("Test 1: schedule create/ls/inspect/pause/resume/delete work");

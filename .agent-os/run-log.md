@@ -4752,3 +4752,22 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - Direct tag `v0.0.0-mvp-beta` and public prerelease `361828099` still target `d898f25f`; the Release is
   `draft=false`, `prerelease=true` and exposes exactly 26 assets. No branch, tag, Release, workflow or service has
   been mutated. The candidate may proceed to one atomic source commit and two normal fast-forward pushes.
+
+## 2026-07-31 [First Decision Map workflow failed safely; CLI observer correction verified]
+
+- Created release-source commit `eacb2b6df0983f0b19f3fd83d4657938b435c73e`
+  (`feat(thoth): replace clarify and loop cognition`) and normally fast-forwarded both authorized branches. Exact
+  workflow `30601495104` failed only in preflight job `91064968161`; every later native, packaged, Relay and publish
+  job was skipped, so fixed Release `361828099` and all 26 assets remained unchanged at `d898f25f`.
+- Preflight passed clean install, Electron setup, Release/brand contracts, Foundation, release runtime, complete
+  App, complete Daemon, public foreground, adapter and Desktop tests. CLI finished `39/40`; only
+  `31-task-schedule` failed while waiting for the first Schedule run to expose Task authority.
+- The failing observer allowed `30` polls at `100ms`, only 3 seconds, despite every other asynchronous authority
+  wait in the same test using 30 seconds. Four concurrent isolated daemons on the hosted runner exceeded that
+  accidental local-speed assumption. Product authority and the same direct test passed locally before the edit.
+- The test now uses the existing 30-second semantic deadline and, on a real timeout, reports final Schedule logs,
+  inspection and Workspace Task list. It still requires a canonical `taskId`, and no product timeout, retry,
+  fallback or assertion was weakened. The focused test passed, then the exact four-way complete CLI command passed
+  `40/40` in `180.3s`; `31-task-schedule` completed in `35.2s`.
+- A corrective source commit and new exact-SHA workflow remain pending. The failed workflow will not be rerun or
+  treated as publication evidence.

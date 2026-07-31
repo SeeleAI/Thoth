@@ -8,10 +8,11 @@
 4. Active blockers: none. The user approved `NTH-CD-100` through `NTH-CD-102`; `NTH-TD-052` temporarily supersedes
    presentation-only refactor work while the single Clarify/Loop authority is replaced and republished.
 5. Current branch: `agent/dev/mvp`. Published source `d898f25f087f3d997fb027df355013a3d600f94e` is the exact target of
-   `release/mvp-actions`, direct tag `v0.0.0-mvp-beta`, and public prerelease `361828099`; the Release contains
-   exactly 26 desktop-only assets. Development HEAD `6b04aa36166b70f65f1ecd557fdcdc901b5674d8` carries the prior
-   evidence closeout, and the uncommitted `NTH-EV-075` candidate is locally release-ready above it. Remote `main`
-   remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+   direct tag `v0.0.0-mvp-beta` and public prerelease `361828099`; the Release contains exactly 26 desktop-only
+   assets. Both authorized branches reached candidate `eacb2b6df0983f0b19f3fd83d4657938b435c73e`, whose workflow
+   `30601495104` failed safely in preflight before publication. The corrective CLI gate change is locally verified
+   and awaits its source commit. Remote `main` remains unchanged at
+   `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the provider-neutral substrate, while `NTH-CD-100` through
    `NTH-CD-102` now replace the former Task/Goals cognition with a durable Decision Map, one Intent Contract, one
    Task Anchor and checkpoint-reviewed Working Sets under `NTH-TD-052`. `NTH-EV-072` verifies that the exact
@@ -47,8 +48,9 @@ independent `15,506` production-LOC gap translated by the measured capability de
 
 ## Active Blockers
 
-None. The failed `c03d60cd` workflow remains preserved as evidence, while corrective source `d898f25f` is the
-verified public fixed Beta. `NTH-TD-036` remains open by design at Stage 4 with a preserved `15,506`-LOC Cut B gap.
+None. Failed workflows `c03d60cd` and `eacb2b6d` remain preserved as evidence, while source `d898f25f` is still
+the verified public fixed Beta. The `eacb2b6d` failure is locally corrected and does not require user input.
+`NTH-TD-036` remains open by design at Stage 4 with a preserved `15,506`-LOC Cut B gap.
 
 ## Recent Important Changes
 
