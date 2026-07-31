@@ -4389,3 +4389,6 @@ never called` after package extraction. `NTH-EXP-084` preserves this failure; th
 9. No branch, tag, Release, deploy or independent service mutation has occurred in this local-verification state.
    Current public `v0.0.0-mvp-beta` remains at `c32ab051`; only after the committed candidate's exact-SHA workflow
    succeeds may its 26 desktop assets be replaced and re-downloaded for final verification.
+10. Release transfer is currently blocked before its first push: the required repository-local Royalvice `gh`
+    configuration reports that its GitHub token is invalid. This is recorded before any branch or Release mutation;
+    the token must be refreshed through the same local configuration rather than bypassed with another credential.

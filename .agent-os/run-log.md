@@ -4870,3 +4870,13 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   The third unchanged Relay journey passed `ok=true`; the failure remains recorded under `NTH-EXP-084`.
 - No remote branch, tag, Release or deployment has changed. `NTH-TD-053` remains the sole top action pending one
   normal release-source commit, exact-SHA workflow, fixed-Beta replacement and public downloaded-artifact journey.
+
+## 2026-07-31 [Decision Session tree release transfer blocked before push]
+
+- Release-source commit `f1fa1ddcd09591f663f8f5cb9ec666c887c8885a` is clean and contains the completed product
+  path, local gates and the packaged Server CLI cache-stability correction. Remote fences remain development
+  `9eb9aeba`, release `c32ab051` and `main=e74c6e0d`.
+- The required `THOTH_GH_CONFIG_DIR=.dev/gh-royalvice` `npm run gh -- auth status --hostname github.com` command
+  reports that the repository-local GitHub token is no longer valid. No alternate credential, git push, workflow,
+  tag or Release mutation was attempted. Refresh the same repository-local credential, then re-run the fence before
+  normal development push and release-branch fast-forward.

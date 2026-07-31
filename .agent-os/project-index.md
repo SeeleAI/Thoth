@@ -5,8 +5,9 @@
 1. Objective: `NTH-OBJ-001`
 2. Top next action: `NTH-TD-053`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. `NTH-TD-053` has completed the approved `NTH-CD-103` Decision Session/tree replacement
-   and all local/packaged/hosted verification; exact-SHA CI and public-release verification remain pending.
+4. Active blocker: the required repository-local Royalvice GitHub credential is invalid. `NTH-TD-053` has completed
+   the approved `NTH-CD-103` Decision Session/tree replacement and all local/packaged/hosted verification; exact-SHA
+   CI and public-release verification cannot start until that credential is refreshed.
 5. Current branch: `agent/dev/mvp` at `9eb9aebae5a5ea02da381580473f039cc71d34b3`. Published source
    `c32ab051370ae1675b05ee53713ca60ac32f24ad` is the exact target of
    `release/mvp-actions`, direct tag `v0.0.0-mvp-beta`, and public prerelease `362857331`; the Release contains
@@ -51,10 +52,12 @@ receipts, accurate Clarify activity and virtualized tree mind-map product path.
 
 ## Active Blockers
 
-None. Failed workflows `c03d60cd`, `eacb2b6d`, `a62ff6e1` and `16216432` remain preserved as evidence. The two
-local npm registry-reset failures during `NTH-TD-053` are retained under `NTH-EXP-084`; the corrected packaged
-Relay journey passes. Corrective source `c32ab051` is the verified public fixed Beta. `NTH-TD-053` is the sole top
-action; `NTH-TD-036` remains open by design at Stage 4 with a preserved `15,506`-LOC Cut B gap.
+The required `THOTH_GH_CONFIG_DIR=.dev/gh-royalvice` credential reports invalid before the authorized branch push.
+No push or Release mutation may bypass that owner. Failed workflows `c03d60cd`, `eacb2b6d`, `a62ff6e1` and
+`16216432` remain preserved as evidence. The two local npm registry-reset failures during `NTH-TD-053` are retained
+under `NTH-EXP-084`; the corrected packaged Relay journey passes. Corrective source `c32ab051` is the verified
+public fixed Beta. `NTH-TD-053` is the sole top action; `NTH-TD-036` remains open by design at Stage 4 with a
+preserved `15,506`-LOC Cut B gap.
 
 ## Recent Important Changes
 
