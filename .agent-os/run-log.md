@@ -4771,3 +4771,23 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   `40/40` in `180.3s`; `31-task-schedule` completed in `35.2s`.
 - A corrective source commit and new exact-SHA workflow remain pending. The failed workflow will not be rerun or
   treated as publication evidence.
+
+## 2026-07-31 [Second Decision Map workflow exposed host-dependent Schedule fixture]
+
+- Created corrective source `a62ff6e107f684a183b5bc9dd8d7054de40acd13`
+  (`test(cli): await scheduled task authority`) and normally pushed development. The first release push command
+  incorrectly expanded the short SHA into an unread object id; Git rejected it with `needs force` and the remote
+  remained unchanged. The real `HEAD` was then read with `git rev-parse`, the release fence was rechecked, and the
+  exact commit was normally fast-forwarded without force.
+- Exact-SHA workflow `30602467471` again passed every pre-CLI preflight step and failed CLI `39/40`; all downstream
+  native, packaged, Relay and publish jobs were skipped, preserving fixed Release `361828099` at `d898f25f`.
+- The new diagnostics proved the Schedule run reached terminal `failed` in `402ms` with
+  `Provider 'claude' is not available`, `taskId=null` and `executionId=null`. The Workspace Task list contained only
+  the earlier confirmed Quick Task. This disproved the incomplete machine-speed diagnosis from the first run.
+- `31-task-schedule` provisions its own scripted Codex transport but the first actual Schedule hard-coded Claude,
+  so success depended on the developer machine having Claude installed. The Schedule now uses its own fixture
+  Provider. A terminal run without Task authority fails immediately with the exact run receipt; the 30-second
+  deadline remains only for nonterminal eventual authority.
+- The focused formal path passes, and the exact four-way complete CLI command passes `40/40` in `186.9s`;
+  `31-task-schedule` completes in `33.8s`. Product runtime is unchanged. A third corrective source commit and new
+  exact-SHA workflow remain pending.

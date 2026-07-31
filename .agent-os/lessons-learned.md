@@ -2006,3 +2006,23 @@ Observed on `2026-07-31` in preflight job `91064968161` of exact-SHA workflow `3
 
 Conclusion: eventual authority should be awaited by a shared semantic deadline and diagnosed from final authority
 receipts. Fixed iteration counts silently encode machine speed and become flaky when independent tests share CPU.
+
+Correction from workflow `30602467471`: the longer deadline was necessary to obtain complete evidence, but it did
+not fix the causal failure. The Schedule had already terminated because Claude was unavailable. The diagnostic
+receipt enabled the separate `NTH-EXP-082` correction below.
+
+## `NTH-EXP-082` Provider E2E fixtures must execute through the transport they provision
+
+Observed on `2026-07-31` in preflight job `91067904073` of exact-SHA workflow `30602467471`:
+
+1. The CLI Schedule test copied and installed the scripted Codex executable, but its first actual Schedule selected
+   Claude. Local machines with Claude installed produced Task authority; the clean hosted runner terminated in
+   `402ms` with `Provider 'claude' is not available`, `taskId=null` and `executionId=null`.
+2. Waiting longer could not create authority from a terminal failed run. The observer now fails immediately when a
+   terminal run lacks a Task and reports the exact run receipt. The Schedule selects its fixture-owned Codex
+   transport; this is external transport determinism, not a Provider-name branch in product orchestration.
+3. The focused test and exact four-way full CLI command pass `40/40`; the affected file completes in `33.8s` and
+   the full suite in `186.9s`. No product availability check, Schedule state machine or Task assertion changed.
+
+Conclusion: a conformance fixture is self-contained only when every real execution uses the transport it installs.
+Host-installed Providers are environmental facts, never valid hidden dependencies for deterministic acceptance.

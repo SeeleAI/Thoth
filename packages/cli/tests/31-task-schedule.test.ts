@@ -156,10 +156,22 @@ try {
       const logs = await ctx.thoth(scopedSchedule(["schedule", "logs", scheduleId, "--json"]));
       assert.strictEqual(logs.exitCode, 0, logs.stderr);
       lastRuns = logs.stdout.trim();
-      const runs = JSON.parse(logs.stdout) as Array<{ taskId?: string | null }>;
+      const runs = JSON.parse(logs.stdout) as Array<{
+        taskId?: string | null;
+        status?: string;
+        error?: string | null;
+      }>;
       const authorityRun = runs.find((run) => typeof run.taskId === "string");
       if (authorityRun?.taskId) {
         return { scheduleId, taskId: authorityRun.taskId };
+      }
+      const failedRun = runs.find(
+        (run) => run.taskId == null && ["failed", "canceled"].includes(run.status ?? ""),
+      );
+      if (failedRun) {
+        throw new Error(
+          `Schedule ${scheduleId} terminated before creating Task authority: ${JSON.stringify(failedRun)}`,
+        );
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -189,7 +201,7 @@ try {
         "--intent-contract",
         intentContractId,
         "--provider",
-        "claude",
+        "codex",
         "--json",
       ]),
       { timeout: 30000 },
@@ -201,7 +213,7 @@ try {
     assert.strictEqual(createdJson.intentContractId, intentContractId);
     assert(
       typeof createdJson.target === "string" &&
-        (createdJson.target.startsWith("agent:") || createdJson.target === "new-agent:claude"),
+        (createdJson.target.startsWith("agent:") || createdJson.target === "new-agent:codex"),
       created.stdout,
     );
 

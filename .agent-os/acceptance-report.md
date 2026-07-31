@@ -4305,3 +4305,11 @@ Status: `in_progress`; local state is `release_ready` and public publication evi
     the common 30-second semantic deadline, preserves the exact `taskId` assertion and emits final logs/inspect/
     Task-list evidence on failure. The focused test passes, and the exact four-way CLI suite passes `40/40` in
     `180.3s`, with `31-task-schedule` completing in `35.2s`. Corrective exact-SHA publication remains pending.
+16. Corrective source `a62ff6e107f684a183b5bc9dd8d7054de40acd13` was normally fast-forwarded to both branches.
+    Workflow `30602467471` again failed CLI `39/40` after every earlier step passed; all downstream jobs were
+    skipped and the public Release stayed at `d898f25f`. The added receipt proved the run had already failed with
+    `Provider 'claude' is not available`, no Task or Execution, rather than merely being slow. The test provisions
+    scripted Codex but had hard-coded Claude for its first real Schedule. It now uses its fixture-owned Provider,
+    rejects terminal-without-Task immediately and keeps the 30-second deadline only for nonterminal eventual
+    authority. Focused acceptance passes, and the exact four-way CLI suite passes `40/40` in `186.9s`, with the
+    affected file at `33.8s`. Product runtime is unchanged; third corrective publication remains pending.
