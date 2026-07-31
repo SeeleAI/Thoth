@@ -110,25 +110,27 @@ SHA-256, source commit, update manifest, embedded build identity, and the comple
 
 ## Current Published Receipt
 
-The current fixed Beta was published from source `d898f25f087f3d997fb027df355013a3d600f94e` by exact-SHA workflow
-`30459786832`. All 11 mandatory jobs passed. Public prerelease `361828099` and direct
+The current fixed Beta was published from source `c32ab051370ae1675b05ee53713ca60ac32f24ad` by exact-SHA workflow
+`30604155018`. All 11 mandatory jobs passed. Public prerelease `362857331` and direct
 tag `v0.0.0-mvp-beta` target that exact source, are non-draft/prerelease, and expose exactly 26 desktop-only assets.
 
 Fresh public downloads verify:
 
 - `BUILD-SOURCE.txt`: `89` bytes,
-  `e08551c3b3e685f9eb5c89f1686bde900d9bcdeb7149e4ce625e4511b66f0ede`
+  `eb8cc39f11d00bb382d97191e143ebafa7321d56ad733dc7c55c2c836c78557e`
 - `MVP-UPDATE.json`: `2,455` bytes,
-  `64ba48f57393188265583c9ca8ebd796d4373bbb983ae65e633d4a9053c57bad`
+  `216636e2f88fa25740ccfa084e03cc2cbe4b8808f03311fa73db335875e025dd`
 - `SHA256SUMS`: `2,418` bytes,
-  `5b456f265efbcd8218080cd5783c4d1b64fe60010726cb9e0677bb3e2fb6cc5c`
-- `Thoth-x86_64.AppImage`: `137,826,536` bytes,
-  `ec90e3f8f860b5e918bf035630df3f2121a91b0c039355e164bdfd3a569ebca8`
+  `e83ec4cb566b2a71cae13388debbb2e528452e0e084b75d484711ca59f67404b`
+- `Thoth-x86_64.AppImage`: `137,826,775` bytes,
+  `e78269655d4e9f07f2eb1358cd36d8b1f6f99ec357d57df6b8c6123cf4eef4ab`
 
 The source metadata, schema-1 update manifest, checksum file and extracted `resources/build-identity.json` agree
-on the source/workflow. The downloaded AppImage completed the real-window Provider Plan/question/Implement
-same-thread, `Tasks | Schedules`, Workspace-script, five-chunk file-transfer, Files/Changes, Browser and Desktop
-bridge journey with `ok=true`.
+on the source/workflow. The downloaded AppImage completed the real-window Decision Map, single Intent Contract,
+Quick, Loop native Plan/Implement, four semantic checkpoints, four fresh Reviews, reorient/retry, `@Task`, Stop,
+schema-v6 migration, `Tasks | Schedules`, Workspace-script, five-chunk file-transfer, Files/Changes, Browser and
+Desktop bridge journey with `ok=true`. Its durable state is `8,592,628` bytes with exactly two content-addressed
+RuntimeBundles.
 
 ## Provider Interaction Replacement History
 
@@ -145,6 +147,31 @@ structured question id `target`, answer array `['Local']`, completed-Plan-only I
 surfaces. Corrective source `d898f25f` then passed exact-SHA workflow `30459786832`, replaced the fixed Release and
 passed fresh public-download and downloaded-AppImage verification. The failed predecessor remains evidence and is
 not treated as a successful publication.
+
+## Decision Map Replacement History
+
+Decision Map source `eacb2b6df0983f0b19f3fd83d4657938b435c73e` reached exact-SHA workflow `30601495104`.
+Preflight passed every gate before the CLI suite, where the Schedule observer exposed an accidental three-second
+window for asynchronously created Task authority. Publish and all native jobs were skipped, so the prior Release
+remained intact. The observer now uses the same 30-second semantic deadline as the surrounding authority checks
+and preserves final Task, Schedule and daemon receipts on failure.
+
+Corrective source `a62ff6e107f684a183b5bc9dd8d7054de40acd13` reached workflow `30602467471`. Its added
+receipts proved the Schedule fixture selected host Claude despite provisioning scripted Codex. The fixture now
+owns and selects its scripted Provider, and a terminal Schedule run without Task authority fails immediately with
+the exact run receipt rather than waiting for a timeout. No product fallback or Provider-specific business branch
+was added, and publish was again skipped.
+
+Source `16216432a3a72a608833c034f33ffa7b47507ee9` reached workflow `30603411869`, where the complete Daemon
+suite exposed an order-sensitive assertion for two intentionally concurrent Workspace routes. The expected and
+actual projections are now normalized by `scriptName` before exact comparison; production RouteStore behavior was
+not changed. All downstream jobs, including publish, were skipped.
+
+Final corrective source `c32ab051370ae1675b05ee53713ca60ac32f24ad` passed exact-SHA workflow
+`30604155018`, including preflight, Linux/Windows/macOS native builds, three native CLI smokes, internal Server CLI,
+hosted Relay and publish. It replaced the fixed Release only after every mandatory job succeeded, then passed the
+fresh public-download identity checks and downloaded-AppImage product journey recorded above. The three failed
+workflows remain failure evidence rather than being rerun or reclassified as successful releases.
 
 ## Credentials And GitHub Operations
 

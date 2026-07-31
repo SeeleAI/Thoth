@@ -4244,7 +4244,7 @@ Status: `verified`.
 
 ### `NTH-EV-075` Decision Map Clarify And Target-Anchored Loop Fixed-Beta Replacement
 
-Status: `in_progress`; local state is `release_ready` and public publication evidence is pending.
+Status: `verified`; terminal state is `published`.
 
 1. The implementation baseline is clean `agent/dev/mvp@6b04aa36166b70f65f1ecd557fdcdc901b5674d8`.
    `NTH-CD-100` through `NTH-CD-102` replace the former Task/Goals cognition authority without dual reads,
@@ -4320,3 +4320,32 @@ Status: `in_progress`; local state is `release_ready` and public publication evi
     only order reversed. The assertion now sorts its copied projection by `scriptName`; production RouteStore is
     unchanged. Focused `4/4` and complete Daemon `199/199` files, `2,535` passed / `26` skipped, pass in `182.51s`.
     Fourth corrective publication remains pending.
+18. Corrective source `c32ab051370ae1675b05ee53713ca60ac32f24ad`
+    (`test(daemon): normalize concurrent route assertions`) was normally fast-forwarded to both authorized
+    branches. Exact-SHA workflow `30604155018`, run number `39`, completed with `success` at that exact head.
+19. All mandatory jobs passed: preflight `91072892352`; macOS x64 `91074112529`; internal Server CLI
+    `91074112547`; Windows Desktop `91074112555`; macOS arm64 `91074112559`; Linux Desktop `91074112583`; hosted
+    Relay `91074381406`; Ubuntu/Windows/macOS CLI smokes `91074381420` / `91074381427` / `91074381476`; and publish
+    `91076006897`. The formerly failing complete Daemon and CLI paths both passed in the mandatory preflight.
+20. Fixed public prerelease `362857331` and direct tag `v0.0.0-mvp-beta` target exactly `c32ab051`; `draft=false`,
+    `prerelease=true`, and the Release exposes exactly 26 desktop-only assets. It contains no APK, iOS, public
+    Server CLI, npm, Nix or Docker output. `MVP-UPDATE.json` lists exactly six preferred installers: macOS arm64/
+    x64 DMG, Windows arm64/x64 NSIS, Linux AppImage and Linux DEB.
+21. Fresh public downloads under ignored `.dev/release-verification/c32ab051.../` match `SHA256SUMS`:
+    `BUILD-SOURCE.txt` is `89` bytes / `eb8cc39f...557e`; `MVP-UPDATE.json` is `2,455` bytes /
+    `216636e2...5dd`; `SHA256SUMS` is `2,418` bytes / `e83ec4cb...404b`; and `Thoth-x86_64.AppImage` is
+    `137,826,775` bytes / `e7826965...ef4ab`. Source metadata, schema-1 manifest, checksum file and extracted
+    `resources/build-identity.json` all identify source `c32ab051` and workflow `30604155018`.
+22. The freshly downloaded AppImage passed the complete real-window journey with exit code `0` and `ok=true`.
+    It retained one Provider thread through native Plan/Implement, answered the native question through the UI,
+    used four checkpoints and four fresh Review decisions, and passed Decision Map, one Intent Contract, Quick,
+    Loop reorient/retry, `@Task`, Stop, schema-v6 migration, Files/Changes, Browser, Workspace scripts, five-chunk
+    file transfer and full Schedule UI/navigation. Isolated durable state is `8,592,628` bytes with exactly the
+    `thoth.clarify` and `thoth.loop` content-addressed RuntimeBundles.
+23. Final non-target audit passed: `main=e74c6e0de8a110d5e07249880d0e4e4f0ceab691`; archive Release
+    `thoth-plugin-final-archive` remains non-draft and published; no Relay deployment, Web deployment, npm/mobile/
+    store/Nix/Docker publication or independent Paseo operation occurred.
+
+Conclusion: `NTH-AC-029` is satisfied, `NTH-TD-052` is verified, and the fixed desktop Beta is `published` at
+source `c32ab051370ae1675b05ee53713ca60ac32f24ad`. `NTH-TD-036` returns as the sole top next action at Stage 4 with
+its independent `15,506`-LOC gap unchanged. This evidence-only closeout is pushed only to `agent/dev/mvp`.

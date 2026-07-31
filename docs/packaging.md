@@ -236,17 +236,19 @@ downloaded public artifact below remains publication authority.
 
 Current verified public artifact:
 
-- Source: `d898f25f087f3d997fb027df355013a3d600f94e`
-- Workflow: `30459786832`
-- Release: `v0.0.0-mvp-beta` / `361828099`
+- Source: `c32ab051370ae1675b05ee53713ca60ac32f24ad`
+- Workflow: `30604155018`
+- Release: `v0.0.0-mvp-beta` / `362857331`
 - Public-download path:
-  `/mnt/cfs/5vr0p6/yzy/thoth/.dev/release-verification/d898f25f087f3d997fb027df355013a3d600f94e/Thoth-x86_64.AppImage`
-- sha256: `ec90e3f8f860b5e918bf035630df3f2121a91b0c039355e164bdfd3a569ebca8`
-- Bytes: `137826536`
-- Embedded build identity: `d898f25f087f3d997fb027df355013a3d600f94e`
-- Public packaged smoke: passed with `ok=true`, Provider Features Plan, native question id `target`, answer array
-  `['Local']`, completed-Plan-only Implement, same-thread implementation and the existing Files/Changes, Browser,
-  Workspace-script, five-chunk file-transfer and complete `Tasks | Schedules` UI/navigation contract
+  `/mnt/cfs/5vr0p6/yzy/thoth/.dev/release-verification/c32ab051370ae1675b05ee53713ca60ac32f24ad/Thoth-x86_64.AppImage`
+- sha256: `e78269655d4e9f07f2eb1358cd36d8b1f6f99ec357d57df6b8c6123cf4eef4ab`
+- Bytes: `137826775`
+- Embedded build identity: `c32ab051370ae1675b05ee53713ca60ac32f24ad`
+- Public packaged smoke: passed with `ok=true`, Decision Map, one Intent Contract, Quick, Loop native
+  Plan/Implement, four semantic checkpoints, four fresh Reviews, reorient/retry, `@Task`, Stop, schema-v6 migration
+  and the existing Files/Changes, Browser, Workspace-script, `1,048,649`-byte five-chunk file transfer and complete
+  `Tasks | Schedules` UI/navigation contract. The isolated durable state is `8,592,628` bytes with exactly two
+  content-addressed RuntimeBundles.
 
 The public artifact is the publication authority. It is downloaded from the GitHub Release and is not reused from
 the local build or workflow artifact.

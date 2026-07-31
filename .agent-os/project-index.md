@@ -3,16 +3,14 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-052`
+2. Top next action: `NTH-TD-036`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. The user approved `NTH-CD-100` through `NTH-CD-102`; `NTH-TD-052` temporarily supersedes
-   presentation-only refactor work while the single Clarify/Loop authority is replaced and republished.
-5. Current branch: `agent/dev/mvp`. Published source `d898f25f087f3d997fb027df355013a3d600f94e` is the exact target of
-   direct tag `v0.0.0-mvp-beta` and public prerelease `361828099`; the Release contains exactly 26 desktop-only
-   assets. Both authorized branches reached corrective candidate `16216432a3a72a608833c034f33ffa7b47507ee9`, whose workflow
-   `30603411869` failed safely in preflight before publication after exposing a concurrent route-order assertion.
-   The deterministic assertion correction is locally verified and awaits its source commit. Remote `main` remains unchanged at
-   `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+4. Active blockers: none. `NTH-EV-075` verifies and publishes the `NTH-CD-100` through `NTH-CD-102` cognition
+   replacement; presentation-only refactor work resumes without weakening its independent target.
+5. Current branch: `agent/dev/mvp`. Published source `c32ab051370ae1675b05ee53713ca60ac32f24ad` is the exact target of
+   `release/mvp-actions`, direct tag `v0.0.0-mvp-beta`, and public prerelease `362857331`; the Release contains
+   exactly 26 desktop-only assets. The development branch carries only this evidence closeout above the published
+   source. Remote `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the provider-neutral substrate, while `NTH-CD-100` through
    `NTH-CD-102` now replace the former Task/Goals cognition with a durable Decision Map, one Intent Contract, one
    Task Anchor and checkpoint-reviewed Working Sets under `NTH-TD-052`. `NTH-EV-072` verifies that the exact
@@ -21,7 +19,8 @@
    usage/OMP/runtime policy, strict forwarded authority and approved App/Desktop repairs all terminate in the
    canonical owners. `NTH-EV-073` verifies one visible Agent session with turn-scoped RuntimeBundle activation,
    typed Provider questions, completed-native-Plan authority and Daemon-owned same-thread Implement. `NTH-EV-075`
-   records the complete local cognition, schema-v6, AppImage, real Codex and hosted Relay candidate. Production is
+   verifies the complete cognition/schema-v6 implementation through exact-SHA CI, 26 public desktop assets and a
+   freshly downloaded AppImage real-window journey. Production is
    `320,124` LOC with translated Cut B/final ceilings `304,618` / `282,218`. `NTH-TD-036` stays doing at Stage
    4 and retains its independent `15,506`-LOC gap. `NTH-EV-074` verifies the corrective packaged PID-lock and
    external native-thread catalog paths through exact-SHA CI, the 26-asset fixed Beta and a freshly downloaded
@@ -42,16 +41,14 @@
 
 ## Top Next Action
 
-`NTH-TD-052` `[doing]`: Implement and verify the Decision Map Clarify, one Intent Contract, target-anchored Loop,
-schema-v6 migration and fixed desktop Beta replacement. After public verification, restore `NTH-TD-036` with its
-independent `15,506` production-LOC gap translated by the measured capability delta.
+`NTH-TD-036` `[doing]`: Resume the feature- and UX-preserving Stage 4 presentation convergence with translated
+Cut B/final ceilings `304,618` / `282,218` and the unchanged independent `15,506` production-LOC gap.
 
 ## Active Blockers
 
-None. Failed workflows `c03d60cd`, `eacb2b6d`, `a62ff6e1` and `16216432` remain preserved as evidence, while source
-`d898f25f` is still the verified public fixed Beta. The latest failure is locally corrected and does not require
-user input.
-`NTH-TD-036` remains open by design at Stage 4 with a preserved `15,506`-LOC Cut B gap.
+None. Failed workflows `c03d60cd`, `eacb2b6d`, `a62ff6e1` and `16216432` remain preserved as evidence. Corrective
+source `c32ab051` is the verified public fixed Beta. `NTH-TD-036` remains open by design at Stage 4 with a preserved
+`15,506`-LOC Cut B gap.
 
 ## Recent Important Changes
 
@@ -174,9 +171,11 @@ user input.
      Challenger and one human-confirmed Intent Contract. Loop has one stable Task Anchor, mutable Agent-owned
      Working Sets and Work Units, semantic checkpoints, fresh read-only Review and deterministic context/stop/
      budget boundaries. The old Task/Goals runtime authority is removed and schema-v5 installs migrate atomically.
-102. `NTH-EV-075`: The replacement is locally `release_ready`. Owner suites, the `135.948s` fast gate, real Codex,
-     three cognition judges, schema-v6 migration, a real-window AppImage and hosted Relay v3 E2EE all pass. Exact
-     release-source commit, normal branch pushes, Actions and public-download verification remain pending.
+102. `NTH-EV-075`: Corrective source `c32ab051` completed exact-SHA workflow `30604155018`, including preflight,
+     four native desktop jobs, internal Server CLI, three CLI smokes, hosted Relay and publish. Fixed prerelease
+     `362857331` exposes exactly 26 desktop-only assets; public checksums/build identity agree on the source, and
+     the freshly downloaded AppImage passed the complete Decision Map/Intent Contract/Quick/Loop product journey.
+     `NTH-TD-052` is verified; `NTH-TD-036` is again the sole top action with its `15,506`-LOC gap unchanged.
 
 ## Read Next
 

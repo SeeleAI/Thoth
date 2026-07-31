@@ -4808,3 +4808,29 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - Focused Daemon acceptance passes `1` file / `4` tests. The complete formal Daemon unit suite passes `199/199`
   files with `2,535` passed and `26` skipped in `182.51s`. A fourth corrective source commit and exact-SHA workflow
   remain pending; the failed workflow will not be rerun as publication evidence.
+
+## 2026-07-31 [Decision Map Clarify and target-anchored Loop published and publicly reverified]
+
+- Created corrective source `c32ab051370ae1675b05ee53713ca60ac32f24ad`
+  (`test(daemon): normalize concurrent route assertions`) and normally fast-forwarded both authorized branches.
+  Exact-SHA workflow `30604155018`, run `39`, completed successfully. All mandatory jobs passed: preflight
+  `91072892352`; macOS x64 `91074112529`; Server CLI `91074112547`; Windows `91074112555`; macOS arm64
+  `91074112559`; Linux `91074112583`; hosted Relay `91074381406`; Ubuntu/Windows/macOS CLI smokes
+  `91074381420` / `91074381427` / `91074381476`; and publish `91076006897`.
+- Fixed public prerelease `362857331` and direct tag `v0.0.0-mvp-beta` now target exactly `c32ab051`, are
+  non-draft/prerelease and expose exactly 26 desktop-only assets. The asset list contains no APK, iOS, public Server
+  CLI, npm, Nix or Docker output; the schema-1 update manifest lists exactly six preferred desktop installers.
+- Fresh downloads under ignored `.dev/release-verification/c32ab051.../` passed checksum and identity verification.
+  `BUILD-SOURCE.txt` is `89` bytes / `eb8cc39f...557e`; `MVP-UPDATE.json` is `2,455` bytes /
+  `216636e2...5dd`; `SHA256SUMS` is `2,418` bytes / `e83ec4cb...404b`; and the AppImage is `137,826,775` bytes /
+  `e7826965...ef4ab`. All metadata and extracted build identity agree on source `c32ab051` and workflow
+  `30604155018`.
+- The freshly downloaded public AppImage passed with exit `0` and `ok=true`. Its real Electron window verified
+  Decision Map, one Intent Contract, Quick, Loop native Plan/Implement, four checkpoints, four fresh Reviews,
+  reorient/retry, `@Task`, Stop, Catalog/Authority schema v6, Files/Changes, Browser, Workspace scripts, a
+  `1,048,649`-byte five-chunk file and full Schedule management/navigation. Durable state is `8,592,628` bytes and
+  contains exactly two RuntimeBundles.
+- Final non-target audit confirms `main=e74c6e0d` and retained archive Release `thoth-plugin-final-archive`. No
+  Relay/Web deployment, npm/mobile/store/Nix/Docker publication or Paseo operation occurred. `NTH-EV-075` and
+  `NTH-TD-052` are verified; terminal state is `published`. `NTH-TD-036` is again the sole top action at Stage 4
+  with the independent `15,506`-LOC gap unchanged. This closeout is development-branch documentation only.

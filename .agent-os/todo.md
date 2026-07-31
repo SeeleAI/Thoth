@@ -47,16 +47,7 @@
 
 ## Doing
 
-1. `NTH-TD-052` `[doing]`: Replace Clarify and Loop with the Decision Map, single Intent Contract and target-anchored Working Set architecture, migrate schema v5 to v6, and publish the verified fixed desktop Beta.
-   - Acceptance: `NTH-AC-029`; no Task/Goals runtime path, no provider-name branch, no prompt/Skill fallback, no duplicate truth, and no release before fast/full/packaged/public verification.
-   - Progress: Protocol, schema-v6 migration, Harness, daemon, App, CLI, packaged AppImage, real Codex, hosted Relay,
-     cognition judges and local promotion gates are complete under `NTH-EV-075`. First exact-SHA workflow
-     `30601495104` exposed an accidental 3-second observer limit; `30602467471` proved the Schedule fixture depended
-     on host-installed Claude despite provisioning scripted Codex; `30603411869` exposed an unrelated concurrent
-     route-order assertion. Fixture ownership and order-insensitive behavior checks now pass exact CLI `40/40` and
-     Daemon `199/199` suites; corrective commit, Actions and public reverification remain.
-   - Related: `NTH-REQ-032`, `NTH-AC-029`, `NTH-CD-060`, `NTH-CD-100`, `NTH-CD-101`, `NTH-CD-102`, `NTH-TD-036`
-2. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
+1. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
    - Acceptance: no public semantic or UX change; no VCS/Provider/RPC/authority/performance work; App suite remains at least `331 files / 2,582 tests`; after the approved capability translations through `NTH-CD-100` through `NTH-CD-102`, Stage 5 source is at most `304,618` production LOC with tokens/AST/imports below Stage 4 and dependencies no higher; the shared `300s` gate passes.
    - Current result: after the approved cognition replacement, production is `320,124` LOC, `1,361,597` tokens,
      `1,408,770` AST nodes, `5,247` imports and `165` runtime dependency edges. `DeltaP52=3,173` translates the prior
@@ -64,7 +55,7 @@
      refactor regression or progress. The remaining independent gap is exactly `15,506` LOC; Stage stays 4 and
      `NTH-TD-036` remains open.
    - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-057`
-3. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
+2. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
    - Goal: Keep restored Paseo surface and Codex dynamicTools path, but make Clarify behave like a pending authority decision lifecycle with intelligent timeline badges and model-submitted frontier ledger.
    - Scope: `thoth_submit_clarify_card` carries `public_badge_summary` and `frontier_ledger`; `thoth_submit_task_card` carries convergence review; `balanced` has a 5-10 card soft range and `dive` has a 10-20 card soft range; cards must not show completed/idle footer before user submission; `decision_it_changes` is legacy optional input only. Under `NTH-CD-052`, raw Provider conversation is an explicit Thoth-off state rather than an ambiguous `Quick + Direct` sub-selection; only Thoth-on exposes structured Clarify and Loop controls. Under `NTH-CD-053`, that off/on choice is strictly per turn: one Workspace Secretary topic reuses one foreground provider session, and a daemon authority fence blocks remembered runtime tools during raw turns instead of using historical `bare` / `structured` sessions.
    - Verification: Reopened under `NTH-EV-029`; unit/build/foundation gates and most real Codex web paths now pass after the frontier-ledger repair, including local/public Balanced sort, local Dive sort, local Balanced PathTracing and local Loop `registered_pending`. Under `NTH-CD-057` / `NTH-EV-038`, ordinary Agent sends now reuse the visible provider session for Thoth Clarify/Quick, remote workspace identity overrides client cwd, and packaged Clarify/Loop skills were confirmed in the public Linux `app.asar`. Do not return this TODO to verified until installed/Relay real-provider behavior is exercised from the replacement build.
@@ -260,6 +251,20 @@ None.
   exposes exactly 26 desktop-only assets, and the checksum/build-identity-verified downloaded AppImage passed the
   complete Provider Plan/question/Implement same-thread and existing product journey. Terminal state is
   `published`; `NTH-TD-036` is again the sole top action and remains doing at Stage 4.
+
+29. `NTH-TD-052` `[verified]`: Replace Clarify and Loop with Decision Map cognition, one Intent Contract and a
+    target-anchored Working Set architecture; migrate schema v5 to v6; and replace the fixed desktop Beta.
+
+- Scope: remove Task/Goals runtime authority, linear Goal execution and Blackboard dumps; add same-session
+  evidence-driven Clarify, one fresh Challenger, Task Anchor, Work Units, semantic checkpoints, fresh read-only
+  Review, context reset and deterministic migration without compatibility paths.
+- Related: `NTH-REQ-032`, `NTH-AC-029`, `NTH-CD-060`, `NTH-CD-100`, `NTH-CD-101`, `NTH-CD-102`, `NTH-EV-075`,
+  `NTH-TD-036`
+- Verification: See `NTH-EV-075`. Local owner/fast/real-Codex/judge/AppImage/Relay gates passed; failed workflows
+  `30601495104`, `30602467471` and `30603411869` remained safe evidence; corrective source `c32ab051` completed all
+  mandatory jobs in workflow `30604155018`. Public prerelease `362857331` exposes exactly 26 desktop-only assets,
+  and the checksum/build-identity-verified downloaded AppImage passed the complete product journey. Terminal state
+  is `published`; `NTH-TD-036` is again the sole top action with its `15,506`-LOC gap unchanged.
 
 ## Abandoned
 
