@@ -2026,3 +2026,20 @@ Observed on `2026-07-31` in preflight job `91067904073` of exact-SHA workflow `3
 
 Conclusion: a conformance fixture is self-contained only when every real execution uses the transport it installs.
 Host-installed Providers are environmental facts, never valid hidden dependencies for deterministic acceptance.
+
+## `NTH-EXP-083` Concurrent service tests must not assert process completion order
+
+Observed on `2026-07-31` in preflight job `91070684262` of exact-SHA workflow `30603411869`:
+
+1. Two real terminal-backed services were spawned concurrently with `Promise.all`. Both produced the exact expected
+   peer environment, hostname, allocated port, Workspace, project and script route fields. The hosted runner
+   registered `web` before `api`, while the test expected the opposite insertion order.
+2. RouteStore intentionally reflects registration order and no product contract promises which concurrent process
+   finishes first. Changing production ordering would alter unrelated behavior; accepting arbitrary fields would
+   weaken the test. The assertion instead sorts a copied projection by stable `scriptName` and retains exact object
+   equality.
+3. Focused acceptance passes `4/4`. The complete Daemon unit suite passes `199/199` files, `2,535` tests with `26`
+   skipped, in `182.51s`.
+
+Conclusion: concurrency order is evidence only when the contract owns an ordering key. Otherwise normalize by a
+stable domain identity before exact content comparison, without changing production scheduling semantics.

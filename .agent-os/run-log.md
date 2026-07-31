@@ -4791,3 +4791,20 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - The focused formal path passes, and the exact four-way complete CLI command passes `40/40` in `186.9s`;
   `31-task-schedule` completes in `33.8s`. Product runtime is unchanged. A third corrective source commit and new
   exact-SHA workflow remain pending.
+
+## 2026-07-31 [Third Decision Map workflow exposed concurrent route assertion]
+
+- Created source `16216432a3a72a608833c034f33ffa7b47507ee9`
+  (`test(cli): use fixture provider for schedules`) and normally fast-forwarded both authorized branches. Exact-SHA
+  workflow `30603411869` failed in complete Daemon unit before reaching CLI; every later job, including publish,
+  was skipped, so fixed Release `361828099` remained intact at `d898f25f`.
+- The only failure was `worktree-bootstrap.posix.test.ts`: two real terminal-backed services are intentionally
+  spawned through `Promise.all`, and both routes contained the exact expected hostname, port, Workspace, project
+  and script values. The assertion nevertheless required insertion order `api, web`; this runner legally completed
+  `web, api` first.
+- The behavior under test is peer-service environment and route content, not process completion order. The
+  assertion now sorts the copied route projection by `scriptName` before exact comparison. RouteStore production
+  behavior and every expected field remain unchanged.
+- Focused Daemon acceptance passes `1` file / `4` tests. The complete formal Daemon unit suite passes `199/199`
+  files with `2,535` passed and `26` skipped in `182.51s`. A fourth corrective source commit and exact-SHA workflow
+  remain pending; the failed workflow will not be rerun as publication evidence.

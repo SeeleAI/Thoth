@@ -510,7 +510,11 @@ describe.skipIf(isPlatform("win32"))("worktree-bootstrap POSIX-only", () => {
       const webPort = Number(apiEnv.THOTH_SERVICE_WEB_PORT);
       expect(Number.isInteger(apiPort)).toBe(true);
       expect(Number.isInteger(webPort)).toBe(true);
-      expect(routeStore.listRoutes()).toEqual([
+      expect(
+        routeStore
+          .listRoutes()
+          .toSorted((left, right) => left.scriptName.localeCompare(right.scriptName)),
+      ).toEqual([
         {
           hostname: "api--feature-peer-env--repo.localhost",
           port: apiPort,

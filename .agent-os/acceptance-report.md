@@ -4313,3 +4313,10 @@ Status: `in_progress`; local state is `release_ready` and public publication evi
     rejects terminal-without-Task immediately and keeps the 30-second deadline only for nonterminal eventual
     authority. Focused acceptance passes, and the exact four-way CLI suite passes `40/40` in `186.9s`, with the
     affected file at `33.8s`. Product runtime is unchanged; third corrective publication remains pending.
+17. Source `16216432a3a72a608833c034f33ffa7b47507ee9` reached both branches and exact-SHA workflow
+    `30603411869`. Preflight failed one of `2,561` Daemon tests before CLI; all later jobs and publish were skipped,
+    preserving the public Release at `d898f25f`. The failed test concurrently starts `api` and `web` through
+    `Promise.all` but asserted their route insertion order. Received routes had every exact expected field with
+    only order reversed. The assertion now sorts its copied projection by `scriptName`; production RouteStore is
+    unchanged. Focused `4/4` and complete Daemon `199/199` files, `2,535` passed / `26` skipped, pass in `182.51s`.
+    Fourth corrective publication remains pending.
