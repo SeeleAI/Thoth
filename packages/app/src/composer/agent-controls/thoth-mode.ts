@@ -1,7 +1,4 @@
-import type {
-  ThothRuntimeClarifyStrength,
-  ThothRuntimeLoopStrength,
-} from "@thoth/protocol/thoth-runtime-contract";
+import type { ThothRuntimeLoopStrength } from "@thoth/protocol/thoth-runtime-contract";
 import type { ThothTurnSnapshot } from "@thoth/protocol/messages";
 
 type ThothModeConfig = {
@@ -10,10 +7,6 @@ type ThothModeConfig = {
   clarifyStrength?: string;
   loopStrength?: string;
 };
-
-export type ThothClarifyStrength = Exclude<ThothRuntimeClarifyStrength, "auto" | "deep" | "none">;
-
-const STRUCTURED_CLARIFY_STRENGTHS: readonly ThothClarifyStrength[] = ["light", "balanced", "dive"];
 
 export function isThothModeEnabled(config: ThothModeConfig | null | undefined): boolean {
   if (config?.enabled !== undefined) {
@@ -32,12 +25,6 @@ export function isThothModeEnabled(config: ThothModeConfig | null | undefined): 
   );
 }
 
-export function resolveThothClarifyStrength(value: unknown): ThothClarifyStrength {
-  return STRUCTURED_CLARIFY_STRENGTHS.includes(value as ThothClarifyStrength)
-    ? (value as ThothClarifyStrength)
-    : "light";
-}
-
 export function resolveThothLoopStrength(value: unknown): ThothRuntimeLoopStrength {
   return value === "one_plan_one_do" ||
     value === "light" ||
@@ -53,17 +40,16 @@ export function buildThothTurnSnapshot(
   if (!isThothModeEnabled(config)) {
     return { enabled: false };
   }
-  const clarifyStrength = resolveThothClarifyStrength(config?.clarifyStrength);
   return config?.mode === "loop"
     ? {
         enabled: true,
         executionMode: "loop",
-        clarifyStrength,
+        clarifyStrength: "auto",
         loopStrength: resolveThothLoopStrength(config.loopStrength),
       }
     : {
         enabled: true,
         executionMode: "quick",
-        clarifyStrength,
+        clarifyStrength: "auto",
       };
 }

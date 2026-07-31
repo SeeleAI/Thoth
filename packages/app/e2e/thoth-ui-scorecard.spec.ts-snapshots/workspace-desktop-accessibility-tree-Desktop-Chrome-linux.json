@@ -1,6 +1,6 @@
 {
   "desktop": {
     "tabs": "- button \"New Agent\":\n  - img\n  - text: New Agent\n  - img\n- button \"New Agent\":\n  - img\n  - text: New Agent\n  - img\n- button \"New agent\":\n  - img\n- button \"workspace.tabs.actions.moreActions\":\n  - img\n- button \"New terminal\":\n  - img\n- button \"New browser\":\n  - img\n- button \"Split pane right\":\n  - img\n- button \"Split pane down\":\n  - img",
-    "composer": "- textbox \"Message agent...\":\n  - /placeholder: Message, @files, /commands\n- button \"Add attachment\":\n  - img\n- button \"Select agent provider\":\n  - img\n  - text: Provider GPT-5.4-Mini\n- img\n- text: Thoth\n- switch \"Enable Thoth mode\" [checked]\n- 'button \"Mode: Quick\"':\n  - img\n  - text: Loop Quick\n  - img\n- 'button \"Clarify: Light\"':\n  - img\n  - text: Clarify Light\n  - img"
+    "composer": "- textbox \"Message agent...\":\n  - /placeholder: Message, @files, /commands\n- button \"Add attachment\":\n  - img\n- button \"Select agent provider\":\n  - img\n  - text: Provider GPT-5.4-Mini\n- img\n- text: Thoth\n- switch \"Enable Thoth mode\" [checked]\n- 'button \"Mode: Light\"':\n  - img\n  - text: Loop Light\n  - img"
   }
 }

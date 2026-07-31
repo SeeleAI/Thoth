@@ -402,11 +402,13 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
 
       <View style={styles.actions}>
         <View style={styles.actionsLeft}>
-          <RecommendButton
-            disabled={intentDisabled || !activeQuestion}
-            onPress={handleRecommend}
-            testID="clarify-card-recommend"
-          />
+          {card.card.allowSingleNodeRecommendation ? (
+            <RecommendButton
+              disabled={intentDisabled || !activeQuestion}
+              onPress={handleRecommend}
+              testID="clarify-card-recommend"
+            />
+          ) : null}
           <ActionButton
             label="此分支交给你"
             disabled={intentDisabled || !activeQuestion}

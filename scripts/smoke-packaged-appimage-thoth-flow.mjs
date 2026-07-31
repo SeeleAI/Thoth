@@ -554,6 +554,72 @@ async function runNativePlanQuestionSurfaceAcceptance({
   };
 }
 
+async function openDecisionTreeSurface({ page, serverId, workspaceId, agentId }) {
+  const route = `thoth://app/h/${encodeURIComponent(serverId)}/workspace/${encodeURIComponent(workspaceId)}?open=${encodeURIComponent(`agent:${agentId}`)}`;
+  await page.goto(route);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await visibleTestId(page, "decision-tree-sidebar", 60_000);
+  await visibleTestId(page, "decision-tree-canvas", 30_000);
+  await visibleTestId(page, "decision-tree-node-packaged-scope", 30_000);
+  await visibleTestId(page, "decision-tree-node-packaged-evidence", 30_000);
+  const edgeCount = await waitFor(
+    async () => {
+      const count = await page.locator('[data-testid^="decision-tree-edge-"]').count();
+      return count >= 2 ? count : null;
+    },
+    30_000,
+    "packaged Decision Tree hierarchy edges",
+  );
+  return { route, edgeCount };
+}
+
+async function inspectDecisionTreeActivitySurface({
+  page,
+  serverId,
+  workspaceId,
+  agentId,
+  screenshotPath,
+}) {
+  const surface = await openDecisionTreeSurface({ page, serverId, workspaceId, agentId });
+  await visibleTestId(page, "decision-tree-node-activity-packaged-scope", 30_000);
+  assert(
+    (await page.getByTestId("decision-tree-active-card").filter({ visible: true }).count()) === 0,
+    "Packaged Decision Tree opened a Card before the active investigation completed",
+  );
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  return {
+    ...surface,
+    nodeIds: ["packaged-scope", "packaged-evidence"],
+    activityNodeId: "packaged-scope",
+    screenshotPath,
+  };
+}
+
+async function inspectDecisionTreeCardSurface({
+  page,
+  serverId,
+  workspaceId,
+  agentId,
+  screenshotPath,
+}) {
+  const surface = await openDecisionTreeSurface({ page, serverId, workspaceId, agentId });
+  await visibleTestId(page, "decision-tree-active-card", 30_000);
+  assert(
+    (await page
+      .getByTestId("decision-tree-node-activity-packaged-scope")
+      .filter({ visible: true })
+      .count()) === 0,
+    "Packaged Decision Tree retained an active spinner while the Human Card owned the decision",
+  );
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  return {
+    ...surface,
+    nodeIds: ["packaged-scope", "packaged-evidence"],
+    cardInInspector: true,
+    screenshotPath,
+  };
+}
+
 async function waitFor(read, timeoutMs = 30_000, label = "condition") {
   const deadline = Date.now() + timeoutMs;
   let lastError = null;
@@ -713,8 +779,8 @@ function seedReleaseStorage(thothHome) {
 
 function inspectStorageMigration(thothHome, probe) {
   const marker = JSON.parse(readFileSync(path.join(thothHome, "storage-layout.json"), "utf8"));
-  assert(marker.version === 6, "Packaged Release storage did not activate layout v6");
-  assert(marker.schemaVersion === 6, "Packaged Release storage did not activate schema v6");
+  assert(marker.version === 7, "Packaged Release storage did not activate layout v7");
+  assert(marker.schemaVersion === 7, "Packaged Release storage did not activate schema v7");
   assert(
     marker.migrationState === "complete",
     "Packaged Release storage migration is not complete",
@@ -730,8 +796,15 @@ function inspectStorageMigration(thothHome, probe) {
     .get(probe.agentId);
   const agents = catalog.prepare("SELECT COUNT(*) AS count FROM catalog_agent_locator").get().count;
   const catalogSchemaVersion = catalog.prepare("PRAGMA user_version").get().user_version;
+  const catalogMigration = catalog
+    .prepare("SELECT version, checksum FROM catalog_schema_migrations WHERE version = 7")
+    .get();
   catalog.close();
-  assert(catalogSchemaVersion === 6, "Packaged Release catalog did not activate SQLite schema v6");
+  assert(catalogSchemaVersion === 7, "Packaged Release catalog did not activate SQLite schema v7");
+  assert(
+    catalogMigration?.checksum === "decision-session-tree-v7-catalog",
+    "Packaged Release catalog is missing the Decision Session tree migration receipt",
+  );
   assert(
     locator?.workspace_id === probe.workspaceId,
     "Release Agent is missing from the migrated global locator",
@@ -745,10 +818,54 @@ function inspectStorageMigration(thothHome, probe) {
     .prepare("SELECT COUNT(*) AS count FROM agent_timeline_rows")
     .get().count;
   const authoritySchemaVersion = authority.prepare("PRAGMA user_version").get().user_version;
+  const authorityMigration = authority
+    .prepare("SELECT version, checksum FROM authority_schema_migrations WHERE version = 10")
+    .get();
+  const decisionTreeTables = authority
+    .prepare(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'table' AND name IN (
+         'decision_sessions',
+         'decision_session_turns',
+         'decision_tree_nodes',
+         'decision_tree_cross_links',
+         'decision_tree_activity'
+       )
+       ORDER BY name`,
+    )
+    .all()
+    .map((row) => row.name);
+  const legacyDecisionMapTables = authority
+    .prepare(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'table' AND name IN ('clarify_sessions', 'clarify_decision_nodes')
+       ORDER BY name`,
+    )
+    .all()
+    .map((row) => row.name);
   authority.close();
   assert(
-    authoritySchemaVersion === 6,
-    "Packaged Release Workspace authority did not activate SQLite schema v6",
+    authoritySchemaVersion === 7,
+    "Packaged Release Workspace authority did not activate SQLite schema v7",
+  );
+  assert(
+    authorityMigration?.checksum === "decision-session-tree-v7",
+    "Packaged Release authority is missing the Decision Session tree migration receipt",
+  );
+  assert(
+    JSON.stringify(decisionTreeTables) ===
+      JSON.stringify([
+        "decision_session_turns",
+        "decision_sessions",
+        "decision_tree_activity",
+        "decision_tree_cross_links",
+        "decision_tree_nodes",
+      ]),
+    "Packaged Release authority is missing Decision Session tree tables",
+  );
+  assert(
+    legacyDecisionMapTables.length === 0,
+    "Packaged Release retained the replaced Clarify Decision Tree tables",
   );
   assert(
     timeline?.item_json === probe.itemJson,
@@ -765,6 +882,9 @@ function inspectStorageMigration(thothHome, probe) {
     timelineRows,
     catalogSchemaVersion,
     authoritySchemaVersion,
+    catalogMigration,
+    authorityMigration,
+    decisionTreeTables,
   };
 }
 
@@ -955,6 +1075,8 @@ async function main() {
   const desktopRendererPath = path.join(runRoot, "desktop-renderer.json");
   const desktopRendererLogPath = path.join(runRoot, "desktop-renderer.log");
   const desktopRendererScreenshotPath = path.join(runRoot, "desktop-renderer.png");
+  const decisionTreeActivityScreenshotPath = path.join(runRoot, "decision-tree-activity.png");
+  const decisionTreeCardScreenshotPath = path.join(runRoot, "decision-tree-card.png");
   const desktopProductSurfacesPath = path.join(runRoot, "desktop-product-surfaces.json");
   const desktopProductSurfacesScreenshotPath = path.join(runRoot, "desktop-product-surfaces.png");
   const quickWorkspace = path.join(runRoot, "quick-workspace");
@@ -974,7 +1096,10 @@ async function main() {
   let releaseMigrationProbe = null;
   if (!realCodex) {
     releaseMigrationProbe = seedReleaseStorage(thothHome);
-    writeFileSync(statePath, JSON.stringify({ checkpoint: 0, review: 0 }));
+    writeFileSync(
+      statePath,
+      JSON.stringify({ checkpoint: 0, review: 0, holdClarifyAfterMap: true }),
+    );
     const fakeCodexPath = path.join(fakeBin, "codex");
     copyFileSync(path.join(root, "scripts/fixtures/scripted-codex-app-server.mjs"), fakeCodexPath);
     chmodSync(fakeCodexPath, 0o755);
@@ -1031,6 +1156,7 @@ async function main() {
   let rendererReceipt = null;
   const rendererLog = [];
   let productSurfacesReceipt = null;
+  let decisionTreeSurface = null;
   let report = null;
   let failure = null;
   let journey = null;
@@ -1133,6 +1259,35 @@ async function main() {
           : "PACKAGED_RAW_LAST",
         loop: loopPrompt,
       },
+      afterQuickTreeExpansion: realCodex
+        ? undefined
+        : async ({ agent }) => {
+            const activity = await inspectDecisionTreeActivitySurface({
+              page,
+              serverId: desktopDaemon.serverId,
+              workspaceId: quickWorkspaceId,
+              agentId: agent.id,
+              screenshotPath: decisionTreeActivityScreenshotPath,
+            });
+            const fixtureState = JSON.parse(readFileSync(statePath, "utf8"));
+            writeFileSync(
+              statePath,
+              JSON.stringify({ ...fixtureState, holdClarifyAfterMap: false }),
+            );
+            decisionTreeSurface = { activity, card: null };
+          },
+      afterQuickClarifyCard: realCodex
+        ? undefined
+        : async ({ agent }) => {
+            const card = await inspectDecisionTreeCardSurface({
+              page,
+              serverId: desktopDaemon.serverId,
+              workspaceId: quickWorkspaceId,
+              agentId: agent.id,
+              screenshotPath: decisionTreeCardScreenshotPath,
+            });
+            decisionTreeSurface = { activity: decisionTreeSurface?.activity ?? null, card };
+          },
     });
     writeFileSync(
       path.join(runRoot, "background-task-detail.json"),
@@ -1371,6 +1526,9 @@ async function main() {
       `Packaged durable Thoth state exceeded 25MB: ${durableBytes} bytes`,
     );
     const migration = realCodex ? null : inspectStorageMigration(thothHome, releaseMigrationProbe);
+    if (!realCodex) {
+      assert(decisionTreeSurface, "Packaged Decision Tree visual acceptance did not run");
+    }
 
     report = {
       ok: true,
@@ -1402,6 +1560,7 @@ async function main() {
       runtimeBundles: runtimeAuthority.bundles,
       loopAttachmentCount: runtimeAuthority.loopAttachmentCount,
       desktopRenderer: rendererReceipt,
+      decisionTreeSurface,
       productSurfaces: productSurfacesReceipt,
     };
   } catch (error) {
@@ -1446,6 +1605,8 @@ async function main() {
       desktopRendererPath,
       desktopRendererLogPath,
       desktopRendererScreenshotPath,
+      decisionTreeActivityScreenshotPath,
+      decisionTreeCardScreenshotPath,
       desktopProductSurfacesPath,
       desktopProductSurfacesScreenshotPath,
       path.join(thothHome, "daemon.log"),

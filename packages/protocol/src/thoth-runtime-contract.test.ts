@@ -79,6 +79,7 @@ describe("Thoth cognitive runtime contract", () => {
     expect(parsed).toMatchObject({
       allowChoiceNotes: true,
       allowNoteOnly: true,
+      allowSingleNodeRecommendation: true,
       allowSubtreeDelegation: true,
     });
     expect(() =>
@@ -100,12 +101,16 @@ describe("Thoth cognitive runtime contract", () => {
   it("persists a provider-owned Decision Map delta without hidden reasoning", () => {
     const parsed = ThothClarifyUpdateMapInputSchema.parse({
       effectiveStrength: "dive",
+      activity: "expanding",
+      activeNodeId: "decision-runtime-target",
       publicSummary: "Grounded the target and exposed one material frontier.",
       nodes: [
         {
           id: "root",
-          parentIds: [],
+          parentId: null,
+          crossLinkIds: [],
           title: "Confirmed objective",
+          summary: "The requested outcome is grounded in Workspace evidence.",
           owner: "agent",
           materiality: "structural",
           status: "resolved",
@@ -114,8 +119,10 @@ describe("Thoth cognitive runtime contract", () => {
         },
         {
           id: "decision-runtime-target",
-          parentIds: ["root"],
+          parentId: "root",
+          crossLinkIds: [],
           title: "Runtime target",
+          summary: null,
           owner: "human",
           materiality: "material",
           status: "open",

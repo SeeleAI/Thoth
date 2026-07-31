@@ -1,18 +1,12 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildThothTurnSnapshot,
-  isThothModeEnabled,
-  resolveThothClarifyStrength,
-} from "./thoth-mode";
+import { buildThothTurnSnapshot, isThothModeEnabled } from "./thoth-mode";
 
 describe("Thoth composer mode", () => {
-  it("starts enabled Thoth sessions at Light or stronger, never Direct", () => {
-    expect(resolveThothClarifyStrength("none")).toBe("light");
-    expect(resolveThothClarifyStrength("auto")).toBe("light");
+  it("lets the Provider choose Clarify depth for every enabled turn", () => {
     expect(buildThothTurnSnapshot({ enabled: true, clarifyStrength: "none" })).toEqual({
       enabled: true,
       executionMode: "quick",
-      clarifyStrength: "light",
+      clarifyStrength: "auto",
     });
   });
 
@@ -36,7 +30,7 @@ describe("Thoth composer mode", () => {
     ).toEqual({
       enabled: true,
       executionMode: "loop",
-      clarifyStrength: "dive",
+      clarifyStrength: "auto",
       loopStrength: "balanced",
     });
     expect(
@@ -49,7 +43,7 @@ describe("Thoth composer mode", () => {
     ).toEqual({
       enabled: true,
       executionMode: "quick",
-      clarifyStrength: "balanced",
+      clarifyStrength: "auto",
     });
   });
 });

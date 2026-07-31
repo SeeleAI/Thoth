@@ -4,7 +4,7 @@
       "step": "before-composer-focus",
       "tag": "button",
       "role": "button",
-      "name": "Mode: Quick",
+      "name": "Mode: Light",
       "testId": "thoth-mode-control"
     },
     {
@@ -39,7 +39,7 @@
     "tabRowVisible": true,
     "composerVisible": true,
     "providerVisible": true,
-    "clarifyVisible": true,
+    "thothVisible": true,
     "modeVisible": true
   }
 }

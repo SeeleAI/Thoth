@@ -55,6 +55,14 @@ and schema-v5-to-v6 migration. It does not authorize force push, merge/rebase, `
 npm/mobile/store/Nix/Docker publication or any operation on independent Paseo. A failed mandatory workflow leaves
 the existing fixed Release intact.
 
+`NTH-CD-103` renews the same narrow authorization on `2026-07-31` for the Decision Session Tree and Card-lifecycle
+replacement. It authorizes one verified schema-v7 source SHA to be normally fast-forwarded to `agent/dev/mvp` and
+`release/mvp-actions`, followed by the existing fixed-Beta workflow and fresh public-asset/AppImage verification.
+The downloaded AppImage must exercise active Decision Tree progress, atomic Card receipt, frozen Task binding and a
+second Decision Session in addition to the existing Quick, Loop, `@Task`, Stop and migration journey. It does not
+authorize force push, merge/rebase, `main`, Relay deployment, npm/mobile/store/Nix/Docker publication or any
+operation on independent Paseo. A failed mandatory job leaves the existing fixed Release intact.
+
 The exact upstream receipt for that authorization is annotated tag object `5f71b185c3d170dec26ea00b91b52a550d510fcd`
 at commit `43cf858c3760679ec9be805ba8b903cdf20f7103`, selected by
 `v0.2.2...v0.2.3 --right-only` from merge base `36f38245cab51bbe0b43b6ac42fd41aa757064d9`.
@@ -204,13 +212,13 @@ timeout is not success: query the remote SHA before deciding whether retry is ne
 After public verification, the evidence-only closeout commit is pushed normally to `agent/dev/mvp` only;
 `release/mvp-actions` stays at the published release-source SHA so documentation does not trigger a second Release.
 
-For the Decision Map/Loop candidate, the release-source commit may be created only after Foundation, complete
-owner suites, `accept:thoth:fast`, three cognition judges, real Codex, fresh Web, schema-v6 migration, rebuilt
+For the Decision Session Tree candidate, the release-source commit may be created only after Foundation, complete
+owner suites, `accept:thoth:fast`, three cognition judges, real Codex, fresh Web, schema-v7 migration, rebuilt
 AppImage and hosted Relay journeys are green. The AppImage report must preserve Provider Features Plan,
 Workspace scripts, direct five-chunk file transfer and full `Tasks | Schedules` UI/navigation while adding the
-Decision Map, one Intent Contract, Quick, Loop checkpoint/fresh Review/reset, `@Task`, Stop and exact schema-v6
-receipts. The workflow retains the hosted Relay and internal Server CLI gates even though this replacement does
-not deploy Relay or publish Server CLI.
+Decision Session Tree, one Intent Contract, Quick, Loop checkpoint/fresh Review/reset, `@Task`, Stop and exact
+schema-v7 receipts. The workflow retains the hosted Relay and internal Server CLI gates even though this
+replacement does not deploy Relay or publish Server CLI.
 
 After workflow success, download public files into an ignored per-source directory and run the product journey
 against that downloaded executable, not the local or Actions artifact. Keep localhost CDP/daemon traffic outside

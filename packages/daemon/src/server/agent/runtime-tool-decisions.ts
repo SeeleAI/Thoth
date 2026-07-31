@@ -115,7 +115,7 @@ export function createRuntimeAuthorityDecision(input: {
     },
     ...(input.card.kind === "clarify_card"
       ? {
-          clarify: {
+          decisionSession: {
             sessionId: input.card.card.sessionId,
             awaitingNodeIds: input.card.card.card.questions.map((question) => question.nodeId),
           },

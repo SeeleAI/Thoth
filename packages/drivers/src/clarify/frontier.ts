@@ -1,7 +1,7 @@
 import type {
-  ClarifyDecisionMateriality,
-  ClarifyDecisionNodeStatus,
-  ClarifyDecisionOwner,
+  DecisionNodeMateriality,
+  DecisionNodeOwner,
+  DecisionNodeStatus,
 } from "@thoth/protocol/clarify-authority";
 import type { ClarifyQuestionItem } from "@thoth/protocol/thoth-runtime-contract";
 
@@ -14,9 +14,9 @@ export type ClarifyFrontierIssueCode =
 
 export interface ClarifyFrontierNode {
   id: string;
-  owner: ClarifyDecisionOwner;
-  materiality: ClarifyDecisionMateriality;
-  status: ClarifyDecisionNodeStatus;
+  owner: DecisionNodeOwner;
+  materiality: DecisionNodeMateriality;
+  status: DecisionNodeStatus;
 }
 
 export interface ClarifyFrontierIssue {
@@ -58,7 +58,7 @@ export function validateClarifyQuestionFrontier(input: {
         code: "unknown_node",
         nodeId,
         questionIndex,
-        message: `Decision node ${nodeId} is not present in the active Decision Map`,
+        message: `Decision node ${nodeId} is not present in the active Decision Tree`,
       });
       return;
     }

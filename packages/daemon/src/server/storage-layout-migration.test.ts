@@ -17,7 +17,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createTestLogger } from "../test-utils/test-logger.js";
 import { ensureThothStorageLayout } from "./storage-layout-migration.js";
 import { createWorkspaceDatabase } from "./storage-schema.js";
-import { WorkspaceAuthorityManager } from "./workspace-authority/index.js";
+import {
+  WorkspaceAuthorityManager,
+  WorkspaceForegroundAuthority,
+} from "./workspace-authority/index.js";
 
 const fixtureRoot = fileURLToPath(
   new URL("../test-fixtures/refactor-release-05775486/", import.meta.url),
@@ -62,9 +65,10 @@ describe("Thoth storage layout migration", () => {
       expect.objectContaining({ version: 7, checksum: "schedule-run-workspace-v4" }),
       expect.objectContaining({ version: 8, checksum: "provider-turn-interaction-v5" }),
       expect.objectContaining({ version: 9, checksum: "decision-map-task-anchor-v6" }),
+      expect.objectContaining({ version: 10, checksum: "decision-session-tree-v7" }),
     ]);
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(6);
-    expect(schemaVersion(authorityPath)).toBe(6);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(7);
+    expect(schemaVersion(authorityPath)).toBe(7);
     expect(hasTable(path.join(home, "catalog.sqlite"), "catalog_runtime_resource_leases")).toBe(
       true,
     );
@@ -85,14 +89,18 @@ describe("Thoth storage layout migration", () => {
     expect(hasTable(authorityPath, "intent_contracts")).toBe(true);
     expect(hasTable(authorityPath, "task_working_sets")).toBe(true);
     expect(hasTable(authorityPath, "task_work_units")).toBe(true);
+    expect(hasTable(authorityPath, "decision_sessions")).toBe(true);
+    expect(hasTable(authorityPath, "decision_tree_nodes")).toBe(true);
+    expect(hasTable(authorityPath, "clarify_sessions")).toBe(false);
+    expect(hasTable(authorityPath, "clarify_decision_nodes")).toBe(false);
     expect(existsSync(`${path.join(home, "catalog.sqlite")}.release-05775486.bak`)).toBe(true);
     expect(existsSync(`${authorityPath}.release-05775486.bak`)).toBe(true);
     expect(readdirSync(path.dirname(authorityPath)).some((name) => /-(wal|shm)$/u.test(name))).toBe(
       false,
     );
     expect(JSON.parse(readFileSync(path.join(home, "storage-layout.json"), "utf8"))).toMatchObject({
-      version: 6,
-      schemaVersion: 6,
+      version: 7,
+      schemaVersion: 7,
       sourceRelease: "05775486",
       migrated: true,
       migrationState: "complete",
@@ -155,12 +163,82 @@ describe("Thoth storage layout migration", () => {
     const root = temporaryRoot("fresh");
     const home = path.join(root, ".thoth");
     await ensureThothStorageLayout(home, createTestLogger());
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(6);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(7);
     expect(JSON.parse(readFileSync(path.join(home, "storage-layout.json"), "utf8"))).toMatchObject({
-      version: 6,
+      version: 7,
       migrated: false,
       workspaceCount: 0,
     });
+  });
+
+  it("atomically upgrades a schema-v6 active Card and deterministic multi-parent Decision Map", async () => {
+    const fixture = await decisionMapV6Home();
+    const authorityPath = workspaceAuthorityPath(fixture.home);
+
+    await ensureThothStorageLayout(fixture.home, createTestLogger());
+
+    expect(schemaVersion(authorityPath)).toBe(7);
+    expect(hasTable(authorityPath, "clarify_sessions")).toBe(false);
+    expect(hasTable(authorityPath, "clarify_decision_nodes")).toBe(false);
+    expect(existsSync(`${authorityPath}.schema-v6.bak`)).toBe(true);
+    const manager = new WorkspaceAuthorityManager(fixture.home);
+    try {
+      const authority = new WorkspaceForegroundAuthority(manager);
+      const tree = authority.getDecisionTree(fixture.agentId, fixture.sessionId);
+      expect(tree).toMatchObject({
+        session: {
+          id: fixture.sessionId,
+          lifecycle: "awaiting_human",
+          activeCardId: fixture.cardId,
+          activity: { state: "awaiting_human", activeNodeId: "language" },
+        },
+        cardReceipts: [expect.objectContaining({ cardId: fixture.cardId, status: "pending" })],
+      });
+      expect(tree?.nodes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: `decision-root-${fixture.sessionId}`, parentId: null }),
+          expect.objectContaining({
+            id: "language",
+            parentId: "product-boundary",
+            crossLinkIds: ["risk-boundary"],
+          }),
+        ]),
+      );
+      expect(authority.getState(fixture.agentId)).toMatchObject({
+        lifecycle: "awaiting_card",
+        pendingCard: { card: { id: fixture.cardId } },
+      });
+    } finally {
+      manager.close();
+    }
+
+    const activatedDigest = sha256(authorityPath);
+    await expect(ensureThothStorageLayout(fixture.home, createTestLogger())).resolves.toEqual({
+      requiresProviderThreadFinalization: false,
+    });
+    expect(sha256(authorityPath)).toBe(activatedDigest);
+  });
+
+  it("preserves and resumes the exact schema-v6 Decision Map source after an interrupted activation", async () => {
+    const fixture = await decisionMapV6Home();
+    const authorityPath = workspaceAuthorityPath(fixture.home);
+    const original = sha256(authorityPath);
+    await expect(
+      ensureThothStorageLayout(fixture.home, createTestLogger(), {
+        onPhase(phase, filePath) {
+          if (phase === "before_activate" && filePath === authorityPath) {
+            throw new Error("injected:v6-before-activate");
+          }
+        },
+      }),
+    ).rejects.toThrow("injected:v6-before-activate");
+    expect(sha256(authorityPath)).toBe(original);
+    expect(hasTable(authorityPath, "clarify_sessions")).toBe(true);
+    expect(hasTable(authorityPath, "decision_sessions")).toBe(false);
+
+    await ensureThothStorageLayout(fixture.home, createTestLogger());
+    expect(hasTable(authorityPath, "clarify_sessions")).toBe(false);
+    expect(hasTable(authorityPath, "decision_sessions")).toBe(true);
   });
 
   it("creates fresh authority storage when Desktop attachments exist before daemon startup", async () => {
@@ -173,7 +251,7 @@ describe("Thoth storage layout migration", () => {
     await expect(ensureThothStorageLayout(home, createTestLogger())).resolves.toEqual({
       requiresProviderThreadFinalization: false,
     });
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(6);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(7);
     expect(readFileSync(attachment, "utf8")).toBe("pending desktop attachment\n");
   });
 
@@ -181,7 +259,7 @@ describe("Thoth storage layout migration", () => {
     await withProcessPlatform("win32", async () => {
       const freshHome = path.join(temporaryRoot("windows-fresh"), ".thoth");
       await ensureThothStorageLayout(freshHome, createTestLogger());
-      expect(schemaVersion(path.join(freshHome, "catalog.sqlite"))).toBe(6);
+      expect(schemaVersion(path.join(freshHome, "catalog.sqlite"))).toBe(7);
 
       const migratedHome = releaseHome();
       const before = entityCounts(workspaceAuthorityPath(migratedHome));
@@ -189,7 +267,7 @@ describe("Thoth storage layout migration", () => {
       const after = entityCounts(workspaceAuthorityPath(migratedHome));
       expect(after.tasks).toBe(before.tasks);
       expect(after.execution_attempts).toBe(before.execution_attempts);
-      expect(schemaVersion(workspaceAuthorityPath(migratedHome))).toBe(6);
+      expect(schemaVersion(workspaceAuthorityPath(migratedHome))).toBe(7);
     });
   });
 
@@ -211,7 +289,7 @@ describe("Thoth storage layout migration", () => {
     await expect(ensureThothStorageLayout(home, createTestLogger())).resolves.toEqual({
       requiresProviderThreadFinalization: false,
     });
-    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(6);
+    expect(schemaVersion(path.join(home, "catalog.sqlite"))).toBe(7);
     expect(readFileSync(path.join(home, "server-id"), "utf8")).toBe("server-id\n");
   });
 
@@ -370,6 +448,245 @@ async function normalizedV2Home(): Promise<string> {
     `${JSON.stringify({ version: 2, schemaVersion: 2, migrationState: "complete" })}\n`,
   );
   return home;
+}
+
+async function decisionMapV6Home(): Promise<{
+  home: string;
+  agentId: string;
+  sessionId: string;
+  cardId: string;
+}> {
+  const root = temporaryRoot("decision-map-v6");
+  const home = path.join(root, ".thoth");
+  const workspaceId = fixtureManifest.workspaceId;
+  const agentId = "agent-v6-map";
+  const cardId = "card-v6-active";
+  const now = "2026-07-30T12:00:00.000Z";
+  await ensureThothStorageLayout(home, createTestLogger());
+  const manager = new WorkspaceAuthorityManager(home);
+  manager.catalog.upsertWorkspace({
+    id: workspaceId,
+    canonicalPath: path.join(root, "workspace"),
+    displayName: "Decision Map v6",
+    kind: "workspace",
+    parentWorkspaceId: null,
+    archivedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const authority = new WorkspaceForegroundAuthority(manager);
+  const started = authority.startTurn({
+    agentId,
+    kind: "thoth",
+    controls: { mode: "quick", clarifyStrength: "dive", loop: null },
+    sourceMessageId: "message-v6-map",
+    workspaceId,
+    workspacePath: path.join(root, "workspace"),
+    userText: "Design the durable provider-neutral runtime.",
+  });
+  const created = authority.startDecisionSession({
+    agentId,
+    turnId: started.turn.id,
+    requestedStrength: "dive",
+  });
+  authority.updateDecisionTree({
+    agentId,
+    sessionId: created.session.id,
+    update: {
+      effectiveStrength: "dive",
+      activity: "expanding",
+      activeNodeId: "language",
+      publicSummary: "The implementation language remains Human-owned.",
+      nodes: [
+        {
+          id: "language",
+          parentId: created.session.rootNodeId,
+          crossLinkIds: [],
+          title: "Implementation language",
+          summary: "Choose the public implementation boundary.",
+          owner: "human",
+          materiality: "structural",
+          status: "open",
+          resolutionRef: null,
+          sourceRefs: [],
+        },
+      ],
+    },
+  });
+  authority.openCard({
+    agentId,
+    turnId: started.turn.id,
+    generation: started.turn.generation,
+    card: {
+      kind: "clarify_card",
+      card: {
+        id: cardId,
+        sessionId: created.session.id,
+        roundIndex: 1,
+        submitted: false,
+        card: {
+          title: "Choose implementation language",
+          whyNow: "This changes the public product boundary.",
+          publicSummary: "Waiting for the implementation language decision.",
+          questions: [
+            {
+              nodeId: "language",
+              question: "Which public implementation boundary should be frozen?",
+              selectionMode: "single",
+              choices: [
+                { id: "typescript", label: "TypeScript" },
+                { id: "rust", label: "Rust" },
+              ],
+              recommendedChoiceId: "typescript",
+            },
+          ],
+          allowChoiceNotes: true,
+          allowNoteOnly: true,
+          allowSingleNodeRecommendation: true,
+          allowSubtreeDelegation: true,
+        },
+      },
+    },
+    runtime: {
+      provider: "fixture",
+      threadId: "thread-v6",
+      providerTurnId: "provider-turn-v6",
+      callId: "call-v6",
+      toolName: "thoth_clarify_ask",
+      redactedRawInputHash: `sha256:${"a".repeat(64)}`,
+    },
+    decisionSession: { sessionId: created.session.id, awaitingNodeIds: ["language"] },
+  });
+  manager.close();
+
+  const authorityPath = workspaceAuthorityPath(home);
+  const database = new DatabaseSync(authorityPath);
+  try {
+    database.exec(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN IMMEDIATE;
+      DROP TABLE decision_tree_activity;
+      DROP TABLE decision_tree_cross_links;
+      DROP TABLE decision_tree_nodes;
+      DROP TABLE decision_session_turns;
+      DROP TABLE decision_sessions;
+      CREATE TABLE clarify_sessions (
+        session_id TEXT PRIMARY KEY NOT NULL,
+        workspace_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL UNIQUE,
+        requested_strength TEXT NOT NULL,
+        effective_strength TEXT,
+        lifecycle TEXT NOT NULL,
+        challenger_used INTEGER NOT NULL CHECK(challenger_used IN (0, 1)),
+        priority_node_id TEXT,
+        intent_contract_id TEXT,
+        revision INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE,
+        FOREIGN KEY(turn_id) REFERENCES turns(turn_id) ON DELETE CASCADE
+      ) STRICT;
+      CREATE TABLE clarify_decision_nodes (
+        node_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        parent_ids_json TEXT NOT NULL,
+        title TEXT NOT NULL,
+        owner TEXT NOT NULL CHECK(owner IN ('human', 'agent', 'evidence')),
+        materiality TEXT NOT NULL CHECK(materiality IN ('structural', 'material', 'local')),
+        status TEXT NOT NULL CHECK(status IN ('open', 'awaiting_human', 'resolved', 'delegated', 'pruned')),
+        resolution_ref TEXT,
+        source_refs_json TEXT NOT NULL,
+        priority INTEGER NOT NULL,
+        revision INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(session_id, node_id),
+        FOREIGN KEY(session_id) REFERENCES clarify_sessions(session_id) ON DELETE CASCADE
+      ) STRICT;
+      DELETE FROM authority_schema_migrations;
+      INSERT INTO authority_schema_migrations(version, checksum, applied_at)
+        VALUES (9, 'decision-map-task-anchor-v6', '${now}');
+      PRAGMA user_version = 6;
+      COMMIT;
+    `);
+    database
+      .prepare(
+        `INSERT INTO clarify_sessions(
+           session_id, workspace_id, agent_id, turn_id, requested_strength, effective_strength,
+           lifecycle, challenger_used, priority_node_id, intent_contract_id, revision,
+           created_at, updated_at
+         ) VALUES (?, ?, ?, ?, 'dive', 'dive', 'awaiting_human', 0, 'language', NULL, 7, ?, ?)`,
+      )
+      .run(created.session.id, workspaceId, agentId, started.turn.id, now, now);
+    const insertNode = database.prepare(
+      `INSERT INTO clarify_decision_nodes(
+         node_id, session_id, parent_ids_json, title, owner, materiality, status,
+         resolution_ref, source_refs_json, priority, revision, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    );
+    insertNode.run(
+      "product-boundary",
+      created.session.id,
+      "[]",
+      "Product boundary",
+      "human",
+      "structural",
+      "resolved",
+      "decision:product",
+      "[]",
+      4,
+      now,
+      now,
+    );
+    insertNode.run(
+      "risk-boundary",
+      created.session.id,
+      "[]",
+      "Risk boundary",
+      "human",
+      "structural",
+      "resolved",
+      "decision:risk",
+      "[]",
+      3,
+      now,
+      now,
+    );
+    insertNode.run(
+      "language",
+      created.session.id,
+      JSON.stringify(["product-boundary", "risk-boundary"]),
+      "Implementation language",
+      "human",
+      "structural",
+      "awaiting_human",
+      null,
+      "[]",
+      2,
+      now,
+      now,
+    );
+  } finally {
+    database.close();
+  }
+
+  const catalog = new DatabaseSync(path.join(home, "catalog.sqlite"));
+  try {
+    catalog.exec(`
+      DELETE FROM catalog_schema_migrations;
+      INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
+        VALUES (6, 'decision-map-task-anchor-v6-catalog', '${now}');
+      PRAGMA user_version = 6;
+    `);
+  } finally {
+    catalog.close();
+  }
+  writeFileSync(
+    path.join(home, "storage-layout.json"),
+    `${JSON.stringify({ version: 6, schemaVersion: 6, migrationState: "complete" })}\n`,
+  );
+  return { home, agentId, sessionId: created.session.id, cardId };
 }
 
 async function normalizedV3Home(): Promise<string> {

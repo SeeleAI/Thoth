@@ -57,7 +57,6 @@ vi.mock("lucide-react-native", () => ({
   ChevronRight: () => React.createElement("span", { "data-icon": "ChevronRight" }),
   GitBranch: () => React.createElement("span", { "data-icon": "GitBranch" }),
   ListChecks: () => React.createElement("span", { "data-icon": "ListChecks" }),
-  SearchCheck: () => React.createElement("span", { "data-icon": "SearchCheck" }),
   Sparkles: () => React.createElement("span", { "data-icon": "Sparkles" }),
 }));
 
@@ -188,17 +187,13 @@ afterEach(() => {
 });
 
 describe("RuntimeControls", () => {
-  it("renders persisted Thoth clarify and mode controls", () => {
+  it("renders only the explicit Thoth switch and Quick or Loop control", () => {
     render(<RuntimeControls serverId="server-1" />);
 
-    expect(screen.getByTestId("thoth-clarify-control").textContent).toContain("Dive");
-    expect(screen.getByTestId("thoth-clarify-dive-label").textContent).toBe("Dive");
-    expect(screen.queryByTestId("thoth-clarify-dive-water")).toBeNull();
+    expect(screen.queryByTestId("thoth-clarify-control")).toBeNull();
+    expect(screen.queryByText("Dive")).toBeNull();
     expect(screen.getByTestId("thoth-mode-control").textContent).toContain("Balanced");
     expect(screen.getByTestId("thoth-mode-control").textContent).not.toContain("Async");
-    expect(screen.getByTestId("thoth-clarify-menu-dive").getAttribute("aria-selected")).toBe(
-      "true",
-    );
     expect(screen.getByTestId("thoth-mode-menu-loop").getAttribute("aria-selected")).toBe("true");
     expect(screen.getByTestId("thoth-mode-menu-quick").textContent).toContain("Quick (Live)");
     expect(screen.getByTestId("thoth-mode-menu-loop").textContent).toContain("Loop (Async)");
@@ -217,15 +212,6 @@ describe("RuntimeControls", () => {
     expect(screen.getByTestId("thoth-mode-control").textContent).not.toContain("Async");
   });
 
-  it("keeps the animated Dive label in the original menu row", () => {
-    configState.current.thoth.clarifyStrength = "light";
-
-    render(<RuntimeControls serverId="server-1" />);
-
-    expect(screen.getByTestId("thoth-clarify-dive-label").textContent).toBe("Dive");
-    expect(screen.queryByTestId("thoth-clarify-dive-water")).toBeNull();
-  });
-
   it("renders Quick as a short selected label without Live detail", () => {
     configState.current.thoth.mode = "quick";
 
@@ -239,20 +225,16 @@ describe("RuntimeControls", () => {
   it("patches only typed thoth control fields", async () => {
     render(<RuntimeControls serverId="server-1" />);
 
-    fireEvent.click(screen.getByTestId("thoth-clarify-menu-light"));
     fireEvent.click(screen.getByTestId("thoth-mode-menu-loop"));
     fireEvent.click(screen.getByTestId("thoth-mode-menu-loop-one_plan_one_do"));
     fireEvent.click(screen.getByTestId("thoth-mode-menu-back"));
     fireEvent.click(screen.getByTestId("thoth-mode-menu-quick"));
 
-    await waitFor(() => expect(patchConfigMock).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(patchConfigMock).toHaveBeenCalledTimes(2));
     expect(patchConfigMock).toHaveBeenNthCalledWith(1, {
-      thoth: { clarifyStrength: "light" },
-    });
-    expect(patchConfigMock).toHaveBeenNthCalledWith(2, {
       thoth: { mode: "loop", loopStrength: "one_plan_one_do" },
     });
-    expect(patchConfigMock).toHaveBeenNthCalledWith(3, {
+    expect(patchConfigMock).toHaveBeenNthCalledWith(2, {
       thoth: { mode: "quick" },
     });
   });
@@ -277,7 +259,7 @@ describe("RuntimeControls", () => {
 
     await waitFor(() =>
       expect(patchConfigMock).toHaveBeenCalledWith({
-        thoth: { enabled: true, clarifyStrength: "dive" },
+        thoth: { enabled: true, clarifyStrength: "auto" },
       }),
     );
   });
@@ -301,7 +283,6 @@ describe("RuntimeControls", () => {
   it("blocks writes without a real host connection", () => {
     render(<RuntimeControls serverId={null} />);
 
-    fireEvent.click(screen.getByTestId("thoth-clarify-menu-light"));
     fireEvent.click(screen.getByTestId("thoth-mode-menu-quick"));
 
     expect(patchConfigMock).not.toHaveBeenCalled();

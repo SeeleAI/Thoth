@@ -249,6 +249,15 @@ export function runMvpReleaseContract({ writeMode = false } = {}) {
   if (!packageServerCli.includes('"--prefer-offline"')) {
     failures.push("Server CLI packaging must prefer the verified local npm cache");
   }
+  const packagedServerCliHarness = readFileSync(
+    join(repoRoot, "scripts/acceptance/packaged-server-cli-harness.mjs"),
+    "utf8",
+  );
+  if (!packagedServerCliHarness.includes('"--prefer-offline"')) {
+    failures.push(
+      "Packaged Server CLI installation must prefer cached packages before registry refresh",
+    );
+  }
 
   const hermeticBuildScripts = new Map([
     ["packages/app/highlight/package.json", "build"],

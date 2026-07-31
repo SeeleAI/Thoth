@@ -5,8 +5,8 @@ import { CLARIFY_GOLDEN_SCENARIOS } from "./golden.js";
 export type ClarifyAblationVariant =
   | "prompt_only"
   | "fixed_scaffold"
-  | "decision_map"
-  | "decision_map_challenger";
+  | "decision_tree"
+  | "decision_tree_challenger";
 
 type QuestionClassification =
   | "material_human"
@@ -47,7 +47,7 @@ interface AblationChallengerTrace {
 }
 
 interface ClarifyAblationTrace {
-  decisionMap: { durable: true; nodes: AblationDecisionNode[] } | null;
+  decisionTree: { durable: true; nodes: AblationDecisionNode[] } | null;
   questions: AblationQuestionSample[];
   finalContract: AblationContractSample;
   challenger: AblationChallengerTrace | null;
@@ -88,7 +88,7 @@ export interface ClarifyUserSimulationReport {
     negativeProbeCount: number;
   };
   ablations: ClarifyAblationResult[];
-  selectedVariant: "decision_map_challenger";
+  selectedVariant: "decision_tree_challenger";
 }
 
 const SCENARIO: ClarifyAblationScenario = {
@@ -141,7 +141,7 @@ function deriveMetrics(trace: ClarifyAblationTrace): {
   evidence: ClarifyAblationMetricEvidence;
 } {
   const expectedIds = SCENARIO.expectedMaterialHumanDecisions.map((decision) => decision.id);
-  const mappedIds = new Set(trace.decisionMap?.nodes.map((node) => node.id) ?? []);
+  const mappedIds = new Set(trace.decisionTree?.nodes.map((node) => node.id) ?? []);
   const coveredIds = new Set(trace.finalContract.coveredDecisionIds);
   const highImpactOmissionNodeIds = expectedIds.filter((id) => !mappedIds.has(id));
   const invalidQuestionIds = trace.questions
@@ -168,6 +168,8 @@ function deriveMetrics(trace: ClarifyAblationTrace): {
           ? 0
           : trace.questions.reduce((sum, question) => sum + question.eliminatedBranches, 0) /
             trace.questions.length,
+      // This ablation trace has no turn-by-turn propagation; the canonical golden scenarios carry that evidence.
+      propagatedMaterialBranches: 0,
       contractRegret: contractRegretDecisionIds.length,
     },
     evidence: {
@@ -192,13 +194,13 @@ function result(
     preservesHumanOwnership: trace.questions.every(
       (question) => question.classification === "material_human",
     ),
-    recoverable: trace.decisionMap?.durable === true,
+    recoverable: trace.decisionTree?.durable === true,
     trace,
   };
 }
 
 function buildAblations(): ClarifyAblationResult[] {
-  const decisionMapContract = contract(
+  const decisionTreeContract = contract(
     ["backup-scope", "retention-policy", "destination-trust"],
     [
       "Backups preserve the confirmed data scope.",
@@ -216,7 +218,7 @@ function buildAblations(): ClarifyAblationResult[] {
   );
   return [
     result("prompt_only", {
-      decisionMap: null,
+      decisionTree: null,
       questions: [
         {
           id: "question-broad-backup",
@@ -230,7 +232,7 @@ function buildAblations(): ClarifyAblationResult[] {
       challenger: null,
     }),
     result("fixed_scaffold", {
-      decisionMap: null,
+      decisionTree: null,
       questions: [
         {
           id: "question-language",
@@ -261,8 +263,8 @@ function buildAblations(): ClarifyAblationResult[] {
       ),
       challenger: null,
     }),
-    result("decision_map", {
-      decisionMap: {
+    result("decision_tree", {
+      decisionTree: {
         durable: true,
         nodes: ["backup-scope", "retention-policy", "destination-trust"].map(mapNode),
       },
@@ -279,11 +281,11 @@ function buildAblations(): ClarifyAblationResult[] {
           3,
         ),
       ],
-      finalContract: decisionMapContract,
+      finalContract: decisionTreeContract,
       challenger: null,
     }),
-    result("decision_map_challenger", {
-      decisionMap: {
+    result("decision_tree_challenger", {
+      decisionTree: {
         durable: true,
         nodes: SCENARIO.expectedMaterialHumanDecisions.map((decision) => mapNode(decision.id)),
       },
@@ -314,7 +316,7 @@ function buildAblations(): ClarifyAblationResult[] {
         reason:
           "The proposed contract can create backups but cannot prove that restore integrity or recovery time meets the user's value boundary.",
         reopenedNodeIds: ["restore-acceptance"],
-        contractBeforeChallenge: decisionMapContract,
+        contractBeforeChallenge: decisionTreeContract,
         contractAfterChallenge: completedContract,
       },
     }),
@@ -327,7 +329,7 @@ export function buildClarifyUserSimulationReport(
   const canonical = runClarifyEval();
   const dive = CLARIFY_GOLDEN_SCENARIOS.find((scenario) => scenario.strength === "dive");
   const ablations = buildAblations();
-  const selected = ablations.find((entry) => entry.variant === "decision_map_challenger")!;
+  const selected = ablations.find((entry) => entry.variant === "decision_tree_challenger")!;
   return {
     skillDigest: skill.digest,
     passed:
@@ -337,13 +339,15 @@ export function buildClarifyUserSimulationReport(
     scenario: SCENARIO,
     metricDefinitions: {
       highImpactOmissions:
-        "Count of expected material Human decision nodes absent from the durable Decision Map.",
+        "Count of expected material Human decision nodes absent from the durable Decision Tree.",
       invalidQuestions:
         "Count of questions classified as discoverable facts, Agent-owned choices, local details, or broad low-value prompts.",
       discoverableFactQuestionRate:
         "Discoverable-fact questions divided by all questions delegated to the Human.",
       branchesEliminatedPerHumanAnswer:
         "Mean number of recorded decision branches eliminated by each Human answer.",
+      propagatedMaterialBranches:
+        "Count of new material branches exposed after a recorded Human decision propagates through the tree.",
       contractRegret:
         "Count of expected material Human decisions not represented in the final Intent Contract.",
     },
@@ -353,13 +357,13 @@ export function buildClarifyUserSimulationReport(
       negativeProbeCount: canonical.negativeProbes.filter((probe) => probe.passed).length,
     },
     ablations,
-    selectedVariant: "decision_map_challenger",
+    selectedVariant: "decision_tree_challenger",
   };
 }
 
 export function validateClarifyUserSimulationReport(report: ClarifyUserSimulationReport): string[] {
   const failures: string[] = [];
-  if (!report.passed) failures.push("canonical Decision Map simulation did not pass");
+  if (!report.passed) failures.push("canonical Decision Tree simulation did not pass");
   if (report.ablations.length !== 4) failures.push("all four research ablations are required");
   for (const entry of report.ablations) {
     const derived = deriveMetrics(entry.trace);
@@ -371,16 +375,16 @@ export function validateClarifyUserSimulationReport(report: ClarifyUserSimulatio
     }
   }
   const promptOnly = report.ablations.find((entry) => entry.variant === "prompt_only");
-  if (promptOnly?.recoverable || promptOnly?.trace.decisionMap) {
+  if (promptOnly?.recoverable || promptOnly?.trace.decisionTree) {
     failures.push("prompt-only must honestly expose its missing durable frontier");
   }
   const fixed = report.ablations.find((entry) => entry.variant === "fixed_scaffold");
   if ((fixed?.metrics.invalidQuestions ?? 0) < 1) {
     failures.push("fixed scaffold must include concrete invalid question evidence");
   }
-  const mapOnly = report.ablations.find((entry) => entry.variant === "decision_map");
-  if (mapOnly?.metrics.highImpactOmissions !== 1 || mapOnly.metrics.contractRegret !== 1) {
-    failures.push("Decision Map-only trace must expose one matching omission and contract regret");
+  const treeOnly = report.ablations.find((entry) => entry.variant === "decision_tree");
+  if (treeOnly?.metrics.highImpactOmissions !== 1 || treeOnly.metrics.contractRegret !== 1) {
+    failures.push("Decision Tree-only trace must expose one matching omission and contract regret");
   }
   const selected = report.ablations.find((entry) => entry.variant === report.selectedVariant);
   if (!selected?.recoverable || !selected.preservesHumanOwnership) {

@@ -145,29 +145,23 @@ test.describe("Loop-2 restored Paseo surface scorecard", () => {
     await expect(
       page.getByText("Provider", { exact: true }).filter({ visible: true }).first(),
     ).toBeVisible();
-    await expect(
-      page.getByTestId("thoth-clarify-control").filter({ visible: true }).first(),
-    ).toBeVisible();
+    await expect(page.getByTestId("thoth-clarify-control")).toHaveCount(0);
     await expect(
       page.getByTestId("thoth-mode-control").filter({ visible: true }).first(),
     ).toBeVisible();
-    await page.getByTestId("thoth-clarify-control").filter({ visible: true }).first().click();
-    await page.getByTestId("thoth-clarify-menu-light").click();
-    await expect(
-      page.getByTestId("thoth-clarify-control").filter({ visible: true }).first(),
-    ).toContainText("Light");
     await page.getByTestId("thoth-mode-control").filter({ visible: true }).first().click();
     await page.getByTestId("thoth-mode-menu-loop").click();
+    await page.getByTestId("thoth-mode-menu-loop-light").click();
     await expect(
       page.getByTestId("thoth-mode-control").filter({ visible: true }).first(),
-    ).toContainText("Loop");
+    ).toContainText("Light");
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("thoth-mode-menu-backdrop")).not.toBeVisible();
+    await expect(page.getByTestId("thoth-mode-menu").filter({ visible: true })).not.toBeVisible();
     await expect(page.getByRole("textbox", { name: "Message agent..." }).first()).toBeVisible();
     await expectNoToyShell(page);
     await expectHealthySurface(page);
     await capture(page, testInfo, "desktop-workspace-composer-paseo-surface.png");
-    await capture(page, testInfo, "desktop-composer-provider-clarify-mode.png");
+    await capture(page, testInfo, "desktop-composer-provider-thoth-loop.png");
 
     const interactionTranscript = [await recordFocus(page, "before-composer-focus")];
     const composer = page.getByRole("textbox", { name: "Message agent..." }).first();
@@ -246,9 +240,7 @@ test.describe("Loop-2 restored Paseo surface scorecard", () => {
     await expect(
       page.getByTestId("message-input-attach-button").filter({ visible: true }).first(),
     ).toBeVisible();
-    await expect(
-      page.getByTestId("thoth-clarify-control").filter({ visible: true }).first(),
-    ).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Enable Thoth mode" })).toBeVisible();
     await expect(
       page.getByTestId("thoth-mode-control").filter({ visible: true }).first(),
     ).toBeVisible();
@@ -357,10 +349,8 @@ async function responsiveTranscript(page: Page, layout: "desktop" | "mobile") {
       .first()
       .isVisible()
       .catch(() => false),
-    clarifyVisible: await page
-      .getByTestId("thoth-clarify-control")
-      .filter({ visible: true })
-      .first()
+    thothVisible: await page
+      .getByRole("switch", { name: "Enable Thoth mode" })
       .isVisible()
       .catch(() => false),
     modeVisible: await page

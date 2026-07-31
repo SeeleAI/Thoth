@@ -79,6 +79,7 @@
     "accept:provider-control:fast": "node scripts/accept-provider-control-fast.mjs",
     "accept:interaction-regressions:fast": "node scripts/accept-interaction-regressions-fast.mjs",
     "accept:provider-plan-tabs:fast": "node scripts/accept-provider-plan-tabs-fast.mjs",
+    "accept:decision-tree:fast": "node scripts/accept-decision-tree-fast.mjs",
     "accept:clarify-loop:cognition-fast": "node scripts/accept-clarify-loop-cognition-fast.mjs",
     "accept:thoth:fast": "node scripts/accept-provider-control-fast.mjs --all",
     "metrics:refactor": "node scripts/refactor-source-metrics.mjs",

@@ -82,7 +82,7 @@ for (const retired of retiredCognitiveTools) {
 const clarifySkill = source("packages/drivers/src/runtime-skills/thoth-clarify/SKILL.md");
 for (const state of [
   "GROUND",
-  "EXPAND_MAP",
+  "EXPAND_TREE",
   "AUTO_RESOLVE",
   "SELF_CHALLENGE",
   "ASK",
@@ -96,7 +96,7 @@ for (const state of [
   if (!clarifySkill.includes(state)) failures.push(`Clarify Skill is missing state ${state}`);
 }
 for (const concept of [
-  "Decision Map",
+  "Decision Tree",
   "Human-owned",
   "Evidence-owned",
   "subtree",
@@ -120,8 +120,11 @@ for (const concept of [
 
 const storageSchema = source("packages/daemon/src/server/storage-schema.ts");
 for (const table of [
-  "clarify_sessions",
-  "clarify_decision_nodes",
+  "decision_sessions",
+  "decision_tree_nodes",
+  "decision_tree_cross_links",
+  "decision_tree_activity",
+  "decision_session_turns",
   "intent_contracts",
   "acceptance_claims",
   "loop_cycles",
@@ -136,12 +139,87 @@ for (const retired of ["CREATE TABLE task_goals", "CREATE TABLE task_blackboard"
   if (storageSchema.includes(retired)) failures.push(`Storage still contains ${retired}`);
 }
 
+const authorityStore = source(
+  "packages/daemon/src/server/workspace-authority/workspace-authority-store.ts",
+);
+for (const required of [
+  "const rootNodeId = `decision-root-${randomUUID()}`",
+  "node.id !== snapshot.session.rootNodeId && node.parentId === null",
+  "assertDecisionTree(",
+  "Decision Session no longer accepts Decision Tree updates",
+  "A Task can be registered only after its Decision Tree is frozen.",
+]) {
+  if (!authorityStore.includes(required)) {
+    failures.push(`Decision Session authority is missing ${required}`);
+  }
+}
+
+const decisionTreeNodeTable = storageSchema.slice(
+  storageSchema.indexOf("CREATE TABLE decision_tree_nodes"),
+  storageSchema.indexOf("CREATE TABLE decision_tree_cross_links"),
+);
+for (const forbidden of [
+  "chain_of_thought",
+  "reasoning",
+  "token",
+  "provider_thread",
+  "provider_session",
+  "model",
+  "lease",
+  "cursor",
+  "receipt",
+  "hash",
+  "prompt",
+]) {
+  if (decisionTreeNodeTable.includes(forbidden)) {
+    failures.push(
+      `Decision Tree node storage contains forbidden runtime/cognition field ${forbidden}`,
+    );
+  }
+}
+
 if (failures.length > 0) {
   console.error("Thoth cognition architecture contract failed:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log("Thoth Decision Map and target-anchored Loop architecture verified.");
+console.log(
+  JSON.stringify(
+    {
+      schemaVersion: 2,
+      passed: true,
+      checks: [
+        {
+          id: "legacy-task-goals-path-removed",
+          detail:
+            "Production roots contain no legacy Task/Goals card convergence, retired Runtime Tool, or goal-backed authority path.",
+        },
+        {
+          id: "minimal-provider-neutral-runtime-tools",
+          detail:
+            "Clarify and Loop expose only the canonical semantic tool catalogs; provider mechanics remain outside cognition.",
+        },
+        {
+          id: "single-root-decision-tree",
+          detail:
+            "Workspace authority creates one stable objective root, rejects additional parentless nodes, validates tree topology, and freezes before Task registration.",
+        },
+        {
+          id: "decision-tree-public-fields-only",
+          detail:
+            "decision_tree_nodes stores public title, summary, ownership, materiality, status, resolution reference, source references, priority, and revision only; it has no hidden reasoning, model, provider, token, receipt, hash, cursor, lease, or prompt field.",
+        },
+        {
+          id: "workspace-authority-schema-v7",
+          detail:
+            "Decision Sessions, session turns, tree nodes, cross-links, activity, Intent Contracts, acceptance claims, Loop cycles, working sets, work units, and review decisions are the sole cognition authority tables.",
+        },
+      ],
+    },
+    null,
+    2,
+  ),
+);
 
 function source(relativePath) {
   return readFileSync(resolve(repoRoot, relativePath), "utf8");

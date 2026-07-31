@@ -169,13 +169,13 @@ if (stage.stage >= 3) {
   );
   requireText(
     "packages/protocol/src/rpc-registry.test.ts",
-    /SessionInboundMessageSchema\.options\)\.toHaveLength\(143\)/,
-    "143 inbound RPC coverage assertion",
+    /SessionInboundMessageSchema\.options\)\.toHaveLength\(144\)/,
+    "144 inbound RPC coverage assertion",
   );
   requireText(
     "packages/protocol/src/rpc-registry.test.ts",
-    /SessionOutboundMessageSchema\.options\)\.toHaveLength\(152\)/,
-    "152 outbound RPC/event coverage assertion",
+    /SessionOutboundMessageSchema\.options\)\.toHaveLength\(153\)/,
+    "153 outbound RPC/event coverage assertion",
   );
   requireText(
     "packages/protocol/src/rpc-registry.test.ts",

@@ -98,15 +98,15 @@ npm run accept:thoth:api -- --appimage packages/desktop/release/Thoth-x86_64.App
 The journey is intentionally a single behavior chain rather than a list of implementation tests:
 
 ```text
-raw -> Clarify Decision Map -> Intent Contract -> Quick -> raw -> Loop checkpoint -> Review reorient -> retry -> complete
+raw -> Clarify Decision Session Tree -> Intent Contract -> Quick -> raw -> Loop checkpoint -> Review reorient -> retry -> complete
 ```
 
-It proves that one visible Agent keeps the same Provider session while Thoth is hot-switched, Decision Map and
-Intent Contract Cards use the public CAS authority API, Quick completes in the foreground, and Loop registration
-hands one stable Task Anchor to checkpointed execution plus fresh independent Review. A false-green Review must
-reorient without changing the Anchor before every Acceptance Claim is evidence-backed. The packaged smoke also
-inspects `app.asar`, loads the immutable Clarify/Loop RuntimeBundles, and uses the daemon managed by the AppImage
-rather than repository daemon code.
+It proves that one visible Agent keeps the same Provider session while Thoth is hot-switched, a Decision Session
+Tree and Intent Contract Card use the public CAS authority API, Quick completes in the foreground, and Loop
+registration hands one stable Task Anchor to checkpointed execution plus fresh independent Review. A false-green
+Review must reorient without changing the Anchor before every Acceptance Claim is evidence-backed. The packaged
+smoke also inspects `app.asar`, loads the immutable Clarify/Loop RuntimeBundles, and uses the daemon managed by
+the AppImage rather than repository daemon code.
 
 The default external scripted harness controls only provider transport actions. It must call the real
 runtime tools and cannot write daemon state directly. This keeps the result deterministic and normally
@@ -134,8 +134,9 @@ store:
 npm run test:thoth-foreground
 ```
 
-The suite covers raw passthrough, same-session hot switching, Agent-scoped Decision Map/Intent Contract authority,
-cancellation, restart/recovery and Loop registration. It is a fast source check, not packaged acceptance.
+The suite covers raw passthrough, same-session hot switching, Agent-scoped Decision Session/Tree/Intent Contract
+authority, cancellation, restart/recovery and Loop registration. It is a fast source check, not packaged
+acceptance.
 
 Provider transport fixtures live outside the Journey and may prescribe semantic tool calls. They must still use
 the real provider adapter and runtime-tool handlers; they may not insert Cards, tasks, phases or verdicts into
@@ -176,7 +177,7 @@ npm run accept:clarify-loop:cognition-fast
 ```
 
 It goes through the formal Protocol, RuntimeBundle, ToolGateway, SQLite authority and App projections. It covers
-the 30-plus-question Dive Decision Map, delegation, one Challenger, one Intent Contract, compact Working Sets,
+the 30-plus-question Dive Decision Tree, delegation, one Challenger, one Intent Contract, compact Working Sets,
 checkpoint/fresh Review, no-progress interruption, budget waiting, context reset and Stop fencing. It does not
 replace the real Codex, packaged AppImage or hosted Relay gates.
 

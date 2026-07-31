@@ -19,6 +19,7 @@ import { createWorkspaceDatabase } from "./storage-schema.js";
 import { ContentAddressedBlobStore } from "./workspace-authority/blob-store.js";
 
 const AUTHORITY_V6_CHECKSUM = "decision-map-task-anchor-v6";
+const AUTHORITY_V7_CHECKSUM = "decision-session-tree-v7";
 const ACTIVE_EXECUTION_STATUSES = new Set([
   "created",
   "starting",
@@ -260,7 +261,7 @@ export function rebuildAuthoritySchemaV6(input: {
       copyLegacySchedules(source, target);
       copyMatchingRows(source, target, "schedule_runs");
 
-      target.exec("PRAGMA user_version = 6; COMMIT;");
+      target.exec("PRAGMA user_version = 7; COMMIT;");
     } catch (error) {
       target.exec("ROLLBACK;");
       throw error;
@@ -289,6 +290,7 @@ function copyMigrationLedger(source: DatabaseSync, target: DatabaseSync, migrate
   );
   for (const row of rows) insert.run(row.version, row.checksum, row.applied_at);
   insert.run(9, AUTHORITY_V6_CHECKSUM, migratedAt);
+  insert.run(10, AUTHORITY_V7_CHECKSUM, migratedAt);
 }
 
 function insertLegacyIntentContract(input: {

@@ -13,7 +13,9 @@ export type ThothRealProviderFlowId =
   | "UT-03-quick-clarify-pause-recover-resume"
   | "UT-04-loop-target-complete"
   | "UT-05-loop-reorient-and-budget"
-  | "UT-06-loop-human-decision-handoff";
+  | "UT-06-loop-human-decision-handoff"
+  | "UT-07-clarify-propagation"
+  | "UT-08-clarify-subtree-delegation";
 
 export interface ClarifyFixtureRound {
   map: ThothClarifyUpdateMapInput;
@@ -32,23 +34,49 @@ export interface ThothRealProviderFlowScript {
   reviews: readonly ThothLoopReviewDecisionInput[];
 }
 
+export const ACTIVE_DECISION_ROOT_PLACEHOLDER = "__ACTIVE_DECISION_ROOT__";
+
 function clarifyRound(input: {
   title: string;
   marker: string;
   parentId?: string;
+  quickCompletionMarker?: string;
 }): ClarifyFixtureRound {
   const rootId = `${input.marker}-root`;
   const scopeId = `${input.marker}-scope`;
   const evidenceId = `${input.marker}-evidence`;
+  const isQuickCompletion = input.quickCompletionMarker !== undefined;
+  const scopeTitle = isQuickCompletion ? "No-op completion" : "Execution scope";
+  const evidenceTitle = isQuickCompletion
+    ? "Canonical completion evidence"
+    : "Acceptance evidence boundary";
+  const scopeQuestion = isQuickCompletion
+    ? "Run the confirmed no-op completion turn?"
+    : "Use the fixed verification scope?";
+  const scopeChoice = isQuickCompletion ? `Emit ${input.quickCompletionMarker}` : "Use fixed scope";
+  const scopeDescription = isQuickCompletion
+    ? "Reply with the canonical completion marker without Workspace mutation."
+    : "Keep the run inside the deterministic authority boundary.";
+  const evidenceQuestion = isQuickCompletion
+    ? "Use the canonical Assistant timeline as the sole completion evidence?"
+    : "Require semantic checkpoint evidence?";
+  const evidenceChoice = isQuickCompletion ? "Use timeline evidence" : "Require evidence";
+  const evidenceDescription = isQuickCompletion
+    ? "The exact completion marker in the visible Assistant timeline is sufficient evidence."
+    : "Review completion must cite durable checkpoint evidence.";
   return {
     map: {
       effectiveStrength: "light",
+      activity: "expanding",
+      activeNodeId: scopeId,
       publicSummary: `Grounded ${input.marker} and exposed its material Human-owned fork.`,
       nodes: [
         {
           id: rootId,
-          parentIds: input.parentId ? [input.parentId] : [],
+          parentId: input.parentId ?? ACTIVE_DECISION_ROOT_PLACEHOLDER,
+          crossLinkIds: [],
           title: `${input.title} grounded objective`,
+          summary: `Grounded the ${input.marker} objective from the fixture evidence.`,
           owner: "agent",
           materiality: "structural",
           status: "resolved",
@@ -57,8 +85,12 @@ function clarifyRound(input: {
         },
         {
           id: scopeId,
-          parentIds: [rootId],
-          title: "Execution scope",
+          parentId: rootId,
+          crossLinkIds: [],
+          title: scopeTitle,
+          summary: isQuickCompletion
+            ? "Waiting for confirmation of the no-op completion turn."
+            : "Waiting for the material execution-scope decision.",
           owner: "human",
           materiality: "material",
           status: "open",
@@ -67,8 +99,12 @@ function clarifyRound(input: {
         },
         {
           id: evidenceId,
-          parentIds: [rootId],
-          title: "Acceptance evidence boundary",
+          parentId: rootId,
+          crossLinkIds: [],
+          title: evidenceTitle,
+          summary: isQuickCompletion
+            ? "Waiting for confirmation of canonical timeline evidence."
+            : "Waiting for the material evidence-boundary decision.",
           owner: "human",
           materiality: "material",
           status: "open",
@@ -84,13 +120,13 @@ function clarifyRound(input: {
       questions: [
         {
           nodeId: scopeId,
-          question: "Use the fixed verification scope?",
+          question: scopeQuestion,
           selectionMode: "single",
           choices: [
             {
               id: `${scopeId}-yes`,
-              label: "Use fixed scope",
-              description: "Keep the run inside the deterministic authority boundary.",
+              label: scopeChoice,
+              description: scopeDescription,
             },
             {
               id: `${scopeId}-stop`,
@@ -102,13 +138,13 @@ function clarifyRound(input: {
         },
         {
           nodeId: evidenceId,
-          question: "Require semantic checkpoint evidence?",
+          question: evidenceQuestion,
           selectionMode: "single",
           choices: [
             {
               id: `${evidenceId}-yes`,
-              label: "Require evidence",
-              description: "Review completion must cite durable checkpoint evidence.",
+              label: evidenceChoice,
+              description: evidenceDescription,
             },
             {
               id: `${evidenceId}-no`,
@@ -121,22 +157,36 @@ function clarifyRound(input: {
       ],
       allowChoiceNotes: true,
       allowNoteOnly: true,
+      allowSingleNodeRecommendation: true,
       allowSubtreeDelegation: true,
     },
   };
 }
 
-function contract(marker: string, decisionNodeRefs: string[]): ThothClarifyProposeContractInput {
+function contract(
+  marker: string,
+  decisionNodeRefs: string[],
+  quickCompletionMarker?: string,
+): ThothClarifyProposeContractInput {
+  const isQuickCompletion = quickCompletionMarker !== undefined;
   return {
     contract: {
       title: `Fixed target ${marker}`,
-      objective: "Verify one target-anchored foreground or background authority flow.",
-      nonGoals: ["Do not modify unrelated Workspace state."],
+      objective: isQuickCompletion
+        ? `Emit exactly ${quickCompletionMarker} in the visible Assistant timeline after the approved no-op Quick task.`
+        : "Verify one target-anchored foreground or background authority flow.",
+      nonGoals: isQuickCompletion
+        ? ["Do not inspect, edit, test, or require Workspace files."]
+        : ["Do not modify unrelated Workspace state."],
       invariants: [
         "Use the Provider Harness session selected by the Agent.",
-        "Treat durable semantic evidence as completion authority.",
+        isQuickCompletion
+          ? "The exact marker is the only task output and no Workspace mutation is allowed."
+          : "Treat durable semantic evidence as completion authority.",
       ],
-      acceptance: ["A durable semantic checkpoint is independently reviewed against this target."],
+      acceptance: isQuickCompletion
+        ? [`The canonical visible Assistant timeline contains exactly ${quickCompletionMarker}.`]
+        : ["A durable semantic checkpoint is independently reviewed against this target."],
       riskBoundary: [],
       humanDecisionRefs: [],
       escalationPolicy: {
@@ -145,7 +195,7 @@ function contract(marker: string, decisionNodeRefs: string[]): ThothClarifyPropo
       },
     },
     decisionNodeRefs,
-    publicSummary: `The ${marker} Decision Map is stable and ready for one Intent Contract.`,
+    publicSummary: `The ${marker} Decision Tree is stable and ready for one Intent Contract.`,
   };
 }
 
@@ -180,22 +230,213 @@ function reviewComplete(marker: string): ThothLoopReviewDecisionInput {
   };
 }
 
-const u2RoundOne = clarifyRound({ title: "Foreground branch one", marker: "UT02_C1" });
+const u2RoundOne = clarifyRound({
+  title: "Foreground branch one",
+  marker: "UT02_C1",
+  quickCompletionMarker: "FOREGROUND_EXEC_DONE",
+});
 const u2RoundTwo = clarifyRound({
   title: "Foreground branch two",
   marker: "UT02_C2",
   parentId: "UT02_C1-root",
+  quickCompletionMarker: "FOREGROUND_EXEC_DONE",
 });
-const u3RoundOne = clarifyRound({ title: "Recovery branch one", marker: "UT03_C1" });
+const u3RoundOne = clarifyRound({
+  title: "Recovery branch one",
+  marker: "UT03_C1",
+  quickCompletionMarker: "RESUMED_FOREGROUND_DONE",
+});
 const u3RoundTwo = clarifyRound({
   title: "Recovery branch two",
   marker: "UT03_C2",
   parentId: "UT03_C1-root",
+  quickCompletionMarker: "RESUMED_FOREGROUND_DONE",
 });
 const u4Round = clarifyRound({ title: "Loop completion branch", marker: "UT04_C1" });
 const u5Round = clarifyRound({ title: "Loop reorientation branch", marker: "UT05_C1" });
 const u6InitialRound = clarifyRound({ title: "Loop handoff origin", marker: "UT06_I1" });
 const u6HandoffRound = clarifyRound({ title: "Loop handoff revision", marker: "UT06_H1" });
+const u7ParentRound: ClarifyFixtureRound = {
+  map: {
+    effectiveStrength: "balanced",
+    activity: "expanding",
+    activeNodeId: "UT07-strategy",
+    publicSummary: "The parent product boundary is ready for one Human-owned decision.",
+    nodes: [
+      {
+        id: "UT07-strategy",
+        parentId: ACTIVE_DECISION_ROOT_PLACEHOLDER,
+        crossLinkIds: [],
+        title: "Rendering product strategy",
+        summary: "Awaiting the parent decision before its conditional descendants become material.",
+        owner: "human",
+        materiality: "structural",
+        status: "awaiting_human",
+        resolutionRef: null,
+        sourceRefs: [],
+      },
+    ],
+  },
+  ask: {
+    title: "Rendering product strategy",
+    whyNow: "This parent choice determines which implementation descendants remain material.",
+    publicSummary: "Confirm the parent boundary before exposing conditional child decisions.",
+    questions: [
+      {
+        nodeId: "UT07-strategy",
+        question: "Which rendering product strategy is authoritative?",
+        selectionMode: "single",
+        choices: [
+          {
+            id: "UT07-strategy-offline",
+            label: "Offline renderer",
+            description: "Expose the production renderer branch.",
+          },
+          {
+            id: "UT07-strategy-interactive",
+            label: "Interactive viewport",
+            description: "Expose the live-preview branch instead.",
+          },
+        ],
+        recommendedChoiceId: "UT07-strategy-offline",
+      },
+    ],
+    allowChoiceNotes: true,
+    allowNoteOnly: true,
+    allowSingleNodeRecommendation: true,
+    allowSubtreeDelegation: true,
+  },
+};
+const u7ChildRound: ClarifyFixtureRound = {
+  map: {
+    effectiveStrength: "balanced",
+    activity: "expanding",
+    activeNodeId: "UT07-renderer-mode",
+    publicSummary:
+      "The confirmed parent exposes one remaining material child and prunes the alternate route.",
+    nodes: [
+      {
+        id: "UT07-renderer-mode",
+        parentId: "UT07-strategy",
+        crossLinkIds: [],
+        title: "Offline renderer mode",
+        summary: "Awaiting the remaining material renderer decision.",
+        owner: "human",
+        materiality: "material",
+        status: "awaiting_human",
+        resolutionRef: null,
+        sourceRefs: [],
+      },
+      {
+        id: "UT07-live-preview",
+        parentId: "UT07-strategy",
+        crossLinkIds: [],
+        title: "Live preview route",
+        summary:
+          "Pruned because the confirmed parent scope does not include an interactive viewport.",
+        owner: "agent",
+        materiality: "material",
+        status: "pruned",
+        resolutionRef: null,
+        sourceRefs: [],
+      },
+    ],
+  },
+  ask: {
+    title: "Offline renderer mode",
+    whyNow: "The parent boundary is resolved; this child remains material to acceptance.",
+    publicSummary: "Confirm the newly material child decision.",
+    questions: [
+      {
+        nodeId: "UT07-renderer-mode",
+        question: "Which offline renderer mode defines acceptance?",
+        selectionMode: "single",
+        choices: [
+          {
+            id: "UT07-renderer-mode-reference",
+            label: "Reference quality",
+            description: "Prioritize the deterministic reference path.",
+          },
+          {
+            id: "UT07-renderer-mode-throughput",
+            label: "Throughput",
+            description: "Prioritize batch throughput instead.",
+          },
+        ],
+        recommendedChoiceId: "UT07-renderer-mode-reference",
+      },
+    ],
+    allowChoiceNotes: true,
+    allowNoteOnly: true,
+    allowSingleNodeRecommendation: true,
+    allowSubtreeDelegation: true,
+  },
+};
+const u8SubtreeRound: ClarifyFixtureRound = {
+  map: {
+    effectiveStrength: "balanced",
+    activity: "expanding",
+    activeNodeId: "UT08-portability",
+    publicSummary:
+      "The parent and its material child are visible before an explicit subtree delegation.",
+    nodes: [
+      {
+        id: "UT08-portability",
+        parentId: ACTIVE_DECISION_ROOT_PLACEHOLDER,
+        crossLinkIds: [],
+        title: "Portability boundary",
+        summary: "Awaiting the Human-owned portability parent decision.",
+        owner: "human",
+        materiality: "structural",
+        status: "awaiting_human",
+        resolutionRef: null,
+        sourceRefs: [],
+      },
+      {
+        id: "UT08-adapter-layout",
+        parentId: "UT08-portability",
+        crossLinkIds: [],
+        title: "Adapter layout boundary",
+        summary: "A material descendant that is delegated only with its parent subtree.",
+        owner: "human",
+        materiality: "material",
+        status: "open",
+        resolutionRef: null,
+        sourceRefs: [],
+      },
+    ],
+  },
+  ask: {
+    title: "Portability boundary",
+    whyNow:
+      "The user may explicitly delegate this parent and its dependent branch to the Provider.",
+    publicSummary: "Choose or delegate the portability parent.",
+    questions: [
+      {
+        nodeId: "UT08-portability",
+        question: "Which portability boundary should the Provider own?",
+        selectionMode: "single",
+        choices: [
+          {
+            id: "UT08-portability-all",
+            label: "All providers",
+            description: "Preserve the shared provider-neutral boundary.",
+          },
+          {
+            id: "UT08-portability-one",
+            label: "One provider",
+            description: "Narrow the product boundary to one provider.",
+          },
+        ],
+        recommendedChoiceId: "UT08-portability-all",
+      },
+    ],
+    allowChoiceNotes: true,
+    allowNoteOnly: true,
+    allowSingleNodeRecommendation: true,
+    allowSubtreeDelegation: true,
+  },
+};
 
 export const THOTH_REAL_PROVIDER_FLOW_SCRIPTS = {
   quickDirect: {
@@ -210,14 +451,18 @@ export const THOTH_REAL_PROVIDER_FLOW_SCRIPTS = {
     id: "UT-02-quick-clarify-foreground-success",
     finalMarker: "FOREGROUND_EXEC_DONE",
     clarify: [u2RoundOne, u2RoundTwo],
-    contract: contract("UT02", [
-      "UT02_C1-root",
-      "UT02_C1-scope",
-      "UT02_C1-evidence",
-      "UT02_C2-root",
-      "UT02_C2-scope",
-      "UT02_C2-evidence",
-    ]),
+    contract: contract(
+      "UT02",
+      [
+        "UT02_C1-root",
+        "UT02_C1-scope",
+        "UT02_C1-evidence",
+        "UT02_C2-root",
+        "UT02_C2-scope",
+        "UT02_C2-evidence",
+      ],
+      "FOREGROUND_EXEC_DONE",
+    ),
     checkpoints: [],
     reviews: [],
   },
@@ -225,14 +470,18 @@ export const THOTH_REAL_PROVIDER_FLOW_SCRIPTS = {
     id: "UT-03-quick-clarify-pause-recover-resume",
     finalMarker: "RESUMED_FOREGROUND_DONE",
     clarify: [u3RoundOne, u3RoundTwo],
-    contract: contract("UT03", [
-      "UT03_C1-root",
-      "UT03_C1-scope",
-      "UT03_C1-evidence",
-      "UT03_C2-root",
-      "UT03_C2-scope",
-      "UT03_C2-evidence",
-    ]),
+    contract: contract(
+      "UT03",
+      [
+        "UT03_C1-root",
+        "UT03_C1-scope",
+        "UT03_C1-evidence",
+        "UT03_C2-root",
+        "UT03_C2-scope",
+        "UT03_C2-evidence",
+      ],
+      "RESUMED_FOREGROUND_DONE",
+    ),
     checkpoints: [],
     reviews: [],
   },
@@ -286,6 +535,22 @@ export const THOTH_REAL_PROVIDER_FLOW_SCRIPTS = {
     checkpoints: [checkpoint("UT06_W1", "Review the revised target boundary.")],
     reviews: [reviewComplete("UT06_W1")],
   },
+  clarifyPropagation: {
+    id: "UT-07-clarify-propagation",
+    finalMarker: "CLARIFY_PROPAGATION_DONE",
+    clarify: [u7ParentRound, u7ChildRound],
+    contract: contract("UT07", ["UT07-strategy", "UT07-renderer-mode"], "CLARIFY_PROPAGATION_DONE"),
+    checkpoints: [],
+    reviews: [],
+  },
+  clarifySubtreeDelegation: {
+    id: "UT-08-clarify-subtree-delegation",
+    finalMarker: "CLARIFY_SUBTREE_DELEGATED",
+    clarify: [u8SubtreeRound],
+    contract: null,
+    checkpoints: [],
+    reviews: [],
+  },
 } as const satisfies Record<string, ThothRealProviderFlowScript>;
 
 function literalCall(name: string, input: unknown): string {
@@ -331,7 +596,8 @@ export function buildRealProviderFixturePrompt(input: {
   const lines = [
     `[THOTH REAL FLOW FIXTURE ${input.script.id}]`,
     "Use only the installed Thoth semantic tools. Do not bypass public authority or write test state directly.",
-    "For each visible Clarify round, update the Decision Map, ask the prescribed related Human-owned forks, then wait for the answer.",
+    `Replace ${ACTIVE_DECISION_ROOT_PLACEHOLDER} in the first map update with the stable root node id already shown in the current Decision Tree.`,
+    "For each visible Clarify round, update changed Decision Tree nodes, ask the prescribed related Human-owned forks, then wait for the answer.",
   ];
   rounds.forEach((round, index) => {
     lines.push(
@@ -345,7 +611,9 @@ export function buildRealProviderFixturePrompt(input: {
     );
   }
   if (input.script.checkpoints.length === 0) {
-    lines.push(`After Quick approval, finish with exactly: ${input.script.finalMarker}`);
+    lines.push(
+      `After Quick approval, the confirmed Intent Contract is a no-op task. Do not inspect or modify the Workspace; finish with exactly: ${input.script.finalMarker}`,
+    );
   } else {
     lines.push(
       "After Loop approval, stop the visible foreground execution. Background Harness threads continue from the Task Anchor.",

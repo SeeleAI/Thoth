@@ -62,6 +62,7 @@ function card(overrides: Partial<ThothClarifyCardModel> = {}): ThothClarifyCardM
       publicSummary: "确认影响实现与验收的关键分叉。",
       allowChoiceNotes: true,
       allowNoteOnly: true,
+      allowSingleNodeRecommendation: true,
       allowSubtreeDelegation: true,
       questions: [
         {

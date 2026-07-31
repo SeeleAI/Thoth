@@ -1395,6 +1395,8 @@ export async function createThothDaemon(
     clearInterval(idleRuntimeSweepTimer);
     await idleRuntimeSweepInFlight?.catch(() => undefined);
     await scheduleService.stop().catch(() => undefined);
+    foregroundTurnCoordinator.close();
+    workspaceTaskOrchestrator.close();
     await closeAllAgents(logger, executionService);
     await executionService.flushForShutdown().catch(() => undefined);
     detachAgentStoragePersistence();

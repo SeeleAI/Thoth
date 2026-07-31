@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 import {
   ClarifyQuestionCardSchema,
   ThothClarifyUpdateMapInputSchema,
+  type ThothClarifyUpdateMapInput,
 } from "@thoth/protocol/thoth-runtime-contract";
 import { IntentContractDraftSchema } from "@thoth/protocol/intent-contract";
 import { loadRuntimeBundle } from "../harness/runtime-bundle.js";
@@ -12,13 +13,18 @@ import {
   type ClarifyFrontierIssueCode,
   type ClarifyFrontierNode,
 } from "./frontier.js";
-import { CLARIFY_GOLDEN_SCENARIOS, type ClarifyGoldenScenario } from "./golden.js";
+import {
+  CLARIFY_GOLDEN_SCENARIOS,
+  type ClarifyGoldenScenario,
+  type ClarifyGoldenTransition,
+} from "./golden.js";
 
 export interface ClarifyResearchMetrics {
   highImpactOmissions: number;
   invalidQuestions: number;
   discoverableFactQuestionRate: number;
   branchesEliminatedPerHumanAnswer: number;
+  propagatedMaterialBranches: number;
   contractRegret: number;
 }
 
@@ -44,40 +50,204 @@ export interface ClarifyNegativeProbeResult {
   observedIssues: ClarifyFrontierIssueCode[];
 }
 
-function assertDag(scenario: ClarifyGoldenScenario): string[] {
+function assertTree(scenario: ClarifyGoldenScenario): string[] {
   const failures: string[] = [];
   const nodes = new Map(scenario.map.nodes.map((node) => [node.id, node]));
+  const root = nodes.get(scenario.rootNodeId);
+  if (!root) {
+    failures.push(`Decision Tree is missing stable root ${scenario.rootNodeId}`);
+  } else if (root.parentId !== null) {
+    failures.push(`Decision Tree root ${scenario.rootNodeId} must not have a parent`);
+  }
+  const rootIds = scenario.map.nodes
+    .filter((node) => node.parentId === null)
+    .map((node) => node.id);
+  if (!sameIds(rootIds, [scenario.rootNodeId])) {
+    failures.push(
+      `Decision Tree must have exactly one stable objective root; observed ${rootIds.join(", ") || "none"}`,
+    );
+  }
   const visit = (nodeId: string, path: Set<string>): void => {
     if (path.has(nodeId)) {
-      failures.push(`Decision Map cycle includes ${nodeId}`);
+      failures.push(`Decision Tree cycle includes ${nodeId}`);
       return;
     }
     const node = nodes.get(nodeId);
     if (!node) return;
     const next = new Set(path).add(nodeId);
-    for (const parentId of node.parentIds) {
+    if (node.parentId) {
+      const parentId = node.parentId;
       if (!nodes.has(parentId))
         failures.push(`Decision node ${nodeId} has unknown parent ${parentId}`);
       else visit(parentId, next);
+    }
+    for (const crossLinkId of node.crossLinkIds) {
+      if (!nodes.has(crossLinkId)) {
+        failures.push(`Decision node ${nodeId} has unknown cross-link ${crossLinkId}`);
+      }
     }
   };
   for (const nodeId of nodes.keys()) visit(nodeId, new Set());
   return failures;
 }
 
+function assertStrengthSemantics(input: {
+  scenario: ClarifyGoldenScenario;
+  nodes: Map<string, ThothClarifyUpdateMapInput["nodes"][number]>;
+}): string[] {
+  const { scenario, nodes } = input;
+  const failures: string[] = [];
+  const questionNodeIds = scenario.cards.flatMap((entry) =>
+    entry.card.questions.map((question) => question.nodeId),
+  );
+  for (const nodeId of questionNodeIds) {
+    const rationale = scenario.humanOwnershipRationale[nodeId]?.trim();
+    if (!rationale || rationale.length < 24) {
+      failures.push(`Human-owned Decision node ${nodeId} lacks a concrete ownership rationale`);
+    }
+  }
+  if (scenario.strength === "light") {
+    for (const nodeId of questionNodeIds) {
+      if (nodes.get(nodeId)?.materiality !== "structural") {
+        failures.push(`Light Clarify asked non-structural Decision node ${nodeId}`);
+      }
+    }
+  }
+  if (scenario.strength === "balanced") {
+    const hasMaterialHumanFrontier = questionNodeIds.some(
+      (nodeId) => nodes.get(nodeId)?.owner === "human",
+    );
+    if (!hasMaterialHumanFrontier) {
+      failures.push("Balanced Clarify does not cover a material Human-owned frontier");
+    }
+  }
+  if (scenario.strength === "dive") {
+    if (questionNodeIds.length < 30) {
+      failures.push(
+        "Dive Clarify did not recursively cover at least thirty material Human branches",
+      );
+    }
+    if (Object.hasOwn(scenario.expected, "maximumHumanQuestions")) {
+      failures.push("Dive Clarify must not encode a Human-question quota");
+    }
+  }
+  return failures;
+}
+
+function sameIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function validateTransitions(input: {
+  scenario: ClarifyGoldenScenario;
+  nodes: Map<string, ThothClarifyUpdateMapInput["nodes"][number]>;
+}): { failures: string[]; eliminatedBranches: number; propagatedMaterialBranches: number } {
+  const { scenario, nodes } = input;
+  const failures: string[] = [];
+  let eliminatedBranches = 0;
+  let propagatedMaterialBranches = 0;
+  if (scenario.transitions.length !== scenario.cards.length) {
+    failures.push(
+      `Expected one propagation transition per Clarify Card, observed ${scenario.transitions.length} for ${scenario.cards.length} cards`,
+    );
+    return { failures, eliminatedBranches, propagatedMaterialBranches };
+  }
+
+  const previouslyResolved = new Set(
+    [...nodes.values()]
+      .filter((node) => ["resolved", "delegated"].includes(node.status))
+      .map((node) => node.id),
+  );
+  const previouslyExposed = new Set<string>();
+  const routeRefs = new Set<string>();
+  const hasResolvedAncestor = (nodeId: string): boolean => {
+    let parentId = nodes.get(nodeId)?.parentId ?? null;
+    while (parentId) {
+      if (previouslyResolved.has(parentId)) return true;
+      parentId = nodes.get(parentId)?.parentId ?? null;
+    }
+    return false;
+  };
+
+  scenario.cards.forEach((entry, index) => {
+    const transition = scenario.transitions[index] as ClarifyGoldenTransition | undefined;
+    if (!transition) return;
+    const questionIds = entry.card.questions.map((question) => question.nodeId);
+    if (transition.cardTitle !== entry.card.title) {
+      failures.push(`Propagation transition ${index + 1} does not belong to ${entry.card.title}`);
+    }
+    if (!sameIds(transition.answeredNodeIds, questionIds)) {
+      failures.push(
+        `Propagation transition ${entry.card.title} does not cover its exact Card frontier`,
+      );
+    }
+    if (entry.eliminatedBranches !== transition.prunedRouteRefs.length) {
+      failures.push(
+        `Propagation transition ${entry.card.title} disagrees with its branch-elimination metric`,
+      );
+    }
+    const terminalIds = new Set([...transition.resolvedNodeIds, ...transition.delegatedNodeIds]);
+    for (const nodeId of transition.answeredNodeIds) {
+      if (!terminalIds.has(nodeId)) {
+        failures.push(`Human answer ${nodeId} has no resolved or delegated Decision Tree outcome`);
+      }
+    }
+    if (
+      entry.humanAction.intent === "recommend" &&
+      !transition.delegatedNodeIds.includes(entry.humanAction.targetNodeId)
+    ) {
+      failures.push(
+        `Single-node recommendation did not delegate ${entry.humanAction.targetNodeId}`,
+      );
+    }
+    if (
+      entry.humanAction.intent === "delegate_subtree" &&
+      !transition.delegatedNodeIds.includes(entry.humanAction.targetNodeId)
+    ) {
+      failures.push(`Subtree delegation did not delegate ${entry.humanAction.targetNodeId}`);
+    }
+    if (transition.prunedRouteRefs.length < transition.answeredNodeIds.length) {
+      failures.push(`Human answers in ${entry.card.title} did not prune meaningful alternatives`);
+    }
+    for (const route of transition.prunedRouteRefs) {
+      if (routeRefs.has(route)) failures.push(`Pruned route ${route} is recorded more than once`);
+      routeRefs.add(route);
+    }
+    for (const nodeId of terminalIds) previouslyResolved.add(nodeId);
+    for (const nodeId of transition.newlyMaterialNodeIds) {
+      const node = nodes.get(nodeId);
+      if (!node) {
+        failures.push(`Propagation exposes unknown Decision node ${nodeId}`);
+        continue;
+      }
+      if (previouslyExposed.has(nodeId)) {
+        failures.push(`Propagation exposes ${nodeId} more than once`);
+      }
+      if (!hasResolvedAncestor(nodeId)) {
+        failures.push(`Newly material node ${nodeId} has no previously resolved parent path`);
+      }
+      previouslyExposed.add(nodeId);
+    }
+    for (const nodeId of transition.answeredNodeIds) previouslyExposed.add(nodeId);
+    eliminatedBranches += transition.prunedRouteRefs.length;
+    propagatedMaterialBranches += transition.newlyMaterialNodeIds.length;
+  });
+  return { failures, eliminatedBranches, propagatedMaterialBranches };
+}
+
 function evaluateScenario(scenario: ClarifyGoldenScenario): ClarifyEvalScenarioResult {
-  const failures = [...assertDag(scenario)];
+  const failures = [...assertTree(scenario)];
   const mapResult = ThothClarifyUpdateMapInputSchema.safeParse(scenario.map);
-  if (!mapResult.success) failures.push(`Decision Map schema: ${mapResult.error.message}`);
+  if (!mapResult.success) failures.push(`Decision Tree schema: ${mapResult.error.message}`);
   const contractResult = IntentContractDraftSchema.safeParse(scenario.contract);
   if (!contractResult.success)
     failures.push(`Intent Contract schema: ${contractResult.error.message}`);
 
   const nodes = new Map(scenario.map.nodes.map((node) => [node.id, node]));
+  failures.push(...assertStrengthSemantics({ scenario, nodes }));
   let humanQuestions = 0;
   let invalidQuestions = 0;
   let discoverableQuestions = 0;
-  let eliminatedBranches = 0;
   const asked = new Set<string>();
   for (const entry of scenario.cards) {
     const parsed = ClarifyQuestionCardSchema.safeParse(entry.card);
@@ -88,7 +258,6 @@ function evaluateScenario(scenario: ClarifyGoldenScenario): ClarifyEvalScenarioR
     });
     invalidQuestions += frontier.issues.length;
     failures.push(...frontier.issues.map((issue) => issue.message));
-    eliminatedBranches += entry.eliminatedBranches;
     for (const question of entry.card.questions) {
       humanQuestions += 1;
       asked.add(question.nodeId);
@@ -105,6 +274,8 @@ function evaluateScenario(scenario: ClarifyGoldenScenario): ClarifyEvalScenarioR
       }
     }
   }
+  const transitions = validateTransitions({ scenario, nodes });
+  failures.push(...transitions.failures);
 
   const highImpactOmissions = scenario.map.nodes.filter(
     (node) =>
@@ -137,7 +308,8 @@ function evaluateScenario(scenario: ClarifyGoldenScenario): ClarifyEvalScenarioR
     invalidQuestions,
     discoverableFactQuestionRate: humanQuestions === 0 ? 0 : discoverableQuestions / humanQuestions,
     branchesEliminatedPerHumanAnswer:
-      humanQuestions === 0 ? 0 : eliminatedBranches / humanQuestions,
+      humanQuestions === 0 ? 0 : transitions.eliminatedBranches / humanQuestions,
+    propagatedMaterialBranches: transitions.propagatedMaterialBranches,
     contractRegret,
   };
   return { id: scenario.id, passed: failures.length === 0, failures, metrics };
@@ -234,6 +406,7 @@ export function runClarifyEval(): ClarifyEvalReport {
         invalidQuestions: 0,
         discoverableFactQuestionRate: 0,
         branchesEliminatedPerHumanAnswer: 0,
+        propagatedMaterialBranches: 0,
         contractRegret: 0,
       },
     });
@@ -254,6 +427,10 @@ export function runClarifyEval(): ClarifyEvalReport {
       ),
       branchesEliminatedPerHumanAnswer: mean(
         results.map((result) => result.metrics.branchesEliminatedPerHumanAnswer),
+      ),
+      propagatedMaterialBranches: results.reduce(
+        (sum, result) => sum + result.metrics.propagatedMaterialBranches,
+        0,
       ),
       contractRegret: results.reduce((sum, result) => sum + result.metrics.contractRegret, 0),
     },

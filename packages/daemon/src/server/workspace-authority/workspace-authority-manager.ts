@@ -3,15 +3,15 @@ import type { PersistedWorkspaceRecord } from "../workspace-registry.js";
 import { WorkspaceCatalogStore } from "./catalog-store.js";
 import {
   WorkspaceAuthorityStore,
-  type ClarifyAuthorityUpdate,
   type WorkspaceAuthorityUpdate,
 } from "./workspace-authority-store.js";
+import type { DecisionTreeDelta } from "@thoth/protocol/clarify-authority";
 import type { ForegroundAuthorityUpdateReason } from "./foreground-authority-types.js";
 import type { AgentThothState } from "@thoth/protocol/thoth/rpc-schemas";
 import type { TaskContextEnvelope } from "@thoth/protocol/task-authority";
 
 type WorkspaceAuthorityManagerSubscriber = (update: WorkspaceAuthorityUpdate) => void;
-type WorkspaceClarifySubscriber = (update: ClarifyAuthorityUpdate) => void;
+type WorkspaceDecisionTreeSubscriber = (update: DecisionTreeDelta) => void;
 type WorkspaceForegroundSubscriber = (
   state: AgentThothState,
   reason: ForegroundAuthorityUpdateReason,
@@ -24,10 +24,10 @@ export class WorkspaceAuthorityManager {
   private readonly stores = new Map<string, WorkspaceAuthorityStore>();
   private readonly storeUnsubscribers = new Map<string, () => void>();
   private readonly foregroundStoreUnsubscribers = new Map<string, () => void>();
-  private readonly clarifyStoreUnsubscribers = new Map<string, () => void>();
+  private readonly decisionTreeStoreUnsubscribers = new Map<string, () => void>();
   private readonly subscribers = new Set<WorkspaceAuthorityManagerSubscriber>();
   private readonly foregroundSubscribers = new Set<WorkspaceForegroundSubscriber>();
-  private readonly clarifySubscribers = new Set<WorkspaceClarifySubscriber>();
+  private readonly decisionTreeSubscribers = new Set<WorkspaceDecisionTreeSubscriber>();
 
   constructor(thothHome: string) {
     this.thothHome = thothHome;
@@ -78,10 +78,10 @@ export class WorkspaceAuthorityManager {
         }
       }),
     );
-    this.clarifyStoreUnsubscribers.set(
+    this.decisionTreeStoreUnsubscribers.set(
       workspaceId,
-      store.subscribeClarify((update) => {
-        for (const subscriber of this.clarifySubscribers) subscriber(update);
+      store.subscribeDecisionTree((update) => {
+        for (const subscriber of this.decisionTreeSubscribers) subscriber(update);
       }),
     );
     this.stores.set(workspaceId, store);
@@ -98,9 +98,9 @@ export class WorkspaceAuthorityManager {
     return () => this.foregroundSubscribers.delete(subscriber);
   }
 
-  subscribeClarify(subscriber: WorkspaceClarifySubscriber): () => void {
-    this.clarifySubscribers.add(subscriber);
-    return () => this.clarifySubscribers.delete(subscriber);
+  subscribeDecisionTree(subscriber: WorkspaceDecisionTreeSubscriber): () => void {
+    this.decisionTreeSubscribers.add(subscriber);
+    return () => this.decisionTreeSubscribers.delete(subscriber);
   }
 
   forAgent(agentId: string): WorkspaceAuthorityStore | null {
@@ -157,15 +157,15 @@ export class WorkspaceAuthorityManager {
       unsubscribe();
     }
     this.foregroundStoreUnsubscribers.clear();
-    for (const unsubscribe of this.clarifyStoreUnsubscribers.values()) unsubscribe();
-    this.clarifyStoreUnsubscribers.clear();
+    for (const unsubscribe of this.decisionTreeStoreUnsubscribers.values()) unsubscribe();
+    this.decisionTreeStoreUnsubscribers.clear();
     for (const store of this.stores.values()) {
       store.close();
     }
     this.stores.clear();
     this.subscribers.clear();
     this.foregroundSubscribers.clear();
-    this.clarifySubscribers.clear();
+    this.decisionTreeSubscribers.clear();
     this.catalog.close();
   }
 }

@@ -313,7 +313,7 @@ export function runtimeToolResultText(input: {
       "User requested revisions.",
       `Visible answer summary: ${input.submittedSummary}`,
       `Answer: ${answerSummary}`,
-      "Return to the same Decision Map, incorporate the note, and propose a revised Intent Contract.",
+      "Return to the same Decision Tree, incorporate the note, and propose a revised Intent Contract.",
     ].join("\n");
   }
   if (input.answer.intent === "stop") {
@@ -337,7 +337,7 @@ export function runtimeToolResultText(input: {
     `Visible answer summary: ${input.submittedSummary}`,
     `Answer: ${answerSummary}`,
     "Continue according to the loaded Thoth Clarify Skill.",
-    "Propagate the decision through the Decision Map, investigate discoverable branches, and ask only the next material Human-owned frontier.",
+    "Propagate the decision through the Decision Tree, investigate discoverable branches, and ask only the next material Human-owned frontier.",
     "When no material Human-owned frontier remains, propose the single Intent Contract.",
   ].join("\n");
 }
@@ -950,9 +950,9 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       throw new Error("Clarify tools require Agent-scoped Workspace authority");
     }
     const turn = foregroundAuthorityStore.getActiveTurn(callerAgentId);
-    const session = foregroundAuthorityStore.getClarifySession(callerAgentId);
-    if (!turn || !session || session.turnId !== turn.id) {
-      throw new Error("No active Clarify session owns this runtime tool call");
+    const session = foregroundAuthorityStore.getDecisionTree(callerAgentId);
+    if (!turn || !session || session.session.activeTurnId !== turn.id) {
+      throw new Error("No active Decision Session owns this runtime tool call");
     }
     return { turn, session };
   };
@@ -961,9 +961,9 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
     registerTool(
       "thoth_clarify_update_map",
       {
-        title: "Update Clarify Decision Map",
+        title: "Update Clarify Decision Tree",
         description:
-          "Persist the visible decision DAG after investigation, automatic resolution, pruning, or propagation. Store conclusions and evidence references, never hidden reasoning.",
+          "Persist the visible Decision Tree after investigation, automatic resolution, pruning, or propagation. Each node has one semantic parent; use cross-links only for additional influence. Store conclusions and evidence references, never hidden reasoning.",
         inputSchema: ThothClarifyUpdateMapInputSchema,
         outputSchema: z
           .object({ ok: z.literal(true), sessionId: z.string(), revision: z.number() })
@@ -971,28 +971,35 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       },
       async (input: ThothClarifyUpdateMapInput, context) => {
         const { session } = requireClarifySession();
-        const updated = foregroundAuthorityStore!.updateClarifyDecisionMap({
+        const updated = foregroundAuthorityStore!.updateDecisionTree({
           agentId: callerAgentId!,
-          sessionId: session.id,
+          sessionId: session.session.id,
           update: input,
         });
         const call = resolveRuntimeToolCallContext(context);
         await appendRuntimeAuthorityToolCall({
           callId: call.callId,
           safeName: "clarify_map",
-          label: "Decision Map",
+          label: "Decision Tree",
           text: input.publicSummary,
           status: "completed",
-          metadata: { sessionId: session.id, changedNodeIds: input.nodes.map((node) => node.id) },
+          metadata: {
+            sessionId: session.session.id,
+            changedNodeIds: input.nodes.map((node) => node.id),
+          },
         });
         return {
           content: [
             {
               type: "text",
-              text: "Decision Map accepted. Continue investigating or ask the next material Human-owned branch.",
+              text: "Decision Tree update accepted. Continue investigating or ask the next material Human-owned branch.",
             },
           ],
-          structuredContent: { ok: true, sessionId: updated.id, revision: updated.revision },
+          structuredContent: {
+            ok: true,
+            sessionId: updated.session.id,
+            revision: updated.revision,
+          },
         };
       },
     );
@@ -1002,7 +1009,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       {
         title: "Ask Clarify decisions",
         description:
-          "Open one durable Card containing one to four related Human-owned branches already present in the Decision Map.",
+          "Open one durable Card containing one to four related Human-owned branches already present in the Decision Tree.",
         inputSchema: ThothClarifyAskInputSchema,
         outputSchema: z
           .object({
@@ -1015,8 +1022,8 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       },
       async (input: ThothClarifyAskInput, context) => {
         const { turn, session } = requireClarifySession();
-        if (!session.effectiveStrength) {
-          throw new Error("Decision Map must establish effectiveStrength before asking the user");
+        if (!session.session.effectiveStrength) {
+          throw new Error("Decision Tree must establish effectiveStrength before asking the user");
         }
         const questionNodeIds = input.questions.map((question) => question.nodeId);
         const frontier = validateClarifyQuestionFrontier({
@@ -1032,7 +1039,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
             .filter((record) => record.kind === "clarify_card").length + 1;
         const card: ThothClarifyCardModel = {
           id: `clarify-card-${randomUUID()}`,
-          sessionId: session.id,
+          sessionId: session.session.id,
           roundIndex,
           card: input,
           submitted: false,
@@ -1043,7 +1050,11 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           label: input.title,
           pendingText: input.publicSummary,
           publicBadgeSummary: input.publicSummary,
-          metadata: { sessionId: session.id, nodeIds: questionNodeIds, roundIndex },
+          metadata: {
+            sessionId: session.session.id,
+            nodeIds: questionNodeIds,
+            roundIndex,
+          },
           card: { kind: "clarify_card", card },
           appendOpenCard: async () => {
             await executionService.appendTimelineItem(callerAgentId!, {
@@ -1070,10 +1081,10 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
         const { turn, session } = requireClarifySession();
         const updated = foregroundAuthorityStore!.proposeIntentContract({
           agentId: callerAgentId!,
-          sessionId: session.id,
+          sessionId: session.session.id,
           proposal: input,
         });
-        if (!updated.intentContract) {
+        if (!updated.session.intentContract) {
           throw new Error("Intent Contract proposal was not persisted");
         }
         const call = resolveRuntimeToolCallContext(context);
@@ -1083,7 +1094,10 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           label: "Intent Contract",
           text: input.publicSummary,
           status: "completed",
-          metadata: { sessionId: session.id, contractId: updated.intentContract.id },
+          metadata: {
+            sessionId: session.session.id,
+            contractId: updated.session.intentContract.id,
+          },
         });
         foregroundAuthorityStore!.markLifecycle({
           agentId: callerAgentId!,
@@ -1113,7 +1127,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
           structuredContent: {
             ok: true,
             status: "challenging",
-            contractId: updated.intentContract.id,
+            contractId: updated.session.intentContract.id,
           },
         };
       },
@@ -1124,7 +1138,7 @@ export function createThothToolCatalog(options: ThothToolHostDependencies): Thot
       {
         title: "Report Clarify blocker",
         description:
-          "Report a real external or Human-owned blocker without fabricating a Decision Map resolution.",
+          "Report a real external or Human-owned blocker without fabricating a Decision Tree resolution.",
         inputSchema: ThothClarifyReportBlockedInputSchema,
         outputSchema: z.object({ ok: z.literal(true), status: z.literal("blocked") }).strict(),
       },

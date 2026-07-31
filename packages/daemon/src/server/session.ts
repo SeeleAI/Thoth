@@ -624,7 +624,7 @@ export class Session {
   private readonly pushTokenStore: PushTokenStore;
   private unsubscribeAgentEvents: (() => void) | null = null;
   private unsubscribeForegroundAuthority: (() => void) | null = null;
-  private unsubscribeClarifyAuthority: (() => void) | null = null;
+  private unsubscribeDecisionTreeAuthority: (() => void) | null = null;
   private unsubscribeWorkspaceAuthority: (() => void) | null = null;
   private unsubscribeTerminalWorkspaceContributionEvents: (() => void) | null = null;
   private readonly agentUpdates: AgentUpdatesService;
@@ -903,9 +903,11 @@ export class Session {
         payload: { state, reason },
       });
     });
-    this.unsubscribeClarifyAuthority = workspaceAuthorityManager.subscribeClarify((update) => {
-      this.emit({ type: "agent.clarify.session.update", payload: update });
-    });
+    this.unsubscribeDecisionTreeAuthority = workspaceAuthorityManager.subscribeDecisionTree(
+      (update) => {
+        this.emit({ type: "agent.decision_tree.delta", payload: update });
+      },
+    );
     this.workspaceAuthorityManager = workspaceAuthorityManager;
     this.workspaceTaskCoordinator = workspaceTaskCoordinator;
     this.unsubscribeWorkspaceAuthority = this.workspaceAuthorityManager.subscribe((update) => {
@@ -1547,8 +1549,9 @@ export class Session {
       scheduleRunOnce: (msg) => this.chatScheduleSession.handleScheduleRunOnceRequest(msg),
       scheduleUpdate: (msg) => this.chatScheduleSession.handleScheduleUpdateRequest(msg),
       getAgentThothState: (msg) => this.handleAgentThothStateRequest(msg),
-      getAgentClarifySession: (msg) => this.handleAgentClarifySessionGetRequest(msg),
-      prioritizeAgentClarifyNode: (msg) => this.handleAgentClarifyNodePrioritizeRequest(msg),
+      listAgentDecisionSessions: (msg) => this.handleAgentDecisionSessionListRequest(msg),
+      getAgentDecisionSession: (msg) => this.handleAgentDecisionSessionGetRequest(msg),
+      prioritizeAgentDecisionNode: (msg) => this.handleAgentDecisionTreeNodePrioritizeRequest(msg),
       answerAgentThothCard: (msg) => this.handleAgentThothCardAnswerRequest(msg),
       listTasks: (msg) => this.handleTaskListRequest(msg),
       getTask: (msg) => this.handleTaskGetRequest(msg),
@@ -3096,36 +3099,65 @@ export class Session {
     }
   }
 
-  private async handleAgentClarifySessionGetRequest(
-    msg: Extract<SessionInboundMessage, { type: "agent.clarify.session.get.request" }>,
+  private async handleAgentDecisionSessionListRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.decision_session.list.request" }>,
   ): Promise<void> {
     try {
       const resolved = await this.resolveAgentIdentifier(msg.agentId);
       if (!resolved.ok) throw new Error(resolved.error);
-      const session = await this.foregroundTurnCoordinator.getClarifySession(resolved.agentId);
+      const sessions = await this.foregroundTurnCoordinator.listDecisionSessions(resolved.agentId);
+      const activeSessionId =
+        sessions.find((session) => !["frozen", "canceled"].includes(session.lifecycle))?.id ?? null;
       this.emit({
-        type: "agent.clarify.session.get.response",
-        payload: { requestId: msg.requestId, session, error: null },
+        type: "agent.decision_session.list.response",
+        payload: { requestId: msg.requestId, sessions, activeSessionId, error: null },
       });
     } catch (error) {
       this.emit({
-        type: "agent.clarify.session.get.response",
+        type: "agent.decision_session.list.response",
         payload: {
           requestId: msg.requestId,
-          session: null,
+          sessions: [],
+          activeSessionId: null,
           error: error instanceof Error ? error.message : String(error),
         },
       });
     }
   }
 
-  private async handleAgentClarifyNodePrioritizeRequest(
-    msg: Extract<SessionInboundMessage, { type: "agent.clarify.node.prioritize.request" }>,
+  private async handleAgentDecisionSessionGetRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.decision_session.get.request" }>,
   ): Promise<void> {
     try {
       const resolved = await this.resolveAgentIdentifier(msg.agentId);
       if (!resolved.ok) throw new Error(resolved.error);
-      const result = this.foregroundTurnCoordinator.prioritizeClarifyNode({
+      const snapshot = await this.foregroundTurnCoordinator.getDecisionTree(
+        resolved.agentId,
+        msg.sessionId,
+      );
+      this.emit({
+        type: "agent.decision_session.get.response",
+        payload: { requestId: msg.requestId, snapshot, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "agent.decision_session.get.response",
+        payload: {
+          requestId: msg.requestId,
+          snapshot: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentDecisionTreeNodePrioritizeRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.decision_tree.node.prioritize.request" }>,
+  ): Promise<void> {
+    try {
+      const resolved = await this.resolveAgentIdentifier(msg.agentId);
+      if (!resolved.ok) throw new Error(resolved.error);
+      const result = this.foregroundTurnCoordinator.prioritizeDecisionNode({
         agentId: resolved.agentId,
         sessionId: msg.sessionId,
         nodeId: msg.nodeId,
@@ -3133,22 +3165,21 @@ export class Session {
         commandId: msg.commandId,
       });
       this.emit({
-        type: "agent.clarify.node.prioritize.response",
+        type: "agent.decision_tree.node.prioritize.response",
         payload: {
           requestId: msg.requestId,
-          session: result.session,
+          delta: result.delta,
           conflict: false,
           duplicate: result.duplicate,
           error: null,
         },
       });
     } catch (error) {
-      const session = await this.foregroundTurnCoordinator.getClarifySession(msg.agentId);
       this.emit({
-        type: "agent.clarify.node.prioritize.response",
+        type: "agent.decision_tree.node.prioritize.response",
         payload: {
           requestId: msg.requestId,
-          session,
+          delta: null,
           conflict: error instanceof WorkspaceAuthorityConflictError,
           duplicate: false,
           error: error instanceof Error ? error.message : String(error),
@@ -3174,6 +3205,8 @@ export class Session {
           accepted: false,
           conflict: false,
           state: await this.foregroundTurnCoordinator.getState(msg.agentId),
+          card: null,
+          decisionTreeDelta: null,
           error: error instanceof Error ? error.message : String(error),
         },
       });
@@ -6494,9 +6527,9 @@ export class Session {
       this.unsubscribeForegroundAuthority();
       this.unsubscribeForegroundAuthority = null;
     }
-    if (this.unsubscribeClarifyAuthority) {
-      this.unsubscribeClarifyAuthority();
-      this.unsubscribeClarifyAuthority = null;
+    if (this.unsubscribeDecisionTreeAuthority) {
+      this.unsubscribeDecisionTreeAuthority();
+      this.unsubscribeDecisionTreeAuthority = null;
     }
     if (this.unsubscribeWorkspaceAuthority) {
       this.unsubscribeWorkspaceAuthority();

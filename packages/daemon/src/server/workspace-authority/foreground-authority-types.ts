@@ -6,6 +6,7 @@ import type {
   ThothIntentContractCardModel,
   ThothTurnControlSnapshot,
 } from "@thoth/protocol/thoth/rpc-schemas";
+import type { DecisionTreeDelta } from "@thoth/protocol/clarify-authority";
 import type { ProviderRunMode, ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
 import type { ProviderPlanCompleted } from "@thoth/protocol/agent-types";
 import type { ProviderTurnInteractionState } from "@thoth/core";
@@ -18,7 +19,7 @@ import type { RuntimeAttachmentReceipt } from "@thoth/drivers/harness";
 
 export type ForegroundAuthorityUpdateReason =
   | "turn_started"
-  | "decision_map_changed"
+  | "decision_tree_changed"
   | "card_opened"
   | "card_answered"
   | "contract_proposed"
@@ -124,6 +125,7 @@ export interface AnswerForegroundCardResult {
   state: AgentThothState;
   card: ForegroundCardAuthorityRecord | null;
   turn: ForegroundTurnAuthorityRecord | null;
+  decisionTreeDelta: DecisionTreeDelta | null;
 }
 
 export interface ForegroundQueuedSubmission {

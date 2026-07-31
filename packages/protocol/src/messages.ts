@@ -7,11 +7,13 @@ import { AgentProviderSchema } from "@thoth/protocol/provider-manifest";
 import { ForgeIdSchema, ForgeRepositorySchema, ForgeResolveErrorCodeSchema } from "./forge.js";
 import { normalizeAgentModelDefinition, TOOL_CALL_ICON_NAMES } from "./agent-types.js";
 import {
-  AgentClarifyNodePrioritizeRequestSchema,
-  AgentClarifyNodePrioritizeResponseSchema,
-  AgentClarifySessionGetRequestSchema,
-  AgentClarifySessionGetResponseSchema,
-  AgentClarifySessionUpdateSchema,
+  AgentDecisionSessionGetRequestSchema,
+  AgentDecisionSessionGetResponseSchema,
+  AgentDecisionSessionListRequestSchema,
+  AgentDecisionSessionListResponseSchema,
+  AgentDecisionTreeDeltaMessageSchema,
+  AgentDecisionTreeNodePrioritizeRequestSchema,
+  AgentDecisionTreeNodePrioritizeResponseSchema,
 } from "./clarify-authority.js";
 import {
   AgentProviderControlSchema,
@@ -138,14 +140,14 @@ export const ThothTurnSnapshotSchema = z.union([
     .object({
       enabled: z.literal(true),
       executionMode: z.literal("quick"),
-      clarifyStrength: z.enum(["light", "balanced", "dive"]),
+      clarifyStrength: z.enum(["auto", "light", "balanced", "dive"]),
     })
     .strict(),
   z
     .object({
       enabled: z.literal(true),
       executionMode: z.literal("loop"),
-      clarifyStrength: z.enum(["light", "balanced", "dive"]),
+      clarifyStrength: z.enum(["auto", "light", "balanced", "dive"]),
       loopStrength: ThothRuntimeLoopStrengthSchema,
     })
     .strict(),
@@ -5176,13 +5178,17 @@ export const rpcRegistry = defineRpcRegistry({
     scheduleRunOnce: unary(ScheduleRunOnceRequestSchema, ScheduleRunOnceResponseSchema),
     scheduleUpdate: unary(ScheduleUpdateRequestSchema, ScheduleUpdateResponseSchema),
     getAgentThothState: unary(AgentThothStateRequestSchema, AgentThothStateResponseSchema),
-    getAgentClarifySession: unary(
-      AgentClarifySessionGetRequestSchema,
-      AgentClarifySessionGetResponseSchema,
+    listAgentDecisionSessions: unary(
+      AgentDecisionSessionListRequestSchema,
+      AgentDecisionSessionListResponseSchema,
     ),
-    prioritizeAgentClarifyNode: unary(
-      AgentClarifyNodePrioritizeRequestSchema,
-      AgentClarifyNodePrioritizeResponseSchema,
+    getAgentDecisionSession: unary(
+      AgentDecisionSessionGetRequestSchema,
+      AgentDecisionSessionGetResponseSchema,
+    ),
+    prioritizeAgentDecisionNode: unary(
+      AgentDecisionTreeNodePrioritizeRequestSchema,
+      AgentDecisionTreeNodePrioritizeResponseSchema,
     ),
     answerAgentThothCard: unary(
       AgentThothCardAnswerRequestSchema,
@@ -5221,7 +5227,7 @@ export const rpcRegistry = defineRpcRegistry({
     terminalStreamExit: serverEvent(TerminalStreamExitSchema),
     terminalAttentionRequired: serverEvent(TerminalAttentionRequiredSchema),
     agentThothStateUpdate: serverEvent(AgentThothStateUpdateSchema),
-    agentClarifySessionUpdate: serverEvent(AgentClarifySessionUpdateSchema),
+    agentDecisionTreeDelta: serverEvent(AgentDecisionTreeDeltaMessageSchema),
     workspaceAuthorityUpdate: serverEvent(WorkspaceAuthorityUpdateSchema),
     daemonUpdateProgress: serverEvent(DaemonUpdateProgressMessageSchema),
   },

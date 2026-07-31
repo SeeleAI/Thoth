@@ -2043,3 +2043,23 @@ Observed on `2026-07-31` in preflight job `91070684262` of exact-SHA workflow `3
 
 Conclusion: concurrency order is evidence only when the contract owns an ordering key. Otherwise normalize by a
 stable domain identity before exact content comparison, without changing production scheduling semantics.
+
+## `NTH-EXP-084` Packaged Server CLI acceptance must prefer a verified cache before proxy refresh
+
+Observed on `2026-07-31` during schema-v7 Decision Session Tree hosted Relay verification:
+
+1. The first two packaged Server CLI journeys failed before daemon or Relay startup. npm 11 fetched the local tgz,
+   displayed `added 286 packages`, then reported `Exit handler never called`. Its logs show the required proxy
+   resetting concurrent npm-registry manifest requests with repeated `ECONNRESET`; cache-stale revalidation lasted
+   about 70 seconds before npm's exit handler failed.
+2. The exact same packaged tgz installs in a fresh temporary prefix with `--prefer-offline`. This does not replace
+   online installation: a cache miss still resolves through the registry. It avoids unnecessary remote revalidation
+   of a verified cache while the product acceptance remains the same packaged CLI and hosted Relay journey.
+3. `PackagedServerCliHarness.install` now uses `--prefer-offline`, one fetch retry and a bounded fetch timeout,
+   matching the package staging path. `mvp-release-contract` statically requires the harness guard. The complete
+   hosted Relay v3 E2EE journey then passes `ok=true`, including Card recovery, Loop controls and five encrypted
+   file chunks.
+
+Conclusion: a local acceptance network guard may stabilize package acquisition only when it preserves the exact
+artifact, the normal online cache-miss path and all downstream product assertions. It must be explicit and
+contract-checked, never silently substituted for the hosted Relay journey.

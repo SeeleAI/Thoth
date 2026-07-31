@@ -47,7 +47,16 @@
 
 ## Doing
 
-1. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
+1. `NTH-TD-053` `[doing]`: Replace the turn-bound Clarify Decision Map with durable Decision Sessions, deterministic incremental Decision Trees and one authority-driven Card lifecycle, then publish the verified schema-v7 product through the fixed desktop Beta transaction.
+   - Goal: One visible Agent conversation may own multiple sequential Decision Sessions; each session spans multiple Clarify turns, owns one stable tree and freezes exactly one Task decision record.
+   - Architecture: Protocol owns snapshot/delta/activity contracts; Workspace authority owns schema-v7 Decision Sessions, tree edges, Card/Task binding and migration; RuntimeBundle grows and converges the tree; App owns only the virtualized tidy-tree scene and view preferences.
+   - Acceptance: `NTH-AC-030`, including Thoth-off isolation, atomic Card receipt, accurate active spinner, no premature terminal footer, 500-node incremental rendering, multi-session history, v6-to-v7 migration, owner suites, fast/full/packaged/Relay/native release gates and public downloaded-asset verification.
+   - Current result: implementation, three cognition judges, `accept:thoth:fast` (`175.209s`), complete owner suites,
+     real Codex, local AppImage and hosted Relay have passed. Pending only the authorized exact-SHA workflow,
+     in-place fixed-Beta replacement and fresh public download journey.
+   - Constraints: No flattened-list compatibility path, full-map polling, provider-name business branch, prompt fallback, second Card projection, force/rebase/main mutation, Relay deployment, npm/mobile/store/Nix/Docker publication or independent Paseo operation.
+   - Related: `NTH-REQ-033`, `NTH-AC-030`, `NTH-CD-103`, `NTH-EV-076`, `NTH-TD-036`
+2. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
    - Acceptance: no public semantic or UX change; no VCS/Provider/RPC/authority/performance work; App suite remains at least `331 files / 2,582 tests`; after the approved capability translations through `NTH-CD-100` through `NTH-CD-102`, Stage 5 source is at most `304,618` production LOC with tokens/AST/imports below Stage 4 and dependencies no higher; the shared `300s` gate passes.
    - Current result: after the approved cognition replacement, production is `320,124` LOC, `1,361,597` tokens,
      `1,408,770` AST nodes, `5,247` imports and `165` runtime dependency edges. `DeltaP52=3,173` translates the prior
@@ -55,7 +64,7 @@
      refactor regression or progress. The remaining independent gap is exactly `15,506` LOC; Stage stays 4 and
      `NTH-TD-036` remains open.
    - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-057`
-2. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
+3. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
    - Goal: Keep restored Paseo surface and Codex dynamicTools path, but make Clarify behave like a pending authority decision lifecycle with intelligent timeline badges and model-submitted frontier ledger.
    - Scope: `thoth_submit_clarify_card` carries `public_badge_summary` and `frontier_ledger`; `thoth_submit_task_card` carries convergence review; `balanced` has a 5-10 card soft range and `dive` has a 10-20 card soft range; cards must not show completed/idle footer before user submission; `decision_it_changes` is legacy optional input only. Under `NTH-CD-052`, raw Provider conversation is an explicit Thoth-off state rather than an ambiguous `Quick + Direct` sub-selection; only Thoth-on exposes structured Clarify and Loop controls. Under `NTH-CD-053`, that off/on choice is strictly per turn: one Workspace Secretary topic reuses one foreground provider session, and a daemon authority fence blocks remembered runtime tools during raw turns instead of using historical `bare` / `structured` sessions.
    - Verification: Reopened under `NTH-EV-029`; unit/build/foundation gates and most real Codex web paths now pass after the frontier-ledger repair, including local/public Balanced sort, local Dive sort, local Balanced PathTracing and local Loop `registered_pending`. Under `NTH-CD-057` / `NTH-EV-038`, ordinary Agent sends now reuse the visible provider session for Thoth Clarify/Quick, remote workspace identity overrides client cwd, and packaged Clarify/Loop skills were confirmed in the public Linux `app.asar`. Do not return this TODO to verified until installed/Relay real-provider behavior is exercised from the replacement build.

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AgentQueuedTurnSchema } from "../agent-turn-queue.js";
+import { DecisionTreeDeltaSchema } from "../clarify-authority.js";
 import { IntentContractProjectionSchema } from "../intent-contract.js";
 import { ProviderRunModeReceiptSchema, ProviderRunModeSchema } from "../provider-control.js";
 import {
@@ -178,14 +179,41 @@ export const AgentThothPendingCardSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("clarify_card"),
       card: ThothClarifyCardModelSchema,
+      status: z.literal("pending").default("pending"),
       createdAt: NonEmptyStringSchema,
+      updatedAt: NonEmptyStringSchema.optional(),
     })
     .strict(),
   z
     .object({
       kind: z.literal("intent_contract_card"),
       card: ThothIntentContractCardModelSchema,
+      status: z.literal("pending").default("pending"),
       createdAt: NonEmptyStringSchema,
+      updatedAt: NonEmptyStringSchema.optional(),
+    })
+    .strict(),
+]);
+
+export const AgentThothCardProjectionSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("clarify_card"),
+      card: ThothClarifyCardModelSchema,
+      status: z.enum(["pending", "answered", "canceled", "blocked"]),
+      submittedSummary: NonEmptyStringSchema.nullable(),
+      createdAt: NonEmptyStringSchema,
+      updatedAt: NonEmptyStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("intent_contract_card"),
+      card: ThothIntentContractCardModelSchema,
+      status: z.enum(["pending", "answered", "canceled", "blocked"]),
+      submittedSummary: NonEmptyStringSchema.nullable(),
+      createdAt: NonEmptyStringSchema,
+      updatedAt: NonEmptyStringSchema,
     })
     .strict(),
 ]);
@@ -245,6 +273,8 @@ export const AgentThothCardAnswerResponseSchema = z
         accepted: z.boolean(),
         conflict: z.boolean(),
         state: AgentThothStateSchema,
+        card: AgentThothCardProjectionSchema.nullable(),
+        decisionTreeDelta: DecisionTreeDeltaSchema.nullable(),
         error: z.string().nullable(),
       })
       .strict(),
@@ -260,7 +290,7 @@ export const AgentThothStateUpdateSchema = z
         reason: z
           .enum([
             "turn_started",
-            "decision_map_changed",
+            "decision_tree_changed",
             "card_opened",
             "card_answered",
             "contract_proposed",
@@ -291,6 +321,7 @@ export type ThothCardAnswerPayload = z.infer<typeof ThothCardAnswerPayloadSchema
 export type AgentThothLifecycle = z.infer<typeof AgentThothLifecycleSchema>;
 export type AgentThothTurn = z.infer<typeof AgentThothTurnSchema>;
 export type AgentThothPendingCard = z.infer<typeof AgentThothPendingCardSchema>;
+export type AgentThothCardProjection = z.infer<typeof AgentThothCardProjectionSchema>;
 export type AgentThothState = z.infer<typeof AgentThothStateSchema>;
 export type AgentThothStateRequest = z.infer<typeof AgentThothStateRequestSchema>;
 export type AgentThothCardAnswerRequest = z.infer<typeof AgentThothCardAnswerRequestSchema>;

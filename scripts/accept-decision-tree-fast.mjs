@@ -3,93 +3,84 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const prebuilt = process.argv.includes("--prebuilt") || process.env.THOTH_ACCEPT_PREBUILT === "1";
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const prebuilt = process.argv.includes("--prebuilt") || process.env.THOTH_ACCEPT_PREBUILT === "1";
 const deadlineMs = 300_000;
 const startedAt = Date.now();
+
 const phases = [
   ...(prebuilt ? [] : [{ name: "protocol build", command: npm, args: ["run", "build:protocol"] }]),
   {
-    name: "Clarify and Loop protocol",
+    name: "Decision Tree protocol",
     command: npm,
     args: [
       "run",
       "test",
       "--workspace=@thoth/protocol",
       "--",
+      "src/messages.thoth-turn-snapshot.test.ts",
       "src/thoth-runtime-contract.test.ts",
       "src/thoth/rpc-schemas.test.ts",
       "src/rpc-registry.test.ts",
     ],
   },
   {
-    name: "cognition golden evals",
+    name: "Decision Tree client SDK",
     command: npm,
-    args: [
-      "run",
-      "test",
-      "--workspace=@thoth/drivers",
-      "--",
-      "src/clarify/eval.test.ts",
-      "src/loop/eval.test.ts",
-    ],
+    args: ["run", "test", "--workspace=@thoth/client", "--", "src/daemon-client.test.ts"],
   },
   {
-    name: "Workspace authority and semantic tools",
+    name: "authority, migration, and ToolGateway",
     command: npm,
     args: [
       "run",
       "test:unit",
       "--workspace=@thoth/daemon",
       "--",
+      "src/server/agent/runtime-tool-decisions.test.ts",
+      "src/server/agent/tools/thoth-tools.test.ts",
       "src/server/storage-layout-migration.test.ts",
       "src/server/workspace-authority/workspace-authority-store.test.ts",
-      "src/server/workspace-authority/task-coordinator.test.ts",
-      "src/server/workspace-authority/task-context-broker.test.ts",
-      "src/server/agent/tools/thoth-tools.test.ts",
     ],
   },
   {
-    name: "public Clarify and Loop journey",
+    name: "provider adapter public journey",
     command: npm,
     args: ["run", "test:e2e:foreground-thoth", "--workspace=@thoth/daemon"],
   },
   {
-    name: "Decision Tree and Task UI",
+    name: "Decision Tree app presentation",
     command: npm,
     args: [
       "run",
       "test",
       "--workspace=@thoth/app",
       "--",
-      "src/components/clarify-decision-card.test.tsx",
-      "src/components/intent-contract-card.test.tsx",
+      "src/composer/agent-controls/runtime-controls.test.tsx",
+      "src/composer/agent-controls/thoth-mode.test.ts",
       "src/components/decision-tree-layout.test.ts",
       "src/components/decision-tree-sidebar.test.tsx",
       "src/components/decision-card-timeline-receipt.test.tsx",
       "src/agent-thoth/foreground-state.test.ts",
-      "src/composer/agent-controls/runtime-controls.test.tsx",
-      "src/composer/agent-controls/thoth-mode.test.ts",
-      "src/panels/background-tasks-panel.test.tsx",
     ],
   },
   {
-    name: "cognition architecture contract",
+    name: "Decision Tree architecture contract",
     command: process.execPath,
     args: ["scripts/check-thoth-cognition-architecture.mjs"],
   },
 ];
 
-for (let index = 0; index < phases.length; index += 1) {
-  const phase = phases[index];
+for (const [index, phase] of phases.entries()) {
   const remainingMs = deadlineMs - (Date.now() - startedAt);
   if (remainingMs <= 0) throw new Error(`300s deadline expired before ${phase.name}`);
   const phaseStartedAt = Date.now();
-  console.log(`\n[cognition-fast ${index + 1}/${phases.length}] ${phase.name}`);
+  console.log(`\n[decision-tree-fast ${index + 1}/${phases.length}] ${phase.name}`);
   await run(phase, remainingMs);
-  console.log(`[cognition-fast] ${phase.name} passed in ${seconds(phaseStartedAt)}s`);
+  console.log(`[decision-tree-fast] ${phase.name} passed in ${seconds(phaseStartedAt)}s`);
 }
-console.log(`\n[cognition-fast] passed in ${seconds(startedAt)}s`);
+
+console.log(`\n[decision-tree-fast] passed in ${seconds(startedAt)}s`);
 
 function run(phase, remainingMs) {
   return new Promise((resolvePromise, rejectPromise) => {

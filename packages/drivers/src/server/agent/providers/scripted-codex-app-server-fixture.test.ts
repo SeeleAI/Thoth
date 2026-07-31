@@ -163,7 +163,27 @@ describe("scripted Codex app-server fixture", () => {
         threadId: originalThreadId,
         input: [
           { type: "skill", name: "thoth.clarify", path: "/fixture/SKILL.md" },
-          { type: "text", text: "Follow the installed thoth.clarify skill." },
+          {
+            type: "text",
+            text: [
+              "Follow the installed thoth.clarify skill.",
+              "Decision Tree:",
+              JSON.stringify([
+                {
+                  id: "decision-root-resume",
+                  parentId: null,
+                  crossLinkIds: [],
+                  title: "Resume fixture objective",
+                  summary: "The restored Clarify turn must use this stable root.",
+                  owner: "human",
+                  materiality: "structural",
+                  status: "open",
+                  resolutionRef: null,
+                  sourceRefs: [],
+                },
+              ]),
+            ].join("\n"),
+          },
         ],
       })) as { turn: { id: string } };
       const mapCall = await second.take(

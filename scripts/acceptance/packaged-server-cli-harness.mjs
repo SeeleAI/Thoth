@@ -144,7 +144,18 @@ export class PackagedServerCliHarness {
     chmodSync(fakeCodexPath, 0o755);
     run(
       "npm",
-      ["install", "--global", "--prefix", this.prefix, "--no-audit", "--no-fund", this.tgzPath],
+      [
+        "install",
+        "--global",
+        "--prefix",
+        this.prefix,
+        "--no-audit",
+        "--no-fund",
+        "--prefer-offline",
+        "--fetch-retries=1",
+        "--fetch-timeout=30000",
+        this.tgzPath,
+      ],
       { cwd: this.runRoot, env: this.env, timeoutMs: 240_000 },
     );
     invariant(existsSync(this.cliPath), `Installed CLI entrypoint not found: ${this.cliPath}`);

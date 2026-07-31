@@ -3,11 +3,12 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-036`
+2. Top next action: `NTH-TD-053`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. `NTH-EV-075` verifies and publishes the `NTH-CD-100` through `NTH-CD-102` cognition
-   replacement; presentation-only refactor work resumes without weakening its independent target.
-5. Current branch: `agent/dev/mvp`. Published source `c32ab051370ae1675b05ee53713ca60ac32f24ad` is the exact target of
+4. Active blockers: none. `NTH-TD-053` has completed the approved `NTH-CD-103` Decision Session/tree replacement
+   and all local/packaged/hosted verification; exact-SHA CI and public-release verification remain pending.
+5. Current branch: `agent/dev/mvp` at `9eb9aebae5a5ea02da381580473f039cc71d34b3`. Published source
+   `c32ab051370ae1675b05ee53713ca60ac32f24ad` is the exact target of
    `release/mvp-actions`, direct tag `v0.0.0-mvp-beta`, and public prerelease `362857331`; the Release contains
    exactly 26 desktop-only assets. The development branch carries only this evidence closeout above the published
    source. Remote `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
@@ -21,8 +22,11 @@
    typed Provider questions, completed-native-Plan authority and Daemon-owned same-thread Implement. `NTH-EV-075`
    verifies the complete cognition/schema-v6 implementation through exact-SHA CI, 26 public desktop assets and a
    freshly downloaded AppImage real-window journey. Production is
-   `320,124` LOC with translated Cut B/final ceilings `304,618` / `282,218`. `NTH-TD-036` stays doing at Stage
-   4 and retains its independent `15,506`-LOC gap. `NTH-EV-074` verifies the corrective packaged PID-lock and
+   `320,124` LOC with translated Cut B/final ceilings `304,618` / `282,218`. `NTH-CD-103` now supersedes the
+   turn-bound Map presentation with one conversation-to-many Decision Sessions and one tree-to-one Task; this
+   replacement has passed local owner, packaged and hosted Relay gates under `NTH-TD-053`, but is not published.
+   `NTH-TD-036` stays doing at Stage 4 and retains
+   its independent `15,506`-LOC gap. `NTH-EV-074` verifies the corrective packaged PID-lock and
    external native-thread catalog paths through exact-SHA CI, the 26-asset fixed Beta and a freshly downloaded
    AppImage real-window journey. Terminal publication state is `published`.
 
@@ -41,14 +45,16 @@
 
 ## Top Next Action
 
-`NTH-TD-036` `[doing]`: Resume the feature- and UX-preserving Stage 4 presentation convergence with translated
-Cut B/final ceilings `304,618` / `282,218` and the unchanged independent `15,506` production-LOC gap.
+`NTH-TD-053` `[doing]`: Complete the authorized fixed-Beta publication and public downloaded-artifact verification
+for the locally verified schema-v7 Decision Sessions, deterministic incremental Decision Trees, atomic Card
+receipts, accurate Clarify activity and virtualized tree mind-map product path.
 
 ## Active Blockers
 
-None. Failed workflows `c03d60cd`, `eacb2b6d`, `a62ff6e1` and `16216432` remain preserved as evidence. Corrective
-source `c32ab051` is the verified public fixed Beta. `NTH-TD-036` remains open by design at Stage 4 with a preserved
-`15,506`-LOC Cut B gap.
+None. Failed workflows `c03d60cd`, `eacb2b6d`, `a62ff6e1` and `16216432` remain preserved as evidence. The two
+local npm registry-reset failures during `NTH-TD-053` are retained under `NTH-EXP-084`; the corrected packaged
+Relay journey passes. Corrective source `c32ab051` is the verified public fixed Beta. `NTH-TD-053` is the sole top
+action; `NTH-TD-036` remains open by design at Stage 4 with a preserved `15,506`-LOC Cut B gap.
 
 ## Recent Important Changes
 
@@ -176,6 +182,10 @@ source `c32ab051` is the verified public fixed Beta. `NTH-TD-036` remains open b
      `362857331` exposes exactly 26 desktop-only assets; public checksums/build identity agree on the source, and
      the freshly downloaded AppImage passed the complete Decision Map/Intent Contract/Quick/Loop product journey.
      `NTH-TD-052` is verified; `NTH-TD-036` is again the sole top action with its `15,506`-LOC gap unchanged.
+103. `NTH-CD-103`: One visible Agent conversation may own multiple sequential Decision Sessions; each Decision
+     Session owns one stable deterministic tree, one Intent Contract and at most one Task. Schema-v7 authority,
+     ordered deltas, atomic Card receipts, active cognition projection and a virtualized tree mind map replace the
+     turn-bound full-map/list path without compatibility runtime.
 
 ## Read Next
 

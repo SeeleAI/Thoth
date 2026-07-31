@@ -4,9 +4,9 @@ import { ThothRuntimeClarifyStrengthSchema } from "./thoth-controls.js";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
 
-export const ClarifyDecisionOwnerSchema = z.enum(["human", "agent", "evidence"]);
-export const ClarifyDecisionMaterialitySchema = z.enum(["structural", "material", "local"]);
-export const ClarifyDecisionNodeStatusSchema = z.enum([
+export const DecisionNodeOwnerSchema = z.enum(["human", "agent", "evidence"]);
+export const DecisionNodeMaterialitySchema = z.enum(["structural", "material", "local"]);
+export const DecisionNodeStatusSchema = z.enum([
   "open",
   "awaiting_human",
   "resolved",
@@ -14,14 +14,37 @@ export const ClarifyDecisionNodeStatusSchema = z.enum([
   "pruned",
 ]);
 
-export const ClarifyDecisionNodeProjectionSchema = z
+export const DecisionTreeActivityStateSchema = z.enum([
+  "understanding",
+  "investigating",
+  "expanding",
+  "challenging",
+  "awaiting_human",
+  "ready_to_confirm",
+  "frozen",
+  "blocked",
+]);
+
+export const DecisionTreeActivitySchema = z
+  .object({
+    state: DecisionTreeActivityStateSchema,
+    activeNodeId: NonEmptyStringSchema.nullable(),
+    summary: NonEmptyStringSchema.nullable(),
+    startedAt: NonEmptyStringSchema,
+    updatedAt: NonEmptyStringSchema,
+  })
+  .strict();
+
+export const DecisionNodeProjectionSchema = z
   .object({
     id: NonEmptyStringSchema,
-    parentIds: z.array(NonEmptyStringSchema),
+    parentId: NonEmptyStringSchema.nullable(),
+    crossLinkIds: z.array(NonEmptyStringSchema),
     title: NonEmptyStringSchema,
-    owner: ClarifyDecisionOwnerSchema,
-    materiality: ClarifyDecisionMaterialitySchema,
-    status: ClarifyDecisionNodeStatusSchema,
+    summary: NonEmptyStringSchema.nullable(),
+    owner: DecisionNodeOwnerSchema,
+    materiality: DecisionNodeMaterialitySchema,
+    status: DecisionNodeStatusSchema,
     resolutionRef: NonEmptyStringSchema.nullable(),
     sourceRefs: z.array(NonEmptyStringSchema),
     priority: z.number().int().nonnegative(),
@@ -29,60 +52,147 @@ export const ClarifyDecisionNodeProjectionSchema = z
   })
   .strict();
 
-export const ClarifySessionLifecycleSchema = z.enum([
-  "grounding",
-  "mapping",
+export const DecisionSessionLifecycleSchema = z.enum([
+  "active",
   "awaiting_human",
-  "challenging",
-  "proposing",
-  "confirmed",
+  "ready_to_confirm",
+  "frozen",
   "blocked",
   "canceled",
 ]);
 
-export const ClarifySessionProjectionSchema = z
+export const DecisionCardReceiptProjectionSchema = z
   .object({
-    id: NonEmptyStringSchema,
-    workspaceId: NonEmptyStringSchema,
-    agentId: NonEmptyStringSchema,
-    turnId: NonEmptyStringSchema,
-    requestedStrength: ThothRuntimeClarifyStrengthSchema.exclude(["deep"]),
-    effectiveStrength: z.enum(["light", "balanced", "dive"]).nullable(),
-    lifecycle: ClarifySessionLifecycleSchema,
-    challengerUsed: z.boolean(),
-    priorityNodeId: NonEmptyStringSchema.nullable(),
-    intentContract: IntentContractProjectionSchema.nullable(),
-    nodes: z.array(ClarifyDecisionNodeProjectionSchema),
-    revision: z.number().int().positive(),
+    cardId: NonEmptyStringSchema,
+    sessionId: NonEmptyStringSchema,
+    kind: z.enum(["clarify_card", "intent_contract_card"]),
+    status: z.enum(["pending", "answered", "canceled", "blocked"]),
+    submittedSummary: NonEmptyStringSchema.nullable(),
     createdAt: NonEmptyStringSchema,
     updatedAt: NonEmptyStringSchema,
   })
   .strict();
 
-export const AgentClarifySessionGetRequestSchema = z
+export const DecisionSessionProjectionSchema = z
   .object({
-    type: z.literal("agent.clarify.session.get.request"),
+    id: NonEmptyStringSchema,
+    workspaceId: NonEmptyStringSchema,
+    agentId: NonEmptyStringSchema,
+    originTurnId: NonEmptyStringSchema,
+    activeTurnId: NonEmptyStringSchema.nullable(),
+    requestedStrength: ThothRuntimeClarifyStrengthSchema.exclude(["deep"]),
+    effectiveStrength: z.enum(["light", "balanced", "dive"]).nullable(),
+    lifecycle: DecisionSessionLifecycleSchema,
+    challengerUsed: z.boolean(),
+    rootNodeId: NonEmptyStringSchema,
+    priorityNodeId: NonEmptyStringSchema.nullable(),
+    activeCardId: NonEmptyStringSchema.nullable(),
+    intentContract: IntentContractProjectionSchema.nullable(),
+    taskId: NonEmptyStringSchema.nullable(),
+    activity: DecisionTreeActivitySchema,
+    revision: z.number().int().positive(),
+    createdAt: NonEmptyStringSchema,
+    updatedAt: NonEmptyStringSchema,
+    frozenAt: NonEmptyStringSchema.nullable(),
+  })
+  .strict();
+
+export const DecisionTreeSnapshotSchema = z
+  .object({
+    session: DecisionSessionProjectionSchema,
+    nodes: z.array(DecisionNodeProjectionSchema),
+    cardReceipts: z.array(DecisionCardReceiptProjectionSchema),
+    revision: z.number().int().positive(),
+  })
+  .strict()
+  .superRefine((snapshot, ctx) => {
+    if (snapshot.revision !== snapshot.session.revision) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Decision Tree snapshot revision must match its session revision",
+        path: ["revision"],
+      });
+    }
+  });
+
+export const DecisionTreeDeltaSchema = z
+  .object({
+    workspaceId: NonEmptyStringSchema,
+    agentId: NonEmptyStringSchema,
+    sessionId: NonEmptyStringSchema,
+    baseRevision: z.number().int().nonnegative(),
+    revision: z.number().int().positive(),
+    session: DecisionSessionProjectionSchema,
+    nodeUpserts: z.array(DecisionNodeProjectionSchema),
+    removedNodeIds: z.array(NonEmptyStringSchema),
+    cardReceipts: z.array(DecisionCardReceiptProjectionSchema),
+    emittedAt: NonEmptyStringSchema,
+  })
+  .strict()
+  .superRefine((delta, ctx) => {
+    if (delta.revision <= delta.baseRevision) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Decision Tree delta revision must advance its base revision",
+        path: ["revision"],
+      });
+    }
+    if (delta.session.id !== delta.sessionId || delta.session.revision !== delta.revision) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Decision Tree delta session identity or revision does not match",
+        path: ["session"],
+      });
+    }
+  });
+
+export const AgentDecisionSessionListRequestSchema = z
+  .object({
+    type: z.literal("agent.decision_session.list.request"),
     requestId: NonEmptyStringSchema,
     agentId: NonEmptyStringSchema,
   })
   .strict();
 
-export const AgentClarifySessionGetResponseSchema = z
+export const AgentDecisionSessionListResponseSchema = z
   .object({
-    type: z.literal("agent.clarify.session.get.response"),
+    type: z.literal("agent.decision_session.list.response"),
     payload: z
       .object({
         requestId: NonEmptyStringSchema,
-        session: ClarifySessionProjectionSchema.nullable(),
+        sessions: z.array(DecisionSessionProjectionSchema),
+        activeSessionId: NonEmptyStringSchema.nullable(),
         error: z.string().nullable(),
       })
       .strict(),
   })
   .strict();
 
-export const AgentClarifyNodePrioritizeRequestSchema = z
+export const AgentDecisionSessionGetRequestSchema = z
   .object({
-    type: z.literal("agent.clarify.node.prioritize.request"),
+    type: z.literal("agent.decision_session.get.request"),
+    requestId: NonEmptyStringSchema,
+    agentId: NonEmptyStringSchema,
+    sessionId: NonEmptyStringSchema.optional(),
+  })
+  .strict();
+
+export const AgentDecisionSessionGetResponseSchema = z
+  .object({
+    type: z.literal("agent.decision_session.get.response"),
+    payload: z
+      .object({
+        requestId: NonEmptyStringSchema,
+        snapshot: DecisionTreeSnapshotSchema.nullable(),
+        error: z.string().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const AgentDecisionTreeNodePrioritizeRequestSchema = z
+  .object({
+    type: z.literal("agent.decision_tree.node.prioritize.request"),
     requestId: NonEmptyStringSchema,
     agentId: NonEmptyStringSchema,
     sessionId: NonEmptyStringSchema,
@@ -92,13 +202,13 @@ export const AgentClarifyNodePrioritizeRequestSchema = z
   })
   .strict();
 
-export const AgentClarifyNodePrioritizeResponseSchema = z
+export const AgentDecisionTreeNodePrioritizeResponseSchema = z
   .object({
-    type: z.literal("agent.clarify.node.prioritize.response"),
+    type: z.literal("agent.decision_tree.node.prioritize.response"),
     payload: z
       .object({
         requestId: NonEmptyStringSchema,
-        session: ClarifySessionProjectionSchema.nullable(),
+        delta: DecisionTreeDeltaSchema.nullable(),
         conflict: z.boolean(),
         duplicate: z.boolean(),
         error: z.string().nullable(),
@@ -107,24 +217,21 @@ export const AgentClarifyNodePrioritizeResponseSchema = z
   })
   .strict();
 
-export const AgentClarifySessionUpdateSchema = z
+export const AgentDecisionTreeDeltaMessageSchema = z
   .object({
-    type: z.literal("agent.clarify.session.update"),
-    payload: z
-      .object({
-        workspaceId: NonEmptyStringSchema,
-        agentId: NonEmptyStringSchema,
-        sessionId: NonEmptyStringSchema,
-        revision: z.number().int().positive(),
-        changedNodeIds: z.array(NonEmptyStringSchema),
-      })
-      .strict(),
+    type: z.literal("agent.decision_tree.delta"),
+    payload: DecisionTreeDeltaSchema,
   })
   .strict();
 
-export type ClarifyDecisionOwner = z.infer<typeof ClarifyDecisionOwnerSchema>;
-export type ClarifyDecisionMateriality = z.infer<typeof ClarifyDecisionMaterialitySchema>;
-export type ClarifyDecisionNodeStatus = z.infer<typeof ClarifyDecisionNodeStatusSchema>;
-export type ClarifyDecisionNodeProjection = z.infer<typeof ClarifyDecisionNodeProjectionSchema>;
-export type ClarifySessionLifecycle = z.infer<typeof ClarifySessionLifecycleSchema>;
-export type ClarifySessionProjection = z.infer<typeof ClarifySessionProjectionSchema>;
+export type DecisionNodeOwner = z.infer<typeof DecisionNodeOwnerSchema>;
+export type DecisionNodeMateriality = z.infer<typeof DecisionNodeMaterialitySchema>;
+export type DecisionNodeStatus = z.infer<typeof DecisionNodeStatusSchema>;
+export type DecisionTreeActivityState = z.infer<typeof DecisionTreeActivityStateSchema>;
+export type DecisionTreeActivity = z.infer<typeof DecisionTreeActivitySchema>;
+export type DecisionNodeProjection = z.infer<typeof DecisionNodeProjectionSchema>;
+export type DecisionSessionLifecycle = z.infer<typeof DecisionSessionLifecycleSchema>;
+export type DecisionCardReceiptProjection = z.infer<typeof DecisionCardReceiptProjectionSchema>;
+export type DecisionSessionProjection = z.infer<typeof DecisionSessionProjectionSchema>;
+export type DecisionTreeSnapshot = z.infer<typeof DecisionTreeSnapshotSchema>;
+export type DecisionTreeDelta = z.infer<typeof DecisionTreeDeltaSchema>;

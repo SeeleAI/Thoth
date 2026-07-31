@@ -34,10 +34,17 @@ import {
   type IntentContractProjection,
 } from "@thoth/protocol/intent-contract";
 import {
-  ClarifyDecisionNodeProjectionSchema,
-  ClarifySessionProjectionSchema,
-  type ClarifyDecisionNodeProjection,
-  type ClarifySessionProjection,
+  DecisionCardReceiptProjectionSchema,
+  DecisionNodeProjectionSchema,
+  DecisionSessionProjectionSchema,
+  DecisionTreeDeltaSchema,
+  DecisionTreeSnapshotSchema,
+  type DecisionCardReceiptProjection,
+  type DecisionNodeProjection,
+  type DecisionSessionProjection,
+  type DecisionTreeActivityState,
+  type DecisionTreeDelta,
+  type DecisionTreeSnapshot,
 } from "@thoth/protocol/clarify-authority";
 import type { HarnessApprovalRequest, RuntimeAttachmentReceipt } from "@thoth/drivers/harness";
 import {
@@ -121,14 +128,6 @@ export interface WorkspaceAuthorityUpdate {
   seq: number;
   changedTaskIds: string[];
   changedExecutionIds: string[];
-}
-
-export interface ClarifyAuthorityUpdate {
-  workspaceId: string;
-  agentId: string;
-  sessionId: string;
-  revision: number;
-  changedNodeIds: string[];
 }
 
 interface TaskRow extends Record<string, unknown> {
@@ -262,7 +261,7 @@ export interface ProviderThreadRecord {
 }
 
 type WorkspaceAuthoritySubscriber = (update: WorkspaceAuthorityUpdate) => void;
-type ClarifyAuthoritySubscriber = (update: ClarifyAuthorityUpdate) => void;
+type DecisionTreeSubscriber = (update: DecisionTreeDelta) => void;
 type ForegroundAuthoritySubscriber = (
   state: AgentThothState,
   reason: ForegroundAuthorityUpdateReason,
@@ -279,38 +278,52 @@ function parseStringArray(value: string): string[] {
     : [];
 }
 
-function assertDecisionDag(
-  nodes: Array<Pick<ClarifyDecisionNodeProjection, "id" | "parentIds">>,
+function assertDecisionTree(
+  nodes: Array<Pick<DecisionNodeProjection, "id" | "parentId" | "crossLinkIds">>,
+  rootNodeId: string,
 ): void {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const visiting = new Set<string>();
   const visited = new Set<string>();
   const visit = (nodeId: string): void => {
-    if (visiting.has(nodeId)) throw new Error(`Decision Map contains a cycle through ${nodeId}`);
+    if (visiting.has(nodeId)) throw new Error(`Decision Tree contains a cycle through ${nodeId}`);
     if (visited.has(nodeId)) return;
     const node = byId.get(nodeId);
-    if (!node) throw new Error(`Decision Map is missing node ${nodeId}`);
+    if (!node) throw new Error(`Decision Tree is missing node ${nodeId}`);
     visiting.add(nodeId);
-    for (const parentId of node.parentIds) visit(parentId);
+    if (node.parentId) visit(node.parentId);
+    for (const crossLinkId of node.crossLinkIds) {
+      if (!byId.has(crossLinkId)) {
+        throw new Error(`Decision node ${node.id} references unknown cross-link ${crossLinkId}`);
+      }
+      if (crossLinkId === node.id) {
+        throw new Error(`Decision node ${node.id} cannot cross-link to itself`);
+      }
+    }
     visiting.delete(nodeId);
     visited.add(nodeId);
   };
+  const roots = nodes.filter((node) => node.parentId === null);
+  if (roots.length !== 1 || roots[0]?.id !== rootNodeId) {
+    throw new Error("Decision Tree must have exactly one stable root");
+  }
   for (const node of nodes) visit(node.id);
 }
 
 function isDecisionDescendant(
   nodeId: string,
   ancestorId: string,
-  nodes: Map<string, ClarifyDecisionNodeProjection>,
+  nodes: Map<string, DecisionNodeProjection>,
   visited = new Set<string>(),
 ): boolean {
   if (visited.has(nodeId)) return false;
   visited.add(nodeId);
   const node = nodes.get(nodeId);
   if (!node) return false;
-  return node.parentIds.some(
-    (parentId) =>
-      parentId === ancestorId || isDecisionDescendant(parentId, ancestorId, nodes, visited),
+  return Boolean(
+    node.parentId &&
+    (node.parentId === ancestorId ||
+      isDecisionDescendant(node.parentId, ancestorId, nodes, visited)),
   );
 }
 
@@ -338,7 +351,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
   private readonly catalog: WorkspaceCatalogStore;
   private readonly sql: WorkspaceSql;
   private readonly subscribers = new Set<WorkspaceAuthoritySubscriber>();
-  private readonly clarifySubscribers = new Set<ClarifyAuthoritySubscriber>();
+  private readonly decisionTreeSubscribers = new Set<DecisionTreeSubscriber>();
   private readonly foregroundSubscribers = new Set<ForegroundAuthoritySubscriber>();
 
   constructor(input: { thothHome: string; workspaceId: string; catalog: WorkspaceCatalogStore }) {
@@ -378,9 +391,9 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     return () => this.subscribers.delete(subscriber);
   }
 
-  subscribeClarify(subscriber: ClarifyAuthoritySubscriber): () => void {
-    this.clarifySubscribers.add(subscriber);
-    return () => this.clarifySubscribers.delete(subscriber);
+  subscribeDecisionTree(subscriber: DecisionTreeSubscriber): () => void {
+    this.decisionTreeSubscribers.add(subscriber);
+    return () => this.decisionTreeSubscribers.delete(subscriber);
   }
 
   subscribeForeground(subscriber: ForegroundAuthoritySubscriber): () => void {
@@ -1114,14 +1127,16 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     generation: string;
     card: ForegroundAuthorityCard;
     runtime: ForegroundAuthorityRuntimeBinding;
-    clarify?: { sessionId: string; awaitingNodeIds: string[] };
+    decisionSession?: { sessionId: string; awaitingNodeIds: string[] };
   }): { record: ForegroundCardAuthorityRecord; state: AgentThothState; created: boolean } {
     let output!: {
       record: ForegroundCardAuthorityRecord;
       state: AgentThothState;
       created: boolean;
     };
-    let changedClarifyNodeIds: string[] = [];
+    let decisionTreeBaseRevision = 0;
+    let decisionSessionId: string | null = null;
+    let changedDecisionNodeIds: string[] = [];
     this.transaction(() => {
       const cardId = input.card.card.id;
       const existing = this.getForegroundCardInTransaction(cardId);
@@ -1146,35 +1161,42 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       }
       const now = nowIso();
       if (input.card.kind === "clarify_card") {
-        if (!input.clarify || input.clarify.sessionId !== input.card.card.sessionId) {
-          throw new WorkspaceAuthorityConflictError(
-            "Clarify Card must be atomically bound to its Decision Map session.",
-          );
-        }
-        const session = this.getClarifySession(input.clarify.sessionId);
         if (
-          !session ||
-          session.agentId !== input.agentId ||
-          session.turnId !== input.turnId ||
-          !session.effectiveStrength ||
-          ["confirmed", "canceled", "blocked"].includes(session.lifecycle)
+          !input.decisionSession ||
+          input.decisionSession.sessionId !== input.card.card.sessionId
         ) {
           throw new WorkspaceAuthorityConflictError(
-            "Clarify Card no longer belongs to an active Decision Map.",
+            "Clarify Card must be atomically bound to its Decision Session.",
           );
         }
+        const snapshot = this.getDecisionTreeSnapshot(input.decisionSession.sessionId);
+        if (
+          !snapshot ||
+          snapshot.session.agentId !== input.agentId ||
+          snapshot.session.activeTurnId !== input.turnId ||
+          !snapshot.session.effectiveStrength ||
+          ["frozen", "canceled", "blocked"].includes(snapshot.session.lifecycle)
+        ) {
+          throw new WorkspaceAuthorityConflictError(
+            "Clarify Card no longer belongs to an active Decision Session.",
+          );
+        }
+        decisionTreeBaseRevision = snapshot.revision;
+        decisionSessionId = snapshot.session.id;
         const questionNodeIds = input.card.card.card.questions.map((question) => question.nodeId);
         if (
-          questionNodeIds.length !== input.clarify.awaitingNodeIds.length ||
-          questionNodeIds.some((nodeId, index) => nodeId !== input.clarify!.awaitingNodeIds[index])
+          questionNodeIds.length !== input.decisionSession.awaitingNodeIds.length ||
+          questionNodeIds.some(
+            (nodeId, index) => nodeId !== input.decisionSession!.awaitingNodeIds[index],
+          )
         ) {
           throw new WorkspaceAuthorityConflictError(
-            "Clarify Card questions do not match the atomically opened Decision Map frontier.",
+            "Clarify Card questions do not match the atomically opened Decision Tree frontier.",
           );
         }
-        const nodes = new Map(session.nodes.map((node) => [node.id, node]));
+        const nodes = new Map(snapshot.nodes.map((node) => [node.id, node]));
         const updateNode = this.database.prepare(
-          `UPDATE clarify_decision_nodes SET status = 'awaiting_human', revision = revision + 1,
+          `UPDATE decision_tree_nodes SET status = 'awaiting_human', revision = revision + 1,
              updated_at = ? WHERE session_id = ? AND node_id = ?`,
         );
         for (const nodeId of questionNodeIds) {
@@ -1188,18 +1210,52 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
               `Clarify Card node ${nodeId} is not an open Human-owned frontier.`,
             );
           }
-          updateNode.run(now, session.id, nodeId);
+          updateNode.run(now, snapshot.session.id, nodeId);
         }
         this.database
           .prepare(
-            `UPDATE clarify_sessions SET lifecycle = 'awaiting_human', revision = revision + 1,
+            `UPDATE decision_sessions SET lifecycle = 'awaiting_human', active_card_id = ?,
+               revision = revision + 1, updated_at = ? WHERE session_id = ?`,
+          )
+          .run(cardId, now, snapshot.session.id);
+        this.updateDecisionTreeActivityInTransaction(
+          snapshot.session.id,
+          "awaiting_human",
+          questionNodeIds[0] ?? null,
+          input.card.card.card.publicSummary,
+          now,
+        );
+        changedDecisionNodeIds = questionNodeIds;
+      } else if (input.decisionSession) {
+        throw new WorkspaceAuthorityConflictError(
+          "Only a Clarify Card can mutate a Decision Tree while opening.",
+        );
+      } else {
+        const snapshot = this.getDecisionTreeSnapshot(input.card.card.sessionId);
+        if (
+          !snapshot ||
+          snapshot.session.agentId !== input.agentId ||
+          snapshot.session.activeTurnId !== input.turnId ||
+          snapshot.session.lifecycle !== "ready_to_confirm"
+        ) {
+          throw new WorkspaceAuthorityConflictError(
+            "Intent Contract Card no longer belongs to a ready Decision Session.",
+          );
+        }
+        decisionTreeBaseRevision = snapshot.revision;
+        decisionSessionId = snapshot.session.id;
+        this.database
+          .prepare(
+            `UPDATE decision_sessions SET active_card_id = ?, revision = revision + 1,
                updated_at = ? WHERE session_id = ?`,
           )
-          .run(now, session.id);
-        changedClarifyNodeIds = questionNodeIds;
-      } else if (input.clarify) {
-        throw new WorkspaceAuthorityConflictError(
-          "Only a Clarify Card can mutate a Decision Map while opening.",
+          .run(cardId, now, snapshot.session.id);
+        this.updateDecisionTreeActivityInTransaction(
+          snapshot.session.id,
+          "ready_to_confirm",
+          null,
+          "Ready to confirm the task",
+          now,
         );
       }
       const displayed = this.blobs.putJson(input.card.card);
@@ -1207,11 +1263,20 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       this.database
         .prepare(
           `INSERT INTO cards(
-             card_id, turn_id, task_id, kind, status, displayed_digest,
+             card_id, turn_id, decision_session_id, task_id, kind, status, displayed_digest,
              answer_digest, submitted_summary, runtime_digest, created_at, updated_at
-           ) VALUES (?, ?, NULL, ?, 'pending', ?, NULL, NULL, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, NULL, ?, 'pending', ?, NULL, NULL, ?, ?, ?)`,
         )
-        .run(cardId, input.turnId, input.card.kind, displayed.digest, runtime.digest, now, now);
+        .run(
+          cardId,
+          input.turnId,
+          decisionSessionId,
+          input.card.kind,
+          displayed.digest,
+          runtime.digest,
+          now,
+          now,
+        );
       this.updateForegroundLifecycleInTransaction({
         agentId: input.agentId,
         turnId: input.turnId,
@@ -1233,9 +1298,15 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
         updatedAt: output.record.updatedAt,
       });
       this.emit([], []);
-      if (input.clarify) {
-        const session = this.getClarifySession(input.clarify.sessionId);
-        if (session) this.emitClarify(session, changedClarifyNodeIds);
+      if (decisionSessionId) {
+        this.emitDecisionTree(
+          this.buildDecisionTreeDelta(
+            decisionSessionId,
+            decisionTreeBaseRevision,
+            changedDecisionNodeIds,
+            [output.record.id],
+          ),
+        );
       }
       this.emitForeground(output.state, "card_opened");
     }
@@ -1257,8 +1328,8 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
   }): AnswerForegroundCardResult {
     const answer = ThothCardAnswerPayloadSchema.parse(input.answer);
     let emitReason = false;
-    const clarifyUpdate: {
-      current: { sessionId: string; changedNodeIds: string[] } | null;
+    const decisionTreeUpdate: {
+      current: { sessionId: string; baseRevision: number; changedNodeIds: string[] } | null;
     } = { current: null };
     const result = this.transaction(() => {
       const duplicate = this.database
@@ -1311,6 +1382,16 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       }
 
       const now = nowIso();
+      const cardSessionId =
+        card.kind === "clarify_card"
+          ? ThothClarifyCardModelSchema.parse(card.card).sessionId
+          : ThothIntentContractCardModelSchema.parse(card.card).sessionId;
+      const decisionSnapshot = this.getDecisionTreeSnapshot(cardSessionId);
+      if (!decisionSnapshot) {
+        throw new WorkspaceAuthorityConflictError(
+          "This authority card no longer belongs to a Decision Session.",
+        );
+      }
       const workspaceRevision = (
         this.database
           .prepare("SELECT authority_revision FROM workspace_meta WHERE workspace_id = ?")
@@ -1383,15 +1464,20 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       if (card.kind === "clarify_card" && "questionCardId" in answer) {
         const clarifyCard = ThothClarifyCardModelSchema.parse(card.card);
         if (answer.intent === "stop") {
-          this.cancelClarifySessionInTransaction(clarifyCard.sessionId, now);
+          this.cancelDecisionSessionInTransaction(clarifyCard.sessionId, now);
           if (taskHandoff?.status === "active") {
             this.finishTaskClarifyHandoffInTransaction(taskHandoff.turnId, "canceled", now);
           }
-          clarifyUpdate.current = { sessionId: clarifyCard.sessionId, changedNodeIds: [] };
-        } else {
-          clarifyUpdate.current = {
+          decisionTreeUpdate.current = {
             sessionId: clarifyCard.sessionId,
-            changedNodeIds: this.applyClarifyCardDecisionInTransaction({
+            baseRevision: decisionSnapshot.revision,
+            changedNodeIds: [],
+          };
+        } else {
+          decisionTreeUpdate.current = {
+            sessionId: clarifyCard.sessionId,
+            baseRevision: decisionSnapshot.revision,
+            changedNodeIds: this.applyDecisionCardDecisionInTransaction({
               sessionId: clarifyCard.sessionId,
               answer,
               decisionId: decision.id,
@@ -1406,12 +1492,16 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
         } else if (answer.intent === "annotate") {
           this.reopenIntentContractInTransaction(contractCard.sessionId, now);
         } else if (answer.intent === "cancel") {
-          this.cancelClarifySessionInTransaction(contractCard.sessionId, now);
+          this.cancelDecisionSessionInTransaction(contractCard.sessionId, now);
           if (taskHandoff?.status === "active") {
             this.finishTaskClarifyHandoffInTransaction(taskHandoff.turnId, "canceled", now);
           }
         }
-        clarifyUpdate.current = { sessionId: contractCard.sessionId, changedNodeIds: [] };
+        decisionTreeUpdate.current = {
+          sessionId: contractCard.sessionId,
+          baseRevision: decisionSnapshot.revision,
+          changedNodeIds: [],
+        };
       }
       const response = { accepted: true, conflict: false, error: null };
       this.database
@@ -1433,13 +1523,29 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     });
     if (emitReason) {
       this.emit([], []);
-      if (clarifyUpdate.current) {
-        const session = this.getClarifySession(clarifyUpdate.current.sessionId);
-        if (session) this.emitClarify(session, clarifyUpdate.current.changedNodeIds);
+      if (decisionTreeUpdate.current) {
+        this.emitDecisionTree(
+          this.buildDecisionTreeDelta(
+            decisionTreeUpdate.current.sessionId,
+            decisionTreeUpdate.current.baseRevision,
+            decisionTreeUpdate.current.changedNodeIds,
+            [input.cardId],
+          ),
+        );
       }
       this.emitForeground(result.state, "card_answered");
     }
-    return result;
+    return {
+      ...result,
+      decisionTreeDelta: decisionTreeUpdate.current
+        ? this.buildDecisionTreeDelta(
+            decisionTreeUpdate.current.sessionId,
+            decisionTreeUpdate.current.baseRevision,
+            decisionTreeUpdate.current.changedNodeIds,
+            [input.cardId],
+          )
+        : null,
+    };
   }
 
   markForegroundLifecycle(input: {
@@ -1603,96 +1709,207 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     });
   }
 
-  startClarifySession(input: {
+  startDecisionSession(input: {
     agentId: string;
     turnId: string;
     requestedStrength: "auto" | "light" | "balanced" | "dive";
-  }): ClarifySessionProjection {
+  }): DecisionTreeSnapshot {
     let sessionId = "";
-    let created = false;
+    let baseRevision = 0;
+    let changedNodeIds: string[] = [];
     this.transaction(() => {
-      const existing = this.database
-        .prepare("SELECT session_id FROM clarify_sessions WHERE turn_id = ?")
-        .get(input.turnId) as { session_id: string } | undefined;
-      if (existing) {
-        sessionId = existing.session_id;
-        return;
-      }
       const turn = this.getForegroundTurnInTransaction(input.turnId);
       if (!turn || turn.agentId !== input.agentId || turn.kind !== "thoth") {
         throw new WorkspaceAuthorityConflictError(
-          `Foreground turn ${input.turnId} cannot own a Clarify session`,
+          `Foreground turn ${input.turnId} cannot own a Decision Session`,
         );
       }
+      const alreadyBound = this.database
+        .prepare("SELECT session_id FROM decision_session_turns WHERE turn_id = ?")
+        .get(input.turnId) as { session_id: string } | undefined;
+      if (alreadyBound) {
+        sessionId = alreadyBound.session_id;
+        baseRevision = this.getDecisionTreeSnapshot(sessionId)?.revision ?? 0;
+        return;
+      }
+      const resumable = this.database
+        .prepare(
+          `SELECT session_id, revision FROM decision_sessions
+           WHERE agent_id = ? AND lifecycle NOT IN ('frozen', 'canceled')
+           ORDER BY created_at DESC, session_id DESC LIMIT 1`,
+        )
+        .get(input.agentId) as { session_id: string; revision: number } | undefined;
       const now = nowIso();
-      sessionId = `clarify-session-${randomUUID()}`;
+      if (resumable) {
+        sessionId = resumable.session_id;
+        baseRevision = resumable.revision;
+        const order = Number(
+          (
+            this.database
+              .prepare(
+                `SELECT COALESCE(MAX(turn_order), 0) + 1 AS next_order
+                 FROM decision_session_turns WHERE session_id = ?`,
+              )
+              .get(sessionId) as { next_order: number }
+          ).next_order,
+        );
+        this.database
+          .prepare(
+            `INSERT INTO decision_session_turns(session_id, turn_id, turn_order, created_at)
+             VALUES (?, ?, ?, ?)`,
+          )
+          .run(sessionId, input.turnId, order, now);
+        this.database
+          .prepare(
+            `UPDATE decision_sessions SET active_turn_id = ?, requested_strength = ?,
+               effective_strength = ?, lifecycle = 'active', revision = revision + 1,
+               updated_at = ? WHERE session_id = ?`,
+          )
+          .run(
+            input.turnId,
+            input.requestedStrength,
+            input.requestedStrength === "auto" ? null : input.requestedStrength,
+            now,
+            sessionId,
+          );
+        this.updateDecisionTreeActivityInTransaction(
+          sessionId,
+          "understanding",
+          null,
+          "Understanding the new context",
+          now,
+        );
+        return;
+      }
+
+      sessionId = `decision-session-${randomUUID()}`;
+      const rootNodeId = `decision-root-${randomUUID()}`;
       this.database
         .prepare(
-          `INSERT INTO clarify_sessions(
-             session_id, workspace_id, agent_id, turn_id, requested_strength,
-             effective_strength, lifecycle, challenger_used, priority_node_id,
-             intent_contract_id, revision, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, 'grounding', 0, NULL, NULL, 1, ?, ?)`,
+          `INSERT INTO decision_sessions(
+             session_id, workspace_id, agent_id, origin_turn_id, active_turn_id,
+             requested_strength, effective_strength, lifecycle, challenger_used,
+             root_node_id, priority_node_id, active_card_id, intent_contract_id,
+             revision, frozen_at, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, NULL, NULL, NULL, 1, NULL, ?, ?)`,
         )
         .run(
           sessionId,
           this.workspaceId,
           input.agentId,
           input.turnId,
+          input.turnId,
           input.requestedStrength,
           input.requestedStrength === "auto" ? null : input.requestedStrength,
+          rootNodeId,
           now,
           now,
         );
-      created = true;
+      this.database
+        .prepare(
+          `INSERT INTO decision_session_turns(session_id, turn_id, turn_order, created_at)
+           VALUES (?, ?, 1, ?)`,
+        )
+        .run(sessionId, input.turnId, now);
+      this.database
+        .prepare(
+          `INSERT INTO decision_tree_nodes(
+             node_id, session_id, parent_id, title, summary, owner, materiality, status,
+             resolution_ref, source_refs_json, priority, revision, created_at, updated_at
+           ) VALUES (?, ?, NULL, 'Objective', ?, 'human', 'structural', 'resolved', ?, ?, 1, 1, ?, ?)`,
+        )
+        .run(
+          rootNodeId,
+          sessionId,
+          turn.userText.trim() || null,
+          `turn:${input.turnId}`,
+          JSON.stringify([`turn:${input.turnId}`]),
+          now,
+          now,
+        );
+      this.database
+        .prepare(
+          `INSERT INTO decision_tree_activity(
+             session_id, state, active_node_id, summary, started_at, updated_at
+           ) VALUES (?, 'understanding', ?, 'Understanding the objective', ?, ?)`,
+        )
+        .run(sessionId, rootNodeId, now, now);
+      changedNodeIds = [rootNodeId];
     });
-    const session = this.getClarifySession(sessionId);
-    if (!session) throw new Error(`Clarify session ${sessionId} was not created`);
-    if (created) this.emitClarify(session, []);
-    return session;
+    const snapshot = this.getDecisionTreeSnapshot(sessionId);
+    if (!snapshot) throw new Error(`Decision Session ${sessionId} was not created`);
+    if (snapshot.revision > baseRevision) {
+      this.emitDecisionTree(
+        this.buildDecisionTreeDelta(sessionId, baseRevision, changedNodeIds, []),
+      );
+    }
+    return snapshot;
   }
 
-  getClarifySession(sessionId: string): ClarifySessionProjection | null {
+  getDecisionTreeSnapshot(sessionId: string): DecisionTreeSnapshot | null {
     const row = this.database
-      .prepare("SELECT * FROM clarify_sessions WHERE session_id = ?")
+      .prepare("SELECT * FROM decision_sessions WHERE session_id = ?")
       .get(sessionId) as Record<string, unknown> | undefined;
-    return row ? this.toClarifySession(row) : null;
+    return row ? this.toDecisionTreeSnapshot(row) : null;
   }
 
-  getLatestClarifySessionForAgent(agentId: string): ClarifySessionProjection | null {
+  listDecisionSessionsForAgent(agentId: string): DecisionSessionProjection[] {
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM decision_sessions WHERE agent_id = ?
+         ORDER BY created_at DESC, session_id DESC`,
+      )
+      .all(agentId) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.toDecisionSessionProjection(row));
+  }
+
+  getLatestDecisionTreeForAgent(agentId: string): DecisionTreeSnapshot | null {
     const row = this.database
       .prepare(
-        `SELECT * FROM clarify_sessions WHERE agent_id = ?
+        `SELECT * FROM decision_sessions WHERE agent_id = ?
          ORDER BY created_at DESC, session_id DESC LIMIT 1`,
       )
       .get(agentId) as Record<string, unknown> | undefined;
-    return row ? this.toClarifySession(row) : null;
+    return row ? this.toDecisionTreeSnapshot(row) : null;
   }
 
-  updateClarifyDecisionMap(input: {
+  updateDecisionTree(input: {
     sessionId: string;
     update: ThothClarifyUpdateMapInput;
-  }): ClarifySessionProjection {
-    let changedNodeIds: string[] = [];
+  }): DecisionTreeSnapshot {
+    let baseRevision = 0;
+    const changedNodeIds = input.update.nodes.map((node) => node.id);
     this.transaction(() => {
-      const session = this.getClarifySession(input.sessionId);
-      if (!session || ["confirmed", "canceled"].includes(session.lifecycle)) {
+      const snapshot = this.getDecisionTreeSnapshot(input.sessionId);
+      if (!snapshot || ["frozen", "canceled"].includes(snapshot.session.lifecycle)) {
         throw new WorkspaceAuthorityConflictError(
-          "Clarify session no longer accepts Decision Map updates",
+          "Decision Session no longer accepts Decision Tree updates",
         );
       }
-      const existing = new Map(session.nodes.map((node) => [node.id, node]));
-      const incomingIds = new Set(input.update.nodes.map((node) => node.id));
+      baseRevision = snapshot.revision;
+      const existing = new Map(snapshot.nodes.map((node) => [node.id, node]));
+      const incomingIds = new Set(changedNodeIds);
       if (incomingIds.size !== input.update.nodes.length) {
-        throw new Error("Decision Map update contains duplicate node ids");
+        throw new Error("Decision Tree update contains duplicate node ids");
       }
       for (const node of input.update.nodes) {
-        for (const parentId of node.parentIds) {
-          if (!existing.has(parentId) && !incomingIds.has(parentId)) {
-            throw new Error(`Decision node ${node.id} references unknown parent ${parentId}`);
+        if (node.id === snapshot.session.rootNodeId && node.parentId !== null) {
+          throw new Error("The stable Decision Tree root cannot be reparented");
+        }
+        if (node.id !== snapshot.session.rootNodeId && node.parentId === null) {
+          throw new Error(`Decision node ${node.id} must have one tree parent`);
+        }
+        if (node.parentId && !existing.has(node.parentId) && !incomingIds.has(node.parentId)) {
+          throw new Error(`Decision node ${node.id} references unknown parent ${node.parentId}`);
+        }
+        for (const crossLinkId of node.crossLinkIds) {
+          if (!existing.has(crossLinkId) && !incomingIds.has(crossLinkId)) {
+            throw new Error(
+              `Decision node ${node.id} references unknown cross-link ${crossLinkId}`,
+            );
           }
         }
-        this.assertClarifyNodeResolution(node);
+        this.assertDecisionNodeResolution(node);
         const previous = existing.get(node.id);
         if (
           previous?.owner === "human" &&
@@ -1704,84 +1921,114 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
           );
         }
       }
-      assertDecisionDag([
-        ...session.nodes.filter((node) => !incomingIds.has(node.id)),
-        ...input.update.nodes.map((node) => ({ ...node, priority: 0, revision: 1 })),
-      ]);
-      const maximumPriority = session.nodes.reduce(
+      assertDecisionTree(
+        [
+          ...snapshot.nodes.filter((node) => !incomingIds.has(node.id)),
+          ...input.update.nodes.map((node) => ({ ...node, priority: 0, revision: 1 })),
+        ],
+        snapshot.session.rootNodeId,
+      );
+      const maximumPriority = snapshot.nodes.reduce(
         (maximum, node) => Math.max(maximum, node.priority),
         0,
       );
       const upsert = this.database.prepare(
-        `INSERT INTO clarify_decision_nodes(
-           node_id, session_id, parent_ids_json, title, owner, materiality, status,
+        `INSERT INTO decision_tree_nodes(
+           node_id, session_id, parent_id, title, summary, owner, materiality, status,
            resolution_ref, source_refs_json, priority, revision, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
          ON CONFLICT(session_id, node_id) DO UPDATE SET
-           parent_ids_json = excluded.parent_ids_json,
+           parent_id = excluded.parent_id,
            title = excluded.title,
+           summary = excluded.summary,
            owner = excluded.owner,
            materiality = excluded.materiality,
            status = excluded.status,
            resolution_ref = excluded.resolution_ref,
            source_refs_json = excluded.source_refs_json,
            priority = excluded.priority,
-           revision = clarify_decision_nodes.revision + 1,
+           revision = decision_tree_nodes.revision + 1,
            updated_at = excluded.updated_at`,
+      );
+      const deleteCrossLinks = this.database.prepare(
+        "DELETE FROM decision_tree_cross_links WHERE session_id = ? AND from_node_id = ?",
+      );
+      const insertCrossLink = this.database.prepare(
+        `INSERT INTO decision_tree_cross_links(
+           session_id, from_node_id, to_node_id, relation, created_at
+         ) VALUES (?, ?, ?, 'influences', ?)`,
       );
       const now = nowIso();
       input.update.nodes.forEach((node, index) => {
         const previous = existing.get(node.id);
         upsert.run(
           node.id,
-          session.id,
-          JSON.stringify(node.parentIds),
+          snapshot.session.id,
+          node.parentId,
           node.title,
+          node.summary,
           node.owner,
           node.materiality,
           node.status,
           node.resolutionRef,
           JSON.stringify(node.sourceRefs),
           previous?.priority ?? maximumPriority + input.update.nodes.length - index,
-          previous ? session.createdAt : now,
+          previous ? snapshot.session.createdAt : now,
           now,
         );
+        deleteCrossLinks.run(snapshot.session.id, node.id);
+        for (const crossLinkId of new Set(node.crossLinkIds)) {
+          insertCrossLink.run(snapshot.session.id, node.id, crossLinkId, now);
+        }
       });
       this.database
         .prepare(
-          `UPDATE clarify_sessions SET effective_strength = ?, lifecycle = 'mapping',
+          `UPDATE decision_sessions SET effective_strength = ?, lifecycle = 'active',
              revision = revision + 1, updated_at = ? WHERE session_id = ?`,
         )
-        .run(input.update.effectiveStrength, now, session.id);
-      changedNodeIds = input.update.nodes.map((node) => node.id);
+        .run(input.update.effectiveStrength, now, snapshot.session.id);
+      this.updateDecisionTreeActivityInTransaction(
+        snapshot.session.id,
+        input.update.activity,
+        input.update.activeNodeId,
+        input.update.publicSummary,
+        now,
+      );
     });
-    const session = this.getClarifySession(input.sessionId)!;
-    this.emitClarify(session, changedNodeIds);
-    return session;
+    const snapshot = this.getDecisionTreeSnapshot(input.sessionId)!;
+    this.emitDecisionTree(
+      this.buildDecisionTreeDelta(input.sessionId, baseRevision, changedNodeIds, []),
+    );
+    return snapshot;
   }
 
-  applyClarifyCardDecision(input: {
+  applyDecisionCardDecision(input: {
     sessionId: string;
     answer: Extract<ThothCardAnswerPayload, { questionCardId: string }>;
     decisionId: string;
-  }): ClarifySessionProjection {
-    const changedNodeIds = this.transaction(() =>
-      this.applyClarifyCardDecisionInTransaction({ ...input, now: nowIso() }),
+  }): DecisionTreeSnapshot {
+    let baseRevision = 0;
+    const changedNodeIds = this.transaction(() => {
+      const snapshot = this.getDecisionTreeSnapshot(input.sessionId);
+      baseRevision = snapshot?.revision ?? 0;
+      return this.applyDecisionCardDecisionInTransaction({ ...input, now: nowIso() });
+    });
+    const snapshot = this.getDecisionTreeSnapshot(input.sessionId)!;
+    this.emitDecisionTree(
+      this.buildDecisionTreeDelta(input.sessionId, baseRevision, changedNodeIds, []),
     );
-    const session = this.getClarifySession(input.sessionId)!;
-    this.emitClarify(session, changedNodeIds);
-    return session;
+    return snapshot;
   }
 
-  private applyClarifyCardDecisionInTransaction(input: {
+  private applyDecisionCardDecisionInTransaction(input: {
     sessionId: string;
     answer: Extract<ThothCardAnswerPayload, { questionCardId: string }>;
     decisionId: string;
     now: string;
   }): string[] {
-    const session = this.getClarifySession(input.sessionId);
-    if (!session) throw new Error(`Clarify session ${input.sessionId} does not exist`);
-    const nodes = new Map(session.nodes.map((node) => [node.id, node]));
+    const snapshot = this.getDecisionTreeSnapshot(input.sessionId);
+    if (!snapshot) throw new Error(`Decision Session ${input.sessionId} does not exist`);
+    const nodes = new Map(snapshot.nodes.map((node) => [node.id, node]));
     const direct = new Set(input.answer.answers.map((answer) => answer.nodeId));
     const delegated = new Set(input.answer.delegatedNodeIds);
     for (const nodeId of [...direct, ...delegated]) {
@@ -1792,7 +2039,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     }
     if (input.answer.intent === "delegate_subtree") {
       for (const rootId of delegated) {
-        for (const node of session.nodes) {
+        for (const node of snapshot.nodes) {
           if (node.id === rootId || isDecisionDescendant(node.id, rootId, nodes)) {
             delegated.add(node.id);
           }
@@ -1801,55 +2048,63 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     }
     const changedNodeIds: string[] = [];
     const update = this.database.prepare(
-      `UPDATE clarify_decision_nodes SET status = ?, resolution_ref = ?,
+      `UPDATE decision_tree_nodes SET status = ?, resolution_ref = ?,
          revision = revision + 1, updated_at = ?
        WHERE session_id = ? AND node_id = ?`,
     );
     for (const nodeId of direct) {
       const status =
         input.answer.intent === "recommend" || delegated.has(nodeId) ? "delegated" : "resolved";
-      update.run(status, input.decisionId, input.now, session.id, nodeId);
+      update.run(status, input.decisionId, input.now, snapshot.session.id, nodeId);
       changedNodeIds.push(nodeId);
     }
     for (const nodeId of delegated) {
       if (direct.has(nodeId)) continue;
-      update.run("delegated", input.decisionId, input.now, session.id, nodeId);
+      update.run("delegated", input.decisionId, input.now, snapshot.session.id, nodeId);
       changedNodeIds.push(nodeId);
     }
     this.database
       .prepare(
-        `UPDATE clarify_sessions SET lifecycle = 'mapping', priority_node_id = NULL,
-           revision = revision + 1, updated_at = ? WHERE session_id = ?`,
+        `UPDATE decision_sessions SET lifecycle = 'active', priority_node_id = NULL,
+           active_card_id = NULL, revision = revision + 1, updated_at = ? WHERE session_id = ?`,
       )
-      .run(input.now, session.id);
+      .run(input.now, snapshot.session.id);
+    this.updateDecisionTreeActivityInTransaction(
+      snapshot.session.id,
+      "understanding",
+      null,
+      "Applying your decision",
+      input.now,
+    );
     return changedNodeIds;
   }
 
   proposeIntentContract(input: {
     sessionId: string;
     proposal: ThothClarifyProposeContractInput;
-  }): ClarifySessionProjection {
+  }): DecisionTreeSnapshot {
+    let baseRevision = 0;
     this.transaction(() => {
-      const session = this.getClarifySession(input.sessionId);
-      if (!session) throw new Error(`Clarify session ${input.sessionId} does not exist`);
-      if (session.intentContract) {
+      const snapshot = this.getDecisionTreeSnapshot(input.sessionId);
+      if (!snapshot) throw new Error(`Decision Session ${input.sessionId} does not exist`);
+      baseRevision = snapshot.revision;
+      if (snapshot.session.intentContract) {
         throw new WorkspaceAuthorityConflictError(
-          "This Clarify contract proposal already exists; revise the session instead of duplicating it",
+          "This Intent Contract proposal already exists; revise the Decision Session instead",
         );
       }
-      const openHuman = session.nodes.filter(
+      const unresolved = snapshot.nodes.filter(
         (node) =>
-          node.owner === "human" &&
-          node.materiality !== "local" &&
-          ["open", "awaiting_human"].includes(node.status),
+          ["open", "awaiting_human"].includes(node.status) &&
+          (node.owner !== "human" || node.materiality !== "local"),
       );
-      if (openHuman.length > 0) {
+      if (unresolved.length > 0) {
         throw new Error(
-          `Intent Contract cannot be proposed with unresolved material Human nodes: ${openHuman.map((node) => node.title).join(", ")}`,
+          `Intent Contract cannot be proposed with unresolved material nodes: ${unresolved.map((node) => node.title).join(", ")}`,
         );
       }
       for (const nodeId of input.proposal.decisionNodeRefs) {
-        if (!session.nodes.some((node) => node.id === nodeId)) {
+        if (!snapshot.nodes.some((node) => node.id === nodeId)) {
           throw new Error(`Intent Contract references unknown Decision node ${nodeId}`);
         }
       }
@@ -1857,7 +2112,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       const contract: IntentContractProjection = {
         id: `intent-contract-${randomUUID()}`,
         workspaceId: this.workspaceId,
-        sourceAgentId: session.agentId,
+        sourceAgentId: snapshot.session.agentId,
         taskId: null,
         title: input.proposal.contract.title,
         objective: input.proposal.contract.objective,
@@ -1882,63 +2137,78 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       this.writeIntentContractInTransaction(contract);
       this.database
         .prepare(
-          `UPDATE clarify_sessions SET intent_contract_id = ?, lifecycle = 'proposing',
+          `UPDATE decision_sessions SET intent_contract_id = ?, lifecycle = 'active',
              revision = revision + 1, updated_at = ? WHERE session_id = ?`,
         )
-        .run(contract.id, now, session.id);
+        .run(contract.id, now, snapshot.session.id);
+      this.updateDecisionTreeActivityInTransaction(
+        snapshot.session.id,
+        "challenging",
+        null,
+        input.proposal.publicSummary,
+        now,
+      );
     });
-    const session = this.getClarifySession(input.sessionId)!;
-    this.emitClarify(session, []);
-    return session;
+    const snapshot = this.getDecisionTreeSnapshot(input.sessionId)!;
+    this.emitDecisionTree(this.buildDecisionTreeDelta(input.sessionId, baseRevision, [], []));
+    return snapshot;
   }
 
-  applyClarifyChallenge(input: {
+  applyDecisionTreeChallenge(input: {
     sessionId: string;
     result: ThothClarifyJudgeContractInput;
-  }): ClarifySessionProjection {
+  }): DecisionTreeSnapshot {
+    let baseRevision = 0;
     let changedNodeIds: string[] = [];
     this.transaction(() => {
-      const session = this.getClarifySession(input.sessionId);
-      if (!session || !session.intentContract) {
+      const snapshot = this.getDecisionTreeSnapshot(input.sessionId);
+      if (!snapshot?.session.intentContract) {
         throw new Error("Clarify Challenger requires a proposed Intent Contract");
       }
-      if (session.challengerUsed) {
+      baseRevision = snapshot.revision;
+      if (snapshot.session.challengerUsed) {
         throw new WorkspaceAuthorityConflictError(
-          "Clarify Challenger has already run for this session",
+          "Clarify Challenger has already run for this Decision Session",
         );
       }
       const now = nowIso();
       if (input.result.decision === "reopen") {
-        const existingIds = new Set(session.nodes.map((node) => node.id));
+        const existingIds = new Set(snapshot.nodes.map((node) => node.id));
+        const incomingIds = new Set(input.result.missingNodes.map((node) => node.id));
         for (const node of input.result.missingNodes) {
-          if (existingIds.has(node.id))
+          if (existingIds.has(node.id)) {
             throw new Error(`Challenger duplicated Decision node ${node.id}`);
-          for (const parentId of node.parentIds) {
-            if (
-              !existingIds.has(parentId) &&
-              !input.result.missingNodes.some((candidate) => candidate.id === parentId)
-            ) {
-              throw new Error(`Challenger node ${node.id} references unknown parent ${parentId}`);
-            }
           }
-          this.assertClarifyNodeResolution(node);
+          if (
+            !node.parentId ||
+            (!existingIds.has(node.parentId) && !incomingIds.has(node.parentId))
+          ) {
+            throw new Error(`Challenger node ${node.id} has no known tree parent`);
+          }
+          this.assertDecisionNodeResolution(node);
         }
-        const insert = this.database.prepare(
-          `INSERT INTO clarify_decision_nodes(
-             node_id, session_id, parent_ids_json, title, owner, materiality, status,
-             resolution_ref, source_refs_json, priority, revision, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-        );
-        const priority = session.nodes.reduce(
+        const priority = snapshot.nodes.reduce(
           (maximum, node) => Math.max(maximum, node.priority),
           0,
+        );
+        const insert = this.database.prepare(
+          `INSERT INTO decision_tree_nodes(
+             node_id, session_id, parent_id, title, summary, owner, materiality, status,
+             resolution_ref, source_refs_json, priority, revision, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+        );
+        const insertCrossLink = this.database.prepare(
+          `INSERT INTO decision_tree_cross_links(
+             session_id, from_node_id, to_node_id, relation, created_at
+           ) VALUES (?, ?, ?, 'influences', ?)`,
         );
         input.result.missingNodes.forEach((node, index) => {
           insert.run(
             node.id,
-            session.id,
-            JSON.stringify(node.parentIds),
+            snapshot.session.id,
+            node.parentId,
             node.title,
+            node.summary,
             node.owner,
             node.materiality,
             node.status,
@@ -1948,48 +2218,83 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
             now,
             now,
           );
+          for (const crossLinkId of new Set(node.crossLinkIds)) {
+            insertCrossLink.run(snapshot.session.id, node.id, crossLinkId, now);
+          }
         });
         changedNodeIds = input.result.missingNodes.map((node) => node.id);
       }
+      const lifecycle =
+        input.result.decision === "reopen"
+          ? "active"
+          : input.result.decision === "blocked"
+            ? "blocked"
+            : "ready_to_confirm";
+      const activity: DecisionTreeActivityState =
+        input.result.decision === "reopen"
+          ? "expanding"
+          : input.result.decision === "blocked"
+            ? "blocked"
+            : "ready_to_confirm";
       this.database
         .prepare(
-          `UPDATE clarify_sessions SET challenger_used = 1, lifecycle = ?,
+          `UPDATE decision_sessions SET challenger_used = 1, lifecycle = ?,
              revision = revision + 1, updated_at = ? WHERE session_id = ?`,
         )
-        .run(
-          input.result.decision === "reopen"
-            ? "mapping"
-            : input.result.decision === "blocked"
-              ? "blocked"
-              : "proposing",
-          now,
-          session.id,
-        );
+        .run(lifecycle, now, snapshot.session.id);
+      this.updateDecisionTreeActivityInTransaction(
+        snapshot.session.id,
+        activity,
+        null,
+        input.result.reason,
+        now,
+      );
     });
-    const session = this.getClarifySession(input.sessionId)!;
-    this.emitClarify(session, changedNodeIds);
-    return session;
+    const snapshot = this.getDecisionTreeSnapshot(input.sessionId)!;
+    this.emitDecisionTree(
+      this.buildDecisionTreeDelta(input.sessionId, baseRevision, changedNodeIds, []),
+    );
+    return snapshot;
   }
 
-  confirmIntentContract(sessionId: string): ClarifySessionProjection {
-    this.transaction(() => this.confirmIntentContractInTransaction(sessionId, nowIso()));
-    const session = this.getClarifySession(sessionId)!;
-    this.emitClarify(session, []);
-    return session;
+  confirmIntentContract(sessionId: string): DecisionTreeSnapshot {
+    let baseRevision = 0;
+    this.transaction(() => {
+      baseRevision = this.getDecisionTreeSnapshot(sessionId)?.revision ?? 0;
+      this.confirmIntentContractInTransaction(sessionId, nowIso());
+    });
+    const snapshot = this.getDecisionTreeSnapshot(sessionId)!;
+    this.emitDecisionTree(this.buildDecisionTreeDelta(sessionId, baseRevision, [], []));
+    return snapshot;
   }
 
-  reopenIntentContract(sessionId: string): ClarifySessionProjection {
-    this.transaction(() => this.reopenIntentContractInTransaction(sessionId, nowIso()));
-    const session = this.getClarifySession(sessionId)!;
-    this.emitClarify(session, []);
-    return session;
+  reopenIntentContract(sessionId: string): DecisionTreeSnapshot {
+    let baseRevision = 0;
+    this.transaction(() => {
+      baseRevision = this.getDecisionTreeSnapshot(sessionId)?.revision ?? 0;
+      this.reopenIntentContractInTransaction(sessionId, nowIso());
+    });
+    const snapshot = this.getDecisionTreeSnapshot(sessionId)!;
+    this.emitDecisionTree(this.buildDecisionTreeDelta(sessionId, baseRevision, [], []));
+    return snapshot;
   }
 
   private confirmIntentContractInTransaction(sessionId: string, now: string): void {
-    const session = this.getClarifySession(sessionId);
-    if (!session?.intentContract || !session.challengerUsed) {
+    const snapshot = this.getDecisionTreeSnapshot(sessionId);
+    if (!snapshot?.session.intentContract || !snapshot.session.challengerUsed) {
       throw new WorkspaceAuthorityConflictError(
         "Intent Contract cannot be confirmed before its one-shot Challenger completes",
+      );
+    }
+    if (
+      snapshot.nodes.some(
+        (node) =>
+          ["open", "awaiting_human"].includes(node.status) &&
+          (node.owner !== "human" || node.materiality !== "local"),
+      )
+    ) {
+      throw new WorkspaceAuthorityConflictError(
+        "Intent Contract cannot be confirmed while the Decision Tree has material open frontiers",
       );
     }
     this.database
@@ -1997,49 +2302,73 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
         `UPDATE intent_contracts SET status = 'confirmed', confirmed_at = ?,
            revision = revision + 1, updated_at = ? WHERE contract_id = ?`,
       )
-      .run(now, now, session.intentContract.id);
+      .run(now, now, snapshot.session.intentContract.id);
     this.database
       .prepare(
-        `UPDATE clarify_sessions SET lifecycle = 'confirmed', revision = revision + 1,
+        `UPDATE decision_sessions SET lifecycle = 'frozen', active_turn_id = NULL,
+           active_card_id = NULL, frozen_at = ?, revision = revision + 1,
            updated_at = ? WHERE session_id = ?`,
       )
-      .run(now, session.id);
+      .run(now, now, snapshot.session.id);
+    this.updateDecisionTreeActivityInTransaction(
+      snapshot.session.id,
+      "frozen",
+      null,
+      "Frozen as Task evidence",
+      now,
+    );
   }
 
   private reopenIntentContractInTransaction(sessionId: string, now: string): void {
-    const session = this.getClarifySession(sessionId);
-    if (!session?.intentContract) throw new Error("Clarify session has no proposed contract");
+    const snapshot = this.getDecisionTreeSnapshot(sessionId);
+    if (!snapshot?.session.intentContract) {
+      throw new Error("Decision Session has no proposed contract");
+    }
     this.database
       .prepare(
         `UPDATE intent_contracts SET status = 'superseded', revision = revision + 1,
            updated_at = ? WHERE contract_id = ?`,
       )
-      .run(now, session.intentContract.id);
+      .run(now, snapshot.session.intentContract.id);
     this.database
       .prepare(
-        `UPDATE clarify_sessions SET intent_contract_id = NULL, lifecycle = 'mapping',
-           revision = revision + 1, updated_at = ? WHERE session_id = ?`,
+        `UPDATE decision_sessions SET intent_contract_id = NULL, lifecycle = 'active',
+           active_card_id = NULL, revision = revision + 1, updated_at = ? WHERE session_id = ?`,
       )
-      .run(now, session.id);
+      .run(now, snapshot.session.id);
+    this.updateDecisionTreeActivityInTransaction(
+      snapshot.session.id,
+      "expanding",
+      null,
+      "Revising the decision tree",
+      now,
+    );
   }
 
-  private cancelClarifySessionInTransaction(sessionId: string, now: string): void {
-    const session = this.getClarifySession(sessionId);
-    if (!session) throw new Error(`Clarify session ${sessionId} does not exist`);
-    if (session.intentContract && session.intentContract.status === "proposed") {
+  private cancelDecisionSessionInTransaction(sessionId: string, now: string): void {
+    const snapshot = this.getDecisionTreeSnapshot(sessionId);
+    if (!snapshot) throw new Error(`Decision Session ${sessionId} does not exist`);
+    if (snapshot.session.intentContract && snapshot.session.intentContract.status === "proposed") {
       this.database
         .prepare(
           `UPDATE intent_contracts SET status = 'superseded', revision = revision + 1,
              updated_at = ? WHERE contract_id = ?`,
         )
-        .run(now, session.intentContract.id);
+        .run(now, snapshot.session.intentContract.id);
     }
     this.database
       .prepare(
-        `UPDATE clarify_sessions SET lifecycle = 'canceled', revision = revision + 1,
-           updated_at = ? WHERE session_id = ?`,
+        `UPDATE decision_sessions SET lifecycle = 'canceled', active_turn_id = NULL,
+           active_card_id = NULL, revision = revision + 1, updated_at = ? WHERE session_id = ?`,
       )
-      .run(now, session.id);
+      .run(now, snapshot.session.id);
+    this.updateDecisionTreeActivityInTransaction(
+      snapshot.session.id,
+      "blocked",
+      null,
+      "Clarification canceled",
+      now,
+    );
   }
 
   applyTaskContractRevisionFromHandoff(input: {
@@ -2179,13 +2508,14 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     }
   }
 
-  prioritizeClarifyNode(input: {
+  prioritizeDecisionNode(input: {
     sessionId: string;
     nodeId: string;
     expectedRevision: number;
     commandId: string;
-  }): { session: ClarifySessionProjection; duplicate: boolean } {
+  }): { delta: DecisionTreeDelta | null; duplicate: boolean } {
     let duplicate = false;
+    let baseRevision = 0;
     this.transaction(() => {
       const previous = this.database
         .prepare("SELECT result_json FROM authority_commands WHERE command_id = ?")
@@ -2194,55 +2524,58 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
         const result = JSON.parse(previous.result_json) as { sessionId: string; nodeId: string };
         if (result.sessionId !== input.sessionId || result.nodeId !== input.nodeId) {
           throw new WorkspaceAuthorityConflictError(
-            `Command ${input.commandId} belongs to another Clarify action`,
+            `Command ${input.commandId} belongs to another Decision Tree action`,
           );
         }
         duplicate = true;
         return;
       }
-      const session = this.getClarifySession(input.sessionId);
-      if (!session || session.revision !== input.expectedRevision) {
-        throw new WorkspaceAuthorityConflictError("Clarify session revision changed");
+      const snapshot = this.getDecisionTreeSnapshot(input.sessionId);
+      if (!snapshot || snapshot.revision !== input.expectedRevision) {
+        throw new WorkspaceAuthorityConflictError("Decision Session revision changed");
       }
-      const node = session.nodes.find((candidate) => candidate.id === input.nodeId);
+      baseRevision = snapshot.revision;
+      const node = snapshot.nodes.find((candidate) => candidate.id === input.nodeId);
       if (!node || !["open", "awaiting_human"].includes(node.status)) {
         throw new Error(`Decision node ${input.nodeId} is not an open frontier`);
       }
-      const maximum = session.nodes.reduce(
+      const maximum = snapshot.nodes.reduce(
         (value, candidate) => Math.max(value, candidate.priority),
         0,
       );
       const now = nowIso();
       this.database
         .prepare(
-          `UPDATE clarify_decision_nodes SET priority = ?, revision = revision + 1,
+          `UPDATE decision_tree_nodes SET priority = ?, revision = revision + 1,
              updated_at = ? WHERE session_id = ? AND node_id = ?`,
         )
-        .run(maximum + 1, now, session.id, node.id);
+        .run(maximum + 1, now, snapshot.session.id, node.id);
       this.database
         .prepare(
-          `UPDATE clarify_sessions SET priority_node_id = ?, revision = revision + 1,
+          `UPDATE decision_sessions SET priority_node_id = ?, revision = revision + 1,
              updated_at = ? WHERE session_id = ?`,
         )
-        .run(node.id, now, session.id);
+        .run(node.id, now, snapshot.session.id);
       this.database
         .prepare(
           `INSERT INTO authority_commands(
              command_id, aggregate_type, aggregate_id, command_kind,
              result_revision, result_json, created_at
-           ) VALUES (?, 'clarify_session', ?, 'prioritize_node', ?, ?, ?)`,
+           ) VALUES (?, 'decision_session', ?, 'prioritize_node', ?, ?, ?)`,
         )
         .run(
           input.commandId,
-          session.id,
-          session.revision + 1,
-          JSON.stringify({ sessionId: session.id, nodeId: node.id }),
+          snapshot.session.id,
+          snapshot.revision + 1,
+          JSON.stringify({ sessionId: snapshot.session.id, nodeId: node.id }),
           now,
         );
     });
-    const session = this.getClarifySession(input.sessionId)!;
-    if (!duplicate) this.emitClarify(session, [input.nodeId]);
-    return { session, duplicate };
+    const delta = duplicate
+      ? null
+      : this.buildDecisionTreeDelta(input.sessionId, baseRevision, [input.nodeId], []);
+    if (delta) this.emitDecisionTree(delta);
+    return { delta, duplicate };
   }
 
   registerTask(input: {
@@ -2256,6 +2589,9 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       throw new Error("Task workspace does not match authority shard");
     }
     let result!: { task: TaskProjection; created: boolean };
+    const decisionBinding: {
+      current: { sessionId: string; baseRevision: number } | null;
+    } = { current: null };
     this.transaction(() => {
       const existing = this.database
         .prepare(`SELECT * FROM tasks WHERE source_turn_id = ? AND source_contract_card_id = ?`)
@@ -2263,6 +2599,19 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       if (existing) {
         result = { task: this.toTaskProjection(existing), created: false };
         return;
+      }
+      const decisionSession = this.database
+        .prepare(
+          `SELECT session_id, lifecycle, revision FROM decision_sessions
+           WHERE intent_contract_id = ?`,
+        )
+        .get(task.intentContract.id) as
+        | { session_id: string; lifecycle: string; revision: number }
+        | undefined;
+      if (decisionSession && decisionSession.lifecycle !== "frozen") {
+        throw new WorkspaceAuthorityConflictError(
+          "A Task can be registered only after its Decision Tree is frozen.",
+        );
       }
       this.writeIntentContractInTransaction(task.intentContract);
       this.database
@@ -2314,11 +2663,33 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       this.database
         .prepare("UPDATE human_decisions SET task_id = ? WHERE turn_id = ? AND task_id IS NULL")
         .run(task.id, input.sourceTurnId);
+      if (decisionSession) {
+        this.database
+          .prepare(
+            `UPDATE decision_sessions SET revision = revision + 1, updated_at = ?
+             WHERE session_id = ?`,
+          )
+          .run(task.updatedAt, decisionSession.session_id);
+        decisionBinding.current = {
+          sessionId: decisionSession.session_id,
+          baseRevision: decisionSession.revision,
+        };
+      }
       result = { task: this.getTask(task.id)!, created: true };
     });
     if (result.created) {
       this.syncTaskLocator(result.task);
       this.emit([result.task.id], []);
+      if (decisionBinding.current) {
+        this.emitDecisionTree(
+          this.buildDecisionTreeDelta(
+            decisionBinding.current.sessionId,
+            decisionBinding.current.baseRevision,
+            [],
+            [],
+          ),
+        );
+      }
     }
     return result;
   }
@@ -4141,13 +4512,20 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       item_json: string | null;
       item_digest: string | null;
     }>;
-    return rows.map((row) => ({
-      seq: row.seq,
-      timestamp: row.timestamp,
-      item: (row.item_digest
-        ? this.blobs.readJson(row.item_digest)
-        : JSON.parse(row.item_json ?? "null")) as AgentTimelineItem,
-    }));
+    const cards = new Map(
+      this.listForegroundCardsForAgent(agentId).map((card) => [card.id, card.card]),
+    );
+    return rows.map((row) => {
+      const recorded = (
+        row.item_digest ? this.blobs.readJson(row.item_digest) : JSON.parse(row.item_json ?? "null")
+      ) as AgentTimelineItem;
+      const item =
+        (recorded.type === "clarify_card" || recorded.type === "intent_contract_card") &&
+        cards.has(recorded.card.id)
+          ? ({ ...recorded, card: cards.get(recorded.card.id)! } as AgentTimelineItem)
+          : recorded;
+      return { seq: row.seq, timestamp: row.timestamp, item };
+    });
   }
 
   appendAgentTimelineRows(agentId: string, rows: readonly AgentTimelineRow[]): void {
@@ -4184,34 +4562,41 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
 
   close(): void {
     this.foregroundSubscribers.clear();
-    this.clarifySubscribers.clear();
+    this.decisionTreeSubscribers.clear();
     this.database.close();
   }
 
-  private toClarifySession(row: Record<string, unknown>): ClarifySessionProjection {
+  private toDecisionTreeSnapshot(row: Record<string, unknown>): DecisionTreeSnapshot {
+    const sessionId = String(row.session_id);
     const nodes = this.database
       .prepare(
-        `SELECT * FROM clarify_decision_nodes WHERE session_id = ?
+        `SELECT * FROM decision_tree_nodes WHERE session_id = ?
          ORDER BY priority DESC, created_at ASC, node_id ASC`,
       )
-      .all(String(row.session_id)) as Array<Record<string, unknown>>;
-    const contractId = typeof row.intent_contract_id === "string" ? row.intent_contract_id : null;
-    return ClarifySessionProjectionSchema.parse({
-      id: row.session_id,
-      workspaceId: row.workspace_id,
-      agentId: row.agent_id,
-      turnId: row.turn_id,
-      requestedStrength: row.requested_strength,
-      effectiveStrength: row.effective_strength ?? null,
-      lifecycle: row.lifecycle,
-      challengerUsed: Number(row.challenger_used) === 1,
-      priorityNodeId: row.priority_node_id ?? null,
-      intentContract: contractId ? this.readIntentContract(contractId) : null,
+      .all(sessionId) as Array<Record<string, unknown>>;
+    const crossLinks = this.database
+      .prepare(
+        `SELECT from_node_id, to_node_id FROM decision_tree_cross_links
+         WHERE session_id = ? ORDER BY from_node_id, to_node_id`,
+      )
+      .all(sessionId) as Array<{ from_node_id: string; to_node_id: string }>;
+    const crossLinksByNode = new Map<string, string[]>();
+    for (const link of crossLinks) {
+      const current = crossLinksByNode.get(link.from_node_id) ?? [];
+      current.push(link.to_node_id);
+      crossLinksByNode.set(link.from_node_id, current);
+    }
+    const projection = this.toDecisionSessionProjection(row);
+    const cardReceipts = this.listDecisionCardReceipts(sessionId);
+    return DecisionTreeSnapshotSchema.parse({
+      session: projection,
       nodes: nodes.map((node) =>
-        ClarifyDecisionNodeProjectionSchema.parse({
+        DecisionNodeProjectionSchema.parse({
           id: node.node_id,
-          parentIds: parseStringArray(String(node.parent_ids_json)),
+          parentId: node.parent_id ?? null,
+          crossLinkIds: crossLinksByNode.get(String(node.node_id)) ?? [],
           title: node.title,
+          summary: node.summary ?? null,
           owner: node.owner,
           materiality: node.materiality,
           status: node.status,
@@ -4221,17 +4606,70 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
           revision: node.revision,
         }),
       ),
-      revision: row.revision,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      cardReceipts,
+      revision: projection.revision,
     });
   }
 
-  private assertClarifyNodeResolution(
-    node: Pick<
-      ClarifyDecisionNodeProjection,
-      "id" | "owner" | "status" | "resolutionRef" | "sourceRefs"
-    >,
+  private toDecisionSessionProjection(row: Record<string, unknown>): DecisionSessionProjection {
+    const sessionId = String(row.session_id);
+    const contractId = typeof row.intent_contract_id === "string" ? row.intent_contract_id : null;
+    const intentContract = contractId ? this.readIntentContract(contractId) : null;
+    const activity = this.database
+      .prepare("SELECT * FROM decision_tree_activity WHERE session_id = ?")
+      .get(sessionId) as Record<string, unknown> | undefined;
+    if (!activity) throw new Error(`Decision Session ${sessionId} has no activity projection`);
+    return DecisionSessionProjectionSchema.parse({
+      id: row.session_id,
+      workspaceId: row.workspace_id,
+      agentId: row.agent_id,
+      originTurnId: row.origin_turn_id,
+      activeTurnId: row.active_turn_id ?? null,
+      requestedStrength: row.requested_strength,
+      effectiveStrength: row.effective_strength ?? null,
+      lifecycle: row.lifecycle,
+      challengerUsed: Number(row.challenger_used) === 1,
+      rootNodeId: row.root_node_id,
+      priorityNodeId: row.priority_node_id ?? null,
+      activeCardId: row.active_card_id ?? null,
+      intentContract,
+      taskId: intentContract?.taskId ?? null,
+      activity: {
+        state: activity.state,
+        activeNodeId: activity.active_node_id ?? null,
+        summary: activity.summary ?? null,
+        startedAt: activity.started_at,
+        updatedAt: activity.updated_at,
+      },
+      revision: row.revision,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      frozenAt: row.frozen_at ?? null,
+    });
+  }
+
+  private listDecisionCardReceipts(sessionId: string): DecisionCardReceiptProjection[] {
+    const rows = this.database
+      .prepare(
+        `SELECT card_id, kind, status, submitted_summary, created_at, updated_at
+         FROM cards WHERE decision_session_id = ? ORDER BY created_at, card_id`,
+      )
+      .all(sessionId) as Array<Record<string, unknown>>;
+    return rows.map((row) =>
+      DecisionCardReceiptProjectionSchema.parse({
+        cardId: row.card_id,
+        sessionId,
+        kind: row.kind,
+        status: row.status,
+        submittedSummary: row.submitted_summary ?? null,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }),
+    );
+  }
+
+  private assertDecisionNodeResolution(
+    node: Pick<DecisionNodeProjection, "id" | "owner" | "status" | "resolutionRef" | "sourceRefs">,
   ): void {
     if (node.owner === "evidence" && node.status === "resolved") {
       if (
@@ -4253,6 +4691,91 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     }
   }
 
+  private updateDecisionTreeActivityInTransaction(
+    sessionId: string,
+    state: DecisionTreeActivityState,
+    activeNodeId: string | null,
+    summary: string | null,
+    now: string,
+  ): void {
+    this.database
+      .prepare(
+        `INSERT INTO decision_tree_activity(
+           session_id, state, active_node_id, summary, started_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           state = excluded.state,
+           active_node_id = excluded.active_node_id,
+           summary = excluded.summary,
+           started_at = CASE
+             WHEN decision_tree_activity.state <> excluded.state
+               OR COALESCE(decision_tree_activity.active_node_id, '') <>
+                  COALESCE(excluded.active_node_id, '')
+             THEN excluded.started_at ELSE decision_tree_activity.started_at END,
+           updated_at = excluded.updated_at`,
+      )
+      .run(sessionId, state, activeNodeId, summary, now, now);
+  }
+
+  private buildDecisionTreeDelta(
+    sessionId: string,
+    baseRevision: number,
+    nodeIds: string[],
+    cardIds: string[],
+  ): DecisionTreeDelta {
+    const row = this.database
+      .prepare("SELECT * FROM decision_sessions WHERE session_id = ?")
+      .get(sessionId) as Record<string, unknown> | undefined;
+    if (!row) throw new Error(`Decision Session ${sessionId} does not exist`);
+    const session = this.toDecisionSessionProjection(row);
+    const uniqueNodeIds = [...new Set(nodeIds)];
+    const nodeUpserts = uniqueNodeIds.map((nodeId) => {
+      const node = this.database
+        .prepare("SELECT * FROM decision_tree_nodes WHERE session_id = ? AND node_id = ?")
+        .get(sessionId, nodeId) as Record<string, unknown> | undefined;
+      if (!node) throw new Error(`Decision node ${nodeId} disappeared before delta emission`);
+      const crossLinks = this.database
+        .prepare(
+          `SELECT to_node_id FROM decision_tree_cross_links
+           WHERE session_id = ? AND from_node_id = ? ORDER BY to_node_id`,
+        )
+        .all(sessionId, nodeId) as Array<{ to_node_id: string }>;
+      return DecisionNodeProjectionSchema.parse({
+        id: node.node_id,
+        parentId: node.parent_id ?? null,
+        crossLinkIds: crossLinks.map((link) => link.to_node_id),
+        title: node.title,
+        summary: node.summary ?? null,
+        owner: node.owner,
+        materiality: node.materiality,
+        status: node.status,
+        resolutionRef: node.resolution_ref ?? null,
+        sourceRefs: parseStringArray(String(node.source_refs_json)),
+        priority: node.priority,
+        revision: node.revision,
+      });
+    });
+    const receiptsById = new Map(
+      this.listDecisionCardReceipts(sessionId).map((receipt) => [receipt.cardId, receipt]),
+    );
+    return DecisionTreeDeltaSchema.parse({
+      workspaceId: this.workspaceId,
+      agentId: session.agentId,
+      sessionId,
+      baseRevision,
+      revision: session.revision,
+      session,
+      nodeUpserts,
+      removedNodeIds: [],
+      cardReceipts: [...new Set(cardIds)].map((cardId) => {
+        const receipt = receiptsById.get(cardId);
+        if (!receipt) throw new Error(`Decision Card ${cardId} disappeared before delta emission`);
+        return receipt;
+      }),
+      emittedAt: nowIso(),
+    });
+  }
+
   private getForegroundStateInTransaction(agentId: string): AgentThothState {
     const authority = this.getForegroundAgentRow(agentId);
     if (!authority) {
@@ -4266,7 +4789,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     const pendingCard = authority.active_turn_id
       ? (this.database
           .prepare(
-            `SELECT card_id, kind, displayed_digest, created_at FROM cards
+            `SELECT card_id, kind, displayed_digest, created_at, updated_at FROM cards
              WHERE turn_id = ? AND status = 'pending'
                AND kind IN ('clarify_card', 'intent_contract_card')
              ORDER BY created_at DESC LIMIT 1`,
@@ -5272,17 +5795,10 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     }
   }
 
-  private emitClarify(session: ClarifySessionProjection, changedNodeIds: string[]): void {
-    const update: ClarifyAuthorityUpdate = {
-      workspaceId: this.workspaceId,
-      agentId: session.agentId,
-      sessionId: session.id,
-      revision: session.revision,
-      changedNodeIds,
-    };
-    for (const subscriber of this.clarifySubscribers) subscriber(update);
-    const state = this.getForegroundState(session.agentId);
-    this.emitForeground(state, "decision_map_changed");
+  private emitDecisionTree(delta: DecisionTreeDelta): void {
+    for (const subscriber of this.decisionTreeSubscribers) subscriber(delta);
+    const state = this.getForegroundState(delta.agentId);
+    this.emitForeground(state, "decision_tree_changed");
   }
 
   private syncTaskLocator(task: TaskProjection): void {

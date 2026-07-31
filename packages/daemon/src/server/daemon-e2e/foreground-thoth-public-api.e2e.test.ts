@@ -6,6 +6,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { DaemonClient } from "../test-utils/index.js";
 import { createTestThothDaemon, type TestThothDaemon } from "../test-utils/thoth-daemon.js";
 import {
+  ACTIVE_DECISION_ROOT_PLACEHOLDER,
   THOTH_REAL_PROVIDER_FLOW_SCRIPTS,
   type ThothRealProviderFlowScript,
 } from "../../test-fixtures/thoth-real-provider-flow-script.js";
@@ -63,6 +64,56 @@ interface ScriptedTurnReceipt {
   runtimeScope: string | null;
   providerRunMode: "default" | "plan";
   prompt: string;
+}
+
+function inspectPersistedDecisionTree(input: {
+  thothHome: string;
+  workspaceId: string;
+  sessionId: string;
+}): {
+  nodeColumnNames: string[];
+  storedNodeFieldNames: string[];
+  forbiddenNodeFieldNames: string[];
+  rootNodeCount: number;
+  persistedNodeCount: number;
+} {
+  const database = new DatabaseSync(
+    join(input.thothHome, "workspaces", input.workspaceId, "authority.sqlite"),
+    { readOnly: true },
+  );
+  try {
+    const nodeColumnNames = database
+      .prepare("PRAGMA table_info(decision_tree_nodes)")
+      .all()
+      .map((row) => String((row as { name: unknown }).name))
+      .sort();
+    const rows = database
+      .prepare("SELECT * FROM decision_tree_nodes WHERE session_id = ? ORDER BY node_id")
+      .all(input.sessionId) as Array<Record<string, unknown>>;
+    const forbiddenNodeFieldNames = nodeColumnNames.filter((field) =>
+      /(chain|thought|reasoning|token|provider|thread|model|lease|cursor|receipt|hash|prompt)/iu.test(
+        field,
+      ),
+    );
+    const rootNodeCount = Number(
+      (
+        database
+          .prepare(
+            "SELECT COUNT(*) AS count FROM decision_tree_nodes WHERE session_id = ? AND parent_id IS NULL",
+          )
+          .get(input.sessionId) as { count: number }
+      ).count,
+    );
+    return {
+      nodeColumnNames,
+      storedNodeFieldNames: [...new Set(rows.flatMap((row) => Object.keys(row)))].sort(),
+      forbiddenNodeFieldNames,
+      rootNodeCount,
+      persistedNodeCount: rows.length,
+    };
+  } finally {
+    database.close();
+  }
 }
 
 async function createScriptedMcpClient(config: AgentSessionConfig): Promise<ScriptedMcpClient> {
@@ -462,7 +513,7 @@ class ScriptedThothSession implements HarnessThread {
           "thoth_clarify_judge_contract",
           {
             decision: "stable",
-            reason: "The Decision Map covers the material fixture boundary.",
+            reason: "The Decision Tree covers the material fixture boundary.",
             missingNodes: [],
           },
           turnId,
@@ -538,6 +589,7 @@ class ScriptedThothClient implements HarnessAdapter {
   private reviewIndex = 0;
   private contractTaken = false;
   private clarifyFlow: "initial" | "handoff" = "initial";
+  private decisionRootNodeId: string | null = null;
   private humanDecisionTaken = false;
   private semanticOmissionsRemaining: number;
   private readonly toolCallsByTransport = new Map<HarnessToolAttachment, number>();
@@ -579,10 +631,32 @@ class ScriptedThothClient implements HarnessAdapter {
 
   prepareClarifyRun(prompt: AgentPromptInput): void {
     const text = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
-    if (!/Decision Map:\s*\[\]/u.test(text)) return;
+    const root = text.match(/"id"\s*:\s*"(decision-root-[^"]+)"/u)?.[1] ?? null;
+    if (root) this.decisionRootNodeId = root;
+    if (!root) return;
     this.clarifyFlow =
       text.includes("Background Task @") && this.script.handoffClarify ? "handoff" : "initial";
-    this.clarifyIndex = 0;
+    const flow =
+      this.clarifyFlow === "handoff" ? (this.script.handoffClarify ?? []) : this.script.clarify;
+    this.clarifyIndex = flow.findIndex((round) => {
+      const humanNodes = round.map.nodes.filter((node) => node.owner === "human");
+      const statuses = humanNodes.map((node) => {
+        const nodeStart = text.indexOf(`"id": ${JSON.stringify(node.id)}`);
+        if (nodeStart < 0) return null;
+        const statusStart = text.indexOf('"status": "', nodeStart);
+        const nextNodeStart = text.indexOf('"id": "', nodeStart + 1);
+        if (statusStart < 0 || (nextNodeStart >= 0 && nextNodeStart < statusStart)) return null;
+        const valueStart = statusStart + '"status": "'.length;
+        return text.slice(valueStart, text.indexOf('"', valueStart));
+      });
+      return (
+        statuses.every((status) => status === null) ||
+        statuses.some(
+          (status) => status !== null && !["resolved", "delegated", "pruned"].includes(status),
+        )
+      );
+    });
+    if (this.clarifyIndex < 0) this.clarifyIndex = flow.length;
     this.contractTaken = false;
   }
 
@@ -592,7 +666,20 @@ class ScriptedThothClient implements HarnessAdapter {
     const input = flow[this.clarifyIndex];
     if (!input) return null;
     this.clarifyIndex += 1;
-    return input;
+    if (!this.decisionRootNodeId) throw new Error("Scripted Clarify run has no Decision Tree root");
+    return {
+      ...input,
+      map: {
+        ...input.map,
+        nodes: input.map.nodes.map((node) => ({
+          ...node,
+          parentId:
+            node.parentId === ACTIVE_DECISION_ROOT_PLACEHOLDER
+              ? this.decisionRootNodeId
+              : node.parentId,
+        })),
+      },
+    };
   }
 
   takeContractInput(): ThothRealProviderFlowScript["contract"] {
@@ -774,7 +861,7 @@ async function answerPendingCard(input: {
   agentId: string;
   cardId: string;
   answer: ThothCardAnswerPayload;
-}): Promise<void> {
+}) {
   const state = await input.client.getAgentThothState(input.agentId);
   if (state.error) {
     throw new Error(state.error);
@@ -789,6 +876,7 @@ async function answerPendingCard(input: {
   if (result.error || result.conflict || !result.accepted) {
     throw new Error(result.error ?? "Agent-scoped card answer was rejected");
   }
+  return result;
 }
 
 async function waitForAgentIdle(client: DaemonClient, agentId: string): Promise<void> {
@@ -1133,9 +1221,9 @@ describe("public foreground Thoth router", () => {
     expect(challengerTurns).toHaveLength(1);
     expect(challengerTurns[0]?.sessionId).not.toBe(visibleSession.id);
     expect(judgeToolCalls).toHaveLength(1);
-    const clarifyAuthority = await client.getAgentClarifySession(agent.id);
+    const clarifyAuthority = await client.getAgentDecisionSession({ agentId: agent.id });
     expect(clarifyAuthority.error).toBeNull();
-    expect(clarifyAuthority.session?.challengerUsed).toBe(true);
+    expect(clarifyAuthority.snapshot?.session.challengerUsed).toBe(true);
 
     const behaviorReceipt = {
       schemaVersion: 1,
@@ -1149,13 +1237,414 @@ describe("public foreground Thoth router", () => {
       challengerTurnIds: challengerTurns.map((receipt) => receipt.turnId),
       challengerLaunchCount: challengerTurns.length,
       judgeContractToolCallCount: judgeToolCalls.length,
-      challengerUsed: clarifyAuthority.session?.challengerUsed === true,
+      challengerUsed: clarifyAuthority.snapshot?.session.challengerUsed === true,
       visibleSessionReusedAfterClarify: provider.sessions[0] === visibleSession,
     };
     const receiptPath = process.env.THOTH_CLARIFY_BEHAVIOR_RECEIPT_PATH;
     if (receiptPath) {
       mkdirSync(dirname(receiptPath), { recursive: true });
       writeFileSync(receiptPath, `${JSON.stringify(behaviorReceipt, null, 2)}\n`, "utf8");
+    }
+  }, 45_000);
+
+  it("Clarify public authority proves propagation, delegation scope, and Intent Contract confirmation", async () => {
+    const propagationScript = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.clarifyPropagation;
+    const propagationProvider = new ScriptedThothClient(propagationScript);
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: propagationProvider } });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+    const propagationCwd = mkdtempSync(join(tmpdir(), "thoth-clarify-propagation-"));
+    workspaces.push(propagationCwd);
+    const propagationAgent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd: propagationCwd,
+      initialPrompt: "CLARIFY_PROPAGATION",
+      thoth: { enabled: true, executionMode: "quick", clarifyStrength: "balanced" },
+    });
+
+    const parentCard = (await waitForPendingCard(
+      client,
+      propagationAgent.id,
+      "clarify_card",
+    )) as ThothClarifyCardModel;
+    expect(parentCard.card.allowSingleNodeRecommendation).toBe(true);
+    const initialTree = await client.getAgentDecisionSession({ agentId: propagationAgent.id });
+    const initialSession = initialTree.snapshot?.session;
+    const initialRoot = initialTree.snapshot?.nodes.find(
+      (node) => node.id === initialSession?.rootNodeId,
+    );
+    expect(initialSession).toMatchObject({ lifecycle: "awaiting_human" });
+    expect(initialRoot).toMatchObject({
+      parentId: null,
+      owner: "human",
+      materiality: "structural",
+      status: "resolved",
+    });
+    expect(initialTree.snapshot?.nodes.filter((node) => node.parentId === null)).toEqual([
+      expect.objectContaining({ id: initialSession?.rootNodeId }),
+    ]);
+    const singleNodeRecommendation = await answerPendingCard({
+      client,
+      agentId: propagationAgent.id,
+      cardId: parentCard.id,
+      answer: {
+        intent: "recommend",
+        questionCardId: parentCard.id,
+        answers: [{ nodeId: "UT07-strategy", choiceIds: [], choiceNotes: {} }],
+        delegatedNodeIds: ["UT07-strategy"],
+        rawAnswer: "Use the Provider recommendation for this one decision.",
+      },
+    });
+    expect(singleNodeRecommendation.decisionTreeDelta?.nodeUpserts).toEqual([
+      expect.objectContaining({ id: "UT07-strategy", status: "delegated" }),
+    ]);
+    const repeatedCardState = await client.getAgentThothState(propagationAgent.id);
+    const repeatedCardAnswer = await client.answerAgentThothCard({
+      agentId: propagationAgent.id,
+      cardId: parentCard.id,
+      answer: {
+        intent: "recommend",
+        questionCardId: parentCard.id,
+        answers: [{ nodeId: "UT07-strategy", choiceIds: [], choiceNotes: {} }],
+        delegatedNodeIds: ["UT07-strategy"],
+        rawAnswer: "This stale Card must not reopen a resolved decision.",
+      },
+      expectedRevision: repeatedCardState.state.revision,
+      commandId: "e2e-stale-clarify-card-rejection",
+    });
+    expect(repeatedCardAnswer).toMatchObject({
+      accepted: false,
+      conflict: false,
+      error: "This authority card is no longer pending for the Agent.",
+    });
+
+    const childCard = (await waitForPendingCard(
+      client,
+      propagationAgent.id,
+      "clarify_card",
+    )) as ThothClarifyCardModel;
+    expect(childCard.card.questions.map((question) => question.nodeId)).toEqual([
+      "UT07-renderer-mode",
+    ]);
+    const propagatedTree = await client.getAgentDecisionSession({ agentId: propagationAgent.id });
+    const propagatedNodes = new Map(
+      propagatedTree.snapshot?.nodes.map((node) => [node.id, node]) ?? [],
+    );
+    expect(propagatedTree.snapshot?.session.id).toBe(initialSession?.id);
+    expect(propagatedTree.snapshot?.session.rootNodeId).toBe(initialSession?.rootNodeId);
+    expect(propagatedNodes.get("UT07-strategy")).toMatchObject({ status: "delegated" });
+    expect(propagatedNodes.get("UT07-renderer-mode")).toMatchObject({
+      parentId: "UT07-strategy",
+      owner: "human",
+      status: "awaiting_human",
+    });
+    expect(propagatedNodes.get("UT07-live-preview")).toMatchObject({ status: "pruned" });
+
+    await answerPendingCard({
+      client,
+      agentId: propagationAgent.id,
+      cardId: childCard.id,
+      answer: {
+        intent: "submit_choices",
+        questionCardId: childCard.id,
+        answers: [
+          {
+            nodeId: "UT07-renderer-mode",
+            choiceIds: ["UT07-renderer-mode-reference"],
+            choiceNotes: {},
+          },
+        ],
+        delegatedNodeIds: [],
+        rawAnswer: "Use the reference renderer mode.",
+      },
+    });
+    const contractCard = (await waitForPendingCard(
+      client,
+      propagationAgent.id,
+      "intent_contract_card",
+    )) as ThothIntentContractCardModel;
+    const confirmationBefore = await client.getAgentDecisionSession({
+      agentId: propagationAgent.id,
+    });
+    expect(confirmationBefore.snapshot?.session).toMatchObject({
+      lifecycle: "ready_to_confirm",
+      activity: { state: "ready_to_confirm" },
+      intentContract: {
+        status: "proposed",
+        confirmedAt: null,
+        escalationPolicy: { finalConfirmation: "automatic" },
+      },
+    });
+    expect(confirmationBefore.snapshot?.cardReceipts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          cardId: contractCard.id,
+          kind: "intent_contract_card",
+          status: "pending",
+        }),
+      ]),
+    );
+    const confirmation = await answerPendingCard({
+      client,
+      agentId: propagationAgent.id,
+      cardId: contractCard.id,
+      answer: {
+        intent: "accept_quick",
+        cardId: contractCard.id,
+        rawAnswer: "Confirm the Intent Contract and run the foreground task.",
+      },
+    });
+    expect(confirmation.card).toMatchObject({
+      card: { id: contractCard.id, submitted: true },
+      status: "answered",
+    });
+    const confirmationAfter = await waitFor(async () => {
+      const result = await client.getAgentDecisionSession({ agentId: propagationAgent.id });
+      return result.snapshot?.session.lifecycle === "frozen" ? result : null;
+    });
+    expect(confirmationAfter.snapshot?.session).toMatchObject({
+      lifecycle: "frozen",
+      activity: { state: "frozen" },
+      intentContract: {
+        status: "confirmed",
+        taskId: expect.any(String),
+        confirmedAt: expect.any(String),
+      },
+    });
+    const frozenSessionId = confirmationAfter.snapshot!.session.id;
+    const frozenNodeDigest = JSON.stringify(
+      confirmationAfter.snapshot!.nodes.map((node) => ({
+        id: node.id,
+        parentId: node.parentId,
+        status: node.status,
+        resolutionRef: node.resolutionRef,
+        revision: node.revision,
+      })),
+    );
+    const frozenPriority = await client.prioritizeAgentDecisionNode({
+      agentId: propagationAgent.id,
+      sessionId: frozenSessionId,
+      nodeId: "UT07-strategy",
+      expectedRevision: confirmationAfter.snapshot!.revision,
+      commandId: "e2e-frozen-tree-priority-rejection",
+    });
+    expect(frozenPriority).toMatchObject({
+      delta: null,
+      conflict: false,
+      error: "Decision node UT07-strategy is not an open frontier",
+    });
+    const frozenAfterRejectedMutation = await client.getAgentDecisionSession({
+      agentId: propagationAgent.id,
+      sessionId: frozenSessionId,
+    });
+    expect(frozenAfterRejectedMutation.snapshot?.session.lifecycle).toBe("frozen");
+    expect(
+      JSON.stringify(
+        frozenAfterRejectedMutation.snapshot?.nodes.map((node) => ({
+          id: node.id,
+          parentId: node.parentId,
+          status: node.status,
+          resolutionRef: node.resolutionRef,
+          revision: node.revision,
+        })),
+      ),
+    ).toBe(frozenNodeDigest);
+    const persistedTree = inspectPersistedDecisionTree({
+      thothHome: daemon.thothHome,
+      workspaceId: propagationAgent.workspaceId!,
+      sessionId: frozenSessionId,
+    });
+    expect(persistedTree.rootNodeCount).toBe(1);
+    expect(persistedTree.persistedNodeCount).toBe(4);
+    expect(persistedTree.forbiddenNodeFieldNames).toEqual([]);
+
+    await waitForThothLifecycle(client, propagationAgent.id, "done");
+    await waitForAgentIdle(client, propagationAgent.id);
+    await client.sendAgentMessage(propagationAgent.id, "CLARIFY_PROPAGATION_SECOND_OBJECTIVE", {
+      thoth: { enabled: true, executionMode: "quick", clarifyStrength: "balanced" },
+    });
+    await waitForPendingCard(client, propagationAgent.id, "clarify_card");
+    const nextTree = await client.getAgentDecisionSession({ agentId: propagationAgent.id });
+    expect(nextTree.snapshot?.session).toMatchObject({ lifecycle: "awaiting_human" });
+    expect(nextTree.snapshot?.session.id).not.toBe(frozenSessionId);
+    const sessions = await client.listAgentDecisionSessions(propagationAgent.id);
+    expect(sessions.error).toBeNull();
+    expect(sessions.activeSessionId).toBe(nextTree.snapshot?.session.id);
+    expect(sessions.sessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: frozenSessionId, lifecycle: "frozen" }),
+        expect.objectContaining({ id: nextTree.snapshot?.session.id, lifecycle: "awaiting_human" }),
+      ]),
+    );
+    const frozenAfterNewObjective = await client.getAgentDecisionSession({
+      agentId: propagationAgent.id,
+      sessionId: frozenSessionId,
+    });
+    expect(frozenAfterNewObjective.snapshot?.session.lifecycle).toBe("frozen");
+    expect(
+      JSON.stringify(
+        frozenAfterNewObjective.snapshot?.nodes.map((node) => ({
+          id: node.id,
+          parentId: node.parentId,
+          status: node.status,
+          resolutionRef: node.resolutionRef,
+          revision: node.revision,
+        })),
+      ),
+    ).toBe(frozenNodeDigest);
+
+    await client.close();
+    await daemon.close();
+    client = null;
+    daemon = null;
+
+    const subtreeScript = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.clarifySubtreeDelegation;
+    const subtreeProvider = new ScriptedThothClient(subtreeScript);
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: subtreeProvider } });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+    const subtreeCwd = mkdtempSync(join(tmpdir(), "thoth-clarify-subtree-"));
+    workspaces.push(subtreeCwd);
+    const subtreeAgent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd: subtreeCwd,
+      initialPrompt: "CLARIFY_SUBTREE_DELEGATION",
+      thoth: { enabled: true, executionMode: "quick", clarifyStrength: "balanced" },
+    });
+    const subtreeCard = (await waitForPendingCard(
+      client,
+      subtreeAgent.id,
+      "clarify_card",
+    )) as ThothClarifyCardModel;
+    const subtreeDelegation = await answerPendingCard({
+      client,
+      agentId: subtreeAgent.id,
+      cardId: subtreeCard.id,
+      answer: {
+        intent: "delegate_subtree",
+        questionCardId: subtreeCard.id,
+        answers: [{ nodeId: "UT08-portability", choiceIds: [], choiceNotes: {} }],
+        delegatedNodeIds: ["UT08-portability"],
+        rawAnswer: "Delegate this complete decision subtree to the Provider.",
+      },
+    });
+    expect(subtreeDelegation.decisionTreeDelta?.nodeUpserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "UT08-portability", status: "delegated" }),
+        expect.objectContaining({ id: "UT08-adapter-layout", status: "delegated" }),
+      ]),
+    );
+    const subtreeTree = await client.getAgentDecisionSession({ agentId: subtreeAgent.id });
+    const subtreeNodes = new Map(subtreeTree.snapshot?.nodes.map((node) => [node.id, node]) ?? []);
+    expect(subtreeNodes.get("UT08-portability")).toMatchObject({ status: "delegated" });
+    expect(subtreeNodes.get("UT08-adapter-layout")).toMatchObject({ status: "delegated" });
+
+    const receiptPath = process.env.THOTH_CLARIFY_BEHAVIOR_RECEIPT_PATH;
+    if (receiptPath) {
+      mkdirSync(dirname(receiptPath), { recursive: true });
+      writeFileSync(
+        receiptPath,
+        `${JSON.stringify(
+          {
+            schemaVersion: 3,
+            journey: "public-api-decision-tree-propagation-delegation-and-confirmation",
+            decisionSessionContinuity: {
+              initialSessionId: initialSession?.id,
+              initialRootNodeId: initialSession?.rootNodeId,
+              initialRootIsOnlyRoot:
+                initialTree.snapshot?.nodes.filter((node) => node.parentId === null).length === 1,
+              propagatedSessionId: propagatedTree.snapshot?.session.id,
+              propagatedRootNodeId: propagatedTree.snapshot?.session.rootNodeId,
+              frozenSessionId,
+              rejectedFrozenMutation: frozenPriority.error,
+              nextObjectiveSessionId: nextTree.snapshot?.session.id,
+              nextObjectiveCreatedNewSession: nextTree.snapshot?.session.id !== frozenSessionId,
+              frozenSessionRemainedImmutable:
+                frozenAfterNewObjective.snapshot?.session.lifecycle === "frozen" &&
+                JSON.stringify(
+                  frozenAfterNewObjective.snapshot?.nodes.map((node) => ({
+                    id: node.id,
+                    parentId: node.parentId,
+                    status: node.status,
+                    resolutionRef: node.resolutionRef,
+                    revision: node.revision,
+                  })),
+                ) === frozenNodeDigest,
+            },
+            persistedDecisionTree: persistedTree,
+            frontierProtection: {
+              staleCardRejected:
+                repeatedCardAnswer.accepted === false &&
+                repeatedCardAnswer.error ===
+                  "This authority card is no longer pending for the Agent.",
+              prunedSiblingCannotBecomeCurrent:
+                propagatedNodes.get("UT07-live-preview")?.status === "pruned",
+            },
+            contractConfirmation: {
+              intentCardPending: true,
+              treeLifecycleBefore: confirmationBefore.snapshot?.session.lifecycle,
+              activityBefore: confirmationBefore.snapshot?.session.activity.state,
+              contractStatusBefore: confirmationBefore.snapshot?.session.intentContract?.status,
+              confirmedAtBefore: confirmationBefore.snapshot?.session.intentContract?.confirmedAt,
+              finalConfirmationPolicy:
+                confirmationBefore.snapshot?.session.intentContract?.escalationPolicy
+                  .finalConfirmation,
+              automaticPolicyStillRequiredIntentCard: Boolean(
+                confirmationBefore.snapshot?.session.intentContract?.escalationPolicy
+                  .finalConfirmation === "automatic" &&
+                confirmationBefore.snapshot?.cardReceipts.some(
+                  (receipt) =>
+                    receipt.cardId === contractCard.id &&
+                    receipt.kind === "intent_contract_card" &&
+                    receipt.status === "pending",
+                ),
+              ),
+              humanAcceptanceAccepted: confirmation.accepted,
+              submittedCard: confirmation.card?.card.submitted,
+              treeLifecycleAfter: confirmationAfter.snapshot?.session.lifecycle,
+              activityAfter: confirmationAfter.snapshot?.session.activity.state,
+              contractStatusAfter: confirmationAfter.snapshot?.session.intentContract?.status,
+              confirmedAtRecorded:
+                confirmationAfter.snapshot?.session.intentContract?.confirmedAt !== null,
+              taskRegistered: confirmationAfter.snapshot?.session.intentContract?.taskId !== null,
+            },
+            singleNodeRecommendation: {
+              intent: "recommend",
+              targetNodeId: "UT07-strategy",
+              deltaNodeIds: singleNodeRecommendation.decisionTreeDelta?.nodeUpserts.map(
+                (node) => node.id,
+              ),
+              targetStatus: propagatedNodes.get("UT07-strategy")?.status,
+              newlyMaterialChildId: "UT07-renderer-mode",
+              newlyMaterialChildParentId: propagatedNodes.get("UT07-renderer-mode")?.parentId,
+              newlyMaterialChildStatus: propagatedNodes.get("UT07-renderer-mode")?.status,
+              prunedSiblingId: "UT07-live-preview",
+              prunedSiblingStatus: propagatedNodes.get("UT07-live-preview")?.status,
+            },
+            subtreeDelegation: {
+              intent: "delegate_subtree",
+              targetNodeId: "UT08-portability",
+              descendantNodeId: "UT08-adapter-layout",
+              deltaNodeIds: subtreeDelegation.decisionTreeDelta?.nodeUpserts.map((node) => node.id),
+              targetStatus: subtreeNodes.get("UT08-portability")?.status,
+              descendantStatus: subtreeNodes.get("UT08-adapter-layout")?.status,
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
     }
   }, 45_000);
 

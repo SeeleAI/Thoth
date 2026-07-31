@@ -57,11 +57,9 @@ import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
 import { useLoadOlderAgentHistory } from "@/hooks/use-load-older-agent-history";
 import type { ToastApi } from "@/components/toast-host";
 import type { DaemonClient } from "@thoth/client/internal/daemon-client";
-import type { ThothCardAnswerPayload } from "@thoth/protocol/thoth/rpc-schemas";
 import { ToolCallDetailsContent } from "@/components/tool-call-details";
 import { QuestionFormCard } from "@/components/question-form-card";
-import { ClarifyDecisionCard } from "@/components/clarify-decision-card";
-import { IntentContractCard } from "@/components/intent-contract-card";
+import { DecisionCardTimelineReceipt } from "@/components/decision-card-timeline-receipt";
 import { LegacyExecutionPlanCard } from "@/components/legacy-execution-plan-card";
 import { RegisteredTaskCard } from "@/components/registered-task-card";
 import { ToolCallSheetProvider } from "@/components/tool-call-sheet";
@@ -107,6 +105,7 @@ import { toErrorMessage } from "@/utils/error-messages";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import {
+  isForegroundTurnSuspended,
   resolveForegroundAgentStatus,
   shouldShowForegroundTurnSpinner,
 } from "@/agent-thoth/foreground-state";
@@ -313,7 +312,6 @@ export interface AgentStreamViewProps {
   toast?: ToastApi | null;
   approvalMode?: "quick" | "loop";
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
-  onSubmitClarifyAnswer?: (cardId: string, answer: ThothCardAnswerPayload) => Promise<void> | void;
 }
 
 const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
@@ -394,7 +392,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       toast,
       approvalMode,
       onOpenWorkspaceFile,
-      onSubmitClarifyAnswer,
     },
     ref,
   ) {
@@ -525,39 +522,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const handleToolCallOpenFile = useStableEvent((filePath: string) => {
       handleInlinePathPress({ raw: filePath, path: filePath }, "main");
     });
-
-    const handleSubmitClarifyAnswer = useStableEvent(
-      async (cardId: string, answer: ThothCardAnswerPayload) => {
-        try {
-          if (onSubmitClarifyAnswer) {
-            await onSubmitClarifyAnswer(cardId, answer);
-            return;
-          }
-          if (!client) {
-            throw new Error(t("workspace.terminal.hostDisconnected"));
-          }
-          const authority = await client.getAgentThothState(agentId);
-          if (authority.error) {
-            throw new Error(authority.error);
-          }
-          if (authority.state.pendingCard?.card.id !== cardId) {
-            throw new Error("This card is no longer the active Thoth decision.");
-          }
-          const result = await client.answerAgentThothCard({
-            agentId,
-            cardId,
-            answer,
-            expectedRevision: authority.state.revision,
-            commandId: `card_${generateMessageId()}`,
-          });
-          if (result.error || result.conflict || !result.accepted) {
-            throw new Error(result.error ?? "The Thoth decision changed on another client.");
-          }
-        } catch (error) {
-          toast?.error(toErrorMessage(error));
-        }
-      },
-    );
 
     const handleForkAssistantTurn: AssistantTurnForkHandler = useStableEvent(
       async ({ target, boundaryMessageId }) => {
@@ -781,18 +745,28 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             onOpenFilePath={handleToolCallOpenFile}
           />
         ),
-        renderClarify: (entry) => (
-          <ClarifyDecisionCard
-            card={entry.item.card}
-            onSubmit={(answer) => handleSubmitClarifyAnswer(entry.item.card.id, answer)}
-          />
-        ),
-        renderIntentContract: (entry) => (
-          <IntentContractCard
-            card={entry.item.card}
-            onSubmit={(answer) => handleSubmitClarifyAnswer(entry.item.card.id, answer)}
-          />
-        ),
+        renderClarify: (entry) => {
+          const active = agentThothState?.pendingCard?.card.id === entry.item.card.id;
+          return (
+            <DecisionCardTimelineReceipt
+              active={active}
+              canceled={!active && !entry.item.card.submitted}
+              summary={entry.item.card.submittedSummary}
+              title={entry.item.card.card.title}
+            />
+          );
+        },
+        renderIntentContract: (entry) => {
+          const active = agentThothState?.pendingCard?.card.id === entry.item.card.id;
+          return (
+            <DecisionCardTimelineReceipt
+              active={active}
+              canceled={!active && !entry.item.card.submitted}
+              summary={entry.item.card.submittedSummary}
+              title={entry.item.card.contract.title}
+            />
+          );
+        },
         renderLegacyExecutionPlan: (entry) => <LegacyExecutionPlanCard plan={entry.item} />,
         renderRegisteredTask: (entry) => <RegisteredTaskCard task={entry.item.task} />,
         renderTodo: (entry) => <TodoListCard items={entry.item.items} />,
@@ -815,7 +789,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         agent.cwd,
         client,
         handleInlinePathPress,
-        handleSubmitClarifyAnswer,
+        agentThothState,
         handleToolCallOpenFile,
         renderUserMessage,
         resolvedServerId,
@@ -839,7 +813,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [effectiveAgentStatus, finalItemId, renderContext],
     );
 
-    const bottomTurnFooterHost = streamLayout.auxiliaryTurnFooter;
+    const bottomTurnFooterHost = isForegroundTurnSuspended(agentThothState)
+      ? null
+      : streamLayout.auxiliaryTurnFooter;
 
     const renderStreamItem = useCallback(
       (layoutItem: StreamLayoutItem) => {
@@ -1135,9 +1111,6 @@ function agentStreamViewPropsEqual(
   if (left.toast !== right.toast) reasons.push("toast");
   if (left.approvalMode !== right.approvalMode) reasons.push("approvalMode");
   if (left.onOpenWorkspaceFile !== right.onOpenWorkspaceFile) reasons.push("onOpenWorkspaceFile");
-  if (left.onSubmitClarifyAnswer !== right.onSubmitClarifyAnswer) {
-    reasons.push("onSubmitClarifyAnswer");
-  }
   recordRenderProfileReasons(`AgentStreamView:${right.agentId}`, reasons);
   return reasons.length === 0;
 }

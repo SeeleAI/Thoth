@@ -24,32 +24,40 @@ const activeTurns = new Set();
 let foregroundFlow = "core";
 let awaitingNativePlanImplementation = false;
 
-const decisionMap = {
-  effectiveStrength: "light",
-  publicSummary: "The packaged objective is grounded and two material Human branches remain.",
-  nodes: [
-    {
-      id: "packaged-scope",
-      parentIds: [],
-      title: "Packaged execution scope",
-      owner: "human",
-      materiality: "structural",
-      status: "awaiting_human",
-      resolutionRef: null,
-      sourceRefs: ["fixture:packaged-request"],
-    },
-    {
-      id: "packaged-evidence",
-      parentIds: ["packaged-scope"],
-      title: "Packaged evidence boundary",
-      owner: "human",
-      materiality: "material",
-      status: "awaiting_human",
-      resolutionRef: null,
-      sourceRefs: ["fixture:packaged-request"],
-    },
-  ],
-};
+function decisionTreeUpdate(rootNodeId) {
+  return {
+    effectiveStrength: "light",
+    activity: "expanding",
+    activeNodeId: "packaged-scope",
+    publicSummary: "The packaged objective is grounded and two material Human branches remain.",
+    nodes: [
+      {
+        id: "packaged-scope",
+        parentId: rootNodeId,
+        crossLinkIds: [],
+        title: "Packaged execution scope",
+        summary: "Waiting for the packaged execution-scope decision.",
+        owner: "human",
+        materiality: "structural",
+        status: "open",
+        resolutionRef: null,
+        sourceRefs: [],
+      },
+      {
+        id: "packaged-evidence",
+        parentId: rootNodeId,
+        crossLinkIds: ["packaged-scope"],
+        title: "Packaged evidence boundary",
+        summary: "Waiting for the packaged evidence-boundary decision.",
+        owner: "human",
+        materiality: "material",
+        status: "open",
+        resolutionRef: null,
+        sourceRefs: [],
+      },
+    ],
+  };
+}
 
 const clarifyCard = {
   title: "Packaged flow decisions",
@@ -81,13 +89,14 @@ const clarifyCard = {
   ],
   allowChoiceNotes: true,
   allowNoteOnly: true,
+  allowSingleNodeRecommendation: true,
   allowSubtreeDelegation: true,
 };
 
 const intentContract = {
   contract: {
     title: "Packaged foreground and Loop flow",
-    objective: "Verify installed Decision Map, Quick and target-anchored Loop authority.",
+    objective: "Verify installed Decision Tree, Quick and target-anchored Loop authority.",
     nonGoals: ["Do not exercise an alternate Provider product path."],
     invariants: ["Use only fixed fixture actions.", "Do not mutate unrelated Workspace files."],
     acceptance: ["The packaged daemon records a checkpoint and fresh Review decision."],
@@ -471,6 +480,13 @@ async function waitForExecuteRelease(turnId) {
   return activeTurns.has(turnId);
 }
 
+async function waitForClarifyMapRelease(turnId) {
+  while (readSharedState().holdClarifyAfterMap === true && activeTurns.has(turnId)) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return activeTurns.has(turnId);
+}
+
 async function submitLoopCheckpoint(turnId) {
   if (readSharedState().holdExecute === true) {
     record({ kind: "execute_hold", threadId, turnId });
@@ -510,7 +526,7 @@ async function runTurn(params, turnId) {
         {
           decision: "stable",
           reason:
-            "The packaged Decision Map covers the objective, evidence, risk and acceptance frontier.",
+            "The packaged Decision Tree covers the objective, evidence, risk and acceptance frontier.",
           missingNodes: [],
         },
         turnId,
@@ -565,7 +581,14 @@ async function runTurn(params, turnId) {
           turnId,
         );
       } else {
-        await requireTool("thoth_clarify_update_map", decisionMap, turnId);
+        const rootNodeId = inputText.match(/"id"\s*:\s*"(decision-root-[^"]+)"/u)?.[1];
+        if (!rootNodeId) throw new Error("Packaged Clarify prompt has no Decision Tree root");
+        await requireTool("thoth_clarify_update_map", decisionTreeUpdate(rootNodeId), turnId);
+        if (readSharedState().holdClarifyAfterMap === true) {
+          record({ kind: "clarify_map_hold", threadId, turnId });
+          const released = await waitForClarifyMapRelease(turnId);
+          if (!released) return;
+        }
         await requireTool("thoth_clarify_ask", clarifyCard, turnId);
       }
     } else if (inputText.includes("Execute the complete approved task now")) {

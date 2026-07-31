@@ -12,7 +12,7 @@ import {
 } from "./user-simulation.js";
 
 describe("thoth.clarify cognitive harness", () => {
-  it("loads the provider-neutral Decision Map Skill artifact", () => {
+  it("loads the provider-neutral Decision Tree Skill artifact", () => {
     const artifact = loadRuntimeSkillArtifact("thoth.clarify");
     expect(artifact.path).toMatch(/runtime-skills[\\/]thoth-clarify[\\/]SKILL\.md$/u);
     expect(artifact.frontmatter).toMatchObject({
@@ -61,7 +61,7 @@ describe("thoth.clarify cognitive harness", () => {
     });
   });
 
-  it("passes the deterministic Decision Map research metrics", () => {
+  it("passes the deterministic Decision Tree research metrics", () => {
     const report = runClarifyEval();
     expect(report.passed, JSON.stringify(report.results, null, 2)).toBe(true);
     expect(report.scenarioCount).toBe(3);
@@ -81,16 +81,16 @@ describe("thoth.clarify cognitive harness", () => {
     ]);
   });
 
-  it("keeps all four ablations and selects Decision Map plus one-shot Challenger", () => {
+  it("keeps all four ablations and selects Decision Tree plus one-shot Challenger", () => {
     const report = buildClarifyUserSimulationReport({
       digest: `sha256:${"0".repeat(64)}`,
     });
-    expect(report.selectedVariant).toBe("decision_map_challenger");
+    expect(report.selectedVariant).toBe("decision_tree_challenger");
     expect(report.ablations.map((entry) => entry.variant)).toEqual([
       "prompt_only",
       "fixed_scaffold",
-      "decision_map",
-      "decision_map_challenger",
+      "decision_tree",
+      "decision_tree_challenger",
     ]);
     expect(validateClarifyUserSimulationReport(report)).toEqual([]);
   });

@@ -44,12 +44,12 @@ if (failures.length > 0) {
 
 const prompt = [
   "You are an independent research judge for a Thoth Clarify architecture ablation.",
-  "Do not modify files. Judge whether the evidence honestly compares prompt-only, fixed scaffold, Decision Map, and Decision Map plus one-shot Challenger.",
+  "Do not modify files. Judge whether the evidence honestly compares prompt-only, fixed scaffold, Decision Tree, and Decision Tree plus one-shot Challenger.",
   "",
   "Pass only if:",
   "- the selected architecture maximizes Provider Agent cognition while keeping a minimal semantic tool surface and deterministic authority boundaries;",
   "- prompt-only loses durable frontier/ownership/recovery, and fixed scaffold creates mechanical or low-value questions;",
-  "- Decision Map alone improves recoverability but can still omit one high-impact branch;",
+  "- Decision Tree alone improves recoverability but can still omit one high-impact branch;",
   "- one fresh Challenger closes concrete contract regret without adding a critic for every card or an endless loop;",
   "- the metrics explicitly cover high-impact omissions, invalid questions, discoverable-fact question rate, branches eliminated per Human answer, and contract regret;",
   "- the selected result preserves Human ownership, supports 30+ material Dive questions when the problem warrants them, and never encodes chain-of-thought;",

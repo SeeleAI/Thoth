@@ -42,6 +42,7 @@ export interface ForegroundCardRow {
   kind: "clarify_card" | "intent_contract_card";
   displayed_digest: string;
   created_at: string;
+  updated_at: string;
 }
 
 function parseTurn(row: ForegroundTurnRow | null): AgentThothTurn | null {
@@ -85,13 +86,17 @@ function parsePendingCard(
     return {
       kind: row.kind,
       card: ThothClarifyCardModelSchema.parse(raw),
+      status: "pending",
       createdAt: row.created_at,
+      updatedAt: row.updated_at,
     };
   }
   return {
     kind: row.kind,
     card: ThothIntentContractCardModelSchema.parse(raw),
+    status: "pending",
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

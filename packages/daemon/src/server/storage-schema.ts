@@ -2,10 +2,10 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const STORAGE_LAYOUT_VERSION = 6;
-export const SQLITE_SCHEMA_VERSION = 6;
-export const CATALOG_MIGRATION_VERSION = 6;
-export const AUTHORITY_MIGRATION_VERSION = 9;
+export const STORAGE_LAYOUT_VERSION = 7;
+export const SQLITE_SCHEMA_VERSION = 7;
+export const CATALOG_MIGRATION_VERSION = 7;
+export const AUTHORITY_MIGRATION_VERSION = 10;
 export const STORAGE_LAYOUT_MARKER = "storage-layout.json";
 
 export function catalogDatabasePath(thothHome: string): string {
@@ -40,7 +40,7 @@ export function createCatalogDatabase(filePath: string): void {
     database
       .prepare(
         `INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
-        VALUES (?, 'decision-map-task-anchor-v6-catalog', ?)`,
+        VALUES (?, 'decision-session-tree-v7-catalog', ?)`,
       )
       .run(CATALOG_MIGRATION_VERSION, new Date().toISOString());
     database.exec("PRAGMA user_version = " + String(SQLITE_SCHEMA_VERSION));
@@ -58,7 +58,7 @@ export function createWorkspaceDatabase(filePath: string, workspaceId: string): 
     database
       .prepare(
         `INSERT INTO authority_schema_migrations(version, checksum, applied_at)
-        VALUES (?, 'decision-map-task-anchor-v6', ?)`,
+        VALUES (?, 'decision-session-tree-v7', ?)`,
       )
       .run(AUTHORITY_MIGRATION_VERSION, now);
     database
@@ -299,6 +299,7 @@ const WORKSPACE_SCHEMA = `
   CREATE TABLE cards (
     card_id TEXT PRIMARY KEY NOT NULL,
     turn_id TEXT NOT NULL,
+    decision_session_id TEXT,
     task_id TEXT,
     kind TEXT NOT NULL,
     status TEXT NOT NULL,
@@ -308,7 +309,8 @@ const WORKSPACE_SCHEMA = `
     runtime_digest TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY(turn_id) REFERENCES turns(turn_id)
+    FOREIGN KEY(turn_id) REFERENCES turns(turn_id),
+    FOREIGN KEY(decision_session_id) REFERENCES decision_sessions(session_id) ON DELETE CASCADE
   ) STRICT;
   CREATE TABLE human_decisions (
     decision_id TEXT PRIMARY KEY NOT NULL,
@@ -329,28 +331,47 @@ const WORKSPACE_SCHEMA = `
     fidelity TEXT NOT NULL,
     decided_at TEXT NOT NULL
   ) STRICT;
-  CREATE TABLE clarify_sessions (
+  CREATE TABLE decision_sessions (
     session_id TEXT PRIMARY KEY NOT NULL,
     workspace_id TEXT NOT NULL,
     agent_id TEXT NOT NULL,
-    turn_id TEXT NOT NULL UNIQUE,
+    origin_turn_id TEXT NOT NULL,
+    active_turn_id TEXT,
     requested_strength TEXT NOT NULL,
     effective_strength TEXT,
-    lifecycle TEXT NOT NULL,
+    lifecycle TEXT NOT NULL CHECK(lifecycle IN (
+      'active', 'awaiting_human', 'ready_to_confirm', 'frozen', 'blocked', 'canceled'
+    )),
     challenger_used INTEGER NOT NULL CHECK(challenger_used IN (0, 1)),
+    root_node_id TEXT NOT NULL,
     priority_node_id TEXT,
+    active_card_id TEXT,
     intent_contract_id TEXT,
     revision INTEGER NOT NULL,
+    frozen_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE,
-    FOREIGN KEY(turn_id) REFERENCES turns(turn_id) ON DELETE CASCADE
+    FOREIGN KEY(origin_turn_id) REFERENCES turns(turn_id),
+    FOREIGN KEY(active_turn_id) REFERENCES turns(turn_id),
+    UNIQUE(intent_contract_id)
   ) STRICT;
-  CREATE TABLE clarify_decision_nodes (
+  CREATE TABLE decision_session_turns (
+    session_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL UNIQUE,
+    turn_order INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(session_id, turn_id),
+    FOREIGN KEY(session_id) REFERENCES decision_sessions(session_id) ON DELETE CASCADE,
+    FOREIGN KEY(turn_id) REFERENCES turns(turn_id) ON DELETE CASCADE,
+    UNIQUE(session_id, turn_order)
+  ) STRICT;
+  CREATE TABLE decision_tree_nodes (
     node_id TEXT NOT NULL,
     session_id TEXT NOT NULL,
-    parent_ids_json TEXT NOT NULL,
+    parent_id TEXT,
     title TEXT NOT NULL,
+    summary TEXT,
     owner TEXT NOT NULL CHECK(owner IN ('human', 'agent', 'evidence')),
     materiality TEXT NOT NULL CHECK(materiality IN ('structural', 'material', 'local')),
     status TEXT NOT NULL CHECK(status IN ('open', 'awaiting_human', 'resolved', 'delegated', 'pruned')),
@@ -361,7 +382,36 @@ const WORKSPACE_SCHEMA = `
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     PRIMARY KEY(session_id, node_id),
-    FOREIGN KEY(session_id) REFERENCES clarify_sessions(session_id) ON DELETE CASCADE
+    FOREIGN KEY(session_id) REFERENCES decision_sessions(session_id) ON DELETE CASCADE,
+    FOREIGN KEY(session_id, parent_id) REFERENCES decision_tree_nodes(session_id, node_id)
+      DEFERRABLE INITIALLY DEFERRED
+  ) STRICT;
+  CREATE TABLE decision_tree_cross_links (
+    session_id TEXT NOT NULL,
+    from_node_id TEXT NOT NULL,
+    to_node_id TEXT NOT NULL,
+    relation TEXT NOT NULL DEFAULT 'influences',
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(session_id, from_node_id, to_node_id),
+    FOREIGN KEY(session_id, from_node_id) REFERENCES decision_tree_nodes(session_id, node_id)
+      ON DELETE CASCADE,
+    FOREIGN KEY(session_id, to_node_id) REFERENCES decision_tree_nodes(session_id, node_id)
+      ON DELETE CASCADE,
+    CHECK(from_node_id <> to_node_id)
+  ) STRICT;
+  CREATE TABLE decision_tree_activity (
+    session_id TEXT PRIMARY KEY NOT NULL,
+    state TEXT NOT NULL CHECK(state IN (
+      'understanding', 'investigating', 'expanding', 'challenging',
+      'awaiting_human', 'ready_to_confirm', 'frozen', 'blocked'
+    )),
+    active_node_id TEXT,
+    summary TEXT,
+    started_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(session_id) REFERENCES decision_sessions(session_id) ON DELETE CASCADE,
+    FOREIGN KEY(session_id, active_node_id) REFERENCES decision_tree_nodes(session_id, node_id)
+      DEFERRABLE INITIALLY DEFERRED
   ) STRICT;
   CREATE TABLE intent_contracts (
     contract_id TEXT PRIMARY KEY NOT NULL,
@@ -696,8 +746,12 @@ const WORKSPACE_SCHEMA = `
   CREATE INDEX execution_attempts_task_time ON execution_attempts(task_id, started_at DESC);
   CREATE UNIQUE INDEX execution_approvals_one_pending
     ON execution_approvals(execution_id) WHERE status = 'pending';
-  CREATE INDEX clarify_decision_nodes_session_priority
-    ON clarify_decision_nodes(session_id, priority DESC, node_id);
+  CREATE INDEX decision_sessions_agent_created
+    ON decision_sessions(agent_id, created_at DESC, session_id DESC);
+  CREATE INDEX decision_tree_nodes_session_priority
+    ON decision_tree_nodes(session_id, priority DESC, node_id);
+  CREATE INDEX decision_tree_nodes_session_parent
+    ON decision_tree_nodes(session_id, parent_id, priority DESC, node_id);
   CREATE INDEX task_work_units_task_time ON task_work_units(task_id, created_at ASC);
   CREATE INDEX review_decisions_task_time ON review_decisions(task_id, created_at ASC);
   CREATE INDEX evidence_refs_task_time ON evidence_refs(task_id, created_at ASC);

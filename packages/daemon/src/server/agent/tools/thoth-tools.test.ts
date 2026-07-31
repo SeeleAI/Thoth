@@ -50,6 +50,7 @@ function semanticToolNames(catalog: ReturnType<typeof createThothToolCatalog>): 
 function createEnvironment(input: {
   scope: ThothToolRuntimeScope;
   foregroundKind?: "thoth_clarify" | "raw_provider";
+  clarifyStrength?: "auto" | "light" | "balanced" | "dive";
 }) {
   const home = mkdtempSync(join(tmpdir(), "thoth-tools-final-contract-"));
   roots.push(home);
@@ -93,13 +94,15 @@ function createEnvironment(input: {
   const gateway = new ToolGateway(sink);
 
   let clarifySessionId: string | null = null;
+  let decisionRootNodeId: string | null = null;
   if (input.scope === "clarify") {
     const foregroundKind = input.foregroundKind ?? "thoth_clarify";
+    const clarifyStrength = input.clarifyStrength ?? "dive";
     const started = authority.startTurn({
       agentId: agent.id,
       kind: foregroundKind === "thoth_clarify" ? "thoth" : "raw",
       ...(foregroundKind === "thoth_clarify"
-        ? { controls: { mode: "quick" as const, clarifyStrength: "dive" as const, loop: null } }
+        ? { controls: { mode: "quick" as const, clarifyStrength, loop: null } }
         : {}),
       sourceMessageId: `message-${foregroundKind}`,
       workspaceId: "workspace-test",
@@ -107,11 +110,13 @@ function createEnvironment(input: {
       userText: "Design the final runtime boundary.",
     });
     if (foregroundKind === "thoth_clarify") {
-      clarifySessionId = authority.startClarifySession({
+      const decisionTree = authority.startDecisionSession({
         agentId: agent.id,
         turnId: started.turn.id,
-        requestedStrength: "dive",
-      }).id;
+        requestedStrength: clarifyStrength,
+      });
+      clarifySessionId = decisionTree.session.id;
+      decisionRootNodeId = decisionTree.session.rootNodeId;
     }
     gateway.beginForegroundTurn({
       agentId: agent.id,
@@ -153,6 +158,7 @@ function createEnvironment(input: {
     cancelAgentRun,
     catalog,
     clarifySessionId,
+    decisionRootNodeId,
     gateway,
     manager,
     sink,
@@ -160,14 +166,16 @@ function createEnvironment(input: {
   };
 }
 
-const resolvedMap = {
+const resolvedMap = (parentId: string | null) => ({
   effectiveStrength: "dive" as const,
   publicSummary: "Workspace evidence resolves the execution boundary.",
   nodes: [
     {
       id: "objective",
-      parentIds: [],
+      parentId,
+      crossLinkIds: [],
       title: "Objective boundary",
+      summary: "Grounded from Workspace evidence.",
       owner: "agent" as const,
       materiality: "structural" as const,
       status: "resolved" as const,
@@ -175,7 +183,7 @@ const resolvedMap = {
       sourceRefs: ["workspace:README.md"],
     },
   ],
-};
+});
 
 afterEach(() => {
   resetClarifyChallengeBrokerForTest();
@@ -211,42 +219,68 @@ describe("final Thoth semantic tool catalog", () => {
     await expect(
       catalog.executeTool(
         "thoth_clarify_update_map",
-        resolvedMap,
+        resolvedMap(null),
         providerCall("thoth_clarify_update_map"),
       ),
     ).rejects.toMatchObject({ code: "THOTH_RUNTIME_INACTIVE" });
   });
 
-  it("persists visible Decision Map conclusions without hidden reasoning", async () => {
-    const { authority, catalog, clarifySessionId, timeline } = createEnvironment({
-      scope: "clarify",
-    });
+  it("persists visible Decision Tree conclusions without hidden reasoning", async () => {
+    const { authority, catalog, clarifySessionId, decisionRootNodeId, timeline } =
+      createEnvironment({
+        scope: "clarify",
+      });
+    const map = resolvedMap(decisionRootNodeId);
     const result = await catalog.executeTool(
       "thoth_clarify_update_map",
-      resolvedMap,
+      map,
       providerCall("thoth_clarify_update_map", "call-map"),
     );
 
     expect(result.structuredContent).toMatchObject({ ok: true, sessionId: clarifySessionId });
-    expect(authority.getClarifySession("agent-1")).toMatchObject({
-      effectiveStrength: "dive",
-      nodes: [expect.objectContaining({ id: "objective", owner: "agent", status: "resolved" })],
-    });
+    const snapshot = authority.getDecisionTree("agent-1");
+    expect(snapshot).toMatchObject({ session: { effectiveStrength: "dive" } });
+    expect(snapshot?.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "objective", owner: "agent", status: "resolved" }),
+      ]),
+    );
     expect(timeline).toContainEqual(
       expect.objectContaining({
         type: "tool_call",
         callId: "call-map",
         status: "completed",
-        detail: expect.objectContaining({ text: resolvedMap.publicSummary }),
+        detail: expect.objectContaining({ text: map.publicSummary }),
       }),
     );
     expect(JSON.stringify(timeline)).not.toContain("chain-of-thought");
   });
 
-  it("opens one durable Clarify Card only for mapped Human-owned nodes and parks the turn", async () => {
-    const { authority, cancelAgentRun, catalog, gateway, timeline } = createEnvironment({
+  it("lets the Provider establish effective Clarify depth from an auto turn snapshot", async () => {
+    const { authority, catalog, decisionRootNodeId } = createEnvironment({
       scope: "clarify",
+      clarifyStrength: "auto",
     });
+    expect(authority.getDecisionTree("agent-1")).toMatchObject({
+      session: { requestedStrength: "auto", effectiveStrength: null },
+    });
+
+    await catalog.executeTool(
+      "thoth_clarify_update_map",
+      { ...resolvedMap(decisionRootNodeId), effectiveStrength: "balanced" },
+      providerCall("thoth_clarify_update_map", "call-auto-strength"),
+    );
+
+    expect(authority.getDecisionTree("agent-1")).toMatchObject({
+      session: { requestedStrength: "auto", effectiveStrength: "balanced" },
+    });
+  });
+
+  it("opens one durable Clarify Card only for mapped Human-owned nodes and parks the turn", async () => {
+    const { authority, cancelAgentRun, catalog, decisionRootNodeId, gateway, timeline } =
+      createEnvironment({
+        scope: "clarify",
+      });
     await catalog.executeTool(
       "thoth_clarify_update_map",
       {
@@ -255,8 +289,10 @@ describe("final Thoth semantic tool catalog", () => {
         nodes: [
           {
             id: "delivery",
-            parentIds: [],
+            parentId: decisionRootNodeId,
+            crossLinkIds: [],
             title: "Delivery boundary",
+            summary: "Waiting for a product-level delivery decision.",
             owner: "human",
             materiality: "structural",
             status: "awaiting_human",
@@ -275,6 +311,7 @@ describe("final Thoth semantic tool catalog", () => {
         publicSummary: "Waiting for the delivery boundary decision.",
         allowChoiceNotes: true,
         allowNoteOnly: true,
+        allowSingleNodeRecommendation: true,
         allowSubtreeDelegation: true,
         questions: [
           {
@@ -306,7 +343,7 @@ describe("final Thoth semantic tool catalog", () => {
   });
 
   it("rejects duplicate, closed, non-Human, and low-value Clarify frontiers", async () => {
-    const { catalog } = createEnvironment({ scope: "clarify" });
+    const { catalog, decisionRootNodeId } = createEnvironment({ scope: "clarify" });
     await catalog.executeTool(
       "thoth_clarify_update_map",
       {
@@ -315,8 +352,10 @@ describe("final Thoth semantic tool catalog", () => {
         nodes: [
           {
             id: "human-open",
-            parentIds: [],
+            parentId: decisionRootNodeId,
+            crossLinkIds: [],
             title: "Material Human choice",
+            summary: "Waiting for a material Human choice.",
             owner: "human",
             materiality: "material",
             status: "open",
@@ -325,8 +364,10 @@ describe("final Thoth semantic tool catalog", () => {
           },
           {
             id: "human-resolved",
-            parentIds: [],
+            parentId: decisionRootNodeId,
+            crossLinkIds: [],
             title: "Resolved Human choice",
+            summary: "The Human choice is already resolved.",
             owner: "human",
             materiality: "material",
             status: "resolved",
@@ -335,8 +376,10 @@ describe("final Thoth semantic tool catalog", () => {
           },
           {
             id: "workspace-fact",
-            parentIds: [],
+            parentId: decisionRootNodeId,
+            crossLinkIds: [],
             title: "Discoverable Workspace fact",
+            summary: "This fact must be resolved from Workspace evidence.",
             owner: "evidence",
             materiality: "material",
             status: "open",
@@ -345,8 +388,10 @@ describe("final Thoth semantic tool catalog", () => {
           },
           {
             id: "local-detail",
-            parentIds: ["human-open"],
+            parentId: "human-open",
+            crossLinkIds: [],
             title: "Local implementation detail",
+            summary: "This local detail is below the Human decision threshold.",
             owner: "human",
             materiality: "local",
             status: "open",
@@ -405,10 +450,10 @@ describe("final Thoth semantic tool catalog", () => {
   });
 
   it("proposes one Intent Contract only after the material frontier is resolved", async () => {
-    const { authority, catalog } = createEnvironment({ scope: "clarify" });
+    const { authority, catalog, decisionRootNodeId } = createEnvironment({ scope: "clarify" });
     await catalog.executeTool(
       "thoth_clarify_update_map",
-      resolvedMap,
+      resolvedMap(decisionRootNodeId),
       providerCall("thoth_clarify_update_map"),
     );
     const result = await catalog.executeTool(
@@ -431,11 +476,14 @@ describe("final Thoth semantic tool catalog", () => {
     );
 
     expect(result.structuredContent).toMatchObject({ ok: true, status: "challenging" });
-    expect(authority.getClarifySession("agent-1")).toMatchObject({
-      lifecycle: "proposing",
-      intentContract: {
-        status: "proposed",
-        objective: "Ship one provider-neutral runtime boundary.",
+    expect(authority.getDecisionTree("agent-1")).toMatchObject({
+      session: {
+        lifecycle: "active",
+        activity: { state: "challenging" },
+        intentContract: {
+          status: "proposed",
+          objective: "Ship one provider-neutral runtime boundary.",
+        },
       },
     });
     expect(authority.getState("agent-1").lifecycle).toBe("challenging");

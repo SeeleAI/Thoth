@@ -1039,11 +1039,12 @@ const clientRpcBindings = {
     clientMethod: "getAgentThothState",
     fields: ["agentId"],
   }),
-  getAgentClarifySession: positionalRpc({
-    clientMethod: "getAgentClarifySession",
+  listAgentDecisionSessions: positionalRpc({
+    clientMethod: "listAgentDecisionSessions",
     fields: ["agentId"],
   }),
-  prioritizeAgentClarifyNode: objectRpc({ clientMethod: "prioritizeAgentClarifyNode" }),
+  getAgentDecisionSession: objectRpc({ clientMethod: "getAgentDecisionSession" }),
+  prioritizeAgentDecisionNode: objectRpc({ clientMethod: "prioritizeAgentDecisionNode" }),
   answerAgentThothCard: objectRpc({ clientMethod: "answerAgentThothCard" }),
   listTasks: positionalRpc({ clientMethod: "listTasks", fields: ["workspaceId"] }),
   getTask: objectRpc({ clientMethod: "getTask" }),
@@ -2588,12 +2589,12 @@ class DaemonClientRuntime {
     return this.on("agent.thoth.state.update", (message) => handler(message.payload));
   }
 
-  subscribeAgentClarifySessionUpdates(
+  subscribeAgentDecisionTreeDeltas(
     handler: (
-      payload: Extract<SessionOutboundMessage, { type: "agent.clarify.session.update" }>["payload"],
+      payload: Extract<SessionOutboundMessage, { type: "agent.decision_tree.delta" }>["payload"],
     ) => void,
   ): () => void {
-    return this.on("agent.clarify.session.update", (message) => handler(message.payload));
+    return this.on("agent.decision_tree.delta", (message) => handler(message.payload));
   }
 
   subscribeWorkspaceAuthorityUpdates(

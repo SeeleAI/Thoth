@@ -168,6 +168,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
   private readonly workspaceTails = new Map<string, Promise<void>>();
   private readonly approvalController: ExecutionApprovalController;
   private readonly approvalTimeoutMs: number;
+  private closed = false;
 
   constructor(
     private readonly authority: WorkspaceAuthorityManager,
@@ -186,6 +187,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
   }
 
   initialize(): void {
+    if (this.closed) return;
     for (const workspace of this.authority.catalog.listWorkspaces()) {
       const store = this.authority.forWorkspace(workspace.id);
       store.recoverInterruptedExecutionsAfterRestart();
@@ -199,7 +201,24 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     }
   }
 
+  /**
+   * Fences process-local callbacks before Workspace authority closes. Durable
+   * executions remain recoverable on the next daemon start; no shutdown timer
+   * may mutate a closed SQLite shard.
+   */
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.approvalController.clear();
+    for (const executionId of [...this.activeByExecution.keys()]) {
+      this.cleanupActive(executionId);
+    }
+    this.workspaceTails.clear();
+    this.coordinator.runtimes.clear();
+  }
+
   async scheduleTask(input: { workspaceId: string; taskId: string }): Promise<void> {
+    if (this.closed) return;
     const previous = this.workspaceTails.get(input.workspaceId) ?? Promise.resolve();
     const next = previous
       .catch(() => undefined)
@@ -219,6 +238,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     execution: ExecutionProjection | null;
     command: "pause" | "resume" | "stop" | "raise_budget" | "review_only";
   }): Promise<void> {
+    if (this.closed) return;
     if (input.command === "stop") {
       if (input.execution) this.approvalController.cancelExecution(input.execution.id);
       return;
@@ -233,6 +253,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     task: TaskProjection;
     execution: ExecutionProjection | null;
   }): Promise<void> {
+    if (this.closed) return;
     const active = input.execution ? this.activeByExecution.get(input.execution.id) : null;
     if (
       active &&
@@ -251,6 +272,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     execution: ExecutionProjection;
     approval: ExecutionApprovalProjection;
   }): Promise<void> {
+    if (this.closed) return;
     this.approvalController.cancel(input.approval.id);
     const active = this.activeByExecution.get(input.execution.id);
     if (
@@ -487,6 +509,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
   }
 
   private async runWorkspace(workspaceId: string): Promise<void> {
+    if (this.closed) return;
     if (this.activeByWorkspace.has(workspaceId)) return;
     const store = this.authority.forWorkspace(workspaceId);
     if (store.hasMutationQuarantine()) return;
@@ -500,6 +523,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
   }
 
   private async launchPhase(store: WorkspaceAuthorityStore, task: TaskProjection): Promise<void> {
+    if (this.closed) return;
     const phase = this.nextPhase(store, task);
     const executionId = `execution-${randomUUID()}`;
     const generation = randomUUID();
@@ -515,6 +539,10 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         ttlMs: LEASE_TTL_MS,
       })
     ) {
+      return;
+    }
+    if (this.closed) {
+      store.releaseMutationLease({ taskId: task.id, executionId, generation });
       return;
     }
 
@@ -689,6 +717,12 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
             thread,
             execution: executionInput,
           });
+      if (this.closed) {
+        await this.executionService
+          .interruptHarnessExecution(adapterId, descriptor)
+          .catch(() => undefined);
+        return;
+      }
       active.descriptor = descriptor;
       active.unregisterRuntime = this.coordinator.runtimes.register({
         workspaceId: task.workspaceId,
@@ -709,6 +743,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
       }, LEASE_HEARTBEAT_MS);
       active.heartbeat.unref();
     } catch (error) {
+      if (this.closed) return;
       store.interruptExecution({
         executionId,
         generation,
@@ -784,6 +819,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     providerSegmentRevision: number,
     purpose: "planning" | "implementation" | "execution" | "repair" | "continuation",
   ): Promise<void> {
+    if (this.closed) return;
     const store = this.authority.forWorkspace(active.workspaceId);
     store.appendTimeline({
       executionId: active.executionId,
@@ -898,6 +934,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     active: ActivePhase,
     request: HarnessApprovalRequest,
   ): Promise<void> {
+    if (this.closed) return;
     const store = this.authority.forWorkspace(active.workspaceId);
     try {
       if (request.kind === "question" || !request.autoApproveEligible) {
@@ -959,6 +996,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
       purpose: "implementation" | "repair" | "continuation";
     },
   ): Promise<void> {
+    if (this.closed) return;
     active.providerSegmentRevision += 1;
     active.unsubscribeEvents?.();
     const descriptor = await this.executionService.continueHarnessExecution(active.adapterId, {
@@ -1001,6 +1039,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
       active.adapterId,
       active.descriptor,
       (event) => {
+        if (this.closed) return;
         active.eventTail = active.eventTail
           .then(() => this.handleExecutionEvent(active, event, revision, purpose))
           .catch((error: unknown) => {
@@ -1031,6 +1070,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
   }
 
   private async interruptForLostLease(active: ActivePhase): Promise<void> {
+    if (this.closed) return;
     if (active.descriptor) {
       await this.executionService
         .interruptHarnessExecution(active.adapterId, active.descriptor)
@@ -1045,6 +1085,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
   }
 
   private async finishPhase(active: ActivePhase): Promise<void> {
+    if (this.closed) return;
     if (this.activeByExecution.get(active.executionId) !== active) return;
     const store = this.authority.forWorkspace(active.workspaceId);
     const persistence = await this.executionService
@@ -1065,6 +1106,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
   }
 
   private async settleForHumanDecision(active: ActivePhase): Promise<void> {
+    if (this.closed) return;
     if (this.activeByExecution.get(active.executionId) !== active) return;
     if (active.descriptor) {
       await this.executionService

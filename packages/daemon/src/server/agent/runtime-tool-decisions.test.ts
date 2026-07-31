@@ -30,6 +30,7 @@ function clarifyCard(sessionId: string): ThothClarifyCardModel {
       publicSummary: "正在拆解目标边界。",
       allowChoiceNotes: true,
       allowNoteOnly: true,
+      allowSingleNodeRecommendation: true,
       allowSubtreeDelegation: true,
       questions: [
         {
@@ -80,22 +81,26 @@ function startThothTurn(store: WorkspaceForegroundAuthority): string {
     workspacePath: "/workspace/thoth",
     userText: "实现一个高性能工具",
   });
-  const session = store.startClarifySession({
+  const session = store.startDecisionSession({
     agentId: "agent-1",
     turnId: started.turn.id,
     requestedStrength: "dive",
   });
-  store.updateClarifyDecisionMap({
+  store.updateDecisionTree({
     agentId: "agent-1",
-    sessionId: session.id,
+    sessionId: session.session.id,
     update: {
       effectiveStrength: "dive",
+      activity: "expanding",
+      activeNodeId: "language",
       publicSummary: "语言是当前高价值 Human-owned 分叉。",
       nodes: [
         {
           id: "language",
-          parentIds: [],
+          parentId: session.session.rootNodeId,
+          crossLinkIds: [],
           title: "实现语言",
+          summary: null,
           owner: "human",
           materiality: "structural",
           status: "awaiting_human",
@@ -105,7 +110,7 @@ function startThothTurn(store: WorkspaceForegroundAuthority): string {
       ],
     },
   });
-  return session.id;
+  return session.session.id;
 }
 
 function createDecision(store: WorkspaceForegroundAuthority, sessionId: string) {
@@ -182,6 +187,101 @@ describe("runtime authority decision persistence", () => {
         clientId: "test-client",
       });
       expect(result.accepted).toBe(true);
+      expect(result.card).toMatchObject({
+        kind: "clarify_card",
+        status: "answered",
+        card: { id: record.cardId, submitted: true, submittedSummary: "选择 C++" },
+      });
+      expect(result.decisionTreeDelta).toMatchObject({
+        sessionId,
+        baseRevision: expect.any(Number),
+        revision: expect.any(Number),
+        cardReceipts: [expect.objectContaining({ cardId: record.cardId, status: "answered" })],
+      });
+      expect(result.decisionTreeDelta!.revision).toBeGreaterThan(
+        result.decisionTreeDelta!.baseRevision,
+      );
+    } finally {
+      recoveredRuntime.manager.close();
+    }
+  });
+
+  it("reprojects the same Timeline Card row as a submitted receipt after restart", () => {
+    const { home, store, manager } = createStore();
+    manager.forWorkspace("workspace-test").upsertAgentRecord({
+      id: "agent-1",
+      provider: "fixture",
+      cwd: "/workspace/thoth",
+      workspaceId: "workspace-test",
+      createdAt: "2026-07-31T00:00:00.000Z",
+      updatedAt: "2026-07-31T00:00:00.000Z",
+      labels: {},
+      lastStatus: "idle",
+      providerRunMode: "default",
+      providerControlRevision: 0,
+    });
+    const sessionId = startThothTurn(store);
+    const { record } = createDecision(store, sessionId);
+    const authority = manager.forAgent("agent-1");
+    expect(authority).not.toBeNull();
+    authority!.appendAgentTimelineRows("agent-1", [
+      {
+        seq: 1,
+        timestamp: "2026-07-31T00:00:00.000Z",
+        item: { type: "clarify_card", card: clarifyCard(sessionId) },
+      },
+    ]);
+
+    const state = store.getState("agent-1");
+    const result = store.answerCard({
+      agentId: "agent-1",
+      cardId: record.cardId,
+      answer: {
+        intent: "submit_choices",
+        questionCardId: record.cardId,
+        answers: [
+          {
+            nodeId: "language",
+            choiceIds: ["cpp"],
+            choiceNotes: {},
+          },
+        ],
+        delegatedNodeIds: [],
+        rawAnswer: "选择 C++",
+      },
+      submittedCard: {
+        ...clarifyCard(sessionId),
+        submitted: true,
+        submittedSummary: "选择 C++",
+      },
+      submittedSummary: "选择 C++",
+      expectedRevision: state.revision,
+      commandId: "answer-before-timeline-restart",
+      nextLifecycle: "running",
+      actorId: "user:test",
+      clientId: "test-client",
+    });
+    expect(result.accepted).toBe(true);
+    manager.close();
+
+    const recoveredRuntime = createStore(home);
+    try {
+      expect(
+        recoveredRuntime.manager.forAgent("agent-1")!.listAgentTimelineRows("agent-1"),
+      ).toEqual([
+        {
+          seq: 1,
+          timestamp: "2026-07-31T00:00:00.000Z",
+          item: {
+            type: "clarify_card",
+            card: expect.objectContaining({
+              id: record.cardId,
+              submitted: true,
+              submittedSummary: "选择 C++",
+            }),
+          },
+        },
+      ]);
     } finally {
       recoveredRuntime.manager.close();
     }

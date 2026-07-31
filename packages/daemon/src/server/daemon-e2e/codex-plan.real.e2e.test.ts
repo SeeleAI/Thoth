@@ -228,7 +228,7 @@ describe("daemon E2E (real codex) - native Plan", () => {
       const nativeQuestion = question.questions[0]!;
       const selectedValue = nativeQuestion.options[0]?.value;
       if (!selectedValue) throw new Error("Native Provider question exposed no selectable option");
-      const selectedTarget = selectedValue.replace(/\s+\(Recommended\)$/iu, "");
+      const selectedTarget = selectedValue.replace(/\s+\([^()]*\)$/u, "");
       const questionResult = await client.respondProviderQuestionAndWait({
         agentId: created.id,
         interactionId: question.interactionId,

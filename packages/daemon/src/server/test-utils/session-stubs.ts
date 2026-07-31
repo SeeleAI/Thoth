@@ -119,7 +119,8 @@ export function createTestToolGateway(): ToolGateway {
 export function createForegroundTurnCoordinatorStub(): SessionOptions["foregroundTurnCoordinator"] {
   return createStub<SessionOptions["foregroundTurnCoordinator"]>({
     resolveProviderApproval: async () => false,
-    getClarifySession: async () => null,
+    getDecisionTree: async () => null,
+    listDecisionSessions: async () => [],
   });
 }
 
@@ -131,7 +132,7 @@ export function createSessionAuthorityStubs(): Pick<
   return {
     workspaceAuthorityManager: createStub<SessionOptions["workspaceAuthorityManager"]>({
       subscribeForeground: () => () => {},
-      subscribeClarify: () => () => {},
+      subscribeDecisionTree: () => () => {},
       subscribe: () => () => {},
     }),
     workspaceTaskCoordinator: createStub<SessionOptions["workspaceTaskCoordinator"]>({

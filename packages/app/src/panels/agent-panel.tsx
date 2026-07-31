@@ -12,7 +12,7 @@ import invariant from "tiny-invariant";
 import { shallow, useShallow } from "zustand/shallow";
 import { AgentStreamView, type AgentStreamViewHandle } from "@/agent-stream/view";
 import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
-import { ClarifyDecisionMap } from "@/components/clarify-decision-map";
+import { DecisionTreeSidebar } from "@/components/decision-tree-sidebar";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
 import { Composer } from "@/composer";
 import { AgentModeControl } from "@/composer/agent-controls/mode-control";
@@ -85,7 +85,6 @@ import { SubagentsTrack } from "@/subagents/track";
 import type { PendingPermission } from "@/types/shared";
 import { generateMessageId } from "@/utils/message-id";
 import type { AgentTimelineEntry } from "@thoth/protocol/agent-types";
-import type { ThothCardAnswerPayload } from "@thoth/protocol/thoth/rpc-schemas";
 import { getInitDeferred, getInitKey } from "@/utils/agent-initialization";
 import { derivePendingPermissionKey } from "@/utils/agent-snapshots";
 import type { WorkspaceFileOpenRequest } from "@/workspace/file-open";
@@ -1154,7 +1153,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
     <View style={styles.contentContainer}>
       <View style={styles.agentBody}>
         {streamContent}
-        <ClarifyDecisionMap serverId={serverId} agentId={effectiveAgent.id} />
+        <DecisionTreeSidebar serverId={serverId} agentId={effectiveAgent.id} />
       </View>
     </View>
   );
@@ -1259,32 +1258,6 @@ const AgentStreamSection = memo(function AgentStreamSection({
     }
     return new Map(pendingPermissionList.map((permission) => [permission.key, permission]));
   }, [pendingPermissionList]);
-  const handleSubmitClarifyAnswer = useCallback(
-    async (cardId: string, answer: ThothCardAnswerPayload) => {
-      if (!client) {
-        throw new Error("Thoth host disconnected");
-      }
-      const authority = await client.getAgentThothState(agent.id);
-      if (authority.error) {
-        throw new Error(authority.error);
-      }
-      if (authority.state.pendingCard?.card.id !== cardId) {
-        throw new Error("This card is no longer the active Thoth decision.");
-      }
-      const result = await client.answerAgentThothCard({
-        agentId: agent.id,
-        cardId,
-        answer,
-        expectedRevision: authority.state.revision,
-        commandId: `card_${generateMessageId()}`,
-      });
-      if (result.error || result.conflict || !result.accepted) {
-        throw new Error(result.error ?? "The Thoth decision changed on another client.");
-      }
-    },
-    [agent.id, client],
-  );
-
   return (
     <AgentStreamView
       ref={streamViewRef}
@@ -1297,7 +1270,6 @@ const AgentStreamSection = memo(function AgentStreamSection({
       isAuthoritativeHistoryReady={hasAppliedAuthoritativeHistory}
       toast={toast}
       onOpenWorkspaceFile={onOpenWorkspaceFile}
-      onSubmitClarifyAnswer={handleSubmitClarifyAnswer}
     />
   );
 });

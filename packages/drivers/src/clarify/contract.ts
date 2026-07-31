@@ -112,8 +112,8 @@ export function loadRuntimeSkillArtifact(
 const COMMON_REQUIRED_PHRASES = ["## Runtime Tools", "provider session", "Do not expose"];
 
 const CLARIFY_REQUIRED_PHRASES = [
-  "Decision Map",
-  "GROUND -> EXPAND_MAP -> AUTO_RESOLVE",
+  "Decision Tree",
+  "GROUND -> EXPAND_TREE -> AUTO_RESOLVE",
   "thoth_clarify_update_map",
   "thoth_clarify_ask",
   "thoth_clarify_propose_contract",

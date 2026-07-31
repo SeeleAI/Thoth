@@ -4834,3 +4834,39 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   Relay/Web deployment, npm/mobile/store/Nix/Docker publication or Paseo operation occurred. `NTH-EV-075` and
   `NTH-TD-052` are verified; terminal state is `published`. `NTH-TD-036` is again the sole top action at Stage 4
   with the independent `15,506`-LOC gap unchanged. This closeout is development-branch documentation only.
+
+## 2026-07-31 [Decision Session tree and Card-lifecycle replacement opened]
+
+- The user approved `NTH-CD-103` after six rounds of product and visualization review. Recorded `NTH-REQ-033`,
+  `NTH-AC-030`, `NTH-CD-103`, `NTH-TD-053` and opening `NTH-EV-076`; `NTH-TD-053` temporarily becomes the sole
+  top action while `NTH-TD-036` remains doing with its independent source-reduction target unchanged.
+- The final authority is one visible Agent conversation to many sequential Decision Sessions, one Decision Session
+  to one stable deterministic tree, one Intent Contract and at most one Task. A session may span many Clarify turns;
+  only a fully converged and confirmed tree may register its Task, after which it freezes as decision evidence.
+- The product cutover requires schema v7, revision-fenced snapshots and ordered deltas, atomic stable-Card receipts,
+  accurate active cognition state and a virtualized left-to-right tree mind map. Thoth-off remains raw and cannot
+  create, advance or resume tree authority.
+- Opening fences are clean `agent/dev/mvp@9eb9aeba`, `release/mvp-actions@c32ab051` and
+  `main@e74c6e0d`. No implementation, tests, packaging, branch mutation, Release mutation or service operation has
+  occurred yet; the existing 26-asset fixed Beta remains public and unchanged.
+
+## 2026-07-31 [Decision Session tree implementation and local release gates passed]
+
+- Completed the schema-v7 Decision Session/tree cutover: stable parented trees and explicit cross-links replace the
+  turn-bound Map/list; snapshot/delta revisions, activity state and atomic Card receipts are authority-owned; the
+  App uses the virtualized tree mind map and no longer creates a second Card projection. Task registration freezes
+  a tree, and a later Thoth objective starts a fresh Decision Session on the same visible Provider conversation.
+- Final cognition judges pass with fresh receipts, and `accept:thoth:fast` passes all 15 stages in `175.209s`.
+  Complete Core, Drivers, Daemon, App, Desktop, CLI and TUI owner suites pass; real Codex Clarify/Task and native
+  Plan/Implement paths also pass. Foundation, Web export, Release/brand/refactor/cognition contracts and
+  `git diff --check` are green.
+- Rebuilt AppImage real-window acceptance passes with schema-v7 migration, Decision Tree activity/Card surface,
+  one Provider thread across native Plan/Implement, Quick, Loop/review/reset, `@Task`, Stop and retained existing
+  desktop product surfaces. Hosted Relay v3 E2EE passes using the freshly packaged Server CLI.
+- The first two packaged Server CLI Relay attempts failed before product execution: the required npm proxy repeatedly
+  reset registry connections, after which npm 11 emitted `Exit handler never called` despite package extraction.
+  The same tgz installs successfully with cache preference. The formal harness now uses `--prefer-offline` plus
+  bounded fetch settings, retains online cache-miss behavior, and `mvp-release-contract` asserts that guard.
+  The third unchanged Relay journey passed `ok=true`; the failure remains recorded under `NTH-EXP-084`.
+- No remote branch, tag, Release or deployment has changed. `NTH-TD-053` remains the sole top action pending one
+  normal release-source commit, exact-SHA workflow, fixed-Beta replacement and public downloaded-artifact journey.

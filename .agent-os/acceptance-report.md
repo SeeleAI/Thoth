@@ -4349,3 +4349,43 @@ Status: `verified`; terminal state is `published`.
 Conclusion: `NTH-AC-029` is satisfied, `NTH-TD-052` is verified, and the fixed desktop Beta is `published` at
 source `c32ab051370ae1675b05ee53713ca60ac32f24ad`. `NTH-TD-036` returns as the sole top next action at Stage 4 with
 its independent `15,506`-LOC gap unchanged. This evidence-only closeout is pushed only to `agent/dev/mvp`.
+
+### `NTH-EV-076` Decision Session Tree And Card Lifecycle Fixed-Beta Replacement
+
+Status: `local_verification_passed`; terminal state is `unverified` pending exact-SHA workflow and public download.
+
+1. User authority is recorded by `NTH-REQ-033`, `NTH-AC-030` and `NTH-CD-103`. The approved target replaces the
+   turn-bound Clarify Map/list projection with durable Decision Sessions, deterministic trees, ordered deltas,
+   one authority-driven Card inspector and one frozen Task binding per tree.
+2. Audited opening fences are clean `agent/dev/mvp@9eb9aebae5a5ea02da381580473f039cc71d34b3`,
+   `origin/release/mvp-actions=c32ab051370ae1675b05ee53713ca60ac32f24ad` and
+   `origin/main=e74c6e0de8a110d5e07249880d0e4e4f0ceab691`. The existing fixed prerelease remains unchanged.
+3. Schema-v7 implementation completed the `DecisionSession -> single-root DecisionTree -> IntentContract -> at most
+one Task` authority. It replaces the full-map/list projection with revision-fenced snapshot/delta delivery,
+   a durable activity projection, atomic same-Card receipts, deterministic tree parents plus cross-links, and
+   schema-v6-to-v7 atomic migration. The former Map/list runtime has no production compatibility path.
+4. The complete local source verification passes: `npm run judge:clarify:golden`,
+   `npm run judge:clarify:user-simulation` and `npm run judge:loop:golden` all report `PASS`; their final ignored
+   artifacts are rooted at `2026-07-31T18-37-38-074Z`, `2026-07-31T18-39-15-596Z` and
+   `2026-07-31T18-40-42-923Z`. `npm run accept:thoth:fast` passes all `15` stages in `175.209s` under the shared
+   `300s` deadline, including the new Decision Tree authority/App path.
+5. Complete owner suites pass with the current source: Core `2/2` files / `20` tests; Drivers `49` files / `606`
+   tests with `3` files / `21` tests intentionally skipped; Daemon `201` files / `2,543` tests with `26` skipped
+   plus integration `3` files / `8` tests with `4` skipped; App `368` files / `2,734` tests; Desktop `37` files /
+   `301` tests with `5` skipped; CLI unit `32/32` plus local `40/40`; TUI `5/5` files / `28` tests. Foundation,
+   Web export, MVP release contract, brand assets, refactor architecture and cognition architecture all pass.
+6. Real Codex passes `test:e2e:real:flow` `4/4` in `297.80s` and `test:e2e:real:plan` `1/1` in `91.60s`. The
+   provider-neutral fixture conformance remains covered by the shared fast gate; no generic model API was used.
+7. A rebuilt AppImage passes the real Electron journey with `ok=true`: Catalog schema `7`, Authority schema `7`,
+   authority migration `10`, Decision Tree activity/Card screenshots, native Plan/Implement on one Provider thread,
+   Quick, Loop/review/reset, `@Task`, Stop, Browser, Files/Changes, Workspace scripts, Schedules and a five-chunk
+   `1,048,649` byte file all pass. Its isolated durable state is `8,756,683` bytes and has exactly two RuntimeBundles.
+8. Hosted Relay v3 E2EE passes through the packaged Server CLI with `ok=true`, including Relay client/daemon
+   restart, restored Card, Pause/Resume/Stop, four Loop attachment receipts, four checkpoints, three Review
+   decisions and a five-chunk `1,048,649` byte file. The first two attempts failed before Relay startup because npm
+   11 received repeated registry `ECONNRESET` responses from the required proxy and then reported `Exit handler
+never called` after package extraction. `NTH-EXP-084` preserves this failure; the harness now prefers its verified
+   cache before registry refresh, remains online for cache misses, and the Release contract prevents regression.
+9. No branch, tag, Release, deploy or independent service mutation has occurred in this local-verification state.
+   Current public `v0.0.0-mvp-beta` remains at `c32ab051`; only after the committed candidate's exact-SHA workflow
+   succeeds may its 26 desktop assets be replaced and re-downloaded for final verification.

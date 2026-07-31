@@ -1,8 +1,8 @@
 import { z } from "zod";
 import {
-  ClarifyDecisionMaterialitySchema,
-  ClarifyDecisionNodeStatusSchema,
-  ClarifyDecisionOwnerSchema,
+  DecisionNodeMaterialitySchema,
+  DecisionNodeOwnerSchema,
+  DecisionNodeStatusSchema,
 } from "./clarify-authority.js";
 import { IntentContractDraftSchema } from "./intent-contract.js";
 import {
@@ -60,6 +60,7 @@ export const ClarifyQuestionCardSchema = z
     questions: z.array(ClarifyQuestionItemSchema).min(1).max(4),
     allowChoiceNotes: z.literal(true).default(true),
     allowNoteOnly: z.literal(true).default(true),
+    allowSingleNodeRecommendation: z.literal(true).default(true),
     allowSubtreeDelegation: z.literal(true).default(true),
   })
   .strict();
@@ -67,11 +68,13 @@ export const ClarifyQuestionCardSchema = z
 export const ClarifyDecisionNodeDeltaSchema = z
   .object({
     id: NonEmptyStringSchema,
-    parentIds: z.array(NonEmptyStringSchema),
+    parentId: NonEmptyStringSchema.nullable(),
+    crossLinkIds: z.array(NonEmptyStringSchema).default([]),
     title: NonEmptyStringSchema,
-    owner: ClarifyDecisionOwnerSchema,
-    materiality: ClarifyDecisionMaterialitySchema,
-    status: ClarifyDecisionNodeStatusSchema,
+    summary: NonEmptyStringSchema.nullable().default(null),
+    owner: DecisionNodeOwnerSchema,
+    materiality: DecisionNodeMaterialitySchema,
+    status: DecisionNodeStatusSchema,
     resolutionRef: NonEmptyStringSchema.nullable().default(null),
     sourceRefs: z.array(NonEmptyStringSchema).default([]),
   })
@@ -81,6 +84,8 @@ export const ThothClarifyUpdateMapInputSchema = z
   .object({
     effectiveStrength: z.enum(["light", "balanced", "dive"]),
     nodes: z.array(ClarifyDecisionNodeDeltaSchema).min(1),
+    activity: z.enum(["investigating", "expanding"]).default("expanding"),
+    activeNodeId: NonEmptyStringSchema.nullable().default(null),
     publicSummary: NonEmptyStringSchema,
   })
   .strict();

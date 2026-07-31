@@ -12,13 +12,14 @@ import {
 import type {
   AgentThothCardAnswerRequest,
   AgentThothCardAnswerResponse,
+  AgentThothCardProjection,
   AgentThothState,
   ThothCardAnswerPayload,
   ThothClarifyCardModel,
   ThothIntentContractCardModel,
   ThothTurnControlSnapshot,
 } from "@thoth/protocol/thoth/rpc-schemas";
-import type { ClarifySessionProjection } from "@thoth/protocol/clarify-authority";
+import type { DecisionTreeSnapshot } from "@thoth/protocol/clarify-authority";
 import type { ExecutionService } from "./execution-service.js";
 import type { AgentRegistry } from "./agent-storage.js";
 import type {
@@ -249,6 +250,20 @@ function submitCard(
   };
 }
 
+function projectAuthorityCard(
+  record: ForegroundCardAuthorityRecord | null,
+): AgentThothCardProjection | null {
+  if (!record) return null;
+  return {
+    kind: record.kind,
+    card: record.card as ThothClarifyCardModel & ThothIntentContractCardModel,
+    status: record.status,
+    submittedSummary: record.submittedSummary,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  } as AgentThothCardProjection;
+}
+
 function renderClarifyCard(card: ThothClarifyCardModel): string {
   const answers = card.submittedAnswers ?? [];
   return [
@@ -285,15 +300,17 @@ function renderIntentContractCard(card: ThothIntentContractCardModel): string {
 function renderTaskTruth(input: {
   turn: ForegroundTurnAuthorityRecord;
   cards: ForegroundCardAuthorityRecord[];
-  session: ClarifySessionProjection;
+  session: DecisionTreeSnapshot;
 }): string {
   return [
     `User request:\n${input.turn.userText}`,
-    `Decision Map:\n${JSON.stringify(
+    `Decision Tree:\n${JSON.stringify(
       input.session.nodes.map((node) => ({
         id: node.id,
-        parentIds: node.parentIds,
+        parentId: node.parentId,
+        crossLinkIds: node.crossLinkIds,
         title: node.title,
+        summary: node.summary,
         owner: node.owner,
         materiality: node.materiality,
         status: node.status,
@@ -316,7 +333,7 @@ function renderTaskTruth(input: {
 
 function nextSemanticDirection(
   cards: ForegroundCardAuthorityRecord[],
-  session: ClarifySessionProjection,
+  session: DecisionTreeSnapshot,
 ): string {
   const contract = cards.filter((card) => card.kind === "intent_contract_card").at(-1);
   if (contract?.status === "answered") {
@@ -324,18 +341,18 @@ function nextSemanticDirection(
   }
   const latestClarify = cards.filter((card) => card.kind === "clarify_card").at(-1);
   if (latestClarify?.status === "answered") {
-    return "Propagate the latest Human Decision through the Decision Map, investigate its descendants, and ask only the next material Human-owned frontier. Propose the Intent Contract only when the graph is stable.";
+    return "Propagate the latest Human Decision through the Decision Tree, investigate its descendants, and ask only the next material Human-owned frontier. Propose the Intent Contract only when the tree is stable.";
   }
-  if (session.challengerUsed && !session.intentContract) {
+  if (session.session.challengerUsed && !session.session.intentContract) {
     return "The one-shot Challenger reopened missing nodes. Resolve that frontier, then propose the revised Intent Contract without another Challenger.";
   }
-  return "Ground in Workspace reality, expand the Decision Map, resolve Evidence-owned and Agent-owned nodes, then ask the first material Human-owned frontier or propose the Intent Contract if none exists.";
+  return "Ground in Workspace reality, expand the Decision Tree, resolve Evidence-owned and Agent-owned nodes, then ask the first material Human-owned frontier or propose the Intent Contract if none exists.";
 }
 
 function buildThothAuthorityPrompt(input: {
   turn: ForegroundTurnAuthorityRecord;
   cards: ForegroundCardAuthorityRecord[];
-  session: ClarifySessionProjection;
+  session: DecisionTreeSnapshot;
 }): string {
   const controls = input.turn.controls;
   if (!controls) {
@@ -345,7 +362,7 @@ function buildThothAuthorityPrompt(input: {
     [
       "Follow the installed thoth.clarify skill in this visible Agent conversation.",
       `The user selected ${controls.mode === "loop" ? "background Loop" : "foreground Quick"} execution and ${controls.clarifyStrength} clarification.`,
-      "Treat the conversation and Workspace as reality. Persist the Decision Map as you investigate; ask only material Human-owned forks.",
+      "Treat the conversation and Workspace as reality. Grow the Decision Tree as you investigate; ask only material Human-owned forks.",
       "Do not expose internal tools, schemas, state, ids, budgets, receipts, or recovery mechanics.",
       nextSemanticDirection(input.cards, input.session),
       renderTaskTruth(input),
@@ -387,7 +404,7 @@ function buildProviderPlanImplementationPrompt(plan: string): string {
 
 function continuationKey(
   cards: ForegroundCardAuthorityRecord[],
-  session: ClarifySessionProjection,
+  session: DecisionTreeSnapshot,
 ): string | null {
   const contract = cards.filter((card) => card.kind === "intent_contract_card").at(-1);
   if (contract) {
@@ -397,8 +414,8 @@ function continuationKey(
   if (latestClarify?.status === "answered") {
     return `clarify-after-${latestClarify.id}`;
   }
-  if (session.challengerUsed && !session.intentContract) {
-    return `clarify-after-challenger-${session.id}`;
+  if (session.session.challengerUsed && !session.session.intentContract) {
+    return `clarify-after-challenger-${session.session.id}`;
   }
   return "first-authority-card";
 }
@@ -424,6 +441,25 @@ export class ForegroundTurnCoordinator {
   private readonly activeQuickWaits = new Map<string, ActiveQuickWait>();
 
   constructor(private readonly options: ForegroundTurnCoordinatorOptions) {}
+
+  /** Fences ephemeral foreground callbacks before Workspace authority closes. */
+  close(): void {
+    this.activeRunTokens.clear();
+    this.deferredRunTokens.clear();
+    for (const agentId of [...this.activeQuickWaits.keys()]) {
+      this.clearQuickWait(agentId);
+    }
+    for (const [agentId, active] of this.activeQuickExecutions) {
+      clearInterval(active.heartbeat);
+      active.unregisterRuntime();
+      this.options.toolGateway.endForegroundTurn({
+        agentId,
+        generation: active.generation,
+      });
+    }
+    this.activeQuickExecutions.clear();
+    this.queueDrains.clear();
+  }
 
   async openTaskClarifyHandoff(input: {
     sourceWorkspaceId: string;
@@ -635,7 +671,7 @@ export class ForegroundTurnCoordinator {
       if (controls.clarifyStrength === "none") {
         throw new Error("An enabled Thoth turn requires a real Clarify strength");
       }
-      const clarifySession = this.options.authorityStore.startClarifySession({
+      const decisionTree = this.options.authorityStore.startDecisionSession({
         agentId: agent.id,
         turnId: started.turn.id,
         requestedStrength: controls.clarifyStrength,
@@ -645,12 +681,12 @@ export class ForegroundTurnCoordinator {
         turnId: started.turn.id,
         generation: started.turn.generation,
         lifecycle: "mapping",
-        reason: "decision_map_changed",
+        reason: "decision_tree_changed",
         error: null,
       });
       const prompt = withPromptAttachments({
         text: appendTextContext(
-          buildThothAuthorityPrompt({ turn: started.turn, cards: [], session: clarifySession }),
+          buildThothAuthorityPrompt({ turn: started.turn, cards: [], session: decisionTree }),
           taskContextPrompt,
         ),
         images: input.images,
@@ -843,19 +879,24 @@ export class ForegroundTurnCoordinator {
     return this.options.authorityStore.getState(agentId);
   }
 
-  async getClarifySession(agentId: string): Promise<ClarifySessionProjection | null> {
+  async listDecisionSessions(agentId: string) {
     await this.recover(agentId);
-    return this.options.authorityStore.getClarifySession(agentId);
+    return this.options.authorityStore.listDecisionSessions(agentId);
   }
 
-  prioritizeClarifyNode(input: {
+  async getDecisionTree(agentId: string, sessionId?: string) {
+    await this.recover(agentId);
+    return this.options.authorityStore.getDecisionTree(agentId, sessionId);
+  }
+
+  prioritizeDecisionNode(input: {
     agentId: string;
     sessionId: string;
     nodeId: string;
     expectedRevision: number;
     commandId: string;
-  }): { session: ClarifySessionProjection; duplicate: boolean } {
-    return this.options.authorityStore.prioritizeClarifyNode(input);
+  }) {
+    return this.options.authorityStore.prioritizeDecisionNode(input);
   }
 
   async answerCard(
@@ -870,6 +911,8 @@ export class ForegroundTurnCoordinator {
         accepted: false,
         conflict: false,
         state: this.options.authorityStore.getState(request.agentId),
+        card: null,
+        decisionTreeDelta: null,
         error: "The authority card does not belong to this Agent.",
       };
     }
@@ -887,6 +930,8 @@ export class ForegroundTurnCoordinator {
         accepted: false,
         conflict: false,
         state: this.options.authorityStore.getState(request.agentId),
+        card: projectAuthorityCard(record),
+        decisionTreeDelta: null,
         error: validationError,
       };
     }
@@ -916,6 +961,8 @@ export class ForegroundTurnCoordinator {
         accepted: false,
         conflict: result.conflict,
         state: result.state,
+        card: projectAuthorityCard(result.card),
+        decisionTreeDelta: result.decisionTreeDelta,
         error: result.error,
       };
     }
@@ -926,15 +973,15 @@ export class ForegroundTurnCoordinator {
         accepted: true,
         conflict: false,
         state: this.options.authorityStore.getState(request.agentId),
+        card: projectAuthorityCard(result.card),
+        decisionTreeDelta: result.decisionTreeDelta,
         error: null,
       };
     }
 
     if (cancelRequested) {
-      await this.appendSubmittedCard(request.agentId, result.card);
       await this.options.executionService.cancelAgentRun(request.agentId).catch(() => false);
     } else {
-      await this.appendSubmittedCard(request.agentId, result.card);
       if (record.kind === "clarify_card" && "questionCardId" in request.answer) {
         await this.launchAuthorityContinuation(turn);
       } else if (quickApproved || loopApproved) {
@@ -962,6 +1009,8 @@ export class ForegroundTurnCoordinator {
       accepted: true,
       conflict: false,
       state: this.options.authorityStore.getState(request.agentId),
+      card: projectAuthorityCard(result.card),
+      decisionTreeDelta: result.decisionTreeDelta,
       error: null,
     };
   }
@@ -973,16 +1022,10 @@ export class ForegroundTurnCoordinator {
       logger: this.options.logger,
     });
     const turn = this.options.authorityStore.getActiveTurn(agentId);
-    const canceled = this.options.authorityStore.cancelActiveTurn({
+    this.options.authorityStore.cancelActiveTurn({
       agentId,
       submittedSummary: USER_CANCELED_SUMMARY,
     });
-    for (const card of canceled.pendingCards) {
-      await this.appendSubmittedCard(agentId, {
-        ...card,
-        card: { ...card.card, submitted: true, submittedSummary: USER_CANCELED_SUMMARY },
-      });
-    }
     if (turn) {
       this.options.toolGateway.endForegroundTurn({ agentId, generation: turn.generation });
     }
@@ -1173,17 +1216,17 @@ export class ForegroundTurnCoordinator {
           generation: input.turn.generation,
         });
         const state = this.options.authorityStore.getState(input.turn.agentId);
-        const clarifySession = input.structured
-          ? this.options.authorityStore.getClarifySession(input.turn.agentId)
+        const decisionTree = input.structured
+          ? this.options.authorityStore.getDecisionTree(input.turn.agentId)
           : null;
         if (
-          clarifySession?.intentContract &&
-          !clarifySession.challengerUsed &&
+          decisionTree?.session.intentContract &&
+          !decisionTree.session.challengerUsed &&
           ["proposing", "challenging"].includes(state.lifecycle)
         ) {
           await this.launchClarifyChallenger(
             this.options.authorityStore.getTurn(input.turn.id) ?? input.turn,
-            clarifySession,
+            decisionTree,
           );
           return;
         }
@@ -1342,9 +1385,11 @@ export class ForegroundTurnCoordinator {
 
   private async launchClarifyChallenger(
     turn: ForegroundTurnAuthorityRecord,
-    session: ClarifySessionProjection,
+    session: DecisionTreeSnapshot,
   ): Promise<void> {
-    if (!session.intentContract || session.challengerUsed || !turn.controls) return;
+    if (!session.session.intentContract || session.session.challengerUsed || !turn.controls) {
+      return;
+    }
     const sourceAgent = await ensureAgentLoaded(turn.agentId, {
       executionService: this.options.executionService,
       agentStorage: this.options.agentStorage,
@@ -1372,7 +1417,7 @@ export class ForegroundTurnCoordinator {
           ? { featureValues: sourceAgent.config.featureValues }
           : {}),
         systemPrompt:
-          "You are the one-shot fresh Thoth Intent Contract Challenger. Work read-only. Independently inspect Workspace reality, the visible Decision Map, and the proposed Intent Contract. Do not ask the user. Call thoth_clarify_judge_contract exactly once with stable, reopen, or blocked; reopen only concrete missing material branches.",
+          "You are the one-shot fresh Thoth Intent Contract Challenger. Work read-only. Independently inspect Workspace reality, the visible Decision Tree, and the proposed Intent Contract. Do not ask the user. Call thoth_clarify_judge_contract exactly once with stable, reopen, or blocked; reopen only concrete missing material branches.",
       },
       undefined,
       {
@@ -1394,8 +1439,8 @@ export class ForegroundTurnCoordinator {
             [
               "Judge this proposed Intent Contract once.",
               `User request:\n${turn.userText}`,
-              `Decision Map:\n${JSON.stringify(session.nodes, null, 2)}`,
-              `Intent Contract:\n${JSON.stringify(session.intentContract, null, 2)}`,
+              `Decision Tree:\n${JSON.stringify(session.nodes, null, 2)}`,
+              `Intent Contract:\n${JSON.stringify(session.session.intentContract, null, 2)}`,
               "Inspect Workspace reality before judging. Return only through thoth_clarify_judge_contract.",
             ].join("\n\n"),
           ),
@@ -1440,9 +1485,9 @@ export class ForegroundTurnCoordinator {
       resolved = true;
       await this.options.executionService.cancelAgentRun(challenger.id).catch(() => false);
       await run;
-      const challenged = this.options.authorityStore.applyClarifyChallenge({
+      const challenged = this.options.authorityStore.applyDecisionTreeChallenge({
         agentId: turn.agentId,
-        sessionId: session.id,
+        sessionId: session.session.id,
         result,
       });
       if (result.decision === "blocked") {
@@ -1459,20 +1504,20 @@ export class ForegroundTurnCoordinator {
       if (result.decision === "reopen") {
         const reopened = this.options.authorityStore.reopenIntentContract(
           turn.agentId,
-          challenged.id,
+          challenged.session.id,
         );
         this.options.authorityStore.markLifecycle({
           agentId: turn.agentId,
           turnId: turn.id,
           generation: turn.generation,
           lifecycle: "mapping",
-          reason: "decision_map_changed",
+          reason: "decision_tree_changed",
           error: null,
         });
         await this.launchAuthorityContinuation(
           this.options.authorityStore.getTurn(turn.id) ?? turn,
         );
-        if (reopened.intentContract) {
+        if (reopened.session.intentContract) {
           throw new Error("Reopened Clarify session retained a superseded Intent Contract");
         }
         return;
@@ -1481,15 +1526,15 @@ export class ForegroundTurnCoordinator {
         .listCardsForTurn(turn.id)
         .find((record) => record.kind === "intent_contract_card");
       if (existing) return;
-      if (!challenged.intentContract) {
+      if (!challenged.session.intentContract) {
         throw new Error("Stable Clarify Challenger lost the proposed Intent Contract");
       }
       const card: ThothIntentContractCardModel = {
         id: `intent-contract-card-${randomUUID()}`,
-        sessionId: challenged.id,
-        contract: challenged.intentContract,
+        sessionId: challenged.session.id,
+        contract: challenged.session.intentContract,
         provenanceSummary:
-          "Grounded in the visible Decision Map and one fresh independent challenge",
+          "Grounded in the visible Decision Tree and one fresh independent challenge",
         turnControls: turn.controls,
         submitted: false,
       };
@@ -1504,7 +1549,7 @@ export class ForegroundTurnCoordinator {
           providerTurnId: challenger.id,
           callId: `clarify-challenge-${challenger.id}`,
           toolName: "thoth_clarify_judge_contract",
-          redactedRawInputHash: `sha256:${challenged.intentContract.id}`,
+          redactedRawInputHash: `sha256:${challenged.session.intentContract.id}`,
         },
       });
       await this.options.executionService.appendTimelineItem(turn.agentId, {
@@ -1528,9 +1573,9 @@ export class ForegroundTurnCoordinator {
 
   private async launchAuthorityContinuation(turn: ForegroundTurnAuthorityRecord): Promise<void> {
     const cards = this.options.authorityStore.listCardsForTurn(turn.id);
-    const session = this.options.authorityStore.getClarifySession(turn.agentId);
-    if (!session || session.turnId !== turn.id) {
-      throw new Error("Foreground Thoth turn has no active Clarify session");
+    const session = this.options.authorityStore.getDecisionTree(turn.agentId);
+    if (!session || session.session.activeTurnId !== turn.id) {
+      throw new Error("Foreground Thoth turn has no active Decision Session");
     }
     const key = continuationKey(cards, session);
     if (!key) {
@@ -1854,9 +1899,12 @@ export class ForegroundTurnCoordinator {
       throw new Error("The Task Clarify handoff no longer owns its original Task revision.");
     }
     if (handoff.status === "active") {
-      const session = this.options.authorityStore.getClarifySession(turn.agentId);
+      const session = this.options.authorityStore.getDecisionTree(turn.agentId);
       const decisions = this.options.authorityStore.listTurnDecisions(turn.id);
-      if (!session?.intentContract || session.intentContract.status !== "confirmed") {
+      if (
+        !session?.session.intentContract ||
+        session.session.intentContract.status !== "confirmed"
+      ) {
         throw new Error("The Task Clarify handoff has no confirmed revised Intent Contract.");
       }
       this.options.taskCoordinator.commitClarifyContractRevision({
@@ -1865,7 +1913,7 @@ export class ForegroundTurnCoordinator {
         sourceAgentWorkspaceId: turn.workspaceId,
         sourceAgentId: turn.agentId,
         decisionRequestId: handoff.decisionRequestId,
-        contract: session.intentContract,
+        contract: session.session.intentContract,
         decisionRecordIds: decisions.map((decision) => decision.id),
         commandId: `task-clarify-commit:${turn.id}:${handoff.decisionRequestId}`,
       });
@@ -1925,10 +1973,10 @@ export class ForegroundTurnCoordinator {
     if (!contractCard || !turn.controls) {
       throw new Error("Task registration requires one approved Intent Contract.");
     }
-    const clarifySession = this.options.authorityStore.getClarifySession(turn.agentId);
+    const clarifySession = this.options.authorityStore.getDecisionTree(turn.agentId);
     if (
-      clarifySession?.id !== contractCard.sessionId ||
-      clarifySession.intentContract?.status !== "confirmed"
+      clarifySession?.session.id !== contractCard.sessionId ||
+      clarifySession.session.intentContract?.status !== "confirmed"
     ) {
       throw new Error("Task registration requires the confirmed Intent Contract authority.");
     }
@@ -1944,7 +1992,7 @@ export class ForegroundTurnCoordinator {
       sourceContractCardId: contractCard.id,
       mode,
       loopStrength: mode === "loop" ? (turn.controls.loop ?? "one_plan_one_do") : null,
-      intentContract: clarifySession.intentContract,
+      intentContract: clarifySession.session.intentContract,
       providerProfile: {
         adapterId: agent.config.provider,
         config: {
@@ -2063,8 +2111,8 @@ export class ForegroundTurnCoordinator {
       }
       return;
     }
-    const session = this.options.authorityStore.getClarifySession(agentId);
-    if (session?.intentContract && !session.challengerUsed) {
+    const session = this.options.authorityStore.getDecisionTree(agentId);
+    if (session?.session.intentContract && !session.session.challengerUsed) {
       await this.launchClarifyChallenger(turn, session);
       return;
     }
@@ -2073,46 +2121,6 @@ export class ForegroundTurnCoordinator {
       ["interrupted", "running", "mapping", "challenging", "proposing"].includes(state.lifecycle)
     ) {
       await this.launchAuthorityContinuation(turn);
-    }
-  }
-
-  private async appendSubmittedCard(
-    agentId: string,
-    record: ForegroundCardAuthorityRecord | null,
-  ): Promise<void> {
-    if (!record) {
-      return;
-    }
-    try {
-      await ensureAgentLoaded(agentId, {
-        executionService: this.options.executionService,
-        agentStorage: this.options.agentStorage,
-        logger: this.options.logger,
-      });
-    } catch (error) {
-      this.options.logger.warn(
-        { error, agentId, cardId: record.id },
-        "Card decision committed without a live Agent timeline projection",
-      );
-      return;
-    }
-    if (!this.options.executionService.hasRunnableSession(agentId)) {
-      this.options.logger.warn(
-        { agentId, cardId: record.id },
-        "Card decision committed while the provider thread is unavailable",
-      );
-      return;
-    }
-    if (record.kind === "clarify_card") {
-      await this.options.executionService.appendTimelineItem(agentId, {
-        type: "clarify_card",
-        card: record.card as ThothClarifyCardModel,
-      });
-    } else {
-      await this.options.executionService.appendTimelineItem(agentId, {
-        type: "intent_contract_card",
-        card: record.card as ThothIntentContractCardModel,
-      });
     }
   }
 

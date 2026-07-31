@@ -142,6 +142,57 @@ function createAgentThothStateForClientTest() {
   };
 }
 
+function createDecisionTreeSnapshotForClientTest() {
+  const now = "2026-07-31T00:00:00.000Z";
+  return {
+    session: {
+      id: "decision-session-1",
+      workspaceId: "workspace-1",
+      agentId: "agent-1",
+      originTurnId: "turn-1",
+      activeTurnId: "turn-1",
+      requestedStrength: "auto",
+      effectiveStrength: "balanced",
+      lifecycle: "active",
+      challengerUsed: false,
+      rootNodeId: "root",
+      priorityNodeId: null,
+      activeCardId: null,
+      intentContract: null,
+      taskId: null,
+      activity: {
+        state: "expanding",
+        activeNodeId: "root",
+        summary: "Expanding the material tree",
+        startedAt: now,
+        updatedAt: now,
+      },
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+      frozenAt: null,
+    },
+    nodes: [
+      {
+        id: "root",
+        parentId: null,
+        crossLinkIds: [],
+        title: "Objective",
+        summary: "A durable decision root",
+        owner: "human",
+        materiality: "structural",
+        status: "resolved",
+        resolutionRef: "turn:turn-1",
+        sourceRefs: ["turn:turn-1"],
+        priority: 1,
+        revision: 1,
+      },
+    ],
+    cardReceipts: [],
+    revision: 1,
+  };
+}
+
 const clients: DaemonClient[] = [];
 
 afterEach(async () => {
@@ -749,6 +800,82 @@ test("requests Agent-scoped Thoth authority state", async () => {
   });
 });
 
+test("uses Decision Session snapshots and ordered tree deltas through the typed client", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const snapshot = createDecisionTreeSnapshotForClientTest();
+  const listPromise = client.listAgentDecisionSessions("agent-1", "req-decision-list");
+  expect(parseSentFrame(mock.sent[0])).toEqual({
+    type: "agent.decision_session.list.request",
+    requestId: "req-decision-list",
+    agentId: "agent-1",
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.decision_session.list.response",
+      payload: {
+        requestId: "req-decision-list",
+        sessions: [snapshot.session],
+        activeSessionId: snapshot.session.id,
+        error: null,
+      },
+    }),
+  );
+  await expect(listPromise).resolves.toMatchObject({ activeSessionId: "decision-session-1" });
+
+  const getPromise = client.getAgentDecisionSession({
+    requestId: "req-decision-get",
+    agentId: "agent-1",
+    sessionId: "decision-session-1",
+  });
+  expect(parseSentFrame(mock.sent[1])).toEqual({
+    type: "agent.decision_session.get.request",
+    requestId: "req-decision-get",
+    agentId: "agent-1",
+    sessionId: "decision-session-1",
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.decision_session.get.response",
+      payload: { requestId: "req-decision-get", snapshot, error: null },
+    }),
+  );
+  await expect(getPromise).resolves.toMatchObject({ snapshot: { revision: 1 }, error: null });
+
+  const deltas: unknown[] = [];
+  client.subscribeAgentDecisionTreeDeltas((delta) => deltas.push(delta));
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.decision_tree.delta",
+      payload: {
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+        sessionId: "decision-session-1",
+        baseRevision: 1,
+        revision: 2,
+        session: { ...snapshot.session, revision: 2, updatedAt: "2026-07-31T00:00:01.000Z" },
+        nodeUpserts: [],
+        removedNodeIds: [],
+        cardReceipts: [],
+        emittedAt: "2026-07-31T00:00:01.000Z",
+      },
+    }),
+  );
+  expect(deltas).toEqual([expect.objectContaining({ baseRevision: 1, revision: 2 })]);
+});
+
 test("gets and updates Agent-scoped provider control", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();
@@ -891,6 +1018,8 @@ test("answers an Agent-scoped Thoth card with CAS and command idempotency", asyn
         accepted: true,
         conflict: false,
         state: createAgentThothStateForClientTest(),
+        card: null,
+        decisionTreeDelta: null,
         error: null,
       },
     }),

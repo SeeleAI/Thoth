@@ -121,6 +121,11 @@ const phases = [
           args: ["scripts/accept-clarify-loop-cognition-fast.mjs", "--prebuilt"],
         },
         {
+          name: "Decision Tree Clarify",
+          command: process.execPath,
+          args: ["scripts/accept-decision-tree-fast.mjs", "--prebuilt"],
+        },
+        {
           name: "Provider Plan and tab archive",
           command: process.execPath,
           args: ["scripts/accept-provider-plan-tabs-fast.mjs"],

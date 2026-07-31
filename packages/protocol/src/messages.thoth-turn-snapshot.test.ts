@@ -54,6 +54,20 @@ describe("foreground Thoth turn snapshot", () => {
     ).toEqual(thoth);
   });
 
+  it("freezes Provider-selected Clarify depth without exposing a Composer strength choice", () => {
+    expect(
+      ThothTurnSnapshotSchema.parse({
+        enabled: true,
+        executionMode: "quick",
+        clarifyStrength: "auto",
+      }),
+    ).toEqual({
+      enabled: true,
+      executionMode: "quick",
+      clarifyStrength: "auto",
+    });
+  });
+
   it("freezes provider Plan independently from the Thoth snapshot", () => {
     const create = CreateAgentRequestMessageSchema.parse({
       type: "create_agent_request",

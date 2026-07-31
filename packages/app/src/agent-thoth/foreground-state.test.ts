@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AgentThothState } from "@thoth/protocol/thoth/rpc-schemas";
-import { resolveForegroundAgentStatus, shouldShowForegroundTurnSpinner } from "./foreground-state";
+import {
+  isForegroundTurnSuspended,
+  resolveForegroundAgentStatus,
+  shouldShowForegroundTurnSpinner,
+} from "./foreground-state";
 
 function state(lifecycle: AgentThothState["lifecycle"]): AgentThothState {
   return {
@@ -24,7 +28,7 @@ function state(lifecycle: AgentThothState["lifecycle"]): AgentThothState {
 }
 
 describe("foreground Agent Thoth projection", () => {
-  it.each(["running", "quick_exec"] as const)(
+  it.each(["running", "mapping", "challenging", "proposing", "quick_exec"] as const)(
     "keeps %s cancellable through the ordinary Agent control",
     (lifecycle) => {
       expect(resolveForegroundAgentStatus("idle", state(lifecycle))).toBe("running");
@@ -46,7 +50,17 @@ describe("foreground Agent Thoth projection", () => {
     const effective = resolveForegroundAgentStatus("idle", projection);
     expect(effective).toBe("idle");
     expect(shouldShowForegroundTurnSpinner(projection, effective)).toBe(false);
+    expect(isForegroundTurnSuspended(projection)).toBe(true);
   });
+
+  it.each(["awaiting_implementation", "quick_wait"] as const)(
+    "suppresses a completed footer while %s is suspended",
+    (lifecycle) => {
+      const projection = state(lifecycle);
+      expect(shouldShowForegroundTurnSpinner(projection, "idle")).toBe(false);
+      expect(isForegroundTurnSuspended(projection)).toBe(true);
+    },
+  );
 
   it("uses the normal Agent lifecycle before authority hydration", () => {
     expect(resolveForegroundAgentStatus("running", null)).toBe("running");

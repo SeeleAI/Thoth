@@ -24,7 +24,7 @@ function tool(name: string, description: string, schema: z.ZodType): RuntimeBund
 const CLARIFY_TOOLS: readonly RuntimeBundleTool[] = [
   tool(
     "thoth_clarify_update_map",
-    "Persist the currently known Decision Map without exposing hidden reasoning.",
+    "Persist changed Decision Tree nodes and activity without exposing hidden reasoning.",
     ThothClarifyUpdateMapInputSchema,
   ),
   tool(
@@ -34,7 +34,7 @@ const CLARIFY_TOOLS: readonly RuntimeBundleTool[] = [
   ),
   tool(
     "thoth_clarify_propose_contract",
-    "Propose the single Intent Contract after the Decision Map is stable.",
+    "Propose the single Intent Contract after the Decision Tree is stable.",
     ThothClarifyProposeContractInputSchema,
   ),
   tool(

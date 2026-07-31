@@ -19,21 +19,25 @@ export function seedConfirmedIntentContract(input: {
     workspacePath: "/workspace",
     userText: input.objective ?? "Execute the scheduled task against its confirmed intent.",
   });
-  const session = input.store.startClarifySession({
+  const tree = input.store.startDecisionSession({
     agentId,
     turnId: started.turn.id,
     requestedStrength: "light",
   });
-  input.store.updateClarifyDecisionMap({
-    sessionId: session.id,
+  input.store.updateDecisionTree({
+    sessionId: tree.session.id,
     update: {
       effectiveStrength: "light",
+      activity: "investigating",
+      activeNodeId: "schedule-objective",
       publicSummary: "The objective and acceptance boundary are grounded.",
       nodes: [
         {
           id: "schedule-objective",
-          parentIds: [],
+          parentId: tree.session.rootNodeId,
+          crossLinkIds: [],
           title: "Scheduled objective",
+          summary: "The scheduled objective and acceptance boundary are grounded.",
           owner: "agent",
           materiality: "structural",
           status: "resolved",
@@ -44,7 +48,7 @@ export function seedConfirmedIntentContract(input: {
     },
   });
   const proposed = input.store.proposeIntentContract({
-    sessionId: session.id,
+    sessionId: tree.session.id,
     proposal: {
       contract: {
         title: input.title ?? "Confirmed schedule template",
@@ -60,16 +64,18 @@ export function seedConfirmedIntentContract(input: {
       publicSummary: "A stable schedule template is ready for independent challenge.",
     },
   });
-  input.store.applyClarifyChallenge({
-    sessionId: proposed.id,
+  input.store.applyDecisionTreeChallenge({
+    sessionId: proposed.session.id,
     result: {
       decision: "stable",
       reason: "The objective, invariant, and acceptance boundary are explicit.",
       missingNodes: [],
     },
   });
-  const confirmed = input.store.confirmIntentContract(proposed.id);
-  if (!confirmed.intentContract) throw new Error("Confirmed Intent Contract fixture is missing");
+  const confirmed = input.store.confirmIntentContract(proposed.session.id);
+  if (!confirmed.session.intentContract) {
+    throw new Error("Confirmed Intent Contract fixture is missing");
+  }
   input.store.markForegroundLifecycle({
     agentId,
     turnId: started.turn.id,
@@ -78,5 +84,5 @@ export function seedConfirmedIntentContract(input: {
     reason: "turn_completed",
     error: null,
   });
-  return confirmed.intentContract;
+  return confirmed.session.intentContract;
 }

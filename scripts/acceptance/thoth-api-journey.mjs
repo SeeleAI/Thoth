@@ -149,6 +149,8 @@ export class ThothApiJourney {
     agentConfig,
     prompts,
     beforeQuick = async () => undefined,
+    afterQuickTreeExpansion = async () => undefined,
+    afterQuickClarifyCard = async () => undefined,
     beforeLoop = async () => undefined,
   }) {
     const agent = await this.client.createAgent({
@@ -165,6 +167,14 @@ export class ThothApiJourney {
     await this.client.sendAgentMessage(agent.id, prompts.quick, {
       thoth: { enabled: true, executionMode: "quick", clarifyStrength: "light" },
     });
+    await afterQuickTreeExpansion({ agent });
+    const quickClarifyCard = await this.waitFor(async () => {
+      const result = await this.client.getAgentThothState(agent.id);
+      if (result.error) throw new Error(result.error);
+      const card = result.state.pendingCard;
+      return card?.card.submitted === false ? card : null;
+    }, "initial Quick Clarify Card");
+    await afterQuickClarifyCard({ agent, card: quickClarifyCard });
     await this.approveIntentContract(agent.id, "quick");
     await this.waitForLifecycle(agent.id, "done");
     await this.waitForAgentIdle(agent.id);

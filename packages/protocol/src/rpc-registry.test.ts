@@ -16,12 +16,12 @@ describe("rpcRegistry", () => {
     );
     const reverseOperations = entries.filter((entry) => entry.kind === "reverseUnary");
 
-    expect(operations).toHaveLength(142);
+    expect(operations).toHaveLength(143);
     expect(reverseOperations).toHaveLength(1);
-    expect(SessionInboundMessageSchema.options).toHaveLength(143);
-    expect(SessionOutboundMessageSchema.options).toHaveLength(152);
-    expect(new Set(operations.map((entry) => entry.requestType)).size).toBe(142);
-    expect(new Set(SessionOutboundMessageSchema.options.map(messageType)).size).toBe(152);
+    expect(SessionInboundMessageSchema.options).toHaveLength(144);
+    expect(SessionOutboundMessageSchema.options).toHaveLength(153);
+    expect(new Set(operations.map((entry) => entry.requestType)).size).toBe(143);
+    expect(new Set(SessionOutboundMessageSchema.options.map(messageType)).size).toBe(153);
 
     expect(new Set(SessionInboundMessageSchema.options.map(messageType))).toEqual(
       new Set(rpcRegistry.inputSchemas.map(messageType)),

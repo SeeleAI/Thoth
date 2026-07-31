@@ -63,9 +63,18 @@ describe("scripted real-provider cognitive flow contract", () => {
       } else {
         expect(prompt).toContain("thoth_clarify_update_map");
         expect(prompt).toContain("thoth_clarify_ask");
-        expect(prompt).toContain("thoth_clarify_propose_contract");
+        if (script.contract) {
+          expect(prompt).toContain("thoth_clarify_propose_contract");
+        } else {
+          expect(prompt).not.toContain("thoth_clarify_propose_contract");
+        }
         expect(prompt).not.toContain("thoth_submit_task_card");
         expect(prompt).not.toContain("thoth_submit_goals_card");
+      }
+      if (script.contract && script.checkpoints.length === 0) {
+        expect(script.contract.contract.objective).toContain(script.finalMarker);
+        expect(script.contract.contract.acceptance.join("\n")).toContain(script.finalMarker);
+        expect(prompt).toContain(script.finalMarker);
       }
       if (script.checkpoints.length > 0) {
         expect(prompt).toContain("thoth_loop_checkpoint");
