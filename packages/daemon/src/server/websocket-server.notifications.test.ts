@@ -13,6 +13,7 @@ import type { ScheduleService } from "./schedule/service.js";
 import type { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
 import {
+  createForegroundTurnCoordinatorStub,
   createProviderSnapshotManagerStub,
   createTestToolGateway,
 } from "./test-utils/session-stubs.js";
@@ -156,7 +157,13 @@ function createServer(executionServiceOverrides?: Record<string, unknown>) {
     createProviderSnapshotManagerStub().manager,
     undefined,
     undefined,
-    { manager: authorityManager, coordinator: authorityCoordinator },
+    undefined,
+    undefined,
+    {
+      manager: authorityManager,
+      coordinator: authorityCoordinator,
+      foregroundTurnCoordinator: createForegroundTurnCoordinatorStub(),
+    },
   );
 
   return { server, executionService, pushNotifications };

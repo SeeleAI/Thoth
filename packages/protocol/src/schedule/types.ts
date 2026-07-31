@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AgentProviderSchema } from "@thoth/protocol/provider-manifest";
 
-export const ScheduleStatusSchema = z.enum(["active", "paused", "completed"]);
+export const ScheduleStatusSchema = z.enum(["needs_contract", "active", "paused", "completed"]);
 export type ScheduleStatus = z.infer<typeof ScheduleStatusSchema>;
 
 export const ScheduleCadenceSchema = z.discriminatedUnion("type", [
@@ -71,6 +71,7 @@ export const StoredScheduleSchema = z.object({
   prompt: z.string().min(1),
   cadence: ScheduleCadenceSchema,
   target: ScheduleTargetSchema,
+  intentContractId: z.string().min(1).nullable(),
   status: ScheduleStatusSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -93,6 +94,7 @@ export interface CreateScheduleInput {
   prompt: string;
   cadence: ScheduleCadence;
   target: ScheduleTarget;
+  intentContractId: string;
   maxRuns?: number | null;
   expiresAt?: string | null;
   runOnCreate?: boolean | null;
@@ -111,6 +113,7 @@ export interface UpdateScheduleInput {
   prompt?: string;
   cadence?: ScheduleCadence;
   newAgentConfig?: UpdateScheduleNewAgentConfig;
+  intentContractId?: string;
   maxRuns?: number | null;
   expiresAt?: string | null;
 }

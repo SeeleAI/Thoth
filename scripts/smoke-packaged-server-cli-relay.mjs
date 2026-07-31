@@ -102,13 +102,13 @@ function inspectAuthority(thothHome, workspaceId, taskId) {
         `SELECT e.execution_id, e.phase_kind, a.bundle_id, a.bundle_digest, a.status
            FROM execution_attempts e
            LEFT JOIN runtime_attachments a ON a.execution_id = e.execution_id
-          WHERE e.task_id = ? AND e.phase_kind IN ('planexec', 'review')
+          WHERE e.task_id = ? AND e.phase_kind IN ('execute', 'review')
           ORDER BY e.started_at ASC`,
       )
       .all(taskId);
     invariant(
-      attachments.length === 6,
-      `Expected six Loop attempts, received ${attachments.length}`,
+      attachments.length === 4,
+      `Expected four Loop attempts, received ${attachments.length}`,
     );
     invariant(
       attachments.every(
@@ -216,7 +216,7 @@ try {
     pendingAfterRestart.state.pendingCard?.card.id === pendingCardId,
     "Daemon restart did not restore the exact open Card",
   );
-  await journey.approveCardChain(core.agent.id, "quick");
+  await journey.approveIntentContract(core.agent.id, "quick");
   await journey.waitForLifecycle(core.agent.id, "done");
   await journey.waitForAgentIdle(core.agent.id);
   invariant(
@@ -227,7 +227,7 @@ try {
   const existingTasks = await client.listTasks(workspaceId);
   invariant(!existingTasks.error, `Task listing failed: ${existingTasks.error}`);
   const excludedTaskIds = new Set(existingTasks.tasks.map((task) => task.id));
-  harness.patchState({ holdPlanExec: true });
+  harness.patchState({ holdExecute: true });
   await client.sendAgentMessage(core.agent.id, "PACKAGED_LOOP_PAUSE", {
     thoth: {
       enabled: true,
@@ -236,16 +236,16 @@ try {
       loopStrength: "light",
     },
   });
-  await journey.approveCardChain(core.agent.id, "loop");
+  await journey.approveIntentContract(core.agent.id, "loop");
   await journey.waitForLifecycle(core.agent.id, "background_handoff");
   const pauseTask = await findTask(client, workspaceId, excludedTaskIds);
   excludedTaskIds.add(pauseTask.id);
   await waitFor(
     async () =>
-      harness.readCapture().some((entry) => entry.kind === "planexec_hold" && entry.threadId) ||
+      harness.readCapture().some((entry) => entry.kind === "execute_hold" && entry.threadId) ||
       null,
     30_000,
-    "held Relay PlanExec",
+    "held Relay Execute attempt",
   );
   const pauseProjection = await client.getTask({ taskId: pauseTask.id, workspaceId });
   invariant(pauseProjection.task, "Pause Task projection is missing");
@@ -257,7 +257,7 @@ try {
     commandId: "server-cli-pause",
   });
   invariant(!pauseResult.error && !pauseResult.conflict, `Pause failed: ${pauseResult.error}`);
-  harness.patchState({ holdPlanExec: false });
+  harness.patchState({ holdExecute: false });
   const paused = await waitFor(
     async () => {
       const detail = await client.getTask({ taskId: pauseTask.id, workspaceId });
@@ -284,7 +284,7 @@ try {
     "resumed Relay Task completion",
   );
 
-  harness.patchState({ holdPlanExec: true });
+  harness.patchState({ holdExecute: true });
   await client.sendAgentMessage(core.agent.id, "PACKAGED_LOOP_STOP", {
     thoth: {
       enabled: true,
@@ -293,7 +293,7 @@ try {
       loopStrength: "light",
     },
   });
-  await journey.approveCardChain(core.agent.id, "loop");
+  await journey.approveIntentContract(core.agent.id, "loop");
   await journey.waitForLifecycle(core.agent.id, "background_handoff");
   const stopTask = await findTask(client, workspaceId, excludedTaskIds);
   const stopDetail = await waitFor(
@@ -331,7 +331,7 @@ try {
     30_000,
     "stopped Relay Task without running spinner",
   );
-  harness.patchState({ holdPlanExec: false });
+  harness.patchState({ holdExecute: false });
 
   const authority = inspectAuthority(harness.thothHome, workspaceId, core.task.id);
   const capture = harness.readCapture();
@@ -339,15 +339,15 @@ try {
   const turnErrors = capture.filter((entry) => entry.kind === "turn_error");
   invariant(turnErrors.length === 0, `Provider fixture errors: ${JSON.stringify(turnErrors)}`);
   invariant(
-    toolCalls.some((entry) => entry.tool === "thoth_submit_clarify_card"),
+    toolCalls.some((entry) => entry.tool === "thoth_clarify_ask"),
     "Relay daemon never received a Clarify runtime-tool call",
   );
   invariant(
-    toolCalls.filter((entry) => entry.tool === "thoth_loop_submit_planexec_result").length >= 5,
-    "Relay daemon did not complete the core and resumed PlanExec phases",
+    toolCalls.filter((entry) => entry.tool === "thoth_loop_checkpoint").length >= 3,
+    "Relay daemon did not complete the core and resumed Execute phases",
   );
   invariant(
-    toolCalls.filter((entry) => entry.tool === "thoth_loop_submit_review_verdict").length >= 5,
+    toolCalls.filter((entry) => entry.tool === "thoth_loop_review_decision").length >= 3,
     "Relay daemon did not complete the core and resumed Review phases",
   );
 
@@ -359,16 +359,15 @@ try {
     agentId: core.agent.id,
     providerThreadId: core.sessionId,
     backgroundTaskId: core.task.id,
-    usedFailedReviews: core.task.budget.usedFailedReviews,
+    usedNonCompleteReviews: core.task.budget.usedNonCompleteReviews,
     restartedCardId: pendingCardId,
     pausedTaskId: pauseTask.id,
     resumedTaskStatus: resumedTask.status,
     stoppedTaskId: stopTask.id,
     stoppedExecutionCount: stopped.executions.length,
     loopAttachmentCount: authority.loopAttachmentCount,
-    planExecCalls: toolCalls.filter((entry) => entry.tool === "thoth_loop_submit_planexec_result")
-      .length,
-    reviewCalls: toolCalls.filter((entry) => entry.tool === "thoth_loop_submit_review_verdict")
+    checkpointCalls: toolCalls.filter((entry) => entry.tool === "thoth_loop_checkpoint").length,
+    reviewDecisionCalls: toolCalls.filter((entry) => entry.tool === "thoth_loop_review_decision")
       .length,
     largeFile: relayLargeFile,
   };

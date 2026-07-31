@@ -6,15 +6,24 @@ const baseOptions = {
   prompt: "do the thing",
   every: "5m",
   provider: "claude",
+  intentContract: "intent-contract-1",
 };
 
 const baseCron = {
   prompt: "do the thing",
   cron: "0 9 * * *",
   provider: "claude",
+  intentContract: "intent-contract-1",
 };
 
 describe("parseScheduleCreateInput new-agent target", () => {
+  test("requires and freezes one confirmed Intent Contract reference", () => {
+    expect(parseScheduleCreateInput(baseOptions).intentContractId).toBe("intent-contract-1");
+    expect(() => parseScheduleCreateInput({ ...baseOptions, intentContract: "  " })).toThrow(
+      expect.objectContaining({ code: "INTENT_CONTRACT_REQUIRED" }),
+    );
+  });
+
   test("stores provider configuration without client filesystem authority", () => {
     const input = parseScheduleCreateInput(baseOptions);
     expect(input.target).toEqual({
@@ -115,6 +124,15 @@ describe("parseScheduleCreateInput first-run timing", () => {
 });
 
 describe("parseScheduleUpdateInput", () => {
+  test("accepts a newly confirmed Intent Contract reference", () => {
+    expect(
+      parseScheduleUpdateInput({ id: "abc", intentContract: "  intent-contract-2  " }),
+    ).toEqual({
+      id: "abc",
+      intentContractId: "intent-contract-2",
+    });
+  });
+
   test("rejects calls with no fields to update", () => {
     expect(() => parseScheduleUpdateInput({ id: "abc" })).toThrow(
       expect.objectContaining({ code: "NO_UPDATES" }),

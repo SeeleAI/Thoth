@@ -18,6 +18,7 @@ export interface ScheduleUpdateOptions extends ScheduleCommandOptions {
   timezone?: string;
   name?: string;
   prompt?: string;
+  intentContract?: string;
   provider?: string;
   model?: string;
   mode?: string;
@@ -41,6 +42,7 @@ export async function runUpdateCommand(
     timezone: options.timezone,
     name: options.name,
     prompt: options.prompt,
+    intentContract: options.intentContract,
     provider: options.provider,
     model: options.model,
     mode: options.mode,

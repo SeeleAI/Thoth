@@ -13,6 +13,8 @@ export interface ForegroundTurnWaiter {
 export interface PendingForegroundRun {
   token: string;
   started: boolean;
+  startingTurnId: string | null;
+  startingEvents: AgentStreamEvent[];
   settled: boolean;
   settledPromise: Promise<void>;
   resolveSettled: () => void;
@@ -38,6 +40,34 @@ export class ForegroundRunState {
 
   hasPendingRun(agentId: string): boolean {
     return this.pendingRuns.has(agentId);
+  }
+
+  captureStartingEvent(agentId: string, event: AgentStreamEvent): boolean {
+    const pendingRun = this.pendingRuns.get(agentId);
+    if (!pendingRun || pendingRun.started) return false;
+    const turnId = getAgentStreamEventTurnId(event);
+    if (!turnId) return false;
+    if (!pendingRun.startingTurnId) {
+      if (event.type !== "turn_started") return false;
+      pendingRun.startingTurnId = turnId;
+    }
+    if (pendingRun.startingTurnId !== turnId) return false;
+    pendingRun.startingEvents.push(event);
+    return true;
+  }
+
+  takeStartingEvents(agentId: string, turnId: string, token: string): AgentStreamEvent[] {
+    const pendingRun = this.pendingRuns.get(agentId);
+    if (
+      !pendingRun ||
+      pendingRun.token !== token ||
+      (pendingRun.startingTurnId !== null && pendingRun.startingTurnId !== turnId)
+    ) {
+      return [];
+    }
+    const events = pendingRun.startingEvents.splice(0);
+    pendingRun.startingTurnId = null;
+    return events;
   }
 
   settlePendingRun(agentId: string, token?: string): void {
@@ -212,6 +242,8 @@ function createPendingForegroundRun(): PendingForegroundRun {
   return {
     token: randomUUID(),
     started: false,
+    startingTurnId: null,
+    startingEvents: [],
     settled: false,
     settledPromise,
     resolveSettled,

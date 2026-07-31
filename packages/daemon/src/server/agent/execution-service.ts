@@ -105,9 +105,8 @@ const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
 const HARNESS_TOOL_SCOPES = new Set<ThothToolRuntimeScope>([
   "clarify",
-  "clarify_audit",
-  "contract_audit",
-  "loop_planexec",
+  "clarify_challenger",
+  "loop_execute",
   "loop_review",
 ]);
 const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
@@ -712,6 +711,7 @@ export class ExecutionService {
     string,
     { agentId: string; canonicalMessageId: string }
   >();
+  private readonly foregroundRuntimeAttachments = new Map<string, RuntimeAttachmentReceipt>();
   private readonly foregroundRuns = new ForegroundRunState();
   private readonly subscribers = new Set<SubscriptionRecord>();
   private readonly idFactory: () => string;
@@ -815,6 +815,16 @@ export class ExecutionService {
 
   async getHarnessCapabilities(adapterId: AgentProvider): Promise<HarnessCapabilities> {
     return (await this.loadAdapter(adapterId)).harnessCapabilities;
+  }
+
+  consumeForegroundRuntimeAttachment(
+    agentId: string,
+    generation: string,
+  ): RuntimeAttachmentReceipt | null {
+    const key = `${agentId}:${generation}`;
+    const receipt = this.foregroundRuntimeAttachments.get(key) ?? null;
+    if (receipt) this.foregroundRuntimeAttachments.delete(key);
+    return receipt;
   }
 
   async createHarnessThread(
@@ -3401,6 +3411,37 @@ export class ExecutionService {
       try {
         const result = await agent.session.startTurn(prompt, options);
         turnId = result.turnId;
+        const activation = options?.runtimeBundleActivation;
+        if (activation) {
+          const capabilities = await this.getHarnessCapabilities(agent.provider);
+          if (capabilities.runtimeBundleActivation !== "native_skill") {
+            throw new Error(
+              `HarnessAdapter ${agent.provider} did not accept RuntimeBundle activation`,
+            );
+          }
+          const instructionAttachment = capabilities.instructionAttachment[0];
+          const toolAttachment = capabilities.toolAttachment[0];
+          const providerThreadId =
+            agent.session.id ??
+            agent.persistence?.nativeHandle ??
+            agent.persistence?.sessionId ??
+            null;
+          if (!instructionAttachment || !toolAttachment || !providerThreadId) {
+            throw new Error(
+              `HarnessAdapter ${agent.provider} did not return a durable RuntimeBundle attachment surface`,
+            );
+          }
+          this.foregroundRuntimeAttachments.set(`${agentId}:${activation.generation}`, {
+            id: `runtime-attachment-${randomUUID()}`,
+            adapterId: agent.provider,
+            threadId: providerThreadId,
+            bundleId: activation.bundleId,
+            bundleDigest: activation.bundleDigest,
+            instructionAttachment,
+            toolAttachment,
+            attachedAt: new Date().toISOString(),
+          });
+        }
         if (options?.messageId) {
           this.canonicalMessageByProviderTurn.set(turnId, {
             agentId,
@@ -3438,6 +3479,7 @@ export class ExecutionService {
 
       turnStream = this.foregroundRuns.createTurnStream(turnId);
       this.foregroundRuns.addWaiter(agent, turnStream.waiter);
+      await this.flushStartingForegroundEvents(agent, turnId, pendingRun.token);
 
       try {
         for await (const event of turnStream.events(isTurnTerminalEvent)) {
@@ -4681,6 +4723,13 @@ export class ExecutionService {
   ): Promise<void> {
     const turnId = getAgentStreamEventTurnId(event);
     const matchingWaiters = this.foregroundRuns.getMatchingWaiters(agent, turnId);
+    if (matchingWaiters.length === 0 && this.foregroundRuns.captureStartingEvent(agent.id, event)) {
+      this.logger.trace(
+        { agentId: agent.id, provider: event.provider, turnId, event },
+        "execution.service.buffer_starting_event",
+      );
+      return;
+    }
     this.logger.trace(
       {
         agentId: agent.id,
@@ -4714,6 +4763,32 @@ export class ExecutionService {
       },
       "execution.service.notify_waiters",
     );
+  }
+
+  private async flushStartingForegroundEvents(
+    agent: ActiveManagedAgent,
+    turnId: string,
+    pendingRunToken: string,
+  ): Promise<void> {
+    const previous = this.sessionEventTails.get(agent.id) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(async () => {
+        const current = this.agents.get(agent.id);
+        if (!current || current.session == null) return;
+        const events = this.foregroundRuns.takeStartingEvents(agent.id, turnId, pendingRunToken);
+        for (const event of events) {
+          await this.dispatchSessionEvent(current, event);
+        }
+      });
+    this.sessionEventTails.set(agent.id, next);
+    try {
+      await next;
+    } finally {
+      if (this.sessionEventTails.get(agent.id) === next) {
+        this.sessionEventTails.delete(agent.id);
+      }
+    }
   }
 
   private async resolveInitialPersistedTitle(

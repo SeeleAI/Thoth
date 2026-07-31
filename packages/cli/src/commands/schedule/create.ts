@@ -15,6 +15,7 @@ export interface ScheduleCreateOptions extends ScheduleCommandOptions {
   cron?: string;
   timezone?: string;
   name?: string;
+  intentContract?: string;
   target?: string;
   provider?: string;
   mode?: string;
@@ -37,6 +38,7 @@ export async function runCreateCommand(
     cron: options.cron,
     timezone: options.timezone,
     name: options.name,
+    intentContract: options.intentContract,
     target: options.target,
     provider: options.provider,
     mode: options.mode,

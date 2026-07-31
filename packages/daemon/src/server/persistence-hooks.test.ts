@@ -95,7 +95,7 @@ describe("persistence hooks", () => {
     });
   });
 
-  test("restores persisted Loop phase agents as hidden internal sessions", () => {
+  test("drops legacy Thoth runtime config while preserving the internal Agent role", () => {
     const record = createRecord({
       provider: "codex",
       internal: true,
@@ -105,6 +105,7 @@ describe("persistence hooks", () => {
           codex: {
             thothLoopRuntimeTools: true,
             thothLoopSessionHome: "/tmp/loop-session-home",
+            modelProvider: "native",
           },
         },
       },
@@ -114,8 +115,7 @@ describe("persistence hooks", () => {
       internal: true,
       extra: {
         codex: {
-          thothLoopRuntimeTools: true,
-          thothLoopSessionHome: "/tmp/loop-session-home",
+          modelProvider: "native",
         },
       },
     });

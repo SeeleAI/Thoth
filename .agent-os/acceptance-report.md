@@ -4241,3 +4241,58 @@ Status: `verified`.
     `317bcda46571ae0ae508f4d892759eff779d9d73`; formal isolation retained Paseo PID `3597831` on `6767` and no
     Thoth daemon on `6688`. No Relay/Web deployment, npm/mobile/store/Nix/Docker publication or Paseo operation
     occurred. Terminal result is `published`.
+
+### `NTH-EV-075` Decision Map Clarify And Target-Anchored Loop Fixed-Beta Replacement
+
+Status: `in_progress`; local state is `release_ready` and public publication evidence is pending.
+
+1. The implementation baseline is clean `agent/dev/mvp@6b04aa36166b70f65f1ecd557fdcdc901b5674d8`.
+   `NTH-CD-100` through `NTH-CD-102` replace the former Task/Goals cognition authority without dual reads,
+   compatibility RPCs, Provider-name business branches, prompt fallback or a second product path.
+2. Protocol and Workspace schema v6 now own Clarify sessions, Decision Map nodes, Intent Contracts, Acceptance
+   Claims, Working Sets, Work Units, Loop cycles and Review decisions. The atomic schema-v5 migration preserves
+   decisions, Timeline, evidence, Provider handles and controls; converts old cards to read-only history; fresh
+   reorients active Loop Tasks; interrupts active Quick work without replay; and removes old authority tables.
+3. The Driver-owned immutable RuntimeBundles expose exactly four Clarify tools, one internal Challenger tool and
+   four Loop tools. The same visible Provider session grounds and asks Human-owned frontiers. One fresh internal
+   Challenger may reopen missing material nodes once. Loop execution receives a compact Task Working Set, emits
+   one semantic checkpoint per meaningful increment and is reviewed from fresh read-only context.
+4. Complete owner suites pass: CLI `40/40`; App `366/366` files and `2,715/2,715` tests; Desktop `37/37` files,
+   `301` passed and `5` skipped; Core `2` files / `20` tests; Drivers `49` passed and `3` skipped files with `606`
+   passed and `21` skipped tests; Daemon `199` files with `2,535` passed and `26` skipped plus integration `3`
+   files with `8` passed and `4` skipped.
+5. `npm run accept:thoth:fast` passed in `135.948s` under the shared `300s` deadline. Its formal public
+   Clarify/Loop path passed `22/22`, including 30-plus high-value Dive questions, recommendation and subtree
+   delegation, five-hour Card continuation, one Challenger, budget boundaries, no-progress interruption/resume,
+   Review independence, context reset and Stop fencing. Foundation passed Highlight `66`, Protocol `415`, Relay
+   `37` and Client `128`; the fresh Web export built `4,463` modules.
+6. Real Codex `UT-02 + UT-04` passed `2` tests with `2` skipped in `209.08s`, covering visible Clarify through one
+   Intent Contract and Quick plus Loop native Plan, Implement, checkpoint, fresh Review and completion. Other
+   Providers use their formal transport conformance fixtures rather than a generic model API.
+7. Independent Codex judges passed after retaining their earlier failures:
+   `.agent-os/artifacts/clarify-cognition-codex-judge-2026-07-31T00-57-18-833Z.md`,
+   `.agent-os/artifacts/clarify-ablation-codex-judge-2026-07-31T01-03-38-211Z.md`, and
+   `.agent-os/artifacts/loop-cognition-codex-judge-2026-07-31T01-23-13-667Z.md` each end in
+   `JUDGE_RESULT: PASS`. Artifacts remain ignored local evidence and are not staged.
+8. Candidate AppImage `7bf5e09ffa62a99020436e3583e3f697e8335ebf5f12facbbaea27af208c0060` is
+   `137,826,663` bytes. Its real Electron window journey reports `ok=true`, one native Provider thread across
+   Plan/Implement, four checkpoints, four Review decisions, schema-v6 migration, Decision Map, Intent Contract,
+   Quick, Loop retry, `@Task`, Stop, Files/Changes, Browser and Schedule. Durable state is `8,604,983` bytes with
+   exactly two content-addressed RuntimeBundles.
+9. Hosted Relay v3 E2EE reports `ok=true` over `relay.test.thoth.seeles.ai:443`, including daemon restart, restored
+   Clarify Card, Loop, Pause/Resume/Stop, four Loop attachments, four checkpoints, three Review decisions and a
+   `1,048,649`-byte five-chunk transfer. No Relay source or deployment changed.
+10. Final local checks pass with exit code `0`: `check:mvp-release-contract`, `check:brand-assets`,
+    `check:thoth:cognition`, `check:refactor-architecture`, `check:refactor-storage`, `format:check`,
+    `validate:repo` including secret-like scan, and `git diff --check`. Old Task/Goals terms remain only in the
+    schema-v5 migration, frozen legacy fixtures and explicit forbidden-residue assertions.
+11. Production is `320,124` LOC, `1,361,597` scanner tokens, `1,408,770` AST nodes, `5,247` imports and `165`
+    runtime dependencies. `DeltaP52=3,173` translates Cut B/final ceilings to `304,618` / `282,218`; the
+    independent `NTH-TD-036` gap remains exactly `15,506` and is neither completed nor regressed.
+12. Pending before `verified`: one atomic release-source commit, normal pushes to both authorized branches,
+    exact-SHA mandatory Actions, in-place replacement of the fixed 26-asset desktop prerelease, fresh public
+    metadata/checksum/update/build-identity downloads and the downloaded public AppImage journey. The current
+    public source and Release remain intact at `d898f25f` until those steps succeed.
+13. Repository-local `Royalvice` preflight confirms development `6b04aa36`, release automation `d898f25f`,
+    `main=e74c6e0d`, direct fixed tag `d898f25f` and public prerelease `361828099` at the same source with exactly
+    26 assets. Release source is an ancestor of development HEAD. No remote mutation occurred during preflight.

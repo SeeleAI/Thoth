@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+import { seedConfirmedIntentContract } from "../test-utils/authority-fixtures.js";
 import { WorkspaceAuthorityManager } from "./workspace-authority-manager.js";
 
 const roots: string[] = [];
@@ -62,13 +63,20 @@ describe("WorkspaceCoordinationRepository", () => {
 
   it("persists schedules only in the owning Workspace authority", () => {
     const manager = createManager();
-    const first = manager.forWorkspace("workspace-a").coordination;
+    const firstAuthority = manager.forWorkspace("workspace-a");
+    const contract = seedConfirmedIntentContract({
+      store: firstAuthority,
+      workspaceId: "workspace-a",
+      agentId: "agent-schedule-owner",
+    });
+    const first = firstAuthority.coordination;
     const second = manager.forWorkspace("workspace-b").coordination;
     const created = first.createSchedule({
       name: "Workspace A schedule",
       prompt: "inspect",
       cadence: { type: "every", everyMs: 60_000 },
       target: { type: "new-agent", config: { provider: "codex" } },
+      intentContractId: contract.id,
       status: "active",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",

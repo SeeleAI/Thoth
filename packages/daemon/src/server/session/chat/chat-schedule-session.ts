@@ -311,6 +311,7 @@ export class ChatScheduleSession {
         name: request.name,
         cadence: request.cadence,
         target,
+        intentContractId: request.intentContractId,
         maxRuns: request.maxRuns,
         expiresAt: request.expiresAt,
         runOnCreate: request.runOnCreate,
@@ -460,6 +461,9 @@ export class ChatScheduleSession {
     try {
       const schedule = await this.scheduleService.update(request.workspaceId, {
         id: request.scheduleId,
+        ...(request.intentContractId !== undefined
+          ? { intentContractId: request.intentContractId }
+          : {}),
         ...(request.name !== undefined ? { name: request.name } : {}),
         ...(request.prompt !== undefined ? { prompt: request.prompt } : {}),
         ...(request.cadence !== undefined ? { cadence: request.cadence } : {}),

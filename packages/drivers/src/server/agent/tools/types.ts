@@ -50,9 +50,8 @@ export interface ThothToolRuntimeCallerConfig {
 
 export type ThothToolRuntimeScope =
   | "clarify"
-  | "clarify_audit"
-  | "contract_audit"
-  | "loop_planexec"
+  | "clarify_challenger"
+  | "loop_execute"
   | "loop_review";
 
 export interface ThothToolRuntimeContext {

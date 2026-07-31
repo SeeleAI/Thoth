@@ -13,13 +13,15 @@ export interface TaskRow {
 }
 
 export function toTaskRow(task: TaskProjection): TaskRow {
-  const passed = task.goals.filter((goal) => goal.status === "passed").length;
+  const satisfied = task.intentContract.acceptanceClaims.filter(
+    (claim) => claim.status === "satisfied",
+  ).length;
   return {
     id: task.id,
     title: task.title,
     mode: task.mode,
     status: task.status,
-    progress: `${passed}/${task.goals.length}`,
+    progress: `${satisfied}/${task.intentContract.acceptanceClaims.length}`,
     revision: task.revision,
     updatedAt: task.updatedAt,
     task,
@@ -33,7 +35,7 @@ export const taskRowSchema: OutputSchema<TaskRow> = {
     { header: "TITLE", field: "title", width: 32 },
     { header: "MODE", field: "mode", width: 7 },
     { header: "STATUS", field: "status", width: 18 },
-    { header: "GOALS", field: "progress", width: 7 },
+    { header: "CLAIMS", field: "progress", width: 7 },
     { header: "REV", field: "revision", width: 5, align: "right" },
     { header: "UPDATED", field: "updatedAt", width: 24 },
   ],

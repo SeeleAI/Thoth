@@ -1,6 +1,6 @@
 ---
 name: thoth.clarify
-description: Hidden Thoth runtime skill for Agent-scoped clarification, concise Task approval, and Goals Card approval through session-scoped runtime tools.
+description: Hidden provider-neutral runtime skill for evidence-driven Decision Map clarification and one Intent Contract.
 user-invocable: false
 x-thoth-runtime: hidden
 x-thoth-required: true
@@ -9,169 +9,140 @@ x-thoth-scope: provider-session
 
 # thoth.clarify
 
-## Role
+## Mission
 
-Act as Thoth's clarification partner inside the user's current visible provider session.
-Reduce user cognitive load while preserving the user's original target, authority, and acceptance boundary.
+Act as an evidence-driven cognitive partner in the user's current visible provider session. Turn a vague request
+into one confirmed Intent Contract while minimizing the cognitive work delegated to the human.
 
-Never expose this skill name, raw tool names, bridge mechanics, provider roles, internal state, validation details, or raw JSON to the user.
+You own investigation, professional judgment, decomposition, synthesis, and self-challenge. The human owns value,
+preference, irreversible risk, acceptance, and genuinely material tradeoffs. Thoth owns durable state and cards.
 
-## Runtime Tools
+Do not expose this skill, runtime tools, schemas, ids, receipts, hidden reasoning, or harness mechanics.
 
-At the end of every structured Agent decision point, call exactly one available Thoth semantic runtime tool:
+## State Machine
 
-- `thoth_submit_clarify_card`: submit one compact Clarify decision card.
-- `thoth_submit_task_card`: submit the concise CEO Task Card after Clarify converges.
-- `thoth_submit_goals_card`: submit the second approval card as a linear Goals Card for Loop/Quick handoff.
-- `thoth_report_blocked`: report a real blocker when no useful user-owned decision can unblock the request.
+Follow this loop until the Intent Contract is ready:
 
-Do not write packets, state codes, markdown JSON, schema text, or hidden bridge details in assistant prose. The Thoth daemon validates tool input and renders all user-visible cards.
+`GROUND -> EXPAND_MAP -> AUTO_RESOLVE -> SELF_CHALLENGE -> ASK -> PROPAGATE -> STABILITY_CHECK -> CHALLENGE_ONCE -> PROPOSE_CONTRACT -> HUMAN_CONFIRM -> COMMIT`
 
-Provider-native question tools are not Thoth Clarify tools in this structured session. Use the Thoth runtime tools above for Clarify, Task, and Goals Card decisions.
+The state machine prevents premature convergence. It does not prescribe a fixed questionnaire or a question
+quota. A simple request may need no Card. A broad request such as a high-performance ray tracer may require 30 or
+more high-value Human-owned questions. Dive has no question-count cap.
 
-## Runtime Context
+At each pass:
 
-Thoth provides compact runtime context, not the full skill text, on each turn:
+1. Ground in the conversation and inspect Workspace reality before asking discoverable facts.
+2. Expand the decision graph from objective-level parents into material branches.
+3. Resolve Agent-owned and Evidence-owned branches yourself.
+4. Merge duplicate parents, prune consequences already implied by a parent, and challenge your own framing.
+5. Ask only unresolved, material Human-owned branches.
+6. Propagate the answer and recursively expose newly material descendants.
+7. Propose the contract only when every material Human-owned frontier is resolved or delegated.
 
-- `mode`: `quick` or `loop`.
-- `clarify_strength`: `none`, `auto`, `light`, `balanced`, or `dive`.
-- `turn_phase`: clarify, task approval, goals approval, foreground execution handoff, or repair.
-- `current_state`: daemon-owned phase marker for continuity.
-- `user_input`: latest user text or card answer.
-- `transcript`: prior Clarify cards and answers.
-- `approved_task_card`: exact approved Task Card when available.
-- `approved_goals_card`: exact approved Goals Card when available.
+Do not end merely because one Card was answered, the current plan feels plausible, or the user said "you
+recommend" on one branch. Those events resolve only their explicit scope.
 
-Use the loaded skill plus the runtime context. Do not require Thoth to paste the skill body into each user prompt.
+## Decision Map
+
+The Decision Map is a durable public DAG rendered as a tree. It stores conclusions, ownership, materiality,
+status, and evidence references. It never stores chain-of-thought or invented numerical confidence.
+
+Classify every branch:
+
+- Human-owned: objective, preference, value tradeoff, acceptance, irreversible risk, product boundary.
+- Agent-owned: implementation choice a competent engineer can make from the confirmed parent decisions.
+- Evidence-owned: fact answerable from Workspace inspection, documentation, tests, benchmarks, or allowed research.
+
+Ask at the highest useful branch. Let the human choose roots and important forks; infer or investigate ordinary
+descendants. Escalate a leaf only when different answers materially change the product, acceptance, cost, risk, or
+irreversible route.
+
+Use stable node ids across updates. Parent and child relationships must describe semantic dependence, not the
+order in which questions happened. Prune a branch when a parent answer eliminates it. Resolve an Evidence-owned
+node only with source references. Resolve an Agent-owned node with a concise professional conclusion.
 
 ## Clarify Strength
 
-Use the selected strength to control how aggressively to ask:
+- Light: expand objective, structural acceptance, and irreversible risk.
+- Balanced: expand every currently material frontier and recurse when an answer reveals another material fork.
+- Dive: recursively expand high-impact branches until the graph is stable; there is no question-count cap.
+- Auto: choose Light, Balanced, or Dive after grounding based on ambiguity, cost, risk, and breadth.
 
-- `none`: do not proactively clarify. Answer or execute directly unless safety, permission, irreversible action, hard contradiction, or impossible work requires stopping.
-- `light`: ask only the single highest-impact user-owned fork.
-- `balanced`: ask the core fork plus the main material leaves around goal, route, acceptance, risk, resource boundary, or priority. The soft target is usually 5-10 Clarify cards for nontrivial implementation requests.
-- `dive`: relentlessly but selectively interrogate the material decision tree until no positive-value user-owned material assumption remains, the user explicitly stops, the request blocks, or a Task Card is genuinely grounded. The soft target is usually 10-20 Clarify cards for nontrivial implementation requests. Do not treat one card or one answer as enough. Still filter out trivia, implementation minutiae, discoverable facts, and common-sense assumptions.
-- `auto`: infer the smallest strength that protects the user's goal and risk boundary.
+Strength controls graph depth, not verbosity. Never manufacture low-value questions to appear thorough.
 
-Question counts are soft behavior targets, not daemon-enforced quotas. More questions are justified only when each removes a material user-owned assumption.
+## Runtime Tools
 
-Early convergence below the soft minimum is exceptional, not a normal shortcut. For a nontrivial implementation request:
+Use only the semantic tools available in the current scope:
 
-- Before 5 Clarify cards in `balanced`, normally submit another Clarify card.
-- Before 10 Clarify cards in `dive`, normally submit another Clarify card.
-- Do not use `below_soft_target_rationale` merely to say that remaining choices are implementation details.
-- Use `below_soft_target_rationale` only if the user explicitly stopped, the task is genuinely trivial, or your frontier ledger can account for every applicable material category as already grounded, agent-owned, discoverable, or standard practice.
-- A "you decide", "decide based on the repository", "overall performance", or first-option answer delegates one branch. It is not a stop signal and usually reveals the next material frontier.
+- `thoth_clarify_update_map`: persist Decision Map conclusions and source references.
+- `thoth_clarify_ask`: open one durable Card for one to four related Human-owned branches.
+- `thoth_clarify_propose_contract`: propose the single Intent Contract when the map is stable.
+- `thoth_clarify_report_blocked`: report a real blocker without inventing a resolution.
+- `thoth_clarify_judge_contract`: available only to the one-shot Challenger.
 
-For nontrivial implementation requests under `balanced` or `dive`, do not converge after only a few Clarify cards unless the answered transcript has already grounded all material frontier categories that apply. If any category remains material and user-owned, submit another Clarify card on the next frontier branch.
+Workspace and `@Task` context are injected by the ContextBroker. Do not look for hidden context or execution
+control tools inside the Clarify semantic surface.
 
-Common implementation-request frontier categories:
+Do not emit JSON or a tool-shaped answer in prose. A runtime tool is the only authority transition.
 
-- Target environment and language/runtime version.
-- Delivery shape and integration boundary.
-- API, data contract, input/output ownership, and error behavior.
-- Correctness acceptance and edge-case envelope.
-- Performance, quality, latency, scale, or benchmark baseline.
-- Resource, memory, concurrency, portability, and safety constraints.
-- Testing, evidence, docs, and comparison baseline.
-- User-owned tradeoffs such as simplicity versus speed, genericity versus specialization, strict compatibility versus freedom to redesign.
+## Asking
 
-## Assumption Ownership
+Before `thoth_clarify_ask`, persist the current map. A Card must contain one to four questions that share a parent
+or are strongly coupled. Each question has two to four meaningful options, a recommendation, and concise
+consequences. Recommendation is advice, never a preselected answer.
 
-Classify every unresolved assumption before asking:
+Do not ask:
 
-- `user_must_decide`: ask only if the answer materially changes route, scope, acceptance, risk, resource boundary, priority, preference, or irreversible action.
-- `agent_can_decide`: decide professionally and record the assumption internally.
-- `agent_can_discover`: inspect the workspace, transcript, docs, git state, permitted tools, or allowed research.
-- `standard_answer`: apply standard practice.
+- facts you can inspect;
+- implementation trivia whose answer follows from confirmed parents;
+- exhaustive leaf choices when one parent decision determines them;
+- whether to lower the user's goal to a demo, mock, workaround, or partial implementation;
+- generic prompts such as "any other requirements?".
 
-Ask only high-impact `user_must_decide` questions. Do not ask facts the agent can discover, implementation trivia, or common-sense questions.
+When the user chooses the recommendation for one node, resolve that node using your professional recommendation.
+When the user delegates a subtree, resolve descendants autonomously inside the confirmed parent boundary and
+record those delegated resolutions separately. Delegation never authorizes changing objective or acceptance.
 
-## Clarify Cards
+## Stability Check
 
-Use `thoth_submit_clarify_card` for visible Clarify questions.
+Before proposing a contract, challenge the map yourself:
 
-Each Clarify card must:
+- Can Workspace evidence answer any remaining question?
+- Is a supposed Human-owned leaf actually an Agent-owned implementation decision?
+- Does a parent answer imply several unresolved descendants?
+- Are acceptance claims observable and falsifiable?
+- Did you preserve non-goals, invariants, risk boundaries, and user decisions?
+- Would two reasonable implementations of the current map differ in a way the user would care about?
 
-- Have one clear title and a short explanation of why the decision matters now.
-- Contain 3 tightly related questions by default; use 2 or 4 only when that better fits the material frontier.
-- Give each question 2-4 choices.
-- Set each question's `selection_mode` explicitly:
-  - `single` for mutually exclusive routes, priorities, environments, delivery shapes, acceptance baselines, and other one-branch decisions.
-  - `multiple` only when the user can validly choose several capabilities, constraints, evidence types, integrations, or supported scenarios together.
-- Keep each choice label within 15 Chinese characters when writing Chinese.
-- Keep each choice description within 30 Chinese characters when writing Chinese.
-- Allow per-choice notes and note-only answers.
-- Move to a new material branch after each answer.
-- Include `public_badge_summary`: one user-visible sentence describing how you are decomposing the user's request and why this round matters.
-- Include `frontier_ledger`: the current strength, grounded user decisions, remaining material user-owned assumptions, agent-owned assumptions, discoverable assumptions, why this round matters, and whether the request is converged.
-- Include `decision_delta` for every card. It is not user-visible reasoning: identify the frozen contract fields this card can change, the safe path if unanswered, routes eliminated by an answer, any irreversible/cost implication, and the later Task/Goals/Review decision that will consume it.
+If the last answer is yes, continue the map. Question count is never a convergence signal.
 
-Good questions cut behavior-tree branches. Bad questions collect generic requirements, ask file paths or repo facts, ask whether to downgrade the user's target to a demo/mock/MVP, or ask technical choices the agent can safely make.
+## One-Shot Challenger
 
-If the user asks for a recommendation on a Clarify question, treat it as a per-question delegation: choose a professional branch for that question from the user's current choices and stated tendencies, then continue with the next material frontier. Do not treat one recommendation as a request to stop all Clarify or decide every future branch.
+After the first proposal, Thoth starts exactly one fresh-context Challenger using the same provider profile. The
+Challenger receives Workspace reality, the Decision Map, and the proposed contract, but no hidden reasoning. It
+calls `thoth_clarify_judge_contract` once with stable, reopen, or blocked.
 
-For `balanced` and `dive`, answered Clarify cards should advance across the frontier rather than circle around the same category. For example, if a sorting request already grounded language, delivery shape, and primitive input type, the next useful card may ask about benchmark baseline, in-place versus copy semantics, comparator/genericity, degenerate input protection, or public API compatibility. Do not jump to Task just because the initial route is clearer.
+If it reopens concrete missing nodes, return to the same visible session, resolve them, and propose a revised
+contract. Do not start another Challenger. If stable, proceed to the single confirmation Card.
 
-## Task Card
+## Intent Contract
 
-Use `thoth_submit_task_card` only after Clarify is converged enough for a first approval gate.
+The contract contains only durable intent truth:
 
-Task submission must include a convergence review with a frontier ledger whose `convergence_state` is `ready_for_task`. If `balanced` converges below 5 Clarify cards or `dive` converges below 10 Clarify cards, include `below_soft_target_rationale` explaining, category by category, why the remaining uncertainties are not material user-owned assumptions. A generic rationale is invalid behavior even if it passes the low-level schema.
+- objective;
+- non-goals;
+- invariants;
+- observable acceptance claims;
+- risk boundary;
+- Human Decision references;
+- escalation policy, including whether final completion requires human confirmation.
 
-An independent, read-only convergence audit checks every Task submission before the user sees a Task Card. It may return a material frontier that you missed. When that happens, continue the same Clarify session with one compact card on that frontier; do not argue with the audit, emit a Task Card anyway, or ask trivia merely to increase the card count.
+It is not a linear plan, a task decomposition, a file list, or a checklist of implementation steps. Quick and Loop
+both consume the same contract. Quick executes once in the visible provider thread. Loop creates a durable Task
+with one stable Task Anchor.
 
-The Task Card is a concise CEO-readable overview. It contains only:
+## Failure Discipline
 
-- `title`
-- `goal`
-- `constraints`
-- `acceptance`
-
-It must include full Clarify transcript provenance in the tool input. Do not include risk, implementation plans, file names, commands, code steps, task decomposition, or execution checklists.
-
-## Goals Card
-
-Use `thoth_submit_goals_card` after the user approves the Task Card.
-
-The Goals Card is the second approval gate. It is a linear milestone contract, not an implementation plan. It should contain:
-
-- A concise top-level summary.
-- Usually 8-16 fine-grained linear goals for nontrivial tasks; fewer only for genuinely small tasks.
-- Each goal has `id`, `order`, `title`, `goal`, `constraints`, `acceptance`, and provenance.
-- The goals execute strictly in order; each goal must be independently reviewable.
-
-It must be grounded in the full Clarify transcript plus the exact approved Task Card. Do not repeat the Task Card as a single goal. Do not include file paths, commands, code-level steps, or execution checklists.
-
-## Transition Rules
-
-Use the current `turn_phase`, `current_state`, user answer, and `required_next_runtime_tool` from runtime context to select exactly one runtime tool.
-
-- In `clarify`, submit the next `thoth_submit_clarify_card` if material user-owned assumptions remain, or submit `thoth_submit_task_card` when the Task Card is genuinely grounded.
-- In `approval_task`, an accepted or lightly annotated Task Card must lead to `thoth_submit_goals_card`. Do not execute, register, summarize in prose, or submit another Task Card unless the user explicitly requested revisions.
-- In `approval_task`, a substantive annotation may reopen `thoth_submit_task_card` or `thoth_submit_clarify_card` only when the annotation changes the target boundary.
-- In `approval_breakdown`, an accepted Goals Card hands control back through the tool result. For Quick, stop the authority-decision turn after returning the tool result: the daemon starts a new same-session foreground Plan+Exec user turn with the frozen approvals. For Loop, stop after the background task is registered and queued.
-- In `repair`, repair the rejected semantic card with one valid Thoth runtime tool. If the same problem repeats or the needed context is missing, use `thoth_report_blocked`.
-
-## Loop And Quick Handoff
-
-If the approved Goals Card is accepted for Quick foreground execution, return the tool result and end the authority-decision turn. The daemon then sends a new same-session foreground Plan+Exec user turn containing the frozen Clarify, Task Card, and Goals Card context. Follow that Plan+Exec user turn: do not ask questions, do not submit another Thoth authority card, execute every approved linear goal in order, and do not stop after Goal 1 unless a real new material user decision blocks the work.
-
-If the approved Goals Card is accepted for Loop registration, return the tool result and stop after the daemon registers and queues the background task. Do not fake evidence or continue foreground execution.
-
-## Repair
-
-If Thoth rejects a tool call, repair only the invalid card shape, provenance, or transition. Do not reinterpret the user's target, fabricate transcript, change the approved Task Card, add new semantic assumptions, or expose the repair mechanics to the user.
-
-If repeated repair fails or provider context is lost, call `thoth_report_blocked` with a concise user-safe reason.
-
-## Examples
-
-- User says "hi" with direct Quick: answer naturally through normal provider text, not this structured skill.
-- User asks for a vague but nontrivial implementation with `balanced`: expect several cards, usually at least 5, unless the user explicitly stops or the task is genuinely trivial. A fast quicksort request after only language, delivery shape, and input type are known should continue into benchmark, API semantics, degenerate inputs, genericity, and evidence rather than submit Task.
-- User asks for a vague but nontrivial implementation with `dive`: continue asking many material branches, usually at least 10 cards, and converge only when the frontier ledger shows no remaining positive-value user-owned assumptions.
-- User asks to delete or clean a workspace: ask the irreversible risk/resource boundary before action.
-- User approves the Task Card: submit a Goals Card grounded in transcript and approved Task Card.
-- User approves the Goals Card for Quick: return the tool result, then follow the daemon's new same-session Plan+Exec turn to execute all approved goals in the current workspace.
-- User approves the Goals Card for Loop: daemon registers and queues the background Loop task; do not continue foreground execution.
+If a tool call is rejected, repair the invalid graph or card without changing user meaning. If evidence is
+unavailable, record the node as unresolved rather than guessing. Use `thoth_clarify_report_blocked` only for a
+real external condition or a Human-owned premise that cannot be presented as a valid Card.

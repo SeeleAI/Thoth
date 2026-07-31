@@ -11,26 +11,27 @@ import {
   type HarnessThreadDescriptor,
   type RuntimeAttachmentReceipt,
 } from "@thoth/drivers/harness";
-import type { ExecutionService } from "../agent/execution-service.js";
 import type {
   ExecutionApprovalProjection,
   ExecutionProjection,
   TaskContextEnvelope,
   TaskProjection,
+  WorkUnitProjection,
 } from "@thoth/protocol/task-authority";
 import type { ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
 import type { ProviderPlanCompleted } from "@thoth/protocol/agent-types";
 import type {
-  ThothLoopPlanExecResultInput,
+  ThothLoopCheckpointInput,
   ThothLoopReportBlockedInput,
-  ThothLoopReviewIndependentAssessmentInput,
-  ThothLoopReviewVerdictInput,
+  ThothLoopRequestHumanDecisionInput,
+  ThothLoopReviewDecisionInput,
 } from "@thoth/protocol/thoth-runtime-contract";
+import type { ExecutionService } from "../agent/execution-service.js";
 import { RuntimeBundleStore } from "./runtime-bundle-store.js";
 import type { WorkspaceAuthorityManager } from "./workspace-authority-manager.js";
 import type { WorkspaceAuthorityStore } from "./workspace-authority-store.js";
 import type { TaskCommandScheduler, WorkspaceTaskCoordinator } from "./task-coordinator.js";
-import { ToolGateway, type ToolResultSink, type ExecutionToolBinding } from "./tool-gateway.js";
+import { ToolGateway, type ExecutionToolBinding, type ToolResultSink } from "./tool-gateway.js";
 import {
   ExecutionApprovalController,
   type ApprovalClock,
@@ -43,10 +44,12 @@ const BACKGROUND_APPROVAL_TIMEOUT_MS = 20_000;
 interface ActivePhase {
   workspaceId: string;
   taskId: string;
-  goalId: string;
+  workUnitId: string | null;
+  cycleId: string;
   executionId: string;
   generation: string;
-  phase: "planexec" | "review";
+  phase: "execute" | "review";
+  nativePlan: boolean;
   adapterId: string;
   thread: HarnessThreadDescriptor;
   descriptor: HarnessExecutionDescriptor | null;
@@ -64,9 +67,7 @@ interface ActivePhase {
 }
 
 function isTerminalEvent(payload: unknown): "completed" | "failed" | "canceled" | null {
-  if (!payload || typeof payload !== "object" || !("type" in payload)) {
-    return null;
-  }
+  if (!payload || typeof payload !== "object" || !("type" in payload)) return null;
   switch ((payload as { type?: unknown }).type) {
     case "turn_completed":
       return "completed";
@@ -83,84 +84,81 @@ function chooseToolTransport(
   adapterId: string,
   capabilities: HarnessCapabilities,
 ): "native" | "mcp" | "acp" {
-  const supported = capabilities.toolAttachment;
-  if (supported.includes("native")) {
-    return "native";
-  }
-  if (supported.includes("acp")) {
-    return "acp";
-  }
-  if (supported.includes("mcp")) {
-    return "mcp";
-  }
+  if (capabilities.toolAttachment.includes("native")) return "native";
+  if (capabilities.toolAttachment.includes("acp")) return "acp";
+  if (capabilities.toolAttachment.includes("mcp")) return "mcp";
   throw new Error(`HarnessAdapter ${adapterId} cannot attach Thoth semantic tools`);
 }
 
-function semanticContext(context: TaskContextEnvelope, goalId: string): string {
-  const goal = context.task.goals.find((candidate) => candidate.id === goalId);
-  if (!goal) {
-    throw new Error(`Task context is missing Goal ${goalId}`);
-  }
-  return JSON.stringify(
-    {
-      task: {
-        title: context.task.title,
-        goal: context.task.goal,
-        constraints: context.task.constraints,
-        acceptance: context.task.acceptance,
-      },
-      currentGoal: {
-        title: goal.title,
-        goal: goal.goal,
-        constraints: goal.constraints,
-        acceptance: goal.acceptance,
-      },
-      humanDecisions: context.decisions.map((decision) => ({
-        kind: decision.kind,
-        displayed: decision.displayed,
-        answer: decision.rawAnswer,
-        normalized: decision.normalized,
-        decidedAt: decision.decidedAt,
-      })),
-      taskMemory: context.blackboard.map((entry) => ({
-        kind: entry.kind,
-        producer: entry.producer,
-        content: entry.content,
-        createdAt: entry.createdAt,
-      })),
-    },
-    null,
-    2,
-  );
-}
-
-function planExecPrompt(context: TaskContextEnvelope, goalId: string): string {
-  return [
-    "Act as PlanExec for the current approved Goal.",
-    "Begin in the provider's native Plan mode. Inspect workspace reality and produce a concrete implementation plan without mutating the workspace.",
-    "After the Plan is approved, implement and validate it in this same provider thread, then submit exactly one semantic PlanExec result through the attached Thoth tool.",
-    "Do not ask the user about implementation choices you can own or discover. Report only a real external or user-owned blocker.",
-    "Task Blackboard context:",
-    semanticContext(context, goalId),
-  ].join("\n\n");
-}
-
-function reviewPrompt(context: TaskContextEnvelope, goalId: string): string {
-  const reviewContext: TaskContextEnvelope = {
-    ...context,
-    blackboard: context.blackboard.filter((entry) => entry.kind !== "planexec_report"),
+function taskAnchor(context: TaskContextEnvelope): unknown {
+  return {
+    title: context.task.intentContract.title,
+    objective: context.task.intentContract.objective,
+    nonGoals: context.task.intentContract.nonGoals,
+    invariants: context.task.intentContract.invariants,
+    acceptanceClaims: context.task.intentContract.acceptanceClaims.map((claim) => ({
+      id: claim.id,
+      statement: claim.statement,
+      status: claim.status,
+    })),
+    riskBoundary: context.task.intentContract.riskBoundary,
+    escalationPolicy: context.task.intentContract.escalationPolicy,
   };
+}
+
+function workingContext(context: TaskContextEnvelope): unknown {
+  return {
+    activeGap: context.task.workingSet.activeGap,
+    currentUnderstanding: context.task.workingSet.currentUnderstanding,
+    currentHypothesis: context.task.workingSet.currentHypothesis,
+    nextMove: context.task.workingSet.nextMove,
+    rejectedRoutes: context.task.workingSet.rejectedRoutes,
+    blockers: context.task.workingSet.blockers,
+    latestReview: context.task.latestReview
+      ? {
+          decision: context.task.latestReview.decision,
+          reason: context.task.latestReview.reason,
+          nextFocus: context.task.latestReview.nextFocus,
+        }
+      : null,
+    evidenceIndex: context.evidence.map((evidence) => ({
+      ref: evidence.id,
+      kind: evidence.kind,
+      summary: evidence.summary,
+      artifactRef: evidence.artifactRef,
+    })),
+  };
+}
+
+function executePrompt(context: TaskContextEnvelope, nativePlan: boolean): string {
   return [
-    "Act as the independent Review for the current approved Goal.",
-    "Inspect workspace reality first. Before receiving PlanExec's semantic account, submit your independent assessment through the attached assessment tool.",
-    "After the tool returns PlanExec's account, compare it with reality and submit exactly one of the six Review outcomes.",
-    "Do not mutate the workspace and do not expose runtime mechanics.",
-    "Task Blackboard context available before independent assessment:",
-    semanticContext(reviewContext, goalId),
+    "Act as the Executor for one meaningful real increment toward this stable Task Anchor.",
+    nativePlan
+      ? "Use the Provider's native Plan mode to investigate and choose a coherent Work Unit. After Plan approval, implement in this same Provider thread."
+      : "The Provider has no native Plan capability. Deliberate using its normal Agent cognition, then implement; do not claim native Plan authority.",
+    "Own discoverable and implementation decisions. Ask a Human only when the Task Anchor genuinely requires Human ownership.",
+    "Do not mechanically restate the contract. Inspect Workspace reality, make a meaningful external increment, collect evidence, then submit exactly one thoth_loop_checkpoint.",
+    "Task Anchor:",
+    JSON.stringify(taskAnchor(context), null, 2),
+    "Current Working Set:",
+    JSON.stringify(workingContext(context), null, 2),
   ].join("\n\n");
 }
 
-/** Workspace-serial Task scheduler and provider-neutral Loop state machine. */
+function reviewPrompt(context: TaskContextEnvelope): string {
+  return [
+    "Act as a fresh independent Reviewer of the stable Task Anchor.",
+    "Inspect Workspace reality yourself. You may read files, run read-only checks, and inspect the Evidence Index, but you must not modify the Workspace.",
+    "Do not assume the Executor is correct and do not request its private transcript. Judge whether reality advanced, drifted, stalled, needs reorientation, needs a Human-owned decision, is blocked, or proves every Acceptance Claim.",
+    "Submit exactly one thoth_loop_review_decision. Use complete only when every Acceptance Claim maps to concrete evidence refs.",
+    "Task Anchor:",
+    JSON.stringify(taskAnchor(context), null, 2),
+    "Review Working Set and Evidence Index:",
+    JSON.stringify(workingContext(context), null, 2),
+  ].join("\n\n");
+}
+
+/** Workspace-serial, target-anchored Loop scheduler. Provider cognition remains inside Harness sessions. */
 export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResultSink {
   readonly toolGateway: ToolGateway;
 
@@ -191,7 +189,11 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     for (const workspace of this.authority.catalog.listWorkspaces()) {
       const store = this.authority.forWorkspace(workspace.id);
       store.recoverInterruptedExecutionsAfterRestart();
-      if (store.listTasks().some((task) => task.mode === "loop" && task.status === "queued")) {
+      if (
+        store
+          .listTasks()
+          .some((task) => task.mode === "loop" && ["queued", "reorienting"].includes(task.status))
+      ) {
         void this.scheduleTask({ workspaceId: workspace.id, taskId: "startup" });
       }
     }
@@ -218,16 +220,10 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     command: "pause" | "resume" | "stop" | "raise_budget" | "review_only";
   }): Promise<void> {
     if (input.command === "stop") {
-      if (input.execution) {
-        this.approvalController.cancelExecution(input.execution.id);
-      }
+      if (input.execution) this.approvalController.cancelExecution(input.execution.id);
       return;
     }
-    if (
-      input.command === "resume" ||
-      input.command === "raise_budget" ||
-      input.command === "review_only"
-    ) {
+    if (["resume", "raise_budget", "review_only"].includes(input.command)) {
       await this.scheduleTask({ workspaceId: input.workspaceId, taskId: input.task.id });
     }
   }
@@ -268,31 +264,27 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         executionId: input.execution.id,
         generation: input.execution.generation,
         summary:
-          "The provider approval callback is no longer recoverable; this phase must be rerun.",
+          "The Provider approval callback is no longer recoverable; this phase will reorient.",
       });
       return;
     }
-
     const decision = input.approval.resolution?.decision;
-    if (!decision) {
-      return;
-    }
+    if (!decision) return;
     const store = this.authority.forWorkspace(input.workspaceId);
     const providerRequestId = store.getProviderApprovalRequestId(input.approval.id);
     if (!providerRequestId) {
       store.interruptExecution({
         executionId: active.executionId,
         generation: active.generation,
-        summary: "The provider approval binding is missing; this phase must be rerun.",
+        summary: "The Provider approval binding is missing; this phase will reorient.",
       });
       await this.finishPhase(active);
       return;
     }
-
     try {
       if (input.approval.kind === "implement") {
-        if (!active.completedPlan) {
-          throw new Error("The completed native Plan receipt is unavailable.");
+        if (!active.nativePlan || !active.completedPlan) {
+          throw new Error("The completed native Plan receipt is unavailable");
         }
         this.executionService.resolveHarnessPlanInteraction(active.descriptor, decision);
         if (decision === "deny") {
@@ -304,25 +296,14 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
           mode: "default",
         });
         if (runModeReceipt.status !== "applied") {
-          throw new Error(
-            runModeReceipt.reason ?? "Provider did not return to default mode for implementation.",
-          );
+          throw new Error(runModeReceipt.reason ?? "Provider did not enter implementation mode");
         }
         active.runModeReceipt = runModeReceipt;
         store.appendTimeline({
           executionId: active.executionId,
           item: { type: "provider_mode_receipt", receipt: runModeReceipt },
         });
-        const currentTask = store.getTask(active.taskId);
-        const currentExecution = store.getExecution(active.executionId);
-        if (
-          !currentTask ||
-          !currentExecution ||
-          currentTask.currentExecutionId !== active.executionId ||
-          currentTask.status !== "running" ||
-          currentExecution.generation !== active.generation ||
-          currentExecution.status !== "implementing"
-        ) {
+        if (!this.stillOwnsExecution(active, "implementing")) {
           await this.executionService
             .interruptHarnessExecution(active.adapterId, active.descriptor)
             .catch(() => undefined);
@@ -330,11 +311,10 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         }
         await this.launchProviderContinuation(active, {
           prompt: [
-            "Implement the approved native Plan now in this same Provider thread.",
-            "Preserve the approved Task contract, inspect current workspace reality, and verify the result.",
-            `Approved Plan:\n${active.completedPlan.text}`,
+            "Implement the completed native Plan now in this same Provider thread.",
+            "Stay anchored to the Intent Contract and current Working Set. Inspect reality, validate one meaningful increment, then submit thoth_loop_checkpoint exactly once.",
+            `Completed native Plan:\n${active.completedPlan.text}`,
           ].join("\n\n"),
-          runMode: "default",
           runModeReceipt,
           purpose: "implementation",
         });
@@ -351,17 +331,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         await this.finishPhase(active);
         return;
       }
-      const currentTask = store.getTask(active.taskId);
-      const currentExecution = store.getExecution(active.executionId);
-      const expectedStatus = "awaiting_provider";
-      if (
-        !currentTask ||
-        !currentExecution ||
-        currentTask.currentExecutionId !== active.executionId ||
-        currentTask.status !== "running" ||
-        currentExecution.generation !== active.generation ||
-        currentExecution.status !== expectedStatus
-      ) {
+      if (!this.stillOwnsExecution(active, "awaiting_provider")) {
         await this.executionService
           .interruptHarnessExecution(active.adapterId, active.descriptor)
           .catch(() => undefined);
@@ -371,18 +341,14 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         active.runModeReceipt = resolution.runModeReceipt;
         store.appendTimeline({
           executionId: active.executionId,
-          item: {
-            type: "provider_mode_receipt",
-            receipt: resolution.runModeReceipt,
-          },
+          item: { type: "provider_mode_receipt", receipt: resolution.runModeReceipt },
         });
       }
       if (resolution.followUpPrompt !== null) {
         await this.launchProviderContinuation(active, {
           prompt: resolution.followUpPrompt,
-          runMode: "default",
           runModeReceipt: resolution.runModeReceipt ?? active.runModeReceipt,
-          purpose: "implementation",
+          purpose: "continuation",
         });
       }
     } catch (error) {
@@ -395,67 +361,100 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     }
   }
 
-  submitPlanExec(input: {
+  submitCheckpoint(input: {
     binding: ExecutionToolBinding;
-    result: ThothLoopPlanExecResultInput;
+    checkpoint: ThothLoopCheckpointInput;
     providerTurnId?: string;
     callId: string;
   }): boolean {
     try {
-      const accepted = this.authority.forWorkspace(input.binding.workspaceId).acceptPlanExecResult({
-        executionId: input.binding.executionId,
-        generation: input.binding.generation,
-        result: input.result,
-        callId: input.callId,
-      });
-      if (accepted) {
-        const active = this.activeByExecution.get(input.binding.executionId);
-        if (active) active.semanticAccepted = true;
-      }
+      const accepted = this.authority
+        .forWorkspace(input.binding.workspaceId)
+        .acceptExecutorCheckpoint({
+          executionId: input.binding.executionId,
+          generation: input.binding.generation,
+          checkpoint: input.checkpoint,
+          callId: input.callId,
+        });
+      if (accepted) this.markSemanticAccepted(input.binding.executionId);
       return accepted;
     } catch (error) {
-      this.logger.warn({ err: error, binding: input.binding }, "Rejected stale PlanExec result");
+      this.logger.warn(
+        { err: error, binding: input.binding },
+        "Rejected stale Executor checkpoint",
+      );
       return false;
     }
   }
 
-  submitReviewAssessment(input: {
+  submitReviewDecision(input: {
     binding: ExecutionToolBinding;
-    assessment: ThothLoopReviewIndependentAssessmentInput;
-    providerTurnId?: string;
-  }): string | null {
-    try {
-      return this.authority.forWorkspace(input.binding.workspaceId).acceptReviewAssessment({
-        executionId: input.binding.executionId,
-        generation: input.binding.generation,
-        assessment: input.assessment,
-      });
-    } catch (error) {
-      this.logger.warn({ err: error, binding: input.binding }, "Rejected stale Review assessment");
-      return null;
-    }
-  }
-
-  submitReviewVerdict(input: {
-    binding: ExecutionToolBinding;
-    verdict: ThothLoopReviewVerdictInput;
+    review: ThothLoopReviewDecisionInput;
     providerTurnId?: string;
     callId: string;
   }): boolean {
     try {
-      const accepted = this.authority.forWorkspace(input.binding.workspaceId).acceptReviewVerdict({
+      const accepted = this.authority.forWorkspace(input.binding.workspaceId).acceptReviewDecision({
         executionId: input.binding.executionId,
         generation: input.binding.generation,
-        verdict: input.verdict,
+        review: input.review,
         callId: input.callId,
       });
+      if (accepted) this.markSemanticAccepted(input.binding.executionId);
+      return accepted;
+    } catch (error) {
+      this.logger.warn({ err: error, binding: input.binding }, "Rejected stale Review decision");
+      return false;
+    }
+  }
+
+  requestHumanDecision(input: {
+    binding: ExecutionToolBinding;
+    request: ThothLoopRequestHumanDecisionInput;
+    providerTurnId?: string;
+    callId: string;
+  }): boolean {
+    try {
+      const accepted = this.authority
+        .forWorkspace(input.binding.workspaceId)
+        .requestExecutionHumanDecision({
+          executionId: input.binding.executionId,
+          generation: input.binding.generation,
+          request: input.request,
+          callId: input.callId,
+        });
       if (accepted) {
+        this.markSemanticAccepted(input.binding.executionId);
         const active = this.activeByExecution.get(input.binding.executionId);
-        if (active) active.semanticAccepted = true;
+        const task = this.authority
+          .forWorkspace(input.binding.workspaceId)
+          .getTask(input.binding.taskId);
+        if (task?.pendingDecision) {
+          const decisionId = task.pendingDecision.id;
+          const openClarify = async (): Promise<void> => {
+            await this.coordinator.openTaskClarify({
+              workspaceId: input.binding.workspaceId,
+              taskId: task.id,
+              decisionId,
+            });
+          };
+          const handoff = active
+            ? this.settleForHumanDecision(active).then(openClarify)
+            : openClarify();
+          void handoff.catch((error: unknown) => {
+            this.logger.error(
+              { err: error, workspaceId: input.binding.workspaceId, taskId: task.id },
+              "Failed to settle and hand a Loop decision to source Agent Clarify",
+            );
+          });
+        }
       }
       return accepted;
     } catch (error) {
-      this.logger.warn({ err: error, binding: input.binding }, "Rejected stale Review verdict");
+      this.logger.warn(
+        { err: error, binding: input.binding },
+        "Rejected stale Human decision request",
+      );
       return false;
     }
   }
@@ -464,6 +463,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     binding: ExecutionToolBinding;
     report: ThothLoopReportBlockedInput;
     providerTurnId?: string;
+    callId: string;
   }): boolean {
     try {
       const accepted = this.authority
@@ -473,10 +473,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
           generation: input.binding.generation,
           report: input.report,
         });
-      if (accepted) {
-        const active = this.activeByExecution.get(input.binding.executionId);
-        if (active) active.semanticAccepted = true;
-      }
+      if (accepted) this.markSemanticAccepted(input.binding.executionId);
       return accepted;
     } catch (error) {
       this.logger.warn({ err: error, binding: input.binding }, "Rejected stale blocker report");
@@ -484,33 +481,32 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     }
   }
 
-  private async runWorkspace(workspaceId: string): Promise<void> {
-    if (this.activeByWorkspace.has(workspaceId)) {
-      return;
-    }
-    const store = this.authority.forWorkspace(workspaceId);
-    if (store.hasMutationQuarantine()) {
-      return;
-    }
-    const task = store
-      .listTasks()
-      .filter((candidate) => candidate.mode === "loop" && candidate.status === "queued")
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0];
-    if (!task?.currentGoalId) {
-      return;
-    }
-    await this.launchPhase(store, task, task.currentGoalId);
+  private markSemanticAccepted(executionId: string): void {
+    const active = this.activeByExecution.get(executionId);
+    if (active) active.semanticAccepted = true;
   }
 
-  private async launchPhase(
-    store: WorkspaceAuthorityStore,
-    task: TaskProjection,
-    goalId: string,
-  ): Promise<void> {
-    const phase = this.nextPhase(store, task, goalId);
+  private async runWorkspace(workspaceId: string): Promise<void> {
+    if (this.activeByWorkspace.has(workspaceId)) return;
+    const store = this.authority.forWorkspace(workspaceId);
+    if (store.hasMutationQuarantine()) return;
+    const task = store.getNextMutationTask();
+    if (!task) return;
+    if (task.mode === "quick") {
+      this.coordinator.wakeQuickMutation(workspaceId);
+      return;
+    }
+    await this.launchPhase(store, task);
+  }
+
+  private async launchPhase(store: WorkspaceAuthorityStore, task: TaskProjection): Promise<void> {
+    const phase = this.nextPhase(store, task);
     const executionId = `execution-${randomUUID()}`;
     const generation = randomUUID();
-    const phaseRunId = `phase-run-${randomUUID()}`;
+    const cycleId =
+      phase === "review" ? this.reviewCycle(store, task) : `loop-cycle-${randomUUID()}`;
+    const workUnit =
+      phase === "execute" ? this.createWorkUnit(task, cycleId) : this.reviewWorkUnit(task, cycleId);
     if (
       !store.claimMutationLease({
         taskId: task.id,
@@ -524,30 +520,23 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
 
     try {
       const metadata = store.getTaskRuntimeMetadata(task.id);
-      if (!metadata) {
-        throw new Error(`Task ${task.id} is missing provider runtime metadata`);
-      }
+      if (!metadata) throw new Error(`Task ${task.id} is missing Provider runtime metadata`);
       const profile = this.authority.catalog.getProviderProfile(metadata.providerProfileId);
-      if (!profile?.enabled) {
+      if (!profile?.enabled)
         throw new Error(`Provider profile ${metadata.providerProfileId} is unavailable`);
-      }
       const adapterId = profile.adapterId;
       const capabilities = await this.executionService.getHarnessCapabilities(adapterId);
       if (capabilities.runtimeBundleActivation !== "native_skill") {
-        throw new Error(
-          `HarnessAdapter ${adapterId} does not support same-session per-turn RuntimeBundle activation`,
-        );
+        throw new Error(`HarnessAdapter ${adapterId} cannot activate the thoth.loop RuntimeBundle`);
       }
       const workspace = this.authority.catalog.getWorkspace(task.workspaceId);
-      if (!workspace) {
-        throw new Error(`Workspace ${task.workspaceId} is missing from catalog`);
-      }
+      if (!workspace) throw new Error(`Workspace ${task.workspaceId} is missing from catalog`);
+
+      const reset = this.requiresFreshExecutorContext(task, phase);
       const reusable =
-        phase === "planexec" ? store.findLatestPlanExecThread(task.id, goalId) : null;
+        phase === "execute" && !reset ? store.findLatestExecuteThread(task.id) : null;
       const lineageParent =
-        phase === "planexec" && !reusable
-          ? store.findLatestPlanExecLineageThread(task.id, goalId)
-          : null;
+        phase === "execute" && !reusable ? store.findLatestExecuteLineageThread(task.id) : null;
       let thread: HarnessThreadDescriptor;
       let continuation = false;
       if (reusable) {
@@ -570,13 +559,14 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
           internal: true,
         });
       }
+
       const now = new Date().toISOString();
       const execution = store.createExecution({
         execution: {
           id: executionId,
           taskId: task.id,
-          goalId,
-          phaseRunId,
+          workUnitId: workUnit?.id ?? null,
+          cycleId,
           phase,
           providerThreadId: thread.id,
           status: "starting",
@@ -590,6 +580,12 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
           summary: null,
           revision: 1,
         },
+        ...(phase === "execute"
+          ? { cycle: { id: cycleId, status: "active" as const, startedAt: now } }
+          : {}),
+        ...(workUnit && !task.workUnits.some((candidate) => candidate.id === workUnit.id)
+          ? { workUnit }
+          : {}),
         providerThread: {
           id: thread.id,
           adapterId: thread.adapterId,
@@ -604,19 +600,19 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         bundle: this.loopBundle,
         tools: {
           transport,
-          catalog: { scope: phase === "planexec" ? "loop_planexec" : "loop_review" },
+          catalog: { scope: phase === "execute" ? "loop_execute" : "loop_review" },
         },
       });
       store.recordAttachment({ executionId, receipt });
-      const runMode: "default" | "plan" = phase === "planexec" ? "plan" : "default";
+      const nativePlan = phase === "execute" && capabilities.plan.kind === "native";
+      const runMode = nativePlan ? "plan" : "default";
       const runModeReceipt = await this.executionService.prepareHarnessRunMode(adapterId, {
         thread,
         mode: runMode,
       });
       if (runModeReceipt.status !== "applied") {
         throw new Error(
-          runModeReceipt.reason ??
-            `HarnessAdapter ${adapterId} did not enter its native ${runMode} mode.`,
+          runModeReceipt.reason ?? `HarnessAdapter ${adapterId} did not apply ${runMode}`,
         );
       }
       const executionWithMode = store.recordExecutionRunModeReceipt({
@@ -624,33 +620,26 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         generation,
         expectedRevision: store.getExecution(executionId)?.revision ?? execution.revision,
         receipt: runModeReceipt,
-        status: phase === "planexec" ? "planning" : "running",
+        status: nativePlan ? "planning" : "running",
       });
-      if (!executionWithMode) {
-        throw new Error(
-          `Execution ${executionId} changed before native mode preparation completed.`,
-        );
-      }
-      const context = store.getTaskContext(task.id);
-      if (!context) {
-        throw new Error(`Task ${task.id} context could not be built`);
-      }
+      if (!executionWithMode) throw new Error(`Execution ${executionId} changed during mode setup`);
+      const context = this.authority.getTaskContext(task.workspaceId, task.id);
+      if (!context) throw new Error(`Task ${task.id} context could not be built`);
       const agentId =
         thread.persistence && typeof thread.persistence.agentId === "string"
           ? thread.persistence.agentId
           : null;
-      if (!agentId) {
-        throw new Error(
-          `Harness thread ${thread.id} did not disclose its daemon-owned Agent binding`,
-        );
-      }
+      if (!agentId)
+        throw new Error(`Harness thread ${thread.id} has no daemon-owned Agent binding`);
       const active: ActivePhase = {
         workspaceId: task.workspaceId,
         taskId: task.id,
-        goalId,
+        workUnitId: workUnit?.id ?? null,
+        cycleId,
         executionId,
         generation,
         phase,
+        nativePlan,
         adapterId,
         thread,
         descriptor: null,
@@ -671,7 +660,8 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
       active.unbindGateway = this.toolGateway.bind(agentId, {
         workspaceId: task.workspaceId,
         taskId: task.id,
-        goalId,
+        workUnitId: workUnit?.id ?? null,
+        cycleId,
         executionId,
         generation,
         phase,
@@ -679,13 +669,12 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
       const executionInput: HarnessExecutionInput = {
         executionId,
         generation,
-        prompt:
-          phase === "planexec" ? planExecPrompt(context, goalId) : reviewPrompt(context, goalId),
+        prompt: phase === "execute" ? executePrompt(context, nativePlan) : reviewPrompt(context),
         attachment: receipt,
         activation: {
           bundleId: this.loopBundle.id,
           bundleDigest: this.loopBundle.digest,
-          scope: phase === "planexec" ? "loop_planexec" : "loop_review",
+          scope: phase === "execute" ? "loop_execute" : "loop_review",
           generation,
         },
         runMode,
@@ -708,29 +697,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         execution: descriptor,
         interrupt: () => this.executionService.interruptHarnessExecution(adapterId, descriptor),
       });
-      const providerSegmentRevision = active.providerSegmentRevision;
-      const providerSegmentPurpose = phase === "planexec" ? "planning" : "execution";
-      active.unsubscribeEvents = this.executionService.subscribeHarnessEvents(
-        adapterId,
-        descriptor,
-        (event) => {
-          active.eventTail = active.eventTail
-            .then(() =>
-              this.handleExecutionEvent(
-                active,
-                event,
-                providerSegmentRevision,
-                providerSegmentPurpose,
-              ),
-            )
-            .catch((error: unknown) => {
-              this.logger.error(
-                { err: error, executionId: active.executionId },
-                "Failed to process Harness execution event",
-              );
-            });
-        },
-      );
+      this.subscribeActive(active, nativePlan ? "planning" : "execution");
       active.heartbeat = setInterval(() => {
         const renewed = store.renewMutationLease({
           taskId: task.id,
@@ -738,9 +705,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
           generation,
           ttlMs: LEASE_TTL_MS,
         });
-        if (!renewed) {
-          void this.interruptForLostLease(active);
-        }
+        if (!renewed) void this.interruptForLostLease(active);
       }, LEASE_HEARTBEAT_MS);
       active.heartbeat.unref();
     } catch (error) {
@@ -755,26 +720,69 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     }
   }
 
-  private nextPhase(
-    store: WorkspaceAuthorityStore,
-    task: TaskProjection,
-    goalId: string,
-  ): "planexec" | "review" {
-    if (task.pendingControl === "review_only") {
-      return "review";
+  private nextPhase(store: WorkspaceAuthorityStore, task: TaskProjection): "execute" | "review" {
+    if (task.pendingControl === "review_only") return "review";
+    if (task.status === "reorienting") return "execute";
+    const latest = store.listExecutions(task.id).at(-1);
+    if (latest?.phase === "execute" && latest.status === "succeeded") {
+      const reviewed = store
+        .listExecutions(task.id)
+        .some(
+          (execution) =>
+            execution.phase === "review" &&
+            execution.cycleId === latest.cycleId &&
+            execution.status === "succeeded",
+        );
+      if (!reviewed) return "review";
     }
-    const latest = store
+    return "execute";
+  }
+
+  private reviewCycle(store: WorkspaceAuthorityStore, task: TaskProjection): string {
+    const execute = store
       .listExecutions(task.id)
-      .filter((execution) => execution.goalId === goalId)
+      .filter((execution) => execution.phase === "execute" && execution.cycleId)
       .at(-1);
-    return latest?.phase === "planexec" && latest.status === "succeeded" ? "review" : "planexec";
+    if (!execute?.cycleId) throw new Error(`Task ${task.id} has no executed cycle to Review`);
+    return execute.cycleId;
+  }
+
+  private reviewWorkUnit(task: TaskProjection, cycleId: string): WorkUnitProjection | null {
+    return task.workUnits.filter((workUnit) => workUnit.cycleId === cycleId).at(-1) ?? null;
+  }
+
+  private createWorkUnit(task: TaskProjection, cycleId: string): WorkUnitProjection {
+    const now = new Date().toISOString();
+    return {
+      id: `work-unit-${randomUUID()}`,
+      taskId: task.id,
+      cycleId,
+      title: "Current gap",
+      activeGap: task.workingSet.activeGap,
+      progressClaim: "No Executor checkpoint has been submitted yet.",
+      unresolvedGap: task.workingSet.activeGap,
+      evidenceRefs: [],
+      status: "active",
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  private requiresFreshExecutorContext(task: TaskProjection, phase: "execute" | "review"): boolean {
+    if (phase === "review") return true;
+    return (
+      task.status === "reorienting" ||
+      task.workingSet.noProgressCount >= 2 ||
+      task.latestReview?.decision === "reorient"
+    );
   }
 
   private async handleExecutionEvent(
     active: ActivePhase,
     event: HarnessExecutionEvent,
     providerSegmentRevision: number,
-    providerSegmentPurpose: "planning" | "implementation" | "execution" | "repair",
+    purpose: "planning" | "implementation" | "execution" | "repair" | "continuation",
   ): Promise<void> {
     const store = this.authority.forWorkspace(active.workspaceId);
     store.appendTimeline({
@@ -782,17 +790,15 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
       occurredAt: event.occurredAt,
       item: event.payload,
     });
-    if (providerSegmentRevision !== active.providerSegmentRevision) {
-      return;
-    }
+    if (providerSegmentRevision !== active.providerSegmentRevision) return;
     if (event.control) {
       switch (event.control.type) {
-        case "plan_completed": {
-          if (active.phase !== "planexec") {
+        case "plan_completed":
+          if (active.phase !== "execute" || !active.nativePlan) {
             store.interruptExecution({
               executionId: active.executionId,
               generation: active.generation,
-              summary: "A native Plan transition appeared outside PlanExec.",
+              summary: "A native Plan transition appeared outside a native-plan Execute attempt.",
             });
             await this.finishPhase(active);
             return;
@@ -803,14 +809,10 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
             kind: "implement",
             title: "Implement plan",
             description: "The Provider completed its native Plan and is ready to implement it.",
-            displayed: {
-              plan: event.control.plan.text,
-              receipt: event.control.plan,
-            },
+            displayed: { plan: event.control.plan.text, receipt: event.control.plan },
             autoApproveEligible: true,
           });
           return;
-        }
         case "plan_invalid":
           store.interruptExecution({
             executionId: active.executionId,
@@ -827,7 +829,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
             executionId: active.executionId,
             generation: active.generation,
             summary:
-              "The provider requested a user answer outside the Task user-decision contract; the phase was not auto-approved.",
+              "The Provider requested a Human answer outside the Task decision tool. The attempt was fenced and will reorient.",
           });
           await this.finishPhase(active);
           return;
@@ -844,18 +846,14 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
       });
     }
     const terminal = isTerminalEvent(event.payload);
-    if (!terminal) {
-      return;
-    }
-    if (providerSegmentPurpose === "planning" && active.completedPlan) {
-      return;
-    }
+    if (!terminal) return;
+    if (purpose === "planning" && active.completedPlan) return;
     const execution = store.getExecution(active.executionId);
-    if (
-      execution?.pendingApproval ||
-      execution?.status === "awaiting_implementation" ||
-      execution?.status === "awaiting_user"
-    ) {
+    if (execution?.pendingApproval || execution?.status === "awaiting_implementation") {
+      return;
+    }
+    if (execution?.status === "awaiting_user") {
+      await this.finishPhase(active);
       return;
     }
     if (
@@ -873,10 +871,10 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     }
     const summary =
       terminal === "completed"
-        ? "Provider completed twice without submitting the required semantic phase result."
+        ? "Provider completed twice without the required semantic Loop tool call."
         : terminal === "canceled"
-          ? "Provider execution was canceled before a semantic phase result was submitted."
-          : "Provider execution failed before a semantic phase result was submitted.";
+          ? "Provider execution was canceled before a semantic Loop result."
+          : "Provider execution failed before a semantic Loop result.";
     store.interruptExecution({
       executionId: active.executionId,
       generation: active.generation,
@@ -886,15 +884,11 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
   }
 
   private async launchRepairContinuation(active: ActivePhase): Promise<void> {
-    if (!active.descriptor) {
-      throw new Error(`Execution ${active.executionId} has no provider descriptor`);
-    }
     await this.launchProviderContinuation(active, {
       prompt:
-        active.phase === "planexec"
-          ? "Your implementation turn ended without the required PlanExec semantic result. Preserve completed work and submit thoth_loop_submit_planexec_result exactly once now."
-          : "Your provider turn ended without the required Review verdict. Preserve your independent assessment and submit thoth_loop_submit_review_verdict exactly once now.",
-      runMode: "default",
+        active.phase === "execute"
+          ? "Your turn ended without the required semantic checkpoint. Preserve real completed work and call thoth_loop_checkpoint exactly once now; do not perform more implementation."
+          : "Your Review turn ended without a decision. Preserve your independent findings and call thoth_loop_review_decision exactly once now; do not modify the Workspace.",
       runModeReceipt: active.runModeReceipt,
       purpose: "repair",
     });
@@ -907,7 +901,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     const store = this.authority.forWorkspace(active.workspaceId);
     try {
       if (request.kind === "question" || !request.autoApproveEligible) {
-        throw new Error("Provider questions are not background runtime approvals.");
+        throw new Error("Provider questions are not background runtime approvals");
       }
       const deadlineAt = this.approvalController.deadlineAfter(this.approvalTimeoutMs);
       const approval = store.createExecutionApproval({
@@ -923,9 +917,7 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         onDeadline: async () => {
           try {
             const current = store.getExecutionApproval(approval.id);
-            if (!current || current.status !== "pending") {
-              return;
-            }
+            if (!current || current.status !== "pending") return;
             const result = await this.coordinator.resolveExecutionApproval({
               workspaceId: active.workspaceId,
               taskId: active.taskId,
@@ -938,14 +930,12 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
               clientId: "daemon",
               recordHumanDecision: false,
             });
-            if (result.error && !result.conflict) {
-              throw new Error(result.error);
-            }
+            if (result.error && !result.conflict) throw new Error(result.error);
           } catch (error) {
             store.interruptExecution({
               executionId: active.executionId,
               generation: active.generation,
-              summary: `Automatic provider approval failed: ${error instanceof Error ? error.message : String(error)}`,
+              summary: `Automatic Provider approval failed: ${error instanceof Error ? error.message : String(error)}`,
             });
             await this.finishPhase(active);
           }
@@ -965,9 +955,8 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     active: ActivePhase,
     input: {
       prompt: unknown;
-      runMode: "default" | "plan";
       runModeReceipt: ProviderRunModeReceipt;
-      purpose: "implementation" | "repair";
+      purpose: "implementation" | "repair" | "continuation";
     },
   ): Promise<void> {
     active.providerSegmentRevision += 1;
@@ -982,10 +971,10 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
         activation: {
           bundleId: this.loopBundle.id,
           bundleDigest: this.loopBundle.digest,
-          scope: active.phase === "planexec" ? "loop_planexec" : "loop_review",
+          scope: active.phase === "execute" ? "loop_execute" : "loop_review",
           generation: active.generation,
         },
-        runMode: input.runMode,
+        runMode: "default",
         runModeReceipt: input.runModeReceipt,
       },
     });
@@ -999,28 +988,45 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
       interrupt: () =>
         this.executionService.interruptHarnessExecution(active.adapterId, descriptor),
     });
-    const providerSegmentRevision = active.providerSegmentRevision;
-    const providerSegmentPurpose = input.purpose;
+    this.subscribeActive(active, input.purpose);
+  }
+
+  private subscribeActive(
+    active: ActivePhase,
+    purpose: "planning" | "implementation" | "execution" | "repair" | "continuation",
+  ): void {
+    if (!active.descriptor) throw new Error(`Execution ${active.executionId} has no descriptor`);
+    const revision = active.providerSegmentRevision;
     active.unsubscribeEvents = this.executionService.subscribeHarnessEvents(
       active.adapterId,
-      descriptor,
+      active.descriptor,
       (event) => {
         active.eventTail = active.eventTail
-          .then(() =>
-            this.handleExecutionEvent(
-              active,
-              event,
-              providerSegmentRevision,
-              providerSegmentPurpose,
-            ),
-          )
+          .then(() => this.handleExecutionEvent(active, event, revision, purpose))
           .catch((error: unknown) => {
             this.logger.error(
               { err: error, executionId: active.executionId },
-              "Failed to process provider continuation event",
+              "Failed to process Harness execution event",
             );
           });
       },
+    );
+  }
+
+  private stillOwnsExecution(
+    active: ActivePhase,
+    expectedStatus: ExecutionProjection["status"],
+  ): boolean {
+    const store = this.authority.forWorkspace(active.workspaceId);
+    const task = store.getTask(active.taskId);
+    const execution = store.getExecution(active.executionId);
+    return Boolean(
+      task &&
+      execution &&
+      task.currentExecutionId === active.executionId &&
+      task.status === "running" &&
+      execution.generation === active.generation &&
+      execution.status === expectedStatus,
     );
   }
 
@@ -1033,12 +1039,13 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
     this.authority.forWorkspace(active.workspaceId).interruptExecution({
       executionId: active.executionId,
       generation: active.generation,
-      summary: "Workspace mutation lease was lost while the provider execution was active.",
+      summary: "Workspace mutation lease was lost while the Provider execution was active.",
     });
     await this.finishPhase(active);
   }
 
   private async finishPhase(active: ActivePhase): Promise<void> {
+    if (this.activeByExecution.get(active.executionId) !== active) return;
     const store = this.authority.forWorkspace(active.workspaceId);
     const persistence = await this.executionService
       .describeHarnessPersistence(active.adapterId, active.thread)
@@ -1054,24 +1061,27 @@ export class WorkspaceTaskOrchestrator implements TaskCommandScheduler, ToolResu
       generation: active.generation,
     });
     this.cleanupActive(active.executionId);
-    const task = store.getTask(active.taskId);
-    if (task?.mode === "loop" && task.status === "queued") {
-      await this.scheduleTask({ workspaceId: active.workspaceId, taskId: active.taskId });
+    this.coordinator.notifyMutationLeaseReleased(active.workspaceId);
+  }
+
+  private async settleForHumanDecision(active: ActivePhase): Promise<void> {
+    if (this.activeByExecution.get(active.executionId) !== active) return;
+    if (active.descriptor) {
+      await this.executionService
+        .interruptHarnessExecution(active.adapterId, active.descriptor)
+        .catch(() => undefined);
     }
+    await this.finishPhase(active);
   }
 
   private cleanupActive(executionId: string): void {
     const active = this.activeByExecution.get(executionId);
-    if (!active) {
-      return;
-    }
+    if (!active) return;
     this.approvalController.cancelExecution(executionId);
     active.unsubscribeEvents?.();
     active.unbindGateway?.();
     active.unregisterRuntime?.();
-    if (active.heartbeat) {
-      clearInterval(active.heartbeat);
-    }
+    if (active.heartbeat) clearInterval(active.heartbeat);
     this.activeByExecution.delete(executionId);
     if (this.activeByWorkspace.get(active.workspaceId) === active) {
       this.activeByWorkspace.delete(active.workspaceId);

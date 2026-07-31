@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import type { AgentAttachment, ThothTurnAck, ThothTurnSnapshot } from "@thoth/protocol/messages";
 import type { ProviderRunMode, ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
 import type { AgentMessageDeliveryMode } from "@thoth/protocol/agent-turn-queue";
-import type { TaskContextReference } from "@thoth/protocol/task-authority";
+import type { TaskContextReference, TaskProjection } from "@thoth/protocol/task-authority";
 import {
   createProviderTurnInteractionState,
   reduceProviderTurnInteraction,
@@ -13,13 +13,12 @@ import type {
   AgentThothCardAnswerRequest,
   AgentThothCardAnswerResponse,
   AgentThothState,
-  ThothApprovalGoalCardModel,
   ThothCardAnswerPayload,
   ThothClarifyCardModel,
-  ThothGoalsCardModel,
-  ThothTaskCardModel,
+  ThothIntentContractCardModel,
   ThothTurnControlSnapshot,
 } from "@thoth/protocol/thoth/rpc-schemas";
+import type { ClarifySessionProjection } from "@thoth/protocol/clarify-authority";
 import type { ExecutionService } from "./execution-service.js";
 import type { AgentRegistry } from "./agent-storage.js";
 import type {
@@ -39,9 +38,12 @@ import {
 import type { ToolGateway } from "../workspace-authority/tool-gateway.js";
 import type { WorkspaceTaskCoordinator } from "../workspace-authority/task-coordinator.js";
 import type { TaskContextBroker } from "../workspace-authority/task-context-broker.js";
+import { rejectClarifyChallenge, waitForClarifyChallenge } from "./clarify-audit-broker.js";
 
 const USER_CANCELED_SUMMARY = "已中断当前请求，可继续输入。";
 const BACKGROUND_HANDOFF_SUMMARY = "后台任务已注册；前台会话可以继续新的对话。";
+const BACKGROUND_REORIENTATION_SUMMARY =
+  "已确认后台任务的新意图合同；任务会从当前 Workspace 现实重新定向并继续。";
 const CLARIFY_RUNTIME_BUNDLE = loadRuntimeBundle("thoth.clarify", THOTH_RUNTIME_BUNDLE_CATALOG);
 
 interface StartForegroundTurnInput {
@@ -58,6 +60,11 @@ interface StartForegroundTurnInput {
   rawRunOptions?: AgentRunOptions;
   contextRefs?: TaskContextReference[];
   deliveryMode: AgentMessageDeliveryMode;
+  taskClarifyHandoff?: {
+    taskWorkspaceId: string;
+    taskId: string;
+    decisionRequestId: string;
+  };
 }
 
 interface ForegroundTurnCoordinatorOptions {
@@ -68,6 +75,26 @@ interface ForegroundTurnCoordinatorOptions {
   taskContextBroker: TaskContextBroker;
   toolGateway: ToolGateway;
   logger: Logger;
+}
+
+interface ActiveQuickExecution {
+  workspaceId: string;
+  taskId: string;
+  executionId: string;
+  generation: string;
+  summary: string;
+  heartbeat: ReturnType<typeof setInterval>;
+  unregisterRuntime: () => void;
+}
+
+interface ActiveQuickWait {
+  token: string;
+  workspaceId: string;
+  taskId: string;
+  turnId: string;
+  generation: string;
+  unsubscribe: () => void;
+  retryTimer: ReturnType<typeof setTimeout>;
 }
 
 function toControls(
@@ -111,10 +138,10 @@ function appendTextContext(text: string, context: string | null): string {
 
 function summarizeAnswer(answer: ThothCardAnswerPayload): string {
   if ("answers" in answer) {
-    const choices = answer.answers.flatMap((entry) => entry.choice_ids);
-    return answer.note?.trim() || choices.join("、") || answer.raw_answer;
+    const choices = answer.answers.flatMap((entry) => entry.choiceIds);
+    return answer.note?.trim() || choices.join("、") || answer.rawAnswer;
   }
-  return answer.note?.trim() || answer.raw_answer;
+  return answer.note?.trim() || answer.rawAnswer;
 }
 
 interface NormalizedClarifyQuestion {
@@ -125,23 +152,12 @@ interface NormalizedClarifyQuestion {
 }
 
 function getClarifyQuestions(card: ThothClarifyCardModel): NormalizedClarifyQuestion[] {
-  const questionCard = card.card;
-  if ("questions" in questionCard) {
-    return questionCard.questions.map((question) => ({
-      id: question.id,
-      title: question.question,
-      selectionMode: question.selection_mode,
-      choices: question.choices,
-    }));
-  }
-  return [
-    {
-      id: questionCard.question_id,
-      title: questionCard.question,
-      selectionMode: "single",
-      choices: questionCard.choices,
-    },
-  ];
+  return card.card.questions.map((question) => ({
+    id: question.nodeId,
+    title: question.question,
+    selectionMode: question.selectionMode,
+    choices: question.choices,
+  }));
 }
 
 function validateClarifyAnswer(
@@ -151,13 +167,27 @@ function validateClarifyAnswer(
   if (!("answers" in answer)) {
     return "Clarify Card requires a Clarify answer payload.";
   }
-  if (answer.question_card_id !== card.id) {
+  if (answer.questionCardId !== card.id) {
     return "The answer does not belong to this Clarify Card.";
   }
   if (answer.intent === "stop") {
     return null;
   }
-  const byId = new Map(answer.answers.map((entry) => [entry.question_id, entry]));
+  if (answer.intent === "recommend" || answer.intent === "delegate_subtree") {
+    const targetNodeId = answer.delegatedNodeIds[0];
+    if (
+      answer.delegatedNodeIds.length !== 1 ||
+      answer.answers.length !== 1 ||
+      answer.answers[0]?.nodeId !== targetNodeId
+    ) {
+      return `${answer.intent} must target exactly one question.`;
+    }
+    if (!getClarifyQuestions(card).some((question) => question.id === targetNodeId)) {
+      return `${answer.intent} targets a question outside this Clarify Card.`;
+    }
+    return null;
+  }
+  const byId = new Map(answer.answers.map((entry) => [entry.nodeId, entry]));
   for (const question of getClarifyQuestions(card)) {
     const entry = byId.get(question.id);
     if (!entry && answer.intent !== "note_only") {
@@ -167,10 +197,10 @@ function validateClarifyAnswer(
       continue;
     }
     const choiceIds = new Set(question.choices.map((choice) => choice.id));
-    if (entry.choice_ids.some((choiceId) => !choiceIds.has(choiceId))) {
+    if (entry.choiceIds.some((choiceId) => !choiceIds.has(choiceId))) {
       return `Question ${question.title} contains an unknown choice.`;
     }
-    if (question.selectionMode === "single" && entry.choice_ids.length > 1) {
+    if (question.selectionMode === "single" && entry.choiceIds.length > 1) {
       return `Question ${question.title} accepts one choice.`;
     }
   }
@@ -178,14 +208,14 @@ function validateClarifyAnswer(
 }
 
 function validateApprovalAnswer(input: {
-  card: ThothTaskCardModel | ThothApprovalGoalCardModel;
+  card: ThothIntentContractCardModel;
   answer: ThothCardAnswerPayload;
   controls: ThothTurnControlSnapshot;
 }): string | null {
-  if (!("card_id" in input.answer)) {
+  if (!("cardId" in input.answer)) {
     return "This approval card requires an approval answer payload.";
   }
-  if (input.answer.card_id !== input.card.id) {
+  if (input.answer.cardId !== input.card.id) {
     return "The answer does not belong to this approval card.";
   }
   if (
@@ -210,9 +240,9 @@ function submitCard(
     submitted: true,
     submittedSummary,
     submittedAnswers: answer.answers.map((entry) => ({
-      questionId: entry.question_id,
-      choiceIds: entry.choice_ids,
-      choiceNotes: entry.choice_notes,
+      nodeId: entry.nodeId,
+      choiceIds: entry.choiceIds,
+      choiceNotes: entry.choiceNotes,
       ...(entry.note ? { note: entry.note } : {}),
     })),
     ...(answer.note ? { submittedNote: answer.note } : {}),
@@ -222,93 +252,90 @@ function submitCard(
 function renderClarifyCard(card: ThothClarifyCardModel): string {
   const answers = card.submittedAnswers ?? [];
   return [
-    `Clarification: ${card.title}`,
-    card.whyNow,
+    `Clarification: ${card.card.title}`,
+    card.card.whyNow,
     ...getClarifyQuestions(card).map((question) => {
-      const answer = answers.find((entry) => entry.questionId === question.id);
+      const answer = answers.find((entry) => entry.nodeId === question.id);
       const selected = question.choices
         .filter((choice) => answer?.choiceIds.includes(choice.id))
         .map((choice) => choice.label);
       return `${question.title}: ${selected.join("、") || answer?.note || "not answered"}`;
     }),
+    card.submittedSummary ? `User decision: ${card.submittedSummary}` : "",
     card.submittedNote ? `User note: ${card.submittedNote}` : "",
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-function renderTaskCard(card: ThothTaskCardModel): string {
+function renderIntentContractCard(card: ThothIntentContractCardModel): string {
   return [
-    card.title,
-    `Goal: ${card.goal}`,
-    `Constraints: ${card.constraints.join("; ")}`,
-    `Acceptance: ${card.acceptance.join("; ")}`,
+    card.contract.title,
+    `Objective: ${card.contract.objective}`,
+    `Non-goals: ${card.contract.nonGoals.join("; ") || "none"}`,
+    `Invariants: ${card.contract.invariants.join("; ") || "none"}`,
+    `Acceptance: ${card.contract.acceptanceClaims.map((claim) => claim.statement).join("; ")}`,
+    `Risk boundary: ${card.contract.riskBoundary.join("; ") || "none"}`,
     card.submittedSummary ? `User decision: ${card.submittedSummary}` : "",
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-function renderGoalsCard(card: ThothApprovalGoalCardModel): string {
-  if (!("goals" in card)) {
-    return [card.title, card.summary, card.submittedSummary ?? ""].filter(Boolean).join("\n");
-  }
-  return [
-    card.title,
-    card.summary,
-    ...card.goals
-      .slice()
-      .sort((left, right) => left.order - right.order)
-      .map(
-        (goal) =>
-          `${goal.order}. ${goal.title}\n${goal.goal}\nConstraints: ${goal.constraints.join("; ")}\nAcceptance: ${goal.acceptance.join("; ")}`,
-      ),
-    card.submittedSummary ? `User decision: ${card.submittedSummary}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
 function renderTaskTruth(input: {
   turn: ForegroundTurnAuthorityRecord;
   cards: ForegroundCardAuthorityRecord[];
+  session: ClarifySessionProjection;
 }): string {
   return [
     `User request:\n${input.turn.userText}`,
+    `Decision Map:\n${JSON.stringify(
+      input.session.nodes.map((node) => ({
+        id: node.id,
+        parentIds: node.parentIds,
+        title: node.title,
+        owner: node.owner,
+        materiality: node.materiality,
+        status: node.status,
+        resolutionRef: node.resolutionRef,
+        sourceRefs: node.sourceRefs,
+      })),
+      null,
+      2,
+    )}`,
     ...input.cards.map((record) => {
       if (record.kind === "clarify_card") {
         return renderClarifyCard(record.card as ThothClarifyCardModel);
       }
-      if (record.kind === "task_card") {
-        return `Approved Task Card:\n${renderTaskCard(record.card as ThothTaskCardModel)}`;
-      }
-      return `Approved Goals Card:\n${renderGoalsCard(record.card as ThothApprovalGoalCardModel)}`;
+      return `Intent Contract:\n${renderIntentContractCard(
+        record.card as ThothIntentContractCardModel,
+      )}`;
     }),
   ].join("\n\n");
 }
 
-function nextSemanticDirection(cards: ForegroundCardAuthorityRecord[]): string {
-  const latestGoal = cards.filter((card) => card.kind === "goal_card").at(-1);
-  if (latestGoal?.status === "answered") {
-    return "The approved work is being handed off. Do not create another authority card.";
-  }
-  const latestTask = cards.filter((card) => card.kind === "task_card").at(-1);
-  if (latestTask?.status === "answered") {
-    return "The user approved the Task Card. Submit the Goals Card grounded in that understanding.";
+function nextSemanticDirection(
+  cards: ForegroundCardAuthorityRecord[],
+  session: ClarifySessionProjection,
+): string {
+  const contract = cards.filter((card) => card.kind === "intent_contract_card").at(-1);
+  if (contract?.status === "answered") {
+    return "The Intent Contract decision is committed. Do not create another authority card.";
   }
   const latestClarify = cards.filter((card) => card.kind === "clarify_card").at(-1);
   if (latestClarify?.status === "answered") {
-    const card = latestClarify.card as ThothClarifyCardModel;
-    return card.frontierLedger?.convergence_state === "ready_for_task"
-      ? "The clarified intent is ready. Synthesize the concise Task Card now."
-      : "Continue co-thinking from the user's answer. Ask the next highest-leverage decision, or synthesize the Task Card only when the intent is genuinely ready.";
+    return "Propagate the latest Human Decision through the Decision Map, investigate its descendants, and ask only the next material Human-owned frontier. Propose the Intent Contract only when the graph is stable.";
   }
-  return "Begin by understanding and expanding the user's intent as a thoughtful expert partner. Submit the highest-leverage Clarify Card, or a Task Card only when the request is already genuinely complete.";
+  if (session.challengerUsed && !session.intentContract) {
+    return "The one-shot Challenger reopened missing nodes. Resolve that frontier, then propose the revised Intent Contract without another Challenger.";
+  }
+  return "Ground in Workspace reality, expand the Decision Map, resolve Evidence-owned and Agent-owned nodes, then ask the first material Human-owned frontier or propose the Intent Contract if none exists.";
 }
 
 function buildThothAuthorityPrompt(input: {
   turn: ForegroundTurnAuthorityRecord;
   cards: ForegroundCardAuthorityRecord[];
+  session: ClarifySessionProjection;
 }): string {
   const controls = input.turn.controls;
   if (!controls) {
@@ -318,9 +345,9 @@ function buildThothAuthorityPrompt(input: {
     [
       "Follow the installed thoth.clarify skill in this visible Agent conversation.",
       `The user selected ${controls.mode === "loop" ? "background Loop" : "foreground Quick"} execution and ${controls.clarifyStrength} clarification.`,
-      "Treat the conversation and workspace as reality. Think with the user, investigate discoverable facts yourself, and use a Thoth semantic authority card for the next user-owned decision.",
+      "Treat the conversation and Workspace as reality. Persist the Decision Map as you investigate; ask only material Human-owned forks.",
       "Do not expose internal tools, schemas, state, ids, budgets, receipts, or recovery mechanics.",
-      nextSemanticDirection(input.cards),
+      nextSemanticDirection(input.cards, input.session),
       renderTaskTruth(input),
     ].join("\n\n"),
   );
@@ -331,20 +358,19 @@ function buildQuickExecutionPrompt(input: {
   cards: ForegroundCardAuthorityRecord[];
   resume: boolean;
 }): string {
-  const task = input.cards.filter((card) => card.kind === "task_card").at(-1);
-  const goals = input.cards.filter((card) => card.kind === "goal_card").at(-1);
-  if (!task || !goals) {
-    throw new Error("Quick execution requires an approved Task Card and Goals Card.");
+  const contract = input.cards.filter((card) => card.kind === "intent_contract_card").at(-1);
+  if (!contract || contract.status !== "answered") {
+    throw new Error("Quick execution requires one approved Intent Contract.");
   }
   return formatSystemNotificationPrompt(
     [
       "Execute the complete approved task now in this same visible Agent conversation.",
       "Do not ask further clarification questions and do not call Thoth authority tools.",
       input.resume
-        ? "Inspect the current workspace first, preserve completed work, and continue from the earliest unfinished approved goal."
-        : "State a concise plan, then execute every approved goal in order. Do not stop after the first goal.",
-      "Use normal provider tools to inspect, edit, test, and verify. Finish with evidence against the approved goals and name any real blocker plainly.",
-      renderTaskTruth(input),
+        ? "Inspect Workspace reality, preserve completed work, and continue from the largest remaining gap against the Task Anchor."
+        : "Orient against the Task Anchor, choose a coherent implementation path, and execute it to a verifiable result.",
+      "Use normal provider tools to inspect, edit, test, and verify. Finish with evidence against every Acceptance Claim and name any real blocker plainly.",
+      renderIntentContractCard(contract.card as ThothIntentContractCardModel),
     ].join("\n\n"),
   );
 }
@@ -359,32 +385,109 @@ function buildProviderPlanImplementationPrompt(plan: string): string {
   );
 }
 
-function continuationKey(cards: ForegroundCardAuthorityRecord[]): string | null {
-  const latestGoal = cards.filter((card) => card.kind === "goal_card").at(-1);
-  if (latestGoal?.status === "answered") {
+function continuationKey(
+  cards: ForegroundCardAuthorityRecord[],
+  session: ClarifySessionProjection,
+): string | null {
+  const contract = cards.filter((card) => card.kind === "intent_contract_card").at(-1);
+  if (contract) {
     return null;
-  }
-  const latestTask = cards.filter((card) => card.kind === "task_card").at(-1);
-  if (latestTask?.status === "answered") {
-    return `goals-after-${latestTask.id}`;
   }
   const latestClarify = cards.filter((card) => card.kind === "clarify_card").at(-1);
   if (latestClarify?.status === "answered") {
     return `clarify-after-${latestClarify.id}`;
   }
+  if (session.challengerUsed && !session.intentContract) {
+    return `clarify-after-challenger-${session.id}`;
+  }
   return "first-authority-card";
 }
 
 function occupiesForegroundExecutionSlot(lifecycle: AgentThothState["lifecycle"]): boolean {
-  return ["running", "awaiting_card", "awaiting_implementation", "quick_exec"].includes(lifecycle);
+  return [
+    "running",
+    "mapping",
+    "awaiting_card",
+    "challenging",
+    "proposing",
+    "awaiting_implementation",
+    "quick_wait",
+    "quick_exec",
+  ].includes(lifecycle);
 }
 
 export class ForegroundTurnCoordinator {
   private readonly activeRunTokens = new Map<string, string>();
   private readonly deferredRunTokens = new Map<string, string>();
   private readonly queueDrains = new Set<string>();
+  private readonly activeQuickExecutions = new Map<string, ActiveQuickExecution>();
+  private readonly activeQuickWaits = new Map<string, ActiveQuickWait>();
 
   constructor(private readonly options: ForegroundTurnCoordinatorOptions) {}
+
+  async openTaskClarifyHandoff(input: {
+    sourceWorkspaceId: string;
+    taskWorkspaceId: string;
+    task: TaskProjection;
+    decisionId: string;
+  }): Promise<void> {
+    const workspace = this.options.authorityStore.getWorkspace(input.sourceWorkspaceId);
+    if (
+      !workspace ||
+      input.task.workspaceId !== input.taskWorkspaceId ||
+      input.task.sourceAgentWorkspaceId !== input.sourceWorkspaceId
+    ) {
+      throw new Error(
+        `Workspace ${input.sourceWorkspaceId} cannot host this Task Clarify handoff.`,
+      );
+    }
+    if (
+      input.task.pendingDecision?.id !== input.decisionId ||
+      input.task.pendingDecision.kind !== "contract_change"
+    ) {
+      throw new Error("Task Clarify handoff no longer owns a pending contract decision.");
+    }
+    const loopStrength =
+      input.task.budget.strength === "single"
+        ? "one_plan_one_do"
+        : input.task.budget.strength === "infinite"
+          ? "run_until_stopped"
+          : input.task.budget.strength;
+    const text = [
+      `Background Task @${input.task.title} needs a Human-owned contract decision.`,
+      input.task.pendingDecision.question,
+      "Reopen Clarify against the existing Task Anchor, latest Workspace evidence, and current decision frontier. Confirm a revised Intent Contract for this same Task; do not create a separate Task.",
+    ].join("\n\n");
+    await this.startTurn({
+      agentId: input.task.sourceAgentId,
+      workspaceId: input.sourceWorkspaceId,
+      workspacePath: workspace.canonicalPath,
+      text,
+      messageId: `task-clarify:${input.task.id}:${input.decisionId}`,
+      thoth: {
+        enabled: true,
+        executionMode: "loop",
+        clarifyStrength: "balanced",
+        loopStrength,
+      },
+      providerRunMode: "default",
+      rawPrompt: text,
+      contextRefs: [
+        {
+          kind: "task",
+          workspaceId: input.taskWorkspaceId,
+          taskId: input.task.id,
+          revision: input.task.revision,
+        },
+      ],
+      deliveryMode: "queue",
+      taskClarifyHandoff: {
+        taskWorkspaceId: input.taskWorkspaceId,
+        taskId: input.task.id,
+        decisionRequestId: input.decisionId,
+      },
+    });
+  }
 
   async startTurn(input: StartForegroundTurnInput): Promise<ThothTurnAck> {
     const agent = await ensureAgentLoaded(input.agentId, {
@@ -448,6 +551,7 @@ export class ForegroundTurnCoordinator {
       workspaceId: input.workspaceId,
       workspacePath: input.workspacePath,
       userText: input.text,
+      ...(input.taskClarifyHandoff ? { taskClarifyHandoff: input.taskClarifyHandoff } : {}),
     });
     if (!started.created) {
       return {
@@ -465,10 +569,19 @@ export class ForegroundTurnCoordinator {
 
     let taskContextPrompt: string | null = null;
     try {
-      const prepared = this.options.taskContextBroker.prepare(
-        input.workspaceId,
-        input.contextRefs ?? [],
-      );
+      const prepared = input.taskClarifyHandoff
+        ? this.options.taskContextBroker.prepareTaskClarifyHandoff({
+            sourceWorkspaceId: input.workspaceId,
+            sourceAgentId: agent.id,
+            taskWorkspaceId: input.taskClarifyHandoff.taskWorkspaceId,
+            taskId: input.taskClarifyHandoff.taskId,
+            taskRevision:
+              input.contextRefs?.find(
+                (reference) => reference.taskId === input.taskClarifyHandoff?.taskId,
+              )?.revision ?? -1,
+            decisionRequestId: input.taskClarifyHandoff.decisionRequestId,
+          })
+        : this.options.taskContextBroker.prepare(input.workspaceId, input.contextRefs ?? []);
       this.options.taskContextBroker.bindTurn({
         workspaceId: input.workspaceId,
         agentId: agent.id,
@@ -517,9 +630,27 @@ export class ForegroundTurnCoordinator {
           messageId: input.messageId,
         });
       }
+      const controls = started.turn.controls;
+      if (!controls) throw new Error("Thoth turn is missing frozen controls");
+      if (controls.clarifyStrength === "none") {
+        throw new Error("An enabled Thoth turn requires a real Clarify strength");
+      }
+      const clarifySession = this.options.authorityStore.startClarifySession({
+        agentId: agent.id,
+        turnId: started.turn.id,
+        requestedStrength: controls.clarifyStrength,
+      });
+      this.options.authorityStore.markLifecycle({
+        agentId: agent.id,
+        turnId: started.turn.id,
+        generation: started.turn.generation,
+        lifecycle: "mapping",
+        reason: "decision_map_changed",
+        error: null,
+      });
       const prompt = withPromptAttachments({
         text: appendTextContext(
-          buildThothAuthorityPrompt({ turn: started.turn, cards: [] }),
+          buildThothAuthorityPrompt({ turn: started.turn, cards: [], session: clarifySession }),
           taskContextPrompt,
         ),
         images: input.images,
@@ -695,13 +826,13 @@ export class ForegroundTurnCoordinator {
     if (result?.followUpPrompt) {
       const current = this.options.authorityStore.getTurn(turn.id) ?? turn;
       const cards = this.options.authorityStore.listCardsForTurn(current.id);
-      const hasApprovedGoals = cards.some(
-        (card) => card.kind === "goal_card" && card.status === "answered",
+      const hasApprovedContract = cards.some(
+        (card) => card.kind === "intent_contract_card" && card.status === "answered",
       );
       this.startProviderRun(current, result.followUpPrompt, {
         replace: true,
         structured:
-          current.kind === "thoth" && !(current.controls?.mode === "quick" && hasApprovedGoals),
+          current.kind === "thoth" && !(current.controls?.mode === "quick" && hasApprovedContract),
       });
     }
     return true;
@@ -710,6 +841,21 @@ export class ForegroundTurnCoordinator {
   async getState(agentId: string): Promise<AgentThothState> {
     await this.recover(agentId);
     return this.options.authorityStore.getState(agentId);
+  }
+
+  async getClarifySession(agentId: string): Promise<ClarifySessionProjection | null> {
+    await this.recover(agentId);
+    return this.options.authorityStore.getClarifySession(agentId);
+  }
+
+  prioritizeClarifyNode(input: {
+    agentId: string;
+    sessionId: string;
+    nodeId: string;
+    expectedRevision: number;
+    commandId: string;
+  }): { session: ClarifySessionProjection; duplicate: boolean } {
+    return this.options.authorityStore.prioritizeClarifyNode(input);
   }
 
   async answerCard(
@@ -731,7 +877,7 @@ export class ForegroundTurnCoordinator {
       record.kind === "clarify_card"
         ? validateClarifyAnswer(record.card as ThothClarifyCardModel, request.answer)
         : validateApprovalAnswer({
-            card: record.card as ThothTaskCardModel | ThothApprovalGoalCardModel,
+            card: record.card as ThothIntentContractCardModel,
             answer: request.answer,
             controls: turn.controls,
           });
@@ -744,24 +890,13 @@ export class ForegroundTurnCoordinator {
         error: validationError,
       };
     }
-    if (record.kind === "goal_card" && request.answer.intent === "accept_loop") {
-      const capability = await this.options.executionService.getAgentPlanCapability(
-        request.agentId,
-      );
-      if (capability.kind !== "native") {
-        return {
-          requestId: request.requestId,
-          accepted: false,
-          conflict: false,
-          state: this.options.authorityStore.getState(request.agentId),
-          error: capability.reason,
-        };
-      }
-    }
-
     const summary = summarizeAnswer(request.answer);
     const cancelRequested = request.answer.intent === "cancel" || request.answer.intent === "stop";
-    const quickApproved = record.kind === "goal_card" && request.answer.intent === "accept_quick";
+    const quickApproved =
+      record.kind === "intent_contract_card" && request.answer.intent === "accept_quick";
+    const loopApproved =
+      record.kind === "intent_contract_card" && request.answer.intent === "accept_loop";
+    const taskClarifyHandoff = this.options.authorityStore.getTaskClarifyHandoff(turn.id);
     const result = this.options.authorityStore.answerCard({
       agentId: request.agentId,
       cardId: request.cardId,
@@ -798,13 +933,25 @@ export class ForegroundTurnCoordinator {
     if (cancelRequested) {
       await this.appendSubmittedCard(request.agentId, result.card);
       await this.options.executionService.cancelAgentRun(request.agentId).catch(() => false);
-    } else if (record.kind === "goal_card" && request.answer.intent === "accept_loop") {
-      await this.registerLoop(turn, request.answer);
     } else {
       await this.appendSubmittedCard(request.agentId, result.card);
-      if (quickApproved) {
-        await this.registerApprovedTask(turn, "quick");
-        await this.launchQuickExecution(turn, true);
+      if (record.kind === "clarify_card" && "questionCardId" in request.answer) {
+        await this.launchAuthorityContinuation(turn);
+      } else if (quickApproved || loopApproved) {
+        if (taskClarifyHandoff?.status === "active") {
+          await this.completeTaskClarifyHandoff(turn, taskClarifyHandoff.taskId);
+        } else if (loopApproved) {
+          await this.registerLoop(turn);
+        } else {
+          const task = await this.registerApprovedTask(turn, "quick");
+          await this.launchQuickExecution(
+            this.options.authorityStore.getTurn(turn.id) ?? turn,
+            true,
+            task.id,
+          );
+        }
+      } else if (record.kind === "intent_contract_card" && request.answer.intent === "annotate") {
+        await this.launchAuthorityContinuation(turn);
       } else {
         await this.launchAuthorityContinuation(turn);
       }
@@ -841,7 +988,9 @@ export class ForegroundTurnCoordinator {
     }
     this.activeRunTokens.delete(agentId);
     this.deferredRunTokens.delete(agentId);
+    this.clearQuickWait(agentId);
     await this.options.executionService.cancelAgentRun(agentId).catch(() => false);
+    this.settleQuickExecution(agentId, "failed", USER_CANCELED_SUMMARY);
     if (options.drainQueue !== false) {
       void this.drainQueue(agentId);
     }
@@ -865,7 +1014,7 @@ export class ForegroundTurnCoordinator {
     const runOptions: AgentRunOptions = {
       ...(input.runOptions ?? {}),
       runtimeBundleActivation:
-        turn.kind === "thoth"
+        turn.kind === "thoth" && input.structured
           ? {
               bundleId: CLARIFY_RUNTIME_BUNDLE.id,
               bundleDigest: CLARIFY_RUNTIME_BUNDLE.digest,
@@ -894,6 +1043,19 @@ export class ForegroundTurnCoordinator {
         }
         if (event.type === "turn_started") {
           const providerTurnId = event.providerTurnId ?? event.turnId;
+          const runtimeAttachment =
+            this.options.executionService.consumeForegroundRuntimeAttachment(
+              input.turn.agentId,
+              input.turn.generation,
+            );
+          if (runtimeAttachment) {
+            this.options.authorityStore.recordRuntimeAttachment({
+              agentId: input.turn.agentId,
+              turnId: input.turn.id,
+              generation: input.turn.generation,
+              receipt: runtimeAttachment,
+            });
+          }
           if (providerTurnId) {
             this.options.toolGateway.bindForegroundProviderTurn({
               agentId: input.turn.agentId,
@@ -931,6 +1093,10 @@ export class ForegroundTurnCoordinator {
           }
         }
         const interactionTurn = this.options.authorityStore.getTurn(input.turn.id) ?? input.turn;
+        if (event.type === "timeline" && event.item.type === "assistant_message") {
+          const quick = this.activeQuickExecutions.get(input.turn.agentId);
+          if (quick) quick.summary = event.item.text;
+        }
         if (event.type === "provider_question_requested" && interactionTurn.providerInteraction) {
           this.commitProviderInteraction(
             interactionTurn,
@@ -1007,6 +1173,20 @@ export class ForegroundTurnCoordinator {
           generation: input.turn.generation,
         });
         const state = this.options.authorityStore.getState(input.turn.agentId);
+        const clarifySession = input.structured
+          ? this.options.authorityStore.getClarifySession(input.turn.agentId)
+          : null;
+        if (
+          clarifySession?.intentContract &&
+          !clarifySession.challengerUsed &&
+          ["proposing", "challenging"].includes(state.lifecycle)
+        ) {
+          await this.launchClarifyChallenger(
+            this.options.authorityStore.getTurn(input.turn.id) ?? input.turn,
+            clarifySession,
+          );
+          return;
+        }
         if (
           state.lifecycle === "awaiting_card" ||
           state.lifecycle === "awaiting_implementation" ||
@@ -1032,6 +1212,11 @@ export class ForegroundTurnCoordinator {
             error:
               event.type === "turn_failed" ? event.error : event.reason || "Provider turn canceled",
           });
+          this.settleQuickExecution(
+            input.turn.agentId,
+            "failed",
+            event.type === "turn_failed" ? event.error : event.reason || "Provider turn canceled",
+          );
           void this.drainQueue(input.turn.agentId);
           return;
         }
@@ -1082,6 +1267,14 @@ export class ForegroundTurnCoordinator {
           return;
         }
         if (!input.structured || state.lifecycle === "quick_exec") {
+          if (state.lifecycle === "quick_exec") {
+            const quick = this.activeQuickExecutions.get(input.turn.agentId);
+            this.settleQuickExecution(
+              input.turn.agentId,
+              "succeeded",
+              quick?.summary.trim() || "Quick execution completed in the visible Provider thread.",
+            );
+          }
           this.options.authorityStore.markLifecycle({
             agentId: input.turn.agentId,
             turnId: input.turn.id,
@@ -1147,9 +1340,199 @@ export class ForegroundTurnCoordinator {
     return updated;
   }
 
+  private async launchClarifyChallenger(
+    turn: ForegroundTurnAuthorityRecord,
+    session: ClarifySessionProjection,
+  ): Promise<void> {
+    if (!session.intentContract || session.challengerUsed || !turn.controls) return;
+    const sourceAgent = await ensureAgentLoaded(turn.agentId, {
+      executionService: this.options.executionService,
+      agentStorage: this.options.agentStorage,
+      logger: this.options.logger,
+    });
+    this.options.authorityStore.markLifecycle({
+      agentId: turn.agentId,
+      turnId: turn.id,
+      generation: turn.generation,
+      lifecycle: "challenging",
+      reason: "contract_proposed",
+      error: null,
+    });
+    const challenger = await this.options.executionService.createAgent(
+      {
+        provider: sourceAgent.provider,
+        cwd: sourceAgent.cwd,
+        internal: true,
+        ...(sourceAgent.config.model ? { model: sourceAgent.config.model } : {}),
+        modeId: "auto",
+        ...(sourceAgent.config.thinkingOptionId
+          ? { thinkingOptionId: sourceAgent.config.thinkingOptionId }
+          : {}),
+        ...(sourceAgent.config.featureValues
+          ? { featureValues: sourceAgent.config.featureValues }
+          : {}),
+        systemPrompt:
+          "You are the one-shot fresh Thoth Intent Contract Challenger. Work read-only. Independently inspect Workspace reality, the visible Decision Map, and the proposed Intent Contract. Do not ask the user. Call thoth_clarify_judge_contract exactly once with stable, reopen, or blocked; reopen only concrete missing material branches.",
+      },
+      undefined,
+      {
+        labels: { surface: "thoth-clarify-challenger", sourceAgentId: sourceAgent.id },
+        runtimeBundleScope: "clarify_challenger",
+        persistSession: true,
+        persistInternal: true,
+        initialTitle: "Intent Contract Challenger",
+        ...(sourceAgent.workspaceId ? { workspaceId: sourceAgent.workspaceId } : {}),
+      },
+    );
+    const waiting = waitForClarifyChallenge(challenger.id);
+    let resolved = false;
+    const run = (async () => {
+      try {
+        for await (const event of this.options.executionService.streamAgent(
+          challenger.id,
+          formatSystemNotificationPrompt(
+            [
+              "Judge this proposed Intent Contract once.",
+              `User request:\n${turn.userText}`,
+              `Decision Map:\n${JSON.stringify(session.nodes, null, 2)}`,
+              `Intent Contract:\n${JSON.stringify(session.intentContract, null, 2)}`,
+              "Inspect Workspace reality before judging. Return only through thoth_clarify_judge_contract.",
+            ].join("\n\n"),
+          ),
+          {
+            runtimeBundleActivation: {
+              bundleId: CLARIFY_RUNTIME_BUNDLE.id,
+              bundleDigest: CLARIFY_RUNTIME_BUNDLE.digest,
+              scope: "clarify_challenger",
+              generation: challenger.id,
+            },
+          },
+        )) {
+          if (resolved) continue;
+          if (event.type === "turn_failed") {
+            rejectClarifyChallenge(challenger.id, event.error);
+            return;
+          }
+          if (event.type === "turn_canceled") {
+            rejectClarifyChallenge(challenger.id, event.reason || "Challenger canceled");
+            return;
+          }
+          if (event.type === "turn_completed") {
+            rejectClarifyChallenge(
+              challenger.id,
+              "Clarify Challenger completed without a semantic judgment",
+            );
+            return;
+          }
+        }
+      } catch (error) {
+        if (!resolved) {
+          rejectClarifyChallenge(
+            challenger.id,
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
+    })();
+
+    try {
+      const result = await waiting;
+      resolved = true;
+      await this.options.executionService.cancelAgentRun(challenger.id).catch(() => false);
+      await run;
+      const challenged = this.options.authorityStore.applyClarifyChallenge({
+        agentId: turn.agentId,
+        sessionId: session.id,
+        result,
+      });
+      if (result.decision === "blocked") {
+        this.options.authorityStore.markLifecycle({
+          agentId: turn.agentId,
+          turnId: turn.id,
+          generation: turn.generation,
+          lifecycle: "interrupted",
+          reason: "turn_interrupted",
+          error: result.reason,
+        });
+        return;
+      }
+      if (result.decision === "reopen") {
+        const reopened = this.options.authorityStore.reopenIntentContract(
+          turn.agentId,
+          challenged.id,
+        );
+        this.options.authorityStore.markLifecycle({
+          agentId: turn.agentId,
+          turnId: turn.id,
+          generation: turn.generation,
+          lifecycle: "mapping",
+          reason: "decision_map_changed",
+          error: null,
+        });
+        await this.launchAuthorityContinuation(
+          this.options.authorityStore.getTurn(turn.id) ?? turn,
+        );
+        if (reopened.intentContract) {
+          throw new Error("Reopened Clarify session retained a superseded Intent Contract");
+        }
+        return;
+      }
+      const existing = this.options.authorityStore
+        .listCardsForTurn(turn.id)
+        .find((record) => record.kind === "intent_contract_card");
+      if (existing) return;
+      if (!challenged.intentContract) {
+        throw new Error("Stable Clarify Challenger lost the proposed Intent Contract");
+      }
+      const card: ThothIntentContractCardModel = {
+        id: `intent-contract-card-${randomUUID()}`,
+        sessionId: challenged.id,
+        contract: challenged.intentContract,
+        provenanceSummary:
+          "Grounded in the visible Decision Map and one fresh independent challenge",
+        turnControls: turn.controls,
+        submitted: false,
+      };
+      this.options.authorityStore.openCard({
+        agentId: turn.agentId,
+        turnId: turn.id,
+        generation: turn.generation,
+        card: { kind: "intent_contract_card", card },
+        runtime: {
+          provider: sourceAgent.provider,
+          threadId: challenger.persistence?.nativeHandle ?? challenger.id,
+          providerTurnId: challenger.id,
+          callId: `clarify-challenge-${challenger.id}`,
+          toolName: "thoth_clarify_judge_contract",
+          redactedRawInputHash: `sha256:${challenged.intentContract.id}`,
+        },
+      });
+      await this.options.executionService.appendTimelineItem(turn.agentId, {
+        type: "intent_contract_card",
+        card,
+      });
+    } catch (error) {
+      resolved = true;
+      await this.options.executionService.cancelAgentRun(challenger.id).catch(() => false);
+      await run;
+      this.options.authorityStore.markLifecycle({
+        agentId: turn.agentId,
+        turnId: turn.id,
+        generation: turn.generation,
+        lifecycle: "interrupted",
+        reason: "turn_interrupted",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   private async launchAuthorityContinuation(turn: ForegroundTurnAuthorityRecord): Promise<void> {
     const cards = this.options.authorityStore.listCardsForTurn(turn.id);
-    const key = continuationKey(cards);
+    const session = this.options.authorityStore.getClarifySession(turn.agentId);
+    if (!session || session.turnId !== turn.id) {
+      throw new Error("Foreground Thoth turn has no active Clarify session");
+    }
+    const key = continuationKey(cards, session);
     if (!key) {
       return;
     }
@@ -1190,7 +1573,7 @@ export class ForegroundTurnCoordinator {
     this.startProviderRun(
       preparedTurn,
       appendTextContext(
-        buildThothAuthorityPrompt({ turn, cards }),
+        buildThothAuthorityPrompt({ turn, cards, session }),
         this.options.taskContextBroker.renderTurn(turn.id),
       ),
       { replace: false, structured: true },
@@ -1200,11 +1583,71 @@ export class ForegroundTurnCoordinator {
   private async launchQuickExecution(
     turn: ForegroundTurnAuthorityRecord,
     resume: boolean,
+    taskId = turn.taskId,
   ): Promise<void> {
     if (!(await this.ensureRunnableAgent(turn))) return;
     if (this.options.executionService.hasInFlightRun(turn.agentId)) {
       this.deferUntilProviderIdle(turn, () => this.launchQuickExecution(turn, resume));
       return;
+    }
+    if (!taskId) throw new Error("Quick execution has no durable Task identity");
+    if (!turn.runtimeAttachment) {
+      throw new Error("Quick execution has no durable foreground RuntimeBundle receipt");
+    }
+    if (!this.activeQuickExecutions.has(turn.agentId)) {
+      const executionId = `quick-execution-${turn.id}`;
+      const execution = this.options.taskCoordinator.beginQuickExecution({
+        workspaceId: turn.workspaceId,
+        taskId,
+        executionId,
+        generation: turn.generation,
+        attachment: turn.runtimeAttachment,
+        runModeReceipt: turn.providerRunModeReceipt,
+      });
+      if (!execution) {
+        this.waitForQuickMutation(turn, taskId, resume);
+        return;
+      }
+      this.clearQuickWait(turn.agentId);
+      const unregisterRuntime = this.options.taskCoordinator.runtimes.register({
+        workspaceId: turn.workspaceId,
+        taskId,
+        generation: turn.generation,
+        execution: {
+          id: execution.id,
+          threadId: turn.runtimeAttachment.threadId,
+          nativeTurnId: null,
+        },
+        interrupt: async () => {
+          await this.options.executionService.cancelAgentRun(turn.agentId);
+        },
+      });
+      const heartbeat = setInterval(() => {
+        const renewed = this.options.taskCoordinator.renewQuickExecution({
+          workspaceId: turn.workspaceId,
+          taskId,
+          executionId,
+          generation: turn.generation,
+        });
+        if (!renewed) {
+          void this.options.executionService.cancelAgentRun(turn.agentId).catch(() => false);
+          this.settleQuickExecution(
+            turn.agentId,
+            "failed",
+            "Quick execution lost the Workspace mutation lease.",
+          );
+        }
+      }, 10_000);
+      heartbeat.unref();
+      this.activeQuickExecutions.set(turn.agentId, {
+        workspaceId: turn.workspaceId,
+        taskId,
+        executionId,
+        generation: turn.generation,
+        summary: "",
+        heartbeat,
+        unregisterRuntime,
+      });
     }
     const cards = this.options.authorityStore.listCardsForTurn(turn.id);
     this.options.authorityStore.markLifecycle({
@@ -1226,6 +1669,108 @@ export class ForegroundTurnCoordinator {
       ),
       { replace: false, structured: false },
     );
+  }
+
+  private settleQuickExecution(
+    agentId: string,
+    status: "succeeded" | "failed",
+    summary: string,
+  ): void {
+    this.clearQuickWait(agentId);
+    const active = this.activeQuickExecutions.get(agentId);
+    if (!active) return;
+    this.activeQuickExecutions.delete(agentId);
+    clearInterval(active.heartbeat);
+    active.unregisterRuntime();
+    try {
+      this.options.taskCoordinator.settleQuickExecution({
+        workspaceId: active.workspaceId,
+        taskId: active.taskId,
+        executionId: active.executionId,
+        generation: active.generation,
+        status,
+        summary: summary.trim() || `Quick execution ${status}.`,
+      });
+    } catch (error) {
+      this.options.logger.warn(
+        { err: error, agentId, executionId: active.executionId },
+        "Quick execution terminal event arrived after Task authority changed",
+      );
+    }
+  }
+
+  private waitForQuickMutation(
+    turn: ForegroundTurnAuthorityRecord,
+    taskId: string,
+    resume: boolean,
+  ): void {
+    const existing = this.activeQuickWaits.get(turn.agentId);
+    if (
+      existing?.turnId === turn.id &&
+      existing.generation === turn.generation &&
+      existing.taskId === taskId
+    ) {
+      return;
+    }
+    this.clearQuickWait(turn.agentId);
+    this.options.authorityStore.markLifecycle({
+      agentId: turn.agentId,
+      turnId: turn.id,
+      generation: turn.generation,
+      lifecycle: "quick_wait",
+      reason: "quick_exec_waiting",
+      error: null,
+    });
+    const token = randomUUID();
+    const retry = (): void => {
+      const waiting = this.activeQuickWaits.get(turn.agentId);
+      if (!waiting || waiting.token !== token) return;
+      this.clearQuickWait(turn.agentId);
+      const current = this.options.authorityStore.getActiveTurn(turn.agentId);
+      const task = this.options.taskCoordinator.get(turn.workspaceId, taskId).task;
+      if (
+        !current ||
+        current.id !== turn.id ||
+        current.generation !== turn.generation ||
+        task?.mode !== "quick" ||
+        task.status !== "queued"
+      ) {
+        return;
+      }
+      void this.launchQuickExecution(current, resume, taskId).catch((error: unknown) => {
+        this.options.authorityStore.markLifecycle({
+          agentId: current.agentId,
+          turnId: current.id,
+          generation: current.generation,
+          lifecycle: "interrupted",
+          reason: "turn_interrupted",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    };
+    const unsubscribe = this.options.taskCoordinator.subscribeQuickMutationReady(
+      turn.workspaceId,
+      retry,
+    );
+    const retryTimer = setTimeout(retry, 1_000);
+    retryTimer.unref();
+    this.activeQuickWaits.set(turn.agentId, {
+      token,
+      workspaceId: turn.workspaceId,
+      taskId,
+      turnId: turn.id,
+      generation: turn.generation,
+      unsubscribe,
+      retryTimer,
+    });
+  }
+
+  private clearQuickWait(agentId: string): void {
+    const waiting = this.activeQuickWaits.get(agentId);
+    if (!waiting) return;
+    this.activeQuickWaits.delete(agentId);
+    waiting.unsubscribe();
+    clearTimeout(waiting.retryTimer);
   }
 
   private deferUntilProviderIdle(
@@ -1262,10 +1807,7 @@ export class ForegroundTurnCoordinator {
     setTimeout(poll, 0).unref();
   }
 
-  private async registerLoop(
-    turn: ForegroundTurnAuthorityRecord,
-    answer: ThothCardAnswerPayload,
-  ): Promise<void> {
+  private async registerLoop(turn: ForegroundTurnAuthorityRecord): Promise<void> {
     try {
       const task = await this.registerApprovedTask(turn, "loop");
       this.options.authorityStore.markLifecycle({
@@ -1277,8 +1819,6 @@ export class ForegroundTurnCoordinator {
         backgroundTaskId: task.id,
         error: null,
       });
-      const goalCard = this.options.authorityStore.getCard((answer as { card_id: string }).card_id);
-      await this.appendSubmittedCard(turn.agentId, goalCard);
       await this.options.executionService.appendTimelineItem(turn.agentId, {
         type: "assistant_message",
         text: BACKGROUND_HANDOFF_SUMMARY,
@@ -1305,16 +1845,92 @@ export class ForegroundTurnCoordinator {
     }
   }
 
+  private async completeTaskClarifyHandoff(
+    turn: ForegroundTurnAuthorityRecord,
+    taskId: string,
+  ): Promise<void> {
+    let handoff = this.options.authorityStore.getTaskClarifyHandoff(turn.id);
+    if (!handoff || handoff.taskId !== taskId || handoff.status === "canceled") {
+      throw new Error("The Task Clarify handoff no longer owns its original Task revision.");
+    }
+    if (handoff.status === "active") {
+      const session = this.options.authorityStore.getClarifySession(turn.agentId);
+      const decisions = this.options.authorityStore.listTurnDecisions(turn.id);
+      if (!session?.intentContract || session.intentContract.status !== "confirmed") {
+        throw new Error("The Task Clarify handoff has no confirmed revised Intent Contract.");
+      }
+      this.options.taskCoordinator.commitClarifyContractRevision({
+        taskWorkspaceId: handoff.taskWorkspaceId,
+        taskId,
+        sourceAgentWorkspaceId: turn.workspaceId,
+        sourceAgentId: turn.agentId,
+        decisionRequestId: handoff.decisionRequestId,
+        contract: session.intentContract,
+        decisionRecordIds: decisions.map((decision) => decision.id),
+        commandId: `task-clarify-commit:${turn.id}:${handoff.decisionRequestId}`,
+      });
+      this.options.authorityStore.finishTaskClarifyHandoff(turn.id, "completed");
+      handoff = this.options.authorityStore.getTaskClarifyHandoff(turn.id);
+    }
+    if (!handoff) throw new Error("The Task Clarify handoff disappeared after commit.");
+    const task = this.options.taskCoordinator.get(handoff.taskWorkspaceId, taskId).task;
+    if (handoff.status !== "completed" || !task) {
+      throw new Error("The Task Clarify handoff did not commit its original Task revision.");
+    }
+    const state = this.options.authorityStore.getState(turn.agentId);
+    const newlySettled =
+      state.lifecycle !== "background_handoff" || state.backgroundTaskId !== task.id;
+    if (newlySettled) {
+      this.options.authorityStore.markLifecycle({
+        agentId: turn.agentId,
+        turnId: turn.id,
+        generation: turn.generation,
+        lifecycle: "background_handoff",
+        reason: "background_handoff",
+        backgroundTaskId: task.id,
+        error: null,
+      });
+      await this.options.executionService.appendTimelineItem(turn.agentId, {
+        type: "registered_task",
+        task,
+      });
+      await this.options.executionService.appendTimelineItem(turn.agentId, {
+        type: "assistant_message",
+        text: BACKGROUND_REORIENTATION_SUMMARY,
+      });
+    }
+    this.activeRunTokens.delete(turn.agentId);
+    this.deferredRunTokens.delete(turn.agentId);
+    this.options.toolGateway.endForegroundTurn({
+      agentId: turn.agentId,
+      generation: turn.generation,
+    });
+    await this.options.executionService.cancelAgentRun(turn.agentId).catch(() => false);
+    void this.options.taskCoordinator
+      .continueAfterContractRevision({ workspaceId: task.workspaceId, taskId: task.id })
+      .catch((error: unknown) => {
+        this.options.logger.error(
+          { err: error, workspaceId: task.workspaceId, taskId: task.id },
+          "Failed to schedule fresh Task reorientation after Clarify",
+        );
+      });
+    void this.drainQueue(turn.agentId);
+  }
+
   private async registerApprovedTask(turn: ForegroundTurnAuthorityRecord, mode: "quick" | "loop") {
     const cards = this.options.authorityStore.listCardsForTurn(turn.id);
-    const taskCard = cards.filter((card) => card.kind === "task_card").at(-1)?.card as
-      | ThothTaskCardModel
-      | undefined;
-    const goalsCard = cards.filter((card) => card.kind === "goal_card").at(-1)?.card as
-      | ThothApprovalGoalCardModel
-      | undefined;
-    if (!taskCard || !goalsCard || !("goals" in goalsCard) || !turn.controls) {
-      throw new Error("Task registration requires approved Task and linear Goals cards.");
+    const contractCard = cards
+      .filter((card) => card.kind === "intent_contract_card" && card.status === "answered")
+      .at(-1)?.card as ThothIntentContractCardModel | undefined;
+    if (!contractCard || !turn.controls) {
+      throw new Error("Task registration requires one approved Intent Contract.");
+    }
+    const clarifySession = this.options.authorityStore.getClarifySession(turn.agentId);
+    if (
+      clarifySession?.id !== contractCard.sessionId ||
+      clarifySession.intentContract?.status !== "confirmed"
+    ) {
+      throw new Error("Task registration requires the confirmed Intent Contract authority.");
     }
     const agent = await ensureAgentLoaded(turn.agentId, {
       executionService: this.options.executionService,
@@ -1325,11 +1941,10 @@ export class ForegroundTurnCoordinator {
       workspaceId: turn.workspaceId,
       sourceAgentId: turn.agentId,
       sourceTurnId: turn.id,
-      sourceGoalsCardId: goalsCard.id,
+      sourceContractCardId: contractCard.id,
       mode,
       loopStrength: mode === "loop" ? (turn.controls.loop ?? "one_plan_one_do") : null,
-      taskCard,
-      goalsCard: goalsCard as ThothGoalsCardModel,
+      intentContract: clarifySession.intentContract,
       providerProfile: {
         adapterId: agent.config.provider,
         config: {
@@ -1343,6 +1958,12 @@ export class ForegroundTurnCoordinator {
         },
       },
     });
+    this.options.authorityStore.bindTask({
+      agentId: turn.agentId,
+      turnId: turn.id,
+      generation: turn.generation,
+      taskId: registration.task.id,
+    });
     if (registration.created) {
       await this.options.executionService.appendTimelineItem(turn.agentId, {
         type: "registered_task",
@@ -1355,11 +1976,33 @@ export class ForegroundTurnCoordinator {
   private async recover(agentId: string): Promise<void> {
     const state = this.options.authorityStore.getState(agentId);
     const turn = this.options.authorityStore.getActiveTurn(agentId);
-    if (!turn || !occupiesForegroundExecutionSlot(state.lifecycle)) {
+    if (!turn) {
+      await this.drainQueue(agentId);
+      return;
+    }
+    if (
+      ["idle", "done", "canceled", "unsupported", "background_handoff"].includes(state.lifecycle)
+    ) {
       await this.drainQueue(agentId);
       return;
     }
     if (state.lifecycle === "awaiting_card" || state.lifecycle === "background_handoff") {
+      return;
+    }
+    if (state.lifecycle === "quick_wait" && turn.taskId) {
+      await this.launchQuickExecution(turn, true, turn.taskId);
+      return;
+    }
+    if (state.lifecycle === "quick_exec" && !this.activeQuickExecutions.has(agentId)) {
+      this.options.authorityStore.markLifecycle({
+        agentId,
+        turnId: turn.id,
+        generation: turn.generation,
+        lifecycle: "interrupted",
+        reason: "turn_interrupted",
+        error:
+          "Quick execution was interrupted by daemon restart and was not replayed automatically.",
+      });
       return;
     }
     if (this.options.executionService.hasInFlightRun(agentId)) {
@@ -1405,21 +2048,30 @@ export class ForegroundTurnCoordinator {
       return;
     }
     const cards = this.options.authorityStore.listCardsForTurn(turn.id);
-    const goal = cards
-      .filter((card) => card.kind === "goal_card" && card.status === "answered")
+    const taskClarifyHandoff = this.options.authorityStore.getTaskClarifyHandoff(turn.id);
+    if (taskClarifyHandoff && taskClarifyHandoff.status !== "canceled") {
+      await this.completeTaskClarifyHandoff(turn, taskClarifyHandoff.taskId);
+      return;
+    }
+    const contract = cards
+      .filter((card) => card.kind === "intent_contract_card" && card.status === "answered")
       .at(-1);
-    if (goal && turn.controls?.mode === "loop" && !state.backgroundTaskId) {
-      const answer = goal.answer;
+    if (contract && turn.controls?.mode === "loop" && !state.backgroundTaskId) {
+      const answer = contract.answer;
       if (answer?.intent === "accept_loop") {
-        await this.registerLoop(turn, answer);
+        await this.registerLoop(turn);
       }
       return;
     }
-    if (goal && turn.controls?.mode === "quick" && state.lifecycle === "interrupted") {
-      await this.launchQuickExecution(turn, true);
+    const session = this.options.authorityStore.getClarifySession(agentId);
+    if (session?.intentContract && !session.challengerUsed) {
+      await this.launchClarifyChallenger(turn, session);
       return;
     }
-    if (state.lifecycle === "interrupted" || state.lifecycle === "running") {
+    if (
+      turn.kind === "thoth" &&
+      ["interrupted", "running", "mapping", "challenging", "proposing"].includes(state.lifecycle)
+    ) {
       await this.launchAuthorityContinuation(turn);
     }
   }
@@ -1456,15 +2108,10 @@ export class ForegroundTurnCoordinator {
         type: "clarify_card",
         card: record.card as ThothClarifyCardModel,
       });
-    } else if (record.kind === "task_card") {
-      await this.options.executionService.appendTimelineItem(agentId, {
-        type: "task_card",
-        card: record.card as ThothTaskCardModel,
-      });
     } else {
       await this.options.executionService.appendTimelineItem(agentId, {
-        type: "goal_card",
-        card: record.card as ThothApprovalGoalCardModel,
+        type: "intent_contract_card",
+        card: record.card as ThothIntentContractCardModel,
       });
     }
   }

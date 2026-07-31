@@ -1,8 +1,7 @@
 import {
   AgentThothStateSchema,
-  ThothApprovalGoalCardModelSchema,
   ThothClarifyCardModelSchema,
-  ThothTaskCardModelSchema,
+  ThothIntentContractCardModelSchema,
   ThothTurnControlSnapshotSchema,
   type AgentThothLifecycle,
   type AgentThothPendingCard,
@@ -40,7 +39,7 @@ export interface ForegroundTurnRow {
 
 export interface ForegroundCardRow {
   card_id: string;
-  kind: "clarify_card" | "task_card" | "goal_card";
+  kind: "clarify_card" | "intent_contract_card";
   displayed_digest: string;
   created_at: string;
 }
@@ -89,16 +88,9 @@ function parsePendingCard(
       createdAt: row.created_at,
     };
   }
-  if (row.kind === "task_card") {
-    return {
-      kind: row.kind,
-      card: ThothTaskCardModelSchema.parse(raw),
-      createdAt: row.created_at,
-    };
-  }
   return {
     kind: row.kind,
-    card: ThothApprovalGoalCardModelSchema.parse(raw),
+    card: ThothIntentContractCardModelSchema.parse(raw),
     createdAt: row.created_at,
   };
 }

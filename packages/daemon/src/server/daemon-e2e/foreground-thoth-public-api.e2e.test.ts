@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { DaemonClient } from "../test-utils/index.js";
 import { createTestThothDaemon, type TestThothDaemon } from "../test-utils/thoth-daemon.js";
 import {
@@ -33,8 +33,7 @@ import type { ThothToolCatalog } from "@thoth/drivers/agent-runtime";
 import type {
   ThothCardAnswerPayload,
   ThothClarifyCardModel,
-  ThothGoalsCardModel,
-  ThothTaskCardModel,
+  ThothIntentContractCardModel,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import { defineHarnessCapabilities } from "@thoth/drivers/harness";
 import { experimental_createMCPClient } from "ai";
@@ -56,6 +55,14 @@ const capabilities: AgentCapabilityFlags = {
 interface ScriptedMcpClient {
   callTool(input: { name: string; args: Record<string, unknown> }): Promise<unknown>;
   close(): Promise<void>;
+}
+
+interface ScriptedTurnReceipt {
+  sessionId: string;
+  turnId: string;
+  runtimeScope: string | null;
+  providerRunMode: "default" | "plan";
+  prompt: string;
 }
 
 async function createScriptedMcpClient(config: AgentSessionConfig): Promise<ScriptedMcpClient> {
@@ -112,6 +119,10 @@ class ScriptedThothSession implements HarnessThread {
     return this.turnOrdinal;
   }
 
+  get modelId(): string | null {
+    return this.config.model ?? null;
+  }
+
   async run(_prompt: AgentPromptInput): Promise<AgentRunResult> {
     return { sessionId: this.id, finalText: "", timeline: [] };
   }
@@ -125,7 +136,15 @@ class ScriptedThothSession implements HarnessThread {
     }
     const turnId = `${this.id}-turn-${++this.turnOrdinal}`;
     this.activeTurnId = turnId;
-    this.receivedPrompts.push(typeof prompt === "string" ? prompt : JSON.stringify(prompt));
+    const promptText = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
+    this.receivedPrompts.push(promptText);
+    this.actor.recordTurnReceipt({
+      sessionId: this.id,
+      turnId,
+      runtimeScope: options?.runtimeBundleActivation?.scope ?? null,
+      providerRunMode: this.providerRunMode,
+      prompt: promptText,
+    });
     queueMicrotask(
       () =>
         void this.runActor(
@@ -165,10 +184,24 @@ class ScriptedThothSession implements HarnessThread {
   }
 
   async getProviderRunModeCapability() {
-    return { kind: "native" } as const;
+    return this.actor.nativePlan
+      ? ({ kind: "native" } as const)
+      : ({
+          kind: "unsupported",
+          reason: "The scripted transport exposes no native Plan mode.",
+        } as const);
   }
 
   async applyProviderRunMode(mode: "default" | "plan") {
+    if (mode === "plan" && !this.actor.nativePlan) {
+      return {
+        capability: {
+          kind: "unsupported" as const,
+          reason: "The scripted transport exposes no native Plan mode.",
+        },
+        nativeModeId: null,
+      };
+    }
     this.providerRunMode = mode;
     return {
       capability: { kind: "native" } as const,
@@ -393,8 +426,8 @@ class ScriptedThothSession implements HarnessThread {
         }
         const plan = [
           "Inspect the current Workspace state.",
-          "Implement the approved Goal in this same provider thread.",
-          "Run the Goal acceptance checks and submit the semantic PlanExec result.",
+          "Choose one meaningful Work Unit against the stable Task Anchor.",
+          "Implement it in this same Provider thread and submit a semantic checkpoint.",
         ].join("\n");
         this.emit({
           type: "timeline",
@@ -424,49 +457,45 @@ class ScriptedThothSession implements HarnessThread {
         if (JSON.stringify(prompt).includes("PLAN_DUPLICATE")) {
           this.emit(completedPlanEvent);
         }
-      } else if (runtimeScope === "clarify_audit") {
+      } else if (runtimeScope === "clarify_challenger") {
         await this.callTool(
-          "thoth_submit_clarify_convergence_audit",
+          "thoth_clarify_judge_contract",
           {
-            outcome: "proceed",
-            summary: "The fixed task is grounded by the scripted authority answers.",
-            missing_material_frontier: [],
-            rejected_question_patterns: [],
-            task_memory_refs: ["public create/send fixture"],
+            decision: "stable",
+            reason: "The Decision Map covers the material fixture boundary.",
+            missingNodes: [],
           },
           turnId,
         );
-      } else if (runtimeScope === "loop_planexec") {
-        const input = this.actor.script.planExec[this.actor.takePlanExecIndex()];
-        if (!input) throw new Error("unexpected PlanExec attempt");
-        await this.callTool("thoth_loop_submit_planexec_result", input, turnId);
+      } else if (runtimeScope === "loop_execute") {
+        const humanDecision = this.actor.takeHumanDecisionInput();
+        if (humanDecision) {
+          await this.callTool("thoth_loop_request_human_decision", humanDecision, turnId);
+          return;
+        }
+        if (!this.actor.takeSemanticOmission()) {
+          const input = this.actor.script.checkpoints[this.actor.takeCheckpointIndex()];
+          if (!input) throw new Error("unexpected Executor checkpoint");
+          await this.callTool("thoth_loop_checkpoint", input, turnId);
+        }
       } else if (runtimeScope === "loop_review") {
         const index = this.actor.takeReviewIndex();
-        const independent = this.actor.script.reviewIndependent[index];
-        const verdict = this.actor.script.review[index];
-        if (!independent || !verdict) throw new Error("unexpected Review attempt");
-        await this.callTool("thoth_loop_submit_review_independent_assessment", independent, turnId);
-        await this.callTool("thoth_loop_submit_review_verdict", verdict, turnId);
+        const review = this.actor.materializeReview(index, prompt);
+        if (!review) throw new Error("unexpected Review attempt");
+        await this.callTool("thoth_loop_review_decision", review, turnId);
       } else if (
         runtimeScope === "clarify" &&
         JSON.stringify(prompt).includes("Follow the installed thoth.clarify skill")
       ) {
-        for (;;) {
-          const clarify = this.actor.takeClarifyInput();
-          if (!clarify) break;
-          await this.callTool("thoth_submit_clarify_card", clarify, turnId);
+        this.actor.prepareClarifyRun(prompt);
+        const round = this.actor.takeClarifyInput();
+        if (round) {
+          await this.callTool("thoth_clarify_update_map", round.map, turnId);
+          await this.callTool("thoth_clarify_ask", round.ask, turnId);
           return;
         }
-        const task = this.actor.takeTaskInput();
-        if (task) {
-          await this.callTool("thoth_submit_task_card", task, turnId);
-          return;
-        }
-        const goals = this.actor.takeGoalsInput();
-        if (goals) {
-          await this.callTool("thoth_submit_goals_card", goals, turnId);
-          return;
-        }
+        const contract = this.actor.takeContractInput();
+        if (contract) await this.callTool("thoth_clarify_propose_contract", contract, turnId);
       } else {
         this.emit({
           type: "timeline",
@@ -505,14 +534,18 @@ class ScriptedThothClient implements HarnessAdapter {
   readonly sessions: ScriptedThothSession[] = [];
   private nextSession = 0;
   private clarifyIndex = 0;
-  private planExecIndex = 0;
+  private checkpointIndex = 0;
   private reviewIndex = 0;
-  private taskTaken = false;
-  private goalsTaken = false;
+  private contractTaken = false;
+  private clarifyFlow: "initial" | "handoff" = "initial";
+  private humanDecisionTaken = false;
+  private semanticOmissionsRemaining: number;
   private readonly toolCallsByTransport = new Map<HarnessToolAttachment, number>();
   private readonly agentIdsBySession = new Map<string, string>();
   readonly toolReceipts: string[] = [];
+  readonly turnReceipts: ScriptedTurnReceipt[] = [];
   readonly simulateQuestionHandlerLossOnClose: boolean;
+  readonly nativePlan: boolean;
 
   constructor(
     readonly script: ThothRealProviderFlowScript,
@@ -520,11 +553,15 @@ class ScriptedThothClient implements HarnessAdapter {
       provider?: string;
       transport?: HarnessToolAttachment;
       simulateQuestionHandlerLossOnClose?: boolean;
+      nativePlan?: boolean;
+      semanticOmissions?: number;
     } = {},
   ) {
     this.provider = options.provider ?? "codex";
     this.transport = options.transport ?? "native";
     this.simulateQuestionHandlerLossOnClose = options.simulateQuestionHandlerLossOnClose ?? false;
+    this.nativePlan = options.nativePlan ?? true;
+    this.semanticOmissionsRemaining = options.semanticOmissions ?? 0;
     this.capabilities = {
       ...capabilities,
       supportsMcpServers: this.transport !== "native",
@@ -532,33 +569,54 @@ class ScriptedThothClient implements HarnessAdapter {
     this.harnessCapabilities = defineHarnessCapabilities({
       toolAttachment: [this.transport],
       runtimeBundleActivation: "native_skill",
-      plan: { kind: "native" },
+      plan: this.nativePlan
+        ? { kind: "native" }
+        : { kind: "unsupported", reason: "The scripted transport exposes no native Plan mode." },
     });
   }
 
   private readonly transport: HarnessToolAttachment;
 
+  prepareClarifyRun(prompt: AgentPromptInput): void {
+    const text = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
+    if (!/Decision Map:\s*\[\]/u.test(text)) return;
+    this.clarifyFlow =
+      text.includes("Background Task @") && this.script.handoffClarify ? "handoff" : "initial";
+    this.clarifyIndex = 0;
+    this.contractTaken = false;
+  }
+
   takeClarifyInput(): ThothRealProviderFlowScript["clarify"][number] | null {
-    const input = this.script.clarify[this.clarifyIndex];
+    const flow =
+      this.clarifyFlow === "handoff" ? (this.script.handoffClarify ?? []) : this.script.clarify;
+    const input = flow[this.clarifyIndex];
     if (!input) return null;
     this.clarifyIndex += 1;
     return input;
   }
 
-  takeTaskInput(): ThothRealProviderFlowScript["task"] {
-    if (this.taskTaken) return null;
-    this.taskTaken = true;
-    return this.script.task;
+  takeContractInput(): ThothRealProviderFlowScript["contract"] {
+    if (this.contractTaken) return null;
+    this.contractTaken = true;
+    return this.clarifyFlow === "handoff"
+      ? (this.script.handoffContract ?? null)
+      : this.script.contract;
   }
 
-  takeGoalsInput(): ThothRealProviderFlowScript["goals"] {
-    if (this.goalsTaken) return null;
-    this.goalsTaken = true;
-    return this.script.goals;
+  takeHumanDecisionInput(): ThothRealProviderFlowScript["humanDecision"] | null {
+    if (this.humanDecisionTaken || !this.script.humanDecision) return null;
+    this.humanDecisionTaken = true;
+    return this.script.humanDecision;
   }
 
-  takePlanExecIndex(): number {
-    return this.planExecIndex++;
+  takeSemanticOmission(): boolean {
+    if (this.semanticOmissionsRemaining <= 0) return false;
+    this.semanticOmissionsRemaining -= 1;
+    return true;
+  }
+
+  takeCheckpointIndex(): number {
+    return this.checkpointIndex++;
   }
 
   takeReviewIndex(): number {
@@ -579,16 +637,41 @@ class ScriptedThothClient implements HarnessAdapter {
     this.toolReceipts.push(receipt);
   }
 
+  recordTurnReceipt(receipt: ScriptedTurnReceipt): void {
+    this.turnReceipts.push(receipt);
+  }
+
   toolCallsFor(transport: HarnessToolAttachment): number {
     return this.toolCallsByTransport.get(transport) ?? 0;
   }
 
-  get planExecCalls(): number {
-    return this.planExecIndex;
+  get checkpointCalls(): number {
+    return this.checkpointIndex;
   }
 
   get reviewCalls(): number {
     return this.reviewIndex;
+  }
+
+  materializeReview(index: number, prompt: AgentPromptInput) {
+    const review = this.script.reviews[index];
+    if (!review) return null;
+    const text = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
+    const evidenceRefs = [...text.matchAll(/"ref"\s*:\s*"([^"]+)"/gu)].map((match) => match[1]!);
+    if (review.decision !== "complete") return { ...review, evidenceRefs };
+    const claimsBlock = /"acceptanceClaims"\s*:\s*\[([\s\S]*?)\]/u.exec(text)?.[1] ?? "";
+    const claimIds = [...claimsBlock.matchAll(/"id"\s*:\s*"([^"]+)"/gu)].map((match) => match[1]!);
+    const latestEvidence = evidenceRefs.at(-1);
+    if (claimIds.length === 0 || !latestEvidence) {
+      throw new Error("Review fixture could not resolve live Acceptance Claim and evidence refs");
+    }
+    return {
+      ...review,
+      evidenceRefs,
+      acceptanceEvidence: Object.fromEntries(
+        claimIds.map((claimId) => [claimId, [latestEvidence]]),
+      ),
+    };
   }
 
   async createSession(
@@ -624,7 +707,7 @@ class ScriptedThothClient implements HarnessAdapter {
   async fetchCatalog(): Promise<{
     models: AgentModelDefinition[];
     modes: AgentMode[];
-    planCapability: { kind: "native" };
+    planCapability: { kind: "native" } | { kind: "unsupported"; reason: string };
   }> {
     return {
       models: [
@@ -639,7 +722,9 @@ class ScriptedThothClient implements HarnessAdapter {
         { id: "auto", label: "Auto" },
         { id: "plan", label: "Plan" },
       ],
-      planCapability: { kind: "native" },
+      planCapability: this.nativePlan
+        ? { kind: "native" }
+        : { kind: "unsupported", reason: "The scripted transport exposes no native Plan mode." },
     };
   }
 
@@ -664,8 +749,8 @@ let approvalCommandSequence = 0;
 async function waitForPendingCard(
   client: DaemonClient,
   agentId: string,
-  kind: "clarify_card" | "task_card" | "goal_card",
-): Promise<ThothClarifyCardModel | ThothTaskCardModel | ThothGoalsCardModel> {
+  kind: "clarify_card" | "intent_contract_card",
+): Promise<ThothClarifyCardModel | ThothIntentContractCardModel> {
   const deadline = Date.now() + 15_000;
   let last: unknown = null;
   while (Date.now() < deadline) {
@@ -750,62 +835,38 @@ async function answerClarifyWithFirstChoices(
     cardId: clarify.id,
     answer: {
       intent: "submit_choices",
-      question_card_id: clarify.id,
-      title: clarify.title,
-      answers:
-        "questions" in clarify.card
-          ? clarify.card.questions.map((question) => ({
-              question_id: question.id,
-              choice_ids: [question.choices[0]!.id],
-              choice_notes: {},
-            }))
-          : [],
-      raw_answer: "Use every first fixed option.",
+      questionCardId: clarify.id,
+      answers: clarify.card.questions.map((question) => ({
+        nodeId: question.nodeId,
+        choiceIds: [question.choices[0]!.id],
+        choiceNotes: {},
+      })),
+      delegatedNodeIds: [],
+      rawAnswer: "Use every first fixed option.",
     },
   });
   return clarify;
 }
 
-async function approveTaskAndGoals(input: {
+async function approveIntentContract(input: {
   client: DaemonClient;
   agentId: string;
   mode: "quick" | "loop";
 }): Promise<void> {
   const intent = input.mode === "loop" ? "accept_loop" : "accept_quick";
-  const task = (await waitForPendingCard(
+  const contract = (await waitForPendingCard(
     input.client,
     input.agentId,
-    "task_card",
-  )) as ThothTaskCardModel;
+    "intent_contract_card",
+  )) as ThothIntentContractCardModel;
   await answerPendingCard({
     client: input.client,
     agentId: input.agentId,
-    cardId: task.id,
+    cardId: contract.id,
     answer: {
       intent,
-      card_id: task.id,
-      title: task.title,
-      raw_answer: `Accept the fixed ${input.mode} task.`,
-    },
-  });
-
-  const goals = (await waitForPendingCard(
-    input.client,
-    input.agentId,
-    "goal_card",
-  )) as ThothGoalsCardModel;
-  await answerPendingCard({
-    client: input.client,
-    agentId: input.agentId,
-    cardId: goals.id,
-    answer: {
-      intent,
-      card_id: goals.id,
-      title: goals.title,
-      raw_answer:
-        input.mode === "loop"
-          ? "Register the fixed background flow."
-          : "Execute every fixed goal in the foreground.",
+      cardId: contract.id,
+      rawAnswer: `Accept the fixed ${input.mode} Intent Contract.`,
     },
   });
 }
@@ -821,7 +882,12 @@ async function timelineContains(
   );
 }
 
-async function waitForCompletedTask(client: DaemonClient, workspaceId: string, timeoutMs = 30_000) {
+async function waitForCompletedTask(
+  client: DaemonClient,
+  workspaceId: string,
+  timeoutMs = 30_000,
+  maxExecutions = 12,
+) {
   const deadline = Date.now() + timeoutMs;
   let lastDetail: unknown = null;
   while (Date.now() < deadline) {
@@ -830,6 +896,20 @@ async function waitForCompletedTask(client: DaemonClient, workspaceId: string, t
     if (task?.status === "completed") return task;
     if (task) {
       lastDetail = await client.getTask({ taskId: task.id, workspaceId });
+      if (lastDetail.executions.length > maxExecutions) {
+        throw new Error(
+          `Deterministic Task exceeded ${maxExecutions} Executions: ${JSON.stringify(
+            lastDetail.executions.map((execution) => ({
+              id: execution.id,
+              phase: execution.phase,
+              status: execution.status,
+              cycleId: execution.cycleId,
+              startedAt: execution.startedAt,
+              summary: execution.summary,
+            })),
+          )}`,
+        );
+      }
       for (const execution of lastDetail.executions) {
         const approval = execution.pendingApproval;
         if (!approval) continue;
@@ -870,10 +950,58 @@ async function waitForCompletedTask(client: DaemonClient, workspaceId: string, t
   throw new Error(`Timed out waiting for completed Task: ${JSON.stringify(lastDetail)}`);
 }
 
+async function waitForTaskAwaitingUser(
+  client: DaemonClient,
+  workspaceId: string,
+  timeoutMs = 30_000,
+) {
+  return await waitFor(async () => {
+    const listed = await client.listTasks(workspaceId);
+    const task = listed.tasks[0];
+    if (!task) return null;
+    const detail = await client.getTask({ workspaceId, taskId: task.id });
+    for (const execution of detail.executions) {
+      const approval = execution.pendingApproval;
+      if (!approval) continue;
+      const resolved = await client.resolveExecutionApproval({
+        workspaceId,
+        taskId: task.id,
+        executionId: execution.id,
+        approvalId: approval.id,
+        decision: approval.kind === "implement" ? "implement" : "allow",
+        expectedRevision: approval.revision,
+        commandId: `e2e-execution-approval-${++approvalCommandSequence}`,
+      });
+      if (resolved.error && !resolved.conflict) throw new Error(resolved.error);
+    }
+    return detail.task?.status === "awaiting_user" && detail.task.pendingDecision ? detail : null;
+  }, timeoutMs);
+}
+
 describe("public foreground Thoth router", () => {
   let daemon: TestThothDaemon | null = null;
   let client: DaemonClient | null = null;
   const workspaces: string[] = [];
+  const loopBehaviorEvidence: Record<string, unknown> = {};
+
+  afterAll(() => {
+    const receiptPath = process.env.THOTH_LOOP_BEHAVIOR_RECEIPT_PATH;
+    if (!receiptPath) return;
+    mkdirSync(dirname(receiptPath), { recursive: true });
+    writeFileSync(
+      receiptPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          journey: "public-api-target-anchored-loop",
+          ...loopBehaviorEvidence,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+  });
 
   afterEach(async () => {
     await client?.close().catch(() => undefined);
@@ -953,18 +1081,82 @@ describe("public foreground Thoth router", () => {
     });
     await answerClarifyWithFirstChoices(client, agent.id);
     await answerClarifyWithFirstChoices(client, agent.id);
-    await approveTaskAndGoals({ client, agentId: agent.id, mode: "quick" });
+    await approveIntentContract({ client, agentId: agent.id, mode: "quick" });
     await waitForThothLifecycle(client, agent.id, "done");
     await waitForAgentIdle(client, agent.id);
-    expect(visibleSession.turnCount).toBe(6);
+    expect(visibleSession.turnCount).toBe(5);
     expect(await timelineContains(client, agent.id, script.finalMarker)).toBe(true);
     expect(await timelineContains(client, agent.id, "LATE_TEXT_AFTER_AUTHORITY_CARD")).toBe(false);
+    const quickTasks = await client.listTasks(agent.workspaceId!);
+    expect(quickTasks.tasks).toHaveLength(1);
+    expect(quickTasks.tasks[0]).toMatchObject({
+      mode: "quick",
+      status: "completed",
+      completionAuthority: "executor_unreviewed",
+    });
+    const quickDetail = await client.getTask({
+      workspaceId: agent.workspaceId!,
+      taskId: quickTasks.tasks[0]!.id,
+    });
+    expect(quickDetail.executions).toHaveLength(1);
+    expect(quickDetail.executions[0]).toMatchObject({
+      phase: "quick_exec",
+      status: "succeeded",
+      attachment: { bundleId: "thoth.clarify", status: "attached" },
+    });
+    expect(quickDetail.evidence).toEqual([
+      expect.objectContaining({
+        executionId: quickDetail.executions[0]!.id,
+        kind: "quick_execution_result",
+      }),
+    ]);
 
     await client.sendAgentMessage(agent.id, "RAW_LAST", { thoth: { enabled: false } });
     await waitForThothLifecycle(client, agent.id, "done");
     await waitForAgentIdle(client, agent.id);
-    expect(visibleSession.turnCount).toBe(7);
+    expect(visibleSession.turnCount).toBe(6);
     expect(provider.sessions[0]).toBe(visibleSession);
+
+    const clarifyTurns = provider.turnReceipts.filter(
+      (receipt) => receipt.runtimeScope === "clarify",
+    );
+    const challengerTurns = provider.turnReceipts.filter(
+      (receipt) => receipt.runtimeScope === "clarify_challenger",
+    );
+    const judgeToolCalls = provider.toolReceipts.filter((receipt) =>
+      receipt.endsWith(":thoth_clarify_judge_contract:start"),
+    );
+    expect(clarifyTurns.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(clarifyTurns.map((receipt) => receipt.sessionId))).toEqual(
+      new Set([visibleSession.id]),
+    );
+    expect(challengerTurns).toHaveLength(1);
+    expect(challengerTurns[0]?.sessionId).not.toBe(visibleSession.id);
+    expect(judgeToolCalls).toHaveLength(1);
+    const clarifyAuthority = await client.getAgentClarifySession(agent.id);
+    expect(clarifyAuthority.error).toBeNull();
+    expect(clarifyAuthority.session?.challengerUsed).toBe(true);
+
+    const behaviorReceipt = {
+      schemaVersion: 1,
+      journey: "foreground-public-api-clarify-session-and-challenger",
+      provider: provider.provider,
+      visibleAgentId: agent.id,
+      visibleProviderSessionId: visibleSession.id,
+      visibleClarifyTurnIds: clarifyTurns.map((receipt) => receipt.turnId),
+      visibleClarifySessionIds: [...new Set(clarifyTurns.map((receipt) => receipt.sessionId))],
+      challengerProviderSessionId: challengerTurns[0]!.sessionId,
+      challengerTurnIds: challengerTurns.map((receipt) => receipt.turnId),
+      challengerLaunchCount: challengerTurns.length,
+      judgeContractToolCallCount: judgeToolCalls.length,
+      challengerUsed: clarifyAuthority.session?.challengerUsed === true,
+      visibleSessionReusedAfterClarify: provider.sessions[0] === visibleSession,
+    };
+    const receiptPath = process.env.THOTH_CLARIFY_BEHAVIOR_RECEIPT_PATH;
+    if (receiptPath) {
+      mkdirSync(dirname(receiptPath), { recursive: true });
+      writeFileSync(receiptPath, `${JSON.stringify(behaviorReceipt, null, 2)}\n`, "utf8");
+    }
   }, 45_000);
 
   it("UT-02c durably queues suspended-card input and serializes Interrupt before later turns", async () => {
@@ -1539,7 +1731,8 @@ describe("public foreground Thoth router", () => {
       },
     });
     await answerClarifyWithFirstChoices(client, agent.id);
-    await approveTaskAndGoals({ client, agentId: agent.id, mode: "quick" });
+    await answerClarifyWithFirstChoices(client, agent.id);
+    await approveIntentContract({ client, agentId: agent.id, mode: "quick" });
     await waitForThothLifecycle(client, agent.id, "done");
     await waitForAgentIdle(client, agent.id);
     expect(await timelineContains(client, agent.id, script.finalMarker)).toBe(true);
@@ -1603,14 +1796,14 @@ describe("public foreground Thoth router", () => {
     expect(restored.id).toBe(firstCard.id);
     await answerClarifyWithFirstChoices(client, agent.id);
     await answerClarifyWithFirstChoices(client, agent.id);
-    await approveTaskAndGoals({ client, agentId: agent.id, mode: "quick" });
+    await approveIntentContract({ client, agentId: agent.id, mode: "quick" });
     await waitForThothLifecycle(client, agent.id, "done");
     await waitForAgentIdle(client, agent.id);
     expect(await timelineContains(client, agent.id, script.finalMarker)).toBe(true);
     expect(provider.sessions.length).toBeGreaterThan(1);
   }, 60_000);
 
-  it("UT-04 registers Loop Single and completes two linear goals after independent Reviews", async () => {
+  it("UT-04 completes one target-anchored Work Unit after fresh independent Review", async () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopLinearPass;
     const provider = new ScriptedThothClient(script);
     daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
@@ -1636,7 +1829,7 @@ describe("public foreground Thoth router", () => {
       },
     });
     await answerClarifyWithFirstChoices(client, agent.id);
-    await approveTaskAndGoals({ client, agentId: agent.id, mode: "loop" });
+    await approveIntentContract({ client, agentId: agent.id, mode: "loop" });
     const handoff = await waitForThothLifecycle(client, agent.id, "background_handoff");
     expect(handoff.backgroundTaskId).toBeTruthy();
 
@@ -1647,15 +1840,313 @@ describe("public foreground Thoth router", () => {
       workspaceId: agent.workspaceId!,
     });
     expect(detail.error).toBeNull();
-    expect(detail.task?.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
-    expect(detail.task?.budget).toMatchObject({ maxFailedReviews: 1, usedFailedReviews: 0 });
-    expect(provider.planExecCalls).toBe(2);
-    expect(provider.reviewCalls).toBe(2);
+    expect(detail.task?.intentContract.objective).toBe(
+      "Verify one target-anchored foreground or background authority flow.",
+    );
+    expect(detail.task?.workUnits).toHaveLength(1);
+    expect(detail.task?.workUnits[0]).toMatchObject({ status: "completed" });
+    expect(detail.task?.latestReview).toMatchObject({ decision: "complete" });
+    expect(detail.task?.budget).toMatchObject({
+      maxNonCompleteReviews: 1,
+      usedNonCompleteReviews: 0,
+    });
+    expect(detail.executions.map((execution) => execution.phase)).toEqual(["execute", "review"]);
+    expect(provider.checkpointCalls).toBe(1);
+    expect(provider.reviewCalls).toBe(1);
+    const executeTurn = provider.turnReceipts.find(
+      (receipt) => receipt.runtimeScope === "loop_execute",
+    )!;
+    const reviewTurn = provider.turnReceipts.find(
+      (receipt) => receipt.runtimeScope === "loop_review",
+    )!;
+    const executeSession = provider.sessions.find(
+      (session) => session.id === executeTurn.sessionId,
+    )!;
+    const reviewSession = provider.sessions.find((session) => session.id === reviewTurn.sessionId)!;
+    expect(executeTurn.providerRunMode).toBe("plan");
+    expect(executeTurn.prompt).toContain("Task Anchor:");
+    expect(executeTurn.prompt).toContain("Current Working Set:");
+    for (const field of [
+      "activeGap",
+      "currentHypothesis",
+      "latestReview",
+      "evidenceIndex",
+      "rejectedRoutes",
+      "blockers",
+    ]) {
+      expect(executeTurn.prompt).toContain(`\"${field}\"`);
+    }
+    expect(executeTurn.prompt).not.toContain("fullTranscript");
+    expect(executeTurn.prompt).not.toContain("Blackboard");
+    expect(reviewTurn.prompt).toContain("Inspect Workspace reality yourself");
+    expect(reviewTurn.prompt).toContain("Evidence Index");
+    expect(reviewTurn.prompt).toContain("must not modify the Workspace");
+    expect(reviewTurn.prompt).toContain("do not request its private transcript");
+    expect(reviewSession.id).not.toBe(executeSession.id);
+    expect(reviewSession.modelId).toBe(executeSession.modelId);
+    loopBehaviorEvidence.nativePlan = {
+      capability: "native",
+      executeSessionId: executeSession.id,
+      reviewSessionId: reviewSession.id,
+      executeAndReviewUseSameModel: reviewSession.modelId === executeSession.modelId,
+      freshReviewThread: reviewSession.id !== executeSession.id,
+      executeRunMode: executeTurn.providerRunMode,
+      reviewRunMode: reviewTurn.providerRunMode,
+      executePrompt: executeTurn.prompt,
+      reviewPrompt: reviewTurn.prompt,
+      workUnitCount: detail.task?.workUnits.length,
+      reviewDecision: detail.task?.latestReview?.decision,
+    };
     const finalAgent = await client.fetchAgent({ agentId: agent.id });
     expect(finalAgent?.agent.status).toBe("idle");
   }, 45_000);
 
-  it("UT-05 retries the failed goal automatically and completes before the Light budget", async () => {
+  it("UT-04b uses normal Agent deliberation when native Plan is unsupported", async () => {
+    const provider = new ScriptedThothClient(THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopLinearPass, {
+      nativePlan: false,
+    });
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const cwd = mkdtempSync(join(tmpdir(), "thoth-public-loop-agent-deliberation-"));
+    workspaces.push(cwd);
+    const agent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd,
+      initialPrompt: "Run Loop without native Plan capability.",
+      thoth: {
+        enabled: true,
+        executionMode: "loop",
+        clarifyStrength: "light",
+        loopStrength: "one_plan_one_do",
+      },
+    });
+    await answerClarifyWithFirstChoices(client, agent.id);
+    await approveIntentContract({ client, agentId: agent.id, mode: "loop" });
+    await waitForThothLifecycle(client, agent.id, "background_handoff");
+    const completed = await waitForCompletedTask(client, agent.workspaceId!);
+    const detail = await client.getTask({ workspaceId: agent.workspaceId!, taskId: completed.id });
+    const executeTurns = provider.turnReceipts.filter(
+      (receipt) => receipt.runtimeScope === "loop_execute",
+    );
+    expect(executeTurns).toHaveLength(1);
+    expect(executeTurns[0]?.providerRunMode).toBe("default");
+    expect(executeTurns[0]?.prompt).toContain("The Provider has no native Plan capability");
+    expect(detail.task?.latestReview?.decision).toBe("complete");
+    loopBehaviorEvidence.agentManagedDeliberation = {
+      capability: "unsupported",
+      executeRunModes: executeTurns.map((receipt) => receipt.providerRunMode),
+      executePrompt: executeTurns[0]?.prompt,
+      completed: detail.task?.status === "completed",
+      provider: provider.provider,
+    };
+  }, 45_000);
+
+  it("UT-04c repairs one terminal without checkpoint on the same Executor lineage", async () => {
+    const provider = new ScriptedThothClient(THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopLinearPass, {
+      nativePlan: false,
+      semanticOmissions: 1,
+    });
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const cwd = mkdtempSync(join(tmpdir(), "thoth-public-loop-repair-success-"));
+    workspaces.push(cwd);
+    const agent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd,
+      initialPrompt: "Run Loop after one missing checkpoint terminal.",
+      thoth: {
+        enabled: true,
+        executionMode: "loop",
+        clarifyStrength: "light",
+        loopStrength: "one_plan_one_do",
+      },
+    });
+    await answerClarifyWithFirstChoices(client, agent.id);
+    await approveIntentContract({ client, agentId: agent.id, mode: "loop" });
+    await waitForThothLifecycle(client, agent.id, "background_handoff");
+    const completed = await waitForCompletedTask(client, agent.workspaceId!);
+    const detail = await client.getTask({ workspaceId: agent.workspaceId!, taskId: completed.id });
+    const executeTurns = provider.turnReceipts.filter(
+      (receipt) => receipt.runtimeScope === "loop_execute",
+    );
+    const executeSessionIds = new Set(executeTurns.map((receipt) => receipt.sessionId));
+    const repairTurns = executeTurns.filter((receipt) =>
+      receipt.prompt.includes("ended without the required semantic checkpoint"),
+    );
+    expect(executeTurns).toHaveLength(2);
+    expect(executeSessionIds.size).toBe(1);
+    expect(repairTurns).toHaveLength(1);
+    expect(detail.task?.status).toBe("completed");
+    loopBehaviorEvidence.singleRepairSuccess = {
+      executorTurnCount: executeTurns.length,
+      executorSessionIds: [...executeSessionIds],
+      repairTurnCount: repairTurns.length,
+      repairPrompt: repairTurns[0]?.prompt,
+      completed: detail.task?.status === "completed",
+    };
+  }, 45_000);
+
+  it("UT-04d interrupts after a second terminal without checkpoint instead of repairing again", async () => {
+    const provider = new ScriptedThothClient(THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopLinearPass, {
+      nativePlan: false,
+      semanticOmissions: 2,
+    });
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const cwd = mkdtempSync(join(tmpdir(), "thoth-public-loop-repair-limit-"));
+    workspaces.push(cwd);
+    const agent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd,
+      initialPrompt: "Run Loop after two missing checkpoint terminals.",
+      thoth: {
+        enabled: true,
+        executionMode: "loop",
+        clarifyStrength: "light",
+        loopStrength: "light",
+      },
+    });
+    await answerClarifyWithFirstChoices(client, agent.id);
+    await approveIntentContract({ client, agentId: agent.id, mode: "loop" });
+    await waitForThothLifecycle(client, agent.id, "background_handoff");
+    const completed = await waitForCompletedTask(client, agent.workspaceId!);
+    const detail = await client.getTask({ workspaceId: agent.workspaceId!, taskId: completed.id });
+    const failedExecute = detail.executions.find(
+      (execution) =>
+        execution.phase === "execute" &&
+        execution.summary?.includes("completed twice without the required semantic Loop tool call"),
+    );
+    expect(failedExecute).toBeTruthy();
+    const executeTurnsBySession = new Map<string, ScriptedTurnReceipt[]>();
+    for (const receipt of provider.turnReceipts.filter(
+      (candidate) => candidate.runtimeScope === "loop_execute",
+    )) {
+      const turns = executeTurnsBySession.get(receipt.sessionId) ?? [];
+      turns.push(receipt);
+      executeTurnsBySession.set(receipt.sessionId, turns);
+    }
+    const firstExecutorTurns =
+      [...executeTurnsBySession.values()].find((turns) =>
+        turns.some((receipt) =>
+          receipt.prompt.includes("ended without the required semantic checkpoint"),
+        ),
+      ) ?? [];
+    const firstExecutorRepairTurns = firstExecutorTurns.filter((receipt) =>
+      receipt.prompt.includes("ended without the required semantic checkpoint"),
+    );
+    expect(firstExecutorTurns).toHaveLength(2);
+    expect(firstExecutorRepairTurns).toHaveLength(1);
+    expect(detail.task?.status).toBe("completed");
+    loopBehaviorEvidence.repairLimit = {
+      failedExecutionId: failedExecute?.id,
+      failedExecutionSummary: failedExecute?.summary,
+      firstExecutorTurnCount: firstExecutorTurns.length,
+      firstExecutorRepairTurnCount: firstExecutorRepairTurns.length,
+      freshlyReorientedAfterFailure:
+        detail.executions.filter((execution) => execution.phase === "execute").length > 1,
+      eventuallyCompleted: detail.task?.status === "completed",
+    };
+  }, 45_000);
+
+  it("UT-04e stops automatic reorientation after two failed Executor attempts and resumes explicitly", async () => {
+    const provider = new ScriptedThothClient(THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopLinearPass, {
+      nativePlan: false,
+      semanticOmissions: 4,
+    });
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const cwd = mkdtempSync(join(tmpdir(), "thoth-public-loop-no-progress-fence-"));
+    workspaces.push(cwd);
+    const agent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd,
+      initialPrompt: "Fence repeated Executor attempts that make no semantic progress.",
+      thoth: {
+        enabled: true,
+        executionMode: "loop",
+        clarifyStrength: "light",
+        loopStrength: "light",
+      },
+    });
+    await answerClarifyWithFirstChoices(client, agent.id);
+    await approveIntentContract({ client, agentId: agent.id, mode: "loop" });
+    await waitForThothLifecycle(client, agent.id, "background_handoff");
+
+    const interrupted = await waitFor(async () => {
+      const listed = await client!.listTasks(agent.workspaceId!);
+      const task = listed.tasks[0];
+      if (!task) return null;
+      const detail = await client!.getTask({ workspaceId: agent.workspaceId!, taskId: task.id });
+      return detail.task?.status === "interrupted" ? detail : null;
+    }, 30_000);
+    const failedExecutors = interrupted.executions.filter(
+      (execution) => execution.phase === "execute",
+    );
+    expect(failedExecutors).toHaveLength(2);
+    expect(failedExecutors.every((execution) => execution.status === "failed")).toBe(true);
+    expect(interrupted.task?.workingSet.noProgressCount).toBe(2);
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const stable = await client.getTask({
+      workspaceId: agent.workspaceId!,
+      taskId: interrupted.task!.id,
+    });
+    expect(stable.executions.filter((execution) => execution.phase === "execute")).toHaveLength(2);
+
+    const resumed = await client.commandTask({
+      workspaceId: agent.workspaceId!,
+      taskId: interrupted.task!.id,
+      command: "resume",
+      expectedRevision: interrupted.task!.revision,
+      commandId: "resume-after-no-progress-fence",
+    });
+    expect(resumed).toMatchObject({ conflict: false, error: null });
+    const completed = await waitForCompletedTask(client, agent.workspaceId!, 30_000, 6);
+    const completedDetail = await client.getTask({
+      workspaceId: agent.workspaceId!,
+      taskId: completed.id,
+    });
+    expect(completedDetail.task).toMatchObject({
+      status: "completed",
+      workingSet: { noProgressCount: 0 },
+    });
+    loopBehaviorEvidence.repeatedNoProgressFence = {
+      failedExecutorCount: failedExecutors.length,
+      noProgressCount: interrupted.task?.workingSet.noProgressCount,
+      stableUntilResume: stable.executions.length === interrupted.executions.length,
+      completedAfterResume: completedDetail.task?.status === "completed",
+    };
+  }, 45_000);
+
+  it("UT-05 reorients the Working Set and completes before the Light budget", async () => {
     const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopRetryAndBudget;
     const provider = new ScriptedThothClient(script);
     const fixtureHomeRoot = process.env.THOTH_REFACTOR_RELEASE_FIXTURE_HOME?.trim();
@@ -1688,7 +2179,7 @@ describe("public foreground Thoth router", () => {
       },
     });
     await answerClarifyWithFirstChoices(client, agent.id);
-    await approveTaskAndGoals({ client, agentId: agent.id, mode: "loop" });
+    await approveIntentContract({ client, agentId: agent.id, mode: "loop" });
     await waitForThothLifecycle(client, agent.id, "background_handoff");
 
     expect(agent.workspaceId).toBeTruthy();
@@ -1698,30 +2189,125 @@ describe("public foreground Thoth router", () => {
       workspaceId: agent.workspaceId!,
     });
     expect(detail.error).toBeNull();
-    expect(detail.task?.budget).toMatchObject({ maxFailedReviews: 5, usedFailedReviews: 1 });
-    const firstGoalId = detail.task?.goals[0]?.id;
-    expect(
-      detail.executions.filter(
-        (execution) => execution.goalId === firstGoalId && execution.phase === "planexec",
-      ),
-    ).toHaveLength(2);
-    expect(detail.task?.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
-    expect(provider.planExecCalls).toBe(3);
-    expect(provider.reviewCalls).toBe(3);
+    expect(detail.task?.budget).toMatchObject({
+      maxNonCompleteReviews: 5,
+      usedNonCompleteReviews: 1,
+    });
+    expect(detail.task?.workUnits).toHaveLength(2);
+    expect(detail.task?.workUnits.map((workUnit) => workUnit.status)).toEqual([
+      "completed",
+      "completed",
+    ]);
+    expect(detail.task?.latestReview).toMatchObject({ decision: "complete" });
+    expect(detail.executions.map((execution) => execution.phase)).toEqual([
+      "execute",
+      "review",
+      "execute",
+      "review",
+    ]);
+    expect(provider.checkpointCalls).toBe(2);
+    expect(provider.reviewCalls).toBe(2);
+    loopBehaviorEvidence.lightBudget = {
+      maxNonCompleteReviews: detail.task?.budget.maxNonCompleteReviews,
+      usedNonCompleteReviews: detail.task?.budget.usedNonCompleteReviews,
+      nonCompleteReviewDecisions: detail.task?.latestReview?.decision === "complete" ? 1 : null,
+      completedOnlyAfterCompleteReview: detail.task?.status === "completed",
+    };
     const finalAgent = await client.fetchAgent({ agentId: agent.id });
     expect(finalAgent?.agent.status).toBe("idle");
   }, 45_000);
 
+  it("UT-06 returns a Human-owned Loop decision to Clarify and revises the same Task", async () => {
+    const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopHumanDecisionHandoff;
+    const provider = new ScriptedThothClient(script);
+    daemon = await createTestThothDaemon({ harnessAdapters: { codex: provider } });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      reconnect: { enabled: false },
+    });
+    await client.connect();
+
+    const cwd = mkdtempSync(join(tmpdir(), "thoth-public-loop-human-handoff-"));
+    workspaces.push(cwd);
+    const agent = await client.createAgent({
+      provider: "codex",
+      model: "scripted-codex",
+      modeId: "auto",
+      cwd,
+      initialPrompt: "Run the deterministic Human-owned Loop handoff.",
+      thoth: {
+        enabled: true,
+        executionMode: "loop",
+        clarifyStrength: "light",
+        loopStrength: "light",
+      },
+    });
+    await answerClarifyWithFirstChoices(client, agent.id);
+    await approveIntentContract({ client, agentId: agent.id, mode: "loop" });
+    const initialHandoff = await waitForThothLifecycle(client, agent.id, "background_handoff");
+    const taskId = initialHandoff.backgroundTaskId!;
+    expect(taskId).toBeTruthy();
+    expect(agent.workspaceId).toBeTruthy();
+
+    const awaitingHuman = await waitForTaskAwaitingUser(client, agent.workspaceId!);
+    expect(awaitingHuman.task).toMatchObject({
+      id: taskId,
+      status: "awaiting_user",
+      currentExecutionId: null,
+      pendingDecision: { kind: "contract_change" },
+    });
+    expect(awaitingHuman.executions).toHaveLength(1);
+    expect(awaitingHuman.executions[0]).toMatchObject({
+      phase: "execute",
+      status: "succeeded",
+      pendingApproval: null,
+    });
+    expect((await client.listTasks(agent.workspaceId!)).tasks).toHaveLength(1);
+
+    await answerClarifyWithFirstChoices(client, agent.id);
+    await approveIntentContract({ client, agentId: agent.id, mode: "loop" });
+    const revisedHandoff = await waitForThothLifecycle(client, agent.id, "background_handoff");
+    expect(revisedHandoff.backgroundTaskId).toBe(taskId);
+
+    const completed = await waitForCompletedTask(client, agent.workspaceId!, 30_000, 4);
+    expect(completed.id).toBe(taskId);
+    const detail = await client.getTask({ workspaceId: agent.workspaceId!, taskId });
+    expect(detail.task).toMatchObject({
+      id: taskId,
+      status: "completed",
+      intentContract: { title: "Fixed target UT06_REVISED", status: "confirmed" },
+      latestReview: { decision: "complete" },
+    });
+    expect((await client.listTasks(agent.workspaceId!)).tasks.map((task) => task.id)).toEqual([
+      taskId,
+    ]);
+    expect(detail.executions.map((execution) => execution.phase)).toEqual([
+      "execute",
+      "execute",
+      "review",
+    ]);
+    expect(
+      detail.decisions.filter((decision) => decision.taskId === taskId).length,
+    ).toBeGreaterThan(0);
+    expect(provider.checkpointCalls).toBe(1);
+    expect(provider.reviewCalls).toBe(1);
+  }, 60_000);
+
   it.each([
-    { providerId: "codex", transport: "native" as const },
-    { providerId: "claude", transport: "mcp" as const },
-    { providerId: "opencode", transport: "mcp" as const },
-    { providerId: "acp-fixture", transport: "mcp" as const },
+    { providerId: "codex", transport: "native" as const, nativePlan: true },
+    { providerId: "claude", transport: "mcp" as const, nativePlan: true },
+    { providerId: "opencode", transport: "mcp" as const, nativePlan: true },
+    { providerId: "pi", transport: "mcp" as const, nativePlan: false },
+    { providerId: "acp-fixture", transport: "mcp" as const, nativePlan: true },
   ])(
     "Harness lifecycle conformance: $providerId over $transport",
-    async ({ providerId, transport }) => {
+    async ({ providerId, transport, nativePlan }) => {
       const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopRetryAndBudget;
-      const provider = new ScriptedThothClient(script, { provider: providerId, transport });
+      const provider = new ScriptedThothClient(script, {
+        provider: providerId,
+        transport,
+        nativePlan,
+      });
       daemon = await createTestThothDaemon({ harnessAdapters: { [providerId]: provider } });
       client = new DaemonClient({
         url: `ws://127.0.0.1:${daemon.port}/ws`,
@@ -1751,7 +2337,7 @@ describe("public foreground Thoth router", () => {
           `${error instanceof Error ? error.message : String(error)} receipts=${JSON.stringify(provider.toolReceipts)}`,
         );
       }
-      await approveTaskAndGoals({ client, agentId: agent.id, mode: "loop" });
+      await approveIntentContract({ client, agentId: agent.id, mode: "loop" });
       await waitForThothLifecycle(client, agent.id, "background_handoff");
 
       const task = await waitForCompletedTask(client, agent.workspaceId!, 45_000);
@@ -1760,14 +2346,29 @@ describe("public foreground Thoth router", () => {
         workspaceId: agent.workspaceId!,
       });
       expect(detail.error).toBeNull();
-      expect(detail.task?.budget).toMatchObject({ usedFailedReviews: 1, maxFailedReviews: 5 });
-      expect(detail.task?.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
-      expect(detail.executions).toHaveLength(6);
+      expect(detail.task?.budget).toMatchObject({
+        usedNonCompleteReviews: 1,
+        maxNonCompleteReviews: 5,
+      });
+      expect(detail.task?.workUnits).toHaveLength(2);
+      expect(detail.task?.latestReview).toMatchObject({ decision: "complete" });
+      expect(detail.executions).toHaveLength(4);
       expect(
         detail.executions.every((execution) => execution.attachment?.status === "attached"),
       ).toBe(true);
-      expect(provider.planExecCalls).toBe(3);
-      expect(provider.reviewCalls).toBe(3);
+      expect(provider.checkpointCalls).toBe(2);
+      expect(provider.reviewCalls).toBe(2);
+      expect(
+        detail.executions
+          .filter((execution) => execution.phase === "execute")
+          .every((execution) =>
+            nativePlan
+              ? execution.runModeReceipt?.requestedMode === "plan" &&
+                execution.runModeReceipt.status === "applied"
+              : execution.runModeReceipt?.requestedMode === "default" &&
+                execution.runModeReceipt.status === "applied",
+          ),
+      ).toBe(true);
       expect(provider.toolCallsFor(transport)).toBeGreaterThan(0);
     },
     60_000,

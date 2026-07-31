@@ -33,6 +33,10 @@ export function createScheduleCommand(): Command {
       .option("--cron <expr>", "Cron cadence expression")
       .option("--timezone <iana>", "IANA time zone for cron cadence (default: UTC)")
       .option("--name <name>", "Optional schedule name")
+      .requiredOption(
+        "--intent-contract <id>",
+        "Confirmed Intent Contract template for every scheduled Task",
+      )
       .option("--target <self|new-agent|agent-id>", "Run target")
       .option(
         "--provider <provider>",
@@ -96,6 +100,10 @@ export function createScheduleCommand(): Command {
       .option("--timezone <iana>", "IANA time zone for cron cadence (requires --cron)")
       .option("--name <name>", "Rename the schedule (empty string clears the name)")
       .option("--prompt <text>", "Replace the schedule prompt")
+      .option(
+        "--intent-contract <id>",
+        "Newly confirmed Intent Contract required for a substantive update",
+      )
       .option(
         "--provider <provider>",
         "New agent provider, or provider/model (only for new-agent target)",

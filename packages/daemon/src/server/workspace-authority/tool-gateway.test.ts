@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ToolGateway } from "./tool-gateway.js";
 
 const gateway = new ToolGateway({
-  submitPlanExec: () => false,
-  submitReviewAssessment: () => null,
-  submitReviewVerdict: () => false,
+  submitCheckpoint: () => false,
+  submitReviewDecision: () => false,
+  requestHumanDecision: () => false,
   reportBlocked: () => false,
 });
 
@@ -187,10 +187,11 @@ describe("provider-neutral scoped capability fence", () => {
     gateway.bind("agent-loop", {
       workspaceId: "workspace-loop",
       taskId: "task-1",
-      goalId: "goal-1",
+      workUnitId: "work-unit-1",
+      cycleId: "cycle-1",
       executionId: "execution-1",
       generation: "generation-loop",
-      phase: "planexec",
+      phase: "execute",
     });
 
     expect(() =>

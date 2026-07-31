@@ -1,7 +1,9 @@
 import type { Command } from "commander";
 import type {
-  HumanDecisionRecord,
+  EvidenceRef,
   ExecutionProjection,
+  HumanDecisionRecord,
+  ReviewDecisionProjection,
   TaskProjection,
 } from "@thoth/protocol/task-authority";
 import type { OutputSchema, SingleResult } from "../../output/index.js";
@@ -19,10 +21,14 @@ interface TaskDetailRow {
   status: string;
   revision: number;
   executions: number;
+  reviews: number;
+  evidence: number;
   decisions: number;
   detail: {
     task: TaskProjection;
     executions: ExecutionProjection[];
+    reviews: ReviewDecisionProjection[];
+    evidence: EvidenceRef[];
     decisions: HumanDecisionRecord[];
   };
 }
@@ -36,6 +42,8 @@ const taskDetailSchema: OutputSchema<TaskDetailRow> = {
     { header: "STATUS", field: "status", width: 18 },
     { header: "REV", field: "revision", width: 5, align: "right" },
     { header: "EXECUTIONS", field: "executions", width: 10, align: "right" },
+    { header: "REVIEWS", field: "reviews", width: 8, align: "right" },
+    { header: "EVIDENCE", field: "evidence", width: 9, align: "right" },
     { header: "DECISIONS", field: "decisions", width: 9, align: "right" },
   ],
   serialize: (row) => row.detail,
@@ -44,7 +52,7 @@ const taskDetailSchema: OutputSchema<TaskDetailRow> = {
 export function addTaskGetOptions(command: Command): Command {
   return addTaskAuthorityOptions(
     command
-      .description("Show Task, Goal, Execution, and human-decision authority")
+      .description("Show Task Anchor, Execution, Review, evidence, and human-decision authority")
       .argument("<task-id>", "Task ID"),
   );
 }
@@ -69,10 +77,14 @@ export async function runTaskGetCommand(
         status: payload.task.status,
         revision: payload.task.revision,
         executions: payload.executions.length,
+        reviews: payload.reviews.length,
+        evidence: payload.evidence.length,
         decisions: payload.decisions.length,
         detail: {
           task: payload.task,
           executions: payload.executions,
+          reviews: payload.reviews,
+          evidence: payload.evidence,
           decisions: payload.decisions,
         },
       },

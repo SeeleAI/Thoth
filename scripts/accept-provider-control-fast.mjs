@@ -116,6 +116,11 @@ const phases = [
   ...(fullThoth
     ? [
         {
+          name: "Clarify and Loop cognition",
+          command: process.execPath,
+          args: ["scripts/accept-clarify-loop-cognition-fast.mjs", "--prebuilt"],
+        },
+        {
           name: "Provider Plan and tab archive",
           command: process.execPath,
           args: ["scripts/accept-provider-plan-tabs-fast.mjs"],

@@ -1056,22 +1056,10 @@ function buildThothDynamicToolSpecs(tools: ThothToolCatalog | undefined): CodexD
   });
 }
 
-function stripInternalCodexRuntimeConfig(
-  config: Record<string, unknown> | undefined,
-): Record<string, unknown> {
-  if (!config) {
-    return {};
-  }
-  const {
-    thothClarifyRuntimeTools: _thothClarifyRuntimeTools,
-    thothClarifyAuditRuntimeTools: _thothClarifyAuditRuntimeTools,
-    thothContractAuditRuntimeTools: _thothContractAuditRuntimeTools,
-    thothLoopRuntimeTools: _thothLoopRuntimeTools,
-    thothLoopSessionHome: _thothLoopSessionHome,
-    thothLoopPhase: _thothLoopPhase,
-    ...providerConfig
-  } = config;
-  return providerConfig;
+function providerOwnedCodexConfig(config: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(config).filter(([key]) => !key.toLowerCase().startsWith("thoth")),
+  );
 }
 
 function dynamicToolResultText(result: ThothToolResult): string {
@@ -4235,7 +4223,7 @@ export class CodexHarnessThread implements HarnessThread {
       innerConfig.mcp_servers = mcpServers;
     }
     if (this.config.extra?.codex) {
-      Object.assign(innerConfig, stripInternalCodexRuntimeConfig(this.config.extra.codex));
+      Object.assign(innerConfig, providerOwnedCodexConfig(this.config.extra.codex));
     }
     if (this.deps.customCodexConfig) {
       Object.assign(innerConfig, this.deps.customCodexConfig);

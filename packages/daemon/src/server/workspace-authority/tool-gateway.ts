@@ -1,8 +1,8 @@
 import type {
-  ThothLoopPlanExecResultInput,
+  ThothLoopCheckpointInput,
   ThothLoopReportBlockedInput,
-  ThothLoopReviewIndependentAssessmentInput,
-  ThothLoopReviewVerdictInput,
+  ThothLoopRequestHumanDecisionInput,
+  ThothLoopReviewDecisionInput,
 } from "@thoth/protocol/thoth-runtime-contract";
 import type { ThothToolExecutionContext } from "@thoth/drivers/agent-runtime";
 
@@ -20,10 +20,11 @@ interface ForegroundToolFence {
 export interface ExecutionToolBinding {
   workspaceId: string;
   taskId: string;
-  goalId: string;
+  workUnitId: string | null;
+  cycleId: string;
   executionId: string;
   generation: string;
-  phase: "planexec" | "review";
+  phase: "execute" | "review";
 }
 
 export interface ScopedCapabilityAuthority {
@@ -34,20 +35,21 @@ export interface ScopedCapabilityAuthority {
 }
 
 export interface ToolResultSink {
-  submitPlanExec(input: {
+  submitCheckpoint(input: {
     binding: ExecutionToolBinding;
-    result: ThothLoopPlanExecResultInput;
+    checkpoint: ThothLoopCheckpointInput;
     providerTurnId?: string;
     callId: string;
   }): boolean;
-  submitReviewAssessment(input: {
+  submitReviewDecision(input: {
     binding: ExecutionToolBinding;
-    assessment: ThothLoopReviewIndependentAssessmentInput;
+    review: ThothLoopReviewDecisionInput;
     providerTurnId?: string;
-  }): string | null;
-  submitReviewVerdict(input: {
+    callId: string;
+  }): boolean;
+  requestHumanDecision(input: {
     binding: ExecutionToolBinding;
-    verdict: ThothLoopReviewVerdictInput;
+    request: ThothLoopRequestHumanDecisionInput;
     providerTurnId?: string;
     callId: string;
   }): boolean;
@@ -55,6 +57,7 @@ export interface ToolResultSink {
     binding: ExecutionToolBinding;
     report: ThothLoopReportBlockedInput;
     providerTurnId?: string;
+    callId: string;
   }): boolean;
 }
 
@@ -206,46 +209,50 @@ export class ToolGateway {
     };
   }
 
-  submitPlanExec(
+  submitCheckpoint(
     agentId: string,
-    result: ThothLoopPlanExecResultInput,
+    checkpoint: ThothLoopCheckpointInput,
     providerTurnId: string | undefined,
     callId: string,
   ): boolean {
-    const binding = this.binding(agentId, "planexec");
-    return binding ? this.sink.submitPlanExec({ binding, result, providerTurnId, callId }) : false;
-  }
-
-  submitReviewAssessment(
-    agentId: string,
-    assessment: ThothLoopReviewIndependentAssessmentInput,
-    providerTurnId?: string,
-  ): string | null {
-    const binding = this.binding(agentId, "review");
+    const binding = this.binding(agentId, "execute");
     return binding
-      ? this.sink.submitReviewAssessment({ binding, assessment, providerTurnId })
-      : null;
+      ? this.sink.submitCheckpoint({ binding, checkpoint, providerTurnId, callId })
+      : false;
   }
 
-  submitReviewVerdict(
+  submitReviewDecision(
     agentId: string,
-    verdict: ThothLoopReviewVerdictInput,
+    review: ThothLoopReviewDecisionInput,
     providerTurnId: string | undefined,
     callId: string,
   ): boolean {
     const binding = this.binding(agentId, "review");
     return binding
-      ? this.sink.submitReviewVerdict({ binding, verdict, providerTurnId, callId })
+      ? this.sink.submitReviewDecision({ binding, review, providerTurnId, callId })
+      : false;
+  }
+
+  requestHumanDecision(
+    agentId: string,
+    request: ThothLoopRequestHumanDecisionInput,
+    providerTurnId: string | undefined,
+    callId: string,
+  ): boolean {
+    const binding = this.bindings.get(agentId);
+    return binding
+      ? this.sink.requestHumanDecision({ binding, request, providerTurnId, callId })
       : false;
   }
 
   reportBlocked(
     agentId: string,
     report: ThothLoopReportBlockedInput,
-    providerTurnId?: string,
+    providerTurnId: string | undefined,
+    callId: string,
   ): boolean {
     const binding = this.bindings.get(agentId);
-    return binding ? this.sink.reportBlocked({ binding, report, providerTurnId }) : false;
+    return binding ? this.sink.reportBlocked({ binding, report, providerTurnId, callId }) : false;
   }
 
   private binding(

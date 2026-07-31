@@ -2,1177 +2,556 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ExecutionService, ManagedAgent } from "../execution-service.js";
-import type { AgentStreamEvent, AgentTimelineItem } from "@thoth/drivers/agent-runtime";
-import type { AgentStorage } from "../agent-storage.js";
-import type { ProviderSnapshotManager } from "../provider-snapshot-manager.js";
+
+import type {
+  AgentTimelineItem,
+  ThothToolExecutionContext,
+  ThothToolRuntimeScope,
+} from "@thoth/drivers/agent-runtime";
+import { THOTH_RUNTIME_TOOL_NAMES } from "@thoth/protocol/thoth-runtime-contract";
+
 import { createTestLogger } from "../../../test-utils/test-logger.js";
+import type { AgentStorage } from "../agent-storage.js";
+import type { ExecutionService, ManagedAgent } from "../execution-service.js";
+import type { ProviderSnapshotManager } from "../provider-snapshot-manager.js";
 import {
-  rejectClarifyConvergenceAudit,
-  resolveClarifyConvergenceAudit,
+  resetClarifyChallengeBrokerForTest,
+  waitForClarifyChallenge,
 } from "../clarify-audit-broker.js";
-import { createThothToolCatalog } from "./thoth-tools.js";
 import {
   ToolGateway,
   WorkspaceAuthorityManager,
   WorkspaceForegroundAuthority,
+  type ToolResultSink,
 } from "../../workspace-authority/index.js";
-import type { ThothCardAnswerPayload } from "@thoth/protocol/thoth/rpc-schemas";
+import { createThothToolCatalog } from "./thoth-tools.js";
 
-const temporaryHomes: string[] = [];
-let currentAuthorityStore: WorkspaceForegroundAuthority | null = null;
-let currentToolGateway: ToolGateway | null = null;
-const authorityManagers: WorkspaceAuthorityManager[] = [];
-let commandSequence = 0;
+const roots: string[] = [];
+const managers: WorkspaceAuthorityManager[] = [];
 
-async function flushToolStart(): Promise<void> {
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
-}
-
-function activeToolGateway(): ToolGateway {
-  if (!currentToolGateway) throw new Error("Test ToolGateway is unavailable");
-  return currentToolGateway;
-}
-
-function createCatalog(
-  input: {
-    auditOutcome?: "proceed" | "revise_frontier";
-    auditFailure?: string;
-    enableLoopRuntimeTools?: boolean;
-    loopPhase?: "planexec" | "review";
-    toolGateway?: ToolGateway;
-    callerAvailableAfterCatalogCreation?: boolean;
-    foregroundTurnKind?: "raw_provider" | "thoth_clarify";
-    browserToolsBroker?: {
-      execute: ReturnType<typeof vi.fn>;
-    };
-    workspaceScripts?: Parameters<typeof createThothToolCatalog>[0]["workspaceScripts"];
-  } = {},
-) {
-  const timeline: AgentTimelineItem[] = [];
-  const appendTimelineItem = vi.fn(async (agentId: string, item: AgentTimelineItem) => {
-    if (agentId === "agent-1") {
-      timeline.push(item);
-    }
-  });
-  const primaryAgent = {
-    id: "agent-1",
-    provider: "codex",
-    cwd: "/tmp/thoth-tool-test",
-    workspaceId: "workspace-test",
-    labels: { topicId: "topic-main", ...(input.loopPhase ? { loopPhase: input.loopPhase } : {}) },
-    config: {
-      provider: "codex",
-      cwd: "/tmp/thoth-tool-test",
-    },
-  } as ManagedAgent;
-  let callerRegistered = input.callerAvailableAfterCatalogCreation !== true;
-  const executionService = {
-    appendTimelineItem,
-    getAgent: (agentId: string) =>
-      agentId === "agent-1" && callerRegistered ? primaryAgent : null,
-    getTimeline: (agentId: string) => (agentId === "agent-1" ? [...timeline] : []),
-    cancelAgentRun: vi.fn(async () => true),
-    createAgent: vi.fn(async (config: Parameters<ExecutionService["createAgent"]>[0]) => {
-      const auditAgent = {
-        id: "clarify-audit-agent",
-        provider: "codex",
-        cwd: config.cwd,
-        config,
-        labels: { surface: "thoth-clarify-audit" },
-      } as ManagedAgent;
-      setImmediate(() => {
-        if (input.auditFailure) {
-          rejectClarifyConvergenceAudit(auditAgent.id, input.auditFailure);
-          return;
-        }
-        resolveClarifyConvergenceAudit(auditAgent.id, {
-          outcome: input.auditOutcome ?? "proceed",
-          summary:
-            input.auditOutcome === "revise_frontier"
-              ? "Performance acceptance remains a material user-owned boundary."
-              : "The candidate Task Card is grounded by the submitted frontier ledger.",
-          missing_material_frontier:
-            input.auditOutcome === "revise_frontier" ? ["性能验收基线"] : [],
-          rejected_question_patterns: [],
-          task_memory_refs: [],
-        });
-      });
-      return auditAgent;
-    }),
-    streamAgent: () =>
-      (async function* pendingAuditStream(): AsyncGenerator<AgentStreamEvent> {
-        await new Promise((resolve) => setImmediate(resolve));
-      })(),
-  } as unknown as ExecutionService;
-
-  const logger = createTestLogger();
-  const thothHome = mkdtempSync(join(tmpdir(), "thoth-tools-authority-"));
-  temporaryHomes.push(thothHome);
-  const authorityManager = new WorkspaceAuthorityManager(thothHome);
-  authorityManagers.push(authorityManager);
-  authorityManager.catalog.upsertWorkspace({
-    id: "workspace-test",
-    canonicalPath: primaryAgent.cwd,
-    displayName: "Test Workspace",
-    kind: "workspace",
-    parentWorkspaceId: null,
-    archivedAt: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
-  const authorityStore = new WorkspaceForegroundAuthority(authorityManager);
-  currentAuthorityStore = authorityStore;
-  const toolGateway =
-    input.toolGateway ??
-    new ToolGateway({
-      submitPlanExec: () => false,
-      submitReviewAssessment: () => null,
-      submitReviewVerdict: () => false,
-      reportBlocked: () => false,
-    });
-  currentToolGateway = toolGateway;
-  const turnKind = input.foregroundTurnKind ?? "thoth_clarify";
-  const foreground = authorityStore.startTurn({
-    agentId: "agent-1",
-    kind: turnKind === "raw_provider" ? "raw" : "thoth",
-    ...(turnKind === "thoth_clarify"
-      ? { controls: { mode: "quick" as const, clarifyStrength: "light" as const, loop: null } }
-      : {}),
-    sourceMessageId: `message-${temporaryHomes.length}`,
-    workspaceId: "workspace-test",
-    workspacePath: primaryAgent.cwd,
-    userText: "Test foreground turn",
-  });
-  const catalog = createThothToolCatalog({
-    executionService,
-    agentStorage: {} as AgentStorage,
-    terminalManager: null,
-    providerSnapshotManager: {} as ProviderSnapshotManager,
-    logger,
-    workspaceAuthorityManager: authorityManager,
-    callerAgentId: "agent-1",
-    callerAgentConfig: primaryAgent.config,
-    runtimeScope: input.enableLoopRuntimeTools
-      ? input.loopPhase === "review"
-        ? "loop_review"
-        : "loop_planexec"
-      : "clarify",
-    toolGateway,
-    ...(input.workspaceScripts ? { workspaceScripts: input.workspaceScripts } : {}),
-    ...(input.browserToolsBroker ? { browserToolsBroker: input.browserToolsBroker } : {}),
-  });
-  callerRegistered = true;
-  toolGateway.beginForegroundTurn({
-    agentId: "agent-1",
-    workspaceId: "workspace-test",
-    generation: "test-generation",
-    kind: turnKind,
-    foregroundTurnId: foreground.turn.id,
-  });
-  toolGateway.bindForegroundProviderTurn({
-    agentId: "agent-1",
-    generation: "test-generation",
-    providerTurnId: "turn-1",
-  });
-  return { appendTimelineItem, timeline, catalog };
-}
-
-function answerPendingRuntimeDecision(input: {
-  cardId: string;
-  submittedSummary: string;
-  answer: ThothCardAnswerPayload;
-}): void {
-  const store = currentAuthorityStore;
-  if (!store) {
-    throw new Error("Test foreground authority store is unavailable");
-  }
-  const card = store.getCard(input.cardId);
-  if (!card) {
-    throw new Error(`Missing authority card ${input.cardId}`);
-  }
-  const state = store.getState(card.agentId);
-  const result = store.answerCard({
-    agentId: card.agentId,
-    cardId: card.id,
-    answer: input.answer,
-    submittedCard: { ...card.card, submitted: true, submittedSummary: input.submittedSummary },
-    submittedSummary: input.submittedSummary,
-    expectedRevision: state.revision,
-    commandId: `test-answer-${++commandSequence}`,
-    nextLifecycle: "running",
-    actorId: "user:test",
-    clientId: "test-client",
-  });
-  expect(result.accepted).toBe(true);
-}
-
-function readyConvergenceReview() {
+function providerCall(toolName: string, callId = `call-${toolName}`): ThothToolExecutionContext {
   return {
-    frontier_ledger: {
-      clarify_strength: "light",
-      grounded_user_decisions: ["用户确认语言和交付形态。"],
-      remaining_material_user_owned_assumptions: [],
-      agent_owned_assumptions: ["实现细节由 agent 决定。"],
-      discoverable_assumptions: ["测试命令从仓库发现。"],
-      why_this_round: "已足够形成任务总览。",
-      convergence_state: "ready_for_task",
+    providerToolCall: {
+      provider: "fixture",
+      threadId: "provider-thread-1",
+      turnId: "provider-turn-1",
+      callId,
+      toolName,
+      isActiveProviderTurn: true,
     },
-    why_task_is_now_grounded: "关键用户决策已经确认，剩余都是 agent 可决定或可发现事项。",
   };
 }
 
-async function submitApprovedTaskCard(
-  catalog: ReturnType<typeof createCatalog>["catalog"],
-): Promise<void> {
-  const toolResult = catalog.executeTool(
-    "thoth_submit_task_card",
-    {
-      task_card: {
-        title: "已确认的测试任务",
-        goal: "为 Goals Card transition guard 提供已确认的 Task Card。",
-        constraints: ["仅验证 authority 顺序。"],
-        acceptance: ["Goals Card 只能出现在 Task Card 批准后。"],
-      },
-      provenance: { clarify_transcript_verbatim: "固定的 Clarify 原文。" },
-      convergence_review: readyConvergenceReview(),
-    },
-    {
-      providerToolCall: {
-        provider: "codex",
-        threadId: "thread-1",
-        turnId: "turn-1",
-        callId: "call-approved-task",
-        toolName: "thoth_submit_task_card",
-      },
-    },
-  );
-  await flushToolStart();
-  const cardId = takeOnlyPendingCardId();
-  answerPendingRuntimeDecision({
-    cardId,
-    submittedSummary: "已确认测试任务",
-    answer: {
-      intent: "accept_quick",
-      card_id: cardId,
-      title: "已确认的测试任务",
-      raw_answer: "确认",
-    },
-  });
-  await toolResult;
-  const turn = currentAuthorityStore?.getActiveTurn("agent-1");
-  if (!turn) throw new Error("Missing foreground turn after Task Card answer");
-  activeToolGateway().beginForegroundTurn({
-    agentId: "agent-1",
-    workspaceId: turn.workspaceId,
-    generation: turn.generation,
-    kind: "thoth_clarify",
-    foregroundTurnId: turn.id,
-  });
-  activeToolGateway().bindForegroundProviderTurn({
-    agentId: "agent-1",
-    generation: turn.generation,
-    providerTurnId: "turn-1",
-  });
+function semanticToolNames(catalog: ReturnType<typeof createThothToolCatalog>): string[] {
+  const semantic = new Set<string>(THOTH_RUNTIME_TOOL_NAMES);
+  return [...catalog.tools.keys()].filter((name) => semantic.has(name));
 }
 
-function takeOnlyPendingCardId(): string {
-  const pending =
-    currentAuthorityStore?.listAllCards().filter((card) => card.status === "pending") ?? [];
-  expect(pending).toHaveLength(1);
-  return pending[0]!.id;
+function createEnvironment(input: {
+  scope: ThothToolRuntimeScope;
+  foregroundKind?: "thoth_clarify" | "raw_provider";
+}) {
+  const home = mkdtempSync(join(tmpdir(), "thoth-tools-final-contract-"));
+  roots.push(home);
+  const manager = new WorkspaceAuthorityManager(home);
+  managers.push(manager);
+  manager.catalog.upsertWorkspace({
+    id: "workspace-test",
+    canonicalPath: "/workspace/test",
+    displayName: "Tool Test Workspace",
+    kind: "workspace",
+    parentWorkspaceId: null,
+    archivedAt: null,
+    createdAt: "2026-07-30T00:00:00.000Z",
+    updatedAt: "2026-07-30T00:00:00.000Z",
+  });
+  const authority = new WorkspaceForegroundAuthority(manager);
+  const timeline: AgentTimelineItem[] = [];
+  const cancelAgentRun = vi.fn(async () => true);
+  const agent = {
+    id: "agent-1",
+    provider: "fixture",
+    cwd: "/workspace/test",
+    workspaceId: "workspace-test",
+    labels: {},
+    config: { provider: "fixture", cwd: "/workspace/test" },
+  } as ManagedAgent;
+  const executionService = {
+    appendTimelineItem: vi.fn(async (agentId: string, item: AgentTimelineItem) => {
+      if (agentId === agent.id) timeline.push(item);
+    }),
+    getAgent: vi.fn((agentId: string) => (agentId === agent.id ? agent : null)),
+    getTimeline: vi.fn(() => [...timeline]),
+    cancelAgentRun,
+  } as unknown as ExecutionService;
+  const sink = {
+    submitCheckpoint: vi.fn<ToolResultSink["submitCheckpoint"]>(() => true),
+    submitReviewDecision: vi.fn<ToolResultSink["submitReviewDecision"]>(() => true),
+    requestHumanDecision: vi.fn<ToolResultSink["requestHumanDecision"]>(() => true),
+    reportBlocked: vi.fn<ToolResultSink["reportBlocked"]>(() => true),
+  };
+  const gateway = new ToolGateway(sink);
+
+  let clarifySessionId: string | null = null;
+  if (input.scope === "clarify") {
+    const foregroundKind = input.foregroundKind ?? "thoth_clarify";
+    const started = authority.startTurn({
+      agentId: agent.id,
+      kind: foregroundKind === "thoth_clarify" ? "thoth" : "raw",
+      ...(foregroundKind === "thoth_clarify"
+        ? { controls: { mode: "quick" as const, clarifyStrength: "dive" as const, loop: null } }
+        : {}),
+      sourceMessageId: `message-${foregroundKind}`,
+      workspaceId: "workspace-test",
+      workspacePath: agent.cwd,
+      userText: "Design the final runtime boundary.",
+    });
+    if (foregroundKind === "thoth_clarify") {
+      clarifySessionId = authority.startClarifySession({
+        agentId: agent.id,
+        turnId: started.turn.id,
+        requestedStrength: "dive",
+      }).id;
+    }
+    gateway.beginForegroundTurn({
+      agentId: agent.id,
+      workspaceId: "workspace-test",
+      generation: started.turn.generation,
+      kind: foregroundKind,
+      foregroundTurnId: started.turn.id,
+    });
+    gateway.bindForegroundProviderTurn({
+      agentId: agent.id,
+      generation: started.turn.generation,
+      providerTurnId: "provider-turn-1",
+    });
+  } else if (input.scope === "loop_execute" || input.scope === "loop_review") {
+    gateway.bind(agent.id, {
+      workspaceId: "workspace-test",
+      taskId: "task-1",
+      workUnitId: "work-unit-1",
+      cycleId: "cycle-1",
+      executionId: "execution-1",
+      generation: "generation-1",
+      phase: input.scope === "loop_execute" ? "execute" : "review",
+    });
+  }
+
+  const catalog = createThothToolCatalog({
+    executionService,
+    agentStorage: {} as AgentStorage,
+    providerSnapshotManager: {} as ProviderSnapshotManager,
+    logger: createTestLogger(),
+    workspaceAuthorityManager: manager,
+    callerAgentId: agent.id,
+    callerAgentConfig: agent.config,
+    runtimeScope: input.scope,
+    toolGateway: gateway,
+  });
+  return {
+    authority,
+    cancelAgentRun,
+    catalog,
+    clarifySessionId,
+    gateway,
+    manager,
+    sink,
+    timeline,
+  };
 }
 
-async function submitAnsweredClarifyCard(
-  catalog: ReturnType<typeof createCatalog>["catalog"],
-  strength: "light" | "balanced" | "dive",
-  input: { converged?: boolean } = {},
-) {
-  const converged = input.converged === true;
-  const toolResult = catalog.executeTool(
-    "thoth_submit_clarify_card",
+const resolvedMap = {
+  effectiveStrength: "dive" as const,
+  publicSummary: "Workspace evidence resolves the execution boundary.",
+  nodes: [
     {
-      title: "确认目标边界",
-      why_now: "这些选择会改变实现路线和验收边界。",
-      public_badge_summary: "正在拆解目标边界：确认路线、接口和验收的材料分支。",
-      frontier_ledger: {
-        clarify_strength: strength,
-        grounded_user_decisions: [],
-        remaining_material_user_owned_assumptions: converged
-          ? []
-          : ["实现路线", "接口形态", "验收边界"],
-        agent_owned_assumptions: ["具体实现策略由 agent 决定。"],
-        discoverable_assumptions: ["仓库测试命令可发现。"],
-        why_this_round: converged
-          ? "所有材料分支已收敛，可以进入任务总览。"
-          : "这些答案决定任务合同边界。",
-        convergence_state: converged ? "ready_for_task" : "not_converged",
-      },
-      questions: [
-        {
-          id: "route",
-          question: "这次优先交付哪类结果？",
-          choices: [
-            { id: "library", label: "库函数", description: "最小复用接口" },
-            { id: "cli", label: "命令行", description: "可传参运行" },
-          ],
-        },
-        {
-          id: "interface",
-          question: "接口更偏向哪种使用方式？",
-          choices: [
-            { id: "simple", label: "简单调用", description: "默认路径清晰" },
-            { id: "config", label: "可配置", description: "保留参数入口" },
-          ],
-        },
-        {
-          id: "acceptance",
-          question: "验收更看重什么？",
-          choices: [
-            { id: "correctness", label: "正确性", description: "覆盖边界输入" },
-            { id: "benchmark", label: "性能基准", description: "给出耗时对比" },
-          ],
-        },
-      ],
+      id: "objective",
+      parentIds: [],
+      title: "Objective boundary",
+      owner: "agent" as const,
+      materiality: "structural" as const,
+      status: "resolved" as const,
+      resolutionRef: "agent:grounded-objective",
+      sourceRefs: ["workspace:README.md"],
     },
-    {
-      providerToolCall: {
-        provider: "codex",
-        threadId: "thread-1",
-        turnId: "turn-1",
-        callId: `call-clarify-${strength}`,
-        toolName: "thoth_submit_clarify_card",
-      },
-    },
-  );
-  await flushToolStart();
-  const cardId = takeOnlyPendingCardId();
-  answerPendingRuntimeDecision({
-    cardId,
-    submittedSummary: "已确认 3 个材料分支",
-    answer: {
-      intent: "submit_choices",
-      question_card_id: cardId,
-      title: "确认目标边界",
-      answers: [],
-      raw_answer: "选择第一项",
-    },
-  });
-  const result = await toolResult;
-  const turn = currentAuthorityStore?.getActiveTurn("agent-1");
-  if (!turn) throw new Error("Missing foreground turn after Clarify Card answer");
-  activeToolGateway().beginForegroundTurn({
-    agentId: "agent-1",
-    workspaceId: turn.workspaceId,
-    generation: turn.generation,
-    kind: "thoth_clarify",
-    foregroundTurnId: turn.id,
-  });
-  activeToolGateway().bindForegroundProviderTurn({
-    agentId: "agent-1",
-    generation: turn.generation,
-    providerTurnId: "turn-1",
-  });
-  return result;
-}
+  ],
+};
 
 afterEach(() => {
-  currentToolGateway?.resetForTest();
-  currentToolGateway = null;
-  currentAuthorityStore = null;
-  for (const manager of authorityManagers.splice(0)) {
-    manager.close();
-  }
-  for (const home of temporaryHomes.splice(0)) {
-    rmSync(home, { recursive: true, force: true });
-  }
+  resetClarifyChallengeBrokerForTest();
+  for (const manager of managers.splice(0)) manager.close();
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-describe("Thoth runtime authority tools", () => {
-  it("mounts the complete provider-neutral browser portfolio through an Agent fence", async () => {
-    const execute = vi.fn(async () => ({
-      requestId: "browser-test",
-      ok: true as const,
-      result: { command: "list_tabs" as const, tabs: [] },
-    }));
-    const { catalog } = createCatalog({
-      foregroundTurnKind: "raw_provider",
-      browserToolsBroker: { execute },
-    });
-
-    expect([...catalog.tools.keys()].filter((name) => name.startsWith("browser_"))).toEqual([
-      "browser_list_tabs",
-      "browser_new_tab",
-      "browser_snapshot",
-      "browser_click",
-      "browser_fill",
-      "browser_wait",
-      "browser_type",
-      "browser_keypress",
-      "browser_navigate",
-      "browser_back",
-      "browser_forward",
-      "browser_reload",
-      "browser_screenshot",
-      "browser_upload",
-      "browser_hover",
-      "browser_select",
-      "browser_drag",
-      "browser_logs",
-      "browser_evaluate",
-      "browser_scroll",
-      "browser_resize",
-      "browser_close_tab",
+describe("final Thoth semantic tool catalog", () => {
+  it("publishes exactly the semantic tools owned by each runtime scope", () => {
+    expect(semanticToolNames(createEnvironment({ scope: "clarify" }).catalog)).toEqual([
+      "thoth_clarify_update_map",
+      "thoth_clarify_ask",
+      "thoth_clarify_propose_contract",
+      "thoth_clarify_report_blocked",
     ]);
+    expect(semanticToolNames(createEnvironment({ scope: "clarify_challenger" }).catalog)).toEqual([
+      "thoth_clarify_judge_contract",
+    ]);
+    expect(semanticToolNames(createEnvironment({ scope: "loop_execute" }).catalog)).toEqual([
+      "thoth_loop_checkpoint",
+      "thoth_loop_request_human_decision",
+      "thoth_loop_report_blocked",
+    ]);
+    expect(semanticToolNames(createEnvironment({ scope: "loop_review" }).catalog)).toEqual([
+      "thoth_loop_review_decision",
+      "thoth_loop_request_human_decision",
+      "thoth_loop_report_blocked",
+    ]);
+  });
 
-    await catalog.executeTool(
-      "browser_list_tabs",
-      {},
-      {
-        providerToolCall: {
-          provider: "codex",
-          threadId: "thread-1",
-          turnId: "turn-1",
-          callId: "call-1",
-          toolName: "browser_list_tabs",
-          isActiveProviderTurn: true,
-        },
-      },
+  it("rejects remembered Clarify tools during a raw Provider turn", async () => {
+    const { catalog } = createEnvironment({ scope: "clarify", foregroundKind: "raw_provider" });
+    await expect(
+      catalog.executeTool(
+        "thoth_clarify_update_map",
+        resolvedMap,
+        providerCall("thoth_clarify_update_map"),
+      ),
+    ).rejects.toMatchObject({ code: "THOTH_RUNTIME_INACTIVE" });
+  });
+
+  it("persists visible Decision Map conclusions without hidden reasoning", async () => {
+    const { authority, catalog, clarifySessionId, timeline } = createEnvironment({
+      scope: "clarify",
+    });
+    const result = await catalog.executeTool(
+      "thoth_clarify_update_map",
+      resolvedMap,
+      providerCall("thoth_clarify_update_map", "call-map"),
     );
-    expect(execute).toHaveBeenCalledWith(
+
+    expect(result.structuredContent).toMatchObject({ ok: true, sessionId: clarifySessionId });
+    expect(authority.getClarifySession("agent-1")).toMatchObject({
+      effectiveStrength: "dive",
+      nodes: [expect.objectContaining({ id: "objective", owner: "agent", status: "resolved" })],
+    });
+    expect(timeline).toContainEqual(
       expect.objectContaining({
-        workspaceId: "workspace-test",
-        agentId: "agent-1",
-        generation: "test-generation",
-        command: { command: "list_tabs", args: {} },
+        type: "tool_call",
+        callId: "call-map",
+        status: "completed",
+        detail: expect.objectContaining({ text: resolvedMap.publicSummary }),
       }),
     );
+    expect(JSON.stringify(timeline)).not.toContain("chain-of-thought");
   });
-  it("rejects remembered authority tools during a raw provider turn", async () => {
-    const { catalog, timeline } = createCatalog({ foregroundTurnKind: "raw_provider" });
 
-    await expect(
-      catalog.executeTool(
-        "thoth_submit_clarify_card",
-        {
-          title: "This must not create a card",
-          why_now: "The raw provider turn must remain raw.",
-          public_badge_summary: "This call is intentionally rejected.",
-          frontier_ledger: {
-            clarify_strength: "light",
-            grounded_user_decisions: [],
-            remaining_material_user_owned_assumptions: ["A user decision"],
-            agent_owned_assumptions: [],
-            discoverable_assumptions: [],
-            why_this_round: "Fence test.",
-            convergence_state: "not_converged",
-          },
-          questions: [
-            {
-              id: "q1",
-              question: "Should not be visible.",
-              choices: [{ id: "a", label: "A", description: "Rejected before parsing authority." }],
-            },
-          ],
-        },
-        {
-          providerToolCall: {
-            provider: "codex",
-            threadId: "thread-raw",
-            turnId: "turn-raw",
-            callId: "call-raw",
-            toolName: "thoth_submit_clarify_card",
-          },
-        },
-      ),
-    ).rejects.toMatchObject({
-      code: "THOTH_RUNTIME_INACTIVE",
-      message: "Thoth RuntimeBundle is inactive for this provider turn",
+  it("opens one durable Clarify Card only for mapped Human-owned nodes and parks the turn", async () => {
+    const { authority, cancelAgentRun, catalog, gateway, timeline } = createEnvironment({
+      scope: "clarify",
     });
-
-    expect(currentAuthorityStore?.listAllCards()).toEqual([]);
-    expect(timeline).toEqual([]);
-  });
-
-  it("registers Clarify tools from launch config before the caller agent is registered", () => {
-    const executionService = {
-      appendTimelineItem: vi.fn(async () => undefined),
-      getAgent: () => null,
-    } as unknown as ExecutionService;
-    const catalog = createThothToolCatalog({
-      executionService,
-      agentStorage: {} as AgentStorage,
-      terminalManager: null,
-      providerSnapshotManager: {} as ProviderSnapshotManager,
-      logger: createTestLogger(),
-      callerAgentId: "agent-launching",
-      callerAgentConfig: { provider: "codex", cwd: "/tmp/thoth-tool-test" },
-      runtimeScope: "clarify",
-    });
-
-    expect(catalog.getTool("thoth_submit_clarify_card")).toBeDefined();
-    expect(catalog.getTool("thoth_submit_task_card")).toBeDefined();
-    expect(catalog.getTool("thoth_submit_goals_card")).toBeDefined();
-    expect(catalog.getTool("thoth_report_blocked")).toBeDefined();
-  });
-
-  it("derives Workspace script list scope from ToolGateway without accepting a provider workspaceId", async () => {
-    const listWorkspace = vi.fn(async (workspaceId: string) => ({
-      workspaceId,
-      scripts: [
-        {
-          scriptName: "web",
-          command: "npm run web",
-          type: "service" as const,
-          hostname: "web--repo.localhost",
-          port: 3000,
-          proxyUrl: "http://web--repo.localhost:6688",
-          lifecycle: "stopped" as const,
-          health: null,
-          exitCode: null,
-          terminalId: null,
-        },
-      ],
-      error: null,
-      errorCode: null,
-    }));
-    const { catalog } = createCatalog({
-      workspaceScripts: {
-        listWorkspace,
-        startWorkspace: vi.fn(),
-        stopWorkspace: vi.fn(),
-      },
-    });
-
-    const result = await catalog.executeTool(
-      "thoth_list_workspace_scripts",
-      {},
+    await catalog.executeTool(
+      "thoth_clarify_update_map",
       {
-        providerToolCall: {
-          provider: "codex",
-          threadId: "thread-1",
-          turnId: "turn-1",
-          callId: "call-list-scripts",
-          toolName: "thoth_list_workspace_scripts",
-          isActiveProviderTurn: true,
-        },
-      },
-    );
-
-    expect(listWorkspace).toHaveBeenCalledWith("workspace-test");
-    expect(result.structuredContent).toMatchObject({
-      ok: true,
-      scripts: [{ scriptName: "web" }],
-    });
-    await expect(
-      catalog.executeTool("thoth_list_workspace_scripts", { workspaceId: "workspace-other" }),
-    ).rejects.toThrow();
-  });
-
-  it("rejects script mutation during Clarify and admits it only in user-approved Quick execution", async () => {
-    const startWorkspace = vi.fn(async (workspaceId: string, scriptName: string) => ({
-      workspaceId,
-      scriptName,
-      script: {
-        scriptName,
-        command: "npm run web",
-        type: "service" as const,
-        hostname: "web--repo.localhost",
-        port: 3000,
-        proxyUrl: "http://web--repo.localhost:6688",
-        lifecycle: "running" as const,
-        health: null,
-        exitCode: null,
-        terminalId: "terminal-web",
-      },
-      terminalId: "terminal-web",
-      error: null,
-      errorCode: null,
-    }));
-    const { catalog } = createCatalog({
-      workspaceScripts: {
-        listWorkspace: vi.fn(),
-        startWorkspace,
-        stopWorkspace: vi.fn(),
-      },
-    });
-    const context = {
-      providerToolCall: {
-        provider: "codex",
-        threadId: "thread-1",
-        turnId: "turn-1",
-        callId: "call-start-script",
-        toolName: "thoth_start_workspace_script",
-        isActiveProviderTurn: true,
-      },
-    };
-
-    await expect(
-      catalog.executeTool("thoth_start_workspace_script", { scriptName: "web" }, context),
-    ).rejects.toThrow("permission_denied during Clarify");
-    expect(startWorkspace).not.toHaveBeenCalled();
-
-    const turn = currentAuthorityStore?.getActiveTurn("agent-1");
-    if (!turn) throw new Error("Missing active foreground turn");
-    currentAuthorityStore?.markLifecycle({
-      agentId: "agent-1",
-      turnId: turn.id,
-      generation: turn.generation,
-      lifecycle: "quick_exec",
-      reason: "quick_exec_started",
-      error: null,
-    });
-    const result = await catalog.executeTool(
-      "thoth_start_workspace_script",
-      { scriptName: "web" },
-      context,
-    );
-    expect(startWorkspace).toHaveBeenCalledWith("workspace-test", "web");
-    expect(result.structuredContent).toMatchObject({
-      ok: true,
-      script: { scriptName: "web", lifecycle: "running" },
-    });
-  });
-
-  it("parks the provider after opening a Task Card", async () => {
-    const { catalog } = createCatalog();
-    const toolResult = catalog.executeTool(
-      "thoth_submit_task_card",
-      {
-        task_card: {
-          title: "实现高性能快速排序",
-          goal: "实现一个可复用的高性能快速排序。",
-          constraints: ["保持用户选择的语言和交付形态。"],
-          acceptance: ["正确性测试通过。", "性能基准可运行。"],
-        },
-        provenance: {
-          clarify_transcript_verbatim: "用户确认了语言、交付形态和验收边界。",
-        },
-        convergence_review: readyConvergenceReview(),
-      },
-      {
-        providerToolCall: {
-          provider: "codex",
-          threadId: "thread-1",
-          turnId: "turn-1",
-          callId: "call-task",
-          toolName: "thoth_submit_task_card",
-        },
-      },
-    );
-    await flushToolStart();
-
-    const cardId = takeOnlyPendingCardId();
-    expect(currentAuthorityStore?.getCard(cardId)?.card).toMatchObject({
-      turnControls: { mode: "quick", clarifyStrength: "light", loop: null },
-    });
-    answerPendingRuntimeDecision({
-      cardId,
-      submittedSummary: "已确认并保持 Quick",
-      answer: {
-        intent: "accept_quick",
-        card_id: cardId,
-        title: "实现高性能快速排序",
-        raw_answer: "确认按 Quick 前台执行",
-      },
-    });
-
-    const result = await toolResult;
-    expect(result.structuredContent).toMatchObject({ status: "awaiting_user", cardId });
-    expect(result.content.map((item) => item.text ?? "").join("\n")).toContain(
-      "Stop this turn and wait for the user's answer",
-    );
-  });
-
-  it("resolves the live caller after catalog creation before starting a convergence audit", async () => {
-    const { catalog } = createCatalog({ callerAvailableAfterCatalogCreation: true });
-    const toolResult = catalog.executeTool(
-      "thoth_submit_task_card",
-      {
-        task_card: {
-          title: "延迟注册的测试任务",
-          goal: "验证动态工具 catalog 创建后仍能启动独立 audit。",
-          constraints: ["仅验证注册时序。"],
-          acceptance: ["Task Card 正常进入用户确认。"],
-        },
-        provenance: { clarify_transcript_verbatim: "固定的 Clarify 原文。" },
-        convergence_review: readyConvergenceReview(),
-      },
-      {
-        providerToolCall: {
-          provider: "codex",
-          threadId: "thread-late-caller",
-          turnId: "turn-1",
-          callId: "call-late-caller",
-          toolName: "thoth_submit_task_card",
-        },
-      },
-    );
-
-    await flushToolStart();
-    const cardId = takeOnlyPendingCardId();
-    answerPendingRuntimeDecision({
-      cardId,
-      submittedSummary: "已确认延迟注册测试任务",
-      answer: {
-        intent: "accept_quick",
-        card_id: cardId,
-        title: "延迟注册的测试任务",
-        raw_answer: "确认",
-      },
-    });
-    await expect(toolResult).resolves.toMatchObject({
-      structuredContent: { status: "awaiting_user" },
-    });
-  });
-
-  it("parks a converged Clarify Card without continuing provider prose", async () => {
-    const { catalog } = createCatalog();
-    const result = await submitAnsweredClarifyCard(catalog, "light", { converged: true });
-    const text = result.content.map((item) => item.text ?? "").join("\n");
-
-    expect(text).toContain("Stop this turn and wait for the user's answer");
-  });
-
-  it("requires an explicit convergence review when Task is submitted below a strength soft target", async () => {
-    const { catalog } = createCatalog();
-    await expect(
-      catalog.executeTool(
-        "thoth_submit_task_card",
-        {
-          task_card: {
-            title: "实现高性能快速排序",
-            goal: "实现一个可复用的高性能快速排序。",
-            constraints: ["保持用户选择的语言和交付形态。"],
-            acceptance: ["正确性测试通过。", "性能基准可运行。"],
-          },
-          provenance: {
-            clarify_transcript_verbatim: "用户确认了部分边界。",
-          },
-          convergence_review: {
-            frontier_ledger: {
-              clarify_strength: "dive",
-              grounded_user_decisions: ["用户确认 C++。"],
-              remaining_material_user_owned_assumptions: [],
-              agent_owned_assumptions: ["pivot 策略由 agent 决定。"],
-              discoverable_assumptions: ["测试命令可发现。"],
-              why_this_round: "模型认为已可收敛。",
-              convergence_state: "ready_for_task",
-            },
-            why_task_is_now_grounded: "模型认为剩余事项都不是用户材料决策。",
-          },
-        },
-        {
-          providerToolCall: {
-            provider: "codex",
-            threadId: "thread-1",
-            turnId: "turn-1",
-            callId: "call-task-low-target",
-            toolName: "thoth_submit_task_card",
-          },
-        },
-      ),
-    ).rejects.toThrow("Clarify soft target not reviewed");
-  });
-
-  it("returns the independent audit frontier to the same Clarify session without opening a Task card", async () => {
-    const { catalog } = createCatalog({ auditOutcome: "revise_frontier" });
-    const result = await catalog.executeTool(
-      "thoth_submit_task_card",
-      {
-        task_card: {
-          title: "实现排序库",
-          goal: "交付可复用排序能力。",
-          constraints: ["保持 API 简洁。"],
-          acceptance: ["正确性测试通过。"],
-        },
-        provenance: { clarify_transcript_verbatim: "用户确认了语言和交付形态。" },
-        convergence_review: readyConvergenceReview(),
-      },
-      {
-        providerToolCall: {
-          provider: "codex",
-          threadId: "thread-1",
-          turnId: "turn-1",
-          callId: "call-task-revise",
-          toolName: "thoth_submit_task_card",
-        },
-      },
-    );
-
-    expect(
-      currentAuthorityStore?.listAllCards().filter((card) => card.status === "pending"),
-    ).toHaveLength(0);
-    expect(result.structuredContent).toMatchObject({ status: "revise_frontier" });
-    expect(result.content.map((item) => item.text).join("\n")).toContain("性能验收基线");
-  });
-
-  it("keeps the flow honestly blocked when the independent convergence audit cannot return", async () => {
-    const { catalog } = createCatalog({ auditFailure: "Audit provider session timed out." });
-    const result = await catalog.executeTool(
-      "thoth_submit_task_card",
-      {
-        task_card: {
-          title: "实现排序库",
-          goal: "交付可复用排序能力。",
-          constraints: ["保持 API 简洁。"],
-          acceptance: ["正确性测试通过。"],
-        },
-        provenance: { clarify_transcript_verbatim: "用户确认了语言和交付形态。" },
-        convergence_review: readyConvergenceReview(),
-      },
-      {
-        providerToolCall: {
-          provider: "codex",
-          threadId: "thread-1",
-          turnId: "turn-1",
-          callId: "call-task-audit-failure",
-          toolName: "thoth_submit_task_card",
-        },
-      },
-    );
-
-    expect(result.structuredContent).toMatchObject({ status: "blocked" });
-    expect(result.isError).toBe(true);
-    expect(result.content.map((item) => item.text).join("\n")).toContain(
-      "Task Card was not created",
-    );
-    expect(
-      currentAuthorityStore?.listAllCards().filter((card) => card.status === "pending"),
-    ).toHaveLength(0);
-  });
-
-  it("rejects Task convergence reviews that downgrade the latest Clarify strength", async () => {
-    const { catalog } = createCatalog();
-    await submitAnsweredClarifyCard(catalog, "dive");
-
-    await expect(
-      catalog.executeTool(
-        "thoth_submit_task_card",
-        {
-          task_card: {
-            title: "实现高性能快速排序",
-            goal: "实现一个可复用的高性能快速排序。",
-            constraints: ["保持用户选择的语言和交付形态。"],
-            acceptance: ["正确性测试通过。", "性能基准可运行。"],
-          },
-          provenance: {
-            clarify_transcript_verbatim: "用户确认了部分边界。",
-          },
-          convergence_review: {
-            frontier_ledger: {
-              clarify_strength: "light",
-              grounded_user_decisions: ["用户确认 C++。"],
-              remaining_material_user_owned_assumptions: [],
-              agent_owned_assumptions: ["pivot 策略由 agent 决定。"],
-              discoverable_assumptions: ["测试命令可发现。"],
-              why_this_round: "模型试图以 light 强度收敛。",
-              convergence_state: "ready_for_task",
-            },
-            why_task_is_now_grounded: "模型认为剩余事项都不是用户材料决策。",
-          },
-        },
-        {
-          providerToolCall: {
-            provider: "codex",
-            threadId: "thread-1",
-            turnId: "turn-1",
-            callId: "call-task-strength-mismatch",
-            toolName: "thoth_submit_task_card",
-          },
-        },
-      ),
-    ).rejects.toThrow("Clarify convergence review strength mismatch");
-  });
-
-  it("parks the provider after opening a Goals Card", async () => {
-    const { catalog } = createCatalog();
-    await submitApprovedTaskCard(catalog);
-    const toolResult = catalog.executeTool(
-      "thoth_submit_goals_card",
-      {
-        goals_card: {
-          title: "高性能快速排序",
-          summary: "按线性目标完成实现、验证和基准。",
-          goals_count_rationale: "这是单元测试级小任务，单个目标已经足够细粒度、线性且可 review。",
-          goals: [
-            {
-              id: "goal-1",
-              order: 1,
-              title: "排序能力",
-              goal: "提供可复用排序能力。",
-              constraints: ["保持接口清晰。"],
-              acceptance: ["排序结果正确。"],
-            },
-          ],
-        },
-        provenance: {
-          clarify_transcript_verbatim: "完整 Clarify 原文。",
-          approved_ceo_task_card_verbatim: "已确认 Task Card 原文。",
-        },
-      },
-      {
-        providerToolCall: {
-          provider: "codex",
-          threadId: "thread-1",
-          turnId: "turn-1",
-          callId: "call-goals",
-          toolName: "thoth_submit_goals_card",
-        },
-      },
-    );
-    await flushToolStart();
-
-    const cardId = takeOnlyPendingCardId();
-    answerPendingRuntimeDecision({
-      cardId,
-      submittedSummary: "已确认并按 Quick 前台执行",
-      answer: {
-        intent: "accept_quick",
-        card_id: cardId,
-        title: "高性能快速排序",
-        raw_answer: "确认按 Quick 前台执行",
-      },
-    });
-
-    const result = await toolResult;
-    expect(result.structuredContent).toMatchObject({ status: "awaiting_user", cardId });
-    expect(result.content.map((item) => item.text ?? "").join("\n")).toContain(
-      "Stop this turn and wait for the user's answer",
-    );
-  });
-
-  it("rejects a Goals Card before the user has approved a Task Card", async () => {
-    const { catalog, appendTimelineItem } = createCatalog();
-    const result = await catalog.executeTool(
-      "thoth_submit_goals_card",
-      {
-        goals_card: {
-          title: "不应跳过 Task 的 Goals",
-          summary: "验证不合法 authority 跳转会被拒绝。",
-          goals_count_rationale: "这是 transition guard 单元测试。",
-          goals: [
-            {
-              id: "goal-1",
-              order: 1,
-              title: "唯一检查点",
-              goal: "验证 transition guard。",
-              constraints: ["没有 Task Card。"],
-              acceptance: ["Goals Card 被拒绝。"],
-            },
-          ],
-        },
-        provenance: {
-          clarify_transcript_verbatim: "固定的 Clarify 原文。",
-          approved_ceo_task_card_verbatim: "不存在的 Task Card。",
-        },
-      },
-      {
-        providerToolCall: {
-          provider: "codex",
-          threadId: "thread-1",
-          turnId: "turn-1",
-          callId: "call-goals-without-task",
-          toolName: "thoth_submit_goals_card",
-        },
-      },
-    );
-
-    expect(result).toMatchObject({
-      isError: true,
-      structuredContent: { ok: false, status: "rejected" },
-    });
-    expect(result.content.map((item) => item.text).join("\n")).toContain(
-      "no user-approved Task Card",
-    );
-    expect(
-      currentAuthorityStore?.listAllCards().filter((card) => card.status === "pending"),
-    ).toHaveLength(0);
-    expect(appendTimelineItem).toHaveBeenCalledWith(
-      "agent-1",
-      expect.objectContaining({ type: "tool_call", status: "failed", name: "goals_approval" }),
-    );
-  });
-
-  it("uses public_badge_summary for Clarify timeline badges instead of legacy decision text", async () => {
-    const { catalog, appendTimelineItem } = createCatalog();
-    const toolResult = catalog.executeTool(
-      "thoth_submit_clarify_card",
-      {
-        title: "确认排序目标边界",
-        why_now: "这些选择会改变接口、性能基线和验收方式。",
-        decision_it_changes: "legacy internal generic decision text",
-        public_badge_summary: "正在拆解排序需求：先确认语言、交付形态和性能验收的材料分支。",
-        frontier_ledger: {
-          clarify_strength: "dive",
-          grounded_user_decisions: [],
-          remaining_material_user_owned_assumptions: ["语言", "交付形态", "性能基线"],
-          agent_owned_assumptions: ["具体 pivot 策略后续由 agent 决定。"],
-          discoverable_assumptions: ["仓库测试框架可由 agent 发现。"],
-          why_this_round: "这些答案决定后续实现路线和验收边界。",
-          convergence_state: "not_converged",
-        },
-        questions: [
+        effectiveStrength: "dive",
+        publicSummary: "The delivery boundary remains Human-owned.",
+        nodes: [
           {
-            id: "language",
-            question: "用什么语言实现？",
-            choices: [
-              { id: "cpp", label: "C++", description: "贴近系统性能" },
-              { id: "rust", label: "Rust", description: "安全且高性能" },
-            ],
-          },
-          {
-            id: "shape",
-            question: "最终交付成什么形态？",
-            choices: [
-              { id: "library", label: "库函数", description: "最小复用接口" },
-              { id: "cli", label: "命令行", description: "可传参运行" },
-            ],
-          },
-          {
-            id: "baseline",
-            question: "性能用什么方式验收？",
-            choices: [
-              { id: "bench", label: "跑基准", description: "给出耗时对比" },
-              { id: "tests", label: "测正确性", description: "正确性优先" },
-            ],
+            id: "delivery",
+            parentIds: [],
+            title: "Delivery boundary",
+            owner: "human",
+            materiality: "structural",
+            status: "awaiting_human",
+            resolutionRef: null,
+            sourceRefs: [],
           },
         ],
       },
-      {
-        providerToolCall: {
-          provider: "codex",
-          threadId: "thread-1",
-          turnId: "turn-1",
-          callId: "call-clarify",
-          toolName: "thoth_submit_clarify_card",
-        },
-      },
+      providerCall("thoth_clarify_update_map"),
     );
-    await flushToolStart();
+    const result = await catalog.executeTool(
+      "thoth_clarify_ask",
+      {
+        title: "Choose the delivery boundary",
+        whyNow: "This branch changes the public product contract.",
+        publicSummary: "Waiting for the delivery boundary decision.",
+        allowChoiceNotes: true,
+        allowNoteOnly: true,
+        allowSubtreeDelegation: true,
+        questions: [
+          {
+            nodeId: "delivery",
+            question: "Which delivery boundary should the task freeze?",
+            selectionMode: "single",
+            choices: [
+              { id: "library", label: "Library", description: "Reusable API" },
+              { id: "cli", label: "CLI", description: "Command-line product" },
+            ],
+            recommendedChoiceId: "library",
+          },
+        ],
+      },
+      providerCall("thoth_clarify_ask", "call-ask"),
+    );
 
-    const runningToolCall = appendTimelineItem.mock.calls.find(
-      ([, item]) => item.type === "tool_call" && item.callId === "call-clarify",
-    )?.[1];
-    expect(runningToolCall).toMatchObject({
-      detail: {
-        label: "需求拆解",
-        text: "正在拆解排序需求：先确认语言、交付形态和性能验收的材料分支。",
-      },
-      metadata: {
-        pendingAuthorityDecision: true,
-        roundIndex: 1,
-      },
+    expect(result.structuredContent).toMatchObject({ ok: true, status: "awaiting_user" });
+    expect(authority.getState("agent-1")).toMatchObject({
+      lifecycle: "awaiting_card",
+      pendingCard: { kind: "clarify_card" },
     });
-    expect(JSON.stringify(runningToolCall)).not.toContain("legacy internal generic decision text");
-
-    const cardId = takeOnlyPendingCardId();
-    answerPendingRuntimeDecision({
-      cardId,
-      submittedSummary: "已确认 3 个分支维度",
-      answer: {
-        intent: "submit_choices",
-        question_card_id: cardId,
-        title: "确认排序目标边界",
-        answers: [],
-        raw_answer: "选择第一项",
-      },
-    });
-    await toolResult;
+    expect(
+      gateway.isParkedProviderTurn({ agentId: "agent-1", providerTurnId: "provider-turn-1" }),
+    ).toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(cancelAgentRun).toHaveBeenCalledWith("agent-1");
+    expect(timeline.filter((item) => item.type === "clarify_card")).toHaveLength(1);
   });
 
-  it("seals provider dynamic-tool call ids into Loop phase results instead of trusting model-supplied ids", async () => {
-    const resolvePlanExecResult = vi.fn(() => true);
-    const resolveReviewVerdict = vi.fn(() => true);
-    const { catalog: planExecCatalog } = createCatalog({
-      enableLoopRuntimeTools: true,
-      loopPhase: "planexec",
-      toolGateway: {
-        beginForegroundTurn: () => {},
-        bindForegroundProviderTurn: () => {},
-        resetForTest: () => {},
-        submitPlanExec: resolvePlanExecResult,
-        submitReviewVerdict: resolveReviewVerdict,
-      } as unknown as ToolGateway,
-    });
-    const { catalog: reviewCatalog } = createCatalog({
-      enableLoopRuntimeTools: true,
-      loopPhase: "review",
-      toolGateway: {
-        beginForegroundTurn: () => {},
-        bindForegroundProviderTurn: () => {},
-        resetForTest: () => {},
-        submitPlanExec: resolvePlanExecResult,
-        submitReviewVerdict: resolveReviewVerdict,
-      } as unknown as ToolGateway,
-    });
-    const context = {
-      providerToolCall: {
-        provider: "codex",
-        threadId: "thread-loop",
-        turnId: "turn-loop",
-        callId: "provider-tool-call-1",
-        toolName: "thoth_loop_submit_planexec_result",
+  it("rejects duplicate, closed, non-Human, and low-value Clarify frontiers", async () => {
+    const { catalog } = createEnvironment({ scope: "clarify" });
+    await catalog.executeTool(
+      "thoth_clarify_update_map",
+      {
+        effectiveStrength: "dive",
+        publicSummary: "Expose valid and invalid frontier candidates.",
+        nodes: [
+          {
+            id: "human-open",
+            parentIds: [],
+            title: "Material Human choice",
+            owner: "human",
+            materiality: "material",
+            status: "open",
+            resolutionRef: null,
+            sourceRefs: [],
+          },
+          {
+            id: "human-resolved",
+            parentIds: [],
+            title: "Resolved Human choice",
+            owner: "human",
+            materiality: "material",
+            status: "resolved",
+            resolutionRef: "decision:resolved",
+            sourceRefs: [],
+          },
+          {
+            id: "workspace-fact",
+            parentIds: [],
+            title: "Discoverable Workspace fact",
+            owner: "evidence",
+            materiality: "material",
+            status: "open",
+            resolutionRef: null,
+            sourceRefs: [],
+          },
+          {
+            id: "local-detail",
+            parentIds: ["human-open"],
+            title: "Local implementation detail",
+            owner: "human",
+            materiality: "local",
+            status: "open",
+            resolutionRef: null,
+            sourceRefs: [],
+          },
+        ],
       },
+      providerCall("thoth_clarify_update_map", "call-invalid-map"),
+    );
+    const question = (nodeId: string) => ({
+      nodeId,
+      question: `Should the Human decide ${nodeId}?`,
+      selectionMode: "single" as const,
+      choices: [
+        { id: "yes", label: "Yes" },
+        { id: "no", label: "No" },
+      ],
+      recommendedChoiceId: "yes",
+    });
+    const ask = (nodeIds: string[]) => ({
+      title: "Invalid frontier probe",
+      whyNow: "Exercise the production frontier validator.",
+      publicSummary: "This invalid Card must be rejected.",
+      questions: nodeIds.map(question),
+    });
+
+    await expect(
+      catalog.executeTool(
+        "thoth_clarify_ask",
+        ask(["human-open", "human-open"]),
+        providerCall("thoth_clarify_ask", "call-duplicate"),
+      ),
+    ).rejects.toThrow(/duplicate_node/u);
+    await expect(
+      catalog.executeTool(
+        "thoth_clarify_ask",
+        ask(["human-resolved"]),
+        providerCall("thoth_clarify_ask", "call-resolved"),
+      ),
+    ).rejects.toThrow(/frontier_closed/u);
+    await expect(
+      catalog.executeTool(
+        "thoth_clarify_ask",
+        ask(["workspace-fact"]),
+        providerCall("thoth_clarify_ask", "call-evidence"),
+      ),
+    ).rejects.toThrow(/owner_not_human/u);
+    await expect(
+      catalog.executeTool(
+        "thoth_clarify_ask",
+        ask(["local-detail"]),
+        providerCall("thoth_clarify_ask", "call-local"),
+      ),
+    ).rejects.toThrow(/low_materiality/u);
+  });
+
+  it("proposes one Intent Contract only after the material frontier is resolved", async () => {
+    const { authority, catalog } = createEnvironment({ scope: "clarify" });
+    await catalog.executeTool(
+      "thoth_clarify_update_map",
+      resolvedMap,
+      providerCall("thoth_clarify_update_map"),
+    );
+    const result = await catalog.executeTool(
+      "thoth_clarify_propose_contract",
+      {
+        contract: {
+          title: "Final runtime boundary",
+          objective: "Ship one provider-neutral runtime boundary.",
+          nonGoals: ["Do not add a compatibility path."],
+          invariants: ["Task authority remains in the Workspace shard."],
+          acceptance: ["Every Provider passes the shared Harness conformance suite."],
+          riskBoundary: ["No hidden provider credentials are persisted."],
+          humanDecisionRefs: [],
+          escalationPolicy: { returnToHumanWhen: [], finalConfirmation: "automatic" },
+        },
+        decisionNodeRefs: ["objective"],
+        publicSummary: "The stable Intent Contract is ready for one fresh Challenger.",
+      },
+      providerCall("thoth_clarify_propose_contract", "call-contract"),
+    );
+
+    expect(result.structuredContent).toMatchObject({ ok: true, status: "challenging" });
+    expect(authority.getClarifySession("agent-1")).toMatchObject({
+      lifecycle: "proposing",
+      intentContract: {
+        status: "proposed",
+        objective: "Ship one provider-neutral runtime boundary.",
+      },
+    });
+    expect(authority.getState("agent-1").lifecycle).toBe("challenging");
+  });
+
+  it("delivers exactly one fresh Challenger judgment through its internal scope", async () => {
+    const waiting = waitForClarifyChallenge("agent-1");
+    const { catalog } = createEnvironment({ scope: "clarify_challenger" });
+    await expect(
+      catalog.executeTool("thoth_clarify_judge_contract", {
+        decision: "stable",
+        reason: "The contract preserves every material boundary.",
+        missingNodes: [],
+      }),
+    ).resolves.toMatchObject({ structuredContent: { ok: true } });
+    await expect(waiting).resolves.toEqual({
+      decision: "stable",
+      reason: "The contract preserves every material boundary.",
+      missingNodes: [],
+    });
+    await expect(
+      catalog.executeTool("thoth_clarify_judge_contract", {
+        decision: "stable",
+        reason: "A second judgment is forbidden.",
+        missingNodes: [],
+      }),
+    ).rejects.toThrow("No pending Clarify Challenger");
+  });
+
+  it("binds checkpoint identity from the active Execute generation", async () => {
+    const { catalog, sink } = createEnvironment({ scope: "loop_execute" });
+    const checkpoint = {
+      title: "Provider-neutral adapter landed",
+      activeGap: "Prove the adapter boundary.",
+      progressClaim: "The adapter now emits a durable receipt.",
+      unresolvedGap: "Run fresh independent Review.",
+      evidenceRefs: ["evidence-adapter-test"],
     };
-
-    await planExecCatalog.executeTool(
-      "thoth_loop_submit_planexec_result",
-      {
-        plan_summary: "Execute the current goal only.",
-        execution_summary: "Completed the current goal.",
-        evidence: ["Focused check passed."],
-        next_review_focus: "Verify the focused check.",
-      },
-      context,
-    );
-    await reviewCatalog.executeTool(
-      "thoth_loop_submit_review_verdict",
-      {
-        outcome: "pass",
-        summary: "Current goal is accepted.",
-        evidence_summary: "Focused check produced the expected proof.",
-      },
-      {
-        providerToolCall: {
-          ...context.providerToolCall,
-          callId: "provider-tool-call-2",
-          toolName: "thoth_loop_submit_review_verdict",
-        },
-      },
-    );
-
-    expect(resolvePlanExecResult).toHaveBeenCalledWith(
-      "agent-1",
-      expect.objectContaining({ plan_summary: "Execute the current goal only." }),
-      "turn-loop",
-      "provider-tool-call-1",
-    );
-    expect(resolveReviewVerdict).toHaveBeenCalledWith(
-      "agent-1",
-      expect.objectContaining({ outcome: "pass" }),
-      "turn-loop",
-      "provider-tool-call-2",
-    );
+    await expect(
+      catalog.executeTool(
+        "thoth_loop_checkpoint",
+        checkpoint,
+        providerCall("thoth_loop_checkpoint", "provider-call-checkpoint"),
+      ),
+    ).resolves.toMatchObject({ structuredContent: { ok: true, status: "accepted" } });
+    expect(sink.submitCheckpoint).toHaveBeenCalledWith({
+      binding: expect.objectContaining({
+        workspaceId: "workspace-test",
+        taskId: "task-1",
+        workUnitId: "work-unit-1",
+        cycleId: "cycle-1",
+        executionId: "execution-1",
+        generation: "generation-1",
+        phase: "execute",
+      }),
+      checkpoint,
+      providerTurnId: "provider-turn-1",
+      callId: "provider-call-checkpoint",
+    });
   });
 
-  it("registers only the semantic result tool for the active Loop phase", () => {
-    const { catalog: planExecCatalog } = createCatalog({
-      enableLoopRuntimeTools: true,
-      loopPhase: "planexec",
-    });
-    const { catalog: reviewCatalog } = createCatalog({
-      enableLoopRuntimeTools: true,
-      loopPhase: "review",
-    });
+  it("keeps fresh Review minimal and routes Human/blocker decisions through the same binding", async () => {
+    const { catalog, sink } = createEnvironment({ scope: "loop_review" });
+    const review = {
+      decision: "complete" as const,
+      reason: "Independent inspection proves the complete Task Anchor.",
+      evidenceRefs: ["evidence-review"],
+      nextFocus: "",
+      rejectedRoutes: [],
+      acceptanceEvidence: { "acceptance-1": ["evidence-review"] },
+    };
+    await catalog.executeTool(
+      "thoth_loop_review_decision",
+      review,
+      providerCall("thoth_loop_review_decision", "provider-call-review"),
+    );
+    expect(sink.submitReviewDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        review,
+        providerTurnId: "provider-turn-1",
+        callId: "provider-call-review",
+        binding: expect.objectContaining({ phase: "review", cycleId: "cycle-1" }),
+      }),
+    );
 
-    expect(planExecCatalog.getTool("thoth_loop_submit_planexec_result")).toBeDefined();
-    expect(planExecCatalog.getTool("thoth_loop_submit_review_verdict")).toBeUndefined();
-    expect(planExecCatalog.getTool("thoth_loop_report_blocked")).toBeDefined();
-    expect(reviewCatalog.getTool("thoth_loop_submit_planexec_result")).toBeUndefined();
-    expect(reviewCatalog.getTool("thoth_loop_submit_review_independent_assessment")).toBeDefined();
-    expect(reviewCatalog.getTool("thoth_loop_submit_review_verdict")).toBeDefined();
-    expect(reviewCatalog.getTool("thoth_loop_report_blocked")).toBeDefined();
+    const request = {
+      title: "Choose the new risk boundary",
+      question: "May this Task expand beyond the confirmed Workspace?",
+      affectedContractFields: ["riskBoundary"],
+      options: [
+        { id: "stay", label: "Stay scoped" },
+        { id: "expand", label: "Expand scope" },
+      ],
+    };
+    await catalog.executeTool(
+      "thoth_loop_request_human_decision",
+      request,
+      providerCall("thoth_loop_request_human_decision", "provider-call-human"),
+    );
+    expect(sink.requestHumanDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ request, callId: "provider-call-human" }),
+    );
+
+    const blocked = {
+      title: "External service unavailable",
+      reason: "The required service is offline.",
+    };
+    await expect(
+      catalog.executeTool(
+        "thoth_loop_report_blocked",
+        blocked,
+        providerCall("thoth_loop_report_blocked", "provider-call-blocked"),
+      ),
+    ).resolves.toMatchObject({ isError: true, structuredContent: { status: "blocked" } });
+    expect(sink.reportBlocked).toHaveBeenCalledWith(
+      expect.objectContaining({ report: blocked, callId: "provider-call-blocked" }),
+    );
   });
 });

@@ -6,7 +6,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { RuntimeAttachmentReceipt } from "@thoth/drivers/harness";
 import { WorkspaceCatalogStore } from "./catalog-store.js";
 import { WorkspaceAuthorityStore } from "./workspace-authority-store.js";
-import { createProviderTurnInteractionState, reduceProviderTurnInteraction } from "@thoth/core";
+import {
+  createProviderTurnInteractionState,
+  createTaskAuthority,
+  reduceProviderTurnInteraction,
+} from "@thoth/core";
+import type { ExecutionProjection } from "@thoth/protocol/task-authority";
 
 const roots: string[] = [];
 
@@ -30,44 +35,126 @@ function createStore() {
 }
 
 function createTask(store: WorkspaceAuthorityStore) {
-  const task = {
+  const now = "2026-07-20T00:00:00.000Z";
+  store.upsertAgentRecord({
+    id: "agent_visible",
+    provider: "fixture",
+    cwd: "/workspace",
+    workspaceId: "wks_test",
+    createdAt: now,
+    updatedAt: now,
+    labels: {},
+    lastStatus: "idle",
+    providerRunMode: "default",
+    providerControlRevision: 0,
+  });
+  const task = createTaskAuthority({
     id: "task_test",
     workspaceId: "wks_test",
+    sourceAgentWorkspaceId: "wks_test",
     sourceAgentId: "agent_visible",
     mode: "loop",
-    title: "Exercise the final authority",
-    goal: "Prove Task and Execution identities stay separate.",
-    constraints: ["No provider-specific authority"],
-    acceptance: ["Stop fences the active execution"],
-    status: "queued",
-    summary: "Queued",
-    currentGoalId: "goal_1",
-    currentExecutionId: null,
-    goals: [
-      {
-        id: "goal_1",
-        order: 1,
-        title: "Run one phase",
-        goal: "Run one phase through the authority store.",
-        constraints: ["Keep Task Truth semantic"],
-        acceptance: ["Execution has its own lifecycle"],
-        status: "queued",
-        revision: 0,
-      },
-    ],
-    latestReviewDirection: null,
-    revision: 1,
-    createdAt: "2026-07-20T00:00:00.000Z",
-    updatedAt: "2026-07-20T00:00:00.000Z",
-  };
+    intentContract: {
+      id: "intent-contract-test",
+      workspaceId: "wks_test",
+      sourceAgentId: "agent_visible",
+      taskId: null,
+      title: "Exercise the final authority",
+      objective: "Prove Task and Execution identities stay separate.",
+      nonGoals: [],
+      invariants: ["No provider-specific authority"],
+      acceptanceClaims: [
+        {
+          id: "acceptance-claim-stop",
+          statement: "Stop fences the active execution",
+          status: "open",
+          evidenceRefs: [],
+          revision: 1,
+        },
+      ],
+      riskBoundary: [],
+      humanDecisionRefs: [],
+      escalationPolicy: { returnToHumanWhen: [], finalConfirmation: "automatic" },
+      status: "confirmed",
+      revision: 1,
+      confirmedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    },
+    strength: "balanced",
+    now,
+  });
   return store.registerTask({
     task,
     sourceTurnId: "source-turn-test",
-    sourceGoalsCardId: "source-goals-card-test",
+    sourceContractCardId: "source-contract-card-test",
     providerProfileId: "provider-profile-test",
-    taskContract: { title: task.title, goal: task.goal },
-    goalsContract: { goals: task.goals },
   }).task;
+}
+
+function createLoopExecution(
+  store: WorkspaceAuthorityStore,
+  input: {
+    id: string;
+    status: ExecutionProjection["status"];
+    generation: string;
+    threadId: string;
+    phase?: "execute" | "review";
+    providerThread?: {
+      id: string;
+      adapterId: string;
+      nativeHandle?: string | null;
+      persistence?: Record<string, unknown> | null;
+      lineageParentId?: string | null;
+    };
+  },
+) {
+  const phase = input.phase ?? "execute";
+  const cycleId = `cycle-${input.id}`;
+  const workUnit =
+    phase === "execute"
+      ? {
+          id: `work-unit-${input.id}`,
+          taskId: "task_test",
+          cycleId,
+          title: "Current gap",
+          activeGap: "Prove Task and Execution identities stay separate.",
+          progressClaim: "No checkpoint has been submitted.",
+          unresolvedGap: "Prove Task and Execution identities stay separate.",
+          evidenceRefs: [],
+          status: "active" as const,
+          revision: 1,
+          createdAt: "2026-07-20T00:00:01.000Z",
+          updatedAt: "2026-07-20T00:00:01.000Z",
+        }
+      : undefined;
+  return store.createExecution({
+    execution: {
+      id: input.id,
+      taskId: "task_test",
+      workUnitId: workUnit?.id ?? null,
+      cycleId,
+      phase,
+      providerThreadId: input.threadId,
+      status: input.status,
+      generation: input.generation,
+      attachment: null,
+      runModeReceipt: null,
+      pendingApproval: null,
+      startedAt: "2026-07-20T00:00:01.000Z",
+      lastActivityAt: "2026-07-20T00:00:01.000Z",
+      completedAt: null,
+      summary: null,
+      revision: 1,
+    },
+    cycle: {
+      id: cycleId,
+      status: phase === "review" ? "reviewing" : "active",
+      startedAt: "2026-07-20T00:00:01.000Z",
+    },
+    ...(workUnit ? { workUnit } : {}),
+    providerThread: input.providerThread ?? { id: input.threadId, adapterId: "fixture" },
+  });
 }
 
 afterEach(() => {
@@ -188,24 +275,11 @@ describe("WorkspaceAuthorityStore", () => {
   it("stores normalized Task and Execution projections without full projection events", () => {
     const { root, catalog, store } = createStore();
     createTask(store);
-    const execution = store.createExecution({
-      execution: {
-        id: "execution_1",
-        taskId: "task_test",
-        goalId: "goal_1",
-        phaseRunId: "phase_1",
-        phase: "planexec",
-        providerThreadId: "thread_1",
-        status: "running",
-        generation: "generation_1",
-        attachment: null,
-        startedAt: "2026-07-20T00:00:01.000Z",
-        lastActivityAt: "2026-07-20T00:00:01.000Z",
-        completedAt: null,
-        summary: null,
-        revision: 1,
-      },
-      providerThread: { id: "thread_1", adapterId: "fixture" },
+    const execution = createLoopExecution(store, {
+      id: "execution_1",
+      threadId: "thread_1",
+      status: "running",
+      generation: "generation_1",
     });
     expect(execution.status).toBe("running");
     expect(store.getTask("task_test")?.currentExecutionId).toBe("execution_1");
@@ -224,7 +298,7 @@ describe("WorkspaceAuthorityStore", () => {
           .prepare("SELECT authority_revision FROM workspace_meta WHERE workspace_id = ?")
           .get("wks_test") as { authority_revision: number }
       ).authority_revision,
-    ).toBe(2);
+    ).toBe(3);
     db.close();
     store.close();
     catalog.close();
@@ -233,23 +307,11 @@ describe("WorkspaceAuthorityStore", () => {
   it("never resumes unavailable legacy context and records an explicit replacement lineage", () => {
     const { catalog, store } = createStore();
     createTask(store);
-    const legacy = store.createExecution({
-      execution: {
-        id: "execution_legacy",
-        taskId: "task_test",
-        goalId: "goal_1",
-        phaseRunId: "phase_legacy",
-        phase: "planexec",
-        providerThreadId: "thread_legacy",
-        status: "starting",
-        generation: "generation_legacy",
-        attachment: null,
-        startedAt: "2026-07-20T00:00:01.000Z",
-        lastActivityAt: "2026-07-20T00:00:01.000Z",
-        completedAt: null,
-        summary: null,
-        revision: 1,
-      },
+    const legacy = createLoopExecution(store, {
+      id: "execution_legacy",
+      threadId: "thread_legacy",
+      status: "starting",
+      generation: "generation_legacy",
       providerThread: {
         id: "thread_legacy",
         adapterId: "fixture",
@@ -266,38 +328,24 @@ describe("WorkspaceAuthorityStore", () => {
       }),
     ).toBe(true);
     expect(
-      store.updateExecution({
+      store.interruptExecution({
         executionId: legacy.id,
         generation: legacy.generation,
-        expectedRevision: legacy.revision,
-        status: "orphaned",
         summary: "Native context is unavailable.",
       }),
-    ).toMatchObject({ status: "orphaned" });
+    ).toBe(true);
 
-    expect(store.findLatestPlanExecThread("task_test", "goal_1")).toBeNull();
-    expect(store.findLatestPlanExecLineageThread("task_test", "goal_1")).toMatchObject({
+    expect(store.findLatestExecuteThread("task_test")).toBeNull();
+    expect(store.findLatestExecuteLineageThread("task_test")).toMatchObject({
       id: "thread_legacy",
       status: "native_context_unavailable",
     });
 
-    store.createExecution({
-      execution: {
-        id: "execution_replacement",
-        taskId: "task_test",
-        goalId: "goal_1",
-        phaseRunId: "phase_replacement",
-        phase: "planexec",
-        providerThreadId: "thread_replacement",
-        status: "starting",
-        generation: "generation_replacement",
-        attachment: null,
-        startedAt: "2026-07-20T00:00:03.000Z",
-        lastActivityAt: "2026-07-20T00:00:03.000Z",
-        completedAt: null,
-        summary: null,
-        revision: 1,
-      },
+    createLoopExecution(store, {
+      id: "execution_replacement",
+      threadId: "thread_replacement",
+      status: "starting",
+      generation: "generation_replacement",
       providerThread: {
         id: "thread_replacement",
         adapterId: "fixture",
@@ -315,24 +363,11 @@ describe("WorkspaceAuthorityStore", () => {
   it("rejects a replayed turn_started event after semantic execution success", () => {
     const { catalog, store } = createStore();
     createTask(store);
-    store.createExecution({
-      execution: {
-        id: "execution_terminal",
-        taskId: "task_test",
-        goalId: "goal_1",
-        phaseRunId: "phase_terminal",
-        phase: "planexec",
-        providerThreadId: "thread_terminal",
-        status: "running",
-        generation: "generation_terminal",
-        attachment: null,
-        startedAt: "2026-07-20T00:00:01.000Z",
-        lastActivityAt: "2026-07-20T00:00:01.000Z",
-        completedAt: null,
-        summary: null,
-        revision: 1,
-      },
-      providerThread: { id: "thread_terminal", adapterId: "fixture" },
+    createLoopExecution(store, {
+      id: "execution_terminal",
+      threadId: "thread_terminal",
+      status: "running",
+      generation: "generation_terminal",
     });
     const succeeded = store.updateExecution({
       executionId: "execution_terminal",
@@ -381,9 +416,9 @@ describe("WorkspaceAuthorityStore", () => {
     const decisions = store.listDecisions("task_test");
     expect(decisions).toHaveLength(1);
     expect(decisions[0]).toMatchObject({
-      displayed: { command: "pause", taskId: "task_test" },
-      rawAnswer: { command: "pause" },
-      normalized: { controlIntent: "pause" },
+      displayed: { command: "pause" },
+      rawAnswer: "pause",
+      normalized: { command: "pause", resultingStatus: "paused" },
       deviceId: "device_1",
       fidelity: "exact",
     });
@@ -394,24 +429,11 @@ describe("WorkspaceAuthorityStore", () => {
   it("records provider permission before execution resumes and preserves the displayed payload", () => {
     const { catalog, store } = createStore();
     createTask(store);
-    store.createExecution({
-      execution: {
-        id: "execution_permission",
-        taskId: "task_test",
-        goalId: "goal_1",
-        phaseRunId: "phase_permission",
-        phase: "planexec",
-        providerThreadId: "thread_permission",
-        status: "awaiting_provider",
-        generation: "generation_permission",
-        attachment: null,
-        startedAt: "2026-07-20T00:00:01.000Z",
-        lastActivityAt: "2026-07-20T00:00:01.000Z",
-        completedAt: null,
-        summary: null,
-        revision: 1,
-      },
-      providerThread: { id: "thread_permission", adapterId: "fixture" },
+    createLoopExecution(store, {
+      id: "execution_permission",
+      threadId: "thread_permission",
+      status: "awaiting_provider",
+      generation: "generation_permission",
     });
     const revision = store.getTask("task_test")!.revision;
     const input = {
@@ -444,10 +466,10 @@ describe("WorkspaceAuthorityStore", () => {
     expect(
       store
         .getTaskContext("task_test")
-        ?.blackboard.some(
-          (entry) =>
-            entry.kind === "human_decision" &&
-            (entry.content as { requestId?: unknown }).requestId === "permission_1",
+        ?.decisions.some(
+          (decision) =>
+            decision.kind === "provider_permission" &&
+            (decision.displayed as { id?: unknown }).id === "permission_1",
         ),
     ).toBe(true);
 
@@ -462,24 +484,11 @@ describe("WorkspaceAuthorityStore", () => {
   it("resolves execution approvals with CAS, command idempotency, and an honest resolution actor", () => {
     const { catalog, store } = createStore();
     createTask(store);
-    store.createExecution({
-      execution: {
-        id: "execution_approval",
-        taskId: "task_test",
-        goalId: "goal_1",
-        phaseRunId: "phase_approval",
-        phase: "planexec",
-        providerThreadId: "thread_approval",
-        status: "planning",
-        generation: "generation_approval",
-        attachment: null,
-        startedAt: "2026-07-22T00:00:00.000Z",
-        lastActivityAt: "2026-07-22T00:00:00.000Z",
-        completedAt: null,
-        summary: null,
-        revision: 1,
-      },
-      providerThread: { id: "thread_approval", adapterId: "fixture" },
+    createLoopExecution(store, {
+      id: "execution_approval",
+      threadId: "thread_approval",
+      status: "planning",
+      generation: "generation_approval",
     });
     const approval = store.createExecutionApproval({
       executionId: "execution_approval",
@@ -522,7 +531,7 @@ describe("WorkspaceAuthorityStore", () => {
     expect(store.listDecisions("task_test").at(-1)).toMatchObject({
       kind: "execution_approval",
       actorId: "human:user-1",
-      rawAnswer: { decision: "implement" },
+      rawAnswer: "implement",
     });
 
     expect(
@@ -557,7 +566,7 @@ describe("WorkspaceAuthorityStore", () => {
         clientId: "daemon",
         recordHumanDecision: false,
       }),
-    ).toThrow("changed before this decision");
+    ).toThrow("no longer pending");
     expect(store.getExecutionApproval(approval.id)?.resolution?.actorId).toBe("human:user-1");
     store.close();
     catalog.close();
@@ -566,24 +575,12 @@ describe("WorkspaceAuthorityStore", () => {
   it("never admits provider questions into the background approval authority", () => {
     const { catalog, store } = createStore();
     createTask(store);
-    store.createExecution({
-      execution: {
-        id: "execution_question",
-        taskId: "task_test",
-        goalId: "goal_1",
-        phaseRunId: "phase_question",
-        phase: "review",
-        providerThreadId: "thread_question",
-        status: "running",
-        generation: "generation_question",
-        attachment: null,
-        startedAt: "2026-07-22T00:00:00.000Z",
-        lastActivityAt: "2026-07-22T00:00:00.000Z",
-        completedAt: null,
-        summary: null,
-        revision: 1,
-      },
-      providerThread: { id: "thread_question", adapterId: "fixture" },
+    createLoopExecution(store, {
+      id: "execution_question",
+      threadId: "thread_question",
+      status: "running",
+      generation: "generation_question",
+      phase: "review",
     });
 
     expect(() =>
@@ -730,24 +727,11 @@ describe("WorkspaceAuthorityStore", () => {
   it("commits Stop before interrupt completion and never projects a running spinner state", () => {
     const { catalog, store } = createStore();
     createTask(store);
-    store.createExecution({
-      execution: {
-        id: "execution_stop",
-        taskId: "task_test",
-        goalId: "goal_1",
-        phaseRunId: "phase_stop",
-        phase: "planexec",
-        providerThreadId: "thread_stop",
-        status: "awaiting_provider",
-        generation: "generation_stop",
-        attachment: null,
-        startedAt: "2026-07-20T00:00:01.000Z",
-        lastActivityAt: "2026-07-20T00:00:01.000Z",
-        completedAt: null,
-        summary: null,
-        revision: 1,
-      },
-      providerThread: { id: "thread_stop", adapterId: "fixture" },
+    createLoopExecution(store, {
+      id: "execution_stop",
+      threadId: "thread_stop",
+      status: "awaiting_provider",
+      generation: "generation_stop",
     });
     const approval = store.createExecutionApproval({
       executionId: "execution_stop",
@@ -777,6 +761,20 @@ describe("WorkspaceAuthorityStore", () => {
       status: "canceled",
       deadlineAt: null,
     });
+    expect(() =>
+      store.acceptExecutorCheckpoint({
+        executionId: "execution_stop",
+        generation: "generation_stop",
+        checkpoint: {
+          title: "Late checkpoint",
+          activeGap: "Stop already owns this execution.",
+          progressClaim: "This stale claim must not advance the Task.",
+          unresolvedGap: "None",
+          evidenceRefs: [],
+        },
+        callId: "late-checkpoint-after-stop",
+      }),
+    ).toThrow(/no longer owns Task mutation authority/u);
     expect(
       store.interruptExecution({
         executionId: "execution_stop",
@@ -810,24 +808,11 @@ describe("WorkspaceAuthorityStore", () => {
   it("interrupts an unrecoverable pending approval on daemon restart", () => {
     const { catalog, store } = createStore();
     createTask(store);
-    store.createExecution({
-      execution: {
-        id: "execution_restart_approval",
-        taskId: "task_test",
-        goalId: "goal_1",
-        phaseRunId: "phase_restart_approval",
-        phase: "planexec",
-        providerThreadId: "thread_restart_approval",
-        status: "planning",
-        generation: "generation_restart_approval",
-        attachment: null,
-        startedAt: "2026-07-22T00:00:00.000Z",
-        lastActivityAt: "2026-07-22T00:00:00.000Z",
-        completedAt: null,
-        summary: null,
-        revision: 1,
-      },
-      providerThread: { id: "thread_restart_approval", adapterId: "fixture" },
+    createLoopExecution(store, {
+      id: "execution_restart_approval",
+      threadId: "thread_restart_approval",
+      status: "planning",
+      generation: "generation_restart_approval",
     });
     const approval = store.createExecutionApproval({
       executionId: "execution_restart_approval",
@@ -845,40 +830,27 @@ describe("WorkspaceAuthorityStore", () => {
 
     expect(store.recoverInterruptedExecutionsAfterRestart()).toEqual(["task_test"]);
     expect(store.getExecution("execution_restart_approval")).toMatchObject({
-      status: "failed",
-      summary: expect.stringContaining("approval callback was pending"),
+      status: "canceled",
+      summary: expect.stringContaining("Daemon restarted"),
       pendingApproval: null,
     });
     expect(store.getExecutionApproval(approval.id)?.status).toBe("canceled");
     expect(store.getTask("task_test")).toMatchObject({
-      status: "interrupted",
+      status: "reorienting",
       currentExecutionId: null,
     });
     store.close();
     catalog.close();
   });
 
-  it("pauses atomically after PlanExec and resumes at the Review boundary", () => {
+  it("pauses atomically after an Executor checkpoint and resumes at the Review boundary", () => {
     const { catalog, store } = createStore();
     createTask(store);
-    store.createExecution({
-      execution: {
-        id: "execution_pause",
-        taskId: "task_test",
-        goalId: "goal_1",
-        phaseRunId: "phase_pause",
-        phase: "planexec",
-        providerThreadId: "thread_pause",
-        status: "awaiting_provider",
-        generation: "generation_pause",
-        attachment: null,
-        startedAt: "2026-07-20T00:00:01.000Z",
-        lastActivityAt: "2026-07-20T00:00:01.000Z",
-        completedAt: null,
-        summary: null,
-        revision: 1,
-      },
-      providerThread: { id: "thread_pause", adapterId: "fixture" },
+    createLoopExecution(store, {
+      id: "execution_pause",
+      threadId: "thread_pause",
+      status: "awaiting_provider",
+      generation: "generation_pause",
     });
     store.recordAttachment({
       executionId: "execution_pause",
@@ -905,18 +877,17 @@ describe("WorkspaceAuthorityStore", () => {
     expect(requested.task.pendingControl).toBe("pause");
 
     expect(
-      store.acceptPlanExecResult({
+      store.acceptExecutorCheckpoint({
         executionId: "execution_pause",
         generation: "generation_pause",
-        result: {
-          plan_summary: "Complete the approved PlanExec checkpoint.",
-          execution_summary: "The approved PlanExec checkpoint completed.",
-          evidence: ["The semantic result was accepted."],
-          validation_performed: ["Checked the phase boundary."],
-          remaining_risks: [],
-          next_review_focus: "Run the independent Review after Resume.",
+        checkpoint: {
+          title: "Completed checkpoint",
+          activeGap: "Prove Task and Execution identities stay separate.",
+          progressClaim: "The approved execution checkpoint completed.",
+          unresolvedGap: "Run the independent Review after Resume.",
+          evidenceRefs: ["evidence-semantic-result"],
         },
-        callId: "planexec_result",
+        callId: "executor-checkpoint",
       }),
     ).toBe(true);
     const paused = store.getTask("task_test")!;
@@ -935,7 +906,7 @@ describe("WorkspaceAuthorityStore", () => {
       actorId: "human",
       clientId: "desktop",
     });
-    expect(resumed.task).toMatchObject({ status: "queued", currentGoalId: "goal_1" });
+    expect(resumed.task).toMatchObject({ status: "reorienting", pendingControl: null });
     store.close();
     catalog.close();
   });
@@ -943,24 +914,12 @@ describe("WorkspaceAuthorityStore", () => {
   it("requires a durable RuntimeBundle attachment receipt for an execution", () => {
     const { catalog, store } = createStore();
     createTask(store);
-    store.createExecution({
-      execution: {
-        id: "execution_bundle",
-        taskId: "task_test",
-        goalId: "goal_1",
-        phaseRunId: "phase_bundle",
-        phase: "review",
-        providerThreadId: "thread_bundle",
-        status: "starting",
-        generation: "generation_bundle",
-        attachment: null,
-        startedAt: "2026-07-20T00:00:01.000Z",
-        lastActivityAt: "2026-07-20T00:00:01.000Z",
-        completedAt: null,
-        summary: null,
-        revision: 1,
-      },
-      providerThread: { id: "thread_bundle", adapterId: "fixture" },
+    createLoopExecution(store, {
+      id: "execution_bundle",
+      threadId: "thread_bundle",
+      status: "starting",
+      generation: "generation_bundle",
+      phase: "review",
     });
     const receipt: RuntimeAttachmentReceipt = {
       id: "attachment_1",
@@ -985,27 +944,18 @@ describe("WorkspaceAuthorityStore", () => {
     const { catalog, store } = createStore();
     createTask(store);
     const context = store.getTaskContext("task_test");
-    expect(context?.blackboard.map((item) => item.kind)).toEqual([
-      "task_contract",
-      "goal_contract",
-    ]);
-    const entry = context!.blackboard[0]!;
+    expect(context?.task.intentContract).toMatchObject({
+      objective: "Prove Task and Execution identities stay separate.",
+      invariants: ["No provider-specific authority"],
+    });
+    expect(context?.task.workingSet.activeGap).toBe(
+      "Prove Task and Execution identities stay separate.",
+    );
+    expect(context?.decisions).toEqual([]);
+    expect(context?.evidence).toEqual([]);
     const serialized = JSON.stringify(context);
     expect(serialized).not.toContain("generation");
     expect(serialized).not.toContain("providerThreadId");
-    expect(
-      readFileSync(
-        entry.contentDigest
-          ? path.join(
-              store.workspaceRoot,
-              "blobs",
-              "sha256",
-              entry.contentDigest.slice(0, 2),
-              entry.contentDigest,
-            )
-          : "",
-      ),
-    ).toBeTruthy();
     store.close();
     catalog.close();
   });

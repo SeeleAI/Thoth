@@ -45,7 +45,7 @@ export interface RuntimeBundle {
 export interface RuntimeBundleActivation {
   bundleId: RuntimeBundle["id"];
   bundleDigest: RuntimeBundle["digest"];
-  scope: "clarify" | "clarify_audit" | "contract_audit" | "loop_planexec" | "loop_review";
+  scope: "clarify" | "clarify_challenger" | "loop_execute" | "loop_review";
   generation: string;
 }
 

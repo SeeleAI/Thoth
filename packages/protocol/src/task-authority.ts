@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { IntentContractProjectionSchema } from "./intent-contract.js";
 import { ProviderRunModeReceiptSchema } from "./provider-control.js";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
@@ -6,8 +7,10 @@ const NonEmptyStringSchema = z.string().trim().min(1);
 export const TaskExecutionModeSchema = z.enum(["quick", "loop"]);
 export const TaskLifecycleSchema = z.enum([
   "queued",
+  "reorienting",
   "running",
   "awaiting_user",
+  "awaiting_user_final",
   "paused",
   "stopping",
   "stopped",
@@ -16,25 +19,24 @@ export const TaskLifecycleSchema = z.enum([
   "completed",
   "interrupted",
 ]);
-export const TaskGoalLifecycleSchema = z.enum([
-  "queued",
-  "running",
-  "awaiting_user",
-  "passed",
-  "paused",
-  "stopped",
-  "blocked",
-  "interrupted",
-]);
-export const PhaseRunKindSchema = z.enum(["quick_exec", "planexec", "review", "audit"]);
+export const TaskExecutionPhaseSchema = z.enum(["quick_exec", "execute", "review"]);
 export const TaskStrengthSchema = z.enum(["single", "light", "balanced", "infinite"]);
+export const TaskCompletionAuthoritySchema = z.enum([
+  "none",
+  "executor_unreviewed",
+  "review_verified",
+  "human_accepted",
+  "legacy",
+]);
 export const ExecutionLifecycleSchema = z.enum([
   "created",
   "starting",
+  "orienting",
   "planning",
   "awaiting_implementation",
   "implementing",
   "running",
+  "reviewing",
   "awaiting_provider",
   "awaiting_user",
   "cancel_requested",
@@ -122,16 +124,77 @@ export const HumanDecisionRecordSchema = z
   })
   .strict();
 
-export const TaskGoalProjectionSchema = z
+export const EvidenceRefSchema = z
   .object({
     id: NonEmptyStringSchema,
-    order: z.number().int().positive(),
+    taskId: NonEmptyStringSchema,
+    executionId: NonEmptyStringSchema.nullable(),
+    workUnitId: NonEmptyStringSchema.nullable(),
+    kind: NonEmptyStringSchema,
+    summary: NonEmptyStringSchema,
+    contentDigest: NonEmptyStringSchema,
+    artifactRef: NonEmptyStringSchema.nullable(),
+    createdAt: NonEmptyStringSchema,
+  })
+  .strict();
+
+export const TaskWorkingSetProjectionSchema = z
+  .object({
+    taskId: NonEmptyStringSchema,
+    activeGap: NonEmptyStringSchema,
+    currentUnderstanding: NonEmptyStringSchema,
+    currentHypothesis: z.string(),
+    nextMove: z.string(),
+    relevantEvidenceRefs: z.array(NonEmptyStringSchema),
+    rejectedRoutes: z.array(NonEmptyStringSchema),
+    blockers: z.array(NonEmptyStringSchema),
+    latestReviewDecisionId: NonEmptyStringSchema.nullable(),
+    noProgressCount: z.number().int().nonnegative(),
+    revision: z.number().int().positive(),
+    updatedAt: NonEmptyStringSchema,
+  })
+  .strict();
+
+export const WorkUnitLifecycleSchema = z.enum(["active", "completed", "abandoned", "blocked"]);
+
+export const WorkUnitProjectionSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    taskId: NonEmptyStringSchema,
+    cycleId: NonEmptyStringSchema,
     title: NonEmptyStringSchema,
-    goal: NonEmptyStringSchema,
-    constraints: z.array(NonEmptyStringSchema),
-    acceptance: z.array(NonEmptyStringSchema).min(1),
-    status: TaskGoalLifecycleSchema,
-    revision: z.number().int().nonnegative(),
+    activeGap: NonEmptyStringSchema,
+    progressClaim: NonEmptyStringSchema,
+    unresolvedGap: z.string(),
+    evidenceRefs: z.array(NonEmptyStringSchema),
+    status: WorkUnitLifecycleSchema,
+    revision: z.number().int().positive(),
+    createdAt: NonEmptyStringSchema,
+    updatedAt: NonEmptyStringSchema,
+  })
+  .strict();
+
+export const ReviewDecisionKindSchema = z.enum([
+  "continue",
+  "reorient",
+  "complete",
+  "need_human",
+  "blocked",
+]);
+
+export const ReviewDecisionProjectionSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    taskId: NonEmptyStringSchema,
+    cycleId: NonEmptyStringSchema,
+    executionId: NonEmptyStringSchema,
+    decision: ReviewDecisionKindSchema,
+    reason: NonEmptyStringSchema,
+    evidenceRefs: z.array(NonEmptyStringSchema),
+    nextFocus: z.string().nullable(),
+    rejectedRoutes: z.array(NonEmptyStringSchema),
+    acceptanceEvidence: z.record(NonEmptyStringSchema, z.array(NonEmptyStringSchema)),
+    createdAt: NonEmptyStringSchema,
   })
   .strict();
 
@@ -146,8 +209,10 @@ export const TaskUserDecisionOptionSchema = z
 export const TaskUserDecisionProjectionSchema = z
   .object({
     id: NonEmptyStringSchema,
+    kind: z.enum(["contract_change", "final_confirmation"]),
     title: NonEmptyStringSchema,
     question: NonEmptyStringSchema,
+    affectedContractFields: z.array(NonEmptyStringSchema),
     options: z.array(TaskUserDecisionOptionSchema).min(2).max(4),
     notePlaceholder: z.string().optional(),
     createdAt: NonEmptyStringSchema,
@@ -158,9 +223,9 @@ export const ExecutionProjectionSchema = z
   .object({
     id: NonEmptyStringSchema,
     taskId: NonEmptyStringSchema,
-    goalId: NonEmptyStringSchema.nullable(),
-    phaseRunId: NonEmptyStringSchema,
-    phase: PhaseRunKindSchema,
+    workUnitId: NonEmptyStringSchema.nullable(),
+    cycleId: NonEmptyStringSchema.nullable(),
+    phase: TaskExecutionPhaseSchema,
     providerThreadId: NonEmptyStringSchema.nullable(),
     status: ExecutionLifecycleSchema,
     generation: NonEmptyStringSchema,
@@ -191,38 +256,31 @@ export const TaskProjectionSchema = z
   .object({
     id: NonEmptyStringSchema,
     workspaceId: NonEmptyStringSchema,
+    sourceAgentWorkspaceId: NonEmptyStringSchema,
     sourceAgentId: NonEmptyStringSchema,
     mode: TaskExecutionModeSchema,
     title: NonEmptyStringSchema,
-    goal: NonEmptyStringSchema,
-    constraints: z.array(NonEmptyStringSchema),
-    acceptance: z.array(NonEmptyStringSchema).min(1),
+    intentContract: IntentContractProjectionSchema,
     status: TaskLifecycleSchema,
     summary: z.string(),
-    currentGoalId: NonEmptyStringSchema.nullable(),
     currentExecutionId: NonEmptyStringSchema.nullable(),
-    goals: z.array(TaskGoalProjectionSchema).min(1),
-    latestReviewDirection: z.string().nullable(),
+    currentWorkUnitId: NonEmptyStringSchema.nullable(),
+    workingSet: TaskWorkingSetProjectionSchema,
+    workUnits: z.array(WorkUnitProjectionSchema),
+    latestReview: ReviewDecisionProjectionSchema.nullable(),
+    completionAuthority: TaskCompletionAuthoritySchema,
     origin: TaskOriginSchema.nullable().default(null),
     pendingDecision: TaskUserDecisionProjectionSchema.nullable().default(null),
     budget: z
       .object({
         strength: TaskStrengthSchema,
-        usedFailedReviews: z.number().int().nonnegative(),
-        maxFailedReviews: z.number().int().positive(),
+        usedNonCompleteReviews: z.number().int().nonnegative(),
+        maxNonCompleteReviews: z.number().int().positive().nullable(),
         activeDurationMs: z.number().int().nonnegative(),
         tokenCount: z.number().int().nonnegative(),
         toolCallCount: z.number().int().nonnegative(),
       })
-      .strict()
-      .default({
-        strength: "single",
-        usedFailedReviews: 0,
-        maxFailedReviews: 1,
-        activeDurationMs: 0,
-        tokenCount: 0,
-        toolCallCount: 0,
-      }),
+      .strict(),
     pendingControl: z
       .enum(["pause", "resume", "stop", "raise_budget", "review_only"])
       .nullable()
@@ -233,36 +291,12 @@ export const TaskProjectionSchema = z
   })
   .strict();
 
-export const TaskBlackboardEntrySchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    taskId: NonEmptyStringSchema,
-    kind: z.enum([
-      "task_contract",
-      "goal_contract",
-      "human_decision",
-      "workspace_fact",
-      "planexec_report",
-      "review_direction",
-      "review_assessment",
-      "evidence_summary",
-      "blocker",
-      "user_decision_request",
-      "replan_proposal",
-    ]),
-    producer: z.enum(["user", "secretary", "planexec", "review", "daemon"]),
-    content: z.unknown(),
-    contentDigest: NonEmptyStringSchema,
-    createdAt: NonEmptyStringSchema,
-  })
-  .strict();
-
 export const TaskContextEnvelopeSchema = z
   .object({
     reference: TaskContextReferenceSchema,
     task: TaskProjectionSchema,
     decisions: z.array(HumanDecisionRecordSchema),
-    blackboard: z.array(TaskBlackboardEntrySchema),
+    evidence: z.array(EvidenceRefSchema),
     generatedAt: NonEmptyStringSchema,
   })
   .strict();
@@ -366,6 +400,8 @@ export const TaskGetResponseSchema = z.object({
     task: TaskProjectionSchema.nullable(),
     executions: z.array(ExecutionProjectionSchema),
     decisions: z.array(HumanDecisionRecordSchema),
+    reviews: z.array(ReviewDecisionProjectionSchema),
+    evidence: z.array(EvidenceRefSchema),
     error: z.string().nullable(),
   }),
 });
@@ -449,6 +485,7 @@ export const WorkspaceAuthorityUpdateSchema = z.object({
 export type TaskExecutionMode = z.infer<typeof TaskExecutionModeSchema>;
 export type TaskStrength = z.infer<typeof TaskStrengthSchema>;
 export type TaskLifecycle = z.infer<typeof TaskLifecycleSchema>;
+export type TaskCompletionAuthority = z.infer<typeof TaskCompletionAuthoritySchema>;
 export type ExecutionLifecycle = z.infer<typeof ExecutionLifecycleSchema>;
 export type ExecutionApprovalKind = z.infer<typeof ExecutionApprovalKindSchema>;
 export type ExecutionApprovalDecision = z.infer<typeof ExecutionApprovalDecisionSchema>;
@@ -457,12 +494,16 @@ export type ExecutionApprovalProjection = z.infer<typeof ExecutionApprovalProjec
 export type TaskContextReference = z.infer<typeof TaskContextReferenceSchema>;
 export type RuntimeAttachmentProjection = z.infer<typeof RuntimeAttachmentProjectionSchema>;
 export type HumanDecisionRecord = z.infer<typeof HumanDecisionRecordSchema>;
-export type TaskGoalProjection = z.infer<typeof TaskGoalProjectionSchema>;
+export type EvidenceRef = z.infer<typeof EvidenceRefSchema>;
+export type TaskWorkingSetProjection = z.infer<typeof TaskWorkingSetProjectionSchema>;
+export type WorkUnitLifecycle = z.infer<typeof WorkUnitLifecycleSchema>;
+export type WorkUnitProjection = z.infer<typeof WorkUnitProjectionSchema>;
+export type ReviewDecisionKind = z.infer<typeof ReviewDecisionKindSchema>;
+export type ReviewDecisionProjection = z.infer<typeof ReviewDecisionProjectionSchema>;
 export type TaskUserDecisionOption = z.infer<typeof TaskUserDecisionOptionSchema>;
 export type TaskUserDecisionProjection = z.infer<typeof TaskUserDecisionProjectionSchema>;
 export type ExecutionProjection = z.infer<typeof ExecutionProjectionSchema>;
 export type TaskOrigin = z.infer<typeof TaskOriginSchema>;
 export type TaskProjection = z.infer<typeof TaskProjectionSchema>;
-export type TaskBlackboardEntry = z.infer<typeof TaskBlackboardEntrySchema>;
 export type TaskContextEnvelope = z.infer<typeof TaskContextEnvelopeSchema>;
 export type TaskCommand = z.infer<typeof TaskCommandSchema>;

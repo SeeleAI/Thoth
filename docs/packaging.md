@@ -216,20 +216,21 @@ only for migration compatibility with older published clients.
 Current verified local pre-publication artifact:
 
 - Path: `/mnt/cfs/5vr0p6/yzy/thoth/packages/desktop/release/Thoth-x86_64.AppImage`
-- sha256: `ba878cdabaf1bd5f9488d1241f2491d012834d075f0b5d0c69cf55b188403059`
-- Bytes: `137830605`
+- sha256: `7bf5e09ffa62a99020436e3583e3f697e8335ebf5f12facbbaea27af208c0060`
+- Bytes: `137826663`
 - Version: `0.0.0-mvp-beta`
 - Packaged smoke: passed with an isolated desktop-managed daemon on a temporary port; the real window verified
   preload/renderer, read-only Files/Changes, Browser automation with typed wrong-`browserId` rejection,
   Workspace-script UI start/stop with durable terminal/service-port receipts, a `1,048,649`-byte five-chunk file
   transfer, complete `Tasks | Schedules` create/edit/pause/resume/run-now/delete/history and bidirectional
   navigation, canonical Schedule Timeline events, Provider Features Plan activation, native question id `target`
-  with answer array `["Local"]`, completed-Plan-only Implement, same-thread implementation, and lossless Release
-  storage migration to layout/schema v5
+  with answer array `["Local"]`, completed-Plan-only Implement, same-thread implementation, Decision Map,
+  single Intent Contract, Quick, Loop checkpoint/fresh Review retry, `@Task`, Stop and lossless migration to
+  Catalog/Authority schema v6. The isolated durable state is `8,604,983` bytes with exactly two RuntimeBundles.
 - Report: `/mnt/cfs/5vr0p6/yzy/thoth/.dev/packaged-appimage-thoth-flow/report.json`
 
-This local artifact includes the corrective release-path changes after exact-SHA workflow `30453064159` failed.
-It is retained as pre-publication evidence only; the downloaded public artifact below is publication authority.
+This local artifact is the `NTH-EV-075` release candidate. It is retained as pre-publication evidence only; the
+downloaded public artifact below remains publication authority.
 
 `packages/desktop/release/` is local artifact output and must not be committed.
 

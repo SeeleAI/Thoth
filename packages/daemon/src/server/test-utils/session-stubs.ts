@@ -108,39 +108,54 @@ export function asWorkspaceScriptRuntimeStore(stub: {
 export function createTestToolGateway(): ToolGateway {
   return new ToolGateway(
     createStub<ToolResultSink>({
-      submitPlanExec: () => false,
-      submitReviewAssessment: () => null,
-      submitReviewVerdict: () => false,
+      submitCheckpoint: () => false,
+      submitReviewDecision: () => false,
+      requestHumanDecision: () => false,
       reportBlocked: () => false,
     }),
   );
 }
 
+export function createForegroundTurnCoordinatorStub(): SessionOptions["foregroundTurnCoordinator"] {
+  return createStub<SessionOptions["foregroundTurnCoordinator"]>({
+    resolveProviderApproval: async () => false,
+    getClarifySession: async () => null,
+  });
+}
+
 export function createSessionAuthorityStubs(): Pick<
   SessionOptions,
-  "workspaceAuthorityManager" | "workspaceTaskCoordinator"
+  "workspaceAuthorityManager" | "workspaceTaskCoordinator" | "foregroundTurnCoordinator"
 > {
   const toolGateway = createTestToolGateway();
   return {
     workspaceAuthorityManager: createStub<SessionOptions["workspaceAuthorityManager"]>({
       subscribeForeground: () => () => {},
+      subscribeClarify: () => () => {},
       subscribe: () => () => {},
     }),
     workspaceTaskCoordinator: createStub<SessionOptions["workspaceTaskCoordinator"]>({
       toolGateway,
     }),
+    foregroundTurnCoordinator: createForegroundTurnCoordinatorStub(),
   };
 }
 
 export function createSessionWithAuthority(
   options: Omit<
     SessionOptions,
-    "workspaceAuthorityManager" | "workspaceTaskCoordinator" | "workspaceServicePortRegistry"
+    | "workspaceAuthorityManager"
+    | "workspaceTaskCoordinator"
+    | "foregroundTurnCoordinator"
+    | "workspaceServicePortRegistry"
   > &
     Partial<
       Pick<
         SessionOptions,
-        "workspaceAuthorityManager" | "workspaceTaskCoordinator" | "workspaceServicePortRegistry"
+        | "workspaceAuthorityManager"
+        | "workspaceTaskCoordinator"
+        | "foregroundTurnCoordinator"
+        | "workspaceServicePortRegistry"
       >
     >,
 ): Session {

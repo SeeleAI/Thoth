@@ -135,7 +135,7 @@ export class PackagedServerCliHarness {
     ]) {
       mkdirSync(directory, { recursive: true });
     }
-    writeFileSync(this.statePath, JSON.stringify({ planExec: 0, review: 0 }));
+    writeFileSync(this.statePath, JSON.stringify({ checkpoint: 0, review: 0 }));
     const fakeCodexPath = path.join(this.fakeBin, "codex");
     copyFileSync(
       path.join(this.root, "scripts/fixtures/scripted-codex-app-server.mjs"),

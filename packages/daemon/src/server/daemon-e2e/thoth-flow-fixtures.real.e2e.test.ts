@@ -8,8 +8,7 @@ import type {
   AgentThothLifecycle,
   ThothCardAnswerPayload,
   ThothClarifyCardModel,
-  ThothGoalsCardModel,
-  ThothTaskCardModel,
+  ThothIntentContractCardModel,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type { ThothTurnSnapshot } from "@thoth/protocol/messages";
 import type { ExecutionProjection, TaskProjection } from "@thoth/protocol/task-authority";
@@ -44,10 +43,9 @@ function sleep(ms: number): Promise<void> {
 
 function createFixtureLogger(): ReturnType<typeof pino> {
   const traceFile = process.env.THOTH_REAL_FLOW_TRACE_FILE?.trim();
-  if (!traceFile) {
-    return pino({ level: "silent" });
-  }
-  return pino({ level: "trace" }, pino.destination({ dest: traceFile, sync: false }));
+  return traceFile
+    ? pino({ level: "trace" }, pino.destination({ dest: traceFile, sync: false }))
+    : pino({ level: "silent" });
 }
 
 async function createFlowRuntime(): Promise<FlowRuntime> {
@@ -64,16 +62,14 @@ async function createFlowRuntime(): Promise<FlowRuntime> {
     const configured = await client.patchDaemonConfig({
       appendSystemPrompt: [
         "You are participating in an automated Thoth transport verification.",
-        "When the user supplies a THOTH REAL FLOW FIXTURE script, follow its literal calls and text exactly.",
-        "Do not independently inspect or alter the workspace.",
+        "Follow a supplied THOTH REAL FLOW FIXTURE literally and call only its prescribed tools.",
+        "Do not independently inspect or alter the Workspace.",
       ].join(" "),
     });
     if (configured.error) throw new Error(configured.error);
     const created = await client.createWorkspace({ source: { kind: "directory", path: cwd } });
     if (created.error || !created.workspace) {
-      throw new Error(
-        `Failed to create temporary flow workspace: ${created.error ?? "unknown error"}`,
-      );
+      throw new Error(created.error ?? "Failed to create temporary flow Workspace");
     }
     return {
       daemon,
@@ -97,15 +93,13 @@ async function createFlowRuntime(): Promise<FlowRuntime> {
 async function configureFixture(
   runtime: FlowRuntime,
   script: ThothRealProviderFlowScript,
-  startAtClarifyIndex = 0,
 ): Promise<string> {
-  const fixturePrompt = buildRealProviderFixturePrompt({ script, startAtClarifyIndex });
+  const fixturePrompt = buildRealProviderFixturePrompt({ script });
   const configured = await runtime.client.patchDaemonConfig({
     appendSystemPrompt: [
       "You are participating in an automated Thoth transport verification.",
-      "The fixture actor instructions below are literal and apply only to visible Clarify, internal PlanExec, and independent Review sessions whose required runtime tool appears in that script.",
-      "Do not inspect or alter the workspace. Do not replace prescribed dynamic-tool arguments with your own wording.",
-      "A dedicated Clarify convergence audit follows its own audit system prompt and required audit tool.",
+      "The fixture applies to visible Clarify, the one-shot Challenger, Executor and fresh Review roles.",
+      "Do not replace prescribed semantic arguments with your own wording and do not write fixture state directly.",
       fixturePrompt,
     ].join("\n\n"),
   });
@@ -118,9 +112,8 @@ async function createFixtureAgent(input: {
   prompt: string;
   thoth: ThothTurnSnapshot;
 }) {
-  const provider = getNativeCodexProviderConfig();
-  return await input.runtime.client.createAgent({
-    ...provider,
+  return input.runtime.client.createAgent({
+    ...getNativeCodexProviderConfig(),
     cwd: input.runtime.cwd,
     workspaceId: input.runtime.workspaceId,
     initialPrompt: input.prompt,
@@ -143,41 +136,34 @@ async function waitForState(
     if (predicate(last.state.lifecycle)) return last.state;
     await sleep(300);
   }
-  throw new Error(
-    `Timed out waiting for ${label}. Last state=${JSON.stringify(last?.state ?? null)}`,
-  );
+  throw new Error(`Timed out waiting for ${label}. Last state=${JSON.stringify(last?.state)}`);
 }
 
-async function waitForPendingCard<T extends "clarify_card" | "task_card" | "goal_card">(
+async function waitForPendingCard(
   runtime: FlowRuntime,
   agentId: string,
-  kind: T,
+  kind: "clarify_card" | "intent_contract_card",
   title: string,
-): Promise<
-  T extends "clarify_card"
-    ? ThothClarifyCardModel
-    : T extends "task_card"
-      ? ThothTaskCardModel
-      : ThothGoalsCardModel
-> {
+): Promise<ThothClarifyCardModel | ThothIntentContractCardModel> {
   const deadline = Date.now() + FOREGROUND_TIMEOUT_MS;
+  let last: unknown = null;
   while (Date.now() < deadline) {
     const payload = await runtime.client.getAgentThothState(agentId);
     if (payload.error) throw new Error(payload.error);
+    last = payload.state;
     const pending = payload.state.pendingCard;
-    if (
-      pending?.kind === kind &&
-      pending.card.title === title &&
-      pending.card.submitted === false
-    ) {
-      return pending.card as never;
+    const pendingTitle =
+      pending?.kind === "clarify_card" ? pending.card.card.title : pending?.card.contract.title;
+    if (pending?.kind === kind && pendingTitle === title && !pending.card.submitted) {
+      return pending.card;
     }
     await sleep(300);
   }
-  throw new Error(`Timed out waiting for ${kind} ${title}`);
+  throw new Error(`Timed out waiting for ${kind} ${title}: ${JSON.stringify(last)}`);
 }
 
 let commandSequence = 0;
+let approvalSequence = 0;
 
 async function answerCard(input: {
   runtime: FlowRuntime;
@@ -199,91 +185,54 @@ async function answerCard(input: {
   }
 }
 
-async function submitFixedClarifyAnswer(
-  runtime: FlowRuntime,
-  agentId: string,
-  card: ThothClarifyCardModel,
-): Promise<void> {
-  if (!("questions" in card.card)) {
-    throw new Error("The real fixture expected a multi-question Clarify Card");
-  }
-  await answerCard({
-    runtime,
-    agentId,
-    cardId: card.id,
-    answer: {
-      intent: "submit_choices",
-      question_card_id: card.id,
-      title: card.title,
-      answers: card.card.questions.map((question) => ({
-        question_id: question.id,
-        choice_ids: [question.choices[0]!.id],
-        choice_notes: {},
-      })),
-      raw_answer: "Use every first fixed option.",
-    },
-  });
-}
-
-async function acceptApprovalCard(input: {
-  runtime: FlowRuntime;
-  agentId: string;
-  card: ThothTaskCardModel | ThothGoalsCardModel;
-  intent: "accept_quick" | "accept_loop";
-}): Promise<void> {
-  await answerCard({
-    runtime: input.runtime,
-    agentId: input.agentId,
-    cardId: input.card.id,
-    answer: {
-      intent: input.intent,
-      card_id: input.card.id,
-      title: input.card.title,
-      raw_answer:
-        input.intent === "accept_loop"
-          ? "Accept the fixed background flow."
-          : "Accept the fixed foreground flow.",
-    },
-  });
-}
-
-async function driveToGoals(input: {
+async function driveClarifyToIntentContract(input: {
   runtime: FlowRuntime;
   agentId: string;
   script: ThothRealProviderFlowScript;
-  startAtClarifyIndex?: number;
-}): Promise<ThothGoalsCardModel> {
-  const startAt = input.startAtClarifyIndex ?? 0;
-  for (const payload of input.script.clarify.slice(startAt)) {
-    const card = await waitForPendingCard(
+  mode: "quick" | "loop";
+}): Promise<ThothIntentContractCardModel> {
+  for (const round of input.script.clarify) {
+    const card = (await waitForPendingCard(
       input.runtime,
       input.agentId,
       "clarify_card",
-      payload.title,
-    );
-    await submitFixedClarifyAnswer(input.runtime, input.agentId, card);
+      round.ask.title,
+    )) as ThothClarifyCardModel;
+    await answerCard({
+      runtime: input.runtime,
+      agentId: input.agentId,
+      cardId: card.id,
+      answer: {
+        intent: "submit_choices",
+        questionCardId: card.id,
+        answers: card.card.questions.map((question) => ({
+          nodeId: question.nodeId,
+          choiceIds: [question.choices[0]!.id],
+          choiceNotes: {},
+        })),
+        delegatedNodeIds: [],
+        rawAnswer: "Use every first fixed option.",
+      },
+    });
   }
-  if (!input.script.task || !input.script.goals) {
-    throw new Error(`Script ${input.script.id} does not define approval Cards`);
-  }
-  const task = await waitForPendingCard(
+  if (!input.script.contract) throw new Error(`Script ${input.script.id} has no Intent Contract`);
+  const contract = (await waitForPendingCard(
     input.runtime,
     input.agentId,
-    "task_card",
-    input.script.task.task_card.title,
-  );
-  await acceptApprovalCard({
+    "intent_contract_card",
+    input.script.contract.contract.title,
+  )) as ThothIntentContractCardModel;
+  await answerCard({
     runtime: input.runtime,
     agentId: input.agentId,
-    card: task,
-    intent: input.script.planExec.length > 0 ? "accept_loop" : "accept_quick",
+    cardId: contract.id,
+    answer: {
+      intent: input.mode === "loop" ? "accept_loop" : "accept_quick",
+      cardId: contract.id,
+      rawAnswer: `Accept the fixed ${input.mode} Intent Contract.`,
+    },
   });
-  return await waitForPendingCard(
-    input.runtime,
-    input.agentId,
-    "goal_card",
-    input.script.goals.goals_card.title,
-  );
+  return contract;
 }
 
 async function timelineEntries(runtime: FlowRuntime, agentId: string) {
@@ -303,9 +252,8 @@ async function waitForAssistantMarker(
 ): Promise<void> {
   const deadline = Date.now() + FOREGROUND_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const entries = await timelineEntries(runtime, agentId);
     if (
-      entries.some(
+      (await timelineEntries(runtime, agentId)).some(
         (entry) => entry.item.type === "assistant_message" && entry.item.text.includes(marker),
       )
     ) {
@@ -314,12 +262,6 @@ async function waitForAssistantMarker(
     await sleep(300);
   }
   throw new Error(`Timed out waiting for assistant marker ${marker}`);
-}
-
-async function visibleToolNames(runtime: FlowRuntime, agentId: string): Promise<string[]> {
-  return (await timelineEntries(runtime, agentId)).flatMap((entry) =>
-    entry.item.type === "tool_call" ? [entry.item.name] : [],
-  );
 }
 
 function assertNoFixtureWorkProducts(runtime: FlowRuntime): void {
@@ -332,41 +274,63 @@ async function waitForLoopTask(
   runtime: FlowRuntime,
   predicate: (task: TaskProjection) => boolean,
   label: string,
-): Promise<{ task: TaskProjection; executions: ExecutionProjection[] }> {
+): Promise<{ task: TaskProjection; executions: ExecutionProjection[]; evidence: unknown[] }> {
   const deadline = Date.now() + LOOP_TIMEOUT_MS;
-  let last: TaskProjection | null = null;
+  let last: unknown = null;
   while (Date.now() < deadline) {
     const listed = await runtime.client.listTasks(runtime.workspaceId);
     if (listed.error) throw new Error(listed.error);
     const summary = listed.tasks[0];
     if (summary) {
-      const inspected = await runtime.client.getTask({
+      const detail = await runtime.client.getTask({
         taskId: summary.id,
         workspaceId: runtime.workspaceId,
       });
-      if (inspected.error) throw new Error(inspected.error);
-      last = inspected.task;
-      if (last && predicate(last)) return { task: last, executions: inspected.executions };
+      if (detail.error) throw new Error(detail.error);
+      last = detail;
+      if (detail.executions.length > 8) {
+        throw new Error(`Loop exceeded eight Executions: ${JSON.stringify(detail)}`);
+      }
+      for (const execution of detail.executions) {
+        const approval = execution.pendingApproval;
+        if (!approval) continue;
+        const resolved = await runtime.client.resolveExecutionApproval({
+          workspaceId: runtime.workspaceId,
+          taskId: summary.id,
+          executionId: execution.id,
+          approvalId: approval.id,
+          decision: approval.kind === "implement" ? "implement" : "allow",
+          expectedRevision: approval.revision,
+          commandId: `real-flow-approval-${++approvalSequence}`,
+        });
+        if (resolved.error && !resolved.conflict) throw new Error(resolved.error);
+      }
+      if (detail.task && predicate(detail.task)) {
+        return { task: detail.task, executions: detail.executions, evidence: detail.evidence };
+      }
+      if (detail.task?.status === "interrupted") {
+        throw new Error(`Loop interrupted before ${label}: ${JSON.stringify(detail)}`);
+      }
     }
-    await sleep(750);
+    await sleep(500);
   }
-  throw new Error(`Timed out waiting for ${label}. Last task=${JSON.stringify(last)}`);
+  throw new Error(`Timed out waiting for ${label}: ${JSON.stringify(last)}`);
 }
 
-async function assertLoopPhaseTransport(
+async function assertLoopTransport(
   runtime: FlowRuntime,
   task: TaskProjection,
   executions: ExecutionProjection[],
 ): Promise<void> {
-  const planExec = executions.filter((execution) => execution.phase === "planexec");
+  const execute = executions.filter((execution) => execution.phase === "execute");
   const review = executions.filter((execution) => execution.phase === "review");
-  expect(planExec.length).toBeGreaterThan(0);
+  expect(execute.length).toBeGreaterThan(0);
   expect(review.length).toBeGreaterThan(0);
   expect(
-    [...planExec, ...review].every((execution) => execution.attachment?.bundleId === "thoth.loop"),
+    [...execute, ...review].every((execution) => execution.attachment?.bundleId === "thoth.loop"),
   ).toBe(true);
-  const phaseTimelines = await Promise.all(
-    executions.map(async (execution) =>
+  const timelines = await Promise.all(
+    executions.map((execution) =>
       runtime.client.getExecutionTimeline({
         workspaceId: runtime.workspaceId,
         taskId: task.id,
@@ -375,9 +339,7 @@ async function assertLoopPhaseTransport(
       }),
     ),
   );
-  expect(phaseTimelines.every((payload) => !payload.error && payload.entries.length > 0)).toBe(
-    true,
-  );
+  expect(timelines.every((payload) => !payload.error && payload.entries.length > 0)).toBe(true);
 }
 
 describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () => {
@@ -403,16 +365,10 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
       runtimes.push(runtime);
       const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickDirect;
       const prompt = await configureFixture(runtime, script);
-      const agent = await createFixtureAgent({
-        runtime,
-        prompt,
-        thoth: { enabled: false },
-      });
+      const agent = await createFixtureAgent({ runtime, prompt, thoth: { enabled: false } });
       await waitForState(runtime, agent.id, (lifecycle) => lifecycle === "done", "raw completion");
       await waitForAssistantMarker(runtime, agent.id, script.finalMarker);
-      expect(
-        (await visibleToolNames(runtime, agent.id)).filter((name) => name.startsWith("thoth_")),
-      ).toEqual([]);
+      expect((await runtime.client.listTasks(runtime.workspaceId)).tasks).toEqual([]);
       assertNoFixtureWorkProducts(runtime);
     },
     240_000,
@@ -424,10 +380,9 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
       const runtime = await createFlowRuntime();
       runtimes.push(runtime);
       const direct = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickDirect;
-      const directPrompt = await configureFixture(runtime, direct);
       const agent = await createFixtureAgent({
         runtime,
-        prompt: directPrompt,
+        prompt: await configureFixture(runtime, direct),
         thoth: { enabled: false },
       });
       await waitForState(runtime, agent.id, (lifecycle) => lifecycle === "done", "first raw turn");
@@ -439,13 +394,7 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
       await runtime.client.sendAgentMessage(agent.id, prompt, {
         thoth: { enabled: true, executionMode: "quick", clarifyStrength: "light" },
       });
-      const goals = await driveToGoals({ runtime, agentId: agent.id, script });
-      await acceptApprovalCard({
-        runtime,
-        agentId: agent.id,
-        card: goals,
-        intent: "accept_quick",
-      });
+      await driveClarifyToIntentContract({ runtime, agentId: agent.id, script, mode: "quick" });
       await waitForState(
         runtime,
         agent.id,
@@ -454,62 +403,32 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
       );
       await waitForAssistantMarker(runtime, agent.id, script.finalMarker);
 
-      await runtime.client.sendAgentMessage(agent.id, directPrompt, { thoth: { enabled: false } });
+      const tasks = await runtime.client.listTasks(runtime.workspaceId);
+      expect(tasks.tasks).toHaveLength(1);
+      const quick = await runtime.client.getTask({
+        workspaceId: runtime.workspaceId,
+        taskId: tasks.tasks[0]!.id,
+      });
+      expect(quick.task).toMatchObject({
+        mode: "quick",
+        status: "completed",
+        completionAuthority: "executor_unreviewed",
+      });
+      expect(quick.executions).toEqual([
+        expect.objectContaining({
+          phase: "quick_exec",
+          status: "succeeded",
+          attachment: expect.objectContaining({ bundleId: "thoth.clarify" }),
+        }),
+      ]);
+      expect(quick.evidence).toHaveLength(1);
+
+      await runtime.client.sendAgentMessage(agent.id, await configureFixture(runtime, direct), {
+        thoth: { enabled: false },
+      });
       await waitForState(runtime, agent.id, (lifecycle) => lifecycle === "done", "second raw turn");
       const after = await runtime.client.fetchAgent({ agentId: agent.id });
       expect(after?.agent.runtimeInfo?.sessionId).toBe(sessionId);
-      expect(await visibleToolNames(runtime, agent.id)).toEqual(
-        expect.arrayContaining(["clarify", "task_approval", "goals_approval"]),
-      );
-      const tasks = await runtime.client.listTasks(runtime.workspaceId);
-      expect(tasks.tasks).toEqual([]);
-      assertNoFixtureWorkProducts(runtime);
-    },
-    420_000,
-  );
-
-  test(
-    THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyRecovery.id,
-    async () => {
-      const runtime = await createFlowRuntime();
-      runtimes.push(runtime);
-      const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.quickClarifyRecovery;
-      const prompt = await configureFixture(runtime, script);
-      const agent = await createFixtureAgent({
-        runtime,
-        prompt,
-        thoth: { enabled: true, executionMode: "quick", clarifyStrength: "light" },
-      });
-      const first = await waitForPendingCard(
-        runtime,
-        agent.id,
-        "clarify_card",
-        script.clarify[0].title,
-      );
-      expect((await runtime.client.getAgentThothState(agent.id)).state.pendingCard?.card.id).toBe(
-        first.id,
-      );
-      await runtime.client.cancelAgent(agent.id);
-      await waitForState(runtime, agent.id, (lifecycle) => lifecycle === "canceled", "cancel");
-
-      const resumePrompt = await configureFixture(runtime, script, 1);
-      await runtime.client.sendAgentMessage(agent.id, resumePrompt, {
-        thoth: { enabled: true, executionMode: "quick", clarifyStrength: "light" },
-      });
-      const goals = await driveToGoals({
-        runtime,
-        agentId: agent.id,
-        script,
-        startAtClarifyIndex: 1,
-      });
-      await acceptApprovalCard({
-        runtime,
-        agentId: agent.id,
-        card: goals,
-        intent: "accept_quick",
-      });
-      await waitForState(runtime, agent.id, (lifecycle) => lifecycle === "done", "resumed Quick");
-      await waitForAssistantMarker(runtime, agent.id, script.finalMarker);
       assertNoFixtureWorkProducts(runtime);
     },
     420_000,
@@ -521,10 +440,9 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
       const runtime = await createFlowRuntime();
       runtimes.push(runtime);
       const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopLinearPass;
-      const prompt = await configureFixture(runtime, script);
       const agent = await createFixtureAgent({
         runtime,
-        prompt,
+        prompt: await configureFixture(runtime, script),
         thoth: {
           enabled: true,
           executionMode: "loop",
@@ -532,13 +450,7 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
           loopStrength: "one_plan_one_do",
         },
       });
-      const goals = await driveToGoals({ runtime, agentId: agent.id, script });
-      await acceptApprovalCard({
-        runtime,
-        agentId: agent.id,
-        card: goals,
-        intent: "accept_loop",
-      });
+      await driveClarifyToIntentContract({ runtime, agentId: agent.id, script, mode: "loop" });
       await waitForState(
         runtime,
         agent.id,
@@ -548,17 +460,16 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
       const completed = await waitForLoopTask(
         runtime,
         (task) => task.status === "completed",
-        "two linear goals",
+        "target completion",
       );
-      expect(completed.task.budget).toMatchObject({ maxFailedReviews: 1, usedFailedReviews: 0 });
-      expect(completed.task.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
-      const context = await runtime.client.getTaskContext({
-        workspaceId: runtime.workspaceId,
-        taskId: completed.task.id,
+      expect(completed.task).toMatchObject({
+        status: "completed",
+        latestReview: { decision: "complete" },
+        budget: { maxNonCompleteReviews: 1, usedNonCompleteReviews: 0 },
       });
-      expect(JSON.stringify(context.context?.blackboard)).toContain("UT04_G1_R1");
-      expect(JSON.stringify(context.context?.blackboard)).toContain("UT04_G2_R1");
-      await assertLoopPhaseTransport(runtime, completed.task, completed.executions);
+      expect(completed.task.workUnits).toHaveLength(1);
+      expect(completed.evidence.length).toBeGreaterThan(0);
+      await assertLoopTransport(runtime, completed.task, completed.executions);
       assertNoFixtureWorkProducts(runtime);
     },
     600_000,
@@ -570,10 +481,9 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
       const runtime = await createFlowRuntime();
       runtimes.push(runtime);
       const script = THOTH_REAL_PROVIDER_FLOW_SCRIPTS.loopRetryAndBudget;
-      const prompt = await configureFixture(runtime, script);
       const agent = await createFixtureAgent({
         runtime,
-        prompt,
+        prompt: await configureFixture(runtime, script),
         thoth: {
           enabled: true,
           executionMode: "loop",
@@ -581,33 +491,28 @@ describe.sequential("Thoth public Agent journeys (real Codex dynamicTools)", () 
           loopStrength: "light",
         },
       });
-      const goals = await driveToGoals({ runtime, agentId: agent.id, script });
-      await acceptApprovalCard({
-        runtime,
-        agentId: agent.id,
-        card: goals,
-        intent: "accept_loop",
-      });
+      await driveClarifyToIntentContract({ runtime, agentId: agent.id, script, mode: "loop" });
       const completed = await waitForLoopTask(
         runtime,
         (task) => task.status === "completed",
-        "failed Review retry completion",
+        "fresh Review reorientation",
       );
-      expect(completed.task.budget).toMatchObject({ maxFailedReviews: 5, usedFailedReviews: 1 });
-      expect(completed.task.goals.map((goal) => goal.status)).toEqual(["passed", "passed"]);
-      expect(
-        completed.executions.filter(
-          (execution) =>
-            execution.goalId === completed.task.goals[0]?.id && execution.phase === "planexec",
-        ),
-      ).toHaveLength(2);
-      const context = await runtime.client.getTaskContext({
-        workspaceId: runtime.workspaceId,
-        taskId: completed.task.id,
+      expect(completed.task).toMatchObject({
+        status: "completed",
+        latestReview: { decision: "complete" },
+        budget: { maxNonCompleteReviews: 5, usedNonCompleteReviews: 1 },
       });
-      expect(JSON.stringify(context.context?.blackboard)).toContain("UT05_G1_R2");
-      expect(JSON.stringify(context.context?.blackboard)).toContain("UT05_G2_R1");
-      await assertLoopPhaseTransport(runtime, completed.task, completed.executions);
+      expect(completed.task.workUnits).toHaveLength(2);
+      expect(completed.task.workingSet.rejectedRoutes).toContain(
+        "Do not repeat the route used by UT05_W1.",
+      );
+      expect(completed.executions.map((execution) => execution.phase)).toEqual([
+        "execute",
+        "review",
+        "execute",
+        "review",
+      ]);
+      await assertLoopTransport(runtime, completed.task, completed.executions);
       assertNoFixtureWorkProducts(runtime);
     },
     600_000,

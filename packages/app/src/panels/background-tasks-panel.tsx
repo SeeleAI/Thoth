@@ -13,6 +13,7 @@ import {
   XCircle,
 } from "lucide-react-native";
 import type {
+  EvidenceRef,
   ExecutionProjection,
   HumanDecisionRecord,
   TaskCommand,
@@ -36,19 +37,9 @@ const BACKGROUND_TASKS_NARROW_DETAIL_HEADER_WIDTH = 520;
 const TIMELINE_PAGE_SIZE = 200;
 
 const ThemedListTodo = withUnistyles(ListTodo);
-const ThemedCheckCircle = withUnistyles(CheckCircle2);
-const ThemedXCircle = withUnistyles(XCircle);
 
 const mutedColorMapping = (theme: { colors: { foregroundMuted: string } }) => ({
   color: theme.colors.foregroundMuted,
-});
-
-const successColorMapping = (theme: { colors: { accentBright: string } }) => ({
-  color: theme.colors.accentBright,
-});
-
-const dangerColorMapping = (theme: { colors: { destructive: string } }) => ({
-  color: theme.colors.destructive,
 });
 
 interface ScrollMetrics {
@@ -88,10 +79,14 @@ function taskStatusLabel(status: TaskProjection["status"]): string {
   switch (status) {
     case "queued":
       return "Queued";
+    case "reorienting":
+      return "Reorienting";
     case "running":
       return "Running";
     case "awaiting_user":
       return "Decision needed";
+    case "awaiting_user_final":
+      return "Final confirmation needed";
     case "paused":
       return "Paused";
     case "stopping":
@@ -129,9 +124,18 @@ function executionStatusLabel(status: ExecutionProjection["status"]): string {
 function isExecutionBusy(execution: ExecutionProjection | null): boolean {
   return (
     execution !== null &&
-    ["created", "starting", "planning", "implementing", "running", "awaiting_provider"].includes(
-      execution.status,
-    )
+    [
+      "created",
+      "starting",
+      "orienting",
+      "planning",
+      "awaiting_implementation",
+      "implementing",
+      "running",
+      "reviewing",
+      "awaiting_provider",
+      "awaiting_user",
+    ].includes(execution.status)
   );
 }
 
@@ -285,9 +289,7 @@ function TaskManagementSurface({
   const [selectedTask, setSelectedTask] = useState<TaskProjection | null>(null);
   const [executions, setExecutions] = useState<ExecutionProjection[]>([]);
   const [decisions, setDecisions] = useState<HumanDecisionRecord[]>([]);
-  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(
-    () => persistedSurface?.selectedGoalId ?? null,
-  );
+  const [evidence, setEvidence] = useState<EvidenceRef[]>([]);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(
     () => persistedSurface?.selectedExecutionId ?? null,
   );
@@ -367,11 +369,7 @@ function TaskManagementSurface({
       setSelectedTask(response.task);
       setExecutions(response.executions);
       setDecisions(response.decisions);
-      setSelectedGoalId((current) =>
-        current && response.task!.goals.some((goal) => goal.id === current)
-          ? current
-          : (response.task!.currentGoalId ?? response.task!.goals[0]?.id ?? null),
-      );
+      setEvidence(response.evidence);
       setSelectedExecutionId((current) => {
         if (current && response.executions.some((execution) => execution.id === current)) {
           return current;
@@ -401,6 +399,7 @@ function TaskManagementSurface({
       setSelectedTask(null);
       setExecutions([]);
       setDecisions([]);
+      setEvidence([]);
       return;
     }
     void refreshDetail(selectedTaskId).catch((nextError) =>
@@ -431,10 +430,9 @@ function TaskManagementSurface({
       serverId,
       workspaceId,
       selectedTaskId,
-      selectedGoalId,
       selectedExecutionId,
     });
-  }, [selectedExecutionId, selectedGoalId, selectedTaskId, serverId, updateSurface, workspaceId]);
+  }, [selectedExecutionId, selectedTaskId, serverId, updateSurface, workspaceId]);
 
   useEffect(() => {
     setDecisionChoiceId(null);
@@ -617,23 +615,18 @@ function TaskManagementSurface({
     ],
   );
 
-  const selectedGoal = useMemo(
-    () => selectedTask?.goals.find((goal) => goal.id === selectedGoalId) ?? null,
-    [selectedGoalId, selectedTask],
-  );
   const visibleExecutions = useMemo(
     () =>
-      executions
-        .filter((execution) => !selectedGoal || execution.goalId === selectedGoal.id)
-        .toSorted((left, right) =>
-          (right.startedAt ?? right.lastActivityAt ?? "").localeCompare(
-            left.startedAt ?? left.lastActivityAt ?? "",
-          ),
+      executions.toSorted((left, right) =>
+        (right.startedAt ?? right.lastActivityAt ?? "").localeCompare(
+          left.startedAt ?? left.lastActivityAt ?? "",
         ),
-    [executions, selectedGoal],
+      ),
+    [executions],
   );
-  const busyExecution = selectedTask?.currentExecutionId
-    ? (executions.find((execution) => execution.id === selectedTask.currentExecutionId) ?? null)
+  const currentWorkUnit = selectedTask?.currentWorkUnitId
+    ? (selectedTask.workUnits.find((workUnit) => workUnit.id === selectedTask.currentWorkUnitId) ??
+      null)
     : null;
   const elapsed =
     selectedExecution?.startedAt && isExecutionBusy(selectedExecution)
@@ -816,8 +809,56 @@ function TaskManagementSurface({
               </View>
             </View>
 
-            <Text style={styles.detailSummary}>{selectedTask.summary}</Text>
+            <Text style={styles.detailSummary}>{selectedTask.intentContract.objective}</Text>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+            <View style={styles.section} testID="task-intent-contract">
+              <Text style={styles.sectionTitle}>Task anchor</Text>
+              <Text style={styles.sectionBody}>{selectedTask.intentContract.objective}</Text>
+              {selectedTask.intentContract.invariants.length > 0 ? (
+                <Text style={styles.sectionMuted}>
+                  Invariants: {selectedTask.intentContract.invariants.join("; ")}
+                </Text>
+              ) : null}
+              <Text style={styles.sectionMuted}>
+                Acceptance:{" "}
+                {selectedTask.intentContract.acceptanceClaims
+                  .map((claim) => claim.statement)
+                  .join("; ")}
+              </Text>
+            </View>
+
+            <View style={styles.section} testID="task-working-set">
+              <Text style={styles.sectionTitle}>Working set</Text>
+              <Text style={styles.sectionBody}>{selectedTask.workingSet.activeGap}</Text>
+              <Text style={styles.sectionMuted}>
+                Understanding: {selectedTask.workingSet.currentUnderstanding}
+              </Text>
+              {selectedTask.workingSet.currentHypothesis ? (
+                <Text style={styles.sectionMuted}>
+                  Hypothesis: {selectedTask.workingSet.currentHypothesis}
+                </Text>
+              ) : null}
+              {selectedTask.workingSet.nextMove ? (
+                <Text style={styles.sectionMuted}>Next: {selectedTask.workingSet.nextMove}</Text>
+              ) : null}
+              {selectedTask.workingSet.blockers.length > 0 ? (
+                <Text style={styles.sectionMuted}>
+                  Blockers: {selectedTask.workingSet.blockers.join("; ")}
+                </Text>
+              ) : null}
+            </View>
+
+            {currentWorkUnit ? (
+              <View style={styles.section} testID="task-current-work-unit">
+                <Text style={styles.sectionTitle}>Current work unit</Text>
+                <Text style={styles.sectionBody}>{currentWorkUnit.title}</Text>
+                <Text style={styles.sectionMuted}>{currentWorkUnit.activeGap}</Text>
+                {currentWorkUnit.progressClaim ? (
+                  <Text style={styles.sectionMuted}>Progress: {currentWorkUnit.progressClaim}</Text>
+                ) : null}
+              </View>
+            ) : null}
 
             {approvalExecution && pendingApproval ? (
               <View style={styles.section} testID="background-execution-approval">
@@ -911,8 +952,9 @@ function TaskManagementSurface({
               <View style={styles.section} testID="loop-budget-wait">
                 <Text style={styles.sectionTitle}>Review budget reached</Text>
                 <Text style={styles.sectionBody}>
-                  {selectedTask.budget.usedFailedReviews} of {selectedTask.budget.maxFailedReviews}{" "}
-                  failed Reviews used.
+                  {selectedTask.budget.usedNonCompleteReviews} of{" "}
+                  {selectedTask.budget.maxNonCompleteReviews ?? "unlimited"} non-complete Reviews
+                  used.
                 </Text>
                 <View style={styles.headerActions}>
                   <ActionButton
@@ -947,8 +989,8 @@ function TaskManagementSurface({
 
             <View style={styles.metricsRow}>
               <Text style={styles.sectionMuted}>
-                Review {selectedTask.budget.usedFailedReviews}/
-                {selectedTask.budget.maxFailedReviews}
+                Review {selectedTask.budget.usedNonCompleteReviews}/
+                {selectedTask.budget.maxNonCompleteReviews ?? "unlimited"}
               </Text>
               <Text style={styles.sectionMuted}>
                 Tokens {selectedTask.budget.tokenCount.toLocaleString()}
@@ -958,48 +1000,9 @@ function TaskManagementSurface({
               </Text>
             </View>
 
-            <View style={styles.goalRail}>
-              {selectedTask.goals.map((goal) => (
-                <Pressable
-                  key={goal.id}
-                  onPress={() => setSelectedGoalId(goal.id)}
-                  style={[styles.goalRow, goal.id === selectedGoalId && styles.goalRowSelected]}
-                  testID={`loop-goal-row-${goal.id}`}
-                >
-                  {goal.status === "passed" ? (
-                    <ThemedCheckCircle size={16} uniProps={successColorMapping} />
-                  ) : goal.status === "blocked" ? (
-                    <ThemedXCircle size={16} uniProps={dangerColorMapping} />
-                  ) : goal.id === selectedTask.currentGoalId && isExecutionBusy(busyExecution) ? (
-                    <ActivityIndicator size="small" />
-                  ) : (
-                    <ThemedListTodo size={16} uniProps={mutedColorMapping} />
-                  )}
-                  <View style={styles.goalTextBlock}>
-                    <Text style={styles.goalTitle}>
-                      Goal {goal.order}: {goal.title}
-                    </Text>
-                    <Text style={styles.goalMeta}>
-                      {goal.status} | revision {goal.revision}
-                    </Text>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-
-            {selectedGoal ? (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Goal contract</Text>
-                <Text style={styles.sectionBody}>{selectedGoal.goal}</Text>
-                <Text style={styles.sectionMuted}>
-                  Acceptance: {selectedGoal.acceptance.join("; ")}
-                </Text>
-              </View>
-            ) : null}
-
             <View style={styles.phaseList}>
               {visibleExecutions.length === 0 ? (
-                <Text style={styles.emptyText}>No execution attempt exists for this goal yet.</Text>
+                <Text style={styles.emptyText}>No execution attempt exists for this task yet.</Text>
               ) : (
                 visibleExecutions.map((execution) => {
                   const active = execution.id === selectedTask.currentExecutionId;
@@ -1018,10 +1021,10 @@ function TaskManagementSurface({
                       ) : (
                         <Clock3 size={15} />
                       )}
-                      <View style={styles.goalTextBlock}>
+                      <View style={styles.executionTextBlock}>
                         <Text style={styles.phaseTitle}>
-                          {execution.phase === "planexec"
-                            ? "PlanExec"
+                          {execution.phase === "execute"
+                            ? "Execute"
                             : execution.phase === "review"
                               ? "Review"
                               : "Quick Exec"}
@@ -1061,10 +1064,31 @@ function TaskManagementSurface({
               </View>
             ) : null}
 
-            {selectedTask.latestReviewDirection ? (
-              <View style={styles.section} testID="task-review-direction">
-                <Text style={styles.sectionTitle}>Review direction</Text>
-                <Text style={styles.sectionBody}>{selectedTask.latestReviewDirection}</Text>
+            {selectedTask.latestReview ? (
+              <View style={styles.section} testID="task-latest-review">
+                <Text style={styles.sectionTitle}>Latest review</Text>
+                <Text style={styles.sectionBody}>
+                  {selectedTask.latestReview.decision}: {selectedTask.latestReview.reason}
+                </Text>
+                {selectedTask.latestReview.nextFocus ? (
+                  <Text style={styles.sectionMuted}>
+                    Next focus: {selectedTask.latestReview.nextFocus}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {evidence.length > 0 ? (
+              <View style={styles.section} testID="task-evidence">
+                <Text style={styles.sectionTitle}>Evidence</Text>
+                {evidence.map((entry) => (
+                  <View key={entry.id} style={styles.decisionRecord}>
+                    <Text style={styles.decisionOptionLabel}>{entry.summary}</Text>
+                    <Text style={styles.sectionMuted}>
+                      {entry.kind} | {formatTimestamp(entry.createdAt)}
+                    </Text>
+                  </View>
+                ))}
               </View>
             ) : null}
 
@@ -1255,22 +1279,7 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[4],
     flexWrap: "wrap",
   },
-  goalRail: { gap: theme.spacing[2] },
-  goalRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    paddingVertical: theme.spacing[2],
-    paddingHorizontal: theme.spacing[2],
-  },
-  goalRowSelected: { backgroundColor: theme.colors.surface2, borderRadius: theme.borderRadius.md },
-  goalTextBlock: { flex: 1, minWidth: 0, gap: 2 },
-  goalTitle: {
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
-    fontWeight: theme.fontWeight.medium,
-  },
-  goalMeta: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs },
+  executionTextBlock: { flex: 1, minWidth: 0, gap: 2 },
   phaseList: { gap: theme.spacing[2] },
   phaseRow: {
     flexDirection: "row",

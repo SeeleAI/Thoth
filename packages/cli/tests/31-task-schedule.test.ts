@@ -1,38 +1,162 @@
 #!/usr/bin/env npx tsx
 
 import assert from "node:assert";
-import { rm } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { connectToDaemon } from "../src/utils/client.ts";
 import { createE2ETestContext } from "./helpers/test-daemon.ts";
 
 console.log("=== Task And Schedule Command Tests ===\n");
 
+const fixtureRoot = await mkdtemp(join(tmpdir(), "thoth-cli-schedule-fixture-"));
+const fixtureBin = join(fixtureRoot, "bin");
+const fixtureCapture = join(fixtureRoot, "scripted-codex.jsonl");
+const fixtureState = join(fixtureRoot, "scripted-codex-state.json");
+const fixtureCodex = join(fixtureBin, "codex");
+await mkdir(fixtureBin, { recursive: true });
+await copyFile(
+  join(
+    import.meta.dirname,
+    "..",
+    "..",
+    "..",
+    "scripts",
+    "fixtures",
+    "scripted-codex-app-server.mjs",
+  ),
+  fixtureCodex,
+);
+await chmod(fixtureCodex, 0o755);
+await writeFile(fixtureState, JSON.stringify({ checkpoint: 0, review: 0 }));
+await writeFile(fixtureCapture, "");
+
 const ctx = await createE2ETestContext({
   timeout: 30000,
-  env: { THOTH_NODE_ENV: "development" },
+  env: {
+    THOTH_NODE_ENV: "development",
+    THOTH_FAKE_CODEX_CAPTURE: fixtureCapture,
+    THOTH_FAKE_CODEX_STATE: fixtureState,
+    PATH: `${fixtureBin}:${process.env.PATH ?? ""}`,
+  },
 });
+
+async function waitFor<T>(read: () => Promise<T | null>, label: string): Promise<T> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const value = await read();
+    if (value !== null) return value;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+}
+
+async function createConfirmedScheduleContract(
+  workspaceId: string,
+): Promise<{ intentContractId: string; sourceAgentId: string }> {
+  const previousHome = process.env.THOTH_HOME;
+  process.env.THOTH_HOME = ctx.thothHome;
+  const client = await connectToDaemon({ host: `127.0.0.1:${ctx.port}` });
+  try {
+    const agent = await client.createAgent({
+      provider: "codex",
+      cwd: ctx.workDir,
+      workspaceId,
+      initialPrompt: "PACKAGED_RAW_FIRST",
+      thoth: { enabled: false },
+    });
+    await waitFor(async () => {
+      const snapshot = await client.fetchAgent({ agentId: agent.id });
+      return snapshot?.agent.status === "idle" ? true : null;
+    }, "schedule source Agent to become idle");
+
+    await client.sendAgentMessage(agent.id, "Create one reusable Schedule Intent Contract.", {
+      thoth: { enabled: true, executionMode: "quick", clarifyStrength: "light" },
+    });
+
+    let contractId: string | null = null;
+    for (let cardIndex = 0; cardIndex < 10 && !contractId; cardIndex += 1) {
+      const current = await waitFor(async () => {
+        const state = await client.getAgentThothState(agent.id);
+        if (state.error) throw new Error(state.error);
+        return state.state.pendingCard?.card.submitted === false ? state.state : null;
+      }, "Schedule Clarify Card");
+      const pending = current.pendingCard!;
+      if (pending.kind === "clarify_card") {
+        const answered = await client.answerAgentThothCard({
+          agentId: agent.id,
+          cardId: pending.card.id,
+          expectedRevision: current.revision,
+          commandId: `cli-schedule-clarify-${cardIndex}`,
+          answer: {
+            intent: "submit_choices",
+            questionCardId: pending.card.id,
+            answers: pending.card.card.questions.map((question) => ({
+              nodeId: question.nodeId,
+              choiceIds: [question.choices[0]!.id],
+              choiceNotes: {},
+            })),
+            delegatedNodeIds: [],
+            rawAnswer: "Use every first recommended schedule choice.",
+          },
+        });
+        assert.strictEqual(answered.accepted, true, answered.error ?? "Clarify answer rejected");
+        continue;
+      }
+
+      contractId = pending.card.contract.id;
+      const accepted = await client.answerAgentThothCard({
+        agentId: agent.id,
+        cardId: pending.card.id,
+        expectedRevision: current.revision,
+        commandId: "cli-schedule-contract-accept",
+        answer: {
+          intent: "accept_quick",
+          cardId: pending.card.id,
+          rawAnswer: "Confirm the Schedule Intent Contract.",
+        },
+      });
+      assert.strictEqual(accepted.accepted, true, accepted.error ?? "Intent Contract rejected");
+    }
+    assert(contractId, "Clarify should produce one confirmed Intent Contract");
+
+    await waitFor(async () => {
+      const state = await client.getAgentThothState(agent.id);
+      if (state.error) throw new Error(state.error);
+      return state.state.lifecycle === "done" ? true : null;
+    }, "Quick contract Task to settle");
+    await waitFor(async () => {
+      const tasks = await client.listTasks(workspaceId);
+      if (tasks.error) throw new Error(tasks.error);
+      return tasks.tasks.some(
+        (task) => task.sourceAgentId === agent.id && task.intentContract.id === contractId,
+      )
+        ? true
+        : null;
+    }, "confirmed contract Task authority");
+    return { intentContractId: contractId, sourceAgentId: agent.id };
+  } finally {
+    await client.close();
+    if (previousHome === undefined) delete process.env.THOTH_HOME;
+    else process.env.THOTH_HOME = previousHome;
+  }
+}
 
 try {
   const workspaceId = await ctx.createWorkspace();
+  const { intentContractId, sourceAgentId } = await createConfirmedScheduleContract(workspaceId);
   const scopedSchedule = (args: string[]) => [...args, "--workspace", workspaceId];
-  const scheduledAuthority: Array<{ taskId: string; executionId: string }> = [];
+  const scheduledAuthority: Array<{ scheduleId: string; taskId: string }> = [];
   const waitForScheduleAuthority = async (
     scheduleId: string,
-  ): Promise<{ taskId: string; executionId: string }> => {
+  ): Promise<{ scheduleId: string; taskId: string }> => {
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const logs = await ctx.thoth(scopedSchedule(["schedule", "logs", scheduleId, "--json"]));
       assert.strictEqual(logs.exitCode, 0, logs.stderr);
-      const runs = JSON.parse(logs.stdout) as Array<{
-        taskId?: string | null;
-        executionId?: string | null;
-      }>;
-      const authorityRun = runs.find(
-        (run) => typeof run.taskId === "string" && typeof run.executionId === "string",
-      );
-      if (authorityRun?.taskId && authorityRun.executionId) {
-        return {
-          taskId: authorityRun.taskId,
-          executionId: authorityRun.executionId,
-        };
+      const runs = JSON.parse(logs.stdout) as Array<{ taskId?: string | null }>;
+      const authorityRun = runs.find((run) => typeof run.taskId === "string");
+      if (authorityRun?.taskId) {
+        return { scheduleId, taskId: authorityRun.taskId };
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -49,6 +173,8 @@ try {
         "5m",
         "--name",
         "review-prs",
+        "--intent-contract",
+        intentContractId,
         "--provider",
         "claude",
         "--json",
@@ -59,6 +185,7 @@ try {
     const createdJson = JSON.parse(created.stdout);
     assert.strictEqual(createdJson.name, "review-prs");
     assert.strictEqual(createdJson.cadence, "every:5m");
+    assert.strictEqual(createdJson.intentContractId, intentContractId);
     assert(
       typeof createdJson.target === "string" &&
         (createdJson.target.startsWith("agent:") || createdJson.target === "new-agent:claude"),
@@ -112,6 +239,8 @@ try {
         "10m",
         "--provider",
         "codex/gpt-5.4",
+        "--intent-contract",
+        intentContractId,
         "--json",
       ]),
       { timeout: 30000 },
@@ -147,6 +276,8 @@ try {
         "5m",
         "--target",
         "self",
+        "--intent-contract",
+        intentContractId,
         "--provider",
         "codex/gpt-5.4",
       ]),
@@ -168,6 +299,7 @@ try {
     const listedTasks = JSON.parse(listed.stdout) as Array<{
       id: string;
       workspaceId: string;
+      sourceAgentWorkspaceId: string;
       sourceAgentId: string;
     }>;
     assert.strictEqual(scheduledAuthority.length, 2);
@@ -175,7 +307,8 @@ try {
       const task = listedTasks.find((candidate) => candidate.id === authority.taskId);
       assert(task, `Task ${authority.taskId} should remain after deleting its Schedule`);
       assert.strictEqual(task.workspaceId, workspaceId);
-      assert(task.sourceAgentId.startsWith("schedule-source-"));
+      assert.strictEqual(task.sourceAgentWorkspaceId, workspaceId);
+      assert.strictEqual(task.sourceAgentId, sourceAgentId);
 
       const detail = await ctx.thoth([
         "task",
@@ -187,18 +320,24 @@ try {
       ]);
       assert.strictEqual(detail.exitCode, 0, detail.stderr);
       const detailJson = JSON.parse(detail.stdout) as {
-        task: { id: string; workspaceId: string };
+        task: {
+          id: string;
+          workspaceId: string;
+          origin: {
+            type: string;
+            ownerWorkspaceId: string;
+            scheduleId: string;
+            runId: string;
+          } | null;
+        };
         executions: Array<{ id: string; taskId: string }>;
       };
       assert.strictEqual(detailJson.task.id, authority.taskId);
       assert.strictEqual(detailJson.task.workspaceId, workspaceId);
-      assert(
-        detailJson.executions.some(
-          (execution) =>
-            execution.id === authority.executionId && execution.taskId === authority.taskId,
-        ),
-        `Execution ${authority.executionId} should belong to Task ${authority.taskId}`,
-      );
+      assert.strictEqual(detailJson.task.origin?.type, "schedule");
+      assert.strictEqual(detailJson.task.origin?.ownerWorkspaceId, workspaceId);
+      assert.strictEqual(detailJson.task.origin?.scheduleId, authority.scheduleId);
+      assert(detailJson.task.origin?.runId, "Schedule Task should preserve its run lineage");
     }
 
     const inferred = await ctx.thoth(["task", "list", "--json"]);
@@ -232,6 +371,7 @@ try {
   await ctx.stop();
   await rm(ctx.thothHome, { recursive: true, force: true });
   await rm(ctx.workDir, { recursive: true, force: true });
+  await rm(fixtureRoot, { recursive: true, force: true });
 }
 
 console.log("=== Task And Schedule Command Tests Passed ===");

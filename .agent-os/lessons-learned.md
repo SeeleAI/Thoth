@@ -1908,3 +1908,83 @@ Observed on `2026-07-29` in hosted Relay job `90583349364` of exact-SHA workflow
 Conclusion: an external harness fixture must model Provider-owned durable native-thread capabilities, not daemon
 request accidents or process-local state. Resume fidelity is tested by killing the Provider process while keeping
 the native thread id and capability catalog stable.
+
+## `NTH-EXP-076` Cognition judges require behavioral traces, not architecture declarations or aggregate metrics
+
+Observed on `2026-07-31` during the first Clarify/Loop cognition judge runs:
+
+1. Clarify initially failed because the evidence did not prove one fresh Challenger, same-visible-session behavior,
+   single-node delegation or rejection of repeated/resolved/low-value questions. The immutable bundle also exposed
+   Workspace-script tools beyond the intended cognition scope. The ablation report supplied aggregate values but
+   no scenario-level derivation and claimed both one high-impact omission and zero contract regret.
+2. Loop initially failed because budgets, terminal-without-checkpoint repair, compact Execute input, fresh Review
+   investigation, native/non-native Plan branches and late-event Stop fencing were described but not behaviorally
+   demonstrated. The missing cases were added through the same formal RuntimeBundle, ToolGateway and authority
+   paths; the bundle scopes were narrowed rather than explained away.
+3. The retained failed artifacts are `clarify-cognition-codex-judge-2026-07-31T00-26-33-943Z.md`,
+   `clarify-ablation-codex-judge-2026-07-31T00-58-37-240Z.md` and
+   `loop-cognition-codex-judge-2026-07-31T01-04-53-124Z.md`. The subsequent independent judge artifacts all end in
+   `JUDGE_RESULT: PASS`.
+
+Conclusion: a Skill sentence, schema field or precomputed aggregate is not evidence that an Agent Harness property
+holds. Golden evidence must expose scenario inputs, authority transitions, scope boundaries and causal metric
+derivations while keeping private reasoning out of persistence.
+
+## `NTH-EXP-077` Packaged Loop acceptance must bound no-progress retries in product authority
+
+Observed on `2026-07-31` during the first schema-v6 AppImage journey:
+
+1. The scripted Provider completed native Plan/Implement without a semantic checkpoint. The daemon treated every
+   terminal as another reorientation and produced `366` ExecutionAttempts in roughly two minutes.
+2. Fixing only the scripted fixture would have hidden a real product liveness failure. Core authority now permits
+   at most two complete Executor attempts without a new semantic increment; the second failure moves the Task to
+   `interrupted`. Explicit Resume clears the counter and starts a fresh reorientation. The fixture was separately
+   corrected to model a valid checkpoint continuation.
+3. The packaged runner now fails immediately after eight Executions or an unexpected terminal state and preserves
+   Task detail, authority, Timeline, daemon log and Provider receipts instead of reporting only a timeout.
+
+Conclusion: a target-anchored Loop still needs a deterministic no-progress circuit breaker outside Provider
+cognition. Reorientation is not progress, and an acceptance runner must expose runaway authority growth early.
+
+## `NTH-EXP-078` Schedule contract invalidation must compare normalized semantics, not request field presence
+
+Observed on `2026-07-31` during the second schema-v6 AppImage journey:
+
+1. The Schedule editor submits a complete snapshot. The Service interpreted the presence of cadence, Workspace
+   mode and timezone fields as a material execution change even when their normalized values were unchanged, so a
+   harmless save incorrectly moved the Schedule to `needs_contract`.
+2. The Service now compares normalized before/after semantics. Omitted `same-workspace` and cron `UTC` defaults are
+   equivalent to their explicit forms; an actual execution-semantic change still requires a new Intent Contract.
+3. Focused Service/App tests and the complete packaged Schedule journey pass without a UI omission workaround or
+   a compatibility branch.
+
+Conclusion: contract invalidation is a semantic diff over canonical values. Complete-form transport payloads are
+not evidence that the user changed Task meaning.
+
+## `NTH-EXP-079` Generated gate constants and real-flow selectors must track their canonical owners
+
+Observed on `2026-07-31` during final cognition verification:
+
+1. The Stage 4 scanner retained old hard-coded Protocol Registry counts after the Registry grew to `143` inbound
+   and `152` outbound schemas. Architecture was valid; the acceptance constant had drifted and was updated to the
+   current Registry owner.
+2. Real Codex produced the Clarify Card, but the E2E read an obsolete nested title field and waited `180` seconds.
+   The assertion now reads the current Agent-scoped Card projection. A separate trace run initially used a relative
+   `.dev/...` path resolved from a package working directory; formal trace paths are now absolute.
+
+Conclusion: fixed scanner counts and E2E selectors are consumers of canonical registries/projections, not parallel
+truth. A timeout after visible product success should first audit the observer path and working-directory domain.
+
+## `NTH-EXP-080` Hosted Relay health and one transient WebSocket failure do not replace the complete journey
+
+Observed on `2026-07-31` during final hosted Relay acceptance:
+
+1. The first attempt returned WebSocket close `1006` across five handshakes while the Relay health endpoint still
+   returned HTTP `200` and protocol `3`. Neither receipt proved the full product path passed or that deployment was
+   defective.
+2. The complete unchanged packaged Server CLI journey was rerun immediately through the same hosted endpoint and
+   passed `ok=true`, including daemon restart, Clarify, Loop controls and five encrypted file chunks. No Relay
+   deployment, protocol bypass or reduced assertion was introduced.
+
+Conclusion: retain transient transport failure evidence, but require the full E2EE product journey for promotion.
+A health endpoint is diagnostic context, not a substitute for end-to-end acceptance.

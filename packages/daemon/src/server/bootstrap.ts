@@ -152,8 +152,6 @@ import type { PersistedConfig } from "./persisted-config.js";
 import { createServiceProxySubsystem, type ServiceProxySubsystem } from "./service-proxy.js";
 import { ScriptHealthMonitor } from "./script-health-monitor.js";
 import { createScriptStatusEmitter } from "./script-status-projection.js";
-import { createWorkspaceScriptsService } from "./session/workspace-scripts/workspace-scripts-service.js";
-import { spawnWorkspaceScript } from "./worktree-bootstrap.js";
 import { WorkspaceServicePortRegistry } from "./workspace-service-port-registry.js";
 import {
   CatalogWorkspaceScriptRuntimeReceiptRepository,
@@ -174,13 +172,16 @@ import {
 import { createWebUiMiddleware } from "./web-ui.js";
 import {
   RuntimeBundleStore,
+  TaskContextBroker,
   WorkspaceAuthorityManager,
   WorkspaceAgentStorage,
   WorkspaceAgentTimelineStore,
+  WorkspaceForegroundAuthority,
   WorkspaceTaskCoordinator,
   WorkspaceTaskOrchestrator,
 } from "./workspace-authority/index.js";
 import { THOTH_RUNTIME_BUNDLE_CATALOG, loadRuntimeBundle } from "@thoth/drivers/harness";
+import { ForegroundTurnCoordinator } from "./agent/foreground-turn-coordinator.js";
 
 const MAX_MCP_DEBUG_BATCH_ITEMS = 10;
 const REDACTED_LOG_VALUE = "[redacted]";
@@ -786,6 +787,18 @@ export async function createThothDaemon(
     new RuntimeBundleStore(config.thothHome),
     logger.child({ module: "workspace-task-orchestrator" }),
   );
+  const foregroundTurnCoordinator = new ForegroundTurnCoordinator({
+    authorityStore: new WorkspaceForegroundAuthority(workspaceAuthorityManager),
+    executionService,
+    agentStorage,
+    taskCoordinator: workspaceTaskCoordinator,
+    taskContextBroker: new TaskContextBroker(workspaceAuthorityManager),
+    toolGateway: workspaceTaskOrchestrator.toolGateway,
+    logger: logger.child({ module: "foreground-turn-coordinator" }),
+  });
+  workspaceTaskCoordinator.setTaskClarifyHandoff({
+    open: (input) => foregroundTurnCoordinator.openTaskClarifyHandoff(input),
+  });
   executionService.setToolGateway(workspaceTaskCoordinator.toolGateway);
   const clarifyRuntimeBundle = loadRuntimeBundle("thoth.clarify", THOTH_RUNTIME_BUNDLE_CATALOG);
   new RuntimeBundleStore(config.thothHome).persist(clarifyRuntimeBundle);
@@ -835,26 +848,11 @@ export async function createThothDaemon(
   const emitExternalSessionMessage = (message: SessionOutboundMessage) => {
     wsServer?.broadcast(wrapSessionMessage(message));
   };
-  const workspaceScriptOperations = createWorkspaceScriptsService({
-    serviceProxy,
-    scriptRuntimeStore,
-    servicePortRegistry: workspaceServicePortRegistry,
-    terminalManager,
-    workspaceRegistry,
-    workspaceGitService,
-    getDaemonTcpPort: () => (boundListenTarget?.type === "tcp" ? boundListenTarget.port : null),
-    getDaemonTcpHost: () => (boundListenTarget?.type === "tcp" ? boundListenTarget.host : null),
-    serviceProxyPublicBaseUrl,
-    resolveScriptHealth: (hostname) => scriptHealthMonitor.getHealthForHostname(hostname),
-    logger,
-    emit: emitExternalSessionMessage,
-    spawnWorkspaceScript,
-  });
   let createScheduleWorktreeWorkspace: CreateScheduleWorktreeWorkspace | null = null;
   const scheduleService = new ScheduleService({
     authority: workspaceAuthorityManager,
+    taskCoordinator: workspaceTaskCoordinator,
     logger,
-    executionService,
     agentStorage,
     providerSnapshotManager,
     createWorktreeWorkspace: async (input) => {
@@ -868,7 +866,7 @@ export async function createThothDaemon(
   const sweepIdleAgentRuntimes = async (): Promise<void> => {
     const result = await executionService.collectIdleAgentRuntimes({
       cutoff: new Date(Date.now() - AGENT_IDLE_RUNTIME_TTL_MS),
-      protectedAgentIds: scheduleService.listRuntimeProtectedAgentIds(),
+      protectedAgentIds: new Set(),
     });
     if (result.releasedAgentIds.length > 0) {
       logger.info(
@@ -1070,7 +1068,6 @@ export async function createThothDaemon(
     workspaceAuthorityManager,
     toolGateway: workspaceTaskCoordinator.toolGateway,
     browserToolsBroker,
-    workspaceScripts: workspaceScriptOperations,
     logger,
   });
   const createAgentToolCatalog = (runtime: ThothToolRuntimeContext) =>
@@ -1337,6 +1334,7 @@ export async function createThothDaemon(
               {
                 manager: workspaceAuthorityManager,
                 coordinator: workspaceTaskCoordinator,
+                foregroundTurnCoordinator,
               },
               browserToolsBroker,
               workspaceServicePortRegistry,

@@ -31,9 +31,8 @@ export class TaskContextBroker {
       unique.set(reference.taskId, reference);
     }
     const normalized = [...unique.values()];
-    const store = this.authority.forWorkspace(workspaceId);
     const contexts = normalized.map((reference) => {
-      const context = store.getTaskContext(reference.taskId);
+      const context = this.authority.getTaskContext(reference.workspaceId, reference.taskId);
       if (!context) {
         throw new Error(`Task ${reference.taskId} does not exist in Workspace ${workspaceId}`);
       }
@@ -51,6 +50,34 @@ export class TaskContextBroker {
     };
   }
 
+  prepareTaskClarifyHandoff(input: {
+    sourceWorkspaceId: string;
+    sourceAgentId: string;
+    taskWorkspaceId: string;
+    taskId: string;
+    taskRevision: number;
+    decisionRequestId: string;
+  }): PreparedTaskContext {
+    const context = this.authority.getTaskContext(input.taskWorkspaceId, input.taskId);
+    if (
+      !context ||
+      context.task.revision !== input.taskRevision ||
+      context.task.sourceAgentWorkspaceId !== input.sourceWorkspaceId ||
+      context.task.sourceAgentId !== input.sourceAgentId ||
+      context.task.pendingDecision?.id !== input.decisionRequestId ||
+      context.task.pendingDecision.kind !== "contract_change"
+    ) {
+      throw new WorkspaceAuthorityConflictError(
+        "Task Clarify handoff no longer matches its source Agent or pending decision",
+      );
+    }
+    return {
+      references: [context.reference],
+      contexts: [context],
+      prompt: renderTaskContexts([context]),
+    };
+  }
+
   bindTurn(input: {
     workspaceId: string;
     agentId: string;
@@ -60,10 +87,10 @@ export class TaskContextBroker {
     if (input.prepared.references.length === 0) {
       return;
     }
-    this.authority.forWorkspace(input.workspaceId).bindTaskContexts({
+    this.authority.forWorkspace(input.workspaceId).bindTaskContextSnapshots({
       agentId: input.agentId,
       turnId: input.turnId,
-      references: input.prepared.references,
+      contexts: input.prepared.contexts,
     });
   }
 
@@ -75,42 +102,51 @@ export class TaskContextBroker {
     const contexts = store.listTurnTaskContexts(turnId);
     return contexts.length > 0 ? renderTaskContexts(contexts) : null;
   }
+
+  latestForTurn(turnId: string): TaskContextEnvelope[] {
+    return this.authority.listLatestTurnTaskContexts(turnId);
+  }
 }
 
 function renderTaskContexts(contexts: TaskContextEnvelope[]): string {
   const semantic = contexts.map((context) => ({
-    task: {
+    taskAnchor: {
       title: context.task.title,
-      mode: context.task.mode,
+      objective: context.task.intentContract.objective,
+      nonGoals: context.task.intentContract.nonGoals,
+      invariants: context.task.intentContract.invariants,
+      acceptanceClaims: context.task.intentContract.acceptanceClaims.map((claim) => ({
+        statement: claim.statement,
+        status: claim.status,
+      })),
+      riskBoundary: context.task.intentContract.riskBoundary,
+      escalationPolicy: context.task.intentContract.escalationPolicy,
+    },
+    progress: {
       status: context.task.status,
       summary: context.task.summary,
-      goal: context.task.goal,
-      constraints: context.task.constraints,
-      acceptance: context.task.acceptance,
-      currentGoal:
-        context.task.goals.find((goal) => goal.id === context.task.currentGoalId) ?? null,
-      goals: context.task.goals.map((goal) => ({
-        order: goal.order,
-        title: goal.title,
-        goal: goal.goal,
-        constraints: goal.constraints,
-        acceptance: goal.acceptance,
-        status: goal.status,
-      })),
-      latestReviewDirection: context.task.latestReviewDirection,
+      activeGap: context.task.workingSet.activeGap,
+      currentUnderstanding: context.task.workingSet.currentUnderstanding,
+      currentHypothesis: context.task.workingSet.currentHypothesis,
+      nextMove: context.task.workingSet.nextMove,
+      rejectedRoutes: context.task.workingSet.rejectedRoutes,
+      blockers: context.task.workingSet.blockers,
+      currentWorkUnit:
+        context.task.workUnits.find((unit) => unit.id === context.task.currentWorkUnitId) ?? null,
+      latestReview: context.task.latestReview
+        ? {
+            decision: context.task.latestReview.decision,
+            reason: context.task.latestReview.reason,
+            nextFocus: context.task.latestReview.nextFocus,
+          }
+        : null,
     },
-    humanDecisions: context.decisions.map((decision) => ({
-      kind: decision.kind,
-      answer: decision.rawAnswer,
-      normalized: decision.normalized,
-      decidedAt: decision.decidedAt,
+    evidenceIndex: context.evidence.map((evidence) => ({
+      kind: evidence.kind,
+      summary: evidence.summary,
+      artifactRef: evidence.artifactRef,
     })),
-    blackboard: context.blackboard.map((entry) => ({
-      kind: entry.kind,
-      producer: entry.producer,
-      content: entry.content,
-      createdAt: entry.createdAt,
-    })),
+    humanDecisionRefs: context.task.intentContract.humanDecisionRefs,
   }));
   return [
     "User-selected read-only Task context from this Workspace:",

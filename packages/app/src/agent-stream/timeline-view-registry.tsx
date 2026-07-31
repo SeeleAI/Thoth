@@ -52,8 +52,8 @@ export interface TimelineRenderContext {
     layout: TimelineRenderLayout,
   ): ReactNode;
   renderClarify(entry: TypedTimelineEntry<"clarify_card">): ReactNode;
-  renderTask(entry: TypedTimelineEntry<"task_card">): ReactNode;
-  renderGoal(entry: TypedTimelineEntry<"goal_card">): ReactNode;
+  renderIntentContract(entry: TypedTimelineEntry<"intent_contract_card">): ReactNode;
+  renderLegacyExecutionPlan(entry: TypedTimelineEntry<"legacy_execution_plan">): ReactNode;
   renderRegisteredTask(entry: TypedTimelineEntry<"registered_task">): ReactNode;
   renderTodo(entry: TypedTimelineEntry<"todo">): ReactNode;
   renderError(entry: TypedTimelineEntry<"error">): ReactNode;
@@ -94,15 +94,15 @@ export const timelineItemViewRegistry = {
     estimateHeight: () => 360,
     render: (entry, context) => context.renderClarify(entry),
   },
-  task_card: {
+  intent_contract_card: {
     meta: { category: "card", toolSequence: false },
-    estimateHeight: () => 340,
-    render: (entry, context) => context.renderTask(entry),
+    estimateHeight: () => 460,
+    render: (entry, context) => context.renderIntentContract(entry),
   },
-  goal_card: {
+  legacy_execution_plan: {
     meta: { category: "card", toolSequence: false },
     estimateHeight: () => 380,
-    render: (entry, context) => context.renderGoal(entry),
+    render: (entry, context) => context.renderLegacyExecutionPlan(entry),
   },
   registered_task: {
     meta: { category: "card", toolSequence: false },
@@ -176,7 +176,7 @@ export function hasPendingAuthorityDecision(items: readonly TimelineRenderItem[]
     if (isPendingTimelineItem(entry)) return false;
     const item = entry.item;
     if (
-      (item.type === "clarify_card" || item.type === "task_card" || item.type === "goal_card") &&
+      (item.type === "clarify_card" || item.type === "intent_contract_card") &&
       item.card.submitted === false
     ) {
       return true;

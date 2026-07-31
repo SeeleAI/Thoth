@@ -839,17 +839,33 @@ test("answers an Agent-scoped Thoth card with CAS and command idempotency", asyn
   mock.triggerOpen();
   await connectPromise;
 
+  await expect(
+    client.answerAgentThothCard({
+      requestId: "req-legacy-thoth-answer",
+      agentId: "agent-1",
+      cardId: "legacy-task-card-1",
+      expectedRevision: 3,
+      commandId: "legacy-command-1",
+      answer: {
+        intent: "accept_quick",
+        card_id: "legacy-task-card-1",
+        title: "Legacy task approval",
+        raw_answer: "Approve",
+      },
+    } as never),
+  ).rejects.toThrow();
+  expect(mock.sent).toHaveLength(0);
+
   const responsePromise = client.answerAgentThothCard({
     requestId: "req-thoth-answer",
     agentId: "agent-1",
-    cardId: "task-card-1",
+    cardId: "intent-contract-card-1",
     expectedRevision: 3,
     commandId: "command-1",
     answer: {
       intent: "accept_quick",
-      card_id: "task-card-1",
-      title: "确认任务",
-      raw_answer: "确认并前台执行",
+      cardId: "intent-contract-card-1",
+      rawAnswer: "Confirm and run in the foreground",
     },
   });
 
@@ -857,14 +873,13 @@ test("answers an Agent-scoped Thoth card with CAS and command idempotency", asyn
     type: "agent.thoth.card.answer.request",
     requestId: "req-thoth-answer",
     agentId: "agent-1",
-    cardId: "task-card-1",
+    cardId: "intent-contract-card-1",
     expectedRevision: 3,
     commandId: "command-1",
     answer: {
       intent: "accept_quick",
-      card_id: "task-card-1",
-      title: "确认任务",
-      raw_answer: "确认并前台执行",
+      cardId: "intent-contract-card-1",
+      rawAnswer: "Confirm and run in the foreground",
     },
   });
 

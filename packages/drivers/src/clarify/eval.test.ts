@@ -1,49 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildClarifyProviderInputEnvelope,
   loadRuntimeSkillArtifact,
   parseRuntimeSkillFrontmatter,
   validateClarifyRuntimeSkillArtifact,
 } from "./contract.js";
-import { evaluateClarifyGoldenDataset } from "./eval.js";
+import { runClarifyEval } from "./eval.js";
 import { CLARIFY_GOLDEN_SCENARIOS } from "./golden.js";
 import {
   buildClarifyUserSimulationReport,
   validateClarifyUserSimulationReport,
 } from "./user-simulation.js";
 
-describe("thoth.clarify harness", () => {
-  it("builds normal provider input envelopes without repeating Skill rules", () => {
-    const envelope = buildClarifyProviderInputEnvelope({
-      sessionId: "sec_test",
-      taskId: null,
-      currentState: "C_ASK",
-      userInput: "帮我把这个项目做好",
-      clarify: "balanced",
-      mode: "loop",
-      loop: "balanced",
-      transcriptRef: "transcript:sec_test:v4",
-      contextSummary: "workspace facts already discovered",
-    });
-
-    expect(envelope.skill).toBe("thoth.clarify");
-    expect(envelope.expect).toBe("clarify");
-    expect(envelope.input).toContain('"type":"clarify_turn"');
-    expect(envelope.input).toContain('"current_state":"C_ASK"');
-    expect(envelope.input).not.toContain("## State Codes");
-    expect(envelope.input).not.toContain("## Transition Rules");
-  });
-
-  it("loads thoth.clarify from the standard SKILL.md artifact", () => {
+describe("thoth.clarify cognitive harness", () => {
+  it("loads the provider-neutral Decision Map Skill artifact", () => {
     const artifact = loadRuntimeSkillArtifact("thoth.clarify");
-    expect(artifact.path).toMatch(/runtime-skills[\\/]thoth-clarify[\\/]SKILL\.md$/);
-    expect(artifact.frontmatter.name).toBe("thoth.clarify");
-    expect(artifact.frontmatter.userInvocable).toBe(false);
-    expect(artifact.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(artifact.path).toMatch(/runtime-skills[\\/]thoth-clarify[\\/]SKILL\.md$/u);
+    expect(artifact.frontmatter).toMatchObject({
+      name: "thoth.clarify",
+      userInvocable: false,
+      xThothRuntime: "hidden",
+      xThothScope: "provider-session",
+    });
+    expect(artifact.digest).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(validateClarifyRuntimeSkillArtifact(artifact)).toEqual([]);
   });
 
-  it("accepts Windows CRLF runtime skill frontmatter", () => {
+  it("accepts Windows CRLF runtime Skill frontmatter", () => {
     const parsed = parseRuntimeSkillFrontmatter(
       [
         "---",
@@ -54,68 +36,62 @@ describe("thoth.clarify harness", () => {
         "## Runtime Context",
       ].join("\r\n"),
     );
-
     expect(parsed.frontmatter).toMatchObject({
       name: "thoth.clarify",
-      description: "Windows-compatible runtime skill",
       userInvocable: false,
     });
     expect(parsed.body).toBe("## Runtime Context");
   });
 
-  it("keeps the golden dataset broad enough for NTH-TD-015 acceptance", () => {
-    expect(CLARIFY_GOLDEN_SCENARIOS.map((scenario) => scenario.id)).toEqual(
-      expect.arrayContaining([
-        "hi-direct",
-        "vague-large-task",
-        "low-risk-small-task",
-        "unclear-acceptance",
-        "risk-resource-boundary",
-        "repeated-ambiguity",
-        "enough-information-task-card",
-        "you-decide-agent-owned",
-        "high-risk-confirmation",
-        "unsafe-blocked",
-        "contradiction",
-        "anti-downgrade",
-        "strength-none-pathtracing",
-        "strength-light-pathtracing",
-        "strength-balanced-pathtracing",
-        "strength-dive-pathtracing",
-        "agent-can-discover",
-        "stop-clarify-task-card",
-        "compact-preset-cask",
-        "answer-packet-note-only",
-        "goal-card-provenance",
-      ]),
-    );
+  it("covers evidence ownership, subtree delegation, and a 32-question Dive", () => {
+    expect(CLARIFY_GOLDEN_SCENARIOS.map((scenario) => scenario.id)).toEqual([
+      "discover-before-ask",
+      "delegate-subtree",
+      "ray-tracer-dive-32",
+    ]);
+    const dive = CLARIFY_GOLDEN_SCENARIOS.find((scenario) => scenario.id === "ray-tracer-dive-32")!;
+    expect(dive.cards.flatMap((entry) => entry.card.questions).length).toBeGreaterThan(30);
+    expect(CLARIFY_GOLDEN_SCENARIOS[0]?.cards[0]?.humanAction).toEqual({
+      intent: "recommend",
+      targetNodeId: "acceptance",
+    });
+    expect(CLARIFY_GOLDEN_SCENARIOS[1]?.cards[0]?.humanAction).toEqual({
+      intent: "delegate_subtree",
+      targetNodeId: "portability",
+    });
   });
 
-  it("passes deterministic clarify golden eval", () => {
-    const report = evaluateClarifyGoldenDataset();
+  it("passes the deterministic Decision Map research metrics", () => {
+    const report = runClarifyEval();
     expect(report.passed, JSON.stringify(report.results, null, 2)).toBe(true);
-    expect(report.results.map((scenario) => scenario.id)).toEqual(
-      expect.arrayContaining([
-        "packaged-runtime-skill-authority",
-        "runtime-bundle-content-addressed",
-        "runtime-bundle-tool-catalog",
-        "runtime-bundle-provider-home-independent",
-        "normal-turn-does-not-repeat-skill-rules",
-        "transition-turn-carries-skill-reference",
-        "skill-rules-live-in-skill-md",
-        "repair-packet-shape-only",
-        "clarify-strength-behavior-differs",
-        "codex-exec-user-simulation",
-      ]),
-    );
+    expect(report.scenarioCount).toBe(3);
+    expect(report.metrics).toMatchObject({
+      highImpactOmissions: 0,
+      invalidQuestions: 0,
+      discoverableFactQuestionRate: 0,
+      contractRegret: 0,
+    });
+    expect(report.metrics.branchesEliminatedPerHumanAnswer).toBeGreaterThan(0);
+    expect(report.negativeProbes).toEqual([
+      expect.objectContaining({ id: "duplicate-question", passed: true }),
+      expect.objectContaining({ id: "already-resolved-question", passed: true }),
+      expect.objectContaining({ id: "discoverable-evidence-question", passed: true }),
+      expect.objectContaining({ id: "agent-owned-question", passed: true }),
+      expect.objectContaining({ id: "low-value-local-question", passed: true }),
+    ]);
   });
 
-  it("keeps user-simulation Task Cards schema-valid with verbatim provenance", () => {
+  it("keeps all four ablations and selects Decision Map plus one-shot Challenger", () => {
     const report = buildClarifyUserSimulationReport({
-      id: "thoth.clarify",
       digest: `sha256:${"0".repeat(64)}`,
     });
-
-    expect(validateClarifyUserSimulationReport(report)).toEqual({ passed: true, failures: [] });
+    expect(report.selectedVariant).toBe("decision_map_challenger");
+    expect(report.ablations.map((entry) => entry.variant)).toEqual([
+      "prompt_only",
+      "fixed_scaffold",
+      "decision_map",
+      "decision_map_challenger",
+    ]);
+    expect(validateClarifyUserSimulationReport(report)).toEqual([]);
   });
 });

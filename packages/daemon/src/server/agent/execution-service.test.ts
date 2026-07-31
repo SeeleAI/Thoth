@@ -3758,6 +3758,56 @@ test("waitForAgentRunStart resolves while a foreground run is still only pending
   expect(manager.getAgent(snapshot.id)?.lifecycle).toBe("idle");
 });
 
+test("buffers Provider events emitted before startTurn returns", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "execution-service-immediate-start-"));
+
+  class ImmediateTerminalSession extends TestHarnessThread {
+    override async startTurn(): Promise<{ turnId: string }> {
+      const turnId = "turn-immediate";
+      this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+      this.pushEvent({
+        type: "timeline",
+        provider: this.provider,
+        turnId,
+        item: { type: "assistant_message", text: "immediate result" },
+      });
+      this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      return { turnId };
+    }
+  }
+
+  class ImmediateTerminalAdapter extends TestHarnessAdapter {
+    override async createSession(config: AgentSessionConfig): Promise<HarnessThread> {
+      return new ImmediateTerminalSession(config);
+    }
+  }
+
+  const manager = new ExecutionService({
+    adapters: { codex: new ImmediateTerminalAdapter() },
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000126",
+  });
+  let agentId: string | null = null;
+
+  try {
+    const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir });
+    agentId = snapshot.id;
+    const events: AgentStreamEvent[] = [];
+    for await (const event of manager.streamAgent(snapshot.id, "fast provider")) {
+      events.push(event);
+    }
+    expect(events.map((event) => event.type)).toEqual([
+      "turn_started",
+      "timeline",
+      "turn_completed",
+    ]);
+    expect(manager.getAgent(snapshot.id)?.lifecycle).toBe("idle");
+  } finally {
+    if (agentId) await manager.closeAgent(agentId).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("replaceAgentRun does not emit idle or resolve waiters between interrupted and replacement runs", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "execution-service-replace-run-"));
   const storagePath = join(workdir, "agents");

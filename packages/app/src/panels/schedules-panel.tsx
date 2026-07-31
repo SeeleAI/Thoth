@@ -31,9 +31,16 @@ interface AgentChoice {
   title: string;
 }
 
+interface IntentContractChoice {
+  id: string;
+  title: string;
+  objective: string;
+}
+
 interface ScheduleEditorState {
   name: string;
   prompt: string;
+  intentContractId: string;
   cadenceType: "every" | "cron";
   everyMinutes: string;
   cronExpression: string;
@@ -52,6 +59,7 @@ interface ScheduleEditorState {
 const EMPTY_EDITOR: ScheduleEditorState = {
   name: "",
   prompt: "",
+  intentContractId: "",
   cadenceType: "every",
   everyMinutes: "60",
   cronExpression: "0 9 * * *",
@@ -88,6 +96,7 @@ function scheduleToEditor(schedule: StoredSchedule): ScheduleEditorState {
   return {
     name: schedule.name ?? "",
     prompt: schedule.prompt,
+    intentContractId: schedule.intentContractId ?? "",
     cadenceType: schedule.cadence.type,
     everyMinutes:
       schedule.cadence.type === "every" ? String(schedule.cadence.everyMs / 60_000) : "60",
@@ -243,6 +252,7 @@ export function SchedulesPanel({
   );
   const [selected, setSelected] = useState<StoredSchedule | null>(null);
   const [agentChoices, setAgentChoices] = useState<AgentChoice[]>([]);
+  const [intentContractChoices, setIntentContractChoices] = useState<IntentContractChoice[]>([]);
   const [editor, setEditor] = useState<ScheduleEditorState>(EMPTY_EDITOR);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -257,9 +267,10 @@ export function SchedulesPanel({
 
   const refresh = useCallback(async () => {
     if (!client) return;
-    const [scheduleResponse, agentResponse] = await Promise.all([
+    const [scheduleResponse, agentResponse, taskResponse] = await Promise.all([
       client.scheduleList({ workspaceId }),
       client.fetchAgents({ scope: "active", page: { limit: 200 } }),
+      client.listTasks(workspaceId),
     ]);
     if (scheduleResponse.error) {
       setError(scheduleResponse.error);
@@ -278,6 +289,22 @@ export function SchedulesPanel({
         .filter((agent) => agent.workspaceId === workspaceId && !agent.archivedAt)
         .map((agent) => ({ id: agent.id, title: agent.title || agent.id })),
     );
+    if (taskResponse.error) {
+      setError(taskResponse.error);
+    } else {
+      const byId = new Map<string, IntentContractChoice>();
+      for (const task of taskResponse.tasks) {
+        const contract = task.intentContract;
+        if (contract.status === "confirmed") {
+          byId.set(contract.id, {
+            id: contract.id,
+            title: contract.title,
+            objective: contract.objective,
+          });
+        }
+      }
+      setIntentContractChoices(Array.from(byId.values()));
+    }
   }, [client, workspaceId]);
 
   const refreshSelected = useCallback(
@@ -350,6 +377,8 @@ export function SchedulesPanel({
     try {
       const prompt = editor.prompt.trim();
       if (!prompt) throw new Error("Prompt is required");
+      const intentContractId = editor.intentContractId.trim();
+      if (!intentContractId) throw new Error("Select a confirmed Intent Contract");
       const cadence = editorCadence(editor);
       const maxRuns = parsePositiveInteger(editor.maxRuns, "Max runs");
       const expiresAt = editor.expiresAt.trim();
@@ -380,6 +409,7 @@ export function SchedulesPanel({
       const response = await client.scheduleCreate({
         workspaceId,
         prompt,
+        intentContractId,
         name: editor.name.trim() || null,
         cadence,
         target,
@@ -407,6 +437,8 @@ export function SchedulesPanel({
     try {
       const prompt = editor.prompt.trim();
       if (!prompt) throw new Error("Prompt is required");
+      const intentContractId = editor.intentContractId.trim();
+      if (!intentContractId) throw new Error("Select a confirmed Intent Contract");
       const maxRuns = editor.maxRuns.trim()
         ? parsePositiveInteger(editor.maxRuns, "Max runs")
         : null;
@@ -428,6 +460,7 @@ export function SchedulesPanel({
         id: selected.id,
         name: editor.name.trim() || null,
         prompt,
+        intentContractId,
         cadence: editorCadence(editor),
         ...(newAgentConfig ? { newAgentConfig } : {}),
         maxRuns,
@@ -489,7 +522,6 @@ export function SchedulesPanel({
         activeTab: "tasks",
         selectedTaskId: run.taskId,
         selectedExecutionId: run.executionId,
-        selectedGoalId: null,
       });
       router.push(buildHostWorkspaceTasksRoute(serverId, run.workspaceId));
     },
@@ -576,6 +608,36 @@ export function SchedulesPanel({
               onChangeText={(prompt) => patchEditor({ prompt })}
               multiline
             />
+            <View style={styles.field} testID="schedule-intent-contract-picker">
+              <Text style={styles.fieldLabel}>Intent Contract</Text>
+              {intentContractChoices.length === 0 ? (
+                <Text style={styles.muted}>
+                  Confirm an Intent Contract in this Workspace before creating or updating a
+                  Schedule.
+                </Text>
+              ) : (
+                <View style={styles.contractChoices}>
+                  {intentContractChoices.map((contract) => (
+                    <Pressable
+                      key={contract.id}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: editor.intentContractId === contract.id }}
+                      onPress={() => patchEditor({ intentContractId: contract.id })}
+                      style={[
+                        styles.contractChoice,
+                        editor.intentContractId === contract.id && styles.contractChoiceSelected,
+                      ]}
+                      testID={`schedule-intent-contract-${contract.id}`}
+                    >
+                      <Text style={styles.scheduleTitle}>{contract.title}</Text>
+                      <Text style={styles.muted} numberOfLines={2}>
+                        {contract.objective}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
             <Text style={styles.fieldLabel}>Cadence</Text>
             <View style={styles.rowWrap}>
               <Choice
@@ -722,7 +784,7 @@ export function SchedulesPanel({
               <Action
                 testID={creating ? "schedule-create-submit" : "schedule-edit-submit"}
                 label={creating ? "Create" : "Save"}
-                disabled={busy !== null}
+                disabled={busy !== null || !editor.intentContractId}
                 onPress={() => void (creating ? createSchedule() : updateSchedule())}
                 icon={busy ? <ActivityIndicator size="small" /> : <Save size={14} />}
               />
@@ -750,6 +812,9 @@ export function SchedulesPanel({
               <Text style={styles.metaText}>Last run: {formatTimestamp(selected.lastRunAt)}</Text>
               <Text style={styles.metaText}>Expires: {formatTimestamp(selected.expiresAt)}</Text>
               <Text style={styles.metaText}>Max runs: {selected.maxRuns ?? "unlimited"}</Text>
+              <Text style={styles.metaText}>
+                Intent Contract: {selected.intentContractId ?? "required"}
+              </Text>
               <Text style={styles.metaText}>
                 Target:{" "}
                 {selected.target.type === "agent"
@@ -783,7 +848,7 @@ export function SchedulesPanel({
               <Action
                 testID="schedule-run-now"
                 label="Run now"
-                disabled={busy !== null}
+                disabled={busy !== null || selected.status === "needs_contract"}
                 onPress={() => void runAction("run")}
                 icon={<Play size={14} />}
               />
@@ -941,6 +1006,19 @@ const styles = StyleSheet.create((theme) => ({
   },
   choiceText: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
   choiceTextSelected: { color: theme.colors.foreground },
+  contractChoices: { gap: theme.spacing[2] },
+  contractChoice: {
+    gap: theme.spacing[1],
+    padding: theme.spacing[3],
+    borderRadius: theme.borderRadius.md,
+    borderWidth: theme.borderWidth[1],
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface1,
+  },
+  contractChoiceSelected: {
+    borderColor: theme.colors.accentBright,
+    backgroundColor: theme.colors.surface2,
+  },
   action: {
     minHeight: 34,
     paddingHorizontal: theme.spacing[3],

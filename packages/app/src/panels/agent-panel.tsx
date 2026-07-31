@@ -12,6 +12,7 @@ import invariant from "tiny-invariant";
 import { shallow, useShallow } from "zustand/shallow";
 import { AgentStreamView, type AgentStreamViewHandle } from "@/agent-stream/view";
 import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
+import { ClarifyDecisionMap } from "@/components/clarify-decision-map";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
 import { Composer } from "@/composer";
 import { AgentModeControl } from "@/composer/agent-controls/mode-control";
@@ -1149,7 +1150,14 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   const streamContent = (
     <ReanimatedAnimated.View style={animatedContentStyle}>{streamSection}</ReanimatedAnimated.View>
   );
-  const contentContainer = <View style={styles.contentContainer}>{streamContent}</View>;
+  const contentContainer = (
+    <View style={styles.contentContainer}>
+      <View style={styles.agentBody}>
+        {streamContent}
+        <ClarifyDecisionMap serverId={serverId} agentId={effectiveAgent.id} />
+      </View>
+    </View>
+  );
 
   return (
     <RewindComposerRestoreProvider text={agentInputDraft.text} setText={agentInputDraft.setText}>
@@ -1633,6 +1641,12 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     overflow: "hidden",
     ...(isWeb ? { userSelect: "none" as const } : {}),
+  },
+  agentBody: {
+    flex: 1,
+    minHeight: 0,
+    flexDirection: "row",
+    position: "relative",
   },
   historySyncOverlay: {
     position: "absolute",

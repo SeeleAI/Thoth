@@ -17,7 +17,6 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Logger } from "pino";
 import {
-  AUTHORITY_MIGRATION_VERSION,
   CATALOG_MIGRATION_VERSION,
   SQLITE_SCHEMA_VERSION,
   STORAGE_LAYOUT_MARKER,
@@ -26,8 +25,14 @@ import {
   createCatalogDatabase,
   workspaceDatabasePath,
 } from "./storage-schema.js";
+import {
+  rebuildAuthoritySchemaV6,
+  removeMigrationTarget,
+  workspaceRootForAuthority,
+} from "./storage-v6-migration.js";
 
 const RELEASE_SOURCE = "05775486";
+const LEGACY_SQLITE_SCHEMA_VERSION = 5;
 const LOCK_SUFFIX = ".migration.lock";
 const NON_AUTHORITY_HOME_ENTRIES = new Set([
   "cli-client-id",
@@ -49,11 +54,11 @@ const CATALOG_V2_REQUIRED_TABLES = [
   "catalog_workspaces",
   "catalog_schema_migrations",
 ] as const;
-const CATALOG_REQUIRED_TABLES = [
+const CATALOG_V5_REQUIRED_TABLES = [
   ...CATALOG_V2_REQUIRED_TABLES,
   "catalog_runtime_resource_leases",
 ] as const;
-const AUTHORITY_REQUIRED_TABLES = [
+const AUTHORITY_V5_REQUIRED_TABLES = [
   "agent_timeline_meta",
   "agent_timeline_rows",
   "agents",
@@ -81,6 +86,43 @@ const AUTHORITY_REQUIRED_TABLES = [
   "tasks",
   "timeline_entries",
   "turns",
+  "workspace_meta",
+] as const;
+const AUTHORITY_REQUIRED_TABLES = [
+  "acceptance_claims",
+  "acceptance_evidence",
+  "agent_timeline_meta",
+  "agent_timeline_rows",
+  "agents",
+  "authority_commands",
+  "authority_schema_migrations",
+  "cards",
+  "chat_messages",
+  "chat_rooms",
+  "clarify_decision_nodes",
+  "clarify_sessions",
+  "context_bindings",
+  "evidence_refs",
+  "execution_approvals",
+  "execution_attempts",
+  "foreground_continuations",
+  "foreground_turn_queue",
+  "human_decisions",
+  "intent_contracts",
+  "loop_cycles",
+  "provider_message_anchors",
+  "provider_threads",
+  "review_decisions",
+  "runtime_attachments",
+  "schedule_runs",
+  "schedules",
+  "task_decision_requests",
+  "task_work_units",
+  "task_working_sets",
+  "tasks",
+  "timeline_entries",
+  "turns",
+  "workspace_leases",
   "workspace_meta",
 ] as const;
 const RELEASE_CATALOG_MIGRATIONS = [[1, "workspace-task-authority-v1"]] as const;
@@ -121,7 +163,8 @@ export async function ensureThothStorageLayout(
     marker.version !== 1 &&
     marker.version !== 2 &&
     marker.version !== 3 &&
-    marker.version !== 4
+    marker.version !== 4 &&
+    marker.version !== 5
   ) {
     throw new Error(`Unsupported Thoth storage layout version: ${String(marker.version)}`);
   }
@@ -154,7 +197,7 @@ export async function ensureThothStorageLayout(
     writeMarker(markerPath, { migrated: true, workspaceCount: workspaceIds.length });
     logger.info(
       { sourceRelease: RELEASE_SOURCE, workspaceCount: workspaceIds.length },
-      "Migrated Thoth storage to normalized authority schema v5",
+      "Migrated Thoth storage to Decision Map and Task Anchor authority schema v6",
     );
     return { requiresProviderThreadFinalization: false };
   } finally {
@@ -176,7 +219,7 @@ function migrateDatabase(
       validateDatabase(current, kind);
       return;
     }
-    if (version !== 0 && version !== 2 && version !== 3 && version !== 4) {
+    if (version !== 0 && version !== 2 && version !== 3 && version !== 4 && version !== 5) {
       throw new Error(`Unsupported SQLite schema ${version} at ${filePath}`);
     }
     if (version === 0) {
@@ -188,103 +231,63 @@ function migrateDatabase(
     } else if (version === 3) {
       requireTables(current, kind, 3);
       requireNormalizedV3Ledger(current, kind);
-    } else {
+    } else if (version === 4) {
       requireTables(current, kind, 4);
       requireNormalizedV4Ledger(current, kind);
+    } else {
+      requireTables(current, kind, 5);
+      requireNormalizedV5Ledger(current, kind);
     }
     if (existsSync(`${filePath}-wal`)) current.exec("PRAGMA wal_checkpoint(TRUNCATE);");
   } finally {
     current.close();
   }
 
+  const normalized = `${filePath}.normalized-v5.tmp-${process.pid}`;
   const temporary = `${filePath}.v${SQLITE_SCHEMA_VERSION}.tmp-${process.pid}`;
   const backup =
     sourceVersion === 0
       ? `${filePath}.release-${RELEASE_SOURCE}.bak`
       : `${filePath}.schema-v${sourceVersion}.bak`;
-  rmSync(temporary, { force: true });
-  copyFileSync(filePath, temporary);
+  removeMigrationTarget(normalized);
+  removeMigrationTarget(temporary);
   try {
+    copyFileSync(filePath, normalized);
+    if (sourceVersion < LEGACY_SQLITE_SCHEMA_VERSION) {
+      normalizeLegacyDatabaseToV5(normalized, kind, sourceVersion);
+      const compatibilityVersion = sourceVersion === 4 ? 4 : sourceVersion === 3 ? 3 : 2;
+      const beforeDigest = semanticDigest(filePath, kind, compatibilityVersion);
+      const normalizedDigest = semanticDigest(normalized, kind, compatibilityVersion);
+      if (normalizedDigest !== beforeDigest) {
+        throw new Error(`Semantic digest changed while normalizing ${filePath} to schema v5`);
+      }
+    }
     options.onPhase?.("copied", filePath);
-    const compatibilityVersion = sourceVersion === 4 ? 4 : sourceVersion === 3 ? 3 : 2;
-    const beforeDigest = semanticDigest(filePath, kind, compatibilityVersion);
+    const migratedAt = new Date().toISOString();
+    if (kind === "catalog") {
+      copyFileSync(normalized, temporary);
+      upgradeCatalogToV6(temporary, migratedAt);
+      const beforeDigest = semanticDigest(normalized, kind);
+      const afterDigest = semanticDigest(temporary, kind);
+      if (afterDigest !== beforeDigest) {
+        throw new Error(`Catalog semantics changed while migrating ${filePath} to schema v6`);
+      }
+    } else {
+      rebuildAuthoritySchemaV6({
+        sourcePath: normalized,
+        targetPath: temporary,
+        workspaceRoot: workspaceRootForAuthority(filePath),
+        migratedAt,
+      });
+    }
+    options.onPhase?.("transformed", filePath);
     const candidate = new DatabaseSync(temporary, { enableForeignKeyConstraints: true });
     try {
-      candidate.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; BEGIN IMMEDIATE;");
-      try {
-        if (sourceVersion === 0 && kind === "authority") {
-          candidate.exec("DROP TABLE authority_events");
-        }
-        applySchemaV5(candidate, kind);
-        const migrationTable =
-          kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations";
-        const migrationVersion =
-          kind === "catalog" ? CATALOG_MIGRATION_VERSION : AUTHORITY_MIGRATION_VERSION;
-        if (sourceVersion === 0) {
-          candidate
-            .prepare(
-              `INSERT INTO ${migrationTable}(version, checksum, applied_at)
-               VALUES (?, ?, ?)`,
-            )
-            .run(
-              kind === "catalog" ? 2 : 5,
-              kind === "catalog" ? "normalized-catalog-v2" : "normalized-authority-v2",
-              new Date().toISOString(),
-            );
-        }
-        if (sourceVersion < 3) {
-          candidate
-            .prepare(
-              `INSERT INTO ${migrationTable}(version, checksum, applied_at)
-               VALUES (?, ?, ?)`,
-            )
-            .run(
-              kind === "catalog" ? 3 : 6,
-              kind === "catalog" ? "host-runtime-resources-v3" : "schedule-task-execution-v3",
-              new Date().toISOString(),
-            );
-        }
-        if (sourceVersion < 4) {
-          candidate
-            .prepare(
-              `INSERT INTO ${migrationTable}(version, checksum, applied_at)
-               VALUES (?, ?, ?)`,
-            )
-            .run(
-              kind === "catalog" ? 4 : 7,
-              kind === "catalog"
-                ? "schedule-run-workspace-v4-catalog"
-                : "schedule-run-workspace-v4",
-              new Date().toISOString(),
-            );
-        }
-        candidate
-          .prepare(
-            `INSERT INTO ${migrationTable}(version, checksum, applied_at)
-             VALUES (?, ?, ?)`,
-          )
-          .run(
-            migrationVersion,
-            kind === "catalog"
-              ? "provider-turn-interaction-v5-catalog"
-              : "provider-turn-interaction-v5",
-            new Date().toISOString(),
-          );
-        candidate.exec(`PRAGMA user_version = ${SQLITE_SCHEMA_VERSION}; COMMIT;`);
-      } catch (error) {
-        candidate.exec("ROLLBACK;");
-        throw error;
-      }
-      options.onPhase?.("transformed", filePath);
       validateDatabase(candidate, kind);
-      const afterDigest = semanticDigest(temporary, kind, compatibilityVersion);
-      if (afterDigest !== beforeDigest) {
-        throw new Error(`Semantic digest changed while migrating ${filePath}`);
-      }
-      options.onPhase?.("validated", filePath);
     } finally {
       candidate.close();
     }
+    options.onPhase?.("validated", filePath);
     fsyncFile(temporary);
     options.onPhase?.("before_activate", filePath);
     if (existsSync(backup)) {
@@ -303,9 +306,87 @@ function migrateDatabase(
     rmSync(`${backup}-wal`, { force: true });
     rmSync(`${backup}-shm`, { force: true });
   } catch (error) {
-    rmSync(temporary, { force: true });
+    removeMigrationTarget(temporary);
     if (!existsSync(filePath) && existsSync(backup)) renameSync(backup, filePath);
     throw error;
+  } finally {
+    removeMigrationTarget(normalized);
+  }
+}
+
+function normalizeLegacyDatabaseToV5(
+  filePath: string,
+  kind: "catalog" | "authority",
+  sourceVersion: number,
+): void {
+  const database = new DatabaseSync(filePath, { enableForeignKeyConstraints: true });
+  try {
+    database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; BEGIN IMMEDIATE;");
+    try {
+      if (sourceVersion === 0 && kind === "authority") database.exec("DROP TABLE authority_events");
+      applySchemaV5(database, kind);
+      const table =
+        kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations";
+      const insert = database.prepare(
+        `INSERT INTO ${table}(version, checksum, applied_at) VALUES (?, ?, ?)`,
+      );
+      const now = new Date().toISOString();
+      if (sourceVersion === 0) {
+        insert.run(
+          kind === "catalog" ? 2 : 5,
+          kind === "catalog" ? "normalized-catalog-v2" : "normalized-authority-v2",
+          now,
+        );
+      }
+      if (sourceVersion < 3) {
+        insert.run(
+          kind === "catalog" ? 3 : 6,
+          kind === "catalog" ? "host-runtime-resources-v3" : "schedule-task-execution-v3",
+          now,
+        );
+      }
+      if (sourceVersion < 4) {
+        insert.run(
+          kind === "catalog" ? 4 : 7,
+          kind === "catalog" ? "schedule-run-workspace-v4-catalog" : "schedule-run-workspace-v4",
+          now,
+        );
+      }
+      insert.run(
+        kind === "catalog" ? 5 : 8,
+        kind === "catalog"
+          ? "provider-turn-interaction-v5-catalog"
+          : "provider-turn-interaction-v5",
+        now,
+      );
+      database.exec(`PRAGMA user_version = ${LEGACY_SQLITE_SCHEMA_VERSION}; COMMIT;`);
+    } catch (error) {
+      database.exec("ROLLBACK;");
+      throw error;
+    }
+  } finally {
+    database.close();
+  }
+}
+
+function upgradeCatalogToV6(filePath: string, migratedAt: string): void {
+  const database = new DatabaseSync(filePath, { enableForeignKeyConstraints: true });
+  try {
+    database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; BEGIN IMMEDIATE;");
+    try {
+      database
+        .prepare(
+          `INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
+           VALUES (?, 'decision-map-task-anchor-v6-catalog', ?)`,
+        )
+        .run(CATALOG_MIGRATION_VERSION, migratedAt);
+      database.exec(`PRAGMA user_version = ${SQLITE_SCHEMA_VERSION}; COMMIT;`);
+    } catch (error) {
+      database.exec("ROLLBACK;");
+      throw error;
+    }
+  } finally {
+    database.close();
   }
 }
 
@@ -447,8 +528,29 @@ function requireNormalizedV4Ledger(database: DatabaseSync, kind: "catalog" | "au
   }
 }
 
+function requireNormalizedV5Ledger(database: DatabaseSync, kind: "catalog" | "authority"): void {
+  const table = kind === "catalog" ? "catalog_schema_migrations" : "authority_schema_migrations";
+  const expectedVersion = kind === "catalog" ? 5 : 8;
+  const expectedChecksum =
+    kind === "catalog" ? "provider-turn-interaction-v5-catalog" : "provider-turn-interaction-v5";
+  const rows = database
+    .prepare(`SELECT version, checksum FROM ${table} ORDER BY version`)
+    .all() as Array<{ version: number; checksum: string }>;
+  const latest = rows.at(-1);
+  if (
+    !latest ||
+    latest.version !== expectedVersion ||
+    latest.checksum !== expectedChecksum ||
+    rows.some((row) => row.version > expectedVersion)
+  ) {
+    throw new Error(
+      `Unsupported ${kind} normalized-v5 migration ledger; the original database was preserved`,
+    );
+  }
+}
+
 function validateDatabase(database: DatabaseSync, kind: "catalog" | "authority"): void {
-  requireTables(database, kind);
+  requireTables(database, kind, 6);
   if (kind === "authority" && hasTable(database, "authority_events")) {
     throw new Error("Migrated authority database still contains the duplicate authority event log");
   }
@@ -466,14 +568,16 @@ function validateDatabase(database: DatabaseSync, kind: "catalog" | "authority")
 function requireTables(
   database: DatabaseSync,
   kind: "catalog" | "authority",
-  sourceVersion: 0 | 2 | 3 | 4 | 5 = 5,
+  sourceVersion: 0 | 2 | 3 | 4 | 5 | 6 = 6,
 ): void {
   const required =
     kind === "catalog" && sourceVersion < 3
       ? CATALOG_V2_REQUIRED_TABLES
       : kind === "catalog"
-        ? CATALOG_REQUIRED_TABLES
-        : AUTHORITY_REQUIRED_TABLES;
+        ? CATALOG_V5_REQUIRED_TABLES
+        : sourceVersion < 6
+          ? AUTHORITY_V5_REQUIRED_TABLES
+          : AUTHORITY_REQUIRED_TABLES;
   const missing: string[] = required.filter((table) => !hasTable(database, table));
   if (kind === "authority" && sourceVersion === 0 && !hasTable(database, "authority_events")) {
     missing.push("authority_events");

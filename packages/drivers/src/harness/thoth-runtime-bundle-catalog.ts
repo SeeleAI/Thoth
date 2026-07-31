@@ -1,16 +1,14 @@
 import { z } from "zod";
 import {
-  ThothGetBoundTaskProgressInputSchema,
-  ThothLoopPlanExecResultInputSchema,
+  ThothClarifyAskInputSchema,
+  ThothClarifyJudgeContractInputSchema,
+  ThothClarifyProposeContractInputSchema,
+  ThothClarifyReportBlockedInputSchema,
+  ThothClarifyUpdateMapInputSchema,
+  ThothLoopCheckpointInputSchema,
   ThothLoopReportBlockedInputSchema,
-  ThothLoopReviewIndependentAssessmentInputSchema,
-  ThothLoopReviewVerdictInputSchema,
-  ThothReportBlockedInputSchema,
-  ThothSubmitClarifyCardInputSchema,
-  ThothSubmitClarifyConvergenceAuditInputSchema,
-  ThothSubmitContractPreservationAuditInputSchema,
-  ThothSubmitGoalsCardInputSchema,
-  ThothSubmitTaskCardInputSchema,
+  ThothLoopRequestHumanDecisionInputSchema,
+  ThothLoopReviewDecisionInputSchema,
 } from "@thoth/protocol/thoth-runtime-contract";
 import type { RuntimeBundleCatalog } from "./runtime-bundle.js";
 import type { RuntimeBundleTool } from "./types.js";
@@ -23,83 +21,65 @@ function tool(name: string, description: string, schema: z.ZodType): RuntimeBund
   };
 }
 
-const WorkspaceScriptListInputSchema = z.object({}).strict();
-const WorkspaceScriptMutationInputSchema = z
-  .object({ scriptName: z.string().trim().min(1) })
-  .strict();
-
-const WORKSPACE_SCRIPT_READ_TOOL = tool(
-  "thoth_list_workspace_scripts",
-  "List configured scripts for the Workspace bound to this execution. Workspace scope is derived by Thoth and cannot be supplied by the Provider.",
-  WorkspaceScriptListInputSchema,
-);
-
-const WORKSPACE_SCRIPT_MUTATION_TOOLS: readonly RuntimeBundleTool[] = [
-  tool(
-    "thoth_start_workspace_script",
-    "Start a configured script in the execution-bound Workspace after the current Quick implementation or Loop PlanExec authority permits mutation.",
-    WorkspaceScriptMutationInputSchema,
-  ),
-  tool(
-    "thoth_stop_workspace_script",
-    "Stop a running configured script in the execution-bound Workspace after the current Quick implementation or Loop PlanExec authority permits mutation.",
-    WorkspaceScriptMutationInputSchema,
-  ),
-];
-
 const CLARIFY_TOOLS: readonly RuntimeBundleTool[] = [
-  WORKSPACE_SCRIPT_READ_TOOL,
-  ...WORKSPACE_SCRIPT_MUTATION_TOOLS,
   tool(
-    "thoth_get_bound_task_progress",
-    "Read the latest semantic progress for Tasks explicitly attached to this foreground turn.",
-    ThothGetBoundTaskProgressInputSchema,
+    "thoth_clarify_update_map",
+    "Persist the currently known Decision Map without exposing hidden reasoning.",
+    ThothClarifyUpdateMapInputSchema,
   ),
   tool(
-    "thoth_submit_clarify_card",
-    "Submit the next user-owned clarification decision.",
-    ThothSubmitClarifyCardInputSchema,
+    "thoth_clarify_ask",
+    "Ask one to four related, material human-owned decision branches.",
+    ThothClarifyAskInputSchema,
   ),
   tool(
-    "thoth_submit_task_card",
-    "Submit the grounded Task Card after clarification converges.",
-    ThothSubmitTaskCardInputSchema,
+    "thoth_clarify_propose_contract",
+    "Propose the single Intent Contract after the Decision Map is stable.",
+    ThothClarifyProposeContractInputSchema,
   ),
   tool(
-    "thoth_submit_goals_card",
-    "Submit the linear Goals Card for user approval.",
-    ThothSubmitGoalsCardInputSchema,
+    "thoth_clarify_report_blocked",
+    "Report a real Clarify blocker without inventing a decision.",
+    ThothClarifyReportBlockedInputSchema,
   ),
-  tool(
-    "thoth_submit_clarify_convergence_audit",
-    "Submit an independent Clarify convergence assessment.",
-    ThothSubmitClarifyConvergenceAuditInputSchema,
-  ),
-  tool("thoth_report_blocked", "Report a real Clarify blocker.", ThothReportBlockedInputSchema),
 ];
 
-const LOOP_TOOLS: readonly RuntimeBundleTool[] = [
-  WORKSPACE_SCRIPT_READ_TOOL,
-  ...WORKSPACE_SCRIPT_MUTATION_TOOLS,
+const CLARIFY_CHALLENGER_TOOLS: readonly RuntimeBundleTool[] = [
   tool(
-    "thoth_loop_submit_planexec_result",
-    "Submit the semantic PlanExec result for independent Review.",
-    ThothLoopPlanExecResultInputSchema,
+    "thoth_clarify_judge_contract",
+    "Judge one proposed Intent Contract exactly once and either accept it or reopen concrete missing nodes.",
+    ThothClarifyJudgeContractInputSchema,
+  ),
+];
+
+const LOOP_EXECUTE_TOOLS: readonly RuntimeBundleTool[] = [
+  tool(
+    "thoth_loop_checkpoint",
+    "Commit one meaningful reality-changing checkpoint and its evidence for fresh Review.",
+    ThothLoopCheckpointInputSchema,
   ),
   tool(
-    "thoth_loop_submit_review_independent_assessment",
-    "Submit Review's independent observations before reading PlanExec's account.",
-    ThothLoopReviewIndependentAssessmentInputSchema,
+    "thoth_loop_request_human_decision",
+    "Pause the Task for a material human-owned decision that would change the Task Anchor.",
+    ThothLoopRequestHumanDecisionInputSchema,
   ),
   tool(
-    "thoth_loop_submit_review_verdict",
-    "Submit one of the six Review outcomes.",
-    ThothLoopReviewVerdictInputSchema,
+    "thoth_loop_report_blocked",
+    "Report a real external blocker without claiming completion.",
+    ThothLoopReportBlockedInputSchema,
+  ),
+];
+
+const LOOP_REVIEW_TOOLS: readonly RuntimeBundleTool[] = [
+  tool(
+    "thoth_loop_review_decision",
+    "Submit the fresh Review decision against the whole Task Anchor.",
+    ThothLoopReviewDecisionInputSchema,
   ),
   tool(
-    "thoth_submit_contract_preservation_audit",
-    "Audit a future-only Goal replan against the approved Task contract.",
-    ThothSubmitContractPreservationAuditInputSchema,
+    "thoth_loop_request_human_decision",
+    "Pause the Task for a material human-owned decision that would change the Task Anchor.",
+    ThothLoopRequestHumanDecisionInputSchema,
   ),
   tool(
     "thoth_loop_report_blocked",
@@ -110,11 +90,18 @@ const LOOP_TOOLS: readonly RuntimeBundleTool[] = [
 
 export const THOTH_RUNTIME_BUNDLE_CATALOG: RuntimeBundleCatalog = {
   toolsFor(bundleId) {
-    return bundleId === "thoth.clarify" ? CLARIFY_TOOLS : LOOP_TOOLS;
+    return bundleId === "thoth.clarify"
+      ? [...CLARIFY_TOOLS, ...CLARIFY_CHALLENGER_TOOLS]
+      : [
+          ...LOOP_EXECUTE_TOOLS,
+          ...LOOP_REVIEW_TOOLS.filter(
+            (candidate) => !LOOP_EXECUTE_TOOLS.some((existing) => existing.name === candidate.name),
+          ),
+        ];
   },
   scopesFor(bundleId) {
     return bundleId === "thoth.clarify"
-      ? ["clarify", "clarify_audit", "contract_audit"]
-      : ["loop_planexec", "loop_review", "contract_audit"];
+      ? ["clarify", "clarify_challenger"]
+      : ["loop_execute", "loop_review"];
   },
 };

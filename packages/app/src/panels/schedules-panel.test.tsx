@@ -18,6 +18,7 @@ const { clientMock, routerPush, updateSurface, theme } = vi.hoisted(() => ({
     scheduleRunOnce: vi.fn(),
     scheduleDelete: vi.fn(),
     fetchAgents: vi.fn(),
+    listTasks: vi.fn(),
   },
   routerPush: vi.fn(),
   updateSurface: vi.fn(),
@@ -89,6 +90,7 @@ function schedule(overrides: Partial<StoredSchedule> = {}): StoredSchedule {
     id: "schedule-1",
     name: "Nightly verification",
     prompt: "Run the complete verification.",
+    intentContractId: "contract-1",
     cadence: { type: "every", everyMs: 3_600_000 },
     target: {
       type: "new-agent",
@@ -167,6 +169,20 @@ function installResponses(value = schedule()): void {
       },
     ],
   });
+  clientMock.listTasks.mockResolvedValue({
+    requestId: "tasks-1",
+    tasks: [
+      {
+        intentContract: {
+          id: "contract-1",
+          title: "Verified schedule contract",
+          objective: "Run the complete verification.",
+          status: "confirmed",
+        },
+      },
+    ],
+    error: null,
+  });
   clientMock.scheduleCreate.mockResolvedValue({
     requestId: "create-1",
     schedule: summary(value),
@@ -222,6 +238,7 @@ describe("SchedulesPanel", () => {
     fireEvent.click(await screen.findByTestId("schedule-create-open"));
     change("schedule-name", "Weekly audit");
     change("schedule-prompt", "Audit the Workspace every week.");
+    fireEvent.click(screen.getByTestId("schedule-intent-contract-contract-1"));
     fireEvent.click(screen.getByTestId("schedule-cadence-cron"));
     change("schedule-cron", "30 9 * * 1");
     change("schedule-timezone", "America/New_York");
@@ -238,6 +255,7 @@ describe("SchedulesPanel", () => {
         workspaceId: "workspace-1",
         name: "Weekly audit",
         prompt: "Audit the Workspace every week.",
+        intentContractId: "contract-1",
         cadence: {
           type: "cron",
           expression: "30 9 * * 1",
@@ -269,6 +287,7 @@ describe("SchedulesPanel", () => {
 
     fireEvent.click(await screen.findByTestId("schedule-create-open"));
     change("schedule-prompt", "Continue the existing Agent every 15 minutes.");
+    fireEvent.click(screen.getByTestId("schedule-intent-contract-contract-1"));
     change("schedule-every-minutes", "15");
     fireEvent.click(screen.getByTestId("schedule-target-existing-agent"));
     fireEvent.click(screen.getByTestId(`schedule-agent-${AGENT_ID}`));
@@ -278,6 +297,7 @@ describe("SchedulesPanel", () => {
       expect(clientMock.scheduleCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           workspaceId: "workspace-1",
+          intentContractId: "contract-1",
           cadence: { type: "every", everyMs: 900_000 },
           target: { type: "agent", agentId: AGENT_ID },
           runOnCreate: true,
@@ -300,6 +320,7 @@ describe("SchedulesPanel", () => {
           workspaceId: "workspace-1",
           id: "schedule-1",
           prompt: "Run the updated verification.",
+          intentContractId: "contract-1",
           newAgentConfig: expect.objectContaining({
             provider: "codex",
             isolation: "worktree",
@@ -373,7 +394,6 @@ describe("SchedulesPanel", () => {
       activeTab: "tasks",
       selectedTaskId: "task-scheduled",
       selectedExecutionId: "execution-scheduled",
-      selectedGoalId: null,
     });
     expect(routerPush).toHaveBeenCalledWith("/h/server-1/workspace/workspace-execution/tasks");
   });

@@ -1,26 +1,19 @@
 import type {
-  ClarifyConvergenceReview,
-  ClarifyDecisionDelta,
-  ClarifyFrontierLedger,
-} from "@thoth/protocol/thoth-runtime-contract";
-import type {
-  ThothApprovalGoalCardModel,
   ThothClarifyCardModel,
-  ThothTaskCardModel,
+  ThothIntentContractCardModel,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type {
   ForegroundAuthorityCard,
   WorkspaceForegroundAuthority,
 } from "../workspace-authority/foreground-authority.js";
 
-export type RuntimeAuthorityCardKind = "clarify_card" | "task_card" | "goals_card" | "blocked_card";
+export type RuntimeAuthorityCardKind = "clarify_card" | "intent_contract_card" | "blocked_card";
 
 export type RuntimeAuthorityDecisionStatus = "pending" | "answered" | "rejected" | "blocked";
 
 export type RuntimeAuthorityCard =
   | { kind: "clarify_card"; card: ThothClarifyCardModel }
-  | { kind: "task_card"; card: ThothTaskCardModel }
-  | { kind: "goals_card"; card: ThothApprovalGoalCardModel }
+  | { kind: "intent_contract_card"; card: ThothIntentContractCardModel }
   | { kind: "blocked_card"; title: string; reason: string };
 
 export interface RuntimeAuthorityDecisionRecord {
@@ -41,19 +34,13 @@ export interface RuntimeAuthorityDecisionRecord {
   redactedRawInputHash: string;
   authorityCard: RuntimeAuthorityCard;
   publicBadgeSummary?: string;
-  frontierLedger?: ClarifyFrontierLedger;
-  decisionDelta?: ClarifyDecisionDelta;
-  convergenceReview?: ClarifyConvergenceReview;
 }
 
 function toStoreCard(card: RuntimeAuthorityCard): ForegroundAuthorityCard {
-  if (card.kind === "clarify_card" || card.kind === "task_card") {
-    return card;
+  if (card.kind === "blocked_card") {
+    throw new Error("Blocked reports do not create user authority cards.");
   }
-  if (card.kind === "goals_card") {
-    return { kind: "goal_card", card: card.card };
-  }
-  throw new Error("Blocked reports do not create user authority cards.");
+  return card;
 }
 
 function fromStoreRecord(
@@ -62,15 +49,14 @@ function fromStoreRecord(
 ): RuntimeAuthorityDecisionRecord | null {
   const card = store.getCard(cardId);
   const turn = card ? store.getTurn(card.turnId) : null;
-  if (!card || !turn) {
-    return null;
-  }
+  if (!card || !turn) return null;
   const authorityCard: RuntimeAuthorityCard =
     card.kind === "clarify_card"
       ? { kind: "clarify_card", card: card.card as ThothClarifyCardModel }
-      : card.kind === "task_card"
-        ? { kind: "task_card", card: card.card as ThothTaskCardModel }
-        : { kind: "goals_card", card: card.card as ThothApprovalGoalCardModel };
+      : {
+          kind: "intent_contract_card",
+          card: card.card as ThothIntentContractCardModel,
+        };
   return {
     id: `runtime-decision-${card.id}`,
     provider: card.runtime.provider,
@@ -109,12 +95,7 @@ export function createRuntimeAuthorityDecision(input: {
   card: RuntimeAuthorityCard;
   redactedRawInputHash: string;
   publicBadgeSummary?: string;
-  frontierLedger?: ClarifyFrontierLedger;
-  decisionDelta?: ClarifyDecisionDelta;
-  convergenceReview?: ClarifyConvergenceReview;
-}): {
-  record: RuntimeAuthorityDecisionRecord;
-} {
+}): { record: RuntimeAuthorityDecisionRecord } {
   const turn = input.store.getActiveTurn(input.agentId);
   if (!turn || turn.kind !== "thoth") {
     throw new Error("No active Agent-scoped Thoth turn owns this authority card.");
@@ -132,21 +113,27 @@ export function createRuntimeAuthorityDecision(input: {
       toolName: input.toolName,
       redactedRawInputHash: input.redactedRawInputHash,
     },
+    ...(input.card.kind === "clarify_card"
+      ? {
+          clarify: {
+            sessionId: input.card.card.sessionId,
+            awaitingNodeIds: input.card.card.card.questions.map((question) => question.nodeId),
+          },
+        }
+      : {}),
   });
-  const base = fromStoreRecord(input.store, opened.record.id);
-  if (!base) {
+  const projected = fromStoreRecord(input.store, opened.record.id);
+  if (!projected) {
     throw new Error(`Failed to project foreground authority card ${opened.record.id}.`);
   }
-  const record: RuntimeAuthorityDecisionRecord = {
-    ...base,
-    cardKind: input.card.kind,
-    authorityCard: input.card,
-    ...(input.publicBadgeSummary ? { publicBadgeSummary: input.publicBadgeSummary } : {}),
-    ...(input.frontierLedger ? { frontierLedger: input.frontierLedger } : {}),
-    ...(input.decisionDelta ? { decisionDelta: input.decisionDelta } : {}),
-    ...(input.convergenceReview ? { convergenceReview: input.convergenceReview } : {}),
+  return {
+    record: {
+      ...projected,
+      cardKind: input.card.kind,
+      authorityCard: input.card,
+      ...(input.publicBadgeSummary ? { publicBadgeSummary: input.publicBadgeSummary } : {}),
+    },
   };
-  return { record };
 }
 
 export function listRuntimeAuthorityDecisionRecords(
@@ -166,14 +153,14 @@ export function listRuntimeAuthorityDecisionRecordsForAgent(
     .flatMap((card) => (fromStoreRecord(store, card.id) ? [fromStoreRecord(store, card.id)!] : []));
 }
 
-export function getLatestRuntimeTaskCardForAgent(
+export function getLatestRuntimeIntentContractCardForAgent(
   store: WorkspaceForegroundAuthority,
   agentId: string,
-): ThothTaskCardModel | null {
+): ThothIntentContractCardModel | null {
   return (
     (store
       .listCardsForAgent(agentId)
-      .filter((record) => record.kind === "task_card")
-      .at(-1)?.card as ThothTaskCardModel | undefined) ?? null
+      .filter((record) => record.kind === "intent_contract_card")
+      .at(-1)?.card as ThothIntentContractCardModel | undefined) ?? null
   );
 }

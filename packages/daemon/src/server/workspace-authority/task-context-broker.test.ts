@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TaskProjection } from "@thoth/protocol/task-authority";
+import { createTaskAuthority } from "@thoth/core";
 import { WorkspaceForegroundAuthority } from "./foreground-authority.js";
 import { TaskContextBroker } from "./task-context-broker.js";
 import { WorkspaceAuthorityManager } from "./workspace-authority-manager.js";
@@ -34,53 +35,61 @@ function createTask(
   workspaceId: string,
   taskId: string,
 ): TaskProjection {
-  const task: TaskProjection = {
+  const now = "2026-07-21T00:00:00.000Z";
+  const store = manager.forWorkspace(workspaceId);
+  store.upsertAgentRecord({
+    id: "agent-visible",
+    provider: "fixture",
+    cwd: manager.catalog.getWorkspace(workspaceId)!.canonicalPath,
+    workspaceId,
+    createdAt: now,
+    updatedAt: now,
+    labels: {},
+    lastStatus: "idle",
+    providerRunMode: "default",
+    providerControlRevision: 0,
+  });
+  const task = createTaskAuthority({
     id: taskId,
     workspaceId,
+    sourceAgentWorkspaceId: workspaceId,
     sourceAgentId: "agent-visible",
     mode: "loop",
-    title: `Task ${taskId}`,
-    goal: "Expose semantic background progress to an explicitly bound foreground turn.",
-    constraints: ["Remain inside one Workspace"],
-    acceptance: ["The selected revision is frozen for the turn"],
-    status: "queued",
-    summary: "Queued",
-    currentGoalId: `goal-${taskId}`,
-    currentExecutionId: null,
-    goals: [
-      {
-        id: `goal-${taskId}`,
-        order: 1,
-        title: "Verify the binding",
-        goal: "Keep foreground and background provider threads separate.",
-        constraints: ["Use Task Blackboard only"],
-        acceptance: ["No provider-session merge"],
-        status: "queued",
-        revision: 0,
-      },
-    ],
-    latestReviewDirection: null,
-    pendingDecision: null,
-    budget: {
-      strength: "single",
-      usedFailedReviews: 0,
-      maxFailedReviews: 1,
-      activeDurationMs: 0,
-      tokenCount: 0,
-      toolCallCount: 0,
+    intentContract: {
+      id: `intent-contract-${taskId}`,
+      workspaceId,
+      sourceAgentId: "agent-visible",
+      taskId: null,
+      title: `Task ${taskId}`,
+      objective: "Expose semantic background progress to an explicitly bound foreground turn.",
+      nonGoals: [],
+      invariants: ["Remain inside one Workspace", "Keep Provider threads separate"],
+      acceptanceClaims: [
+        {
+          id: `claim-${taskId}`,
+          statement: "The selected Task revision is frozen for the foreground turn.",
+          status: "open",
+          evidenceRefs: [],
+          revision: 1,
+        },
+      ],
+      riskBoundary: [],
+      humanDecisionRefs: [],
+      escalationPolicy: { returnToHumanWhen: [], finalConfirmation: "automatic" },
+      status: "confirmed",
+      revision: 1,
+      confirmedAt: now,
+      createdAt: now,
+      updatedAt: now,
     },
-    pendingControl: null,
-    revision: 1,
-    createdAt: "2026-07-21T00:00:00.000Z",
-    updatedAt: "2026-07-21T00:00:00.000Z",
-  };
-  return manager.forWorkspace(workspaceId).registerTask({
+    strength: "single",
+    now,
+  });
+  return store.registerTask({
     task,
     sourceTurnId: `source-turn-${taskId}`,
-    sourceGoalsCardId: `source-goals-card-${taskId}`,
+    sourceContractCardId: `source-contract-card-${taskId}`,
     providerProfileId: "provider-profile-test",
-    taskContract: { title: task.title, goal: task.goal },
-    goalsContract: { goals: task.goals },
   }).task;
 }
 

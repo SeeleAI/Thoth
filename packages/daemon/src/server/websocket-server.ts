@@ -75,6 +75,7 @@ import {
   WorkspaceAuthorityManager,
   WorkspaceTaskCoordinator,
 } from "./workspace-authority/index.js";
+import type { ForegroundTurnCoordinator } from "./agent/foreground-turn-coordinator.js";
 import { snapshotGitCommandRuntimeMetrics } from "../utils/run-git-command.js";
 import type { GitCommandRuntimeMetricsSnapshot } from "../utils/git-command-runtime-metrics.js";
 import { CLIENT_CAPS } from "@thoth/protocol/client-capabilities";
@@ -393,8 +394,8 @@ export class DaemonWebSocketServer {
   private readonly workspaceRegistry: WorkspaceRegistry;
   private readonly chatService: WorkspaceChatService;
   private readonly workspaceAuthorityManager: WorkspaceAuthorityManager;
-  private readonly ownsWorkspaceAuthorityManager: boolean;
   private readonly workspaceTaskCoordinator: WorkspaceTaskCoordinator;
+  private readonly foregroundTurnCoordinator: ForegroundTurnCoordinator;
   private readonly workspaceServicePortRegistry: WorkspaceServicePortRegistry;
   private readonly scheduleService: ScheduleService;
   private readonly checkoutDiffManager: CheckoutDiffManager;
@@ -486,6 +487,7 @@ export class DaemonWebSocketServer {
     workspaceAuthority?: {
       manager: WorkspaceAuthorityManager;
       coordinator: WorkspaceTaskCoordinator;
+      foregroundTurnCoordinator: ForegroundTurnCoordinator;
     },
     browserToolsBroker?: BrowserToolsBroker,
     workspaceServicePortRegistry?: WorkspaceServicePortRegistry,
@@ -513,15 +515,12 @@ export class DaemonWebSocketServer {
     this.workspaceGitService = workspaceGitService ?? createFallbackWorkspaceGitService();
     this.downloadTokenStore = downloadTokenStore;
     this.thothHome = thothHome;
-    this.ownsWorkspaceAuthorityManager = workspaceAuthority === undefined;
-    this.workspaceAuthorityManager =
-      workspaceAuthority?.manager ?? new WorkspaceAuthorityManager(this.thothHome);
-    this.workspaceTaskCoordinator =
-      workspaceAuthority?.coordinator ??
-      new WorkspaceTaskCoordinator(
-        this.workspaceAuthorityManager,
-        this.logger.child({ component: "workspace-task-coordinator" }),
-      );
+    if (!workspaceAuthority) {
+      throw new Error("workspaceAuthority is required");
+    }
+    this.workspaceAuthorityManager = workspaceAuthority.manager;
+    this.workspaceTaskCoordinator = workspaceAuthority.coordinator;
+    this.foregroundTurnCoordinator = workspaceAuthority.foregroundTurnCoordinator;
     this.browserToolsBroker = browserToolsBroker ?? new BrowserToolsBroker({});
     this.workspaceServicePortRegistry =
       workspaceServicePortRegistry ??
@@ -846,9 +845,6 @@ export class DaemonWebSocketServer {
 
     await Promise.all(cleanupPromises);
     this.workspaceTaskCoordinator.runtimes.clear();
-    if (this.ownsWorkspaceAuthorityManager) {
-      this.workspaceAuthorityManager.close();
-    }
     this.providerSnapshotManager.destroy();
     this.checkoutDiffManager.dispose();
     this.workspaceGitService.dispose();
@@ -1110,6 +1106,7 @@ export class DaemonWebSocketServer {
       chatService: this.chatService,
       workspaceAuthorityManager: this.workspaceAuthorityManager,
       workspaceTaskCoordinator: this.workspaceTaskCoordinator,
+      foregroundTurnCoordinator: this.foregroundTurnCoordinator,
       scheduleService: this.scheduleService,
       checkoutDiffManager: this.checkoutDiffManager,
       github: this.github,

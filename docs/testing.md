@@ -98,15 +98,15 @@ npm run accept:thoth:api -- --appimage packages/desktop/release/Thoth-x86_64.App
 The journey is intentionally a single behavior chain rather than a list of implementation tests:
 
 ```text
-raw -> Quick Clarify -> raw -> Loop -> Review fail -> retry -> pass -> done
+raw -> Clarify Decision Map -> Intent Contract -> Quick -> raw -> Loop checkpoint -> Review reorient -> retry -> complete
 ```
 
-It proves that one visible Agent keeps the same provider session while Thoth is hot-switched, Agent
-Cards use the public CAS authority API, Quick completes in the foreground, Loop registration ends the
-foreground lifecycle at `background_handoff`, and independent PlanExec/Review sessions consume one
-failed-Review retry before the task reaches `done`. The packaged smoke also inspects `app.asar`, mounts
-the packaged Clarify/Loop skills, and uses the daemon managed by the AppImage rather than repository
-daemon code.
+It proves that one visible Agent keeps the same Provider session while Thoth is hot-switched, Decision Map and
+Intent Contract Cards use the public CAS authority API, Quick completes in the foreground, and Loop registration
+hands one stable Task Anchor to checkpointed execution plus fresh independent Review. A false-green Review must
+reorient without changing the Anchor before every Acceptance Claim is evidence-backed. The packaged smoke also
+inspects `app.asar`, loads the immutable Clarify/Loop RuntimeBundles, and uses the daemon managed by the AppImage
+rather than repository daemon code.
 
 The default external scripted harness controls only provider transport actions. It must call the real
 runtime tools and cannot write daemon state directly. This keeps the result deterministic and normally
@@ -127,15 +127,15 @@ validate newer source changes, so rebuild the AppImage before using this command
 
 ## Source-Level Product API Checks
 
-Use the public Create/Send/Card/Background Task API suite while changing the foreground coordinator or authority
+Use the public Create/Send/Card/Task API suite while changing the foreground coordinator or authority
 store:
 
 ```bash
 npm run test:thoth-foreground
 ```
 
-The suite covers raw passthrough, same-session hot switching, Agent-scoped Card authority, cancellation,
-restart/recovery and Loop registration. It is a fast source check, not packaged acceptance.
+The suite covers raw passthrough, same-session hot switching, Agent-scoped Decision Map/Intent Contract authority,
+cancellation, restart/recovery and Loop registration. It is a fast source check, not packaged acceptance.
 
 Provider transport fixtures live outside the Journey and may prescribe semantic tool calls. They must still use
 the real provider adapter and runtime-tool handlers; they may not insert Cards, tasks, phases or verdicts into
@@ -168,6 +168,17 @@ npm run accept:thoth:fast
 
 This reuses the same runner, executes the complete foreground authority journey and adds storage migration, Task
 coordination, Task context and the wider App Task surface under the same hard deadline.
+
+The cognition-specific slice is also available directly:
+
+```bash
+npm run accept:clarify-loop:cognition-fast
+```
+
+It goes through the formal Protocol, RuntimeBundle, ToolGateway, SQLite authority and App projections. It covers
+the 30-plus-question Dive Decision Map, delegation, one Challenger, one Intent Contract, compact Working Sets,
+checkpoint/fresh Review, no-progress interruption, budget waiting, context reset and Stop fencing. It does not
+replace the real Codex, packaged AppImage or hosted Relay gates.
 
 ## Native Provider Plan And Question Acceptance
 
@@ -285,9 +296,10 @@ must never probe, stop, reuse or restart the legacy daemon.
 ## Release Gates
 
 The fast Journey is necessary but does not replace broad promotion evidence. Before replacing the MVP Release,
-run the affected package suites, `npm run check:foundation`, daemon/web builds, three golden judges, native
-desktop/Android/CLI smokes, real Relay, secret scan and `git diff --check`. The workflow must then repeat the
-packaged Journey before publishing and rerun it against the downloaded public AppImage.
+run the affected package suites, `npm run check:foundation`, daemon/web builds, three cognition judges, native
+desktop/internal CLI smokes, hosted Relay, secret scan and `git diff --check`. The workflow must then repeat the
+packaged Journey before publishing and rerun it against the downloaded public AppImage. Android remains a local
+source/build target and is not a Release gate or public asset.
 
 ## Test Suffixes
 

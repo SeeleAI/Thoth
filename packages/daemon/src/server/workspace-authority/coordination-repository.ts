@@ -252,6 +252,7 @@ export class WorkspaceCoordinationRepository {
       prompt: row.prompt,
       cadence: JSON.parse(String(row.cadence_json)) as unknown,
       target: JSON.parse(String(row.target_json)) as unknown,
+      intentContractId: row.intent_contract_id ?? null,
       status: row.status,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -276,15 +277,16 @@ export class WorkspaceCoordinationRepository {
       this.database
         .prepare(
           `INSERT INTO schedules(
-             schedule_id, name, prompt, cadence_json, target_json, status,
+             schedule_id, name, prompt, cadence_json, target_json, intent_contract_id, status,
              created_at, updated_at, next_run_at, last_run_at, paused_at,
              expires_at, max_runs
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(schedule_id) DO UPDATE SET
              name = excluded.name,
              prompt = excluded.prompt,
              cadence_json = excluded.cadence_json,
              target_json = excluded.target_json,
+             intent_contract_id = excluded.intent_contract_id,
              status = excluded.status,
              updated_at = excluded.updated_at,
              next_run_at = excluded.next_run_at,
@@ -299,6 +301,7 @@ export class WorkspaceCoordinationRepository {
           schedule.prompt,
           JSON.stringify(schedule.cadence),
           JSON.stringify(schedule.target),
+          schedule.intentContractId,
           schedule.status,
           schedule.createdAt,
           schedule.updatedAt,

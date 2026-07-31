@@ -24,16 +24,28 @@ describe("agent-scoped Thoth protocol", () => {
         updatedAt: "2026-07-18T00:00:01.000Z",
       },
       pendingCard: {
-        kind: "task_card",
+        kind: "clarify_card",
         createdAt: "2026-07-18T00:00:01.000Z",
         card: {
           id: "card-1",
-          roundLabel: "Task Card",
-          title: "Ship the flow",
-          goal: "Make the installed product path work",
-          constraints: ["Use the visible agent session"],
-          acceptance: ["The AppImage creates a real card"],
-          provenanceSummary: "Grounded in the current user request",
+          sessionId: "clarify-session-1",
+          roundIndex: 1,
+          card: {
+            title: "Deployment boundary",
+            whyNow: "This choice changes the implementation target.",
+            publicSummary: "Confirm one material Human-owned branch.",
+            questions: [
+              {
+                nodeId: "runtime-target",
+                question: "Which runtime target should own acceptance?",
+                choices: [
+                  { id: "native", label: "Native" },
+                  { id: "portable", label: "Portable" },
+                ],
+                recommendedChoiceId: "native",
+              },
+            ],
+          },
           submitted: false,
         },
       },
@@ -41,7 +53,7 @@ describe("agent-scoped Thoth protocol", () => {
       error: null,
     });
 
-    expect(state.pendingCard?.kind).toBe("task_card");
+    expect(state.pendingCard?.kind).toBe("clarify_card");
     expect(
       AgentThothStateUpdateSchema.parse({
         type: "agent.thoth.state.update",
@@ -53,9 +65,8 @@ describe("agent-scoped Thoth protocol", () => {
   it("requires CAS and command idempotency fields for card answers", () => {
     const answer = ThothCardAnswerPayloadSchema.parse({
       intent: "accept_loop",
-      card_id: "card-1",
-      title: "Goals Card",
-      raw_answer: "Register in the background",
+      cardId: "card-1",
+      rawAnswer: "Run the confirmed Intent Contract in the background.",
     });
     const request = AgentThothCardAnswerRequestSchema.parse({
       type: "agent.thoth.card.answer.request",
@@ -69,6 +80,42 @@ describe("agent-scoped Thoth protocol", () => {
 
     expect(request.expectedRevision).toBe(7);
     expect(request.commandId).toBe("command-1");
+  });
+
+  it("binds recommendation and subtree delegation to exactly one Decision node", () => {
+    const targetAnswer = {
+      nodeId: "runtime-target",
+      choiceIds: [],
+      choiceNotes: {},
+    };
+    expect(
+      ThothCardAnswerPayloadSchema.parse({
+        intent: "recommend",
+        questionCardId: "card-1",
+        answers: [targetAnswer],
+        delegatedNodeIds: ["runtime-target"],
+        rawAnswer: "Use your recommendation for this node.",
+      }),
+    ).toMatchObject({ intent: "recommend", delegatedNodeIds: ["runtime-target"] });
+    expect(
+      ThothCardAnswerPayloadSchema.parse({
+        intent: "delegate_subtree",
+        questionCardId: "card-1",
+        answers: [targetAnswer],
+        delegatedNodeIds: ["runtime-target"],
+        rawAnswer: "Delegate this subtree.",
+      }),
+    ).toMatchObject({ intent: "delegate_subtree", delegatedNodeIds: ["runtime-target"] });
+
+    expect(() =>
+      ThothCardAnswerPayloadSchema.parse({
+        intent: "recommend",
+        questionCardId: "card-1",
+        answers: [targetAnswer, { ...targetAnswer, nodeId: "risk" }],
+        delegatedNodeIds: ["runtime-target", "risk"],
+        rawAnswer: "Recommend every question.",
+      }),
+    ).toThrow(/exactly one target Decision node/u);
   });
 
   it("rejects every removed Workspace Secretary RPC", () => {

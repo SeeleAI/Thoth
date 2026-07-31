@@ -169,13 +169,13 @@ if (stage.stage >= 3) {
   );
   requireText(
     "packages/protocol/src/rpc-registry.test.ts",
-    /SessionInboundMessageSchema\.options\)\.toHaveLength\(141\)/,
-    "141 inbound RPC coverage assertion",
+    /SessionInboundMessageSchema\.options\)\.toHaveLength\(143\)/,
+    "143 inbound RPC coverage assertion",
   );
   requireText(
     "packages/protocol/src/rpc-registry.test.ts",
-    /SessionOutboundMessageSchema\.options\)\.toHaveLength\(149\)/,
-    "149 outbound RPC/event coverage assertion",
+    /SessionOutboundMessageSchema\.options\)\.toHaveLength\(152\)/,
+    "152 outbound RPC/event coverage assertion",
   );
   requireText(
     "packages/protocol/src/rpc-registry.test.ts",
@@ -259,8 +259,8 @@ if (stage.stage >= 4) {
     "assistant_message",
     "reasoning",
     "clarify_card",
-    "task_card",
-    "goal_card",
+    "intent_contract_card",
+    "legacy_execution_plan",
     "registered_task",
     "tool_call",
     "todo",

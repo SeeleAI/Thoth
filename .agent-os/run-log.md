@@ -4698,3 +4698,57 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   at `317bcda4`; `main` remains `e74c6e0d`. No Relay/Web deployment, npm/mobile/store/Nix/Docker publication or
   Paseo operation occurred. `NTH-EV-074` and `NTH-TD-051` are verified; terminal state is `published`.
   `NTH-TD-036` is again the sole top action, remains doing at Stage 4 and retains its `15,506`-LOC gap.
+
+## 2026-07-30 [Decision Map Clarify and target-anchored Loop implementation opened]
+
+- The user approved the complete replacement architecture after six research/design rounds. Recorded
+  `NTH-REQ-032`, `NTH-AC-029`, `NTH-CD-100`, `NTH-CD-101`, `NTH-CD-102` and `NTH-TD-052`.
+- The locked product model is one same-session Decision Map Clarify, one Intent Contract, one Task Anchor and a
+  mutable Working Set reviewed at semantic checkpoints. Card quotas, Task/Goals dual approval, linear Goal
+  authority, Blackboard dumping and Contract Preservation Audit are superseded rather than retained as fallback.
+- Current checkout is clean `agent/dev/mvp` at `6b04aa36166b70f65f1ecd557fdcdc901b5674d8`; public fixed Beta and
+  `release/mvp-actions` remain at `d898f25f087f3d997fb027df355013a3d600f94e`, with exactly 26 desktop assets.
+  Remote `main` remains `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+- Implementation begins at Protocol authority, then schema-v6 migration, Harness/context/evidence, daemon state
+  machines, App surfaces, fast/full/packaged acceptance and the authorized fixed-Beta replacement. No tests or
+  source implementation claims have been made at session opening.
+
+## 2026-07-31 [Decision Map Clarify and target-anchored Loop reached local release readiness]
+
+- Replaced the production Task/Goals cognition path with schema-v6 Decision Map Clarify, one Intent Contract, one
+  Task Anchor, mutable Working Sets/Work Units, semantic checkpoints and fresh read-only Review. RuntimeBundle
+  surfaces are exactly four Clarify tools, one internal Challenger tool and four Loop tools. Old Task/Goals names
+  survive only inside deterministic schema-v5 migration fixtures and explicit forbidden-residue tests.
+- The full owner results pass: CLI `40/40`; App `366/366` files and `2,715/2,715` tests; Desktop `37/37` files,
+  `301` passed and `5` skipped; Core `2` files / `20` tests; Drivers `49` passed and `3` skipped files with `606`
+  passed and `21` skipped tests; Daemon `199` files with `2,535` passed and `26` skipped plus integration `3` files
+  with `8` passed and `4` skipped. The shared `accept:thoth:fast` passed in `135.948s`, including the formal public
+  cognition path `22/22`; Foundation passed Highlight `66`, Protocol `415`, Relay `37` and Client `128`.
+- Real Codex `UT-02 + UT-04` passed `2` tests with `2` skipped in `209.08s`. The final Clarify cognition, ablation
+  and Loop judges all returned `JUDGE_RESULT: PASS`. The fresh Web export built `4,463` modules. Storage migration
+  verified Catalog/Authority schema v6 and digest `74f79a53c1ca`.
+- Candidate AppImage `7bf5e09f...c0060` is `137,826,663` bytes and passed the complete real-window journey with
+  `ok=true`: Decision Map, Intent Contract, Quick, Loop native Plan/Implement, checkpoint/Review retry, `@Task`,
+  Stop, Files/Changes, Browser and Schedule. Its isolated durable state is `8,604,983` bytes with exactly two
+  content-addressed RuntimeBundles. Hosted Relay v3 E2EE also passed `ok=true`, including daemon restart,
+  Clarify, Loop, Pause/Resume/Stop and a `1,048,649`-byte five-chunk transfer.
+- Final local promotion checks pass with current exit code `0`: MVP Release contract, brand assets, cognition
+  architecture, Stage 4 architecture, schema-v6 storage fixture, formatting, repository/secret validation and
+  `git diff --check`. Current production metrics are `320,124` LOC, `1,361,597` scanner tokens, `1,408,770` AST
+  nodes, `5,247` imports and `165` runtime dependencies. `DeltaP52=3,173` translates Cut B/final ceilings to
+  `304,618` / `282,218` and preserves the independent `15,506`-LOC `NTH-TD-036` gap.
+- `NTH-EV-075` is locally `release_ready`, not yet verified or published. The existing fixed Release remains
+  unchanged at `d898f25f` until the atomic source commit, both normal pushes, exact-SHA workflow, 26-asset
+  replacement, public metadata/checksum/build-identity downloads and downloaded-AppImage reverification pass.
+
+## 2026-07-31 [Decision Map fixed-Beta publication preflight passed]
+
+- Repository-local GitHub authentication resolves to `Royalvice`. One initial auth-status invocation omitted
+  `THOTH_GH_CONFIG_DIR` and was correctly rejected before any remote operation; the retry used the locked local
+  config plus HTTPS proxy and passed without changing global credentials.
+- Live GitHub receipts match every fence: `agent/dev/mvp=6b04aa36166b70f65f1ecd557fdcdc901b5674d8`,
+  `release/mvp-actions=d898f25f087f3d997fb027df355013a3d600f94e`, and
+  `main=e74c6e0de8a110d5e07249880d0e4e4f0ceab691`. The release source is an ancestor of development HEAD.
+- Direct tag `v0.0.0-mvp-beta` and public prerelease `361828099` still target `d898f25f`; the Release is
+  `draft=false`, `prerelease=true` and exposes exactly 26 assets. No branch, tag, Release, workflow or service has
+  been mutated. The candidate may proceed to one atomic source commit and two normal fast-forward pushes.

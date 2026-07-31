@@ -61,7 +61,8 @@ import type { ThothCardAnswerPayload } from "@thoth/protocol/thoth/rpc-schemas";
 import { ToolCallDetailsContent } from "@/components/tool-call-details";
 import { QuestionFormCard } from "@/components/question-form-card";
 import { ClarifyDecisionCard } from "@/components/clarify-decision-card";
-import { ThothApprovalCard } from "@/components/thoth-approval-card";
+import { IntentContractCard } from "@/components/intent-contract-card";
+import { LegacyExecutionPlanCard } from "@/components/legacy-execution-plan-card";
 import { RegisteredTaskCard } from "@/components/registered-task-card";
 import { ToolCallSheetProvider } from "@/components/tool-call-sheet";
 import { type AgentStreamRenderModel, buildAgentStreamRenderModel } from "./model";
@@ -786,22 +787,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             onSubmit={(answer) => handleSubmitClarifyAnswer(entry.item.card.id, answer)}
           />
         ),
-        renderTask: (entry) => (
-          <ThothApprovalCard
+        renderIntentContract: (entry) => (
+          <IntentContractCard
             card={entry.item.card}
-            kind="task"
-            approvalMode={approvalMode}
             onSubmit={(answer) => handleSubmitClarifyAnswer(entry.item.card.id, answer)}
           />
         ),
-        renderGoal: (entry) => (
-          <ThothApprovalCard
-            card={entry.item.card}
-            kind="goal"
-            approvalMode={approvalMode}
-            onSubmit={(answer) => handleSubmitClarifyAnswer(entry.item.card.id, answer)}
-          />
-        ),
+        renderLegacyExecutionPlan: (entry) => <LegacyExecutionPlanCard plan={entry.item} />,
         renderRegisteredTask: (entry) => <RegisteredTaskCard task={entry.item.task} />,
         renderTodo: (entry) => <TodoListCard items={entry.item.items} />,
         renderError: (entry) => (
@@ -821,7 +813,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       }),
       [
         agent.cwd,
-        approvalMode,
         client,
         handleInlinePathPress,
         handleSubmitClarifyAnswer,

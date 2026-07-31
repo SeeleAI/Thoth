@@ -191,7 +191,6 @@ import type {
   WorkspaceAuthorityManager,
   WorkspaceTaskCoordinator,
 } from "./workspace-authority/index.js";
-import { TaskContextBroker } from "./workspace-authority/task-context-broker.js";
 import { WorkspaceForegroundAuthority } from "./workspace-authority/foreground-authority.js";
 import { WorkspaceAuthorityConflictError } from "./workspace-authority/workspace-authority-store.js";
 import { ScheduleService } from "./schedule/service.js";
@@ -498,6 +497,7 @@ export interface SessionOptions {
   scheduleService: ScheduleService;
   workspaceAuthorityManager: WorkspaceAuthorityManager;
   workspaceTaskCoordinator: WorkspaceTaskCoordinator;
+  foregroundTurnCoordinator: ForegroundTurnCoordinator;
   checkoutDiffManager: CheckoutDiffManager;
   github?: GitHubService;
   createAgentMcpTransport?: AgentMcpTransportFactory;
@@ -624,6 +624,7 @@ export class Session {
   private readonly pushTokenStore: PushTokenStore;
   private unsubscribeAgentEvents: (() => void) | null = null;
   private unsubscribeForegroundAuthority: (() => void) | null = null;
+  private unsubscribeClarifyAuthority: (() => void) | null = null;
   private unsubscribeWorkspaceAuthority: (() => void) | null = null;
   private unsubscribeTerminalWorkspaceContributionEvents: (() => void) | null = null;
   private readonly agentUpdates: AgentUpdatesService;
@@ -695,6 +696,7 @@ export class Session {
       scheduleService,
       workspaceAuthorityManager,
       workspaceTaskCoordinator,
+      foregroundTurnCoordinator,
       checkoutDiffManager,
       github,
       renameCurrentBranch,
@@ -894,21 +896,15 @@ export class Session {
       logger: this.sessionLogger,
     });
     const foregroundAuthorityStore = new WorkspaceForegroundAuthority(workspaceAuthorityManager);
-    const taskContextBroker = new TaskContextBroker(workspaceAuthorityManager);
-    this.foregroundTurnCoordinator = new ForegroundTurnCoordinator({
-      authorityStore: foregroundAuthorityStore,
-      executionService: this.executionService,
-      agentStorage: this.agentStorage,
-      taskCoordinator: workspaceTaskCoordinator,
-      taskContextBroker,
-      toolGateway: workspaceTaskCoordinator.toolGateway,
-      logger: this.sessionLogger.child({ component: "foreground-turn-coordinator" }),
-    });
+    this.foregroundTurnCoordinator = foregroundTurnCoordinator;
     this.unsubscribeForegroundAuthority = foregroundAuthorityStore.subscribe((state, reason) => {
       this.emit({
         type: "agent.thoth.state.update",
         payload: { state, reason },
       });
+    });
+    this.unsubscribeClarifyAuthority = workspaceAuthorityManager.subscribeClarify((update) => {
+      this.emit({ type: "agent.clarify.session.update", payload: update });
     });
     this.workspaceAuthorityManager = workspaceAuthorityManager;
     this.workspaceTaskCoordinator = workspaceTaskCoordinator;
@@ -1246,7 +1242,7 @@ export class Session {
     options: { allowInternalStream: boolean },
   ): void {
     if (event.type === "agent_state") {
-      // Loop PlanExec/Review agents can be lazily restored when the
+      // Loop Execute/Review agents can be lazily restored when the
       // Background Tasks surface fetches their timeline. That restoration
       // emits a normal manager state event, but it must never enter the
       // workspace agent directory or create a foreground tab.
@@ -1551,6 +1547,8 @@ export class Session {
       scheduleRunOnce: (msg) => this.chatScheduleSession.handleScheduleRunOnceRequest(msg),
       scheduleUpdate: (msg) => this.chatScheduleSession.handleScheduleUpdateRequest(msg),
       getAgentThothState: (msg) => this.handleAgentThothStateRequest(msg),
+      getAgentClarifySession: (msg) => this.handleAgentClarifySessionGetRequest(msg),
+      prioritizeAgentClarifyNode: (msg) => this.handleAgentClarifyNodePrioritizeRequest(msg),
       answerAgentThothCard: (msg) => this.handleAgentThothCardAnswerRequest(msg),
       listTasks: (msg) => this.handleTaskListRequest(msg),
       getTask: (msg) => this.handleTaskGetRequest(msg),
@@ -1807,7 +1805,7 @@ export class Session {
     const registered = await this.registerAuthorityWorkspace(msg.workspaceId);
     const result = registered
       ? this.workspaceTaskCoordinator.get(msg.workspaceId, msg.taskId)
-      : { task: null, executions: [], decisions: [] };
+      : { task: null, executions: [], decisions: [], reviews: [], evidence: [] };
     this.emit({
       type: "task.get.response",
       payload: {
@@ -3092,6 +3090,67 @@ export class Session {
         payload: {
           requestId: msg.requestId,
           state: await this.foregroundTurnCoordinator.getState(msg.agentId),
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentClarifySessionGetRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.clarify.session.get.request" }>,
+  ): Promise<void> {
+    try {
+      const resolved = await this.resolveAgentIdentifier(msg.agentId);
+      if (!resolved.ok) throw new Error(resolved.error);
+      const session = await this.foregroundTurnCoordinator.getClarifySession(resolved.agentId);
+      this.emit({
+        type: "agent.clarify.session.get.response",
+        payload: { requestId: msg.requestId, session, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "agent.clarify.session.get.response",
+        payload: {
+          requestId: msg.requestId,
+          session: null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentClarifyNodePrioritizeRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.clarify.node.prioritize.request" }>,
+  ): Promise<void> {
+    try {
+      const resolved = await this.resolveAgentIdentifier(msg.agentId);
+      if (!resolved.ok) throw new Error(resolved.error);
+      const result = this.foregroundTurnCoordinator.prioritizeClarifyNode({
+        agentId: resolved.agentId,
+        sessionId: msg.sessionId,
+        nodeId: msg.nodeId,
+        expectedRevision: msg.expectedRevision,
+        commandId: msg.commandId,
+      });
+      this.emit({
+        type: "agent.clarify.node.prioritize.response",
+        payload: {
+          requestId: msg.requestId,
+          session: result.session,
+          conflict: false,
+          duplicate: result.duplicate,
+          error: null,
+        },
+      });
+    } catch (error) {
+      const session = await this.foregroundTurnCoordinator.getClarifySession(msg.agentId);
+      this.emit({
+        type: "agent.clarify.node.prioritize.response",
+        payload: {
+          requestId: msg.requestId,
+          session,
+          conflict: error instanceof WorkspaceAuthorityConflictError,
+          duplicate: false,
           error: error instanceof Error ? error.message : String(error),
         },
       });
@@ -6434,6 +6493,10 @@ export class Session {
     if (this.unsubscribeForegroundAuthority) {
       this.unsubscribeForegroundAuthority();
       this.unsubscribeForegroundAuthority = null;
+    }
+    if (this.unsubscribeClarifyAuthority) {
+      this.unsubscribeClarifyAuthority();
+      this.unsubscribeClarifyAuthority = null;
     }
     if (this.unsubscribeWorkspaceAuthority) {
       this.unsubscribeWorkspaceAuthority();

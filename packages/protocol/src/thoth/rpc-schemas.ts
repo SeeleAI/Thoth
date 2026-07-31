@@ -1,10 +1,8 @@
 import { z } from "zod";
-import { ProviderRunModeReceiptSchema, ProviderRunModeSchema } from "../provider-control.js";
 import { AgentQueuedTurnSchema } from "../agent-turn-queue.js";
+import { IntentContractProjectionSchema } from "../intent-contract.js";
+import { ProviderRunModeReceiptSchema, ProviderRunModeSchema } from "../provider-control.js";
 import {
-  ClarifyFrontierLedgerSchema,
-  ClarifyDecisionDeltaSchema,
-  ClarifyLinearGoalContractSchema,
   ClarifyQuestionCardSchema,
   ThothRuntimeClarifyStrengthSchema,
   ThothRuntimeLoopStrengthSchema,
@@ -12,7 +10,6 @@ import {
 } from "../thoth-runtime-contract.js";
 
 const NonEmptyStringSchema = z.string().trim().min(1);
-const StringListSchema = z.array(NonEmptyStringSchema).min(1);
 
 export const ThothTurnControlSnapshotSchema = z
   .object({
@@ -25,25 +22,16 @@ export const ThothTurnControlSnapshotSchema = z
 export const ThothClarifyCardModelSchema = z
   .object({
     id: NonEmptyStringSchema,
-    roundLabel: NonEmptyStringSchema,
-    roundIndex: z.number().int().positive().optional(),
-    title: NonEmptyStringSchema,
-    whyNow: z.string(),
-    continuesClarify: z.boolean(),
-    publicBadgeSummary: NonEmptyStringSchema.optional(),
-    frontierLedger: ClarifyFrontierLedgerSchema.optional(),
-    frontierLedgerRef: NonEmptyStringSchema.optional(),
-    decisionDelta: ClarifyDecisionDeltaSchema.optional(),
+    sessionId: NonEmptyStringSchema,
+    roundIndex: z.number().int().positive(),
     card: ClarifyQuestionCardSchema,
     submitted: z.boolean(),
     submittedSummary: NonEmptyStringSchema.optional(),
-    // Persist the actual user decisions so a later foreground execution handoff
-    // receives the full Clarify context rather than only a submission count.
     submittedAnswers: z
       .array(
         z
           .object({
-            questionId: NonEmptyStringSchema,
+            nodeId: NonEmptyStringSchema,
             choiceIds: z.array(NonEmptyStringSchema),
             choiceNotes: z.record(NonEmptyStringSchema, z.string()).default({}),
             note: z.string().optional(),
@@ -55,81 +43,23 @@ export const ThothClarifyCardModelSchema = z
   })
   .strict();
 
-export const ThothTaskCardModelSchema = z
+export const ThothIntentContractCardModelSchema = z
   .object({
     id: NonEmptyStringSchema,
-    roundLabel: NonEmptyStringSchema,
-    title: NonEmptyStringSchema,
-    goal: NonEmptyStringSchema,
-    constraints: StringListSchema,
-    acceptance: StringListSchema,
+    sessionId: NonEmptyStringSchema,
+    contract: IntentContractProjectionSchema,
     provenanceSummary: NonEmptyStringSchema,
-    // Frozen from the composer when the user sent the turn that produced this authority flow.
-    // Current controls may hot-switch independently and apply only to a later user send.
-    turnControls: ThothTurnControlSnapshotSchema.optional(),
+    turnControls: ThothTurnControlSnapshotSchema,
     submitted: z.boolean(),
     submittedSummary: NonEmptyStringSchema.optional(),
   })
   .strict();
-
-export const ThothPyramidPlanSubgoalSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    title: NonEmptyStringSchema,
-    goal: NonEmptyStringSchema,
-    acceptance: StringListSchema,
-  })
-  .strict();
-
-export const ThothPyramidPlanStageSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    title: NonEmptyStringSchema,
-    goal: NonEmptyStringSchema,
-    acceptance: StringListSchema,
-    subgoals: z.array(ThothPyramidPlanSubgoalSchema),
-  })
-  .strict();
-
-export const ThothGoalCardModelSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    roundLabel: NonEmptyStringSchema,
-    title: NonEmptyStringSchema,
-    summary: NonEmptyStringSchema,
-    pyramid: z.array(ThothPyramidPlanStageSchema).min(1),
-    provenanceSummary: NonEmptyStringSchema,
-    turnControls: ThothTurnControlSnapshotSchema.optional(),
-    submitted: z.boolean(),
-    submittedSummary: NonEmptyStringSchema.optional(),
-  })
-  .strict();
-
-export const ThothGoalsCardModelSchema = z
-  .object({
-    id: NonEmptyStringSchema,
-    roundLabel: NonEmptyStringSchema,
-    title: NonEmptyStringSchema,
-    summary: NonEmptyStringSchema,
-    goalsCountRationale: z.string().optional(),
-    goals: z.array(ClarifyLinearGoalContractSchema).min(1),
-    provenanceSummary: NonEmptyStringSchema,
-    turnControls: ThothTurnControlSnapshotSchema.optional(),
-    submitted: z.boolean(),
-    submittedSummary: NonEmptyStringSchema.optional(),
-  })
-  .strict();
-
-export const ThothApprovalGoalCardModelSchema = z.union([
-  ThothGoalsCardModelSchema,
-  ThothGoalCardModelSchema,
-]);
 
 export const ClarifyAnswerIntentSchema = z.enum([
   "submit_choices",
   "note_only",
   "recommend",
-  "decide",
+  "delegate_subtree",
   "stop",
 ]);
 
@@ -143,43 +73,81 @@ export const ApprovalActionIntentSchema = z.enum([
 export const ThothClarifyCardAnswerPayloadSchema = z
   .object({
     intent: ClarifyAnswerIntentSchema,
-    question_card_id: NonEmptyStringSchema,
-    title: NonEmptyStringSchema,
+    questionCardId: NonEmptyStringSchema,
     answers: z.array(
       z
         .object({
-          question_id: NonEmptyStringSchema,
-          choice_ids: z.array(NonEmptyStringSchema),
-          choice_notes: z.record(NonEmptyStringSchema, z.string()).default({}),
+          nodeId: NonEmptyStringSchema,
+          choiceIds: z.array(NonEmptyStringSchema),
+          choiceNotes: z.record(NonEmptyStringSchema, z.string()).default({}),
           note: z.string().optional(),
         })
         .strict(),
     ),
+    delegatedNodeIds: z.array(NonEmptyStringSchema).default([]),
     note: z.string().optional(),
-    raw_answer: NonEmptyStringSchema,
+    rawAnswer: NonEmptyStringSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((answer, ctx) => {
+    const isDelegation = answer.intent === "recommend" || answer.intent === "delegate_subtree";
+    if (isDelegation) {
+      if (answer.delegatedNodeIds.length !== 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${answer.intent} requires exactly one target Decision node`,
+          path: ["delegatedNodeIds"],
+        });
+        return;
+      }
+      const targetNodeId = answer.delegatedNodeIds[0];
+      if (answer.answers.length !== 1 || answer.answers[0]?.nodeId !== targetNodeId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${answer.intent} must answer only its target Decision node`,
+          path: ["answers"],
+        });
+      } else if (answer.answers[0].choiceIds.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${answer.intent} delegates the decision and cannot also select a choice`,
+          path: ["answers", 0, "choiceIds"],
+        });
+      }
+      return;
+    }
+    if (answer.delegatedNodeIds.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${answer.intent} cannot delegate Decision nodes`,
+        path: ["delegatedNodeIds"],
+      });
+    }
+  });
 
-export const ThothApprovalCardAnswerPayloadSchema = z
+export const ThothIntentContractAnswerPayloadSchema = z
   .object({
     intent: ApprovalActionIntentSchema,
-    card_id: NonEmptyStringSchema,
-    title: NonEmptyStringSchema,
+    cardId: NonEmptyStringSchema,
     note: z.string().optional(),
-    raw_answer: NonEmptyStringSchema,
+    rawAnswer: NonEmptyStringSchema,
   })
   .strict();
 
 export const ThothCardAnswerPayloadSchema = z.union([
   ThothClarifyCardAnswerPayloadSchema,
-  ThothApprovalCardAnswerPayloadSchema,
+  ThothIntentContractAnswerPayloadSchema,
 ]);
 
 export const AgentThothLifecycleSchema = z.enum([
   "idle",
   "running",
+  "mapping",
   "awaiting_card",
+  "challenging",
+  "proposing",
   "awaiting_implementation",
+  "quick_wait",
   "quick_exec",
   "background_handoff",
   "interrupted",
@@ -215,15 +183,8 @@ export const AgentThothPendingCardSchema = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
-      kind: z.literal("task_card"),
-      card: ThothTaskCardModelSchema,
-      createdAt: NonEmptyStringSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("goal_card"),
-      card: ThothApprovalGoalCardModelSchema,
+      kind: z.literal("intent_contract_card"),
+      card: ThothIntentContractCardModelSchema,
       createdAt: NonEmptyStringSchema,
     })
     .strict(),
@@ -299,8 +260,11 @@ export const AgentThothStateUpdateSchema = z
         reason: z
           .enum([
             "turn_started",
+            "decision_map_changed",
             "card_opened",
             "card_answered",
+            "contract_proposed",
+            "quick_exec_waiting",
             "quick_exec_started",
             "background_handoff",
             "turn_completed",
@@ -316,16 +280,13 @@ export const AgentThothStateUpdateSchema = z
 
 export type ThothTurnControlSnapshot = z.infer<typeof ThothTurnControlSnapshotSchema>;
 export type ThothClarifyCardModel = z.infer<typeof ThothClarifyCardModelSchema>;
-export type ThothTaskCardModel = z.infer<typeof ThothTaskCardModelSchema>;
-export type ThothPyramidPlanSubgoal = z.infer<typeof ThothPyramidPlanSubgoalSchema>;
-export type ThothPyramidPlanStage = z.infer<typeof ThothPyramidPlanStageSchema>;
-export type ThothGoalCardModel = z.infer<typeof ThothGoalCardModelSchema>;
-export type ThothGoalsCardModel = z.infer<typeof ThothGoalsCardModelSchema>;
-export type ThothApprovalGoalCardModel = z.infer<typeof ThothApprovalGoalCardModelSchema>;
+export type ThothIntentContractCardModel = z.infer<typeof ThothIntentContractCardModelSchema>;
 export type ClarifyAnswerIntent = z.infer<typeof ClarifyAnswerIntentSchema>;
 export type ApprovalActionIntent = z.infer<typeof ApprovalActionIntentSchema>;
 export type ThothClarifyCardAnswerPayload = z.infer<typeof ThothClarifyCardAnswerPayloadSchema>;
-export type ThothApprovalCardAnswerPayload = z.infer<typeof ThothApprovalCardAnswerPayloadSchema>;
+export type ThothIntentContractAnswerPayload = z.infer<
+  typeof ThothIntentContractAnswerPayloadSchema
+>;
 export type ThothCardAnswerPayload = z.infer<typeof ThothCardAnswerPayloadSchema>;
 export type AgentThothLifecycle = z.infer<typeof AgentThothLifecycleSchema>;
 export type AgentThothTurn = z.infer<typeof AgentThothTurnSchema>;

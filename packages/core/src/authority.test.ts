@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
+import type { IntentContractProjection } from "@thoth/protocol/intent-contract";
 import type {
   ExecutionApprovalProjection,
   ExecutionProjection,
   TaskProjection,
+  WorkUnitProjection,
 } from "@thoth/protocol/task-authority";
 import {
   AuthorityTransitionError,
   createTaskAuthority,
-  deriveDurableGoalId,
   transitionAuthority,
   type AuthorityState,
   type DeterministicAuthorityInput,
@@ -19,70 +20,80 @@ const deterministic: DeterministicAuthorityInput = {
   ids: {
     decisionId: "decision-1",
     decisionRequestId: "decision-request-1",
-    blackboardIds: Array.from({ length: 8 }, (_, index) => `blackboard-${index + 1}`),
+    evidenceId: "evidence-1",
+    reviewDecisionId: "review-1",
   },
 };
 
 describe("transitionAuthority", () => {
-  it("applies Task control without reading time or generating identity", () => {
+  it("constructs one target-anchored Task without Goal authority", () => {
+    const task = createTaskAuthority({
+      id: "task-created",
+      workspaceId: "workspace-1",
+      sourceAgentWorkspaceId: "workspace-1",
+      sourceAgentId: "agent-1",
+      mode: "loop",
+      intentContract: intentContract({ taskId: null }),
+      strength: "balanced",
+      now,
+    });
+
+    expect(task).toMatchObject({
+      id: "task-created",
+      status: "queued",
+      currentExecutionId: null,
+      currentWorkUnitId: null,
+      workUnits: [],
+      completionAuthority: "none",
+      workingSet: { activeGap: "Deliver the confirmed runtime target." },
+      budget: {
+        strength: "balanced",
+        usedNonCompleteReviews: 0,
+        maxNonCompleteReviews: 10,
+      },
+    });
+    expect(task.intentContract.taskId).toBe("task-created");
+  });
+
+  it("requires a confirmed Intent Contract from the same Workspace and source Agent", () => {
+    expect(() =>
+      createTaskAuthority({
+        id: "task-created",
+        workspaceId: "workspace-1",
+        sourceAgentWorkspaceId: "workspace-1",
+        sourceAgentId: "agent-1",
+        mode: "loop",
+        intentContract: intentContract({ status: "proposed", confirmedAt: null }),
+        strength: "light",
+        now,
+      }),
+    ).toThrow(/confirmed Intent Contract/u);
+  });
+
+  it("applies Task controls with CAS and settles Stop in a second transition", () => {
     const state = authorityState();
     const paused = transitionAuthority(
       state,
       {
         type: "task.control",
         command: "pause",
-        expectedRevision: 1,
+        expectedRevision: state.task.revision,
         commandId: "command-pause",
         actorId: "human",
         clientId: "desktop",
       },
       deterministic,
     );
-    expect(paused.task).toMatchObject({
-      status: "running",
-      pendingControl: "pause",
-      revision: 2,
-      updatedAt: now,
-    });
-    expect(paused.decision).toMatchObject({
-      id: "decision-1",
-      commandId: "command-pause",
-      resultRevision: 2,
-      decidedAt: now,
-    });
+    expect(paused.task).toMatchObject({ status: "running", pendingControl: "pause" });
+    expect(paused.decision).toMatchObject({ kind: "task_control_pause", decidedAt: now });
 
-    const stopped = transitionAuthority(
-      state,
-      {
-        type: "task.control",
-        command: "stop",
-        expectedRevision: 1,
-        commandId: "command-stop",
-        actorId: "human",
-        clientId: "desktop",
-      },
-      deterministic,
-    );
-    expect(stopped.task).toMatchObject({ status: "stopping", pendingControl: "stop" });
-    expect(stopped.execution).toMatchObject({ status: "cancel_requested", revision: 2 });
-    expect(stopped.cancelPendingApprovals).toBe(true);
-    expect(stopped.effects).toEqual([
-      {
-        type: "interrupt_execution",
-        executionId: "execution-1",
-        generation: "generation-1",
-      },
-    ]);
-  });
-
-  it("rejects stale revision as an explicit authority conflict", () => {
     expect(() =>
       transitionAuthority(
-        authorityState(),
+        state,
         {
           type: "task.control",
           command: "pause",
-          expectedRevision: 9,
+          expectedRevision: 99,
           commandId: "stale",
           actorId: "human",
           clientId: "desktop",
@@ -92,252 +103,307 @@ describe("transitionAuthority", () => {
     ).toThrowError(
       expect.objectContaining<Partial<AuthorityTransitionError>>({ kind: "conflict" }),
     );
-  });
 
-  it("moves PlanExec completion to the Review boundary atomically", () => {
-    const mutation = transitionAuthority(
-      authorityState(),
-      {
-        type: "execution.planexec.completed",
-        generation: "generation-1",
-        result: {
-          plan_summary: "Plan",
-          execution_summary: "Implemented",
-          evidence: ["Evidence"],
-          validation_performed: ["Tests"],
-          remaining_risks: [],
-          next_review_focus: "Review",
-        },
-      },
-      deterministic,
-    );
-    expect(mutation.task).toMatchObject({
-      status: "queued",
-      currentExecutionId: null,
-      summary: "PlanExec completed; independent Review is queued.",
-    });
-    expect(mutation.execution).toMatchObject({ status: "succeeded", completedAt: now });
-    expect(mutation.blackboard).toEqual([
-      expect.objectContaining({ id: "blackboard-1", kind: "planexec_report" }),
-    ]);
-    expect(mutation.phaseRunStatus).toBe("succeeded");
-  });
-
-  it("settles a Quick execution and its Task through one authority transition", () => {
-    const state = authorityState({
-      task: taskProjection({ mode: "quick" }),
-      execution: executionProjection({ phase: "quick_exec", attachment: null }),
-    });
-    const succeeded = transitionAuthority(
+    const stopping = transitionAuthority(
       state,
       {
-        type: "execution.quick.settled",
-        generation: "generation-1",
-        status: "succeeded",
-        summary: "Scheduled work completed",
-      },
-      deterministic,
-    );
-
-    expect(succeeded.task).toMatchObject({
-      status: "completed",
-      currentGoalId: null,
-      currentExecutionId: null,
-      summary: "Scheduled work completed",
-    });
-    expect(succeeded.task.goals[0]).toMatchObject({ status: "passed", revision: 2 });
-    expect(succeeded.execution).toMatchObject({
-      status: "succeeded",
-      completedAt: now,
-      summary: "Scheduled work completed",
-    });
-    expect(succeeded.blackboard).toEqual([
-      expect.objectContaining({ kind: "evidence_summary", producer: "daemon" }),
-    ]);
-    expect(succeeded.phaseRunStatus).toBe("succeeded");
-    expect(succeeded.effects).toEqual([{ type: "release_task_runtime", taskId: "task-1" }]);
-  });
-
-  it("keeps failed Quick execution authority terminal and recoverable", () => {
-    const state = authorityState({
-      task: taskProjection({ mode: "quick" }),
-      execution: executionProjection({ phase: "quick_exec", attachment: null }),
-    });
-    const failed = transitionAuthority(
-      state,
-      {
-        type: "execution.quick.settled",
-        generation: "generation-1",
-        status: "failed",
-        summary: "Provider unavailable",
-      },
-      deterministic,
-    );
-
-    expect(failed.task).toMatchObject({
-      status: "interrupted",
-      currentExecutionId: null,
-      summary: "Provider unavailable",
-    });
-    expect(failed.task.goals[0]).toMatchObject({ status: "interrupted" });
-    expect(failed.execution).toMatchObject({ status: "failed", completedAt: now });
-    expect(failed.blackboard).toEqual([
-      expect.objectContaining({ kind: "blocker", producer: "daemon" }),
-    ]);
-    expect(failed.phaseRunStatus).toBe("interrupted");
-  });
-
-  it("applies Review retry budget and direction in one pure transition", () => {
-    const state = authorityState({ execution: reviewExecution() });
-    const mutation = transitionAuthority(
-      state,
-      {
-        type: "execution.review.completed",
-        generation: "generation-review",
-        verdict: {
-          outcome: "continue",
-          summary: "Retry with corrected direction",
-          direction_memo: {
-            conclusion: "Retry",
-            reality: ["The result is incomplete"],
-            diagnosis: "Root issue",
-            abandon: [],
-            reframe: "Correct the root issue",
-            next_direction: "Implement the correction",
-          },
-        },
-      },
-      deterministic,
-    );
-    expect(mutation.task).toMatchObject({
-      status: "budget_wait",
-      currentExecutionId: null,
-      budget: { usedFailedReviews: 1, maxFailedReviews: 1 },
-    });
-    expect(mutation.task.goals[0]).toMatchObject({ status: "queued", revision: 2 });
-    expect(mutation.execution).toMatchObject({ status: "succeeded" });
-  });
-
-  it("opens and answers a user-owned Review decision with exact evidence", () => {
-    const reviewState = authorityState({ execution: reviewExecution() });
-    const opened = transitionAuthority(
-      reviewState,
-      {
-        type: "execution.review.completed",
-        generation: "generation-review",
-        verdict: {
-          outcome: "return_to_user_decision",
-          summary: "A user choice is required",
-          user_decision: {
-            title: "Choose",
-            question: "A or B?",
-            options: [
-              { id: "a", label: "A" },
-              { id: "b", label: "B" },
-            ],
-          },
-        },
-      },
-      deterministic,
-    );
-    expect(opened.task).toMatchObject({
-      status: "awaiting_user",
-      pendingDecision: { id: "decision-request-1" },
-    });
-    expect(opened.decisionRequest).toMatchObject({ type: "open" });
-
-    const answered = transitionAuthority(
-      {
-        ...reviewState,
-        task: opened.task,
-        execution: null,
-        pendingDecision: opened.task.pendingDecision,
-      },
-      {
-        type: "task.decision.answered",
-        decisionId: "decision-request-1",
-        optionId: "b",
-        note: " exact note ",
-        expectedRevision: opened.task.revision,
-        commandId: "answer-1",
+        type: "task.control",
+        command: "stop",
+        expectedRevision: state.task.revision,
+        commandId: "command-stop",
         actorId: "human",
         clientId: "desktop",
       },
       deterministic,
     );
-    expect(answered.task).toMatchObject({ status: "queued", pendingDecision: null });
-    expect(answered.decision).toMatchObject({
-      id: "decision-1",
-      rawAnswer: { optionId: "b", note: " exact note " },
-      normalized: { note: "exact note" },
-    });
-    expect(answered.decisionRequest).toEqual({
-      type: "answer",
-      requestId: "decision-request-1",
-      decisionId: "decision-1",
-      answeredAt: now,
-    });
+    expect(stopping.task).toMatchObject({ status: "stopping", pendingControl: "stop" });
+    expect(stopping.execution).toMatchObject({ status: "cancel_requested" });
+    expect(stopping.effects).toEqual([
+      {
+        type: "interrupt_execution",
+        executionId: "execution-1",
+        generation: "generation-1",
+      },
+    ]);
+
+    const stopped = transitionAuthority(
+      { ...state, task: stopping.task, execution: stopping.execution },
+      {
+        type: "execution.stop.settled",
+        generation: "generation-1",
+        orphaned: false,
+      },
+      deterministic,
+    );
+    expect(stopped.task).toMatchObject({ status: "stopped", pendingControl: null });
+    expect(stopped.execution).toMatchObject({ status: "canceled" });
   });
 
-  it("preserves approved Goals while replacing only unstarted future Goals", () => {
-    const task = taskProjection({
-      goals: [
-        goal("goal-1", 1, "running"),
-        goal("goal-2", 2, "queued"),
-        goal("goal-3", 3, "queued"),
-      ],
-    });
-    const state = authorityState({ task, execution: reviewExecution(), goalsRevision: 4 });
+  it("atomically turns an Executor checkpoint into evidence and the Review boundary", () => {
     const mutation = transitionAuthority(
-      state,
+      authorityState(),
       {
-        type: "execution.review.completed",
-        generation: "generation-review",
-        verdict: {
-          outcome: "replan_unstarted_goals",
-          summary: "Replace future work",
-          deferred_goal_replan_proposal: {
-            base_goals_revision: 4,
-            rationale: "Reality changed",
-            expected_benefit: "Converge",
-            affected_goal_ids: ["goal-2", "goal-3"],
-            goals: [
-              {
-                id: "replacement",
-                order: 2,
-                title: "Replacement",
-                goal: "Do replacement",
-                constraints: ["Stay scoped"],
-                acceptance: ["Pass"],
-              },
-            ],
-          },
+        type: "execution.checkpoint.completed",
+        generation: "generation-1",
+        checkpoint: {
+          title: "Runtime increment",
+          activeGap: "Deliver the confirmed runtime target.",
+          progressClaim: "The native path now passes its focused verification.",
+          unresolvedGap: "Independently review the complete target.",
+          evidenceRefs: ["evidence-provider"],
         },
       },
       deterministic,
     );
-    expect(mutation.goalsRevision).toBe(5);
-    expect(mutation.task.goals).toHaveLength(2);
-    expect(mutation.task.goals[0]).toMatchObject({ id: "goal-1", status: "passed" });
-    expect(mutation.task.goals[1]).toMatchObject({
-      id: deriveDurableGoalId({
-        taskId: "task-1",
-        sourceGoalId: "replacement",
-        order: 2,
-        lineage: "replan-5",
-      }),
+
+    expect(mutation.task).toMatchObject({
       status: "queued",
+      currentExecutionId: null,
+      currentWorkUnitId: "work-unit-1",
+      workingSet: {
+        activeGap: "Independently review the complete target.",
+        nextMove: "Run a fresh independent Review against Workspace reality.",
+      },
+    });
+    expect(mutation.task.workUnits[0]).toMatchObject({
+      status: "completed",
+      evidenceRefs: ["evidence-provider", "evidence-1"],
+    });
+    expect(mutation.execution).toMatchObject({ status: "succeeded", completedAt: now });
+    expect(mutation.evidence).toEqual([
+      expect.objectContaining({ id: "evidence-1", kind: "executor_checkpoint" }),
+    ]);
+  });
+
+  it("records a Review reorientation, rejected routes, and the non-complete budget", () => {
+    const mutation = transitionAuthority(
+      authorityState({ execution: executionProjection({ phase: "review" }) }),
+      {
+        type: "execution.review.completed",
+        generation: "generation-1",
+        review: {
+          decision: "reorient",
+          reason: "The implementation optimized the wrong runtime boundary.",
+          evidenceRefs: ["evidence-review"],
+          nextFocus: "Reorient against the confirmed native target.",
+          rejectedRoutes: ["Do not continue the portable-only route."],
+          acceptanceEvidence: {},
+        },
+      },
+      deterministic,
+    );
+
+    expect(mutation.task).toMatchObject({
+      status: "budget_wait",
+      currentExecutionId: null,
+      latestReview: { id: "review-1", decision: "reorient" },
+      budget: { usedNonCompleteReviews: 1, maxNonCompleteReviews: 1 },
+      workingSet: {
+        activeGap: "Reorient against the confirmed native target.",
+        rejectedRoutes: ["Do not continue the portable-only route."],
+      },
+    });
+    expect(mutation.effects).toEqual([{ type: "release_task_runtime", taskId: "task-1" }]);
+  });
+
+  it("completes only when Review maps every Acceptance Claim to evidence", () => {
+    const state = authorityState({ execution: executionProjection({ phase: "review" }) });
+    expect(() =>
+      transitionAuthority(
+        state,
+        {
+          type: "execution.review.completed",
+          generation: "generation-1",
+          review: {
+            decision: "complete",
+            reason: "Looks complete.",
+            evidenceRefs: ["evidence-review"],
+            acceptanceEvidence: {},
+            rejectedRoutes: [],
+          },
+        },
+        deterministic,
+      ),
+    ).toThrow(/map every Acceptance Claim/u);
+
+    const completed = transitionAuthority(
+      state,
+      {
+        type: "execution.review.completed",
+        generation: "generation-1",
+        review: completeReview(),
+      },
+      deterministic,
+    );
+    expect(completed.task).toMatchObject({
+      status: "completed",
+      completionAuthority: "review_verified",
+      pendingDecision: null,
+      intentContract: {
+        acceptanceClaims: [
+          { id: "acceptance-1", status: "satisfied", evidenceRefs: ["evidence-review"] },
+        ],
+      },
     });
   });
 
-  it("settles approval and restart interruption without provider-specific policy", () => {
+  it("opens final Human confirmation only when the Intent Contract requires it", () => {
+    const task = taskProjection({
+      intentContract: intentContract({
+        taskId: "task-1",
+        escalationPolicy: {
+          returnToHumanWhen: ["Final acceptance is material."],
+          finalConfirmation: "required",
+        },
+      }),
+    });
+    const reviewed = transitionAuthority(
+      authorityState({ task, execution: executionProjection({ phase: "review" }) }),
+      {
+        type: "execution.review.completed",
+        generation: "generation-1",
+        review: completeReview(),
+      },
+      deterministic,
+    );
+    expect(reviewed.task).toMatchObject({
+      status: "awaiting_user_final",
+      pendingDecision: { id: "decision-request-1", kind: "final_confirmation" },
+    });
+
+    const accepted = transitionAuthority(
+      {
+        ...authorityState({ task: reviewed.task, execution: null }),
+        pendingDecision: reviewed.task.pendingDecision,
+      },
+      {
+        type: "task.decision.answered",
+        decisionId: "decision-request-1",
+        optionId: "accept",
+        expectedRevision: reviewed.task.revision,
+        commandId: "accept-final",
+        actorId: "human",
+        clientId: "desktop",
+      },
+      deterministic,
+    );
+    expect(accepted.task).toMatchObject({
+      status: "completed",
+      completionAuthority: "human_accepted",
+      pendingDecision: null,
+    });
+    expect(accepted.decision).toMatchObject({ kind: "task_final_confirmation" });
+  });
+
+  it("returns a new Human-owned premise to Clarify and revises the same Task lineage", () => {
+    const opened = transitionAuthority(
+      authorityState(),
+      {
+        type: "execution.human_decision.requested",
+        generation: "generation-1",
+        request: {
+          title: "Runtime boundary changed",
+          question: "May execution adopt the discovered native boundary?",
+          affectedContractFields: ["riskBoundary"],
+          options: [
+            { id: "adopt", label: "Adopt boundary" },
+            { id: "keep", label: "Keep contract" },
+          ],
+        },
+      },
+      deterministic,
+    );
+    expect(opened.task).toMatchObject({
+      id: "task-1",
+      status: "awaiting_user",
+      currentExecutionId: null,
+      pendingDecision: { id: "decision-request-1", kind: "contract_change" },
+    });
+    expect(opened.execution).toMatchObject({ status: "succeeded" });
+    expect(opened.effects).toEqual([
+      {
+        type: "open_task_clarify",
+        taskId: "task-1",
+        decisionRequestId: "decision-request-1",
+      },
+    ]);
+
+    const revisedContract = intentContract({
+      id: "intent-contract-revised",
+      taskId: "task-1",
+      title: "Revised runtime boundary",
+      revision: 2,
+      confirmedAt: now,
+      updatedAt: now,
+    });
+    const revised = transitionAuthority(
+      {
+        ...authorityState({ task: opened.task, execution: null }),
+        pendingDecision: opened.task.pendingDecision,
+      },
+      {
+        type: "task.contract.revised",
+        decisionRequestId: "decision-request-1",
+        decisionRecordId: "decision-contract-revision",
+        expectedRevision: opened.task.revision,
+        contract: revisedContract,
+      },
+      deterministic,
+    );
+    expect(revised.task).toMatchObject({
+      id: "task-1",
+      title: "Revised runtime boundary",
+      status: "reorienting",
+      pendingDecision: null,
+      intentContract: { id: "intent-contract-revised", revision: 2 },
+      workingSet: { activeGap: "Deliver the confirmed runtime target." },
+    });
+    expect(revised.effects).toEqual([{ type: "schedule_task", taskId: "task-1" }]);
+  });
+
+  it.each([
+    { status: "succeeded" as const, taskStatus: "completed", authority: "executor_unreviewed" },
+    { status: "failed" as const, taskStatus: "interrupted", authority: "none" },
+  ])("settles a Quick execution as $status without independent Review", (example) => {
+    const task = taskProjection({ mode: "quick" });
+    const execution = executionProjection({
+      phase: "quick_exec",
+      workUnitId: null,
+      cycleId: null,
+      attachment: {
+        id: "attachment-quick",
+        bundleId: "thoth.clarify",
+        bundleDigest: "sha256:quick",
+        status: "attached",
+        attachedAt: now,
+      },
+    });
+    const settled = transitionAuthority(
+      authorityState({ task, execution }),
+      {
+        type: "execution.quick.settled",
+        generation: "generation-1",
+        status: example.status,
+        summary: "Quick execution settled.",
+      },
+      deterministic,
+    );
+    expect(settled.task).toMatchObject({
+      status: example.taskStatus,
+      completionAuthority: example.authority,
+      currentExecutionId: null,
+    });
+    expect(settled.execution).toMatchObject({ status: example.status, completedAt: now });
+  });
+
+  it("resolves Provider approval and reorients an interrupted Loop after restart", () => {
     const approval = approvalProjection();
     const approved = transitionAuthority(
       authorityState({ approval }),
       {
         type: "execution.approval.resolved",
         decision: "implement",
-        expectedRevision: 1,
+        expectedRevision: approval.revision,
         commandId: "approval-command",
         actorId: "human",
         clientId: "desktop",
@@ -347,19 +413,75 @@ describe("transitionAuthority", () => {
     );
     expect(approved.approval).toMatchObject({ status: "allowed", revision: 2 });
     expect(approved.execution).toMatchObject({ status: "implementing" });
-    expect(approved.task).toMatchObject({ status: "running" });
 
     const restarted = transitionAuthority(
-      authorityState({
-        task: taskProjection({ status: "stopping", pendingControl: "stop" }),
-        execution: executionProjection({ status: "cancel_requested" }),
-      }),
+      authorityState(),
       { type: "execution.restart.interrupted" },
       deterministic,
     );
-    expect(restarted.task).toMatchObject({ status: "stopped", pendingControl: null });
-    expect(restarted.execution).toMatchObject({ status: "orphaned" });
-    expect(restarted.quarantine).toBe(true);
+    expect(restarted.task).toMatchObject({ status: "reorienting", currentExecutionId: null });
+    expect(restarted.execution).toMatchObject({ status: "canceled" });
+    expect(restarted.effects).toEqual([{ type: "schedule_task", taskId: "task-1" }]);
+  });
+
+  it("stops automatic reorientation after two Executor attempts make no semantic progress", () => {
+    const first = transitionAuthority(
+      authorityState(),
+      {
+        type: "execution.interrupted",
+        generation: "generation-1",
+        summary: "Provider completed twice without a checkpoint.",
+      },
+      deterministic,
+    );
+    expect(first.task).toMatchObject({
+      status: "reorienting",
+      workingSet: { noProgressCount: 1 },
+    });
+    expect(first.effects).toEqual([{ type: "schedule_task", taskId: "task-1" }]);
+
+    const retryTask = taskProjection();
+    retryTask.workingSet = {
+      ...retryTask.workingSet,
+      noProgressCount: 1,
+    };
+    const second = transitionAuthority(
+      authorityState({ task: retryTask }),
+      {
+        type: "execution.interrupted",
+        generation: "generation-1",
+        summary: "Replacement Executor also completed without a checkpoint.",
+      },
+      deterministic,
+    );
+    expect(second.task).toMatchObject({
+      status: "interrupted",
+      currentExecutionId: null,
+      workingSet: {
+        noProgressCount: 2,
+        nextMove:
+          "Two Executor attempts produced no semantic progress; explicit Resume is required.",
+      },
+    });
+    expect(second.effects).toEqual([{ type: "release_task_runtime", taskId: "task-1" }]);
+
+    const resumed = transitionAuthority(
+      { ...authorityState({ task: second.task }), execution: second.execution },
+      {
+        type: "task.control",
+        command: "resume",
+        expectedRevision: second.task.revision,
+        commandId: "resume-after-no-progress",
+        actorId: "human",
+        clientId: "desktop",
+      },
+      deterministic,
+    );
+    expect(resumed.task).toMatchObject({
+      status: "reorienting",
+      workingSet: { noProgressCount: 0 },
+    });
+    expect(resumed.effects).toEqual([{ type: "schedule_task", taskId: "task-1" }]);
   });
 
   it("answers a foreground Card through the same deterministic authority entry", () => {
@@ -408,125 +530,90 @@ describe("transitionAuthority", () => {
       taskId: null,
       turnId: "turn-1",
       cardId: "card-1",
-      resultRevision: 3,
-    });
-  });
-
-  it("constructs Task authority with stable Goal identity", () => {
-    const task = createTaskAuthority({
-      id: "task-created",
-      workspaceId: "workspace-1",
-      sourceAgentId: "agent-1",
-      mode: "loop",
-      title: "Task",
-      goal: "Goal",
-      constraints: ["Constraint"],
-      acceptance: ["Acceptance"],
-      strength: "balanced",
-      goals: [
-        {
-          sourceId: "source-goal",
-          order: 1,
-          title: "First",
-          goal: "Do first",
-          constraints: ["Constraint"],
-          acceptance: ["Pass"],
-        },
-      ],
-      now,
-    });
-    expect(task).toMatchObject({
-      origin: null,
-      status: "queued",
-      currentGoalId: deriveDurableGoalId({
-        taskId: "task-created",
-        sourceGoalId: "source-goal",
-        order: 1,
-        lineage: "approved-goals",
-      }),
-      budget: { strength: "balanced", maxFailedReviews: 10 },
-      createdAt: now,
     });
   });
 });
 
-function authorityState(
-  patch: Partial<AuthorityState> & {
-    task?: TaskProjection;
-    execution?: ExecutionProjection | null;
-  } = {},
-): AuthorityState {
+function intentContract(patch: Partial<IntentContractProjection> = {}): IntentContractProjection {
   return {
-    workspaceRevision: 7,
-    task: patch.task ?? taskProjection(),
-    execution: patch.execution === undefined ? executionProjection() : patch.execution,
-    approval: patch.approval,
-    pendingDecision: patch.pendingDecision,
-    goalsRevision: patch.goalsRevision ?? 0,
-    latestPlanExecReport: patch.latestPlanExecReport,
-  };
-}
-
-function taskProjection(patch: Partial<TaskProjection> = {}): TaskProjection {
-  return {
-    id: "task-1",
+    id: "intent-contract-1",
     workspaceId: "workspace-1",
     sourceAgentId: "agent-1",
-    mode: "loop",
-    title: "Task",
-    goal: "Goal",
-    constraints: ["Constraint"],
-    acceptance: ["Acceptance"],
-    origin: null,
-    status: "running",
-    summary: "Running",
-    currentGoalId: "goal-1",
-    currentExecutionId: "execution-1",
-    goals: [goal("goal-1", 1, "running")],
-    latestReviewDirection: null,
-    pendingDecision: null,
-    budget: {
-      strength: "single",
-      usedFailedReviews: 0,
-      maxFailedReviews: 1,
-      activeDurationMs: 0,
-      tokenCount: 0,
-      toolCallCount: 0,
-    },
-    pendingControl: null,
+    taskId: "task-1",
+    title: "Runtime target",
+    objective: "Deliver the confirmed runtime target.",
+    nonGoals: ["Do not add a fallback."],
+    invariants: ["Use one provider-neutral path."],
+    acceptanceClaims: [
+      {
+        id: "acceptance-1",
+        statement: "The runtime target passes independent verification.",
+        status: "open",
+        evidenceRefs: [],
+        revision: 1,
+      },
+    ],
+    riskBoundary: [],
+    humanDecisionRefs: ["decision-runtime-target"],
+    escalationPolicy: { returnToHumanWhen: [], finalConfirmation: "automatic" },
+    status: "confirmed",
     revision: 1,
+    confirmedAt: "2026-07-23T19:00:00.000Z",
     createdAt: "2026-07-23T19:00:00.000Z",
     updatedAt: "2026-07-23T19:00:00.000Z",
     ...patch,
   };
 }
 
-function goal(
-  id: string,
-  order: number,
-  status: TaskProjection["goals"][number]["status"],
-): TaskProjection["goals"][number] {
+function workUnit(): WorkUnitProjection {
   return {
-    id,
-    order,
-    title: `Goal ${order}`,
-    goal: `Do ${order}`,
-    constraints: ["Constraint"],
-    acceptance: ["Pass"],
-    status,
+    id: "work-unit-1",
+    taskId: "task-1",
+    cycleId: "cycle-1",
+    title: "Current runtime gap",
+    activeGap: "Deliver the confirmed runtime target.",
+    progressClaim: "No checkpoint has been submitted.",
+    unresolvedGap: "Deliver the confirmed runtime target.",
+    evidenceRefs: [],
+    status: "active",
     revision: 1,
+    createdAt: "2026-07-23T19:00:00.000Z",
+    updatedAt: "2026-07-23T19:00:00.000Z",
+  };
+}
+
+function taskProjection(patch: Partial<TaskProjection> = {}): TaskProjection {
+  const base = createTaskAuthority({
+    id: "task-1",
+    workspaceId: "workspace-1",
+    sourceAgentWorkspaceId: "workspace-1",
+    sourceAgentId: "agent-1",
+    mode: patch.mode ?? "loop",
+    intentContract: intentContract({ taskId: null }),
+    strength: "single",
+    now: "2026-07-23T19:00:00.000Z",
+  });
+  return {
+    ...base,
+    status: "running",
+    summary: "Execution is running.",
+    currentExecutionId: "execution-1",
+    currentWorkUnitId: patch.mode === "quick" ? null : "work-unit-1",
+    workUnits: patch.mode === "quick" ? [] : [workUnit()],
+    ...patch,
   };
 }
 
 function executionProjection(patch: Partial<ExecutionProjection> = {}): ExecutionProjection {
+  const phase = patch.phase ?? "execute";
   return {
     id: "execution-1",
     taskId: "task-1",
-    goalId: "goal-1",
-    phaseRunId: "phase-1",
-    phase: "planexec",
+    workUnitId: phase === "quick_exec" ? null : "work-unit-1",
+    cycleId: phase === "quick_exec" ? null : "cycle-1",
+    phase,
     providerThreadId: "thread-1",
-    status: "running",
+    status: "awaiting_provider",
     generation: "generation-1",
     attachment: {
       id: "attachment-1",
@@ -546,11 +633,29 @@ function executionProjection(patch: Partial<ExecutionProjection> = {}): Executio
   };
 }
 
-function reviewExecution(): ExecutionProjection {
-  return executionProjection({
-    phase: "review",
-    generation: "generation-review",
-  });
+function authorityState(
+  patch: Partial<AuthorityState> & {
+    task?: TaskProjection;
+    execution?: ExecutionProjection | null;
+  } = {},
+): AuthorityState {
+  return {
+    workspaceRevision: 7,
+    task: patch.task ?? taskProjection(),
+    execution: patch.execution === undefined ? executionProjection() : patch.execution,
+    approval: patch.approval,
+    pendingDecision: patch.pendingDecision,
+  };
+}
+
+function completeReview() {
+  return {
+    decision: "complete" as const,
+    reason: "Independent inspection verified the complete target.",
+    evidenceRefs: ["evidence-review"],
+    rejectedRoutes: [],
+    acceptanceEvidence: { "acceptance-1": ["evidence-review"] },
+  };
 }
 
 function approvalProjection(): ExecutionApprovalProjection {

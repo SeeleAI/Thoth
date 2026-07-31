@@ -11,7 +11,7 @@ import {
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { Check } from "lucide-react-native";
 import type {
-  ClarifyQuestionChoice,
+  ClarifyQuestionItem,
   ClarifyQuestionSelectionMode,
 } from "@thoth/protocol/thoth-runtime-contract";
 import type {
@@ -26,28 +26,12 @@ interface ClarifyDecisionCardProps {
   onSubmit?: ClarifyAnswerSubmitter;
 }
 
-type Question = {
-  id: string;
-  question: string;
-  selection_mode?: ClarifyQuestionSelectionMode;
-  choices: ClarifyQuestionChoice[];
-  note?: string;
-};
+type Question = ClarifyQuestionItem;
 
 const NOTE_PLACEHOLDER = "可补说明也可以只写备注。";
 
 function getQuestions(card: ThothClarifyCardModel["card"]): Question[] {
-  if ("questions" in card) {
-    return card.questions;
-  }
-  return [
-    {
-      id: card.question_id,
-      question: card.question,
-      selection_mode: "single",
-      choices: card.choices,
-    },
-  ];
+  return card.questions;
 }
 
 function toggleMultipleChoice(selection: Set<string>, choiceId: string): Set<string> {
@@ -61,7 +45,7 @@ function toggleMultipleChoice(selection: Set<string>, choiceId: string): Set<str
 }
 
 function selectionMode(question: Question): ClarifyQuestionSelectionMode {
-  return question.selection_mode ?? "single";
+  return question.selectionMode;
 }
 
 function compactNotes(notes: Record<string, string | undefined>): Record<string, string> {
@@ -79,13 +63,13 @@ function summarizeRawAnswer(input: {
   questionNotes: Record<string, string | undefined>;
 }): string {
   const lines = input.questions.map((question) => {
-    const selected = Array.from(input.selections[question.id] ?? []);
+    const selected = Array.from(input.selections[question.nodeId] ?? []);
     const selectedLabels = selected
       .map((choiceId) => question.choices.find((choice) => choice.id === choiceId)?.label)
       .filter(Boolean)
       .join(", ");
-    const questionNote = input.questionNotes[question.id]?.trim();
-    const choiceNoteText = Object.entries(input.choiceNotes[question.id] ?? {})
+    const questionNote = input.questionNotes[question.nodeId]?.trim();
+    const choiceNoteText = Object.entries(input.choiceNotes[question.nodeId] ?? {})
       .map(([choiceId, note]) => {
         const trimmed = note?.trim();
         if (!trimmed) return null;
@@ -118,11 +102,11 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
 
   const isQuestionComplete = useCallback(
     (question: Question) => {
-      const hasChoice = (selections[question.id]?.size ?? 0) > 0;
-      const hasChoiceNote = Object.values(choiceNotes[question.id] ?? {}).some(
+      const hasChoice = (selections[question.nodeId]?.size ?? 0) > 0;
+      const hasChoiceNote = Object.values(choiceNotes[question.nodeId] ?? {}).some(
         (note) => (note ?? "").trim().length > 0,
       );
-      const hasQuestionNote = (questionNotes[question.id] ?? "").trim().length > 0;
+      const hasQuestionNote = (questionNotes[question.nodeId] ?? "").trim().length > 0;
       return hasChoice || hasChoiceNote || hasQuestionNote;
     },
     [choiceNotes, questionNotes, selections],
@@ -148,14 +132,17 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
       if (selectionMode(question) === "single") {
         setSelections((current) => ({
           ...current,
-          [question.id]: new Set([choiceId]),
+          [question.nodeId]: new Set([choiceId]),
         }));
         moveToNextQuestion();
         return;
       }
       setSelections((current) => ({
         ...current,
-        [question.id]: toggleMultipleChoice(current[question.id] ?? new Set<string>(), choiceId),
+        [question.nodeId]: toggleMultipleChoice(
+          current[question.nodeId] ?? new Set<string>(),
+          choiceId,
+        ),
       }));
     },
     [moveToNextQuestion, readonly],
@@ -182,30 +169,36 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
   }, []);
 
   const submit = useCallback(
-    async (intent: ThothClarifyCardAnswerPayload["intent"]) => {
+    async (intent: ThothClarifyCardAnswerPayload["intent"], delegatedNodeIds: string[] = []) => {
       if (!onSubmit || card.submitted || isSubmitting) return;
       const rawAnswer =
         intent === "recommend"
           ? "你推荐"
-          : intent === "decide"
-            ? "你决定"
+          : intent === "delegate_subtree"
+            ? "此分支交给 Agent 决定"
             : intent === "stop"
               ? "暂停继续询问"
               : summarizeRawAnswer({ questions, selections, choiceNotes, questionNotes });
-      const answers = questions.map((question) => ({
-        question_id: question.id,
-        choice_ids: Array.from(selections[question.id] ?? []),
-        choice_notes: compactNotes(choiceNotes[question.id] ?? {}),
-        ...(questionNotes[question.id]?.trim() ? { note: questionNotes[question.id]?.trim() } : {}),
+      const answerQuestions =
+        intent === "recommend" || intent === "delegate_subtree"
+          ? questions.filter((question) => delegatedNodeIds.includes(question.nodeId))
+          : questions;
+      const answers = answerQuestions.map((question) => ({
+        nodeId: question.nodeId,
+        choiceIds: Array.from(selections[question.nodeId] ?? []),
+        choiceNotes: compactNotes(choiceNotes[question.nodeId] ?? {}),
+        ...(questionNotes[question.nodeId]?.trim()
+          ? { note: questionNotes[question.nodeId]?.trim() }
+          : {}),
       }));
       setIsSubmitting(true);
       try {
         await onSubmit({
           intent,
-          question_card_id: card.id,
-          title: card.title,
+          questionCardId: card.id,
           answers,
-          raw_answer: rawAnswer,
+          delegatedNodeIds,
+          rawAnswer,
         });
       } finally {
         setIsSubmitting(false);
@@ -214,7 +207,6 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
     [
       card.id,
       card.submitted,
-      card.title,
       choiceNotes,
       isSubmitting,
       onSubmit,
@@ -231,8 +223,15 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
     void submit(intent);
   }, [selections, submit]);
   const handleRecommend = useCallback(() => {
-    void submit("recommend");
-  }, [submit]);
+    if (activeQuestion) {
+      void submit("recommend", [activeQuestion.nodeId]);
+    }
+  }, [activeQuestion, submit]);
+  const handleDelegateSubtree = useCallback(() => {
+    if (activeQuestion) {
+      void submit("delegate_subtree", [activeQuestion.nodeId]);
+    }
+  }, [activeQuestion, submit]);
   const handleStop = useCallback(() => {
     void submit("stop");
   }, [submit]);
@@ -245,9 +244,9 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
       <View style={styles.card} testID="clarify-decision-card">
         <View style={styles.submittedHeader}>
           <View style={styles.header}>
-            <Text style={styles.roundLabel}>{card.roundLabel}</Text>
+            <Text style={styles.roundLabel}>Clarify {card.roundIndex}</Text>
             <Text style={styles.title} testID="clarify-card-title">
-              {card.title}
+              {card.card.title}
             </Text>
           </View>
           <View style={styles.readonlyBanner} testID="clarify-card-readonly">
@@ -261,23 +260,23 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
   return (
     <View style={styles.card} testID="clarify-decision-card">
       <View style={styles.header}>
-        <Text style={styles.roundLabel}>{card.roundLabel}</Text>
+        <Text style={styles.roundLabel}>Clarify {card.roundIndex}</Text>
         <Text style={styles.title} testID="clarify-card-title">
-          {card.title}
+          {card.card.title}
         </Text>
-        {card.whyNow ? (
+        {card.card.whyNow ? (
           <Text style={styles.whyNow} testID="clarify-card-why-now">
-            {card.whyNow}
+            {card.card.whyNow}
           </Text>
         ) : null}
       </View>
 
       <View style={styles.questionNav} testID="clarify-card-question-nav">
         {questions.map((question, index) => {
-          const selected = selections[question.id]?.size ?? 0;
+          const selected = selections[question.nodeId]?.size ?? 0;
           const hasNote =
-            (questionNotes[question.id] ?? "").trim().length > 0 ||
-            Object.values(choiceNotes[question.id] ?? {}).some(
+            (questionNotes[question.nodeId] ?? "").trim().length > 0 ||
+            Object.values(choiceNotes[question.nodeId] ?? {}).some(
               (note) => (note ?? "").trim().length > 0,
             );
           const isActive = index === activeQuestionIndex;
@@ -294,7 +293,7 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
           ];
           return (
             <Pressable
-              key={question.id}
+              key={question.nodeId}
               accessibilityRole="tab"
               accessibilityState={{ selected: isActive }}
               onPress={() => setActiveQuestionIndex(index)}
@@ -309,7 +308,10 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
       </View>
 
       {activeQuestion ? (
-        <View style={styles.questionBlock} testID={`clarify-card-question-${activeQuestion.id}`}>
+        <View
+          style={styles.questionBlock}
+          testID={`clarify-card-question-${activeQuestion.nodeId}`}
+        >
           <Text style={styles.questionKicker}>
             问题 {Math.min(activeQuestionIndex + 1, questions.length)} / {questions.length}
           </Text>
@@ -320,7 +322,7 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
                 ? styles.questionModeShellMultiple
                 : styles.questionModeShellSingle,
             ]}
-            testID={`clarify-card-question-mode-${activeQuestion.id}-${selectionMode(activeQuestion)}`}
+            testID={`clarify-card-question-mode-${activeQuestion.nodeId}-${selectionMode(activeQuestion)}`}
           >
             <Text
               style={[
@@ -339,7 +341,7 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
           ) : null}
           <View style={styles.choices}>
             {activeQuestion.choices.map((choice) => {
-              const selected = selections[activeQuestion.id] ?? new Set<string>();
+              const selected = selections[activeQuestion.nodeId] ?? new Set<string>();
               const isSelected = selected.has(choice.id);
               const isMultiple = selectionMode(activeQuestion) === "multiple";
               const choicePressableStyle = ({
@@ -363,7 +365,7 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
                     accessibilityState={{ selected: isSelected, checked: isSelected }}
                     onPress={() => handleToggleChoice(activeQuestion, choice.id)}
                     style={choicePressableStyle}
-                    testID={`clarify-card-choice-${activeQuestion.id}-${choice.id}`}
+                    testID={`clarify-card-choice-${activeQuestion.nodeId}-${choice.id}`}
                   >
                     <View style={styles.choiceText}>
                       <Text style={styles.choiceLabel}>{choice.label}</Text>
@@ -375,12 +377,12 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
                     <TextInput
                       placeholder={NOTE_PLACEHOLDER}
                       placeholderTextColor={theme.colors.foregroundMuted}
-                      value={choiceNotes[activeQuestion.id]?.[choice.id] ?? ""}
+                      value={choiceNotes[activeQuestion.nodeId]?.[choice.id] ?? ""}
                       onChangeText={(value) =>
-                        handleChoiceNoteChange(activeQuestion.id, choice.id, value)
+                        handleChoiceNoteChange(activeQuestion.nodeId, choice.id, value)
                       }
                       style={styles.noteInput}
-                      testID={`clarify-card-choice-note-${activeQuestion.id}-${choice.id}`}
+                      testID={`clarify-card-choice-note-${activeQuestion.nodeId}-${choice.id}`}
                     />
                   ) : null}
                 </View>
@@ -390,10 +392,10 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
           <TextInput
             placeholder={NOTE_PLACEHOLDER}
             placeholderTextColor={theme.colors.foregroundMuted}
-            value={questionNotes[activeQuestion.id] ?? ""}
-            onChangeText={(value) => handleQuestionNoteChange(activeQuestion.id, value)}
+            value={questionNotes[activeQuestion.nodeId] ?? ""}
+            onChangeText={(value) => handleQuestionNoteChange(activeQuestion.nodeId, value)}
             style={styles.noteInput}
-            testID={`clarify-card-question-note-${activeQuestion.id}`}
+            testID={`clarify-card-question-note-${activeQuestion.nodeId}`}
           />
         </View>
       ) : null}
@@ -401,9 +403,15 @@ export function ClarifyDecisionCard({ card, onSubmit }: ClarifyDecisionCardProps
       <View style={styles.actions}>
         <View style={styles.actionsLeft}>
           <RecommendButton
-            disabled={intentDisabled}
+            disabled={intentDisabled || !activeQuestion}
             onPress={handleRecommend}
             testID="clarify-card-recommend"
+          />
+          <ActionButton
+            label="此分支交给你"
+            disabled={intentDisabled || !activeQuestion}
+            onPress={handleDelegateSubtree}
+            testID="clarify-card-delegate-subtree"
           />
         </View>
         <View style={styles.actionsRight}>

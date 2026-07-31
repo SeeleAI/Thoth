@@ -30,6 +30,7 @@ export const ScheduleCreateRequestSchema = z.object({
   name: z.string().optional(),
   cadence: ScheduleCadenceSchema,
   target: ScheduleCreateTargetSchema,
+  intentContractId: z.string().min(1),
   maxRuns: z.number().int().positive().optional(),
   expiresAt: z.string().optional(),
   runOnCreate: z.boolean().optional(),
@@ -99,6 +100,7 @@ export const ScheduleUpdateRequestSchema = z.object({
   prompt: z.string().min(1).optional(),
   cadence: ScheduleCadenceSchema.optional(),
   newAgentConfig: ScheduleUpdateNewAgentConfigSchema.optional(),
+  intentContractId: z.string().min(1).optional(),
   maxRuns: z.number().int().positive().nullable().optional(),
   expiresAt: z.string().nullable().optional(),
 });

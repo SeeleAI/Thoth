@@ -146,28 +146,28 @@ function createRuntimeToolCatalogStub(input?: {
   ) => Promise<{ text: string; isError?: boolean }>;
 }): ThothToolCatalog {
   const tools = new Map(
-    (input?.toolNames ?? ["thoth_submit_clarify_card"]).map((name) => [
+    (input?.toolNames ?? ["thoth_clarify_ask"]).map((name) => [
       name,
       {
         name,
         title: name,
         description:
-          name === "thoth_submit_clarify_card"
-            ? "Submit a Clarify card after satisfying the configured soft minimum."
+          name === "thoth_clarify_ask"
+            ? "Ask one to four related, material human-owned decision branches."
             : `Submit ${name}`,
         inputSchema:
-          name === "thoth_submit_clarify_card"
+          name === "thoth_clarify_ask"
             ? z.object({
                 title: z.string(),
-                why_now: z.string(),
-                public_badge_summary: z.string(),
-                frontier_ledger: z.unknown(),
+                whyNow: z.string(),
+                publicSummary: z.string(),
                 questions: z.array(
                   z.object({
-                    id: z.string(),
+                    nodeId: z.string(),
                     question: z.string(),
-                    selection_mode: z.enum(["single", "multiple"]),
-                    options: z.array(z.unknown()),
+                    selectionMode: z.enum(["single", "multiple"]),
+                    choices: z.array(z.unknown()),
+                    recommendedChoiceId: z.string(),
                   }),
                 ),
               })
@@ -633,12 +633,7 @@ describe("Codex app-server provider", () => {
       false,
       "agent-dynamic-tools",
       createRuntimeToolCatalogStub({
-        toolNames: [
-          "thoth_submit_clarify_card",
-          "browser_list_tabs",
-          "browser_new_tab",
-          "untrusted_tool",
-        ],
+        toolNames: ["thoth_clarify_ask", "browser_list_tabs", "browser_new_tab", "untrusted_tool"],
       }),
     );
     castInternals<{ client: CodexClientLike }>(session).client = fakeClient;
@@ -652,17 +647,11 @@ describe("Codex app-server provider", () => {
       | undefined;
     expect(dynamicTools).toEqual([
       expect.objectContaining({
-        name: "thoth_submit_clarify_card",
-        description: expect.stringContaining("soft minimum"),
+        name: "thoth_clarify_ask",
+        description: expect.stringContaining("human-owned decision branches"),
         inputSchema: expect.objectContaining({
           type: "object",
-          required: expect.arrayContaining([
-            "title",
-            "why_now",
-            "public_badge_summary",
-            "frontier_ledger",
-            "questions",
-          ]),
+          required: expect.arrayContaining(["title", "whyNow", "publicSummary", "questions"]),
         }),
       }),
       expect.objectContaining({
@@ -679,16 +668,16 @@ describe("Codex app-server provider", () => {
         }),
       }),
     ]);
-    const clarifyTool = dynamicTools?.find((tool) => tool.name === "thoth_submit_clarify_card");
+    const clarifyTool = dynamicTools?.find((tool) => tool.name === "thoth_clarify_ask");
     const questionItems = (
       (clarifyTool?.inputSchema?.properties as Record<string, unknown> | undefined)?.questions as
         | { items?: Record<string, unknown> }
         | undefined
     )?.items;
     expect(questionItems).toMatchObject({
-      required: expect.arrayContaining(["selection_mode"]),
+      required: expect.arrayContaining(["nodeId", "selectionMode", "recommendedChoiceId"]),
       properties: expect.objectContaining({
-        selection_mode: expect.objectContaining({ enum: ["single", "multiple"] }),
+        selectionMode: expect.objectContaining({ enum: ["single", "multiple"] }),
       }),
     });
   });
@@ -716,7 +705,7 @@ describe("Codex app-server provider", () => {
       false,
       "agent-resumed-dynamic-tools",
       createRuntimeToolCatalogStub({
-        toolNames: ["thoth_submit_clarify_card", "browser_list_tabs"],
+        toolNames: ["thoth_clarify_ask", "browser_list_tabs"],
       }),
     ) as CodexTestSession;
     session.client = fakeClient;
@@ -742,9 +731,9 @@ describe("Codex app-server provider", () => {
       createConfig({
         thinkingOptionId: "medium",
         extra: {
-          thothRuntimeTools: { enabled: true, scope: "clarify" },
           codex: {
             providerVisibleOption: "keep-me",
+            thothRuntimeTools: { enabled: true, scope: "clarify" },
           },
         },
       }),
@@ -768,12 +757,10 @@ describe("Codex app-server provider", () => {
     const params = startCall?.params as Record<string, unknown> | undefined;
     expect(params?.config).toEqual({ providerVisibleOption: "keep-me" });
     expect(JSON.stringify(params?.config)).not.toContain("thothRuntimeTools");
-    expect(params?.dynamicTools).toEqual([
-      expect.objectContaining({ name: "thoth_submit_clarify_card" }),
-    ]);
+    expect(params?.dynamicTools).toEqual([expect.objectContaining({ name: "thoth_clarify_ask" })]);
   });
 
-  test("exposes only the convergence-audit semantic tool to an audit session", async () => {
+  test("exposes only the contract challenger semantic tool to a challenger session", async () => {
     const requests: Array<{ method: string; params: unknown }> = [];
     const fakeClient: CodexClientLike = {
       async request(method: string, params?: unknown) {
@@ -797,8 +784,8 @@ describe("Codex app-server provider", () => {
       false,
       false,
       false,
-      "clarify-audit-agent",
-      createRuntimeToolCatalogStub({ toolNames: ["thoth_submit_clarify_convergence_audit"] }),
+      "clarify-challenger-agent",
+      createRuntimeToolCatalogStub({ toolNames: ["thoth_clarify_judge_contract"] }),
     );
     castInternals<{ client: CodexClientLike }>(session).client = fakeClient;
 
@@ -808,11 +795,11 @@ describe("Codex app-server provider", () => {
     const params = startCall?.params as Record<string, unknown> | undefined;
     expect(
       (params?.dynamicTools as Array<{ name: string }> | undefined)?.map((tool) => tool.name),
-    ).toEqual(["thoth_submit_clarify_convergence_audit"]);
+    ).toEqual(["thoth_clarify_judge_contract"]);
     expect(params?.config).toBeUndefined();
   });
 
-  test("exposes only the contract-audit semantic tool to a replan audit session", async () => {
+  test("exposes only the review decision semantic tool to a fresh review session", async () => {
     const requests: Array<{ method: string; params: unknown }> = [];
     const fakeClient: CodexClientLike = {
       async request(method: string, params?: unknown) {
@@ -836,8 +823,8 @@ describe("Codex app-server provider", () => {
       false,
       false,
       false,
-      "contract-audit-agent",
-      createRuntimeToolCatalogStub({ toolNames: ["thoth_submit_contract_preservation_audit"] }),
+      "loop-review-agent",
+      createRuntimeToolCatalogStub({ toolNames: ["thoth_loop_review_decision"] }),
     );
     castInternals<{ client: CodexClientLike }>(session).client = fakeClient;
 
@@ -847,7 +834,7 @@ describe("Codex app-server provider", () => {
     const params = startCall?.params as Record<string, unknown> | undefined;
     expect(
       (params?.dynamicTools as Array<{ name: string }> | undefined)?.map((tool) => tool.name),
-    ).toEqual(["thoth_submit_contract_preservation_audit"]);
+    ).toEqual(["thoth_loop_review_decision"]);
     expect(params?.config).toBeUndefined();
   });
 
@@ -879,12 +866,12 @@ describe("Codex app-server provider", () => {
       turnId: "turn-1",
       callId: "call-1",
       namespace: null,
-      tool: "thoth_submit_clarify_card",
+      tool: "thoth_clarify_ask",
       arguments: { title: "Boundary" },
     });
 
     expect(execute).toHaveBeenCalledWith(
-      "thoth_submit_clarify_card",
+      "thoth_clarify_ask",
       { title: "Boundary" },
       expect.objectContaining({
         providerToolCall: expect.objectContaining({
@@ -892,7 +879,7 @@ describe("Codex app-server provider", () => {
           threadId: "thread-1",
           turnId: "turn-1",
           callId: "call-1",
-          toolName: "thoth_submit_clarify_card",
+          toolName: "thoth_clarify_ask",
         }),
       }),
     );
@@ -901,7 +888,7 @@ describe("Codex app-server provider", () => {
       contentItems: [
         {
           type: "inputText",
-          text: 'handled thoth_submit_clarify_card {"title":"Boundary"}',
+          text: 'handled thoth_clarify_ask {"title":"Boundary"}',
         },
       ],
     });

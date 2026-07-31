@@ -290,6 +290,9 @@ async function runWorkspaceScriptsSurfaceAcceptance({ client, page, serverId, wo
 }
 
 async function runScheduleSurfaceAcceptance({ client, page, serverId, workspaceId }) {
+  const taskTemplates = await client.listTasks(workspaceId);
+  const template = taskTemplates.tasks.find((task) => task.intentContract?.status === "confirmed");
+  assert(template, "Packaged Schedule has no confirmed Intent Contract template");
   const route = `thoth://app/h/${encodeURIComponent(serverId)}/workspace/${encodeURIComponent(workspaceId)}/tasks`;
   await page.goto(route);
   await visibleTestId(page, "tasks-surface");
@@ -302,6 +305,9 @@ async function runScheduleSurfaceAcceptance({ client, page, serverId, workspaceI
   await (await visibleTestId(page, "schedule-model")).fill("gpt-5.4");
   await (await visibleTestId(page, "schedule-mode")).fill("full-access");
   await (await visibleTestId(page, "schedule-max-runs")).fill("2");
+  await (
+    await visibleTestId(page, `schedule-intent-contract-${template.intentContract.id}`)
+  ).click();
   await (await visibleTestId(page, "schedule-create-submit")).click();
   await visibleTestId(page, "schedule-detail");
 
@@ -365,40 +371,62 @@ async function runScheduleSurfaceAcceptance({ client, page, serverId, workspaceI
   const run = fired.run;
   assert(run?.status === "succeeded", "Packaged Schedule did not reach succeeded");
   assert(typeof run.taskId === "string", "Packaged Schedule did not create a real Task");
-  assert(
-    typeof run.executionId === "string",
-    "Packaged Schedule did not create a real ExecutionAttempt",
-  );
+  assert(run.executionId === null, "Schedule trigger fabricated an Execution identity");
 
-  const task = await client.getTask({ workspaceId, taskId: run.taskId });
-  assert(!task.error && task.task?.id === run.taskId, "Packaged Schedule Task is not queryable");
-  assert(
-    task.executions.some(
-      (execution) => execution.id === run.executionId && execution.status === "succeeded",
-    ),
-    "Packaged Schedule ExecutionAttempt is not durably succeeded",
+  const task = await waitFor(
+    async () => {
+      const detail = await client.getTask({ workspaceId, taskId: run.taskId });
+      if (detail.error) throw new Error(detail.error);
+      for (const execution of detail.executions) {
+        const approval = execution.pendingApproval;
+        if (!approval) continue;
+        const resolved = await client.resolveExecutionApproval({
+          workspaceId,
+          taskId: run.taskId,
+          executionId: execution.id,
+          approvalId: approval.id,
+          decision: approval.kind === "implement" ? "implement" : "allow",
+          expectedRevision: approval.revision,
+          commandId: `packaged-schedule-approval-${approval.id}`,
+        });
+        if (resolved.error && !resolved.conflict) throw new Error(resolved.error);
+      }
+      return detail.task?.status === "completed" ? detail : null;
+    },
+    60_000,
+    "packaged Schedule background Task completion",
   );
-  const timeline = await client.getExecutionTimeline({
-    workspaceId,
-    taskId: run.taskId,
-    executionId: run.executionId,
-    limit: 20,
-  });
-  assert(!timeline.error, `Packaged Schedule Timeline failed: ${timeline.error}`);
-  const timelineTypes = timeline.entries.map((entry) => entry.item?.type).filter(Boolean);
+  assert(task.task?.mode === "loop", "Packaged Schedule did not register a Loop Task");
   assert(
-    timelineTypes.includes("schedule_run_started") &&
-      timelineTypes.includes("schedule_run_succeeded"),
-    `Packaged Schedule Timeline is incomplete: ${JSON.stringify(timelineTypes)}`,
+    task.task?.origin?.type === "schedule" && task.task.origin.scheduleId === created.id,
+    "Packaged Schedule Task lost its durable origin",
+  );
+  assert(
+    task.executions.length >= 2 &&
+      task.executions.every((execution) => execution.attachment?.bundleId === "thoth.loop"),
+    "Packaged Schedule Task bypassed the Loop RuntimeBundle",
+  );
+  const timelinePages = await Promise.all(
+    task.executions.map((execution) =>
+      client.getExecutionTimeline({
+        workspaceId,
+        taskId: run.taskId,
+        executionId: execution.id,
+        limit: 100,
+      }),
+    ),
+  );
+  const timelineTypes = timelinePages.flatMap((timeline) =>
+    timeline.entries.map((entry) => entry.item?.type).filter(Boolean),
+  );
+  assert(
+    timelinePages.every((timeline) => !timeline.error && timeline.entries.length > 0),
+    `Packaged Schedule execution Timeline is incomplete: ${JSON.stringify(timelineTypes)}`,
   );
 
   await visibleTestId(page, `schedule-run-${run.id}`);
   await (await visibleTestId(page, `schedule-open-task-${run.id}`)).click();
-  const row = await visibleTestId(page, `background-task-row-${run.taskId}`);
-  assert(
-    (await row.textContent())?.includes("Packaged Schedule Updated"),
-    "Packaged Tasks projection omitted the Schedule Task title",
-  );
+  await visibleTestId(page, `background-task-row-${run.taskId}`);
   await (await visibleTestId(page, "background-task-open-schedule")).click();
   const scheduleDetail = await visibleTestId(page, "schedule-detail");
   assert(
@@ -408,7 +436,7 @@ async function runScheduleSurfaceAcceptance({ client, page, serverId, workspaceI
   return {
     scheduleId: created.id,
     taskId: run.taskId,
-    executionId: run.executionId,
+    executionId: task.executions[0]?.id ?? null,
     status: run.status,
     timelineTypes,
     route,
@@ -609,7 +637,7 @@ async function configureRealCodexFixture(client, fixturePrompt) {
       "You are participating in an automated Thoth transport verification.",
       "Follow the matching literal fixture actions below only when their required runtime tool is available.",
       "Do not inspect or alter the workspace, and do not substitute your own tool arguments.",
-      "In a PlanExec or Review session, the named phase submission tool is already present in the current tool catalog. Call it directly; do not search for it and do not report a tool-availability blocker.",
+      "In an Executor or fresh Review session, the named semantic tool is already present in the current tool catalog. Call it directly; do not search for it and do not report a tool-availability blocker.",
       fixturePrompt,
     ].join("\n\n"),
   });
@@ -685,8 +713,8 @@ function seedReleaseStorage(thothHome) {
 
 function inspectStorageMigration(thothHome, probe) {
   const marker = JSON.parse(readFileSync(path.join(thothHome, "storage-layout.json"), "utf8"));
-  assert(marker.version === 5, "Packaged Release storage did not activate layout v5");
-  assert(marker.schemaVersion === 5, "Packaged Release storage did not activate schema v5");
+  assert(marker.version === 6, "Packaged Release storage did not activate layout v6");
+  assert(marker.schemaVersion === 6, "Packaged Release storage did not activate schema v6");
   assert(
     marker.migrationState === "complete",
     "Packaged Release storage migration is not complete",
@@ -703,7 +731,7 @@ function inspectStorageMigration(thothHome, probe) {
   const agents = catalog.prepare("SELECT COUNT(*) AS count FROM catalog_agent_locator").get().count;
   const catalogSchemaVersion = catalog.prepare("PRAGMA user_version").get().user_version;
   catalog.close();
-  assert(catalogSchemaVersion === 5, "Packaged Release catalog did not activate SQLite schema v5");
+  assert(catalogSchemaVersion === 6, "Packaged Release catalog did not activate SQLite schema v6");
   assert(
     locator?.workspace_id === probe.workspaceId,
     "Release Agent is missing from the migrated global locator",
@@ -719,8 +747,8 @@ function inspectStorageMigration(thothHome, probe) {
   const authoritySchemaVersion = authority.prepare("PRAGMA user_version").get().user_version;
   authority.close();
   assert(
-    authoritySchemaVersion === 5,
-    "Packaged Release Workspace authority did not activate SQLite schema v5",
+    authoritySchemaVersion === 6,
+    "Packaged Release Workspace authority did not activate SQLite schema v6",
   );
   assert(
     timeline?.item_json === probe.itemJson,
@@ -782,13 +810,13 @@ function inspectRuntimeAuthority(thothHome, workspaceId, taskId) {
                 a.bundle_id, a.bundle_digest, a.status AS attachment_status
            FROM execution_attempts e
            LEFT JOIN runtime_attachments a ON a.execution_id = e.execution_id
-          WHERE e.task_id = ? AND e.phase_kind IN ('planexec', 'review')
+          WHERE e.task_id = ? AND e.phase_kind IN ('execute', 'review')
           ORDER BY e.started_at ASC`,
       )
       .all(taskId);
     assert(
-      attachments.length === 6,
-      `Expected six packaged PlanExec/Review attempts, received ${attachments.length}`,
+      attachments.length === 4,
+      `Expected four packaged Execute/Review attempts, received ${attachments.length}`,
     );
     assert(
       attachments.every(
@@ -946,7 +974,7 @@ async function main() {
   let releaseMigrationProbe = null;
   if (!realCodex) {
     releaseMigrationProbe = seedReleaseStorage(thothHome);
-    writeFileSync(statePath, JSON.stringify({ planExec: 0, review: 0 }));
+    writeFileSync(statePath, JSON.stringify({ checkpoint: 0, review: 0 }));
     const fakeCodexPath = path.join(fakeBin, "codex");
     copyFileSync(path.join(root, "scripts/fixtures/scripted-codex-app-server.mjs"), fakeCodexPath);
     chmodSync(fakeCodexPath, 0o755);
@@ -1005,6 +1033,7 @@ async function main() {
   let productSurfacesReceipt = null;
   let report = null;
   let failure = null;
+  let journey = null;
   try {
     const renderer = await connectToPackagedRenderer({ child, cdpPort });
     browser = renderer.browser;
@@ -1081,7 +1110,7 @@ async function main() {
       : "PACKAGED_QUICK_CLARIFY";
     const loopPrompt = realCodex ? readFileSync(loopPromptPath, "utf8") : "PACKAGED_LOOP_RETRY";
     await configureRealCodexFixture(client, `${quickPrompt}\n\n${loopPrompt}`);
-    const journey = new ThothApiJourney({
+    journey = new ThothApiJourney({
       client,
       timeoutMs: realCodex ? 600_000 : 120_000,
       commandPrefix: "packaged-card",
@@ -1178,7 +1207,7 @@ async function main() {
     let stopTask = null;
     if (!realCodex) {
       const fixtureState = JSON.parse(readFileSync(statePath, "utf8"));
-      writeFileSync(statePath, JSON.stringify({ ...fixtureState, holdPlanExec: true }));
+      writeFileSync(statePath, JSON.stringify({ ...fixtureState, holdExecute: true }));
       await client.sendAgentMessage(core.agent.id, "PACKAGED_LOOP_STOP", {
         thoth: {
           enabled: true,
@@ -1187,7 +1216,7 @@ async function main() {
           loopStrength: "light",
         },
       });
-      await journey.approveCardChain(core.agent.id, "loop");
+      await journey.approveIntentContract(core.agent.id, "loop");
       await journey.waitForLifecycle(core.agent.id, "background_handoff");
       stopTask = await waitFor(
         async () => {
@@ -1205,7 +1234,7 @@ async function main() {
             : null;
         },
         30_000,
-        "held packaged PlanExec",
+        "held packaged Execute attempt",
       );
       const stopped = await client.commandTask({
         workspaceId: quickWorkspaceId,
@@ -1275,18 +1304,17 @@ async function main() {
         threadStarts.some(
           (entry) =>
             Array.isArray(entry.dynamicToolNames) &&
-            entry.dynamicToolNames.includes("thoth_submit_clarify_card"),
+            entry.dynamicToolNames.includes("thoth_clarify_update_map"),
         ),
         "Packaged foreground thread did not receive Clarify dynamic tools",
       );
       assert(
-        toolCalls.filter((entry) => entry.tool === "thoth_loop_submit_planexec_result").length ===
-          3,
-        "Expected three packaged PlanExec attempts",
+        toolCalls.filter((entry) => entry.tool === "thoth_loop_checkpoint").length === 4,
+        "Expected four packaged semantic checkpoints",
       );
       assert(
-        toolCalls.filter((entry) => entry.tool === "thoth_loop_submit_review_verdict").length === 3,
-        "Expected three packaged Review verdicts",
+        toolCalls.filter((entry) => entry.tool === "thoth_loop_review_decision").length === 4,
+        "Expected four packaged fresh Review decisions",
       );
       const quickThreadStart = threadStarts.find((entry) => entry.cwd === quickWorkspace);
       assert(quickThreadStart, "Packaged Quick foreground thread was not captured");
@@ -1294,8 +1322,8 @@ async function main() {
         (entry) => entry.kind === "turn_start" && entry.threadId === quickThreadStart.threadId,
       ).length;
       assert(
-        visibleTurnCount === 16,
-        `Expected sixteen hot-switch, Provider Plan, @Task, Browser and Stop-probe turns, received ${visibleTurnCount}`,
+        visibleTurnCount === 13,
+        `Expected thirteen hot-switch, Provider Plan, @Task, Browser and Stop-probe turns, received ${visibleTurnCount}`,
       );
       const nativeQuestion = capture.find(
         (entry) =>
@@ -1354,7 +1382,7 @@ async function main() {
       hotSessionId: core.sessionId,
       loopAgentId: core.agent.id,
       backgroundTaskId: core.task.id,
-      usedFailedReviews: core.task.budget.usedFailedReviews,
+      usedNonCompleteReviews: core.task.budget.usedNonCompleteReviews,
       stoppedTaskId: stopTask?.id ?? null,
       visibleSessionCount: visibleSessionIds.length,
       durableBytes,
@@ -1362,11 +1390,10 @@ async function main() {
       ...(realCodex
         ? {}
         : {
-            planExecCalls: toolCalls.filter(
-              (entry) => entry.tool === "thoth_loop_submit_planexec_result",
-            ).length,
-            reviewCalls: toolCalls.filter(
-              (entry) => entry.tool === "thoth_loop_submit_review_verdict",
+            checkpointCalls: toolCalls.filter((entry) => entry.tool === "thoth_loop_checkpoint")
+              .length,
+            reviewDecisionCalls: toolCalls.filter(
+              (entry) => entry.tool === "thoth_loop_review_decision",
             ).length,
             dynamicToolThreadCount: threadStarts.filter(
               (entry) => Array.isArray(entry.dynamicToolNames) && entry.dynamicToolNames.length > 0,
@@ -1403,6 +1430,12 @@ async function main() {
       desktopRendererLogPath,
       rendererLog.length > 0 ? `${rendererLog.join("\n")}\n` : "",
     );
+    if (journey?.lastTaskDetail) {
+      writeFileSync(
+        path.join(runRoot, "background-task-detail.json"),
+        `${JSON.stringify(journey.lastTaskDetail, null, 2)}\n`,
+      );
+    }
     rmSync(outputDir, { recursive: true, force: true });
     mkdirSync(outputDir, { recursive: true });
     for (const filePath of [

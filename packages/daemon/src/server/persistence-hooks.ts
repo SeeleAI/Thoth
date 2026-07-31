@@ -37,6 +37,18 @@ function isProviderRegistered(
   return new Set(validProviders).has(provider);
 }
 
+function stripReservedThothRuntimeKeys<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripReservedThothRuntimeKeys(item)) as T;
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !key.toLowerCase().startsWith("thoth"))
+      .map(([key, item]) => [key, stripReservedThothRuntimeKeys(item)]),
+  ) as T;
+}
+
 /**
  * Attach AgentStorage persistence to an ExecutionService instance so every
  * agent_state snapshot is flushed to disk.
@@ -71,7 +83,7 @@ export function buildConfigOverrides(record: StoredAgentRecord): Partial<AgentSe
     model: record.config?.model ?? undefined,
     thinkingOptionId: record.config?.thinkingOptionId ?? undefined,
     featureValues: record.config?.featureValues ?? undefined,
-    extra: record.config?.extra ?? undefined,
+    extra: record.config?.extra ? stripReservedThothRuntimeKeys(record.config.extra) : undefined,
     systemPrompt: record.config?.systemPrompt ?? undefined,
     mcpServers: record.config?.mcpServers ?? undefined,
   });

@@ -19,6 +19,7 @@ describe("Workspace-scoped schedule RPC", () => {
       requestId: "request-1",
       workspaceId: "workspace-1",
       prompt: "Inspect status",
+      intentContractId: "intent-contract-1",
       cadence: { type: "every", everyMs: 60_000 },
       target: {
         type: "new-agent",

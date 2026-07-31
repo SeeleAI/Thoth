@@ -1,10 +1,9 @@
 import type {
   AgentThothLifecycle,
   AgentThothState,
-  ThothApprovalGoalCardModel,
   ThothCardAnswerPayload,
   ThothClarifyCardModel,
-  ThothTaskCardModel,
+  ThothIntentContractCardModel,
   ThothTurnControlSnapshot,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type { ProviderRunMode, ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
@@ -15,11 +14,15 @@ import type {
   AgentQueuedTurn,
   AgentTurnQueueCommand,
 } from "@thoth/protocol/agent-turn-queue";
+import type { RuntimeAttachmentReceipt } from "@thoth/drivers/harness";
 
 export type ForegroundAuthorityUpdateReason =
   | "turn_started"
+  | "decision_map_changed"
   | "card_opened"
   | "card_answered"
+  | "contract_proposed"
+  | "quick_exec_waiting"
   | "quick_exec_started"
   | "background_handoff"
   | "turn_completed"
@@ -27,12 +30,11 @@ export type ForegroundAuthorityUpdateReason =
   | "turn_canceled"
   | "queue_changed";
 
-export type ForegroundAuthorityCardKind = "clarify_card" | "task_card" | "goal_card";
+export type ForegroundAuthorityCardKind = "clarify_card" | "intent_contract_card";
 
 export type ForegroundAuthorityCard =
   | { kind: "clarify_card"; card: ThothClarifyCardModel }
-  | { kind: "task_card"; card: ThothTaskCardModel }
-  | { kind: "goal_card"; card: ThothApprovalGoalCardModel };
+  | { kind: "intent_contract_card"; card: ThothIntentContractCardModel };
 
 export interface ForegroundAuthorityRuntimeBinding {
   provider: string;
@@ -55,7 +57,9 @@ export interface ForegroundTurnAuthorityRecord {
   providerPlanReceipt: ProviderPlanCompleted | null;
   providerInteraction: ProviderTurnInteractionState | null;
   providerInteractionRevision: number;
+  runtimeAttachment: RuntimeAttachmentReceipt | null;
   sourceMessageId: string | null;
+  taskId: string | null;
   workspaceId: string;
   workspacePath: string;
   userText: string;
@@ -89,6 +93,21 @@ export interface StartForegroundTurnInput {
   workspaceId: string;
   workspacePath: string;
   userText: string;
+  taskClarifyHandoff?: {
+    taskWorkspaceId: string;
+    taskId: string;
+    decisionRequestId: string;
+  };
+}
+
+export interface ForegroundTaskClarifyHandoffRecord {
+  turnId: string;
+  taskWorkspaceId: string;
+  taskId: string;
+  decisionRequestId: string;
+  status: "active" | "completed" | "canceled";
+  createdAt: string;
+  completedAt: string | null;
 }
 
 export interface StartForegroundTurnResult {

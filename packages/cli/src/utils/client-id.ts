@@ -3,12 +3,15 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
-const CLIENT_SESSION_KEY_FILE = join(
-  process.env.THOTH_HOME ?? join(homedir(), ".thoth"),
-  "cli-client-id",
-);
-
 let cachedClientId: string | null = null;
+
+export function resolveCliClientIdPath(
+  env: NodeJS.ProcessEnv = process.env,
+  userHome = homedir(),
+): string {
+  const configuredHome = env.THOTH_HOME?.trim();
+  return join(configuredHome || join(userHome, ".thoth"), "cli-client-id");
+}
 
 function normalizeClientId(value: string): string | null {
   const trimmed = value.trim();
@@ -24,8 +27,9 @@ export async function getOrCreateCliClientId(): Promise<string> {
     return cachedClientId;
   }
 
+  const keyFile = resolveCliClientIdPath();
   try {
-    const existing = normalizeClientId(await readFile(CLIENT_SESSION_KEY_FILE, "utf8"));
+    const existing = normalizeClientId(await readFile(keyFile, "utf8"));
     if (existing) {
       cachedClientId = existing;
       return existing;
@@ -38,8 +42,8 @@ export async function getOrCreateCliClientId(): Promise<string> {
   }
 
   const nextValue = generateClientId();
-  await mkdir(dirname(CLIENT_SESSION_KEY_FILE), { recursive: true });
-  await writeFile(CLIENT_SESSION_KEY_FILE, nextValue, { mode: 0o600 });
+  await mkdir(dirname(keyFile), { recursive: true });
+  await writeFile(keyFile, nextValue, { mode: 0o600 });
   cachedClientId = nextValue;
   return nextValue;
 }

@@ -2,34 +2,49 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import {
+  EvidenceRefSchema,
   ExecutionApprovalProjectionSchema,
   ExecutionProjectionSchema,
   HumanDecisionRecordSchema,
-  TaskBlackboardEntrySchema,
+  ReviewDecisionProjectionSchema,
   TaskContextEnvelopeSchema,
   TaskOriginSchema,
   TaskProjectionSchema,
   TaskUserDecisionProjectionSchema,
+  TaskWorkingSetProjectionSchema,
+  WorkUnitProjectionSchema,
+  type EvidenceRef,
   type ExecutionLifecycle,
   type ExecutionApprovalDecision,
   type ExecutionApprovalProjection,
   type ExecutionProjection,
   type HumanDecisionRecord,
+  type ReviewDecisionProjection,
   type RuntimeAttachmentProjection,
-  type TaskBlackboardEntry,
   type TaskCommand,
   type TaskContextEnvelope,
   type TaskContextReference,
-  type TaskOrigin,
   type TaskProjection,
   type TaskUserDecisionProjection,
+  type TaskWorkingSetProjection,
+  type WorkUnitProjection,
 } from "@thoth/protocol/task-authority";
+import {
+  IntentContractProjectionSchema,
+  type IntentContractProjection,
+} from "@thoth/protocol/intent-contract";
+import {
+  ClarifyDecisionNodeProjectionSchema,
+  ClarifySessionProjectionSchema,
+  type ClarifyDecisionNodeProjection,
+  type ClarifySessionProjection,
+} from "@thoth/protocol/clarify-authority";
 import type { HarnessApprovalRequest, RuntimeAttachmentReceipt } from "@thoth/drivers/harness";
 import {
   AuthorityTransitionError,
   transitionAuthority,
-  type AuthorityBlackboardAppend,
   type AuthorityCommand,
+  type AuthorityEvidenceAppend,
   type AuthorityMutation,
   type AuthorityState,
   type DeterministicAuthorityInput,
@@ -53,20 +68,22 @@ import type {
 import type { AgentTimelineRow } from "@thoth/drivers/internal/server/agent/agent-timeline-store-types";
 import {
   AgentThothLifecycleSchema,
-  ThothApprovalGoalCardModelSchema,
   ThothCardAnswerPayloadSchema,
   ThothClarifyCardModelSchema,
-  ThothTaskCardModelSchema,
+  ThothIntentContractCardModelSchema,
   ThothTurnControlSnapshotSchema,
   type AgentThothLifecycle,
   type AgentThothState,
   type ThothCardAnswerPayload,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type {
-  ThothLoopPlanExecResultInput,
+  ThothClarifyJudgeContractInput,
+  ThothClarifyProposeContractInput,
+  ThothClarifyUpdateMapInput,
+  ThothLoopCheckpointInput,
   ThothLoopReportBlockedInput,
-  ThothLoopReviewIndependentAssessmentInput,
-  ThothLoopReviewVerdictInput,
+  ThothLoopRequestHumanDecisionInput,
+  ThothLoopReviewDecisionInput,
 } from "@thoth/protocol/thoth-runtime-contract";
 import {
   AgentMessageDeliveryModeSchema,
@@ -89,6 +106,7 @@ import type {
   ForegroundAuthorityUpdateReason,
   ForegroundCardAuthorityRecord,
   ForegroundQueuedSubmission,
+  ForegroundTaskClarifyHandoffRecord,
   ForegroundQueueCommandInput,
   ForegroundQueueCommandResult,
   ForegroundTurnAuthorityRecord,
@@ -105,23 +123,34 @@ export interface WorkspaceAuthorityUpdate {
   changedExecutionIds: string[];
 }
 
+export interface ClarifyAuthorityUpdate {
+  workspaceId: string;
+  agentId: string;
+  sessionId: string;
+  revision: number;
+  changedNodeIds: string[];
+}
+
 interface TaskRow extends Record<string, unknown> {
   task_id: string;
   workspace_id: string;
+  source_agent_workspace_id: string;
   source_agent_id: string;
   execution_mode: string;
   title: string;
-  goal: string;
-  constraints_json: string;
-  acceptance_json: string;
+  intent_contract_id: string;
   status: string;
   summary: string;
-  current_goal_id: string | null;
   current_execution_id: string | null;
-  latest_review_direction: string | null;
+  current_work_unit_id: string | null;
+  completion_authority: string;
+  source_turn_id: string | null;
+  source_contract_card_id: string | null;
+  provider_profile_id: string | null;
+  origin_json: string | null;
   budget_strength: string;
-  used_failed_reviews: number;
-  max_failed_reviews: number;
+  used_non_complete_reviews: number;
+  max_non_complete_reviews: number | null;
   active_duration_ms: number;
   token_count: number;
   tool_call_count: number;
@@ -144,8 +173,8 @@ interface WorkspaceSql {
 interface ExecutionRow extends Record<string, unknown> {
   execution_id: string;
   task_id: string;
-  goal_id: string | null;
-  phase_run_id: string;
+  work_unit_id: string | null;
+  cycle_id: string | null;
   phase_kind: string;
   provider_thread_id: string | null;
   status: string;
@@ -219,9 +248,8 @@ export interface ExecutionApprovalAuthorityResult {
 
 export interface TaskRuntimeMetadata {
   sourceTurnId: string;
-  sourceGoalsCardId: string;
+  sourceContractCardId: string;
   providerProfileId: string;
-  goalsRevision: number;
 }
 
 export interface ProviderThreadRecord {
@@ -234,6 +262,7 @@ export interface ProviderThreadRecord {
 }
 
 type WorkspaceAuthoritySubscriber = (update: WorkspaceAuthorityUpdate) => void;
+type ClarifyAuthoritySubscriber = (update: ClarifyAuthorityUpdate) => void;
 type ForegroundAuthoritySubscriber = (
   state: AgentThothState,
   reason: ForegroundAuthorityUpdateReason,
@@ -248,6 +277,41 @@ function parseStringArray(value: string): string[] {
   return Array.isArray(parsed)
     ? parsed.filter((entry): entry is string => typeof entry === "string")
     : [];
+}
+
+function assertDecisionDag(
+  nodes: Array<Pick<ClarifyDecisionNodeProjection, "id" | "parentIds">>,
+): void {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (nodeId: string): void => {
+    if (visiting.has(nodeId)) throw new Error(`Decision Map contains a cycle through ${nodeId}`);
+    if (visited.has(nodeId)) return;
+    const node = byId.get(nodeId);
+    if (!node) throw new Error(`Decision Map is missing node ${nodeId}`);
+    visiting.add(nodeId);
+    for (const parentId of node.parentIds) visit(parentId);
+    visiting.delete(nodeId);
+    visited.add(nodeId);
+  };
+  for (const node of nodes) visit(node.id);
+}
+
+function isDecisionDescendant(
+  nodeId: string,
+  ancestorId: string,
+  nodes: Map<string, ClarifyDecisionNodeProjection>,
+  visited = new Set<string>(),
+): boolean {
+  if (visited.has(nodeId)) return false;
+  visited.add(nodeId);
+  const node = nodes.get(nodeId);
+  if (!node) return false;
+  return node.parentIds.some(
+    (parentId) =>
+      parentId === ancestorId || isDecisionDescendant(parentId, ancestorId, nodes, visited),
+  );
 }
 
 function assertWorkspaceId(workspaceId: string): void {
@@ -274,6 +338,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
   private readonly catalog: WorkspaceCatalogStore;
   private readonly sql: WorkspaceSql;
   private readonly subscribers = new Set<WorkspaceAuthoritySubscriber>();
+  private readonly clarifySubscribers = new Set<ClarifyAuthoritySubscriber>();
   private readonly foregroundSubscribers = new Set<ForegroundAuthoritySubscriber>();
 
   constructor(input: { thothHome: string; workspaceId: string; catalog: WorkspaceCatalogStore }) {
@@ -311,6 +376,11 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
   subscribe(subscriber: WorkspaceAuthoritySubscriber): () => void {
     this.subscribers.add(subscriber);
     return () => this.subscribers.delete(subscriber);
+  }
+
+  subscribeClarify(subscriber: ClarifyAuthoritySubscriber): () => void {
+    this.clarifySubscribers.add(subscriber);
+    return () => this.clarifySubscribers.delete(subscriber);
   }
 
   subscribeForeground(subscriber: ForegroundAuthoritySubscriber): () => void {
@@ -420,9 +490,13 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
         const authority = this.getForegroundAgentRow(input.agentId);
         if (
           authority &&
-          ["running", "awaiting_card", "awaiting_implementation", "quick_exec"].includes(
-            authority.thoth_lifecycle,
-          )
+          [
+            "running",
+            "awaiting_card",
+            "awaiting_implementation",
+            "quick_wait",
+            "quick_exec",
+          ].includes(authority.thoth_lifecycle)
         ) {
           throw new WorkspaceAuthorityConflictError(
             `Agent ${input.agentId} already has an active foreground turn.`,
@@ -448,9 +522,9 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
              turn_id, agent_id, task_id, provider_thread_id, generation, status, turn_kind,
              controls_json, provider_run_mode, provider_mode_receipt_json,
              provider_plan_receipt_json, provider_interaction_json, provider_interaction_revision,
-             source_message_id, workspace_path, user_text_digest,
+             runtime_attachment_json, source_message_id, workspace_path, user_text_digest,
              provider_turn_id, background_task_id, error, created_at, updated_at
-           ) VALUES (?, ?, NULL, NULL, ?, 'running', ?, ?, ?, NULL, NULL, NULL, 0,
+           ) VALUES (?, ?, NULL, NULL, ?, 'running', ?, ?, ?, NULL, NULL, NULL, 0, NULL,
              ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
           )
           .run(
@@ -466,6 +540,22 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
             now,
             now,
           );
+        if (input.taskClarifyHandoff) {
+          this.database
+            .prepare(
+              `INSERT INTO task_clarify_handoffs(
+                 turn_id, task_workspace_id, task_id, decision_request_id,
+                 status, created_at, completed_at
+               ) VALUES (?, ?, ?, ?, 'active', ?, NULL)`,
+            )
+            .run(
+              turnId,
+              input.taskClarifyHandoff.taskWorkspaceId,
+              input.taskClarifyHandoff.taskId,
+              input.taskClarifyHandoff.decisionRequestId,
+              now,
+            );
+        }
         const nextRevision = (authority?.authority_revision ?? 0) + 1;
         this.database
           .prepare(
@@ -964,18 +1054,74 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     );
   }
 
+  recordForegroundRuntimeAttachment(input: {
+    agentId: string;
+    turnId: string;
+    generation: string;
+    receipt: RuntimeAttachmentReceipt;
+  }): ForegroundTurnAuthorityRecord {
+    this.transaction(() => {
+      const turn = this.getForegroundTurnInTransaction(input.turnId);
+      if (
+        !turn ||
+        turn.agentId !== input.agentId ||
+        turn.generation !== input.generation ||
+        turn.kind !== "thoth"
+      ) {
+        throw new WorkspaceAuthorityConflictError(
+          "RuntimeBundle receipt belongs to a stale foreground turn",
+        );
+      }
+      if (input.receipt.bundleId !== "thoth.clarify") {
+        throw new Error("Foreground Clarify requires a thoth.clarify RuntimeBundle receipt");
+      }
+      this.database
+        .prepare(`UPDATE turns SET runtime_attachment_json = ?, updated_at = ? WHERE turn_id = ?`)
+        .run(JSON.stringify(input.receipt), nowIso(), input.turnId);
+    });
+    return this.getForegroundTurn(input.turnId)!;
+  }
+
+  bindForegroundTask(input: {
+    agentId: string;
+    turnId: string;
+    generation: string;
+    taskId: string;
+  }): ForegroundTurnAuthorityRecord {
+    this.transaction(() => {
+      const turn = this.getForegroundTurnInTransaction(input.turnId);
+      const task = this.getTask(input.taskId);
+      if (
+        !turn ||
+        turn.agentId !== input.agentId ||
+        turn.generation !== input.generation ||
+        !task ||
+        task.workspaceId !== this.workspaceId ||
+        task.sourceAgentId !== input.agentId
+      ) {
+        throw new WorkspaceAuthorityConflictError("Task belongs to another foreground turn");
+      }
+      this.database
+        .prepare(`UPDATE turns SET task_id = ?, updated_at = ? WHERE turn_id = ?`)
+        .run(input.taskId, nowIso(), input.turnId);
+    });
+    return this.getForegroundTurn(input.turnId)!;
+  }
+
   openForegroundCard(input: {
     agentId: string;
     turnId: string;
     generation: string;
     card: ForegroundAuthorityCard;
     runtime: ForegroundAuthorityRuntimeBinding;
+    clarify?: { sessionId: string; awaitingNodeIds: string[] };
   }): { record: ForegroundCardAuthorityRecord; state: AgentThothState; created: boolean } {
     let output!: {
       record: ForegroundCardAuthorityRecord;
       state: AgentThothState;
       created: boolean;
     };
+    let changedClarifyNodeIds: string[] = [];
     this.transaction(() => {
       const cardId = input.card.card.id;
       const existing = this.getForegroundCardInTransaction(cardId);
@@ -999,6 +1145,63 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
         );
       }
       const now = nowIso();
+      if (input.card.kind === "clarify_card") {
+        if (!input.clarify || input.clarify.sessionId !== input.card.card.sessionId) {
+          throw new WorkspaceAuthorityConflictError(
+            "Clarify Card must be atomically bound to its Decision Map session.",
+          );
+        }
+        const session = this.getClarifySession(input.clarify.sessionId);
+        if (
+          !session ||
+          session.agentId !== input.agentId ||
+          session.turnId !== input.turnId ||
+          !session.effectiveStrength ||
+          ["confirmed", "canceled", "blocked"].includes(session.lifecycle)
+        ) {
+          throw new WorkspaceAuthorityConflictError(
+            "Clarify Card no longer belongs to an active Decision Map.",
+          );
+        }
+        const questionNodeIds = input.card.card.card.questions.map((question) => question.nodeId);
+        if (
+          questionNodeIds.length !== input.clarify.awaitingNodeIds.length ||
+          questionNodeIds.some((nodeId, index) => nodeId !== input.clarify!.awaitingNodeIds[index])
+        ) {
+          throw new WorkspaceAuthorityConflictError(
+            "Clarify Card questions do not match the atomically opened Decision Map frontier.",
+          );
+        }
+        const nodes = new Map(session.nodes.map((node) => [node.id, node]));
+        const updateNode = this.database.prepare(
+          `UPDATE clarify_decision_nodes SET status = 'awaiting_human', revision = revision + 1,
+             updated_at = ? WHERE session_id = ? AND node_id = ?`,
+        );
+        for (const nodeId of questionNodeIds) {
+          const node = nodes.get(nodeId);
+          if (
+            !node ||
+            node.owner !== "human" ||
+            !["open", "awaiting_human"].includes(node.status)
+          ) {
+            throw new WorkspaceAuthorityConflictError(
+              `Clarify Card node ${nodeId} is not an open Human-owned frontier.`,
+            );
+          }
+          updateNode.run(now, session.id, nodeId);
+        }
+        this.database
+          .prepare(
+            `UPDATE clarify_sessions SET lifecycle = 'awaiting_human', revision = revision + 1,
+               updated_at = ? WHERE session_id = ?`,
+          )
+          .run(now, session.id);
+        changedClarifyNodeIds = questionNodeIds;
+      } else if (input.clarify) {
+        throw new WorkspaceAuthorityConflictError(
+          "Only a Clarify Card can mutate a Decision Map while opening.",
+        );
+      }
       const displayed = this.blobs.putJson(input.card.card);
       const runtime = this.blobs.putJson(input.runtime);
       this.database
@@ -1030,6 +1233,10 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
         updatedAt: output.record.updatedAt,
       });
       this.emit([], []);
+      if (input.clarify) {
+        const session = this.getClarifySession(input.clarify.sessionId);
+        if (session) this.emitClarify(session, changedClarifyNodeIds);
+      }
       this.emitForeground(output.state, "card_opened");
     }
     return output;
@@ -1050,6 +1257,9 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
   }): AnswerForegroundCardResult {
     const answer = ThothCardAnswerPayloadSchema.parse(input.answer);
     let emitReason = false;
+    const clarifyUpdate: {
+      current: { sessionId: string; changedNodeIds: string[] } | null;
+    } = { current: null };
     const result = this.transaction(() => {
       const duplicate = this.database
         .prepare("SELECT result_json FROM authority_commands WHERE command_id = ?")
@@ -1165,7 +1375,44 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
         lifecycle: mutation.agent.lifecycle,
         now,
       });
-      this.insertDecisionInTransaction(mutation.decision);
+      const taskHandoff = this.getTaskClarifyHandoff(turn.id);
+      const decision = taskHandoff
+        ? { ...mutation.decision, taskId: taskHandoff.taskId }
+        : mutation.decision;
+      this.insertDecisionInTransaction(decision);
+      if (card.kind === "clarify_card" && "questionCardId" in answer) {
+        const clarifyCard = ThothClarifyCardModelSchema.parse(card.card);
+        if (answer.intent === "stop") {
+          this.cancelClarifySessionInTransaction(clarifyCard.sessionId, now);
+          if (taskHandoff?.status === "active") {
+            this.finishTaskClarifyHandoffInTransaction(taskHandoff.turnId, "canceled", now);
+          }
+          clarifyUpdate.current = { sessionId: clarifyCard.sessionId, changedNodeIds: [] };
+        } else {
+          clarifyUpdate.current = {
+            sessionId: clarifyCard.sessionId,
+            changedNodeIds: this.applyClarifyCardDecisionInTransaction({
+              sessionId: clarifyCard.sessionId,
+              answer,
+              decisionId: decision.id,
+              now,
+            }),
+          };
+        }
+      } else if (card.kind === "intent_contract_card" && "cardId" in answer) {
+        const contractCard = ThothIntentContractCardModelSchema.parse(card.card);
+        if (answer.intent === "accept_quick" || answer.intent === "accept_loop") {
+          this.confirmIntentContractInTransaction(contractCard.sessionId, now);
+        } else if (answer.intent === "annotate") {
+          this.reopenIntentContractInTransaction(contractCard.sessionId, now);
+        } else if (answer.intent === "cancel") {
+          this.cancelClarifySessionInTransaction(contractCard.sessionId, now);
+          if (taskHandoff?.status === "active") {
+            this.finishTaskClarifyHandoffInTransaction(taskHandoff.turnId, "canceled", now);
+          }
+        }
+        clarifyUpdate.current = { sessionId: contractCard.sessionId, changedNodeIds: [] };
+      }
       const response = { accepted: true, conflict: false, error: null };
       this.database
         .prepare(
@@ -1186,6 +1433,10 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     });
     if (emitReason) {
       this.emit([], []);
+      if (clarifyUpdate.current) {
+        const session = this.getClarifySession(clarifyUpdate.current.sessionId);
+        if (session) this.emitClarify(session, clarifyUpdate.current.changedNodeIds);
+      }
       this.emitForeground(result.state, "card_answered");
     }
     return result;
@@ -1281,6 +1532,33 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     return this.getForegroundCardInTransaction(cardId);
   }
 
+  getTaskClarifyHandoff(turnId: string): ForegroundTaskClarifyHandoffRecord | null {
+    const row = this.database
+      .prepare("SELECT * FROM task_clarify_handoffs WHERE turn_id = ?")
+      .get(turnId) as
+      | {
+          turn_id: string;
+          task_workspace_id: string;
+          task_id: string;
+          decision_request_id: string;
+          status: ForegroundTaskClarifyHandoffRecord["status"];
+          created_at: string;
+          completed_at: string | null;
+        }
+      | undefined;
+    return row
+      ? {
+          turnId: row.turn_id,
+          taskWorkspaceId: row.task_workspace_id,
+          taskId: row.task_id,
+          decisionRequestId: row.decision_request_id,
+          status: row.status,
+          createdAt: row.created_at,
+          completedAt: row.completed_at,
+        }
+      : null;
+  }
+
   listForegroundCardsForTurn(turnId: string): ForegroundCardAuthorityRecord[] {
     return this.listForegroundCardsForTurnInTransaction(turnId);
   }
@@ -1290,7 +1568,9 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       .prepare(
         `SELECT cards.* FROM cards
          JOIN turns ON turns.turn_id = cards.turn_id
-         WHERE turns.agent_id = ? ORDER BY cards.created_at ASC`,
+         WHERE turns.agent_id = ?
+           AND cards.kind IN ('clarify_card', 'intent_contract_card')
+         ORDER BY cards.created_at ASC`,
       )
       .all(agentId) as Array<Record<string, unknown>>;
     return rows.map((row) => this.toForegroundCard(row));
@@ -1301,6 +1581,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       .prepare(
         `SELECT cards.*, turns.agent_id FROM cards
          JOIN turns ON turns.turn_id = cards.turn_id
+         WHERE cards.kind IN ('clarify_card', 'intent_contract_card')
          ORDER BY cards.created_at ASC`,
       )
       .all() as Array<Record<string, unknown>>;
@@ -1322,13 +1603,653 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     });
   }
 
+  startClarifySession(input: {
+    agentId: string;
+    turnId: string;
+    requestedStrength: "auto" | "light" | "balanced" | "dive";
+  }): ClarifySessionProjection {
+    let sessionId = "";
+    let created = false;
+    this.transaction(() => {
+      const existing = this.database
+        .prepare("SELECT session_id FROM clarify_sessions WHERE turn_id = ?")
+        .get(input.turnId) as { session_id: string } | undefined;
+      if (existing) {
+        sessionId = existing.session_id;
+        return;
+      }
+      const turn = this.getForegroundTurnInTransaction(input.turnId);
+      if (!turn || turn.agentId !== input.agentId || turn.kind !== "thoth") {
+        throw new WorkspaceAuthorityConflictError(
+          `Foreground turn ${input.turnId} cannot own a Clarify session`,
+        );
+      }
+      const now = nowIso();
+      sessionId = `clarify-session-${randomUUID()}`;
+      this.database
+        .prepare(
+          `INSERT INTO clarify_sessions(
+             session_id, workspace_id, agent_id, turn_id, requested_strength,
+             effective_strength, lifecycle, challenger_used, priority_node_id,
+             intent_contract_id, revision, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, 'grounding', 0, NULL, NULL, 1, ?, ?)`,
+        )
+        .run(
+          sessionId,
+          this.workspaceId,
+          input.agentId,
+          input.turnId,
+          input.requestedStrength,
+          input.requestedStrength === "auto" ? null : input.requestedStrength,
+          now,
+          now,
+        );
+      created = true;
+    });
+    const session = this.getClarifySession(sessionId);
+    if (!session) throw new Error(`Clarify session ${sessionId} was not created`);
+    if (created) this.emitClarify(session, []);
+    return session;
+  }
+
+  getClarifySession(sessionId: string): ClarifySessionProjection | null {
+    const row = this.database
+      .prepare("SELECT * FROM clarify_sessions WHERE session_id = ?")
+      .get(sessionId) as Record<string, unknown> | undefined;
+    return row ? this.toClarifySession(row) : null;
+  }
+
+  getLatestClarifySessionForAgent(agentId: string): ClarifySessionProjection | null {
+    const row = this.database
+      .prepare(
+        `SELECT * FROM clarify_sessions WHERE agent_id = ?
+         ORDER BY created_at DESC, session_id DESC LIMIT 1`,
+      )
+      .get(agentId) as Record<string, unknown> | undefined;
+    return row ? this.toClarifySession(row) : null;
+  }
+
+  updateClarifyDecisionMap(input: {
+    sessionId: string;
+    update: ThothClarifyUpdateMapInput;
+  }): ClarifySessionProjection {
+    let changedNodeIds: string[] = [];
+    this.transaction(() => {
+      const session = this.getClarifySession(input.sessionId);
+      if (!session || ["confirmed", "canceled"].includes(session.lifecycle)) {
+        throw new WorkspaceAuthorityConflictError(
+          "Clarify session no longer accepts Decision Map updates",
+        );
+      }
+      const existing = new Map(session.nodes.map((node) => [node.id, node]));
+      const incomingIds = new Set(input.update.nodes.map((node) => node.id));
+      if (incomingIds.size !== input.update.nodes.length) {
+        throw new Error("Decision Map update contains duplicate node ids");
+      }
+      for (const node of input.update.nodes) {
+        for (const parentId of node.parentIds) {
+          if (!existing.has(parentId) && !incomingIds.has(parentId)) {
+            throw new Error(`Decision node ${node.id} references unknown parent ${parentId}`);
+          }
+        }
+        this.assertClarifyNodeResolution(node);
+        const previous = existing.get(node.id);
+        if (
+          previous?.owner === "human" &&
+          ["resolved", "delegated"].includes(previous.status) &&
+          (node.status !== previous.status || node.resolutionRef !== previous.resolutionRef)
+        ) {
+          throw new WorkspaceAuthorityConflictError(
+            `Human Decision node ${node.id} cannot be overwritten by the Agent`,
+          );
+        }
+      }
+      assertDecisionDag([
+        ...session.nodes.filter((node) => !incomingIds.has(node.id)),
+        ...input.update.nodes.map((node) => ({ ...node, priority: 0, revision: 1 })),
+      ]);
+      const maximumPriority = session.nodes.reduce(
+        (maximum, node) => Math.max(maximum, node.priority),
+        0,
+      );
+      const upsert = this.database.prepare(
+        `INSERT INTO clarify_decision_nodes(
+           node_id, session_id, parent_ids_json, title, owner, materiality, status,
+           resolution_ref, source_refs_json, priority, revision, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+         ON CONFLICT(session_id, node_id) DO UPDATE SET
+           parent_ids_json = excluded.parent_ids_json,
+           title = excluded.title,
+           owner = excluded.owner,
+           materiality = excluded.materiality,
+           status = excluded.status,
+           resolution_ref = excluded.resolution_ref,
+           source_refs_json = excluded.source_refs_json,
+           priority = excluded.priority,
+           revision = clarify_decision_nodes.revision + 1,
+           updated_at = excluded.updated_at`,
+      );
+      const now = nowIso();
+      input.update.nodes.forEach((node, index) => {
+        const previous = existing.get(node.id);
+        upsert.run(
+          node.id,
+          session.id,
+          JSON.stringify(node.parentIds),
+          node.title,
+          node.owner,
+          node.materiality,
+          node.status,
+          node.resolutionRef,
+          JSON.stringify(node.sourceRefs),
+          previous?.priority ?? maximumPriority + input.update.nodes.length - index,
+          previous ? session.createdAt : now,
+          now,
+        );
+      });
+      this.database
+        .prepare(
+          `UPDATE clarify_sessions SET effective_strength = ?, lifecycle = 'mapping',
+             revision = revision + 1, updated_at = ? WHERE session_id = ?`,
+        )
+        .run(input.update.effectiveStrength, now, session.id);
+      changedNodeIds = input.update.nodes.map((node) => node.id);
+    });
+    const session = this.getClarifySession(input.sessionId)!;
+    this.emitClarify(session, changedNodeIds);
+    return session;
+  }
+
+  applyClarifyCardDecision(input: {
+    sessionId: string;
+    answer: Extract<ThothCardAnswerPayload, { questionCardId: string }>;
+    decisionId: string;
+  }): ClarifySessionProjection {
+    const changedNodeIds = this.transaction(() =>
+      this.applyClarifyCardDecisionInTransaction({ ...input, now: nowIso() }),
+    );
+    const session = this.getClarifySession(input.sessionId)!;
+    this.emitClarify(session, changedNodeIds);
+    return session;
+  }
+
+  private applyClarifyCardDecisionInTransaction(input: {
+    sessionId: string;
+    answer: Extract<ThothCardAnswerPayload, { questionCardId: string }>;
+    decisionId: string;
+    now: string;
+  }): string[] {
+    const session = this.getClarifySession(input.sessionId);
+    if (!session) throw new Error(`Clarify session ${input.sessionId} does not exist`);
+    const nodes = new Map(session.nodes.map((node) => [node.id, node]));
+    const direct = new Set(input.answer.answers.map((answer) => answer.nodeId));
+    const delegated = new Set(input.answer.delegatedNodeIds);
+    for (const nodeId of [...direct, ...delegated]) {
+      const node = nodes.get(nodeId);
+      if (!node || node.owner !== "human") {
+        throw new Error(`Clarify answer references non-Human node ${nodeId}`);
+      }
+    }
+    if (input.answer.intent === "delegate_subtree") {
+      for (const rootId of delegated) {
+        for (const node of session.nodes) {
+          if (node.id === rootId || isDecisionDescendant(node.id, rootId, nodes)) {
+            delegated.add(node.id);
+          }
+        }
+      }
+    }
+    const changedNodeIds: string[] = [];
+    const update = this.database.prepare(
+      `UPDATE clarify_decision_nodes SET status = ?, resolution_ref = ?,
+         revision = revision + 1, updated_at = ?
+       WHERE session_id = ? AND node_id = ?`,
+    );
+    for (const nodeId of direct) {
+      const status =
+        input.answer.intent === "recommend" || delegated.has(nodeId) ? "delegated" : "resolved";
+      update.run(status, input.decisionId, input.now, session.id, nodeId);
+      changedNodeIds.push(nodeId);
+    }
+    for (const nodeId of delegated) {
+      if (direct.has(nodeId)) continue;
+      update.run("delegated", input.decisionId, input.now, session.id, nodeId);
+      changedNodeIds.push(nodeId);
+    }
+    this.database
+      .prepare(
+        `UPDATE clarify_sessions SET lifecycle = 'mapping', priority_node_id = NULL,
+           revision = revision + 1, updated_at = ? WHERE session_id = ?`,
+      )
+      .run(input.now, session.id);
+    return changedNodeIds;
+  }
+
+  proposeIntentContract(input: {
+    sessionId: string;
+    proposal: ThothClarifyProposeContractInput;
+  }): ClarifySessionProjection {
+    this.transaction(() => {
+      const session = this.getClarifySession(input.sessionId);
+      if (!session) throw new Error(`Clarify session ${input.sessionId} does not exist`);
+      if (session.intentContract) {
+        throw new WorkspaceAuthorityConflictError(
+          "This Clarify contract proposal already exists; revise the session instead of duplicating it",
+        );
+      }
+      const openHuman = session.nodes.filter(
+        (node) =>
+          node.owner === "human" &&
+          node.materiality !== "local" &&
+          ["open", "awaiting_human"].includes(node.status),
+      );
+      if (openHuman.length > 0) {
+        throw new Error(
+          `Intent Contract cannot be proposed with unresolved material Human nodes: ${openHuman.map((node) => node.title).join(", ")}`,
+        );
+      }
+      for (const nodeId of input.proposal.decisionNodeRefs) {
+        if (!session.nodes.some((node) => node.id === nodeId)) {
+          throw new Error(`Intent Contract references unknown Decision node ${nodeId}`);
+        }
+      }
+      const now = nowIso();
+      const contract: IntentContractProjection = {
+        id: `intent-contract-${randomUUID()}`,
+        workspaceId: this.workspaceId,
+        sourceAgentId: session.agentId,
+        taskId: null,
+        title: input.proposal.contract.title,
+        objective: input.proposal.contract.objective,
+        nonGoals: input.proposal.contract.nonGoals,
+        invariants: input.proposal.contract.invariants,
+        acceptanceClaims: input.proposal.contract.acceptance.map((statement) => ({
+          id: `acceptance-claim-${randomUUID()}`,
+          statement,
+          status: "open",
+          evidenceRefs: [],
+          revision: 1,
+        })),
+        riskBoundary: input.proposal.contract.riskBoundary,
+        humanDecisionRefs: input.proposal.contract.humanDecisionRefs,
+        escalationPolicy: input.proposal.contract.escalationPolicy,
+        status: "proposed",
+        revision: 1,
+        confirmedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.writeIntentContractInTransaction(contract);
+      this.database
+        .prepare(
+          `UPDATE clarify_sessions SET intent_contract_id = ?, lifecycle = 'proposing',
+             revision = revision + 1, updated_at = ? WHERE session_id = ?`,
+        )
+        .run(contract.id, now, session.id);
+    });
+    const session = this.getClarifySession(input.sessionId)!;
+    this.emitClarify(session, []);
+    return session;
+  }
+
+  applyClarifyChallenge(input: {
+    sessionId: string;
+    result: ThothClarifyJudgeContractInput;
+  }): ClarifySessionProjection {
+    let changedNodeIds: string[] = [];
+    this.transaction(() => {
+      const session = this.getClarifySession(input.sessionId);
+      if (!session || !session.intentContract) {
+        throw new Error("Clarify Challenger requires a proposed Intent Contract");
+      }
+      if (session.challengerUsed) {
+        throw new WorkspaceAuthorityConflictError(
+          "Clarify Challenger has already run for this session",
+        );
+      }
+      const now = nowIso();
+      if (input.result.decision === "reopen") {
+        const existingIds = new Set(session.nodes.map((node) => node.id));
+        for (const node of input.result.missingNodes) {
+          if (existingIds.has(node.id))
+            throw new Error(`Challenger duplicated Decision node ${node.id}`);
+          for (const parentId of node.parentIds) {
+            if (
+              !existingIds.has(parentId) &&
+              !input.result.missingNodes.some((candidate) => candidate.id === parentId)
+            ) {
+              throw new Error(`Challenger node ${node.id} references unknown parent ${parentId}`);
+            }
+          }
+          this.assertClarifyNodeResolution(node);
+        }
+        const insert = this.database.prepare(
+          `INSERT INTO clarify_decision_nodes(
+             node_id, session_id, parent_ids_json, title, owner, materiality, status,
+             resolution_ref, source_refs_json, priority, revision, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+        );
+        const priority = session.nodes.reduce(
+          (maximum, node) => Math.max(maximum, node.priority),
+          0,
+        );
+        input.result.missingNodes.forEach((node, index) => {
+          insert.run(
+            node.id,
+            session.id,
+            JSON.stringify(node.parentIds),
+            node.title,
+            node.owner,
+            node.materiality,
+            node.status,
+            node.resolutionRef,
+            JSON.stringify(node.sourceRefs),
+            priority + input.result.missingNodes.length - index,
+            now,
+            now,
+          );
+        });
+        changedNodeIds = input.result.missingNodes.map((node) => node.id);
+      }
+      this.database
+        .prepare(
+          `UPDATE clarify_sessions SET challenger_used = 1, lifecycle = ?,
+             revision = revision + 1, updated_at = ? WHERE session_id = ?`,
+        )
+        .run(
+          input.result.decision === "reopen"
+            ? "mapping"
+            : input.result.decision === "blocked"
+              ? "blocked"
+              : "proposing",
+          now,
+          session.id,
+        );
+    });
+    const session = this.getClarifySession(input.sessionId)!;
+    this.emitClarify(session, changedNodeIds);
+    return session;
+  }
+
+  confirmIntentContract(sessionId: string): ClarifySessionProjection {
+    this.transaction(() => this.confirmIntentContractInTransaction(sessionId, nowIso()));
+    const session = this.getClarifySession(sessionId)!;
+    this.emitClarify(session, []);
+    return session;
+  }
+
+  reopenIntentContract(sessionId: string): ClarifySessionProjection {
+    this.transaction(() => this.reopenIntentContractInTransaction(sessionId, nowIso()));
+    const session = this.getClarifySession(sessionId)!;
+    this.emitClarify(session, []);
+    return session;
+  }
+
+  private confirmIntentContractInTransaction(sessionId: string, now: string): void {
+    const session = this.getClarifySession(sessionId);
+    if (!session?.intentContract || !session.challengerUsed) {
+      throw new WorkspaceAuthorityConflictError(
+        "Intent Contract cannot be confirmed before its one-shot Challenger completes",
+      );
+    }
+    this.database
+      .prepare(
+        `UPDATE intent_contracts SET status = 'confirmed', confirmed_at = ?,
+           revision = revision + 1, updated_at = ? WHERE contract_id = ?`,
+      )
+      .run(now, now, session.intentContract.id);
+    this.database
+      .prepare(
+        `UPDATE clarify_sessions SET lifecycle = 'confirmed', revision = revision + 1,
+           updated_at = ? WHERE session_id = ?`,
+      )
+      .run(now, session.id);
+  }
+
+  private reopenIntentContractInTransaction(sessionId: string, now: string): void {
+    const session = this.getClarifySession(sessionId);
+    if (!session?.intentContract) throw new Error("Clarify session has no proposed contract");
+    this.database
+      .prepare(
+        `UPDATE intent_contracts SET status = 'superseded', revision = revision + 1,
+           updated_at = ? WHERE contract_id = ?`,
+      )
+      .run(now, session.intentContract.id);
+    this.database
+      .prepare(
+        `UPDATE clarify_sessions SET intent_contract_id = NULL, lifecycle = 'mapping',
+           revision = revision + 1, updated_at = ? WHERE session_id = ?`,
+      )
+      .run(now, session.id);
+  }
+
+  private cancelClarifySessionInTransaction(sessionId: string, now: string): void {
+    const session = this.getClarifySession(sessionId);
+    if (!session) throw new Error(`Clarify session ${sessionId} does not exist`);
+    if (session.intentContract && session.intentContract.status === "proposed") {
+      this.database
+        .prepare(
+          `UPDATE intent_contracts SET status = 'superseded', revision = revision + 1,
+             updated_at = ? WHERE contract_id = ?`,
+        )
+        .run(now, session.intentContract.id);
+    }
+    this.database
+      .prepare(
+        `UPDATE clarify_sessions SET lifecycle = 'canceled', revision = revision + 1,
+           updated_at = ? WHERE session_id = ?`,
+      )
+      .run(now, session.id);
+  }
+
+  applyTaskContractRevisionFromHandoff(input: {
+    taskId: string;
+    sourceAgentWorkspaceId: string;
+    sourceAgentId: string;
+    decisionRequestId: string;
+    contract: IntentContractProjection;
+    decisionRecordIds: string[];
+    commandId: string;
+  }): { task: TaskProjection; duplicate: boolean } {
+    if (input.decisionRecordIds.length === 0) {
+      throw new Error("Task contract revision requires at least one recorded Human decision");
+    }
+    let result!: { task: TaskProjection; duplicate: boolean };
+    this.transaction(() => {
+      const prior = this.database
+        .prepare("SELECT result_json FROM authority_commands WHERE command_id = ?")
+        .get(input.commandId) as { result_json: string } | undefined;
+      if (prior) {
+        const recorded = JSON.parse(prior.result_json) as { taskId: string };
+        if (recorded.taskId !== input.taskId) {
+          throw new WorkspaceAuthorityConflictError(
+            `Command ${input.commandId} belongs to another Task`,
+          );
+        }
+        const task = this.getTask(input.taskId);
+        if (!task) throw new Error(`Task ${input.taskId} disappeared after its handoff command`);
+        result = { task, duplicate: true };
+        return;
+      }
+
+      const now = nowIso();
+      const task = this.getTask(input.taskId);
+      const pendingDecision = task ? this.getPendingTaskDecision(task.id) : null;
+      if (
+        !task ||
+        task.sourceAgentWorkspaceId !== input.sourceAgentWorkspaceId ||
+        task.sourceAgentId !== input.sourceAgentId ||
+        pendingDecision?.id !== input.decisionRequestId ||
+        pendingDecision.kind !== "contract_change"
+      ) {
+        throw new WorkspaceAuthorityConflictError(
+          "Task contract decision changed before the clarified contract was committed.",
+        );
+      }
+      const revisedContract = IntentContractProjectionSchema.parse({
+        ...input.contract,
+        workspaceId: task.workspaceId,
+        sourceAgentId: task.sourceAgentId,
+        taskId: task.id,
+        humanDecisionRefs: [
+          ...new Set([
+            ...task.intentContract.humanDecisionRefs,
+            ...input.contract.humanDecisionRefs,
+            ...input.decisionRecordIds,
+          ]),
+        ],
+        status: "confirmed",
+        revision: task.intentContract.revision + 1,
+        confirmedAt: now,
+        updatedAt: now,
+      });
+      this.database
+        .prepare(
+          `UPDATE intent_contracts SET status = 'superseded', revision = revision + 1,
+             updated_at = ? WHERE contract_id = ?`,
+        )
+        .run(now, task.intentContract.id);
+      const mutation = this.transition(
+        this.authorityState({ task, pendingDecision }),
+        {
+          type: "task.contract.revised",
+          decisionRequestId: input.decisionRequestId,
+          decisionRecordId: input.decisionRecordIds.at(-1)!,
+          expectedRevision: task.revision,
+          contract: revisedContract,
+        },
+        now,
+      );
+      this.applyAuthorityMutationInTransaction(mutation);
+      this.database
+        .prepare(
+          `INSERT INTO authority_commands(
+             command_id, aggregate_type, aggregate_id, command_kind,
+             result_revision, result_json, created_at
+           ) VALUES (?, 'task', ?, 'clarify_contract_revision', ?, ?, ?)`,
+        )
+        .run(
+          input.commandId,
+          task.id,
+          mutation.task.revision,
+          JSON.stringify({ taskId: task.id }),
+          now,
+        );
+      result = { task: mutation.task, duplicate: false };
+    });
+    if (!result.duplicate) {
+      this.syncTaskLocator(result.task);
+      this.emit([result.task.id], []);
+    }
+    return result;
+  }
+
+  finishTaskClarifyHandoff(turnId: string, status: "completed" | "canceled"): boolean {
+    let changed = false;
+    this.transaction(() => {
+      const current = this.getTaskClarifyHandoff(turnId);
+      if (!current) throw new Error(`Task Clarify handoff for turn ${turnId} does not exist`);
+      if (current.status === status) return;
+      if (current.status !== "active") {
+        throw new WorkspaceAuthorityConflictError(
+          `Task Clarify handoff for turn ${turnId} is already ${current.status}.`,
+        );
+      }
+      this.finishTaskClarifyHandoffInTransaction(turnId, status, nowIso());
+      changed = true;
+    });
+    return changed;
+  }
+
+  private finishTaskClarifyHandoffInTransaction(
+    turnId: string,
+    status: "completed" | "canceled",
+    now: string,
+  ): void {
+    const updated = this.database
+      .prepare(
+        `UPDATE task_clarify_handoffs SET status = ?, completed_at = ?
+         WHERE turn_id = ? AND status = 'active'`,
+      )
+      .run(status, now, turnId);
+    if (updated.changes !== 1) {
+      throw new WorkspaceAuthorityConflictError(
+        `Task Clarify handoff for turn ${turnId} is no longer active.`,
+      );
+    }
+  }
+
+  prioritizeClarifyNode(input: {
+    sessionId: string;
+    nodeId: string;
+    expectedRevision: number;
+    commandId: string;
+  }): { session: ClarifySessionProjection; duplicate: boolean } {
+    let duplicate = false;
+    this.transaction(() => {
+      const previous = this.database
+        .prepare("SELECT result_json FROM authority_commands WHERE command_id = ?")
+        .get(input.commandId) as { result_json: string } | undefined;
+      if (previous) {
+        const result = JSON.parse(previous.result_json) as { sessionId: string; nodeId: string };
+        if (result.sessionId !== input.sessionId || result.nodeId !== input.nodeId) {
+          throw new WorkspaceAuthorityConflictError(
+            `Command ${input.commandId} belongs to another Clarify action`,
+          );
+        }
+        duplicate = true;
+        return;
+      }
+      const session = this.getClarifySession(input.sessionId);
+      if (!session || session.revision !== input.expectedRevision) {
+        throw new WorkspaceAuthorityConflictError("Clarify session revision changed");
+      }
+      const node = session.nodes.find((candidate) => candidate.id === input.nodeId);
+      if (!node || !["open", "awaiting_human"].includes(node.status)) {
+        throw new Error(`Decision node ${input.nodeId} is not an open frontier`);
+      }
+      const maximum = session.nodes.reduce(
+        (value, candidate) => Math.max(value, candidate.priority),
+        0,
+      );
+      const now = nowIso();
+      this.database
+        .prepare(
+          `UPDATE clarify_decision_nodes SET priority = ?, revision = revision + 1,
+             updated_at = ? WHERE session_id = ? AND node_id = ?`,
+        )
+        .run(maximum + 1, now, session.id, node.id);
+      this.database
+        .prepare(
+          `UPDATE clarify_sessions SET priority_node_id = ?, revision = revision + 1,
+             updated_at = ? WHERE session_id = ?`,
+        )
+        .run(node.id, now, session.id);
+      this.database
+        .prepare(
+          `INSERT INTO authority_commands(
+             command_id, aggregate_type, aggregate_id, command_kind,
+             result_revision, result_json, created_at
+           ) VALUES (?, 'clarify_session', ?, 'prioritize_node', ?, ?, ?)`,
+        )
+        .run(
+          input.commandId,
+          session.id,
+          session.revision + 1,
+          JSON.stringify({ sessionId: session.id, nodeId: node.id }),
+          now,
+        );
+    });
+    const session = this.getClarifySession(input.sessionId)!;
+    if (!duplicate) this.emitClarify(session, [input.nodeId]);
+    return { session, duplicate };
+  }
+
   registerTask(input: {
     task: TaskProjection;
     sourceTurnId: string;
-    sourceGoalsCardId: string;
+    sourceContractCardId: string;
     providerProfileId: string;
-    taskContract: unknown;
-    goalsContract: unknown;
   }): { task: TaskProjection; created: boolean } {
     const task = TaskProjectionSchema.parse(input.task);
     if (task.workspaceId !== this.workspaceId) {
@@ -1337,43 +2258,44 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     let result!: { task: TaskProjection; created: boolean };
     this.transaction(() => {
       const existing = this.database
-        .prepare(`SELECT * FROM tasks WHERE source_turn_id = ? AND source_goals_card_id = ?`)
-        .get(input.sourceTurnId, input.sourceGoalsCardId) as TaskRow | undefined;
+        .prepare(`SELECT * FROM tasks WHERE source_turn_id = ? AND source_contract_card_id = ?`)
+        .get(input.sourceTurnId, input.sourceContractCardId) as TaskRow | undefined;
       if (existing) {
         result = { task: this.toTaskProjection(existing), created: false };
         return;
       }
+      this.writeIntentContractInTransaction(task.intentContract);
       this.database
         .prepare(
           `INSERT INTO tasks(
-             task_id, workspace_id, source_agent_id, execution_mode, title, goal,
-             constraints_json, acceptance_json, status, summary, current_goal_id,
-             current_execution_id, latest_review_direction, source_turn_id,
-             source_goals_card_id, provider_profile_id, budget_strength,
-             used_failed_reviews, max_failed_reviews, active_duration_ms, token_count,
-             tool_call_count, pending_control, goals_revision, revision, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+             task_id, workspace_id, source_agent_workspace_id, source_agent_id, execution_mode, title,
+             intent_contract_id, status, summary, current_execution_id,
+             current_work_unit_id, completion_authority, source_turn_id,
+             source_contract_card_id, provider_profile_id, origin_json, budget_strength,
+             used_non_complete_reviews, max_non_complete_reviews, active_duration_ms,
+             token_count, tool_call_count, pending_control, revision, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           task.id,
           task.workspaceId,
+          task.sourceAgentWorkspaceId,
           task.sourceAgentId,
           task.mode,
           task.title,
-          task.goal,
-          JSON.stringify(task.constraints),
-          JSON.stringify(task.acceptance),
+          task.intentContract.id,
           task.status,
           task.summary,
-          task.currentGoalId,
           task.currentExecutionId,
-          task.latestReviewDirection,
+          task.currentWorkUnitId,
+          task.completionAuthority,
           input.sourceTurnId,
-          input.sourceGoalsCardId,
+          input.sourceContractCardId,
           input.providerProfileId,
+          task.origin ? JSON.stringify(task.origin) : null,
           task.budget.strength,
-          task.budget.usedFailedReviews,
-          task.budget.maxFailedReviews,
+          task.budget.usedNonCompleteReviews,
+          task.budget.maxNonCompleteReviews,
           task.budget.activeDurationMs,
           task.budget.tokenCount,
           task.budget.toolCallCount,
@@ -1382,25 +2304,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
           task.createdAt,
           task.updatedAt,
         );
-      const insertGoal = this.database.prepare(
-        `INSERT INTO task_goals(
-           goal_id, task_id, goal_order, title, goal, constraints_json,
-           acceptance_json, status, revision
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      );
-      for (const goal of task.goals) {
-        insertGoal.run(
-          goal.id,
-          task.id,
-          goal.order,
-          goal.title,
-          goal.goal,
-          JSON.stringify(goal.constraints),
-          JSON.stringify(goal.acceptance),
-          goal.status,
-          goal.revision,
-        );
-      }
+      this.writeWorkingSetInTransaction(task.workingSet);
       this.database
         .prepare("UPDATE turns SET task_id = ? WHERE turn_id = ?")
         .run(task.id, input.sourceTurnId);
@@ -1410,18 +2314,6 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       this.database
         .prepare("UPDATE human_decisions SET task_id = ? WHERE turn_id = ? AND task_id IS NULL")
         .run(task.id, input.sourceTurnId);
-      this.appendBlackboardInTransaction({
-        taskId: task.id,
-        kind: "task_contract",
-        producer: "secretary",
-        content: input.taskContract,
-      });
-      this.appendBlackboardInTransaction({
-        taskId: task.id,
-        kind: "goal_contract",
-        producer: "secretary",
-        content: input.goalsContract,
-      });
       result = { task: this.getTask(task.id)!, created: true };
     });
     if (result.created) {
@@ -1438,28 +2330,30 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     return row ? this.toTaskProjection(row) : null;
   }
 
+  getIntentContract(contractId: string): IntentContractProjection | null {
+    return this.readIntentContract(contractId);
+  }
+
   getTaskRuntimeMetadata(taskId: string): TaskRuntimeMetadata | null {
     const row = this.database
       .prepare(
-        `SELECT source_turn_id, source_goals_card_id, provider_profile_id, goals_revision
+        `SELECT source_turn_id, source_contract_card_id, provider_profile_id
          FROM tasks WHERE task_id = ?`,
       )
       .get(taskId) as
       | {
           source_turn_id: string | null;
-          source_goals_card_id: string | null;
+          source_contract_card_id: string | null;
           provider_profile_id: string | null;
-          goals_revision: number;
         }
       | undefined;
-    if (!row || !row.source_turn_id || !row.source_goals_card_id || !row.provider_profile_id) {
+    if (!row || !row.source_turn_id || !row.source_contract_card_id || !row.provider_profile_id) {
       return null;
     }
     return {
       sourceTurnId: row.source_turn_id,
-      sourceGoalsCardId: row.source_goals_card_id,
+      sourceContractCardId: row.source_contract_card_id,
       providerProfileId: row.provider_profile_id,
-      goalsRevision: row.goals_revision,
     };
   }
 
@@ -1468,6 +2362,21 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       .prepare("SELECT * FROM tasks ORDER BY updated_at DESC")
       .all() as TaskRow[];
     return rows.map((row) => this.toTaskProjection(row));
+  }
+
+  getNextMutationTask(): TaskProjection | null {
+    return (
+      this.listTasks()
+        .filter(
+          (task) =>
+            (task.mode === "quick" && task.status === "queued") ||
+            (task.mode === "loop" && ["queued", "reorienting"].includes(task.status)),
+        )
+        .sort(
+          (left, right) =>
+            left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
+        )[0] ?? null
+    );
   }
 
   searchTasks(query: string, limit: number): TaskProjection[] {
@@ -1496,6 +2405,12 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
 
   createExecution(input: {
     execution: ExecutionProjection;
+    cycle?: {
+      id: string;
+      status: "active" | "reviewing";
+      startedAt: string;
+    };
+    workUnit?: WorkUnitProjection;
     providerThread?: {
       id: string;
       adapterId: string;
@@ -1529,24 +2444,29 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
             now,
           );
       }
-      this.database
-        .prepare(
-          `INSERT OR IGNORE INTO phase_runs(
-             phase_run_id, task_id, goal_id, phase_kind, status, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, 'running', ?, ?)`,
-        )
-        .run(
-          execution.phaseRunId,
-          execution.taskId,
-          execution.goalId,
-          execution.phase,
-          execution.startedAt ?? now,
-          execution.lastActivityAt ?? now,
+      if (input.cycle) {
+        const order = Number(
+          (
+            this.database
+              .prepare(
+                "SELECT COALESCE(MAX(cycle_order), 0) + 1 AS value FROM loop_cycles WHERE task_id = ?",
+              )
+              .get(execution.taskId) as { value: number }
+          ).value,
         );
+        this.database
+          .prepare(
+            `INSERT INTO loop_cycles(
+               cycle_id, task_id, cycle_order, status, started_at, completed_at
+             ) VALUES (?, ?, ?, ?, ?, NULL)`,
+          )
+          .run(input.cycle.id, execution.taskId, order, input.cycle.status, input.cycle.startedAt);
+      }
+      if (input.workUnit) this.insertWorkUnitInTransaction(input.workUnit);
       this.database
         .prepare(
           `INSERT INTO execution_attempts(
-             execution_id, task_id, goal_id, phase_run_id, phase_kind, provider_thread_id,
+             execution_id, task_id, work_unit_id, cycle_id, phase_kind, provider_thread_id,
              status, generation, run_mode_receipt_json,
              started_at, last_activity_at, completed_at, summary, revision
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1554,8 +2474,8 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
         .run(
           execution.id,
           execution.taskId,
-          execution.goalId,
-          execution.phaseRunId,
+          execution.workUnitId,
+          execution.cycleId,
           execution.phase,
           execution.providerThreadId,
           execution.status,
@@ -1568,7 +2488,9 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
           execution.revision,
         );
       const mutation = this.transition(
-        this.authorityState({ task }),
+        this.authorityState({
+          task: input.workUnit ? { ...task, workUnits: [...task.workUnits, input.workUnit] } : task,
+        }),
         { type: "execution.created", execution },
         now,
       );
@@ -1613,30 +2535,30 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       : null;
   }
 
-  findLatestPlanExecThread(taskId: string, goalId: string): ProviderThreadRecord | null {
+  findLatestExecuteThread(taskId: string): ProviderThreadRecord | null {
     const row = this.database
       .prepare(
         `SELECT provider_threads.* FROM execution_attempts
          JOIN provider_threads ON provider_threads.thread_id = execution_attempts.provider_thread_id
-         WHERE execution_attempts.task_id = ? AND execution_attempts.goal_id = ?
-           AND execution_attempts.phase_kind = 'planexec'
+         WHERE execution_attempts.task_id = ?
+           AND execution_attempts.phase_kind = 'execute'
            AND provider_threads.status IN ('active', 'resumable')
          ORDER BY execution_attempts.started_at DESC LIMIT 1`,
       )
-      .get(taskId, goalId) as Record<string, unknown> | undefined;
+      .get(taskId) as Record<string, unknown> | undefined;
     return row ? this.getProviderThread(String(row.thread_id)) : null;
   }
 
-  findLatestPlanExecLineageThread(taskId: string, goalId: string): ProviderThreadRecord | null {
+  findLatestExecuteLineageThread(taskId: string): ProviderThreadRecord | null {
     const row = this.database
       .prepare(
         `SELECT provider_threads.* FROM execution_attempts
          JOIN provider_threads ON provider_threads.thread_id = execution_attempts.provider_thread_id
-         WHERE execution_attempts.task_id = ? AND execution_attempts.goal_id = ?
-           AND execution_attempts.phase_kind = 'planexec'
+         WHERE execution_attempts.task_id = ?
+           AND execution_attempts.phase_kind = 'execute'
          ORDER BY execution_attempts.started_at DESC LIMIT 1`,
       )
-      .get(taskId, goalId) as Record<string, unknown> | undefined;
+      .get(taskId) as Record<string, unknown> | undefined;
     return row ? this.getProviderThread(String(row.thread_id)) : null;
   }
 
@@ -1713,12 +2635,17 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       }
       const task = this.getTask(execution.taskId);
       if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
-      const mutation = this.transition(this.authorityState({ task, execution }), {
-        type: "execution.quick.settled",
-        generation: input.generation,
-        status: input.status,
-        summary: input.summary,
-      });
+      const mutation = this.transition(
+        this.authorityState({ task, execution }),
+        {
+          type: "execution.quick.settled",
+          generation: input.generation,
+          status: input.status,
+          summary: input.summary,
+        },
+        undefined,
+        { evidenceId: `evidence-quick-${input.executionId}` },
+      );
       this.applyAuthorityMutationInTransaction(mutation);
       taskId = task.id;
     });
@@ -1970,10 +2897,10 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     this.syncTaskLocator(result.task);
     return result;
   }
-  acceptPlanExecResult(input: {
+  acceptExecutorCheckpoint(input: {
     executionId: string;
     generation: string;
-    result: ThothLoopPlanExecResultInput;
+    checkpoint: ThothLoopCheckpointInput;
     callId: string;
   }): boolean {
     let taskId = "";
@@ -1986,11 +2913,18 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       }
       const task = this.getTask(execution.taskId);
       if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
-      const mutation = this.transition(this.authorityState({ task, execution }), {
-        type: "execution.planexec.completed",
-        generation: input.generation,
-        result: input.result,
-      });
+      const mutation = this.transition(
+        this.authorityState({ task, execution }),
+        {
+          type: "execution.checkpoint.completed",
+          generation: input.generation,
+          checkpoint: input.checkpoint,
+        },
+        undefined,
+        {
+          evidenceId: `evidence-checkpoint-${input.callId}`,
+        },
+      );
       this.applyAuthorityMutationInTransaction(mutation);
       taskId = task.id;
     });
@@ -1999,47 +2933,10 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     this.emit([taskId], [input.executionId]);
     return true;
   }
-  acceptReviewAssessment(input: {
+  acceptReviewDecision(input: {
     executionId: string;
     generation: string;
-    assessment: ThothLoopReviewIndependentAssessmentInput;
-  }): string {
-    let taskId = "";
-    let reportContent: unknown;
-    this.transaction(() => {
-      const execution = this.getExecution(input.executionId);
-      if (!execution) {
-        throw new WorkspaceAuthorityConflictError(
-          `Execution ${input.executionId} is not the active semantic tool authority`,
-        );
-      }
-      const task = this.getTask(execution.taskId);
-      if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
-      reportContent = this.listBlackboard(task.id)
-        .filter((entry) => entry.kind === "planexec_report")
-        .at(-1)?.content;
-      const mutation = this.transition(
-        this.authorityState({ task, execution, latestPlanExecReport: reportContent }),
-        {
-          type: "execution.review.assessed",
-          generation: input.generation,
-          assessment: input.assessment,
-        },
-      );
-      this.applyAuthorityMutationInTransaction(mutation);
-      taskId = task.id;
-    });
-    this.emit([taskId], [input.executionId]);
-    return [
-      "Independent assessment recorded. Now compare it with PlanExec's semantic account:",
-      JSON.stringify(reportContent),
-      "Return one Review outcome based on workspace reality, the approved goal, and this account.",
-    ].join("\n\n");
-  }
-  acceptReviewVerdict(input: {
-    executionId: string;
-    generation: string;
-    verdict: ThothLoopReviewVerdictInput;
+    review: ThothLoopReviewDecisionInput;
     callId: string;
   }): boolean {
     let taskId = "";
@@ -2053,16 +2950,50 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       const task = this.getTask(execution.taskId);
       if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
       const mutation = this.transition(
-        this.authorityState({
-          task,
-          execution,
-          goalsRevision: this.getTaskRuntimeMetadata(task.id)?.goalsRevision,
-        }),
+        this.authorityState({ task, execution }),
         {
           type: "execution.review.completed",
           generation: input.generation,
-          verdict: input.verdict,
+          review: input.review,
         },
+        undefined,
+        {
+          reviewDecisionId: `review-decision-${input.callId}`,
+          decisionRequestId: `task-decision-${input.callId}`,
+        },
+      );
+      this.applyAuthorityMutationInTransaction(mutation);
+      taskId = task.id;
+    });
+    this.syncTaskLocator(this.getTask(taskId)!);
+    this.emit([taskId], [input.executionId]);
+    return true;
+  }
+  requestExecutionHumanDecision(input: {
+    executionId: string;
+    generation: string;
+    request: ThothLoopRequestHumanDecisionInput;
+    callId: string;
+  }): boolean {
+    let taskId = "";
+    this.transaction(() => {
+      const execution = this.getExecution(input.executionId);
+      if (!execution) {
+        throw new WorkspaceAuthorityConflictError(
+          `Execution ${input.executionId} is not the active semantic tool authority`,
+        );
+      }
+      const task = this.getTask(execution.taskId);
+      if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
+      const mutation = this.transition(
+        this.authorityState({ task, execution }),
+        {
+          type: "execution.human_decision.requested",
+          generation: input.generation,
+          request: input.request,
+        },
+        undefined,
+        { decisionRequestId: `task-decision-${input.callId}` },
       );
       this.applyAuthorityMutationInTransaction(mutation);
       taskId = task.id;
@@ -2086,11 +3017,16 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       }
       const task = this.getTask(execution.taskId);
       if (!task) throw new Error(`Task ${execution.taskId} does not exist`);
-      const mutation = this.transition(this.authorityState({ task, execution }), {
-        type: "execution.blocked",
-        generation: input.generation,
-        report: input.report,
-      });
+      const mutation = this.transition(
+        this.authorityState({ task, execution }),
+        {
+          type: "execution.blocked",
+          generation: input.generation,
+          report: input.report,
+        },
+        undefined,
+        { evidenceId: `evidence-blocker-${randomUUID()}` },
+      );
       this.applyAuthorityMutationInTransaction(mutation);
       taskId = task.id;
     });
@@ -2168,7 +3104,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       status: "attached",
       attachedAt: input.receipt.attachedAt,
     };
-    if (["planexec", "review"].includes(execution.phase) && projection.bundleId !== "thoth.loop") {
+    if (["execute", "review"].includes(execution.phase) && projection.bundleId !== "thoth.loop") {
       throw new Error(`${execution.phase} requires a thoth.loop RuntimeBundle receipt`);
     }
     this.transaction(() => {
@@ -2195,27 +3131,56 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     return projection;
   }
 
-  listBlackboard(taskId: string): TaskBlackboardEntry[] {
+  listEvidence(taskId: string): EvidenceRef[] {
     const rows = this.database
-      .prepare("SELECT * FROM task_blackboard WHERE task_id = ? ORDER BY created_at ASC")
+      .prepare(
+        "SELECT * FROM evidence_refs WHERE task_id = ? ORDER BY created_at ASC, evidence_id ASC",
+      )
       .all(taskId) as Array<Record<string, unknown>>;
     return rows.map((row) =>
-      TaskBlackboardEntrySchema.parse({
-        id: String(row.entry_id),
+      EvidenceRefSchema.parse({
+        id: String(row.evidence_id),
         taskId: String(row.task_id),
+        executionId: row.execution_id ?? null,
+        workUnitId: row.work_unit_id ?? null,
         kind: row.kind,
-        producer: row.producer,
-        content: this.blobs.readJson(String(row.content_digest)),
+        summary: row.summary,
         contentDigest: String(row.content_digest),
+        artifactRef: row.artifact_ref ?? null,
         createdAt: String(row.created_at),
       }),
     );
+  }
+
+  listReviewDecisions(taskId: string): ReviewDecisionProjection[] {
+    const rows = this.database
+      .prepare(
+        "SELECT * FROM review_decisions WHERE task_id = ? ORDER BY created_at ASC, review_decision_id ASC",
+      )
+      .all(taskId) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.toReviewDecision(row));
   }
 
   listDecisions(taskId: string): HumanDecisionRecord[] {
     const rows = this.database
       .prepare("SELECT * FROM human_decisions WHERE task_id = ? ORDER BY decided_at ASC")
       .all(taskId) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.toDecision(row));
+  }
+
+  getDecision(decisionId: string): HumanDecisionRecord | null {
+    const row = this.database
+      .prepare("SELECT * FROM human_decisions WHERE decision_id = ?")
+      .get(decisionId) as Record<string, unknown> | undefined;
+    return row ? this.toDecision(row) : null;
+  }
+
+  listTurnDecisions(turnId: string): HumanDecisionRecord[] {
+    const rows = this.database
+      .prepare(
+        "SELECT * FROM human_decisions WHERE turn_id = ? ORDER BY decided_at ASC, decision_id ASC",
+      )
+      .all(turnId) as Array<Record<string, unknown>>;
     return rows.map((row) => this.toDecision(row));
   }
 
@@ -2233,31 +3198,17 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       },
       task,
       decisions: this.listDecisions(taskId),
-      blackboard: this.listBlackboard(taskId),
+      evidence: this.listEvidence(taskId),
       generatedAt: nowIso(),
     });
   }
 
-  bindTaskContexts(input: {
+  bindTaskContextSnapshots(input: {
     agentId: string;
     turnId: string;
-    references: TaskContextReference[];
+    contexts: TaskContextEnvelope[];
   }): TaskContextEnvelope[] {
-    const contexts = input.references.map((reference) => {
-      if (reference.workspaceId !== this.workspaceId) {
-        throw new Error(`Task ${reference.taskId} belongs to another Workspace`);
-      }
-      const context = this.getTaskContext(reference.taskId);
-      if (!context) {
-        throw new Error(`Task ${reference.taskId} does not exist in Workspace ${this.workspaceId}`);
-      }
-      if (context.task.revision !== reference.revision) {
-        throw new WorkspaceAuthorityConflictError(
-          `Task ${reference.taskId} revision changed from ${reference.revision} to ${context.task.revision}`,
-        );
-      }
-      return context;
-    });
+    const contexts = input.contexts.map((context) => TaskContextEnvelopeSchema.parse(context));
     this.transaction(() => {
       const turn = this.getForegroundTurnInTransaction(input.turnId);
       if (!turn || turn.agentId !== input.agentId) {
@@ -2267,8 +3218,9 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       }
       const insert = this.database.prepare(
         `INSERT OR IGNORE INTO context_bindings(
-           binding_id, agent_id, turn_id, task_id, task_revision, context_digest, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           binding_id, agent_id, turn_id, task_workspace_id, task_id,
+           task_revision, context_digest, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const context of contexts) {
         const snapshot = this.blobs.putJson(context);
@@ -2276,6 +3228,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
           `context-binding-${randomUUID()}`,
           input.agentId,
           input.turnId,
+          context.reference.workspaceId,
           context.task.id,
           context.task.revision,
           snapshot.digest,
@@ -2307,14 +3260,38 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     });
   }
 
+  listTurnTaskContextReferences(turnId: string): TaskContextReference[] {
+    const rows = this.database
+      .prepare(
+        `SELECT task_workspace_id, task_id, task_revision FROM context_bindings
+         WHERE turn_id = ? ORDER BY created_at ASC`,
+      )
+      .all(turnId) as Array<{
+      task_workspace_id: string;
+      task_id: string;
+      task_revision: number;
+    }>;
+    return rows.map((row) => ({
+      kind: "task",
+      workspaceId: row.task_workspace_id,
+      taskId: row.task_id,
+      revision: row.task_revision,
+    }));
+  }
+
   listLatestTurnTaskContexts(turnId: string): TaskContextEnvelope[] {
     const rows = this.database
       .prepare(
-        `SELECT task_id FROM context_bindings
+        `SELECT task_workspace_id, task_id FROM context_bindings
          WHERE turn_id = ? ORDER BY created_at ASC`,
       )
-      .all(turnId) as Array<{ task_id: string }>;
+      .all(turnId) as Array<{ task_workspace_id: string; task_id: string }>;
     return rows.map((row) => {
+      if (row.task_workspace_id !== this.workspaceId) {
+        throw new Error(
+          `Bound Task ${row.task_id} requires Workspace manager resolution from ${row.task_workspace_id}`,
+        );
+      }
       const context = this.getTaskContext(row.task_id);
       if (!context) {
         throw new Error(`Bound Task ${row.task_id} is no longer available`);
@@ -2579,12 +3556,6 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
             `Task ${task.id} changed while recording provider permission`,
           );
         }
-        this.appendBlackboardInTransaction({
-          taskId: task.id,
-          kind: "human_decision",
-          producer: "user",
-          content: normalized,
-        });
       } else {
         const updated = this.database
           .prepare(
@@ -3213,7 +4184,73 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
 
   close(): void {
     this.foregroundSubscribers.clear();
+    this.clarifySubscribers.clear();
     this.database.close();
+  }
+
+  private toClarifySession(row: Record<string, unknown>): ClarifySessionProjection {
+    const nodes = this.database
+      .prepare(
+        `SELECT * FROM clarify_decision_nodes WHERE session_id = ?
+         ORDER BY priority DESC, created_at ASC, node_id ASC`,
+      )
+      .all(String(row.session_id)) as Array<Record<string, unknown>>;
+    const contractId = typeof row.intent_contract_id === "string" ? row.intent_contract_id : null;
+    return ClarifySessionProjectionSchema.parse({
+      id: row.session_id,
+      workspaceId: row.workspace_id,
+      agentId: row.agent_id,
+      turnId: row.turn_id,
+      requestedStrength: row.requested_strength,
+      effectiveStrength: row.effective_strength ?? null,
+      lifecycle: row.lifecycle,
+      challengerUsed: Number(row.challenger_used) === 1,
+      priorityNodeId: row.priority_node_id ?? null,
+      intentContract: contractId ? this.readIntentContract(contractId) : null,
+      nodes: nodes.map((node) =>
+        ClarifyDecisionNodeProjectionSchema.parse({
+          id: node.node_id,
+          parentIds: parseStringArray(String(node.parent_ids_json)),
+          title: node.title,
+          owner: node.owner,
+          materiality: node.materiality,
+          status: node.status,
+          resolutionRef: node.resolution_ref ?? null,
+          sourceRefs: parseStringArray(String(node.source_refs_json)),
+          priority: node.priority,
+          revision: node.revision,
+        }),
+      ),
+      revision: row.revision,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    });
+  }
+
+  private assertClarifyNodeResolution(
+    node: Pick<
+      ClarifyDecisionNodeProjection,
+      "id" | "owner" | "status" | "resolutionRef" | "sourceRefs"
+    >,
+  ): void {
+    if (node.owner === "evidence" && node.status === "resolved") {
+      if (
+        node.sourceRefs.length === 0 ||
+        node.sourceRefs.some(
+          (source) => !source.startsWith("workspace:") && !source.startsWith("evidence:"),
+        )
+      ) {
+        throw new Error(
+          `Evidence-owned Decision node ${node.id} requires Workspace evidence source refs`,
+        );
+      }
+    }
+    if (["resolved", "delegated"].includes(node.status) && !node.resolutionRef) {
+      throw new Error(`Resolved Decision node ${node.id} requires a resolution ref`);
+    }
+    if (["open", "awaiting_human", "pruned"].includes(node.status) && node.resolutionRef) {
+      throw new Error(`Open or pruned Decision node ${node.id} cannot carry a resolution ref`);
+    }
   }
 
   private getForegroundStateInTransaction(agentId: string): AgentThothState {
@@ -3231,6 +4268,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
           .prepare(
             `SELECT card_id, kind, displayed_digest, created_at FROM cards
              WHERE turn_id = ? AND status = 'pending'
+               AND kind IN ('clarify_card', 'intent_contract_card')
              ORDER BY created_at DESC LIMIT 1`,
           )
           .get(authority.active_turn_id) as ForegroundCardRow | undefined)
@@ -3276,7 +4314,8 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       .prepare(
         `SELECT cards.*, turns.agent_id FROM cards
          JOIN turns ON turns.turn_id = cards.turn_id
-         WHERE cards.card_id = ?`,
+         WHERE cards.card_id = ?
+           AND cards.kind IN ('clarify_card', 'intent_contract_card')`,
       )
       .get(cardId) as Record<string, unknown> | undefined;
     return row ? this.toForegroundCard(row) : null;
@@ -3287,7 +4326,9 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       .prepare(
         `SELECT cards.*, turns.agent_id FROM cards
          JOIN turns ON turns.turn_id = cards.turn_id
-         WHERE cards.turn_id = ? ORDER BY cards.created_at ASC`,
+         WHERE cards.turn_id = ?
+           AND cards.kind IN ('clarify_card', 'intent_contract_card')
+         ORDER BY cards.created_at ASC`,
       )
       .all(turnId) as Array<Record<string, unknown>>;
     return rows.map((row) => this.toForegroundCard(row));
@@ -3328,7 +4369,12 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
         typeof row.provider_interaction_revision === "number"
           ? row.provider_interaction_revision
           : 0,
+      runtimeAttachment:
+        typeof row.runtime_attachment_json === "string"
+          ? (JSON.parse(row.runtime_attachment_json) as RuntimeAttachmentReceipt)
+          : null,
       sourceMessageId: typeof row.source_message_id === "string" ? row.source_message_id : null,
+      taskId: typeof row.task_id === "string" ? row.task_id : null,
       workspaceId: this.workspaceId,
       workspacePath:
         typeof row.workspace_path === "string"
@@ -3380,9 +4426,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     const card =
       kind === "clarify_card"
         ? ThothClarifyCardModelSchema.parse(rawCard)
-        : kind === "task_card"
-          ? ThothTaskCardModelSchema.parse(rawCard)
-          : ThothApprovalGoalCardModelSchema.parse(rawCard);
+        : ThothIntentContractCardModelSchema.parse(rawCard);
     if (typeof row.runtime_digest !== "string") {
       throw new Error(`Foreground card ${String(row.card_id)} is missing its runtime binding`);
     }
@@ -3499,8 +4543,6 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     execution?: ExecutionProjection | null;
     approval?: ExecutionApprovalProjection | null;
     pendingDecision?: TaskUserDecisionProjection | null;
-    goalsRevision?: number;
-    latestPlanExecReport?: unknown;
   }): AuthorityState {
     const row = this.database
       .prepare("SELECT authority_revision FROM workspace_meta WHERE workspace_id = ?")
@@ -3511,8 +4553,6 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       execution: input.execution ?? null,
       approval: input.approval,
       pendingDecision: input.pendingDecision,
-      goalsRevision: input.goalsRevision,
-      latestPlanExecReport: input.latestPlanExecReport,
     };
   }
 
@@ -3520,13 +4560,16 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     state: AuthorityState,
     command: AuthorityCommand,
     now = nowIso(),
+    ids: DeterministicAuthorityInput["ids"] = {},
   ): AuthorityMutation {
     const deterministic: DeterministicAuthorityInput = {
       now,
       ids: {
         decisionId: `decision-${randomUUID()}`,
         decisionRequestId: `task-decision-${randomUUID()}`,
-        blackboardIds: Array.from({ length: 8 }, () => `blackboard-${randomUUID()}`),
+        evidenceId: `evidence-${randomUUID()}`,
+        reviewDecisionId: `review-decision-${randomUUID()}`,
+        ...ids,
       },
     };
     try {
@@ -3541,7 +4584,7 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
   }
 
   private applyAuthorityMutationInTransaction(mutation: AuthorityMutation): void {
-    this.writeTaskProjectionInTransaction(mutation.task, mutation.goalsRevision);
+    this.writeTaskProjectionInTransaction(mutation.task);
     if (mutation.execution) this.writeExecutionProjectionInTransaction(mutation.execution);
     if (mutation.approval) this.writeApprovalProjectionInTransaction(mutation.approval);
     if (mutation.cancelPendingApprovals && mutation.execution) {
@@ -3574,12 +4617,8 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
           mutation.task.id,
         );
     }
-    for (const entry of mutation.blackboard) this.insertBlackboardInTransaction(entry);
-    if (mutation.phaseRunStatus && mutation.execution) {
-      this.database
-        .prepare("UPDATE phase_runs SET status = ?, updated_at = ? WHERE phase_run_id = ?")
-        .run(mutation.phaseRunStatus, mutation.task.updatedAt, mutation.execution.phaseRunId);
-    }
+    for (const evidence of mutation.evidence) this.insertEvidenceInTransaction(evidence);
+    if (mutation.reviewDecision) this.insertReviewDecisionInTransaction(mutation.reviewDecision);
     for (const effect of mutation.effects) {
       if (effect.type === "quarantine_execution") {
         this.database
@@ -3602,68 +4641,40 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     }
   }
 
-  private writeTaskProjectionInTransaction(task: TaskProjection, goalsRevision?: number): void {
+  private writeTaskProjectionInTransaction(task: TaskProjection): void {
+    this.writeIntentContractInTransaction(task.intentContract);
     const update = this.database
       .prepare(
-        `UPDATE tasks SET status = ?, summary = ?, current_goal_id = ?,
-           current_execution_id = ?, latest_review_direction = ?, budget_strength = ?,
-           used_failed_reviews = ?, max_failed_reviews = ?, active_duration_ms = ?,
-           token_count = ?, tool_call_count = ?, pending_control = ?,
-           goals_revision = COALESCE(?, goals_revision), revision = ?, updated_at = ?
+        `UPDATE tasks SET title = ?, intent_contract_id = ?, status = ?, summary = ?,
+           current_execution_id = ?, current_work_unit_id = ?, completion_authority = ?,
+           origin_json = ?, budget_strength = ?, used_non_complete_reviews = ?,
+           max_non_complete_reviews = ?, active_duration_ms = ?, token_count = ?,
+           tool_call_count = ?, pending_control = ?, revision = ?, updated_at = ?
          WHERE task_id = ?`,
       )
       .run(
+        task.title,
+        task.intentContract.id,
         task.status,
         task.summary,
-        task.currentGoalId,
         task.currentExecutionId,
-        task.latestReviewDirection,
+        task.currentWorkUnitId,
+        task.completionAuthority,
+        task.origin ? JSON.stringify(task.origin) : null,
         task.budget.strength,
-        task.budget.usedFailedReviews,
-        task.budget.maxFailedReviews,
+        task.budget.usedNonCompleteReviews,
+        task.budget.maxNonCompleteReviews,
         task.budget.activeDurationMs,
         task.budget.tokenCount,
         task.budget.toolCallCount,
         task.pendingControl,
-        goalsRevision ?? null,
         task.revision,
         task.updatedAt,
         task.id,
       );
     if (update.changes !== 1) throw new Error(`Task ${task.id} disappeared during mutation`);
-    const goalIds = task.goals.map((goal) => goal.id);
-    this.database
-      .prepare(
-        `DELETE FROM task_goals WHERE task_id = ? AND goal_id NOT IN (${goalIds.map(() => "?").join(", ")})`,
-      )
-      .run(task.id, ...goalIds);
-    const upsert = this.database.prepare(
-      `INSERT INTO task_goals(
-         goal_id, task_id, goal_order, title, goal, constraints_json,
-         acceptance_json, status, revision
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(goal_id) DO UPDATE SET
-         goal_order = excluded.goal_order,
-         title = excluded.title,
-         goal = excluded.goal,
-         constraints_json = excluded.constraints_json,
-         acceptance_json = excluded.acceptance_json,
-         status = excluded.status,
-         revision = excluded.revision`,
-    );
-    for (const goal of task.goals) {
-      upsert.run(
-        goal.id,
-        task.id,
-        goal.order,
-        goal.title,
-        goal.goal,
-        JSON.stringify(goal.constraints),
-        JSON.stringify(goal.acceptance),
-        goal.status,
-        goal.revision,
-      );
-    }
+    this.writeWorkingSetInTransaction(task.workingSet);
+    for (const workUnit of task.workUnits) this.writeWorkUnitInTransaction(workUnit);
   }
 
   private writeExecutionProjectionInTransaction(execution: ExecutionProjection): void {
@@ -3709,58 +4720,233 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
       throw new Error(`Approval ${approval.id} disappeared during mutation`);
   }
 
-  private insertBlackboardInTransaction(input: AuthorityBlackboardAppend): TaskBlackboardEntry {
-    const blob = this.blobs.putJson(input.content);
-    const entry = TaskBlackboardEntrySchema.parse({
-      ...input,
-      contentDigest: blob.digest,
-    });
+  private writeIntentContractInTransaction(contract: IntentContractProjection): void {
+    const value = IntentContractProjectionSchema.parse(contract);
     this.database
       .prepare(
-        `INSERT INTO task_blackboard(entry_id, task_id, kind, producer, content_digest, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO intent_contracts(
+           contract_id, workspace_id, source_agent_id, task_id, title, objective,
+           non_goals_json, invariants_json, risk_boundary_json, human_decision_refs_json,
+           escalation_policy_json, status, revision, confirmed_at, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(contract_id) DO UPDATE SET
+           task_id = excluded.task_id,
+           title = excluded.title,
+           objective = excluded.objective,
+           non_goals_json = excluded.non_goals_json,
+           invariants_json = excluded.invariants_json,
+           risk_boundary_json = excluded.risk_boundary_json,
+           human_decision_refs_json = excluded.human_decision_refs_json,
+           escalation_policy_json = excluded.escalation_policy_json,
+           status = excluded.status,
+           revision = excluded.revision,
+           confirmed_at = excluded.confirmed_at,
+           updated_at = excluded.updated_at`,
       )
       .run(
-        entry.id,
-        entry.taskId,
-        entry.kind,
-        entry.producer,
-        entry.contentDigest,
-        entry.createdAt,
+        value.id,
+        value.workspaceId,
+        value.sourceAgentId,
+        value.taskId,
+        value.title,
+        value.objective,
+        JSON.stringify(value.nonGoals),
+        JSON.stringify(value.invariants),
+        JSON.stringify(value.riskBoundary),
+        JSON.stringify(value.humanDecisionRefs),
+        JSON.stringify(value.escalationPolicy),
+        value.status,
+        value.revision,
+        value.confirmedAt,
+        value.createdAt,
+        value.updatedAt,
       );
-    return entry;
+    const upsertClaim = this.database.prepare(
+      `INSERT INTO acceptance_claims(
+         claim_id, contract_id, claim_order, statement, status, revision
+       ) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(claim_id) DO UPDATE SET
+         contract_id = excluded.contract_id,
+         claim_order = excluded.claim_order,
+         statement = excluded.statement,
+         status = excluded.status,
+         revision = excluded.revision`,
+    );
+    value.acceptanceClaims.forEach((claim, index) => {
+      upsertClaim.run(claim.id, value.id, index + 1, claim.statement, claim.status, claim.revision);
+    });
+    const claimIds = value.acceptanceClaims.map((claim) => claim.id);
+    this.database
+      .prepare(
+        `DELETE FROM acceptance_claims
+         WHERE contract_id = ? AND claim_id NOT IN (${claimIds.map(() => "?").join(", ")})`,
+      )
+      .run(value.id, ...claimIds);
   }
 
-  private appendBlackboardInTransaction(input: {
-    taskId: string;
-    kind: TaskBlackboardEntry["kind"];
-    producer: TaskBlackboardEntry["producer"];
-    content: unknown;
-  }): TaskBlackboardEntry {
+  private writeWorkingSetInTransaction(workingSet: TaskWorkingSetProjection): void {
+    const value = TaskWorkingSetProjectionSchema.parse(workingSet);
+    this.database
+      .prepare(
+        `INSERT INTO task_working_sets(
+           task_id, active_gap, current_understanding, current_hypothesis, next_move,
+           relevant_evidence_refs_json, rejected_routes_json, blockers_json,
+           latest_review_decision_id, no_progress_count, revision, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(task_id) DO UPDATE SET
+           active_gap = excluded.active_gap,
+           current_understanding = excluded.current_understanding,
+           current_hypothesis = excluded.current_hypothesis,
+           next_move = excluded.next_move,
+           relevant_evidence_refs_json = excluded.relevant_evidence_refs_json,
+           rejected_routes_json = excluded.rejected_routes_json,
+           blockers_json = excluded.blockers_json,
+           latest_review_decision_id = excluded.latest_review_decision_id,
+           no_progress_count = excluded.no_progress_count,
+           revision = excluded.revision,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        value.taskId,
+        value.activeGap,
+        value.currentUnderstanding,
+        value.currentHypothesis,
+        value.nextMove,
+        JSON.stringify(value.relevantEvidenceRefs),
+        JSON.stringify(value.rejectedRoutes),
+        JSON.stringify(value.blockers),
+        value.latestReviewDecisionId,
+        value.noProgressCount,
+        value.revision,
+        value.updatedAt,
+      );
+  }
+
+  private insertWorkUnitInTransaction(workUnit: WorkUnitProjection): void {
+    const value = WorkUnitProjectionSchema.parse(workUnit);
+    this.database
+      .prepare(
+        `INSERT INTO task_work_units(
+           work_unit_id, task_id, cycle_id, title, active_gap, progress_claim,
+           unresolved_gap, evidence_refs_json, status, revision, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        value.id,
+        value.taskId,
+        value.cycleId,
+        value.title,
+        value.activeGap,
+        value.progressClaim,
+        value.unresolvedGap,
+        JSON.stringify(value.evidenceRefs),
+        value.status,
+        value.revision,
+        value.createdAt,
+        value.updatedAt,
+      );
+  }
+
+  private writeWorkUnitInTransaction(workUnit: WorkUnitProjection): void {
+    const value = WorkUnitProjectionSchema.parse(workUnit);
+    const updated = this.database
+      .prepare(
+        `UPDATE task_work_units SET title = ?, active_gap = ?, progress_claim = ?,
+           unresolved_gap = ?, evidence_refs_json = ?, status = ?, revision = ?, updated_at = ?
+         WHERE work_unit_id = ?`,
+      )
+      .run(
+        value.title,
+        value.activeGap,
+        value.progressClaim,
+        value.unresolvedGap,
+        JSON.stringify(value.evidenceRefs),
+        value.status,
+        value.revision,
+        value.updatedAt,
+        value.id,
+      );
+    if (updated.changes === 0) this.insertWorkUnitInTransaction(value);
+  }
+
+  private insertEvidenceInTransaction(input: AuthorityEvidenceAppend): EvidenceRef {
     const blob = this.blobs.putJson(input.content);
-    const entry = TaskBlackboardEntrySchema.parse({
-      id: `blackboard-${randomUUID()}`,
+    const evidence = EvidenceRefSchema.parse({
+      id: input.id,
       taskId: input.taskId,
+      executionId: input.executionId,
+      workUnitId: input.workUnitId,
       kind: input.kind,
-      producer: input.producer,
-      content: input.content,
+      summary: input.summary,
       contentDigest: blob.digest,
-      createdAt: nowIso(),
+      artifactRef: input.artifactRef,
+      createdAt: input.createdAt,
     });
     this.database
       .prepare(
-        `INSERT INTO task_blackboard(entry_id, task_id, kind, producer, content_digest, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO evidence_refs(
+           evidence_id, task_id, execution_id, work_unit_id, kind, summary,
+           content_digest, artifact_ref, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        entry.id,
-        entry.taskId,
-        entry.kind,
-        entry.producer,
-        entry.contentDigest,
-        entry.createdAt,
+        evidence.id,
+        evidence.taskId,
+        evidence.executionId,
+        evidence.workUnitId,
+        evidence.kind,
+        evidence.summary,
+        evidence.contentDigest,
+        evidence.artifactRef,
+        evidence.createdAt,
       );
-    return entry;
+    return evidence;
+  }
+
+  private insertReviewDecisionInTransaction(review: ReviewDecisionProjection): void {
+    const value = ReviewDecisionProjectionSchema.parse(review);
+    this.database
+      .prepare(
+        `INSERT INTO review_decisions(
+           review_decision_id, task_id, cycle_id, execution_id, decision, reason,
+           evidence_refs_json, next_focus, rejected_routes_json,
+           acceptance_evidence_json, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        value.id,
+        value.taskId,
+        value.cycleId,
+        value.executionId,
+        value.decision,
+        value.reason,
+        JSON.stringify(value.evidenceRefs),
+        value.nextFocus,
+        JSON.stringify(value.rejectedRoutes),
+        JSON.stringify(value.acceptanceEvidence),
+        value.createdAt,
+      );
+    const insertEvidence = this.database.prepare(
+      `INSERT OR IGNORE INTO acceptance_evidence(
+         claim_id, evidence_id, review_decision_id, created_at
+       ) VALUES (?, ?, ?, ?)`,
+    );
+    for (const [claimId, evidenceIds] of Object.entries(value.acceptanceEvidence)) {
+      for (const evidenceId of evidenceIds) {
+        insertEvidence.run(claimId, evidenceId, value.id, value.createdAt);
+      }
+    }
+    this.database
+      .prepare(`UPDATE loop_cycles SET status = ?, completed_at = ? WHERE cycle_id = ?`)
+      .run(
+        value.decision === "continue" || value.decision === "reorient"
+          ? "completed"
+          : value.decision === "blocked"
+            ? "blocked"
+            : "completed",
+        value.createdAt,
+        value.cycleId,
+      );
   }
 
   private toDecision(row: Record<string, unknown>): HumanDecisionRecord {
@@ -3787,39 +4973,44 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
   }
 
   private toTaskProjection(row: TaskRow): TaskProjection {
-    const goalRows = this.database
-      .prepare("SELECT * FROM task_goals WHERE task_id = ? ORDER BY goal_order ASC")
+    const contract = this.readIntentContract(row.intent_contract_id);
+    if (!contract)
+      throw new Error(`Task ${row.task_id} is missing Intent Contract ${row.intent_contract_id}`);
+    const workingSet = this.readWorkingSet(row.task_id);
+    if (!workingSet) throw new Error(`Task ${row.task_id} is missing its Working Set`);
+    const workUnits = this.database
+      .prepare(
+        "SELECT * FROM task_work_units WHERE task_id = ? ORDER BY created_at ASC, work_unit_id ASC",
+      )
       .all(row.task_id) as Array<Record<string, unknown>>;
+    const latestReviewRow = this.database
+      .prepare(
+        `SELECT * FROM review_decisions WHERE task_id = ?
+         ORDER BY created_at DESC, review_decision_id DESC LIMIT 1`,
+      )
+      .get(row.task_id) as Record<string, unknown> | undefined;
     return TaskProjectionSchema.parse({
       id: row.task_id,
       workspaceId: row.workspace_id,
+      sourceAgentWorkspaceId: row.source_agent_workspace_id,
       sourceAgentId: row.source_agent_id,
       mode: row.execution_mode,
       title: row.title,
-      goal: row.goal,
-      constraints: parseStringArray(row.constraints_json),
-      acceptance: parseStringArray(row.acceptance_json),
+      intentContract: contract,
       status: row.status,
       summary: row.summary,
-      currentGoalId: row.current_goal_id,
       currentExecutionId: row.current_execution_id,
-      goals: goalRows.map((goal) => ({
-        id: String(goal.goal_id),
-        order: Number(goal.goal_order),
-        title: String(goal.title),
-        goal: String(goal.goal),
-        constraints: parseStringArray(String(goal.constraints_json)),
-        acceptance: parseStringArray(String(goal.acceptance_json)),
-        status: goal.status,
-        revision: Number(goal.revision),
-      })),
-      latestReviewDirection: row.latest_review_direction,
-      origin: this.resolveTaskOrigin(row.task_id),
+      currentWorkUnitId: row.current_work_unit_id,
+      workingSet,
+      workUnits: workUnits.map((workUnit) => this.toWorkUnit(workUnit)),
+      latestReview: latestReviewRow ? this.toReviewDecision(latestReviewRow) : null,
+      completionAuthority: row.completion_authority,
+      origin: row.origin_json ? TaskOriginSchema.parse(JSON.parse(row.origin_json)) : null,
       pendingDecision: this.getPendingTaskDecision(row.task_id),
       budget: {
         strength: row.budget_strength,
-        usedFailedReviews: row.used_failed_reviews,
-        maxFailedReviews: row.max_failed_reviews,
+        usedNonCompleteReviews: row.used_non_complete_reviews,
+        maxNonCompleteReviews: row.max_non_complete_reviews,
         activeDurationMs: row.active_duration_ms,
         tokenCount: row.token_count,
         toolCallCount: row.tool_call_count,
@@ -3831,40 +5022,99 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     });
   }
 
-  private resolveTaskOrigin(taskId: string): TaskOrigin | null {
+  private readIntentContract(contractId: string): IntentContractProjection | null {
     const row = this.database
-      .prepare(
-        `SELECT content_digest FROM task_blackboard
-         WHERE task_id = ? AND kind = 'task_contract'
-         ORDER BY created_at DESC, entry_id DESC LIMIT 1`,
-      )
-      .get(taskId) as { content_digest: string } | undefined;
-    if (!row) {
-      return null;
-    }
-    let content: unknown;
-    try {
-      content = this.blobs.readJson(row.content_digest);
-    } catch {
-      // Legacy fixtures and partially retained homes can contain a blackboard
-      // digest without the optional source blob. Origin is an additive
-      // projection, so absence must remain null instead of breaking Task reads.
-      return null;
-    }
-    if (!content || typeof content !== "object" || Array.isArray(content)) {
-      return null;
-    }
-    const contract = content as Record<string, unknown>;
-    if (contract.source !== "schedule") {
-      return null;
-    }
-    const parsed = TaskOriginSchema.safeParse({
-      type: "schedule",
-      ownerWorkspaceId: contract.ownerWorkspaceId,
-      scheduleId: contract.scheduleId,
-      runId: contract.runId,
+      .prepare("SELECT * FROM intent_contracts WHERE contract_id = ?")
+      .get(contractId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    const claims = this.database
+      .prepare("SELECT * FROM acceptance_claims WHERE contract_id = ? ORDER BY claim_order ASC")
+      .all(contractId) as Array<Record<string, unknown>>;
+    const evidenceForClaim = this.database.prepare(
+      "SELECT evidence_id FROM acceptance_evidence WHERE claim_id = ? ORDER BY created_at, evidence_id",
+    );
+    return IntentContractProjectionSchema.parse({
+      id: row.contract_id,
+      workspaceId: row.workspace_id,
+      sourceAgentId: row.source_agent_id,
+      taskId: row.task_id ?? null,
+      title: row.title,
+      objective: row.objective,
+      nonGoals: parseStringArray(String(row.non_goals_json)),
+      invariants: parseStringArray(String(row.invariants_json)),
+      acceptanceClaims: claims.map((claim) => ({
+        id: claim.claim_id,
+        statement: claim.statement,
+        status: claim.status,
+        evidenceRefs: (
+          evidenceForClaim.all(String(claim.claim_id)) as Array<{ evidence_id: string }>
+        ).map((evidence) => evidence.evidence_id),
+        revision: claim.revision,
+      })),
+      riskBoundary: parseStringArray(String(row.risk_boundary_json)),
+      humanDecisionRefs: parseStringArray(String(row.human_decision_refs_json)),
+      escalationPolicy: JSON.parse(String(row.escalation_policy_json)),
+      status: row.status,
+      revision: row.revision,
+      confirmedAt: row.confirmed_at ?? null,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
     });
-    return parsed.success ? parsed.data : null;
+  }
+
+  private readWorkingSet(taskId: string): TaskWorkingSetProjection | null {
+    const row = this.database
+      .prepare("SELECT * FROM task_working_sets WHERE task_id = ?")
+      .get(taskId) as Record<string, unknown> | undefined;
+    return row
+      ? TaskWorkingSetProjectionSchema.parse({
+          taskId: row.task_id,
+          activeGap: row.active_gap,
+          currentUnderstanding: row.current_understanding,
+          currentHypothesis: row.current_hypothesis,
+          nextMove: row.next_move,
+          relevantEvidenceRefs: parseStringArray(String(row.relevant_evidence_refs_json)),
+          rejectedRoutes: parseStringArray(String(row.rejected_routes_json)),
+          blockers: parseStringArray(String(row.blockers_json)),
+          latestReviewDecisionId: row.latest_review_decision_id ?? null,
+          noProgressCount: row.no_progress_count,
+          revision: row.revision,
+          updatedAt: row.updated_at,
+        })
+      : null;
+  }
+
+  private toWorkUnit(row: Record<string, unknown>): WorkUnitProjection {
+    return WorkUnitProjectionSchema.parse({
+      id: row.work_unit_id,
+      taskId: row.task_id,
+      cycleId: row.cycle_id,
+      title: row.title,
+      activeGap: row.active_gap,
+      progressClaim: row.progress_claim,
+      unresolvedGap: row.unresolved_gap,
+      evidenceRefs: parseStringArray(String(row.evidence_refs_json)),
+      status: row.status,
+      revision: row.revision,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    });
+  }
+
+  private toReviewDecision(row: Record<string, unknown>): ReviewDecisionProjection {
+    return ReviewDecisionProjectionSchema.parse({
+      id: row.review_decision_id,
+      taskId: row.task_id,
+      cycleId: row.cycle_id,
+      executionId: row.execution_id,
+      decision: row.decision,
+      reason: row.reason,
+      evidenceRefs: parseStringArray(String(row.evidence_refs_json)),
+      nextFocus: row.next_focus ?? null,
+      rejectedRoutes: parseStringArray(String(row.rejected_routes_json)),
+      acceptanceEvidence: JSON.parse(String(row.acceptance_evidence_json)),
+      createdAt: row.created_at,
+    });
   }
 
   private toExecutionProjection(row: ExecutionRow): ExecutionProjection {
@@ -3876,8 +5126,8 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     return ExecutionProjectionSchema.parse({
       id: row.execution_id,
       taskId: row.task_id,
-      goalId: row.goal_id,
-      phaseRunId: row.phase_run_id,
+      workUnitId: row.work_unit_id,
+      cycleId: row.cycle_id,
       phase: row.phase_kind,
       providerThreadId: row.provider_thread_id,
       status: row.status,
@@ -4020,6 +5270,19 @@ export class WorkspaceAuthorityStore implements WorkspaceAuthorityRepository {
     for (const subscriber of this.subscribers) {
       subscriber(update);
     }
+  }
+
+  private emitClarify(session: ClarifySessionProjection, changedNodeIds: string[]): void {
+    const update: ClarifyAuthorityUpdate = {
+      workspaceId: this.workspaceId,
+      agentId: session.agentId,
+      sessionId: session.id,
+      revision: session.revision,
+      changedNodeIds,
+    };
+    for (const subscriber of this.clarifySubscribers) subscriber(update);
+    const state = this.getForegroundState(session.agentId);
+    this.emitForeground(state, "decision_map_changed");
   }
 
   private syncTaskLocator(task: TaskProjection): void {

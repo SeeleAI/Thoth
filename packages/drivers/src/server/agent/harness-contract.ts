@@ -12,9 +12,8 @@ import type {
 import type { AgentAttachment } from "@thoth/protocol/messages";
 import type { TaskProjection } from "@thoth/protocol/task-authority";
 import type {
-  ThothApprovalGoalCardModel,
   ThothClarifyCardModel,
-  ThothTaskCardModel,
+  ThothIntentContractCardModel,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import type { ThothToolCatalog } from "./tools/types.js";
 import type { HarnessCapabilities } from "../../harness/index.js";
@@ -420,8 +419,19 @@ export type AgentTimelineItem =
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | { type: "clarify_card"; card: ThothClarifyCardModel }
-  | { type: "task_card"; card: ThothTaskCardModel }
-  | { type: "goal_card"; card: ThothApprovalGoalCardModel }
+  | { type: "intent_contract_card"; card: ThothIntentContractCardModel }
+  | {
+      type: "legacy_execution_plan";
+      title: string;
+      summary: string;
+      items: Array<{
+        title: string;
+        outcome: string;
+        objective: string;
+        constraints: string[];
+        acceptance: string[];
+      }>;
+    }
   | { type: "registered_task"; task: TaskProjection }
   | ToolCallTimelineItem
   | { type: "todo"; items: { text: string; completed: boolean }[] }

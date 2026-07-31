@@ -477,6 +477,7 @@ export interface WaitForChatMessagesOptions {
 export interface CreateScheduleOptions {
   workspaceId: string;
   prompt: string;
+  intentContractId: string;
   name?: string | null;
   cadence:
     | {
@@ -547,6 +548,7 @@ export interface UpdateScheduleOptions {
         timezone?: string;
       };
   newAgentConfig?: UpdateScheduleNewAgentConfig;
+  intentContractId?: string;
   maxRuns?: number | null;
   expiresAt?: string | null;
   requestId?: string;
@@ -1037,6 +1039,11 @@ const clientRpcBindings = {
     clientMethod: "getAgentThothState",
     fields: ["agentId"],
   }),
+  getAgentClarifySession: positionalRpc({
+    clientMethod: "getAgentClarifySession",
+    fields: ["agentId"],
+  }),
+  prioritizeAgentClarifyNode: objectRpc({ clientMethod: "prioritizeAgentClarifyNode" }),
   answerAgentThothCard: objectRpc({ clientMethod: "answerAgentThothCard" }),
   listTasks: positionalRpc({ clientMethod: "listTasks", fields: ["workspaceId"] }),
   getTask: objectRpc({ clientMethod: "getTask" }),
@@ -1741,6 +1748,7 @@ const clientRpcBindings = {
       body: {
         workspaceId: options.workspaceId,
         prompt: options.prompt,
+        intentContractId: options.intentContractId,
         cadence: options.cadence,
         target: options.target,
         ...(options.name ? { name: options.name } : {}),
@@ -1768,6 +1776,7 @@ const clientRpcBindings = {
         prompt: options.prompt,
         cadence: options.cadence,
         newAgentConfig: options.newAgentConfig,
+        intentContractId: options.intentContractId,
         maxRuns: options.maxRuns,
         expiresAt: options.expiresAt,
       },
@@ -2577,6 +2586,14 @@ class DaemonClientRuntime {
     handler: (payload: AgentThothStateUpdatePayload) => void,
   ): () => void {
     return this.on("agent.thoth.state.update", (message) => handler(message.payload));
+  }
+
+  subscribeAgentClarifySessionUpdates(
+    handler: (
+      payload: Extract<SessionOutboundMessage, { type: "agent.clarify.session.update" }>["payload"],
+    ) => void,
+  ): () => void {
+    return this.on("agent.clarify.session.update", (message) => handler(message.payload));
   }
 
   subscribeWorkspaceAuthorityUpdates(

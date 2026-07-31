@@ -41,7 +41,9 @@ const CAPABILITIES = {
 } as const;
 
 const HARNESS_CAPABILITIES = defineHarnessCapabilities({
+  instructionAttachment: ["session_prompt"],
   toolAttachment: ["native"],
+  runtimeBundleActivation: "native_skill",
   plan: { kind: "native" },
 });
 
@@ -50,7 +52,7 @@ const RUNTIME_BUNDLE: RuntimeBundle = {
   digest: `sha256:${"a".repeat(64)}`,
   instructions: "Use the daemon-owned Loop tool contract.",
   tools: [],
-  scopes: ["loop_planexec"],
+  scopes: ["loop_execute"],
   sourceName: "fixture/SKILL.md",
 };
 
@@ -300,7 +302,7 @@ async function createFixture(): Promise<HarnessFixture> {
   const attachment = await service.attachHarnessRuntimeBundle("codex", {
     thread,
     bundle: RUNTIME_BUNDLE,
-    tools: { transport: "native", catalog: { scope: "loop_planexec" } },
+    tools: { transport: "native", catalog: { scope: "loop_execute" } },
   });
   const fixture = { service, adapter, session, thread, attachment, workdir };
   fixtures.push(fixture);
@@ -324,7 +326,7 @@ async function startExecution(
     activation: {
       bundleId: RUNTIME_BUNDLE.id,
       bundleDigest: RUNTIME_BUNDLE.digest,
-      scope: "loop_planexec",
+      scope: "loop_execute",
       generation: `generation-${executionId}`,
     },
     runMode,
@@ -335,6 +337,15 @@ async function startExecution(
     execution,
   });
   await waitForTurn(fixture.session, 1);
+  const agentId = fixture.thread.persistence?.agentId;
+  if (typeof agentId !== "string") throw new Error("Harness Agent binding is missing");
+  await vi.waitFor(() => {
+    const agent = fixture.service.getAgent(agentId);
+    if (agent?.lifecycle === "error") {
+      throw new Error(agent.lastError ?? "Harness Agent entered an unknown error state");
+    }
+    expect(agent?.lifecycle).toBe("running");
+  });
   return descriptor;
 }
 
@@ -418,7 +429,7 @@ describe("ExecutionService Harness conformance", () => {
         activation: {
           bundleId: RUNTIME_BUNDLE.id,
           bundleDigest: RUNTIME_BUNDLE.digest,
-          scope: "loop_planexec",
+          scope: "loop_execute",
           generation: "generation-execution-plan",
         },
         runMode: "default",

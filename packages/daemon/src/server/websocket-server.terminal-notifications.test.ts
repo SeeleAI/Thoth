@@ -19,6 +19,7 @@ import type {
 import type { PersistedWorkspaceRecord, WorkspaceRegistry } from "./workspace-registry.js";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
 import {
+  createForegroundTurnCoordinatorStub,
   createProviderSnapshotManagerStub,
   createTestToolGateway,
 } from "./test-utils/session-stubs.js";
@@ -189,7 +190,13 @@ function createServer(terminalManager: TerminalManager, workspaceRegistry?: Work
     createProviderSnapshotManagerStub().manager,
     undefined,
     undefined,
-    { manager: authorityManager, coordinator: authorityCoordinator },
+    undefined,
+    undefined,
+    {
+      manager: authorityManager,
+      coordinator: authorityCoordinator,
+      foregroundTurnCoordinator: createForegroundTurnCoordinatorStub(),
+    },
   );
 
   return { server, pushNotifications };

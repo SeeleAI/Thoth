@@ -17,8 +17,16 @@ import type {
   ForegroundQueuedSubmission,
   ForegroundQueueCommandInput,
   ForegroundQueueCommandResult,
+  ForegroundTaskClarifyHandoffRecord,
 } from "./foreground-authority-types.js";
 import type { AgentQueuedTurn } from "@thoth/protocol/agent-turn-queue";
+import type { ClarifySessionProjection } from "@thoth/protocol/clarify-authority";
+import type { RuntimeAttachmentReceipt } from "@thoth/drivers/harness";
+import type {
+  ThothClarifyJudgeContractInput,
+  ThothClarifyProposeContractInput,
+  ThothClarifyUpdateMapInput,
+} from "@thoth/protocol/thoth-runtime-contract";
 
 /** Agent-scoped facade over Workspace-sharded authority stores. */
 export class WorkspaceForegroundAuthority {
@@ -46,6 +54,11 @@ export class WorkspaceForegroundAuthority {
         error: null,
       }
     );
+  }
+
+  getWorkspace(workspaceId: string): { id: string; canonicalPath: string } | null {
+    const workspace = this.manager.catalog.getWorkspace(workspaceId);
+    return workspace ? { id: workspace.id, canonicalPath: workspace.canonicalPath } : null;
   }
 
   getActiveTurn(agentId: string): ForegroundTurnAuthorityRecord | null {
@@ -98,6 +111,20 @@ export class WorkspaceForegroundAuthority {
     return this.manager.forTurn(turnId)?.getForegroundTurn(turnId) ?? null;
   }
 
+  getTaskClarifyHandoff(turnId: string): ForegroundTaskClarifyHandoffRecord | null {
+    return this.manager.forTurn(turnId)?.getTaskClarifyHandoff(turnId) ?? null;
+  }
+
+  listTurnDecisions(turnId: string) {
+    return this.manager.forTurn(turnId)?.listTurnDecisions(turnId) ?? [];
+  }
+
+  finishTaskClarifyHandoff(turnId: string, status: "completed" | "canceled"): boolean {
+    const store = this.manager.forTurn(turnId);
+    if (!store) throw new Error(`Foreground turn ${turnId} has no Workspace authority`);
+    return store.finishTaskClarifyHandoff(turnId, status);
+  }
+
   getTurnBySourceMessage(
     agentId: string,
     sourceMessageId: string,
@@ -145,12 +172,35 @@ export class WorkspaceForegroundAuthority {
     return store.recordForegroundProviderInteraction(input);
   }
 
+  recordRuntimeAttachment(input: {
+    agentId: string;
+    turnId: string;
+    generation: string;
+    receipt: RuntimeAttachmentReceipt;
+  }): ForegroundTurnAuthorityRecord {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) throw new Error(`Agent ${input.agentId} is not bound to a Workspace authority`);
+    return store.recordForegroundRuntimeAttachment(input);
+  }
+
+  bindTask(input: {
+    agentId: string;
+    turnId: string;
+    generation: string;
+    taskId: string;
+  }): ForegroundTurnAuthorityRecord {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) throw new Error(`Agent ${input.agentId} is not bound to a Workspace authority`);
+    return store.bindForegroundTask(input);
+  }
+
   openCard(input: {
     agentId: string;
     turnId: string;
     generation: string;
     card: ForegroundAuthorityCard;
     runtime: ForegroundAuthorityRuntimeBinding;
+    clarify?: { sessionId: string; awaitingNodeIds: string[] };
   }): { record: ForegroundCardAuthorityRecord; state: AgentThothState; created: boolean } {
     const store = this.manager.forAgent(input.agentId);
     if (!store) {
@@ -229,6 +279,85 @@ export class WorkspaceForegroundAuthority {
 
   claimContinuation(input: { turnId: string; generation: string; key: string }): boolean {
     return this.manager.forTurn(input.turnId)?.claimForegroundContinuation(input) ?? false;
+  }
+
+  startClarifySession(input: {
+    agentId: string;
+    turnId: string;
+    requestedStrength: "auto" | "light" | "balanced" | "dive";
+  }): ClarifySessionProjection {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) throw new Error(`Agent ${input.agentId} is not bound to Workspace authority`);
+    return store.startClarifySession(input);
+  }
+
+  getClarifySession(agentId: string): ClarifySessionProjection | null {
+    return this.manager.forAgent(agentId)?.getLatestClarifySessionForAgent(agentId) ?? null;
+  }
+
+  updateClarifyDecisionMap(input: {
+    agentId: string;
+    sessionId: string;
+    update: ThothClarifyUpdateMapInput;
+  }): ClarifySessionProjection {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) throw new Error(`Agent ${input.agentId} is not bound to Workspace authority`);
+    return store.updateClarifyDecisionMap(input);
+  }
+
+  applyClarifyCardDecision(input: {
+    agentId: string;
+    sessionId: string;
+    answer: Extract<ThothCardAnswerPayload, { questionCardId: string }>;
+    decisionId: string;
+  }): ClarifySessionProjection {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) throw new Error(`Agent ${input.agentId} is not bound to Workspace authority`);
+    return store.applyClarifyCardDecision(input);
+  }
+
+  proposeIntentContract(input: {
+    agentId: string;
+    sessionId: string;
+    proposal: ThothClarifyProposeContractInput;
+  }): ClarifySessionProjection {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) throw new Error(`Agent ${input.agentId} is not bound to Workspace authority`);
+    return store.proposeIntentContract(input);
+  }
+
+  applyClarifyChallenge(input: {
+    agentId: string;
+    sessionId: string;
+    result: ThothClarifyJudgeContractInput;
+  }): ClarifySessionProjection {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) throw new Error(`Agent ${input.agentId} is not bound to Workspace authority`);
+    return store.applyClarifyChallenge(input);
+  }
+
+  confirmIntentContract(agentId: string, sessionId: string): ClarifySessionProjection {
+    const store = this.manager.forAgent(agentId);
+    if (!store) throw new Error(`Agent ${agentId} is not bound to Workspace authority`);
+    return store.confirmIntentContract(sessionId);
+  }
+
+  reopenIntentContract(agentId: string, sessionId: string): ClarifySessionProjection {
+    const store = this.manager.forAgent(agentId);
+    if (!store) throw new Error(`Agent ${agentId} is not bound to Workspace authority`);
+    return store.reopenIntentContract(sessionId);
+  }
+
+  prioritizeClarifyNode(input: {
+    agentId: string;
+    sessionId: string;
+    nodeId: string;
+    expectedRevision: number;
+    commandId: string;
+  }): { session: ClarifySessionProjection; duplicate: boolean } {
+    const store = this.manager.forAgent(input.agentId);
+    if (!store) throw new Error(`Agent ${input.agentId} is not bound to Workspace authority`);
+    return store.prioritizeClarifyNode(input);
   }
 }
 

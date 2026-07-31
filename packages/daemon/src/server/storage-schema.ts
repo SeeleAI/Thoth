@@ -2,10 +2,10 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export const STORAGE_LAYOUT_VERSION = 5;
-export const SQLITE_SCHEMA_VERSION = 5;
-export const CATALOG_MIGRATION_VERSION = 5;
-export const AUTHORITY_MIGRATION_VERSION = 8;
+export const STORAGE_LAYOUT_VERSION = 6;
+export const SQLITE_SCHEMA_VERSION = 6;
+export const CATALOG_MIGRATION_VERSION = 6;
+export const AUTHORITY_MIGRATION_VERSION = 9;
 export const STORAGE_LAYOUT_MARKER = "storage-layout.json";
 
 export function catalogDatabasePath(thothHome: string): string {
@@ -40,7 +40,7 @@ export function createCatalogDatabase(filePath: string): void {
     database
       .prepare(
         `INSERT INTO catalog_schema_migrations(version, checksum, applied_at)
-        VALUES (?, 'provider-turn-interaction-v5-catalog', ?)`,
+        VALUES (?, 'decision-map-task-anchor-v6-catalog', ?)`,
       )
       .run(CATALOG_MIGRATION_VERSION, new Date().toISOString());
     database.exec("PRAGMA user_version = " + String(SQLITE_SCHEMA_VERSION));
@@ -58,7 +58,7 @@ export function createWorkspaceDatabase(filePath: string, workspaceId: string): 
     database
       .prepare(
         `INSERT INTO authority_schema_migrations(version, checksum, applied_at)
-        VALUES (?, 'provider-turn-interaction-v5', ?)`,
+        VALUES (?, 'decision-map-task-anchor-v6', ?)`,
       )
       .run(AUTHORITY_MIGRATION_VERSION, now);
     database
@@ -259,6 +259,7 @@ const WORKSPACE_SCHEMA = `
     provider_plan_receipt_json TEXT,
     provider_interaction_json TEXT,
     provider_interaction_revision INTEGER NOT NULL DEFAULT 0,
+    runtime_attachment_json TEXT,
     source_message_id TEXT,
     workspace_path TEXT,
     user_text_digest TEXT,
@@ -328,63 +329,159 @@ const WORKSPACE_SCHEMA = `
     fidelity TEXT NOT NULL,
     decided_at TEXT NOT NULL
   ) STRICT;
+  CREATE TABLE clarify_sessions (
+    session_id TEXT PRIMARY KEY NOT NULL,
+    workspace_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL UNIQUE,
+    requested_strength TEXT NOT NULL,
+    effective_strength TEXT,
+    lifecycle TEXT NOT NULL,
+    challenger_used INTEGER NOT NULL CHECK(challenger_used IN (0, 1)),
+    priority_node_id TEXT,
+    intent_contract_id TEXT,
+    revision INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE,
+    FOREIGN KEY(turn_id) REFERENCES turns(turn_id) ON DELETE CASCADE
+  ) STRICT;
+  CREATE TABLE clarify_decision_nodes (
+    node_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    parent_ids_json TEXT NOT NULL,
+    title TEXT NOT NULL,
+    owner TEXT NOT NULL CHECK(owner IN ('human', 'agent', 'evidence')),
+    materiality TEXT NOT NULL CHECK(materiality IN ('structural', 'material', 'local')),
+    status TEXT NOT NULL CHECK(status IN ('open', 'awaiting_human', 'resolved', 'delegated', 'pruned')),
+    resolution_ref TEXT,
+    source_refs_json TEXT NOT NULL,
+    priority INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(session_id, node_id),
+    FOREIGN KEY(session_id) REFERENCES clarify_sessions(session_id) ON DELETE CASCADE
+  ) STRICT;
+  CREATE TABLE intent_contracts (
+    contract_id TEXT PRIMARY KEY NOT NULL,
+    workspace_id TEXT NOT NULL,
+    source_agent_id TEXT NOT NULL,
+    task_id TEXT,
+    title TEXT NOT NULL,
+    objective TEXT NOT NULL,
+    non_goals_json TEXT NOT NULL,
+    invariants_json TEXT NOT NULL,
+    risk_boundary_json TEXT NOT NULL,
+    human_decision_refs_json TEXT NOT NULL,
+    escalation_policy_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('draft', 'proposed', 'confirmed', 'superseded', 'legacy')),
+    revision INTEGER NOT NULL,
+    confirmed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+  CREATE TABLE acceptance_claims (
+    claim_id TEXT PRIMARY KEY NOT NULL,
+    contract_id TEXT NOT NULL,
+    claim_order INTEGER NOT NULL,
+    statement TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('open', 'supported', 'satisfied', 'reopened')),
+    revision INTEGER NOT NULL,
+    FOREIGN KEY(contract_id) REFERENCES intent_contracts(contract_id) ON DELETE CASCADE,
+    UNIQUE(contract_id, claim_order)
+  ) STRICT;
   CREATE TABLE tasks (
     task_id TEXT PRIMARY KEY NOT NULL,
     workspace_id TEXT NOT NULL,
+    source_agent_workspace_id TEXT NOT NULL,
     source_agent_id TEXT NOT NULL,
     execution_mode TEXT NOT NULL,
     title TEXT NOT NULL,
-    goal TEXT NOT NULL,
-    constraints_json TEXT NOT NULL,
-    acceptance_json TEXT NOT NULL,
+    intent_contract_id TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL,
     summary TEXT NOT NULL,
-    current_goal_id TEXT,
     current_execution_id TEXT,
-    latest_review_direction TEXT,
+    current_work_unit_id TEXT,
+    completion_authority TEXT NOT NULL,
     source_turn_id TEXT,
-    source_goals_card_id TEXT,
+    source_contract_card_id TEXT,
     provider_profile_id TEXT,
+    origin_json TEXT,
     budget_strength TEXT NOT NULL DEFAULT 'single',
-    used_failed_reviews INTEGER NOT NULL DEFAULT 0,
-    max_failed_reviews INTEGER NOT NULL DEFAULT 1,
+    used_non_complete_reviews INTEGER NOT NULL DEFAULT 0,
+    max_non_complete_reviews INTEGER,
     active_duration_ms INTEGER NOT NULL DEFAULT 0,
     token_count INTEGER NOT NULL DEFAULT 0,
     tool_call_count INTEGER NOT NULL DEFAULT 0,
     pending_control TEXT,
-    goals_revision INTEGER NOT NULL DEFAULT 0,
     revision INTEGER NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  ) STRICT;
-  CREATE TABLE task_goals (
-    goal_id TEXT PRIMARY KEY NOT NULL,
-    task_id TEXT NOT NULL,
-    goal_order INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    goal TEXT NOT NULL,
-    constraints_json TEXT NOT NULL,
-    acceptance_json TEXT NOT NULL,
-    status TEXT NOT NULL,
-    revision INTEGER NOT NULL,
-    FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
-    UNIQUE(task_id, goal_order)
-  ) STRICT;
-  CREATE TABLE phase_runs (
-    phase_run_id TEXT PRIMARY KEY NOT NULL,
-    task_id TEXT NOT NULL,
-    goal_id TEXT,
-    phase_kind TEXT NOT NULL,
-    status TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    FOREIGN KEY(intent_contract_id) REFERENCES intent_contracts(contract_id)
+  ) STRICT;
+  CREATE TABLE task_working_sets (
+    task_id TEXT PRIMARY KEY NOT NULL,
+    active_gap TEXT NOT NULL,
+    current_understanding TEXT NOT NULL,
+    current_hypothesis TEXT NOT NULL,
+    next_move TEXT NOT NULL,
+    relevant_evidence_refs_json TEXT NOT NULL,
+    rejected_routes_json TEXT NOT NULL,
+    blockers_json TEXT NOT NULL,
+    latest_review_decision_id TEXT,
+    no_progress_count INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
     FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
+  ) STRICT;
+  CREATE TABLE loop_cycles (
+    cycle_id TEXT PRIMARY KEY NOT NULL,
+    task_id TEXT NOT NULL,
+    cycle_order INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('active', 'reviewing', 'completed', 'reorienting', 'blocked', 'interrupted')),
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
+    UNIQUE(task_id, cycle_order)
+  ) STRICT;
+  CREATE TABLE task_work_units (
+    work_unit_id TEXT PRIMARY KEY NOT NULL,
+    task_id TEXT NOT NULL,
+    cycle_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    active_gap TEXT NOT NULL,
+    progress_claim TEXT NOT NULL,
+    unresolved_gap TEXT NOT NULL,
+    evidence_refs_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('active', 'completed', 'abandoned', 'blocked')),
+    revision INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
+    FOREIGN KEY(cycle_id) REFERENCES loop_cycles(cycle_id) ON DELETE CASCADE
+  ) STRICT;
+  CREATE TABLE review_decisions (
+    review_decision_id TEXT PRIMARY KEY NOT NULL,
+    task_id TEXT NOT NULL,
+    cycle_id TEXT NOT NULL,
+    execution_id TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK(decision IN ('continue', 'reorient', 'complete', 'need_human', 'blocked')),
+    reason TEXT NOT NULL,
+    evidence_refs_json TEXT NOT NULL,
+    next_focus TEXT,
+    rejected_routes_json TEXT NOT NULL,
+    acceptance_evidence_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
+    FOREIGN KEY(cycle_id) REFERENCES loop_cycles(cycle_id) ON DELETE CASCADE,
+    FOREIGN KEY(execution_id) REFERENCES execution_attempts(execution_id) ON DELETE CASCADE
   ) STRICT;
   CREATE TABLE execution_attempts (
     execution_id TEXT PRIMARY KEY NOT NULL,
     task_id TEXT NOT NULL,
-    goal_id TEXT,
-    phase_run_id TEXT NOT NULL,
+    work_unit_id TEXT,
+    cycle_id TEXT,
     phase_kind TEXT NOT NULL,
     provider_thread_id TEXT,
     status TEXT NOT NULL,
@@ -396,7 +493,8 @@ const WORKSPACE_SCHEMA = `
     summary TEXT,
     revision INTEGER NOT NULL,
     FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
-    FOREIGN KEY(phase_run_id) REFERENCES phase_runs(phase_run_id),
+    FOREIGN KEY(work_unit_id) REFERENCES task_work_units(work_unit_id),
+    FOREIGN KEY(cycle_id) REFERENCES loop_cycles(cycle_id),
     FOREIGN KEY(provider_thread_id) REFERENCES provider_threads(thread_id)
   ) STRICT;
   CREATE TABLE execution_approvals (
@@ -435,15 +533,6 @@ const WORKSPACE_SCHEMA = `
     attached_at TEXT NOT NULL,
     FOREIGN KEY(execution_id) REFERENCES execution_attempts(execution_id) ON DELETE CASCADE
   ) STRICT;
-  CREATE TABLE task_blackboard (
-    entry_id TEXT PRIMARY KEY NOT NULL,
-    task_id TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    producer TEXT NOT NULL,
-    content_digest TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
-  ) STRICT;
   CREATE TABLE task_decision_requests (
     decision_id TEXT PRIMARY KEY NOT NULL,
     task_id TEXT NOT NULL,
@@ -453,12 +542,24 @@ const WORKSPACE_SCHEMA = `
     created_at TEXT NOT NULL,
     answered_at TEXT,
     FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
-    FOREIGN KEY(answer_decision_id) REFERENCES human_decisions(decision_id)
+    UNIQUE(task_id, decision_id)
+  ) STRICT;
+  CREATE TABLE task_clarify_handoffs (
+    turn_id TEXT PRIMARY KEY NOT NULL,
+    task_workspace_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    decision_request_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('active', 'completed', 'canceled')),
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY(turn_id) REFERENCES turns(turn_id) ON DELETE CASCADE,
+    UNIQUE(task_workspace_id, task_id, decision_request_id)
   ) STRICT;
   CREATE TABLE context_bindings (
     binding_id TEXT PRIMARY KEY NOT NULL,
     agent_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,
+    task_workspace_id TEXT NOT NULL,
     task_id TEXT NOT NULL,
     task_revision INTEGER NOT NULL,
     context_digest TEXT,
@@ -494,10 +595,25 @@ const WORKSPACE_SCHEMA = `
     evidence_id TEXT PRIMARY KEY NOT NULL,
     task_id TEXT NOT NULL,
     execution_id TEXT,
+    work_unit_id TEXT,
     kind TEXT NOT NULL,
+    summary TEXT NOT NULL,
     content_digest TEXT NOT NULL,
+    artifact_ref TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
+    FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
+    FOREIGN KEY(execution_id) REFERENCES execution_attempts(execution_id) ON DELETE SET NULL,
+    FOREIGN KEY(work_unit_id) REFERENCES task_work_units(work_unit_id) ON DELETE SET NULL
+  ) STRICT;
+  CREATE TABLE acceptance_evidence (
+    claim_id TEXT NOT NULL,
+    evidence_id TEXT NOT NULL,
+    review_decision_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(claim_id, evidence_id, review_decision_id),
+    FOREIGN KEY(claim_id) REFERENCES acceptance_claims(claim_id) ON DELETE CASCADE,
+    FOREIGN KEY(evidence_id) REFERENCES evidence_refs(evidence_id) ON DELETE CASCADE,
+    FOREIGN KEY(review_decision_id) REFERENCES review_decisions(review_decision_id) ON DELETE CASCADE
   ) STRICT;
   CREATE TABLE authority_commands (
     command_id TEXT PRIMARY KEY NOT NULL,
@@ -549,14 +665,16 @@ const WORKSPACE_SCHEMA = `
     prompt TEXT NOT NULL,
     cadence_json TEXT NOT NULL,
     target_json TEXT NOT NULL,
-    status TEXT NOT NULL CHECK(status IN ('active', 'paused', 'completed')),
+    intent_contract_id TEXT,
+    status TEXT NOT NULL CHECK(status IN ('needs_contract', 'active', 'paused', 'completed')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     next_run_at TEXT,
     last_run_at TEXT,
     paused_at TEXT,
     expires_at TEXT,
-    max_runs INTEGER
+    max_runs INTEGER,
+    FOREIGN KEY(intent_contract_id) REFERENCES intent_contracts(contract_id)
   ) STRICT;
   CREATE TABLE schedule_runs (
     run_id TEXT PRIMARY KEY NOT NULL,
@@ -578,15 +696,19 @@ const WORKSPACE_SCHEMA = `
   CREATE INDEX execution_attempts_task_time ON execution_attempts(task_id, started_at DESC);
   CREATE UNIQUE INDEX execution_approvals_one_pending
     ON execution_approvals(execution_id) WHERE status = 'pending';
-  CREATE INDEX task_blackboard_task_time ON task_blackboard(task_id, created_at ASC);
+  CREATE INDEX clarify_decision_nodes_session_priority
+    ON clarify_decision_nodes(session_id, priority DESC, node_id);
+  CREATE INDEX task_work_units_task_time ON task_work_units(task_id, created_at ASC);
+  CREATE INDEX review_decisions_task_time ON review_decisions(task_id, created_at ASC);
+  CREATE INDEX evidence_refs_task_time ON evidence_refs(task_id, created_at ASC);
   CREATE UNIQUE INDEX task_decision_requests_one_pending
     ON task_decision_requests(task_id) WHERE status = 'pending';
   CREATE UNIQUE INDEX context_bindings_turn_task ON context_bindings(turn_id, task_id);
   CREATE UNIQUE INDEX turns_agent_source_message
     ON turns(agent_id, source_message_id) WHERE source_message_id IS NOT NULL;
   CREATE UNIQUE INDEX tasks_source_registration
-    ON tasks(source_turn_id, source_goals_card_id)
-    WHERE source_turn_id IS NOT NULL AND source_goals_card_id IS NOT NULL;
+    ON tasks(source_turn_id, source_contract_card_id)
+    WHERE source_turn_id IS NOT NULL AND source_contract_card_id IS NOT NULL;
   CREATE INDEX turns_agent_created ON turns(agent_id, created_at DESC);
   CREATE INDEX foreground_turn_queue_agent_order
     ON foreground_turn_queue(agent_id, queue_order ASC, created_at ASC);

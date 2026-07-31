@@ -141,6 +141,7 @@ export function parseScheduleCreateInput(options: {
   cron?: string;
   timezone?: string;
   name?: string;
+  intentContract?: string;
   target?: string;
   provider?: string;
   mode?: string;
@@ -154,6 +155,14 @@ export function parseScheduleCreateInput(options: {
     throw {
       code: "INVALID_PROMPT",
       message: "Schedule prompt cannot be empty",
+    } satisfies CommandError;
+  }
+
+  const intentContractId = options.intentContract?.trim() ?? "";
+  if (!intentContractId) {
+    throw {
+      code: "INTENT_CONTRACT_REQUIRED",
+      message: "--intent-contract must identify a confirmed Intent Contract",
     } satisfies CommandError;
   }
 
@@ -200,6 +209,7 @@ export function parseScheduleCreateInput(options: {
 
   return {
     prompt,
+    intentContractId,
     cadence,
     target,
     runOnCreate,
@@ -237,6 +247,7 @@ export interface ScheduleUpdateOptionsInput {
   timezone?: string;
   name?: string;
   prompt?: string;
+  intentContract?: string;
   provider?: string;
   model?: string;
   mode?: string;
@@ -263,12 +274,14 @@ export function parseScheduleUpdateInput(options: ScheduleUpdateOptionsInput): U
   const expiresAt = parseUpdateExpiresAt(options);
   const name = parseUpdateName(options);
   const prompt = parseUpdatePrompt(options);
+  const intentContractId = parseIntentContractId(options.intentContract);
 
   if (
     name === undefined &&
     prompt === undefined &&
     cadence === undefined &&
     newAgentConfig === undefined &&
+    intentContractId === undefined &&
     maxRuns === undefined &&
     expiresAt === undefined
   ) {
@@ -284,9 +297,22 @@ export function parseScheduleUpdateInput(options: ScheduleUpdateOptionsInput): U
     ...(prompt !== undefined ? { prompt } : {}),
     ...(cadence !== undefined ? { cadence } : {}),
     ...(newAgentConfig !== undefined ? { newAgentConfig } : {}),
+    ...(intentContractId !== undefined ? { intentContractId } : {}),
     ...(maxRuns !== undefined ? { maxRuns } : {}),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
   };
+}
+
+function parseIntentContractId(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw {
+      code: "INVALID_INTENT_CONTRACT",
+      message: "--intent-contract cannot be empty",
+    } satisfies CommandError;
+  }
+  return trimmed;
 }
 
 function parseCadenceFromFlags(
@@ -434,6 +460,7 @@ function parsePositiveInt(value: string, flag: string): number {
 export interface ScheduleRow {
   id: string;
   name: string | null;
+  intentContractId: string | null;
   cadence: string;
   target: string;
   status: string;
@@ -445,6 +472,7 @@ export function toScheduleRow(schedule: ScheduleListItem | ScheduleRecord): Sche
   return {
     id: schedule.id,
     name: schedule.name,
+    intentContractId: schedule.intentContractId,
     cadence: formatCadence(schedule.cadence),
     target: formatTarget(schedule.target),
     status: schedule.status,

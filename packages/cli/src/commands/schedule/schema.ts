@@ -7,6 +7,7 @@ export const scheduleSchema: OutputSchema<ScheduleRow> = {
   columns: [
     { header: "ID", field: "id", width: 10 },
     { header: "NAME", field: "name", width: 20 },
+    { header: "CONTRACT", field: "intentContractId", width: 18 },
     { header: "CADENCE", field: "cadence", width: 20 },
     { header: "TARGET", field: "target", width: 20 },
     { header: "STATUS", field: "status", width: 12 },
@@ -78,6 +79,7 @@ export function createScheduleInspectRows(schedule: ScheduleRecord): ScheduleIns
     { key: "Id", value: schedule.id },
     { key: "Name", value: schedule.name ?? "null" },
     { key: "Prompt", value: schedule.prompt },
+    { key: "IntentContract", value: schedule.intentContractId ?? "required" },
     {
       key: "Cadence",
       value:

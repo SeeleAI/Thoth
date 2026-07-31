@@ -12,7 +12,11 @@ import type { WorkspaceChatService } from "./chat/chat-service.js";
 import type { ScheduleService } from "./schedule/service.js";
 import type { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
-import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
+import {
+  createForegroundTurnCoordinatorStub,
+  createProviderSnapshotManagerStub,
+  createTestToolGateway,
+} from "./test-utils/session-stubs.js";
 import {
   asUint8Array,
   decodeTerminalStreamFrame,
@@ -22,6 +26,8 @@ import {
 import { CLIENT_CAPS } from "@thoth/protocol/client-capabilities";
 import { BROWSER_AUTOMATION_COMMAND_NAMES } from "@thoth/protocol/browser-automation/rpc-schemas";
 import { BrowserToolsBroker } from "./browser-tools/broker.js";
+import { WorkspaceAuthorityManager } from "./workspace-authority/workspace-authority-manager.js";
+import { WorkspaceTaskCoordinator } from "./workspace-authority/task-coordinator.js";
 
 type SocketListener = (...args: unknown[]) => void;
 
@@ -116,6 +122,7 @@ interface WebSocketServerInternals {
 
 const TEST_DAEMON_VERSION = "1.2.3-test";
 const testHomes: string[] = [];
+const authorityManagers: WorkspaceAuthorityManager[] = [];
 
 const WireEnvelopeSchema = z.object({
   type: z.string().optional(),
@@ -227,6 +234,13 @@ function createServer(options?: {
   const logger = options?.logger ?? createLogger();
   const thothHome = mkdtempSync(join(tmpdir(), "thoth-websocket-server-test-"));
   testHomes.push(thothHome);
+  const authorityManager = new WorkspaceAuthorityManager(thothHome);
+  const authorityCoordinator = new WorkspaceTaskCoordinator(
+    authorityManager,
+    createStub<pino.Logger>(logger),
+  );
+  authorityCoordinator.setToolGateway(createTestToolGateway());
+  authorityManagers.push(authorityManager);
   return new DaemonWebSocketServer(
     createStub<HTTPServer>({}),
     createStub<pino.Logger>(logger),
@@ -282,7 +296,11 @@ function createServer(options?: {
     undefined,
     undefined,
     undefined,
-    undefined,
+    {
+      manager: authorityManager,
+      coordinator: authorityCoordinator,
+      foregroundTurnCoordinator: createForegroundTurnCoordinatorStub(),
+    },
     options?.browserToolsBroker,
   );
 }
@@ -385,6 +403,9 @@ describe("relay external socket reconnect behavior", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    for (const authorityManager of authorityManagers.splice(0)) {
+      authorityManager.close();
+    }
     for (const thothHome of testHomes.splice(0)) {
       rmSync(thothHome, { recursive: true, force: true });
     }

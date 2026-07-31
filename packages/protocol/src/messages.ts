@@ -7,6 +7,13 @@ import { AgentProviderSchema } from "@thoth/protocol/provider-manifest";
 import { ForgeIdSchema, ForgeRepositorySchema, ForgeResolveErrorCodeSchema } from "./forge.js";
 import { normalizeAgentModelDefinition, TOOL_CALL_ICON_NAMES } from "./agent-types.js";
 import {
+  AgentClarifyNodePrioritizeRequestSchema,
+  AgentClarifyNodePrioritizeResponseSchema,
+  AgentClarifySessionGetRequestSchema,
+  AgentClarifySessionGetResponseSchema,
+  AgentClarifySessionUpdateSchema,
+} from "./clarify-authority.js";
+import {
   AgentProviderControlSchema,
   ProviderPlanCapabilitySchema,
   ProviderRunModeReceiptSchema,
@@ -92,8 +99,7 @@ import {
   AgentThothCardAnswerResponseSchema,
   AgentThothStateUpdateSchema,
   ThothClarifyCardModelSchema,
-  ThothApprovalGoalCardModelSchema,
-  ThothTaskCardModelSchema,
+  ThothIntentContractCardModelSchema,
 } from "@thoth/protocol/thoth/rpc-schemas";
 import {
   ThothConfigRawSchema,
@@ -733,12 +739,22 @@ export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknow
     card: ThothClarifyCardModelSchema,
   }),
   z.object({
-    type: z.literal("task_card"),
-    card: ThothTaskCardModelSchema,
+    type: z.literal("intent_contract_card"),
+    card: ThothIntentContractCardModelSchema,
   }),
   z.object({
-    type: z.literal("goal_card"),
-    card: ThothApprovalGoalCardModelSchema,
+    type: z.literal("legacy_execution_plan"),
+    title: z.string(),
+    summary: z.string(),
+    items: z.array(
+      z.object({
+        title: z.string(),
+        outcome: z.string(),
+        objective: z.string(),
+        constraints: z.array(z.string()),
+        acceptance: z.array(z.string()),
+      }),
+    ),
   }),
   z.object({
     type: z.literal("registered_task"),
@@ -5160,6 +5176,14 @@ export const rpcRegistry = defineRpcRegistry({
     scheduleRunOnce: unary(ScheduleRunOnceRequestSchema, ScheduleRunOnceResponseSchema),
     scheduleUpdate: unary(ScheduleUpdateRequestSchema, ScheduleUpdateResponseSchema),
     getAgentThothState: unary(AgentThothStateRequestSchema, AgentThothStateResponseSchema),
+    getAgentClarifySession: unary(
+      AgentClarifySessionGetRequestSchema,
+      AgentClarifySessionGetResponseSchema,
+    ),
+    prioritizeAgentClarifyNode: unary(
+      AgentClarifyNodePrioritizeRequestSchema,
+      AgentClarifyNodePrioritizeResponseSchema,
+    ),
     answerAgentThothCard: unary(
       AgentThothCardAnswerRequestSchema,
       AgentThothCardAnswerResponseSchema,
@@ -5197,6 +5221,7 @@ export const rpcRegistry = defineRpcRegistry({
     terminalStreamExit: serverEvent(TerminalStreamExitSchema),
     terminalAttentionRequired: serverEvent(TerminalAttentionRequiredSchema),
     agentThothStateUpdate: serverEvent(AgentThothStateUpdateSchema),
+    agentClarifySessionUpdate: serverEvent(AgentClarifySessionUpdateSchema),
     workspaceAuthorityUpdate: serverEvent(WorkspaceAuthorityUpdateSchema),
     daemonUpdateProgress: serverEvent(DaemonUpdateProgressMessageSchema),
   },

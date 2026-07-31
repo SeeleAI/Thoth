@@ -18,51 +18,29 @@ import {
 
 const temporaryHomes: string[] = [];
 
-function clarifyCard(): ThothClarifyCardModel {
+function clarifyCard(sessionId: string): ThothClarifyCardModel {
   return {
     id: "clarify-card-persist",
-    roundLabel: "Clarify",
-    title: "确认目标边界",
-    whyNow: "这些选择会改变任务路线。",
-    continuesClarify: true,
-    publicBadgeSummary: "正在拆解目标边界。",
-    frontierLedger: {
-      clarify_strength: "dive",
-      grounded_user_decisions: [],
-      remaining_material_user_owned_assumptions: ["语言", "交付形态"],
-      agent_owned_assumptions: ["具体实现策略由 agent 决定。"],
-      discoverable_assumptions: ["测试命令可发现。"],
-      why_this_round: "这些问题决定任务路线。",
-      convergence_state: "not_converged",
-    },
+    sessionId,
+    roundIndex: 1,
     submitted: false,
     card: {
-      question_id: "question-card-persist",
       title: "确认目标边界",
-      behavior_tree_node: "boundary",
-      why_now: "先确认用户拥有的关键选择。",
-      allow_choice_notes: true,
-      allow_note_only: true,
+      whyNow: "这些选择会改变任务路线。",
+      publicSummary: "正在拆解目标边界。",
+      allowChoiceNotes: true,
+      allowNoteOnly: true,
+      allowSubtreeDelegation: true,
       questions: [
         {
-          id: "language",
+          nodeId: "language",
           question: "用什么语言实现？",
-          behavior_tree_node: "language",
-          selection_mode: "single",
+          selectionMode: "single",
           choices: [
             { id: "cpp", label: "C++", description: "贴近系统性能" },
             { id: "rust", label: "Rust", description: "安全且高性能" },
           ],
-        },
-        {
-          id: "shape",
-          question: "交付成什么形态？",
-          behavior_tree_node: "shape",
-          selection_mode: "single",
-          choices: [
-            { id: "library", label: "库函数", description: "最小复用接口" },
-            { id: "cli", label: "命令行", description: "可传参运行" },
-          ],
+          recommendedChoiceId: "cpp",
         },
       ],
     },
@@ -92,8 +70,8 @@ function createStore(home?: string): {
   return { home: resolvedHome, store: new WorkspaceForegroundAuthority(manager), manager };
 }
 
-function startThothTurn(store: WorkspaceForegroundAuthority): void {
-  store.startTurn({
+function startThothTurn(store: WorkspaceForegroundAuthority): string {
+  const started = store.startTurn({
     agentId: "agent-1",
     kind: "thoth",
     controls: { mode: "quick", clarifyStrength: "dive", loop: null },
@@ -102,9 +80,35 @@ function startThothTurn(store: WorkspaceForegroundAuthority): void {
     workspacePath: "/workspace/thoth",
     userText: "实现一个高性能工具",
   });
+  const session = store.startClarifySession({
+    agentId: "agent-1",
+    turnId: started.turn.id,
+    requestedStrength: "dive",
+  });
+  store.updateClarifyDecisionMap({
+    agentId: "agent-1",
+    sessionId: session.id,
+    update: {
+      effectiveStrength: "dive",
+      publicSummary: "语言是当前高价值 Human-owned 分叉。",
+      nodes: [
+        {
+          id: "language",
+          parentIds: [],
+          title: "实现语言",
+          owner: "human",
+          materiality: "structural",
+          status: "awaiting_human",
+          resolutionRef: null,
+          sourceRefs: [],
+        },
+      ],
+    },
+  });
+  return session.id;
 }
 
-function createDecision(store: WorkspaceForegroundAuthority) {
+function createDecision(store: WorkspaceForegroundAuthority, sessionId: string) {
   return createRuntimeAuthorityDecision({
     store,
     provider: "codex",
@@ -112,8 +116,8 @@ function createDecision(store: WorkspaceForegroundAuthority) {
     threadId: "thread-1",
     providerTurnId: "turn-1",
     callId: "call-1",
-    toolName: "thoth_submit_clarify_card",
-    card: { kind: "clarify_card", card: clarifyCard() },
+    toolName: "thoth_clarify_ask",
+    card: { kind: "clarify_card", card: clarifyCard(sessionId) },
     redactedRawInputHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   });
 }
@@ -128,8 +132,8 @@ afterEach(() => {
 describe("runtime authority decision persistence", () => {
   it("keeps an open Card actionable after process memory is lost", () => {
     const { home, store, manager } = createStore();
-    startThothTurn(store);
-    const { record } = createDecision(store);
+    const sessionId = startThothTurn(store);
+    const { record } = createDecision(store, sessionId);
     manager.close();
 
     const recoveredRuntime = createStore(home);
@@ -149,18 +153,28 @@ describe("runtime authority decision persistence", () => {
 
       const answer: ThothCardAnswerPayload = {
         intent: "submit_choices",
-        question_card_id: record.cardId,
-        title: "确认目标边界",
-        answers: [],
-        raw_answer: "继续",
+        questionCardId: record.cardId,
+        answers: [
+          {
+            nodeId: "language",
+            choiceIds: ["cpp"],
+            choiceNotes: {},
+          },
+        ],
+        delegatedNodeIds: [],
+        rawAnswer: "选择 C++",
       };
       const state = recovered.getState("agent-1");
       const result = recovered.answerCard({
         agentId: "agent-1",
         cardId: record.cardId,
         answer,
-        submittedCard: { ...clarifyCard(), submitted: true, submittedSummary: "继续" },
-        submittedSummary: "继续",
+        submittedCard: {
+          ...clarifyCard(sessionId),
+          submitted: true,
+          submittedSummary: "选择 C++",
+        },
+        submittedSummary: "选择 C++",
         expectedRevision: state.revision,
         commandId: "answer-after-restart",
         nextLifecycle: "running",
@@ -176,8 +190,8 @@ describe("runtime authority decision persistence", () => {
   it("does not expire an unanswered authority Card over elapsed time", async () => {
     const { store, manager } = createStore();
     try {
-      startThothTurn(store);
-      const { record } = createDecision(store);
+      const sessionId = startThothTurn(store);
+      const { record } = createDecision(store, sessionId);
       vi.useFakeTimers();
       await vi.advanceTimersByTimeAsync(365 * 24 * 60 * 60 * 1_000);
 

@@ -133,18 +133,23 @@ describe("scripted Codex app-server fixture", () => {
     temporaryDirectories.add(directory);
     const capturePath = join(directory, "capture.jsonl");
     const statePath = join(directory, "state.json");
-    writeFileSync(statePath, JSON.stringify({ planExec: 0, review: 0 }));
+    writeFileSync(statePath, JSON.stringify({ checkpoint: 0, review: 0 }));
+
+    const runtimeToolNames = [
+      "thoth_clarify_update_map",
+      "thoth_clarify_ask",
+      "thoth_clarify_propose_contract",
+      "thoth_clarify_judge_contract",
+      "thoth_loop_checkpoint",
+      "thoth_loop_review_decision",
+    ];
 
     const first = new ScriptedCodexProcess(fixturePath, capturePath, statePath);
     let second: ScriptedCodexProcess | null = null;
     try {
       const started = (await first.request("thread/start", {
         cwd: directory,
-        dynamicTools: [
-          { name: "thoth_submit_clarify_card" },
-          { name: "thoth_submit_task_card" },
-          { name: "thoth_submit_goals_card" },
-        ],
+        dynamicTools: runtimeToolNames.map((name) => ({ name })),
       })) as { thread: { id: string } };
       const originalThreadId = started.thread.id;
       await first.stop();
@@ -161,15 +166,24 @@ describe("scripted Codex app-server fixture", () => {
           { type: "text", text: "Follow the installed thoth.clarify skill." },
         ],
       })) as { turn: { id: string } };
-      const toolCall = await second.take(
+      const mapCall = await second.take(
         (message) => message.method === "item/tool/call" && message.params?.turnId === turn.turn.id,
       );
-      expect(toolCall.params).toMatchObject({
+      expect(mapCall.params).toMatchObject({
         threadId: originalThreadId,
         turnId: turn.turn.id,
-        tool: "thoth_submit_clarify_card",
+        tool: "thoth_clarify_update_map",
       });
-      second.send({ jsonrpc: "2.0", id: toolCall.id, result: { success: true } });
+      second.send({ jsonrpc: "2.0", id: mapCall.id, result: { success: true } });
+      const askCall = await second.take(
+        (message) => message.method === "item/tool/call" && message.params?.turnId === turn.turn.id,
+      );
+      expect(askCall.params).toMatchObject({
+        threadId: originalThreadId,
+        turnId: turn.turn.id,
+        tool: "thoth_clarify_ask",
+      });
+      second.send({ jsonrpc: "2.0", id: askCall.id, result: { success: true } });
       await expect(
         second.take(
           (message) =>
@@ -181,11 +195,7 @@ describe("scripted Codex app-server fixture", () => {
       const state = JSON.parse(readFileSync(statePath, "utf8")) as {
         dynamicToolNamesByThreadId?: Record<string, string[]>;
       };
-      expect(state.dynamicToolNamesByThreadId?.[originalThreadId]).toEqual([
-        "thoth_submit_clarify_card",
-        "thoth_submit_task_card",
-        "thoth_submit_goals_card",
-      ]);
+      expect(state.dynamicToolNamesByThreadId?.[originalThreadId]).toEqual(runtimeToolNames);
       const records = readFileSync(capturePath, "utf8")
         .trim()
         .split("\n")
@@ -194,23 +204,71 @@ describe("scripted Codex app-server fixture", () => {
         expect.objectContaining({
           kind: "thread_resume",
           threadId: originalThreadId,
-          dynamicToolNames: [
-            "thoth_submit_clarify_card",
-            "thoth_submit_task_card",
-            "thoth_submit_goals_card",
-          ],
+          dynamicToolNames: runtimeToolNames,
         }),
       );
       expect(records).toContainEqual(
         expect.objectContaining({
           kind: "tool_call",
           threadId: originalThreadId,
-          tool: "thoth_submit_clarify_card",
+          tool: "thoth_clarify_update_map",
+        }),
+      );
+      expect(records).toContainEqual(
+        expect.objectContaining({
+          kind: "tool_call",
+          threadId: originalThreadId,
+          tool: "thoth_clarify_ask",
         }),
       );
     } finally {
       await second?.stop();
       await first.stop();
+    }
+  }, 15_000);
+
+  it("submits the semantic checkpoint from a native Plan implementation continuation", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "thoth-scripted-codex-loop-implement-"));
+    temporaryDirectories.add(directory);
+    const capturePath = join(directory, "capture.jsonl");
+    const statePath = join(directory, "state.json");
+    writeFileSync(statePath, JSON.stringify({ checkpoint: 0, review: 0 }));
+
+    const process = new ScriptedCodexProcess(fixturePath, capturePath, statePath);
+    try {
+      const started = (await process.request("thread/start", {
+        cwd: directory,
+        dynamicTools: [{ name: "thoth_loop_checkpoint" }],
+      })) as { thread: { id: string } };
+      const turn = (await process.request("turn/start", {
+        threadId: started.thread.id,
+        input: [
+          { type: "skill", name: "thoth.loop", path: "/fixture/SKILL.md" },
+          {
+            type: "text",
+            text: "Implement the completed native Plan now in this same Provider thread.",
+          },
+        ],
+        collaborationMode: { mode: "code" },
+      })) as { turn: { id: string } };
+      const checkpoint = await process.take(
+        (message) =>
+          message.method === "item/tool/call" &&
+          message.params?.turnId === turn.turn.id &&
+          message.params?.tool === "thoth_loop_checkpoint",
+      );
+      expect(checkpoint.params?.arguments).toMatchObject({
+        title: "Packaged checkpoint CYCLE_1",
+      });
+      process.send({ jsonrpc: "2.0", id: checkpoint.id, result: { success: true } });
+      await expect(
+        process.take(
+          (message) =>
+            message.method === "turn/completed" && message.params?.threadId === started.thread.id,
+        ),
+      ).resolves.toMatchObject({ params: { threadId: started.thread.id } });
+    } finally {
+      await process.stop();
     }
   }, 15_000);
 });

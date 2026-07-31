@@ -53,44 +53,42 @@ afterEach(() => {
 function card(overrides: Partial<ThothClarifyCardModel> = {}): ThothClarifyCardModel {
   return {
     id: "clarify-card-1",
-    roundLabel: "Clarify",
-    title: "确认方向",
-    whyNow: "先确认关键分叉。",
-    continuesClarify: true,
+    sessionId: "clarify-session-1",
+    roundIndex: 1,
     submitted: false,
     card: {
-      question_id: "question-form-1",
       title: "确认方向",
-      behavior_tree_node: "delivery-path",
-      why_now: "路线会影响验收。",
-      allow_choice_notes: true,
-      allow_note_only: true,
+      whyNow: "先确认关键分叉。",
+      publicSummary: "确认影响实现与验收的关键分叉。",
+      allowChoiceNotes: true,
+      allowNoteOnly: true,
+      allowSubtreeDelegation: true,
       questions: [
         {
-          id: "scope",
+          nodeId: "scope",
           question: "优先哪条路线？",
-          behavior_tree_node: "delivery-path/scope",
-          selection_mode: "single",
+          selectionMode: "single",
+          recommendedChoiceId: "ship",
           choices: [
             { id: "ship", label: "上线", description: "真实发布" },
             { id: "demo", label: "演示", description: "先做演示" },
           ],
         },
         {
-          id: "risk",
+          nodeId: "risk",
           question: "风险边界？",
-          behavior_tree_node: "delivery-path/risk",
-          selection_mode: "single",
+          selectionMode: "single",
+          recommendedChoiceId: "safe",
           choices: [
             { id: "safe", label: "保守", description: "少改动" },
             { id: "bold", label: "激进", description: "可重构" },
           ],
         },
         {
-          id: "evidence",
+          nodeId: "evidence",
           question: "需要哪些验收？",
-          behavior_tree_node: "delivery-path/evidence",
-          selection_mode: "multiple",
+          selectionMode: "multiple",
+          recommendedChoiceId: "tests",
           choices: [
             { id: "tests", label: "测试", description: "覆盖正确性" },
             { id: "bench", label: "基准", description: "覆盖性能" },
@@ -152,25 +150,25 @@ describe("ClarifyDecisionCard", () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith({
       intent: "submit_choices",
-      question_card_id: "clarify-card-1",
-      title: "确认方向",
-      raw_answer: expect.stringContaining("必须是真的上线"),
+      questionCardId: "clarify-card-1",
+      delegatedNodeIds: [],
+      rawAnswer: expect.stringContaining("必须是真的上线"),
       answers: [
         {
-          question_id: "scope",
-          choice_ids: ["ship"],
-          choice_notes: { ship: "必须是真的上线" },
+          nodeId: "scope",
+          choiceIds: ["ship"],
+          choiceNotes: { ship: "必须是真的上线" },
         },
         {
-          question_id: "risk",
-          choice_ids: [],
-          choice_notes: {},
+          nodeId: "risk",
+          choiceIds: [],
+          choiceNotes: {},
           note: "风险优先保守",
         },
         {
-          question_id: "evidence",
-          choice_ids: ["tests", "bench"],
-          choice_notes: {},
+          nodeId: "evidence",
+          choiceIds: ["tests", "bench"],
+          choiceNotes: {},
         },
       ],
     });
@@ -200,10 +198,41 @@ describe("ClarifyDecisionCard", () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         intent: "recommend",
-        question_card_id: "clarify-card-1",
-        raw_answer: "你推荐",
+        questionCardId: "clarify-card-1",
+        delegatedNodeIds: ["risk"],
+        rawAnswer: "你推荐",
+        answers: [
+          {
+            nodeId: "risk",
+            choiceIds: [],
+            choiceNotes: {},
+          },
+        ],
       }),
     );
+  });
+
+  it("delegates only the active subtree and leaves sibling questions unanswered", async () => {
+    const onSubmit = vi.fn();
+    render(<ClarifyDecisionCard card={card()} onSubmit={onSubmit} />);
+
+    fireEvent.click(screen.getByTestId("clarify-card-question-tab-3"));
+    fireEvent.click(screen.getByTestId("clarify-card-delegate-subtree"));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith({
+      intent: "delegate_subtree",
+      questionCardId: "clarify-card-1",
+      delegatedNodeIds: ["evidence"],
+      rawAnswer: "此分支交给 Agent 决定",
+      answers: [
+        {
+          nodeId: "evidence",
+          choiceIds: [],
+          choiceNotes: {},
+        },
+      ],
+    });
   });
 
   it("renders submitted cards as readonly history", () => {
@@ -227,24 +256,24 @@ describe("ClarifyDecisionCard", () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith({
       intent: "stop",
-      question_card_id: "clarify-card-1",
-      title: "确认方向",
-      raw_answer: "暂停继续询问",
+      questionCardId: "clarify-card-1",
+      delegatedNodeIds: [],
+      rawAnswer: "暂停继续询问",
       answers: [
         {
-          question_id: "scope",
-          choice_ids: [],
-          choice_notes: {},
+          nodeId: "scope",
+          choiceIds: [],
+          choiceNotes: {},
         },
         {
-          question_id: "risk",
-          choice_ids: [],
-          choice_notes: {},
+          nodeId: "risk",
+          choiceIds: [],
+          choiceNotes: {},
         },
         {
-          question_id: "evidence",
-          choice_ids: [],
-          choice_notes: {},
+          nodeId: "evidence",
+          choiceIds: [],
+          choiceNotes: {},
         },
       ],
     });

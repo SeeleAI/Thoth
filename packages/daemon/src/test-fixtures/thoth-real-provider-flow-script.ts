@@ -1,297 +1,290 @@
 import type {
-  ThothLoopPlanExecResultInput,
-  ThothLoopReviewIndependentAssessmentInput,
-  ThothLoopReviewVerdictInput,
-  ThothSubmitClarifyCardInput,
-  ThothSubmitGoalsCardInput,
-  ThothSubmitTaskCardInput,
+  ThothClarifyAskInput,
+  ThothClarifyProposeContractInput,
+  ThothClarifyUpdateMapInput,
+  ThothLoopCheckpointInput,
+  ThothLoopRequestHumanDecisionInput,
+  ThothLoopReviewDecisionInput,
 } from "@thoth/protocol/thoth-runtime-contract";
 
 export type ThothRealProviderFlowId =
   | "UT-01-quick-direct-passthrough"
   | "UT-02-quick-clarify-foreground-success"
   | "UT-03-quick-clarify-pause-recover-resume"
-  | "UT-04-loop-linear-all-pass"
-  | "UT-05-loop-retry-and-budget";
+  | "UT-04-loop-target-complete"
+  | "UT-05-loop-reorient-and-budget"
+  | "UT-06-loop-human-decision-handoff";
+
+export interface ClarifyFixtureRound {
+  map: ThothClarifyUpdateMapInput;
+  ask: ThothClarifyAskInput;
+}
 
 export interface ThothRealProviderFlowScript {
   id: ThothRealProviderFlowId;
   finalMarker: string;
-  clarify: readonly ThothSubmitClarifyCardInput[];
-  task: ThothSubmitTaskCardInput | null;
-  goals: ThothSubmitGoalsCardInput | null;
-  planExec: readonly ThothLoopPlanExecResultInput[];
-  reviewIndependent: readonly ThothLoopReviewIndependentAssessmentInput[];
-  review: readonly ThothLoopReviewVerdictInput[];
+  clarify: readonly ClarifyFixtureRound[];
+  contract: ThothClarifyProposeContractInput | null;
+  handoffClarify?: readonly ClarifyFixtureRound[];
+  handoffContract?: ThothClarifyProposeContractInput;
+  humanDecision?: ThothLoopRequestHumanDecisionInput;
+  checkpoints: readonly ThothLoopCheckpointInput[];
+  reviews: readonly ThothLoopReviewDecisionInput[];
 }
 
-function clarifyCard(input: {
+function clarifyRound(input: {
   title: string;
   marker: string;
-  readyForTask: boolean;
-}): ThothSubmitClarifyCardInput {
+  parentId?: string;
+}): ClarifyFixtureRound {
+  const rootId = `${input.marker}-root`;
+  const scopeId = `${input.marker}-scope`;
+  const evidenceId = `${input.marker}-evidence`;
   return {
-    title: input.title,
-    why_now: "Collect the next fixed answer for this verification run.",
-    public_badge_summary: `Fixed branch ${input.marker} is awaiting its prescribed answer.`,
-    frontier_ledger: {
-      clarify_strength: "light",
-      grounded_user_decisions: ["This is a fixed transport verification run."],
-      remaining_material_user_owned_assumptions: input.readyForTask
-        ? []
-        : ["The next fixed answer has not been submitted yet."],
-      agent_owned_assumptions: ["No workspace change is required."],
-      discoverable_assumptions: [],
-      why_this_round: "Advance the fixed authority lifecycle without autonomous decisions.",
-      convergence_state: input.readyForTask ? "ready_for_task" : "not_converged",
-    },
-    decision_delta: {
-      affected_contract_fields: ["goal", "acceptance"],
-      safe_if_unanswered: "The scripted run must stop at this authority card.",
-      eliminated_routes: ["Unscripted provider improvisation"],
-      irreversible_or_cost_impact: "No workspace mutation is allowed in this fixture.",
-      downstream_refs: ["task_card.goal", "task_card.acceptance"],
-    },
-    questions: [
-      {
-        id: `${input.marker}-scope`,
-        question: "Use the first fixed scope option?",
-        behavior_tree_node: `${input.marker}_scope`,
-        selection_mode: "single",
-        choices: [
-          {
-            id: `${input.marker}-scope-yes`,
-            label: "Use fixed scope",
-            description: "Continue the scripted run",
-          },
-          {
-            id: `${input.marker}-scope-no`,
-            label: "Stop run",
-            description: "Exercise the alternate branch",
-          },
-        ],
-      },
-      {
-        id: `${input.marker}-evidence`,
-        question: "Use the first fixed evidence option?",
-        behavior_tree_node: `${input.marker}_evidence`,
-        selection_mode: "single",
-        choices: [
-          {
-            id: `${input.marker}-evidence-yes`,
-            label: "Use evidence",
-            description: "Record the scripted evidence",
-          },
-          {
-            id: `${input.marker}-evidence-no`,
-            label: "Reject evidence",
-            description: "Exercise the alternate branch",
-          },
-        ],
-      },
-    ],
-    allow_choice_notes: true,
-    allow_note_only: true,
-  };
-}
-
-function taskCard(marker: string): ThothSubmitTaskCardInput {
-  return {
-    task_card: {
-      title: `Fixed task ${marker}`,
-      goal: "Verify the prescribed foreground or background authority flow.",
-      constraints: ["Do not change workspace files.", "Use only the supplied fixed values."],
-      acceptance: ["Every prescribed marker is recorded in the correct phase."],
-    },
-    provenance: {
-      clarify_transcript_verbatim: "Fixed answers were submitted through the authority cards.",
-    },
-    convergence_review: {
-      frontier_ledger: {
-        clarify_strength: "light",
-        grounded_user_decisions: ["Both fixed answers have been submitted."],
-        remaining_material_user_owned_assumptions: [],
-        agent_owned_assumptions: ["No implementation decision remains."],
-        discoverable_assumptions: [],
-        why_this_round: "The scripted verification has collected every required answer.",
-        convergence_state: "ready_for_task",
-      },
-      why_task_is_now_grounded: "The fixed script has no remaining user-owned branch.",
-    },
-  };
-}
-
-function goalsCard(marker: string): ThothSubmitGoalsCardInput {
-  return {
-    goals_card: {
-      title: `Fixed goals ${marker}`,
-      summary: "Two linear checkpoints verify phase handoff and completion.",
-      goals_count_rationale:
-        "This short transport verification intentionally uses two atomic linear checkpoints.",
-      goals: [
+    map: {
+      effectiveStrength: "light",
+      publicSummary: `Grounded ${input.marker} and exposed its material Human-owned fork.`,
+      nodes: [
         {
-          id: `${marker}-goal-1`,
-          order: 1,
-          title: "Fixed checkpoint one",
-          goal: "Record the first prescribed phase marker.",
-          constraints: ["Do not change workspace files."],
-          acceptance: ["The first Review receives the first prescribed marker."],
-          provenance: "Fixed verification task.",
+          id: rootId,
+          parentIds: input.parentId ? [input.parentId] : [],
+          title: `${input.title} grounded objective`,
+          owner: "agent",
+          materiality: "structural",
+          status: "resolved",
+          resolutionRef: `agent:${input.marker}:grounded`,
+          sourceRefs: [`fixture:${input.marker}`],
         },
         {
-          id: `${marker}-goal-2`,
-          order: 2,
-          title: "Fixed checkpoint two",
-          goal: "Record the second prescribed phase marker after checkpoint one passes.",
-          constraints: ["Do not change workspace files."],
-          acceptance: ["The second Review receives the second prescribed marker."],
-          provenance: "Fixed verification task.",
+          id: scopeId,
+          parentIds: [rootId],
+          title: "Execution scope",
+          owner: "human",
+          materiality: "material",
+          status: "open",
+          resolutionRef: null,
+          sourceRefs: [],
+        },
+        {
+          id: evidenceId,
+          parentIds: [rootId],
+          title: "Acceptance evidence boundary",
+          owner: "human",
+          materiality: "material",
+          status: "open",
+          resolutionRef: null,
+          sourceRefs: [],
         },
       ],
     },
-    provenance: {
-      clarify_transcript_verbatim: "Fixed authority answers were supplied.",
-      approved_ceo_task_card_verbatim: "The fixed task card was approved.",
+    ask: {
+      title: input.title,
+      whyNow: "These two sibling decisions determine the stable intent boundary.",
+      publicSummary: `Confirm the material ${input.marker} branch.`,
+      questions: [
+        {
+          nodeId: scopeId,
+          question: "Use the fixed verification scope?",
+          selectionMode: "single",
+          choices: [
+            {
+              id: `${scopeId}-yes`,
+              label: "Use fixed scope",
+              description: "Keep the run inside the deterministic authority boundary.",
+            },
+            {
+              id: `${scopeId}-stop`,
+              label: "Stop",
+              description: "Do not create an executable Task.",
+            },
+          ],
+          recommendedChoiceId: `${scopeId}-yes`,
+        },
+        {
+          nodeId: evidenceId,
+          question: "Require semantic checkpoint evidence?",
+          selectionMode: "single",
+          choices: [
+            {
+              id: `${evidenceId}-yes`,
+              label: "Require evidence",
+              description: "Review completion must cite durable checkpoint evidence.",
+            },
+            {
+              id: `${evidenceId}-no`,
+              label: "No evidence",
+              description: "Allow an unverified completion claim.",
+            },
+          ],
+          recommendedChoiceId: `${evidenceId}-yes`,
+        },
+      ],
+      allowChoiceNotes: true,
+      allowNoteOnly: true,
+      allowSubtreeDelegation: true,
     },
   };
 }
 
-function planExec(input: { marker: string }): ThothLoopPlanExecResultInput {
+function contract(marker: string, decisionNodeRefs: string[]): ThothClarifyProposeContractInput {
   return {
-    plan_summary: `Prescribed plan ${input.marker}.`,
-    execution_summary: `Prescribed execution ${input.marker}.`,
-    evidence: [`Prescribed evidence ${input.marker}.`],
-    validation_performed: [`Prescribed validation ${input.marker}.`],
-    remaining_risks: [],
-    next_review_focus: `Validate prescribed marker ${input.marker}.`,
-  };
-}
-
-function reviewIndependent(marker: string): ThothLoopReviewIndependentAssessmentInput {
-  return {
-    observations: [`Independent prescribed observation ${marker}.`],
-    working_theory: `Independent prescribed theory ${marker}.`,
-    inspection_focus: [`Independent prescribed focus ${marker}.`],
-  };
-}
-
-function reviewPass(input: { marker: string }): ThothLoopReviewVerdictInput {
-  return {
-    outcome: "pass",
-    summary: `Prescribed Review pass ${input.marker}.`,
-    evidence_summary: `Prescribed evidence summary ${input.marker}.`,
-  };
-}
-
-function reviewFail(input: { marker: string }): ThothLoopReviewVerdictInput {
-  return {
-    outcome: "continue",
-    summary: `Prescribed Review failure ${input.marker}.`,
-    evidence_summary: `Prescribed failure evidence ${input.marker}.`,
-    direction_memo: {
-      conclusion: `Prescribed retry conclusion ${input.marker}.`,
-      reality: [`Prescribed reality ${input.marker}.`],
-      diagnosis: `FIXTURE_R5_ROOT_CAUSE_${input.marker}`,
-      abandon: [`FIXTURE_R5_ABANDON_${input.marker}`],
-      reframe: `FIXTURE_R5_REFRAME_${input.marker}`,
-      next_direction: `FIXTURE_R5_GUIDANCE_${input.marker}`,
+    contract: {
+      title: `Fixed target ${marker}`,
+      objective: "Verify one target-anchored foreground or background authority flow.",
+      nonGoals: ["Do not modify unrelated Workspace state."],
+      invariants: [
+        "Use the Provider Harness session selected by the Agent.",
+        "Treat durable semantic evidence as completion authority.",
+      ],
+      acceptance: ["A durable semantic checkpoint is independently reviewed against this target."],
+      riskBoundary: [],
+      humanDecisionRefs: [],
+      escalationPolicy: {
+        returnToHumanWhen: ["The target boundary must change."],
+        finalConfirmation: "automatic",
+      },
     },
+    decisionNodeRefs,
+    publicSummary: `The ${marker} Decision Map is stable and ready for one Intent Contract.`,
   };
 }
 
-const u2ClarifyOne = clarifyCard({
-  title: "Fixture foreground branch one",
-  marker: "UT02_C1",
-  readyForTask: false,
-});
-const u2ClarifyTwo = clarifyCard({
-  title: "Fixture foreground branch two",
+function checkpoint(marker: string, unresolvedGap: string): ThothLoopCheckpointInput {
+  return {
+    title: `Meaningful increment ${marker}`,
+    activeGap: "Verify the target-anchored authority flow.",
+    progressClaim: `Recorded semantic progress ${marker}.`,
+    unresolvedGap,
+    evidenceRefs: [],
+  };
+}
+
+function reviewContinue(marker: string): ThothLoopReviewDecisionInput {
+  return {
+    decision: "reorient",
+    reason: `Independent Review found a real remaining gap after ${marker}.`,
+    evidenceRefs: [],
+    nextFocus: `Correct the remaining gap identified after ${marker}.`,
+    rejectedRoutes: [`Do not repeat the route used by ${marker}.`],
+    acceptanceEvidence: {},
+  };
+}
+
+function reviewComplete(marker: string): ThothLoopReviewDecisionInput {
+  return {
+    decision: "complete",
+    reason: `Independent Review verified the target after ${marker}.`,
+    evidenceRefs: [],
+    rejectedRoutes: [],
+    acceptanceEvidence: {},
+  };
+}
+
+const u2RoundOne = clarifyRound({ title: "Foreground branch one", marker: "UT02_C1" });
+const u2RoundTwo = clarifyRound({
+  title: "Foreground branch two",
   marker: "UT02_C2",
-  readyForTask: true,
+  parentId: "UT02_C1-root",
 });
-const u3ClarifyOne = clarifyCard({
-  title: "Fixture recovery branch one",
-  marker: "UT03_C1",
-  readyForTask: false,
-});
-const u3ClarifyTwo = clarifyCard({
-  title: "Fixture recovery branch two",
+const u3RoundOne = clarifyRound({ title: "Recovery branch one", marker: "UT03_C1" });
+const u3RoundTwo = clarifyRound({
+  title: "Recovery branch two",
   marker: "UT03_C2",
-  readyForTask: true,
+  parentId: "UT03_C1-root",
 });
-const u4Clarify = clarifyCard({
-  title: "Fixture loop pass branch",
-  marker: "UT04_C1",
-  readyForTask: true,
-});
-const u5Clarify = clarifyCard({
-  title: "Fixture loop retry branch",
-  marker: "UT05_C1",
-  readyForTask: true,
-});
+const u4Round = clarifyRound({ title: "Loop completion branch", marker: "UT04_C1" });
+const u5Round = clarifyRound({ title: "Loop reorientation branch", marker: "UT05_C1" });
+const u6InitialRound = clarifyRound({ title: "Loop handoff origin", marker: "UT06_I1" });
+const u6HandoffRound = clarifyRound({ title: "Loop handoff revision", marker: "UT06_H1" });
 
 export const THOTH_REAL_PROVIDER_FLOW_SCRIPTS = {
   quickDirect: {
     id: "UT-01-quick-direct-passthrough",
     finalMarker: "DIRECT_DONE",
     clarify: [],
-    task: null,
-    goals: null,
-    planExec: [],
-    reviewIndependent: [],
-    review: [],
+    contract: null,
+    checkpoints: [],
+    reviews: [],
   },
   quickClarifyForeground: {
     id: "UT-02-quick-clarify-foreground-success",
     finalMarker: "FOREGROUND_EXEC_DONE",
-    clarify: [u2ClarifyOne, u2ClarifyTwo],
-    task: taskCard("UT02"),
-    goals: goalsCard("UT02"),
-    planExec: [],
-    reviewIndependent: [],
-    review: [],
+    clarify: [u2RoundOne, u2RoundTwo],
+    contract: contract("UT02", [
+      "UT02_C1-root",
+      "UT02_C1-scope",
+      "UT02_C1-evidence",
+      "UT02_C2-root",
+      "UT02_C2-scope",
+      "UT02_C2-evidence",
+    ]),
+    checkpoints: [],
+    reviews: [],
   },
   quickClarifyRecovery: {
     id: "UT-03-quick-clarify-pause-recover-resume",
     finalMarker: "RESUMED_FOREGROUND_DONE",
-    clarify: [u3ClarifyOne, u3ClarifyTwo],
-    task: taskCard("UT03"),
-    goals: goalsCard("UT03"),
-    planExec: [],
-    reviewIndependent: [],
-    review: [],
+    clarify: [u3RoundOne, u3RoundTwo],
+    contract: contract("UT03", [
+      "UT03_C1-root",
+      "UT03_C1-scope",
+      "UT03_C1-evidence",
+      "UT03_C2-root",
+      "UT03_C2-scope",
+      "UT03_C2-evidence",
+    ]),
+    checkpoints: [],
+    reviews: [],
   },
   loopLinearPass: {
-    id: "UT-04-loop-linear-all-pass",
-    finalMarker: "LOOP_LINEAR_DONE",
-    clarify: [u4Clarify],
-    task: taskCard("UT04"),
-    goals: goalsCard("UT04"),
-    planExec: [planExec({ marker: "UT04_G1_R1" }), planExec({ marker: "UT04_G2_R1" })],
-    reviewIndependent: [reviewIndependent("UT04_G1_R1"), reviewIndependent("UT04_G2_R1")],
-    review: [reviewPass({ marker: "UT04_G1_R1" }), reviewPass({ marker: "UT04_G2_R1" })],
+    id: "UT-04-loop-target-complete",
+    finalMarker: "LOOP_TARGET_COMPLETE",
+    clarify: [u4Round],
+    contract: contract("UT04", ["UT04_C1-root", "UT04_C1-scope", "UT04_C1-evidence"]),
+    checkpoints: [checkpoint("UT04_W1", "Review the completed increment.")],
+    reviews: [reviewComplete("UT04_W1")],
   },
   loopRetryAndBudget: {
-    id: "UT-05-loop-retry-and-budget",
-    finalMarker: "LOOP_RETRY_DONE",
-    clarify: [u5Clarify],
-    task: taskCard("UT05"),
-    goals: goalsCard("UT05"),
-    planExec: [
-      planExec({ marker: "UT05_G1_R1" }),
-      planExec({ marker: "UT05_G1_R2" }),
-      planExec({ marker: "UT05_G2_R1" }),
+    id: "UT-05-loop-reorient-and-budget",
+    finalMarker: "LOOP_REORIENT_COMPLETE",
+    clarify: [u5Round],
+    contract: contract("UT05", ["UT05_C1-root", "UT05_C1-scope", "UT05_C1-evidence"]),
+    checkpoints: [
+      checkpoint("UT05_W1", "Correct the independently observed gap."),
+      checkpoint("UT05_W2", "Review the corrected target."),
     ],
-    reviewIndependent: [
-      reviewIndependent("UT05_G1_R1"),
-      reviewIndependent("UT05_G1_R2"),
-      reviewIndependent("UT05_G2_R1"),
-    ],
-    review: [
-      reviewFail({ marker: "UT05_G1_R1" }),
-      reviewPass({ marker: "UT05_G1_R2" }),
-      reviewPass({ marker: "UT05_G2_R1" }),
-    ],
+    reviews: [reviewContinue("UT05_W1"), reviewComplete("UT05_W2")],
+  },
+  loopHumanDecisionHandoff: {
+    id: "UT-06-loop-human-decision-handoff",
+    finalMarker: "LOOP_HUMAN_HANDOFF_COMPLETE",
+    clarify: [u6InitialRound],
+    contract: contract("UT06_INITIAL", ["UT06_I1-root", "UT06_I1-scope", "UT06_I1-evidence"]),
+    handoffClarify: [u6HandoffRound],
+    handoffContract: contract("UT06_REVISED", [
+      "UT06_H1-root",
+      "UT06_H1-scope",
+      "UT06_H1-evidence",
+    ]),
+    humanDecision: {
+      title: "Confirm revised risk boundary",
+      question: "May the Task adopt the newly discovered target boundary?",
+      affectedContractFields: ["riskBoundary"],
+      options: [
+        {
+          id: "adopt-boundary",
+          label: "Adopt boundary",
+          description: "Revise the Intent Contract and freshly reorient execution.",
+        },
+        {
+          id: "keep-boundary",
+          label: "Keep boundary",
+          description: "Retain the current Intent Contract and stop this route.",
+        },
+      ],
+    },
+    checkpoints: [checkpoint("UT06_W1", "Review the revised target boundary.")],
+    reviews: [reviewComplete("UT06_W1")],
   },
 } as const satisfies Record<string, ThothRealProviderFlowScript>;
 
@@ -299,20 +292,25 @@ function literalCall(name: string, input: unknown): string {
   return `Call ${name} exactly once with this JSON argument:\n${JSON.stringify(input)}`;
 }
 
-function backgroundPhaseScript(script: ThothRealProviderFlowScript): string {
-  if (script.planExec.length === 0) {
-    return "";
-  }
+function reviewCall(input: ThothLoopReviewDecisionInput): string {
+  if (input.decision !== "complete") return literalCall("thoth_loop_review_decision", input);
   return [
-    "BACKGROUND PHASE ACTORS:",
-    "A PlanExec agent must locate the entry matching its current goal title and round, then make exactly that call. It must not inspect, write, or otherwise change the workspace. Thoth binds goal and attempt identity itself.",
-    ...script.planExec.map((input) => literalCall("thoth_loop_submit_planexec_result", input)),
-    "A Review agent must locate the entries matching its current goal title and semantic retry context. It must first submit the matching independent assessment, wait for the tool result, then submit the matching final verdict. It must not inspect, write, or otherwise change the workspace.",
-    "For the initial attempt of a goal, the Prior Review Direction Memo block is none, so use that goal's R1 entries. For the scripted retry in UT-05, that block contains FIXTURE_R5_GUIDANCE_UT05_G1_R1; use the literal UT05_G1_R2 entries. This is fixture routing only: do not infer or submit a phase number.",
-    ...script.reviewIndependent.map((input) =>
-      literalCall("thoth_loop_submit_review_independent_assessment", input),
-    ),
-    ...script.review.map((input) => literalCall("thoth_loop_submit_review_verdict", input)),
+    "Call thoth_loop_review_decision exactly once after independent inspection.",
+    "Use the semantic fields in this template, but map every live Acceptance Claim id from the injected Task Anchor to one or more live Evidence refs from the Harness Evidence Index. Do not submit placeholder ids or an empty acceptanceEvidence object.",
+    JSON.stringify(input),
+  ].join("\n");
+}
+
+function backgroundScript(script: ThothRealProviderFlowScript): string {
+  if (script.checkpoints.length === 0) return "";
+  return [
+    "BACKGROUND EXECUTOR AND REVIEW FIXTURE:",
+    "Each Executor must inspect its current Task Anchor and submit one meaningful checkpoint. Each fresh Reviewer must independently inspect reality and submit one decision. Live Task and evidence ids come from the Harness context, never from fixture mechanics.",
+    ...(script.humanDecision
+      ? [literalCall("thoth_loop_request_human_decision", script.humanDecision)]
+      : []),
+    ...script.checkpoints.map((input) => literalCall("thoth_loop_checkpoint", input)),
+    ...script.reviews.map(reviewCall),
   ].join("\n\n");
 }
 
@@ -324,37 +322,34 @@ export function buildRealProviderFixturePrompt(input: {
   if (input.script.clarify.length === 0) {
     return [
       `[THOTH REAL FLOW FIXTURE ${input.script.id}]`,
-      "This is a deterministic provider transport test, not an implementation request.",
-      "Do not inspect files, write files, call shell commands, fetch network data, or make independent decisions.",
+      "This is a deterministic Provider Harness transport test, not an implementation request.",
       `Reply with exactly this text and nothing else: ${input.script.finalMarker}`,
     ].join("\n\n");
   }
 
-  const clarifySteps = input.script.clarify.slice(startAt);
+  const rounds = input.script.clarify.slice(startAt);
   const lines = [
     `[THOTH REAL FLOW FIXTURE ${input.script.id}]`,
-    "This is a deterministic provider transport test, not an implementation request.",
-    "Act only as the prescribed fixture actor. Do not inspect files, write files, call shell commands, fetch network data, or make independent decisions.",
-    "Preserve every literal JSON argument exactly. Do not add fields and do not substitute values.",
-    "For the visible Agent Clarify turn, make one call, wait for its user result, then perform the next numbered call.",
-    ...clarifySteps.map(
-      (payload, index) => `${index + 1}. ${literalCall("thoth_submit_clarify_card", payload)}`,
-    ),
+    "Use only the installed Thoth semantic tools. Do not bypass public authority or write test state directly.",
+    "For each visible Clarify round, update the Decision Map, ask the prescribed related Human-owned forks, then wait for the answer.",
   ];
-  if (input.script.task && input.script.goals) {
+  rounds.forEach((round, index) => {
     lines.push(
-      `${clarifySteps.length + 1}. ${literalCall("thoth_submit_task_card", input.script.task)}`,
-      `${clarifySteps.length + 2}. ${literalCall("thoth_submit_goals_card", input.script.goals)}`,
+      `${index + 1}a. ${literalCall("thoth_clarify_update_map", round.map)}`,
+      `${index + 1}b. ${literalCall("thoth_clarify_ask", round.ask)}`,
+    );
+  });
+  if (input.script.contract) {
+    lines.push(
+      `${rounds.length + 1}. ${literalCall("thoth_clarify_propose_contract", input.script.contract)}`,
     );
   }
-  if (input.script.planExec.length === 0) {
-    lines.push(
-      `After the Goals Card is accepted for Quick, reply with exactly: ${input.script.finalMarker}`,
-    );
+  if (input.script.checkpoints.length === 0) {
+    lines.push(`After Quick approval, finish with exactly: ${input.script.finalMarker}`);
   } else {
     lines.push(
-      "After the Goals Card is accepted for Loop, stop the visible foreground turn. The independent background phase actors below will continue.",
-      backgroundPhaseScript(input.script),
+      "After Loop approval, stop the visible foreground execution. Background Harness threads continue from the Task Anchor.",
+      backgroundScript(input.script),
     );
   }
   return lines.join("\n\n");

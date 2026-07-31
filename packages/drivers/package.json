@@ -18,6 +18,10 @@
       "types": "./dist/clarify/index.d.ts",
       "default": "./dist/clarify/index.js"
     },
+    "./clarify/frontier": {
+      "types": "./dist/clarify/frontier.d.ts",
+      "default": "./dist/clarify/frontier.js"
+    },
     "./harness": {
       "types": "./dist/harness/index.d.ts",
       "default": "./dist/harness/index.js"

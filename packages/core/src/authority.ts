@@ -1,33 +1,37 @@
-import { createHash } from "node:crypto";
+import type { IntentContractProjection } from "@thoth/protocol/intent-contract";
 import type {
   ExecutionApprovalDecision,
   ExecutionApprovalProjection,
   ExecutionLifecycle,
   ExecutionProjection,
   HumanDecisionRecord,
-  TaskBlackboardEntry,
+  ReviewDecisionProjection,
   TaskCommand,
   TaskProjection,
   TaskStrength,
   TaskUserDecisionProjection,
+  WorkUnitProjection,
 } from "@thoth/protocol/task-authority";
 import type {
-  ThothLoopPlanExecResultInput,
+  ThothLoopCheckpointInput,
   ThothLoopReportBlockedInput,
-  ThothLoopReviewIndependentAssessmentInput,
-  ThothLoopReviewVerdictInput,
+  ThothLoopRequestHumanDecisionInput,
+  ThothLoopReviewDecisionInput,
 } from "@thoth/protocol/thoth-runtime-contract";
 import type { AgentThothLifecycle } from "@thoth/protocol/thoth/rpc-schemas";
 
 const ACTIVE_EXECUTION_STATUSES = new Set<ExecutionLifecycle>([
   "created",
   "starting",
+  "orienting",
   "planning",
   "awaiting_implementation",
   "implementing",
   "running",
+  "reviewing",
   "awaiting_provider",
   "awaiting_user",
+  "cancel_requested",
 ]);
 const TERMINAL_EXECUTION_STATUSES = new Set<ExecutionLifecycle>([
   "canceled",
@@ -35,6 +39,7 @@ const TERMINAL_EXECUTION_STATUSES = new Set<ExecutionLifecycle>([
   "failed",
   "orphaned",
 ]);
+const MAX_CONSECUTIVE_EXECUTION_FAILURES = 2;
 
 export type AuthorityTransitionErrorKind = "conflict" | "invalid";
 
@@ -54,8 +59,6 @@ export interface AuthorityState {
   execution: ExecutionProjection | null;
   approval?: ExecutionApprovalProjection | null;
   pendingDecision?: TaskUserDecisionProjection | null;
-  goalsRevision?: number;
-  latestPlanExecReport?: unknown;
 }
 
 export interface ForegroundCardAuthorityState {
@@ -77,7 +80,7 @@ export interface ForegroundCardAuthorityState {
     id: string;
     turnId: string;
     agentId: string;
-    kind: "clarify_card" | "task_card" | "goal_card";
+    kind: "clarify_card" | "intent_contract_card";
     status: "pending" | "answered" | "canceled" | "blocked";
     displayed: unknown;
   };
@@ -88,7 +91,8 @@ export interface DeterministicAuthorityInput {
   ids?: {
     decisionId?: string;
     decisionRequestId?: string;
-    blackboardIds?: readonly string[];
+    evidenceId?: string;
+    reviewDecisionId?: string;
   };
 }
 
@@ -144,19 +148,19 @@ export type AuthorityCommand =
       recordHumanDecision: boolean;
     } & ActorCommand)
   | {
-      type: "execution.planexec.completed";
+      type: "execution.checkpoint.completed";
       generation: string;
-      result: ThothLoopPlanExecResultInput;
-    }
-  | {
-      type: "execution.review.assessed";
-      generation: string;
-      assessment: ThothLoopReviewIndependentAssessmentInput;
+      checkpoint: ThothLoopCheckpointInput;
     }
   | {
       type: "execution.review.completed";
       generation: string;
-      verdict: ThothLoopReviewVerdictInput;
+      review: ThothLoopReviewDecisionInput;
+    }
+  | {
+      type: "execution.human_decision.requested";
+      generation: string;
+      request: ThothLoopRequestHumanDecisionInput;
     }
   | {
       type: "execution.blocked";
@@ -182,14 +186,24 @@ export type AuthorityCommand =
       optionId: string;
       note?: string;
       expectedRevision: number;
-    } & ActorCommand);
+    } & ActorCommand)
+  | {
+      type: "task.contract.revised";
+      decisionRequestId: string;
+      decisionRecordId: string;
+      expectedRevision: number;
+      contract: IntentContractProjection;
+    };
 
-export interface AuthorityBlackboardAppend {
+export interface AuthorityEvidenceAppend {
   id: string;
   taskId: string;
-  kind: TaskBlackboardEntry["kind"];
-  producer: TaskBlackboardEntry["producer"];
+  executionId: string | null;
+  workUnitId: string | null;
+  kind: string;
+  summary: string;
   content: unknown;
+  artifactRef: string | null;
   createdAt: string;
 }
 
@@ -207,7 +221,8 @@ export type AuthorityEffect =
   | { type: "interrupt_execution"; executionId: string; generation: string }
   | { type: "schedule_task"; taskId: string }
   | { type: "quarantine_execution"; executionId: string; generation: string }
-  | { type: "release_task_runtime"; taskId: string };
+  | { type: "release_task_runtime"; taskId: string }
+  | { type: "open_task_clarify"; taskId: string; decisionRequestId: string };
 
 export interface AuthorityMutation {
   task: TaskProjection;
@@ -215,10 +230,9 @@ export interface AuthorityMutation {
   approval?: ExecutionApprovalProjection | null;
   decision?: HumanDecisionRecord;
   decisionRequest?: AuthorityDecisionRequestMutation;
-  blackboard: readonly AuthorityBlackboardAppend[];
-  phaseRunStatus?: "succeeded" | "interrupted";
+  evidence: readonly AuthorityEvidenceAppend[];
+  reviewDecision?: ReviewDecisionProjection;
   cancelPendingApprovals: boolean;
-  goalsRevision?: number;
   quarantine: boolean;
   projectionDelta: AuthorityProjectionDelta;
   effects: readonly AuthorityEffect[];
@@ -270,66 +284,64 @@ export interface WorkspaceAuthorityRepository {
 export interface CreateTaskAuthorityInput {
   id: string;
   workspaceId: string;
+  sourceAgentWorkspaceId: string;
   sourceAgentId: string;
   mode: "quick" | "loop";
-  title: string;
-  goal: string;
-  constraints: readonly string[];
-  acceptance: readonly string[];
+  intentContract: IntentContractProjection;
   strength: TaskStrength;
-  goals: readonly {
-    sourceId: string;
-    order: number;
-    title: string;
-    goal: string;
-    constraints: readonly string[];
-    acceptance: readonly string[];
-  }[];
   now: string;
 }
 
 export function createTaskAuthority(input: CreateTaskAuthorityInput): TaskProjection {
-  const goals = input.goals
-    .slice()
-    .sort((left, right) => left.order - right.order)
-    .map((goal) => ({
-      id: deriveDurableGoalId({
-        taskId: input.id,
-        sourceGoalId: goal.sourceId,
-        order: goal.order,
-        lineage: "approved-goals",
-      }),
-      order: goal.order,
-      title: goal.title,
-      goal: goal.goal,
-      constraints: [...goal.constraints],
-      acceptance: [...goal.acceptance],
-      status: "queued" as const,
-      revision: 1,
-    }));
-  const firstGoal = goals[0];
-  if (!firstGoal) invalid("Task registration requires at least one approved goal");
+  if (input.intentContract.workspaceId !== input.workspaceId) {
+    invalid("Intent Contract belongs to another Workspace");
+  }
+  if (input.intentContract.sourceAgentId !== input.sourceAgentId) {
+    invalid("Intent Contract belongs to another source Agent");
+  }
+  if (input.intentContract.status !== "confirmed") {
+    invalid("Task registration requires a confirmed Intent Contract");
+  }
+  const contract: IntentContractProjection = {
+    ...input.intentContract,
+    taskId: input.id,
+    updatedAt: input.now,
+  };
   return {
     id: input.id,
     workspaceId: input.workspaceId,
+    sourceAgentWorkspaceId: input.sourceAgentWorkspaceId,
     sourceAgentId: input.sourceAgentId,
     mode: input.mode,
-    title: input.title,
-    goal: input.goal,
-    constraints: [...input.constraints],
-    acceptance: [...input.acceptance],
-    origin: null,
+    title: contract.title,
+    intentContract: contract,
     status: "queued",
-    summary: "Approved task queued for execution.",
-    currentGoalId: firstGoal.id,
+    summary: "Confirmed intent is queued for execution.",
     currentExecutionId: null,
-    goals,
-    latestReviewDirection: null,
+    currentWorkUnitId: null,
+    workingSet: {
+      taskId: input.id,
+      activeGap: contract.objective,
+      currentUnderstanding: "Execution has not oriented against Workspace reality yet.",
+      currentHypothesis: "",
+      nextMove: "Orient against the Task Anchor and choose the first meaningful Work Unit.",
+      relevantEvidenceRefs: [],
+      rejectedRoutes: [],
+      blockers: [],
+      latestReviewDecisionId: null,
+      noProgressCount: 0,
+      revision: 1,
+      updatedAt: input.now,
+    },
+    workUnits: [],
+    latestReview: null,
+    completionAuthority: "none",
+    origin: null,
     pendingDecision: null,
     budget: {
       strength: input.strength,
-      usedFailedReviews: 0,
-      maxFailedReviews: failedReviewLimit(input.strength),
+      usedNonCompleteReviews: 0,
+      maxNonCompleteReviews: nonCompleteReviewLimit(input.strength),
       activeDurationMs: 0,
       tokenCount: 0,
       toolCallCount: 0,
@@ -368,17 +380,17 @@ export function transitionAuthority(
     case "execution.status.changed":
       return transitionExecutionStatus(authority, command, input);
     case "execution.quick.settled":
-      return transitionQuickExecutionSettled(authority, command, input);
+      return transitionQuickSettled(authority, command, input);
     case "execution.approval.requested":
       return transitionApprovalRequested(authority, command, input);
     case "execution.approval.resolved":
       return transitionApprovalResolved(authority, command, input);
-    case "execution.planexec.completed":
-      return transitionPlanExecCompleted(authority, command, input);
-    case "execution.review.assessed":
-      return transitionReviewAssessed(authority, command, input);
+    case "execution.checkpoint.completed":
+      return transitionCheckpoint(authority, command, input);
     case "execution.review.completed":
-      return transitionReviewCompleted(authority, command, input);
+      return transitionReview(authority, command, input);
+    case "execution.human_decision.requested":
+      return transitionHumanDecisionRequest(authority, command, input);
     case "execution.blocked":
       return transitionBlocked(authority, command, input);
     case "execution.interrupted":
@@ -389,6 +401,8 @@ export function transitionAuthority(
       return transitionRestartInterrupted(authority, input);
     case "task.decision.answered":
       return transitionTaskDecision(authority, command, input);
+    case "task.contract.revised":
+      return transitionContractRevised(authority, command, input);
   }
 }
 
@@ -397,19 +411,34 @@ function transitionForegroundCard(
   command: ForegroundAuthorityCommand,
   input: DeterministicAuthorityInput,
 ): ForegroundAuthorityMutation {
-  if (state.agent.revision !== command.expectedRevision) {
-    conflict("The Agent Thoth state changed before this card answer was applied.");
+  if (state.agent.revision !== command.expectedRevision)
+    conflict("Agent authority revision changed");
+  if (state.agent.activeTurnId !== state.turn.id || state.card.turnId !== state.turn.id) {
+    conflict("Foreground Card is no longer attached to the active turn");
   }
-  if (
-    state.card.status !== "pending" ||
-    state.card.agentId !== state.agent.id ||
-    state.card.turnId !== state.turn.id ||
-    state.agent.activeTurnId !== state.turn.id ||
-    state.turn.agentId !== state.agent.id
-  ) {
-    conflict("This authority card no longer belongs to the active Agent turn.");
-  }
+  if (state.card.status !== "pending") conflict("Foreground Card is no longer pending");
+  if (state.turn.generation.length === 0) invalid("Foreground turn has no generation fence");
   const revision = state.agent.revision + 1;
+  const decision = humanDecision({
+    id: requiredId(input.ids?.decisionId, "decisionId"),
+    workspaceId: state.workspaceId,
+    taskId: null,
+    turnId: state.turn.id,
+    cardId: state.card.id,
+    kind: `card_${state.card.kind}`,
+    displayed: state.card.displayed,
+    rawAnswer: command.answer,
+    normalized: command.submittedCard,
+    actorId: command.actorId,
+    clientId: command.clientId,
+    deviceId: command.deviceId ?? null,
+    commandId: command.commandId,
+    expectedRevision: command.expectedRevision,
+    resultRevision: revision,
+    supersedesDecisionId: null,
+    fidelity: "exact",
+    decidedAt: input.now,
+  });
   return {
     agent: { ...state.agent, revision, lifecycle: command.nextLifecycle },
     turn: { ...state.turn, lifecycle: command.nextLifecycle },
@@ -421,32 +450,54 @@ function transitionForegroundCard(
       submittedSummary: command.submittedSummary,
       updatedAt: input.now,
     },
-    decision: {
-      id: requireId(input.ids?.decisionId, "decisionId"),
-      workspaceId: state.workspaceId,
-      taskId: null,
-      turnId: state.turn.id,
-      cardId: state.card.id,
-      kind: `card_${state.card.kind}`,
-      displayed: state.card.displayed,
-      rawAnswer: command.answer,
-      normalized: command.submittedCard,
-      actorId: command.actorId,
-      clientId: command.clientId,
-      deviceId: command.deviceId ?? null,
-      commandId: command.commandId,
-      expectedRevision: command.expectedRevision,
-      resultRevision: revision,
-      supersedesDecisionId: null,
-      fidelity: "exact",
-      decidedAt: input.now,
-    },
+    decision,
     projectionDelta: {
       workspaceRevision: state.workspaceRevision + 1,
       changedTaskIds: [],
       changedExecutionIds: [],
     },
   };
+}
+
+function transitionExecutionCreated(
+  state: AuthorityState,
+  command: Extract<AuthorityCommand, { type: "execution.created" }>,
+  input: DeterministicAuthorityInput,
+): AuthorityMutation {
+  if (command.execution.taskId !== state.task.id) invalid("Execution belongs to another Task");
+  if (state.task.currentExecutionId) conflict("Task already has an active Execution");
+  if (!["queued", "reorienting", "running"].includes(state.task.status)) {
+    conflict(`Task cannot start an Execution while ${state.task.status}`);
+  }
+  if (command.execution.phase === "quick_exec" && state.task.mode !== "quick") {
+    invalid("Only Quick Tasks can create quick_exec Executions");
+  }
+  if (command.execution.phase !== "quick_exec" && state.task.mode !== "loop") {
+    invalid("Only Loop Tasks can create execute or review Executions");
+  }
+  if (command.execution.phase !== "quick_exec" && !command.execution.cycleId) {
+    invalid("Loop Execution requires a cycle identity");
+  }
+  if (command.execution.phase === "execute" && !command.execution.workUnitId) {
+    invalid("Execute requires a Work Unit identity");
+  }
+  if (
+    command.execution.workUnitId &&
+    !state.task.workUnits.some((workUnit) => workUnit.id === command.execution.workUnitId)
+  ) {
+    invalid(`Work Unit ${command.execution.workUnitId} is not part of Task ${state.task.id}`);
+  }
+  const task = updateTask(state.task, input.now, {
+    status: "running",
+    currentExecutionId: command.execution.id,
+    currentWorkUnitId: command.execution.workUnitId,
+    pendingControl: state.task.pendingControl === "review_only" ? null : state.task.pendingControl,
+    summary:
+      command.execution.phase === "review"
+        ? "Fresh Review is inspecting Workspace reality."
+        : "Executor is working on the current gap.",
+  });
+  return mutation(state, task, command.execution, input.now);
 }
 
 function transitionExecutionStatus(
@@ -459,209 +510,58 @@ function transitionExecutionStatus(
   if (command.expectedStatus && execution.status !== command.expectedStatus) {
     conflict(`Execution status changed from ${command.expectedStatus} to ${execution.status}`);
   }
-  return mutation(
-    state,
-    state.task,
-    updateExecution(execution, input.now, {
-      status: command.status,
-      summary: command.summary === undefined ? execution.summary : command.summary,
-      completedAt: TERMINAL_EXECUTION_STATUSES.has(command.status)
-        ? input.now
-        : execution.completedAt,
-      runModeReceipt:
-        command.runModeReceipt === undefined ? execution.runModeReceipt : command.runModeReceipt,
-    }),
-  );
+  if (TERMINAL_EXECUTION_STATUSES.has(execution.status)) conflict("Execution is already terminal");
+  const next = updateExecution(execution, input.now, {
+    status: command.status,
+    summary: command.summary === undefined ? execution.summary : command.summary,
+    runModeReceipt:
+      command.runModeReceipt === undefined ? execution.runModeReceipt : command.runModeReceipt,
+  });
+  return mutation(state, state.task, next, input.now);
 }
 
-function transitionQuickExecutionSettled(
+function transitionQuickSettled(
   state: AuthorityState,
   command: Extract<AuthorityCommand, { type: "execution.quick.settled" }>,
   input: DeterministicAuthorityInput,
 ): AuthorityMutation {
-  const execution = requireExecutionGeneration(state, command.generation);
-  if (state.task.mode !== "quick" || execution.phase !== "quick_exec") {
-    invalid("Quick settlement requires a Quick Task and quick_exec ExecutionAttempt");
-  }
-  if (
-    state.task.currentExecutionId !== execution.id ||
-    state.task.status === "stopping" ||
-    TERMINAL_EXECUTION_STATUSES.has(execution.status)
-  ) {
-    conflict(`Execution ${execution.id} no longer owns Quick Task ${state.task.id}`);
-  }
-  if (!execution.goalId) invalid("Quick execution is missing its Goal identity");
-  const currentGoal = state.task.goals.find((goal) => goal.id === execution.goalId);
-  if (!currentGoal || currentGoal.status !== "running") {
-    conflict(`Quick Goal ${execution.goalId} is no longer running`);
-  }
-
-  const succeeded = command.status === "succeeded";
-  const goals = updateGoal(
-    state.task.goals,
-    execution.goalId,
-    succeeded ? "passed" : "interrupted",
-    "running",
-  );
-  return mutation(
-    state,
-    updateTask(state.task, input.now, {
-      status: succeeded ? "completed" : "interrupted",
-      summary: command.summary,
-      currentGoalId: succeeded ? null : execution.goalId,
-      currentExecutionId: null,
-      goals,
-    }),
-    updateExecution(execution, input.now, {
-      status: command.status,
-      summary: command.summary,
-      completedAt: input.now,
-    }),
-    {
-      blackboard: [
-        blackboard(input, 0, state.task.id, succeeded ? "evidence_summary" : "blocker", "daemon", {
-          executionId: execution.id,
-          status: command.status,
-          summary: command.summary,
-        }),
-      ],
-      phaseRunStatus: succeeded ? "succeeded" : "interrupted",
-      effects: [{ type: "release_task_runtime", taskId: state.task.id }],
+  const execution = requireSemanticExecution(state, command.generation, "quick_exec");
+  const evidenceId = requiredId(input.ids?.evidenceId, "evidenceId");
+  const nextExecution = updateExecution(execution, input.now, {
+    status: command.status,
+    summary: command.summary,
+    completedAt: input.now,
+  });
+  const task = updateTask(state.task, input.now, {
+    status: command.status === "succeeded" ? "completed" : "interrupted",
+    summary: command.summary,
+    currentExecutionId: null,
+    currentWorkUnitId: null,
+    completionAuthority: command.status === "succeeded" ? "executor_unreviewed" : "none",
+    workingSet: {
+      ...state.task.workingSet,
+      currentUnderstanding: command.summary,
+      relevantEvidenceRefs: unique([...state.task.workingSet.relevantEvidenceRefs, evidenceId]),
+      revision: state.task.workingSet.revision + 1,
+      updatedAt: input.now,
     },
-  );
-}
-
-function transitionTaskControl(
-  state: AuthorityState,
-  command: Extract<AuthorityCommand, { type: "task.control" }>,
-  input: DeterministicAuthorityInput,
-): AuthorityMutation {
-  const { task } = state;
-  requireRevision(task, command.expectedRevision);
-  if (["stopping", "stopped"].includes(task.status)) {
-    invalid(`Cannot ${command.command} a ${task.status} task`);
-  }
-  const execution = state.execution;
-  const active = execution !== null && ACTIVE_EXECUTION_STATUSES.has(execution.status);
-  let nextTask = task;
-  let nextExecution = execution;
-  let effects: AuthorityEffect[] = [];
-  let cancelPendingApprovals = false;
-  let quarantine = false;
-
-  if (command.command === "stop") {
-    if (task.status === "completed") invalid("Cannot stop a completed task");
-    nextTask = updateTask(task, input.now, {
-      status: "stopping",
-      pendingControl: "stop",
-      summary: "Stopping the active execution.",
-    });
-    if (active && execution) {
-      nextExecution = updateExecution(execution, input.now, {
-        status: "cancel_requested",
-        summary: "Cancellation requested by the user.",
-      });
-      cancelPendingApprovals = true;
-      effects = [
-        {
-          type: "interrupt_execution",
-          executionId: execution.id,
-          generation: execution.generation,
-        },
-      ];
-    }
-  } else {
-    let status = task.status;
-    let summary = task.summary;
-    let pendingControl: TaskCommand | null = null;
-    let strength = task.budget.strength;
-    let maxFailedReviews = task.budget.maxFailedReviews;
-    switch (command.command) {
-      case "pause":
-        if (task.status === "completed") invalid("Cannot pause a completed task");
-        status = active ? task.status : "paused";
-        pendingControl = active ? "pause" : null;
-        summary = active
-          ? "Pause requested; the task will pause at the current phase boundary."
-          : "Paused by the user.";
-        break;
-      case "resume":
-        if (!["paused", "interrupted", "budget_wait"].includes(task.status)) {
-          invalid(`Cannot resume a ${task.status} task`);
-        }
-        status = "queued";
-        summary = "Resume requested; the task is queued for execution.";
-        effects = [{ type: "schedule_task", taskId: task.id }];
-        break;
-      case "raise_budget": {
-        if (task.status === "completed") invalid("Cannot raise the budget of a completed task");
-        const raised = nextTaskStrength(strength);
-        if (!raised) invalid("The task already has the maximum Review budget");
-        strength = raised.strength;
-        maxFailedReviews = raised.maxFailedReviews;
-        status = task.status === "budget_wait" ? "queued" : task.status;
-        summary = "A budget extension was approved by the user.";
-        break;
-      }
-      case "review_only":
-        status = "queued";
-        pendingControl = "review_only";
-        summary = "An independent Review was requested by the user.";
-        effects = [{ type: "schedule_task", taskId: task.id }];
-        break;
-    }
-    nextTask = updateTask(task, input.now, {
-      status,
-      summary,
-      pendingControl,
-      budget: { ...task.budget, strength, maxFailedReviews },
-    });
-  }
-
-  const decision = humanDecision({
-    state,
-    input,
-    command,
-    kind: `task_${command.command}`,
-    displayed: { command: command.command, taskId: task.id, taskTitle: task.title },
-    rawAnswer: { command: command.command },
-    normalized: { controlIntent: command.command },
-    resultRevision: nextTask.revision,
   });
-  return mutation(state, nextTask, nextExecution, {
-    decision,
-    cancelPendingApprovals,
-    quarantine,
-    effects,
+  return mutation(state, task, nextExecution, input.now, {
+    evidence: [
+      {
+        id: evidenceId,
+        taskId: task.id,
+        executionId: execution.id,
+        workUnitId: null,
+        kind: "quick_execution_result",
+        summary: command.summary,
+        content: { status: command.status, summary: command.summary },
+        artifactRef: null,
+        createdAt: input.now,
+      },
+    ],
+    effects: [{ type: "release_task_runtime", taskId: task.id }],
   });
-}
-
-function transitionExecutionCreated(
-  state: AuthorityState,
-  command: Extract<AuthorityCommand, { type: "execution.created" }>,
-  input: DeterministicAuthorityInput,
-): AuthorityMutation {
-  if (command.execution.taskId !== state.task.id) invalid("Execution belongs to another Task");
-  const goals = command.execution.goalId
-    ? state.task.goals.map((goal) =>
-        goal.id === command.execution.goalId && ["queued", "interrupted"].includes(goal.status)
-          ? { ...goal, status: "running" as const, revision: goal.revision + 1 }
-          : goal,
-      )
-    : state.task.goals;
-  return mutation(
-    state,
-    updateTask(state.task, input.now, {
-      status: "running",
-      currentExecutionId: command.execution.id,
-      pendingControl:
-        command.execution.phase === "review" && state.task.pendingControl === "review_only"
-          ? null
-          : state.task.pendingControl,
-      goals,
-    }),
-    command.execution,
-  );
 }
 
 function transitionApprovalRequested(
@@ -671,19 +571,15 @@ function transitionApprovalRequested(
 ): AuthorityMutation {
   const execution = requireActiveExecution(state, command.approval.executionId);
   if (command.approval.taskId !== state.task.id || command.approval.status !== "pending") {
-    invalid("Execution approval does not belong to the active Task");
+    invalid("Approval does not belong to this active Task Execution");
   }
-  const implementing = command.approval.kind === "implement";
+  const status: ExecutionLifecycle =
+    command.approval.kind === "implement" ? "awaiting_implementation" : "awaiting_provider";
   return mutation(
     state,
-    updateTask(state.task, input.now, {
-      summary: implementing
-        ? "Native Plan is ready for implementation approval."
-        : "Provider approval is waiting for a user decision.",
-    }),
-    updateExecution(execution, input.now, {
-      status: implementing ? "awaiting_implementation" : "awaiting_user",
-    }),
+    updateTask(state.task, input.now, { status: "running" }),
+    updateExecution(execution, input.now, { status }),
+    input.now,
     { approval: command.approval },
   );
 }
@@ -693,228 +589,335 @@ function transitionApprovalResolved(
   command: Extract<AuthorityCommand, { type: "execution.approval.resolved" }>,
   input: DeterministicAuthorityInput,
 ): AuthorityMutation {
-  const execution = requireActiveExecution(state, state.approval?.executionId);
   const approval = state.approval;
-  if (
-    !approval ||
-    approval.status !== "pending" ||
-    approval.revision !== command.expectedRevision
-  ) {
-    conflict("Execution approval changed before this decision was committed.");
-  }
+  if (!approval || approval.status !== "pending")
+    conflict("Execution approval is no longer pending");
+  if (approval.revision !== command.expectedRevision)
+    conflict("Execution approval revision changed");
+  const execution = requireActiveExecution(state, approval.executionId);
   if (approval.kind === "implement" && !["implement", "deny"].includes(command.decision)) {
-    invalid("A native Plan approval requires Implement or Deny.");
+    invalid("Plan approval requires implement or deny");
   }
   if (approval.kind !== "implement" && command.decision === "implement") {
-    invalid("Implement is only valid for a native Plan approval.");
+    invalid("Only a Plan approval accepts implement");
   }
-  const denied = command.decision === "deny";
-  const nextApproval: ExecutionApprovalProjection = {
+  const allowed = command.decision !== "deny";
+  const resolved: ExecutionApprovalProjection = {
     ...approval,
-    status: denied ? "denied" : "allowed",
-    resolution: { decision: command.decision, actorId: command.actorId, resolvedAt: input.now },
+    status: allowed ? "allowed" : "denied",
+    resolution: {
+      decision: command.decision,
+      actorId: command.actorId,
+      resolvedAt: input.now,
+    },
     revision: approval.revision + 1,
     updatedAt: input.now,
   };
   const nextExecution = updateExecution(execution, input.now, {
-    status: denied
-      ? "failed"
-      : approval.kind === "implement"
+    status: allowed
+      ? approval.kind === "implement"
         ? "implementing"
-        : "awaiting_provider",
-    completedAt: denied ? input.now : null,
-    summary: denied ? "Provider approval was denied." : execution.summary,
+        : "awaiting_provider"
+      : "failed",
+    ...(allowed ? {} : { completedAt: input.now, summary: "Provider approval was denied." }),
   });
   const nextTask = updateTask(state.task, input.now, {
-    status: denied ? "interrupted" : "running",
-    summary: denied
-      ? "Provider approval was denied; resume reruns this phase."
-      : approval.kind === "implement"
-        ? "Native Plan approved; implementation is running."
-        : "Provider approval resolved; execution is continuing.",
-    currentExecutionId: denied ? null : execution.id,
+    status: allowed ? "running" : "interrupted",
+    ...(allowed
+      ? {}
+      : {
+          currentExecutionId: null,
+          summary: "Provider approval was denied; execution did not continue.",
+        }),
   });
   const decision = command.recordHumanDecision
     ? humanDecision({
-        state,
-        input,
-        command,
+        id: requiredId(input.ids?.decisionId, "decisionId"),
+        workspaceId: state.task.workspaceId,
+        taskId: state.task.id,
+        turnId: null,
+        cardId: null,
         kind: "execution_approval",
         displayed: approval.displayed,
-        rawAnswer: { decision: command.decision },
-        normalized: {
-          approvalId: approval.id,
-          executionId: execution.id,
-          kind: approval.kind,
-          decision: command.decision,
-        },
+        rawAnswer: command.decision,
+        normalized: { approvalId: approval.id, decision: command.decision },
+        actorId: command.actorId,
+        clientId: command.clientId,
+        deviceId: command.deviceId ?? null,
+        commandId: command.commandId,
         expectedRevision: command.expectedRevision,
         resultRevision: nextTask.revision,
+        supersedesDecisionId: null,
+        fidelity: "exact",
+        decidedAt: input.now,
       })
     : undefined;
-  return mutation(state, nextTask, nextExecution, { approval: nextApproval, decision });
+  return mutation(state, nextTask, nextExecution, input.now, {
+    approval: resolved,
+    decision,
+    effects: allowed ? [] : [{ type: "release_task_runtime", taskId: state.task.id }],
+  });
 }
 
-function transitionPlanExecCompleted(
+function transitionCheckpoint(
   state: AuthorityState,
-  command: Extract<AuthorityCommand, { type: "execution.planexec.completed" }>,
+  command: Extract<AuthorityCommand, { type: "execution.checkpoint.completed" }>,
   input: DeterministicAuthorityInput,
 ): AuthorityMutation {
-  const execution = requireSemanticExecution(state, command.generation, "planexec");
-  const paused = state.task.pendingControl === "pause";
-  const blackboardRows = [
-    blackboard(input, 0, state.task.id, "planexec_report", "planexec", command.result),
-  ];
-  return mutation(
-    state,
-    updateTask(state.task, input.now, {
-      status: paused ? "paused" : "queued",
-      summary: paused
-        ? "Paused after PlanExec; independent Review remains queued."
-        : "PlanExec completed; independent Review is queued.",
-      currentExecutionId: null,
-      pendingControl: null,
-    }),
-    updateExecution(execution, input.now, {
-      status: "succeeded",
-      summary: command.result.execution_summary,
-      completedAt: input.now,
-    }),
-    { blackboard: blackboardRows, phaseRunStatus: "succeeded" },
-  );
-}
-
-function transitionReviewAssessed(
-  state: AuthorityState,
-  command: Extract<AuthorityCommand, { type: "execution.review.assessed" }>,
-  input: DeterministicAuthorityInput,
-): AuthorityMutation {
-  requireSemanticExecution(state, command.generation, "review");
-  if (state.latestPlanExecReport === undefined) {
-    invalid("Review cannot compare reality before a PlanExec report exists");
-  }
-  return mutation(state, state.task, state.execution, {
-    blackboard: [
-      blackboard(input, 0, state.task.id, "review_assessment", "review", command.assessment),
+  const execution = requireSemanticExecution(state, command.generation, "execute");
+  if (!execution.workUnitId) invalid("Execute checkpoint has no Work Unit identity");
+  const workUnit = state.task.workUnits.find((candidate) => candidate.id === execution.workUnitId);
+  if (!workUnit) invalid(`Work Unit ${execution.workUnitId} is missing`);
+  const evidenceId = requiredId(input.ids?.evidenceId, "evidenceId");
+  const evidenceRefs = unique([...command.checkpoint.evidenceRefs, evidenceId]);
+  const pauseAtBoundary = state.task.pendingControl === "pause";
+  const nextWorkUnit: WorkUnitProjection = {
+    ...workUnit,
+    title: command.checkpoint.title,
+    activeGap: command.checkpoint.activeGap,
+    progressClaim: command.checkpoint.progressClaim,
+    unresolvedGap: command.checkpoint.unresolvedGap,
+    evidenceRefs,
+    status: "completed",
+    revision: workUnit.revision + 1,
+    updatedAt: input.now,
+  };
+  const task = updateTask(state.task, input.now, {
+    status: pauseAtBoundary ? "paused" : "queued",
+    summary: command.checkpoint.progressClaim,
+    currentExecutionId: null,
+    currentWorkUnitId: nextWorkUnit.id,
+    pendingControl: pauseAtBoundary ? null : state.task.pendingControl,
+    workUnits: replaceWorkUnit(state.task.workUnits, nextWorkUnit),
+    workingSet: {
+      ...state.task.workingSet,
+      activeGap: command.checkpoint.unresolvedGap || state.task.workingSet.activeGap,
+      currentUnderstanding: command.checkpoint.progressClaim,
+      nextMove: pauseAtBoundary
+        ? "Resume when ready; the next phase is a fresh independent Review."
+        : "Run a fresh independent Review against Workspace reality.",
+      relevantEvidenceRefs: unique([
+        ...state.task.workingSet.relevantEvidenceRefs,
+        ...evidenceRefs,
+      ]),
+      noProgressCount:
+        command.checkpoint.evidenceRefs.length === 0 &&
+        command.checkpoint.progressClaim.trim() === workUnit.progressClaim.trim()
+          ? state.task.workingSet.noProgressCount + 1
+          : 0,
+      revision: state.task.workingSet.revision + 1,
+      updatedAt: input.now,
+    },
+  });
+  const nextExecution = updateExecution(execution, input.now, {
+    status: "succeeded",
+    summary: command.checkpoint.progressClaim,
+    completedAt: input.now,
+  });
+  return mutation(state, task, nextExecution, input.now, {
+    evidence: [
+      {
+        id: evidenceId,
+        taskId: task.id,
+        executionId: execution.id,
+        workUnitId: nextWorkUnit.id,
+        kind: "executor_checkpoint",
+        summary: command.checkpoint.progressClaim,
+        content: command.checkpoint,
+        artifactRef: null,
+        createdAt: input.now,
+      },
+    ],
+    effects: [
+      pauseAtBoundary
+        ? { type: "release_task_runtime", taskId: task.id }
+        : { type: "schedule_task", taskId: task.id },
     ],
   });
 }
 
-function transitionReviewCompleted(
+function transitionReview(
   state: AuthorityState,
   command: Extract<AuthorityCommand, { type: "execution.review.completed" }>,
   input: DeterministicAuthorityInput,
 ): AuthorityMutation {
   const execution = requireSemanticExecution(state, command.generation, "review");
-  if (!execution.goalId) invalid("Review execution is missing its Goal identity");
-  const current = state.task.goals.find((goal) => goal.id === execution.goalId);
-  if (!current) invalid(`Goal ${execution.goalId} does not belong to Task ${state.task.id}`);
-
-  const blackboardRows: AuthorityBlackboardAppend[] = [];
-  const append = (
-    kind: TaskBlackboardEntry["kind"],
-    producer: TaskBlackboardEntry["producer"],
-    content: unknown,
-  ) =>
-    blackboardRows.push(
-      blackboard(input, blackboardRows.length, state.task.id, kind, producer, content),
-    );
-  append("evidence_summary", "review", {
-    outcome: command.verdict.outcome,
-    summary: command.verdict.summary,
-    evidenceSummary: command.verdict.evidence_summary ?? null,
-  });
-  if (command.verdict.direction_memo)
-    append("review_direction", "review", command.verdict.direction_memo);
-
+  if (!execution.cycleId) invalid("Review has no Loop cycle identity");
+  if (command.review.decision === "complete") assertCompleteEvidence(state.task, command.review);
+  const reviewId = requiredId(input.ids?.reviewDecisionId, "reviewDecisionId");
+  const review: ReviewDecisionProjection = {
+    id: reviewId,
+    taskId: state.task.id,
+    cycleId: execution.cycleId,
+    executionId: execution.id,
+    decision: command.review.decision,
+    reason: command.review.reason,
+    evidenceRefs: command.review.evidenceRefs,
+    nextFocus: command.review.nextFocus ?? null,
+    rejectedRoutes: command.review.rejectedRoutes,
+    acceptanceEvidence: command.review.acceptanceEvidence,
+    createdAt: input.now,
+  };
+  const usedReviews =
+    command.review.decision === "complete"
+      ? state.task.budget.usedNonCompleteReviews
+      : state.task.budget.usedNonCompleteReviews + 1;
+  const budgetExhausted =
+    command.review.decision !== "complete" &&
+    state.task.budget.maxNonCompleteReviews !== null &&
+    usedReviews >= state.task.budget.maxNonCompleteReviews;
+  const requiresFinal =
+    command.review.decision === "complete" &&
+    state.task.intentContract.escalationPolicy.finalConfirmation === "required";
+  const nextStatus: TaskProjection["status"] = budgetExhausted
+    ? "budget_wait"
+    : command.review.decision === "complete"
+      ? requiresFinal
+        ? "awaiting_user_final"
+        : "completed"
+      : command.review.decision === "need_human"
+        ? "awaiting_user"
+        : command.review.decision === "blocked"
+          ? "blocked"
+          : command.review.decision === "reorient"
+            ? "reorienting"
+            : "queued";
+  const pauseAtBoundary =
+    state.task.pendingControl === "pause" && ["queued", "reorienting"].includes(nextStatus);
+  const effectiveStatus: TaskProjection["status"] = pauseAtBoundary ? "paused" : nextStatus;
+  let pendingDecision: TaskUserDecisionProjection | null = state.task.pendingDecision;
   let decisionRequest: AuthorityDecisionRequestMutation | undefined;
-  let pendingDecision = state.task.pendingDecision;
-  if (command.verdict.user_decision) {
+  if (requiresFinal) {
     const request: TaskUserDecisionProjection = {
-      id: requireId(input.ids?.decisionRequestId, "decisionRequestId"),
-      title: command.verdict.user_decision.title,
-      question: command.verdict.user_decision.question,
-      options: command.verdict.user_decision.options,
-      ...(command.verdict.user_decision.note_placeholder === undefined
-        ? {}
-        : { notePlaceholder: command.verdict.user_decision.note_placeholder }),
+      id: requiredId(input.ids?.decisionRequestId, "decisionRequestId"),
+      kind: "final_confirmation",
+      title: "Final acceptance",
+      question:
+        "Review found evidence for every Acceptance Claim. Accept completion or reopen the Task?",
+      affectedContractFields: [],
+      options: [
+        { id: "accept", label: "Accept completion" },
+        { id: "reopen", label: "Reopen Task" },
+      ],
       createdAt: input.now,
     };
     pendingDecision = request;
     decisionRequest = { type: "open", request };
-    append("user_decision_request", "review", request);
-  }
-  if (command.verdict.deferred_goal_replan_proposal) {
-    append("replan_proposal", "review", command.verdict.deferred_goal_replan_proposal);
-  }
-
-  let goals = state.task.goals;
-  let nextTaskStatus: TaskProjection["status"] = "queued";
-  let nextGoalId: string | null = current.id;
-  let usedFailedReviews = state.task.budget.usedFailedReviews;
-  let latestDirection = state.task.latestReviewDirection;
-  let goalsRevision = state.goalsRevision;
-
-  switch (command.verdict.outcome) {
-    case "pass": {
-      goals = updateGoal(goals, current.id, "passed");
-      const next = goals.find((goal) => goal.order > current.order && goal.status === "queued");
-      nextGoalId = next?.id ?? null;
-      nextTaskStatus = next ? "queued" : "completed";
-      break;
-    }
-    case "continue":
-    case "reframe_current_goal":
-      usedFailedReviews += 1;
-      goals = updateGoal(goals, current.id, "queued");
-      nextTaskStatus =
-        usedFailedReviews >= state.task.budget.maxFailedReviews ? "budget_wait" : "queued";
-      latestDirection = command.verdict.direction_memo
-        ? JSON.stringify(command.verdict.direction_memo)
-        : null;
-      break;
-    case "replan_unstarted_goals": {
-      const replan = applyReplan(state, current.id, command.verdict);
-      goals = replan.goals;
-      goalsRevision = replan.goalsRevision;
-      nextGoalId = replan.nextGoalId;
-      nextTaskStatus = nextGoalId ? "queued" : "completed";
-      break;
-    }
-    case "return_to_user_decision":
-      goals = updateGoal(goals, current.id, "awaiting_user");
-      nextTaskStatus = "awaiting_user";
-      break;
-    case "real_blocker":
-      goals = updateGoal(goals, current.id, "blocked");
-      nextTaskStatus = "blocked";
-      append("blocker", "review", { summary: command.verdict.summary });
-      break;
-  }
-  if (state.task.pendingControl === "pause" && nextTaskStatus === "queued") {
-    nextTaskStatus = "paused";
   }
   const task = updateTask(state.task, input.now, {
-    status: nextTaskStatus,
-    summary: command.verdict.summary,
-    currentGoalId: nextGoalId,
+    intentContract:
+      command.review.decision === "complete"
+        ? {
+            ...state.task.intentContract,
+            acceptanceClaims: state.task.intentContract.acceptanceClaims.map((claim) => ({
+              ...claim,
+              status: "satisfied" as const,
+              evidenceRefs: command.review.acceptanceEvidence[claim.id] ?? [],
+              revision: claim.revision + 1,
+            })),
+            updatedAt: input.now,
+          }
+        : state.task.intentContract,
+    status: effectiveStatus,
+    summary: command.review.reason,
     currentExecutionId: null,
-    goals,
-    latestReviewDirection: latestDirection,
+    latestReview: review,
+    completionAuthority: command.review.decision === "complete" ? "review_verified" : "none",
     pendingDecision,
-    budget: { ...state.task.budget, usedFailedReviews },
-    pendingControl: null,
+    pendingControl: pauseAtBoundary ? null : state.task.pendingControl,
+    budget: { ...state.task.budget, usedNonCompleteReviews: usedReviews },
+    workingSet: {
+      ...state.task.workingSet,
+      activeGap:
+        command.review.decision === "complete"
+          ? "All Acceptance Claims are supported by Review evidence."
+          : command.review.nextFocus?.trim() || state.task.workingSet.activeGap,
+      currentUnderstanding: command.review.reason,
+      currentHypothesis: command.review.nextFocus ?? state.task.workingSet.currentHypothesis,
+      nextMove: pauseAtBoundary
+        ? "Resume when ready and continue from the latest independent Review."
+        : reviewNextMove(command.review.decision, budgetExhausted),
+      relevantEvidenceRefs: unique([
+        ...state.task.workingSet.relevantEvidenceRefs,
+        ...command.review.evidenceRefs,
+      ]),
+      rejectedRoutes: unique([
+        ...state.task.workingSet.rejectedRoutes,
+        ...command.review.rejectedRoutes,
+      ]),
+      blockers:
+        command.review.decision === "blocked"
+          ? unique([...state.task.workingSet.blockers, command.review.reason])
+          : state.task.workingSet.blockers,
+      latestReviewDecisionId: review.id,
+      noProgressCount:
+        command.review.evidenceRefs.length === 0
+          ? state.task.workingSet.noProgressCount + 1
+          : state.task.workingSet.noProgressCount,
+      revision: state.task.workingSet.revision + 1,
+      updatedAt: input.now,
+    },
   });
-  return mutation(
-    state,
-    task,
-    updateExecution(execution, input.now, {
-      status: "succeeded",
-      summary: command.verdict.summary,
-      completedAt: input.now,
-    }),
-    { blackboard: blackboardRows, decisionRequest, goalsRevision, phaseRunStatus: "succeeded" },
-  );
+  const nextExecution = updateExecution(execution, input.now, {
+    status: "succeeded",
+    summary: command.review.reason,
+    completedAt: input.now,
+  });
+  return mutation(state, task, nextExecution, input.now, {
+    reviewDecision: review,
+    decisionRequest,
+    effects:
+      effectiveStatus === "queued" || effectiveStatus === "reorienting"
+        ? [{ type: "schedule_task", taskId: task.id }]
+        : effectiveStatus === "completed" ||
+            effectiveStatus === "blocked" ||
+            effectiveStatus === "budget_wait" ||
+            effectiveStatus === "paused"
+          ? [{ type: "release_task_runtime", taskId: task.id }]
+          : [],
+  });
+}
+
+function transitionHumanDecisionRequest(
+  state: AuthorityState,
+  command: Extract<AuthorityCommand, { type: "execution.human_decision.requested" }>,
+  input: DeterministicAuthorityInput,
+): AuthorityMutation {
+  const execution = requireSemanticExecution(state, command.generation);
+  const request: TaskUserDecisionProjection = {
+    id: requiredId(input.ids?.decisionRequestId, "decisionRequestId"),
+    kind: "contract_change",
+    title: command.request.title,
+    question: command.request.question,
+    affectedContractFields: [...command.request.affectedContractFields],
+    options: command.request.options,
+    ...(command.request.notePlaceholder
+      ? { notePlaceholder: command.request.notePlaceholder }
+      : {}),
+    createdAt: input.now,
+  };
+  const task = updateTask(state.task, input.now, {
+    status: "awaiting_user",
+    summary: command.request.question,
+    currentExecutionId: null,
+    pendingDecision: request,
+    workingSet: {
+      ...state.task.workingSet,
+      blockers: unique([...state.task.workingSet.blockers, command.request.question]),
+      nextMove: "Return to the source Agent Clarify session for a Human-owned contract decision.",
+      revision: state.task.workingSet.revision + 1,
+      updatedAt: input.now,
+    },
+  });
+  const nextExecution = updateExecution(execution, input.now, {
+    status: "succeeded",
+    summary: command.request.question,
+    completedAt: input.now,
+  });
+  return mutation(state, task, nextExecution, input.now, {
+    decisionRequest: { type: "open", request },
+    effects: [{ type: "open_task_clarify", taskId: task.id, decisionRequestId: request.id }],
+  });
 }
 
 function transitionBlocked(
@@ -923,35 +926,55 @@ function transitionBlocked(
   input: DeterministicAuthorityInput,
 ): AuthorityMutation {
   const execution = requireSemanticExecution(state, command.generation);
-  const goals = execution.goalId
-    ? updateGoal(state.task.goals, execution.goalId, "blocked")
-    : state.task.goals;
-  return mutation(
-    state,
-    updateTask(state.task, input.now, {
-      status: "blocked",
-      summary: command.report.reason,
-      currentExecutionId: null,
-      goals,
-    }),
-    updateExecution(execution, input.now, {
-      status: "failed",
-      summary: command.report.reason,
-      completedAt: input.now,
-    }),
-    {
-      blackboard: [
-        blackboard(
-          input,
-          0,
-          state.task.id,
-          "blocker",
-          execution.phase === "review" ? "review" : "planexec",
-          command.report,
-        ),
-      ],
+  const evidenceId = requiredId(input.ids?.evidenceId, "evidenceId");
+  const workUnits = execution.workUnitId
+    ? state.task.workUnits.map((workUnit) =>
+        workUnit.id === execution.workUnitId
+          ? {
+              ...workUnit,
+              status: "blocked" as const,
+              unresolvedGap: command.report.reason,
+              revision: workUnit.revision + 1,
+              updatedAt: input.now,
+            }
+          : workUnit,
+      )
+    : state.task.workUnits;
+  const task = updateTask(state.task, input.now, {
+    status: "blocked",
+    summary: command.report.reason,
+    currentExecutionId: null,
+    workUnits,
+    workingSet: {
+      ...state.task.workingSet,
+      blockers: unique([...state.task.workingSet.blockers, command.report.reason]),
+      nextMove: command.report.nextUserDecision ?? "Resolve the reported external blocker.",
+      relevantEvidenceRefs: unique([...state.task.workingSet.relevantEvidenceRefs, evidenceId]),
+      revision: state.task.workingSet.revision + 1,
+      updatedAt: input.now,
     },
-  );
+  });
+  const nextExecution = updateExecution(execution, input.now, {
+    status: "failed",
+    summary: command.report.reason,
+    completedAt: input.now,
+  });
+  return mutation(state, task, nextExecution, input.now, {
+    evidence: [
+      {
+        id: evidenceId,
+        taskId: task.id,
+        executionId: execution.id,
+        workUnitId: execution.workUnitId,
+        kind: "reported_blocker",
+        summary: command.report.reason,
+        content: command.report,
+        artifactRef: null,
+        createdAt: input.now,
+      },
+    ],
+    effects: [{ type: "release_task_runtime", taskId: task.id }],
+  });
 }
 
 function transitionInterrupted(
@@ -962,30 +985,41 @@ function transitionInterrupted(
   const execution = requireExecutionGeneration(state, command.generation);
   if (TERMINAL_EXECUTION_STATUSES.has(execution.status)) conflict("Execution is already terminal");
   if (execution.status === "cancel_requested" || state.task.status === "stopping") {
-    conflict("Stop authority owns the active execution");
+    conflict("Stop authority owns this Execution");
   }
-  const goals = execution.goalId
-    ? state.task.goals.map((goal) =>
-        goal.id === execution.goalId && goal.status === "running"
-          ? { ...goal, status: "interrupted" as const, revision: goal.revision + 1 }
-          : goal,
-      )
-    : state.task.goals;
-  return mutation(
-    state,
-    updateTask(state.task, input.now, {
-      status: "interrupted",
-      summary: command.summary,
-      currentExecutionId: null,
-      goals,
-    }),
-    updateExecution(execution, input.now, {
-      status: "failed",
-      summary: command.summary,
-      completedAt: input.now,
-    }),
-    { phaseRunStatus: "interrupted" },
-  );
+  const noProgressCount =
+    state.task.mode === "loop"
+      ? state.task.workingSet.noProgressCount + 1
+      : state.task.workingSet.noProgressCount;
+  const shouldReorient =
+    state.task.mode === "loop" && noProgressCount < MAX_CONSECUTIVE_EXECUTION_FAILURES;
+  const task = updateTask(state.task, input.now, {
+    status: shouldReorient ? "reorienting" : "interrupted",
+    summary: command.summary,
+    currentExecutionId: null,
+    workingSet: {
+      ...state.task.workingSet,
+      nextMove: shouldReorient
+        ? "Freshly reorient because the Provider execution could not continue."
+        : state.task.mode === "loop"
+          ? "Two Executor attempts produced no semantic progress; explicit Resume is required."
+          : "Quick execution was interrupted and will not replay automatically.",
+      noProgressCount,
+      revision: state.task.workingSet.revision + 1,
+      updatedAt: input.now,
+    },
+  });
+  const nextExecution = updateExecution(execution, input.now, {
+    status: "failed",
+    summary: command.summary,
+    completedAt: input.now,
+  });
+  return mutation(state, task, nextExecution, input.now, {
+    cancelPendingApprovals: true,
+    effects: shouldReorient
+      ? [{ type: "schedule_task", taskId: task.id }]
+      : [{ type: "release_task_runtime", taskId: task.id }],
+  });
 }
 
 function transitionStopSettled(
@@ -994,43 +1028,43 @@ function transitionStopSettled(
   input: DeterministicAuthorityInput,
 ): AuthorityMutation {
   if (state.task.status !== "stopping") conflict("Task is no longer stopping");
-  let execution = state.execution;
+  const execution = state.execution;
   if (execution && command.generation && execution.generation !== command.generation) {
-    conflict("Execution generation changed during Stop");
+    conflict("Stop settlement belongs to an older Execution generation");
   }
-  if (execution?.status === "cancel_requested") {
-    execution = updateExecution(execution, input.now, {
-      status: command.orphaned ? "orphaned" : "canceled",
-      summary: command.orphaned
-        ? "Provider interruption could not be confirmed; execution is quarantined."
-        : "Execution canceled by the user.",
-      completedAt: input.now,
-    });
-  }
-  return mutation(
-    state,
-    updateTask(state.task, input.now, {
-      status: "stopped",
-      pendingControl: null,
-      summary: command.orphaned
-        ? "Stopped; an orphaned provider execution remains quarantined."
-        : "Stopped by the user.",
-    }),
-    execution,
-    {
-      quarantine: command.orphaned,
-      effects:
-        command.orphaned && execution
-          ? [
-              {
-                type: "quarantine_execution",
-                executionId: execution.id,
-                generation: execution.generation,
-              },
-            ]
-          : [{ type: "release_task_runtime", taskId: state.task.id }],
-    },
-  );
+  const nextExecution =
+    execution?.status === "cancel_requested"
+      ? updateExecution(execution, input.now, {
+          status: command.orphaned ? "orphaned" : "canceled",
+          completedAt: input.now,
+          summary: command.orphaned
+            ? "Provider interrupt could not be confirmed; late events remain fenced."
+            : "Execution stopped by user command.",
+        })
+      : execution;
+  const task = updateTask(state.task, input.now, {
+    status: "stopped",
+    pendingControl: null,
+    currentExecutionId: null,
+    summary: command.orphaned
+      ? "Stopped with an orphaned Provider execution in cancel quarantine."
+      : "Stopped by user command.",
+  });
+  return mutation(state, task, nextExecution ?? null, input.now, {
+    cancelPendingApprovals: true,
+    quarantine: command.orphaned,
+    effects: command.orphaned
+      ? nextExecution
+        ? [
+            {
+              type: "quarantine_execution",
+              executionId: nextExecution.id,
+              generation: nextExecution.generation,
+            },
+          ]
+        : []
+      : [{ type: "release_task_runtime", taskId: task.id }],
+  });
 }
 
 function transitionRestartInterrupted(
@@ -1038,49 +1072,142 @@ function transitionRestartInterrupted(
   input: DeterministicAuthorityInput,
 ): AuthorityMutation {
   const execution = state.execution;
-  if (
-    !execution ||
-    (!ACTIVE_EXECUTION_STATUSES.has(execution.status) && execution.status !== "cancel_requested")
-  ) {
-    conflict("Execution is not recoverable after restart");
+  if (!execution || TERMINAL_EXECUTION_STATUSES.has(execution.status)) {
+    return mutation(state, state.task, execution, input.now);
   }
-  const stopping = state.task.status === "stopping" || execution.status === "cancel_requested";
-  const summary = stopping
-    ? "Daemon restarted before provider cancellation could be confirmed."
-    : execution.status === "awaiting_implementation" || execution.status === "awaiting_user"
-      ? "Daemon restarted while a provider approval callback was pending; this phase must be rerun."
-      : "Daemon restarted while the provider execution was active.";
-  const goals = execution.goalId
-    ? updateGoal(state.task.goals, execution.goalId, stopping ? "stopped" : "interrupted")
-    : state.task.goals;
-  return mutation(
-    state,
-    updateTask(state.task, input.now, {
-      status: stopping ? "stopped" : "interrupted",
-      summary,
-      currentExecutionId: null,
+  const nextExecution = updateExecution(execution, input.now, {
+    status: "canceled",
+    completedAt: input.now,
+    summary: "Daemon restarted before this Provider execution could be resumed.",
+  });
+  const task = updateTask(state.task, input.now, {
+    status: state.task.mode === "loop" ? "reorienting" : "interrupted",
+    currentExecutionId: null,
+    summary:
+      state.task.mode === "loop"
+        ? "Provider context must be freshly reoriented after daemon restart."
+        : "Quick execution was interrupted by daemon restart and was not replayed.",
+  });
+  return mutation(state, task, nextExecution, input.now, {
+    cancelPendingApprovals: true,
+    effects:
+      task.mode === "loop"
+        ? [{ type: "schedule_task", taskId: task.id }]
+        : [{ type: "release_task_runtime", taskId: task.id }],
+  });
+}
+
+function transitionTaskControl(
+  state: AuthorityState,
+  command: Extract<AuthorityCommand, { type: "task.control" }>,
+  input: DeterministicAuthorityInput,
+): AuthorityMutation {
+  requireRevision(state.task, command.expectedRevision);
+  const execution = state.execution;
+  const active = execution !== null && ACTIVE_EXECUTION_STATUSES.has(execution.status);
+  let task = state.task;
+  let nextExecution = execution;
+  let decision: HumanDecisionRecord | undefined;
+  let effects: AuthorityEffect[] = [];
+  let quarantine = false;
+
+  if (command.command === "stop") {
+    if (["stopped", "completed"].includes(task.status)) conflict(`Task is already ${task.status}`);
+    task = updateTask(task, input.now, {
+      status: "stopping",
+      pendingControl: "stop",
+      summary: active ? "Canceling the active Provider execution." : "Finalizing Task stop.",
+    });
+    if (active && execution) {
+      nextExecution = updateExecution(execution, input.now, { status: "cancel_requested" });
+      effects = [
+        {
+          type: "interrupt_execution",
+          executionId: execution.id,
+          generation: execution.generation,
+        },
+      ];
+    }
+  } else if (command.command === "pause") {
+    if (["completed", "stopped"].includes(task.status)) conflict(`Task is already ${task.status}`);
+    task = updateTask(task, input.now, {
+      status: active ? task.status : "paused",
+      pendingControl: active ? "pause" : null,
+      summary: active
+        ? "Pause is armed for the next safe phase boundary."
+        : "Paused at a safe phase boundary.",
+    });
+  } else if (command.command === "resume") {
+    if (task.mode !== "loop") invalid("Quick Tasks cannot resume after terminal execution");
+    if (!["paused", "blocked", "interrupted", "budget_wait", "reorienting"].includes(task.status)) {
+      conflict(`Task cannot resume while ${task.status}`);
+    }
+    task = updateTask(task, input.now, {
+      status: "reorienting",
       pendingControl: null,
-      goals,
-    }),
-    updateExecution(execution, input.now, {
-      status: stopping ? "orphaned" : "failed",
-      summary,
-      completedAt: input.now,
-    }),
-    {
-      cancelPendingApprovals: true,
-      quarantine: stopping,
-      effects: stopping
-        ? [
-            {
-              type: "quarantine_execution",
-              executionId: execution.id,
-              generation: execution.generation,
-            },
-          ]
-        : [],
-    },
-  );
+      summary: "Resume accepted; Task will freshly orient against current Workspace reality.",
+      workingSet:
+        task.status === "interrupted"
+          ? {
+              ...task.workingSet,
+              noProgressCount: 0,
+              revision: task.workingSet.revision + 1,
+              updatedAt: input.now,
+            }
+          : task.workingSet,
+    });
+    effects = [{ type: "schedule_task", taskId: task.id }];
+  } else if (command.command === "raise_budget") {
+    const strength = raiseStrength(task.budget.strength);
+    if (strength === task.budget.strength) conflict("Task already has unbounded Review budget");
+    task = updateTask(task, input.now, {
+      status: task.status === "budget_wait" ? "reorienting" : task.status,
+      pendingControl: null,
+      budget: {
+        ...task.budget,
+        strength,
+        maxNonCompleteReviews: nonCompleteReviewLimit(strength),
+      },
+      summary: `Review budget raised to ${strength}.`,
+    });
+    if (task.status === "reorienting") effects = [{ type: "schedule_task", taskId: task.id }];
+  } else {
+    if (task.mode !== "loop") invalid("Review-only is available only for Loop Tasks");
+    if (active) conflict("Review-only cannot replace an active Execution");
+    task = updateTask(task, input.now, {
+      status: "queued",
+      pendingControl: "review_only",
+      summary: "A fresh independent Review is queued without a new Executor attempt.",
+    });
+    effects = [{ type: "schedule_task", taskId: task.id }];
+  }
+
+  decision = humanDecision({
+    id: requiredId(input.ids?.decisionId, "decisionId"),
+    workspaceId: task.workspaceId,
+    taskId: task.id,
+    turnId: null,
+    cardId: null,
+    kind: `task_control_${command.command}`,
+    displayed: { command: command.command, taskStatus: state.task.status },
+    rawAnswer: command.command,
+    normalized: { command: command.command, resultingStatus: task.status },
+    actorId: command.actorId,
+    clientId: command.clientId,
+    deviceId: command.deviceId ?? null,
+    commandId: command.commandId,
+    expectedRevision: command.expectedRevision,
+    resultRevision: task.revision,
+    supersedesDecisionId: null,
+    fidelity: "exact",
+    decidedAt: input.now,
+  });
+  return mutation(state, task, nextExecution, input.now, {
+    decision,
+    effects,
+    quarantine,
+    cancelPendingApprovals: command.command === "stop",
+  });
 }
 
 function transitionTaskDecision(
@@ -1090,37 +1217,55 @@ function transitionTaskDecision(
 ): AuthorityMutation {
   requireRevision(state.task, command.expectedRevision);
   const pending = state.pendingDecision ?? state.task.pendingDecision;
-  if (state.task.status !== "awaiting_user" || !state.task.currentGoalId) {
-    invalid(`Task ${state.task.id} is not awaiting a user decision`);
-  }
-  if (!pending || pending.id !== command.decisionId) {
-    conflict(`Task decision ${command.decisionId} is no longer pending`);
+  if (!pending || pending.id !== command.decisionId) conflict("Task decision is no longer pending");
+  if (pending.kind !== "final_confirmation") {
+    invalid(
+      "Contract-changing decisions must be resolved through the source Agent Clarify session",
+    );
   }
   const selected = pending.options.find((option) => option.id === command.optionId);
   if (!selected) invalid(`Decision option ${command.optionId} does not belong to ${pending.id}`);
-  const normalized = {
-    decisionId: pending.id,
-    option: selected,
-    note: command.note?.trim() || null,
-  };
+  if (!["accept", "reopen"].includes(selected.id))
+    invalid("Final confirmation has invalid options");
   const task = updateTask(state.task, input.now, {
-    status: "queued",
-    summary: `User selected: ${selected.label}`,
-    pendingControl: null,
+    status: selected.id === "accept" ? "completed" : "reorienting",
+    completionAuthority: selected.id === "accept" ? "human_accepted" : "none",
     pendingDecision: null,
-    goals: updateGoal(state.task.goals, state.task.currentGoalId, "queued", "awaiting_user"),
+    summary:
+      selected.id === "accept"
+        ? "Human final acceptance recorded."
+        : command.note?.trim() || "Human reopened the Task after final Review.",
+    workingSet: {
+      ...state.task.workingSet,
+      nextMove:
+        selected.id === "accept"
+          ? "No next move; completion was accepted."
+          : "Freshly reorient using the Human reopening note and current Workspace reality.",
+      revision: state.task.workingSet.revision + 1,
+      updatedAt: input.now,
+    },
   });
   const decision = humanDecision({
-    state,
-    input,
-    command,
-    kind: "task_user_decision",
+    id: requiredId(input.ids?.decisionId, "decisionId"),
+    workspaceId: task.workspaceId,
+    taskId: task.id,
+    turnId: null,
+    cardId: null,
+    kind: "task_final_confirmation",
     displayed: pending,
     rawAnswer: { optionId: command.optionId, note: command.note ?? null },
-    normalized,
+    normalized: { optionId: selected.id, label: selected.label, note: command.note ?? null },
+    actorId: command.actorId,
+    clientId: command.clientId,
+    deviceId: command.deviceId ?? null,
+    commandId: command.commandId,
+    expectedRevision: command.expectedRevision,
     resultRevision: task.revision,
+    supersedesDecisionId: null,
+    fidelity: "exact",
+    decidedAt: input.now,
   });
-  return mutation(state, task, state.execution, {
+  return mutation(state, task, state.execution, input.now, {
     decision,
     decisionRequest: {
       type: "answer",
@@ -1128,135 +1273,92 @@ function transitionTaskDecision(
       decisionId: decision.id,
       answeredAt: input.now,
     },
-    blackboard: [blackboard(input, 0, task.id, "human_decision", "user", normalized)],
+    effects:
+      selected.id === "reopen"
+        ? [{ type: "schedule_task", taskId: task.id }]
+        : [{ type: "release_task_runtime", taskId: task.id }],
+  });
+}
+
+function transitionContractRevised(
+  state: AuthorityState,
+  command: Extract<AuthorityCommand, { type: "task.contract.revised" }>,
+  input: DeterministicAuthorityInput,
+): AuthorityMutation {
+  requireRevision(state.task, command.expectedRevision);
+  const pending = state.pendingDecision ?? state.task.pendingDecision;
+  if (!pending || pending.id !== command.decisionRequestId || pending.kind !== "contract_change") {
+    conflict("Task contract decision is no longer pending");
+  }
+  if (
+    command.contract.taskId !== state.task.id ||
+    command.contract.workspaceId !== state.task.workspaceId ||
+    command.contract.sourceAgentId !== state.task.sourceAgentId
+  ) {
+    invalid("Revised Intent Contract does not belong to this Task lineage");
+  }
+  if (command.contract.status !== "confirmed") invalid("Revised Intent Contract is not confirmed");
+  if (command.contract.revision <= state.task.intentContract.revision) {
+    invalid("Revised Intent Contract must advance the contract revision");
+  }
+  const task = updateTask(state.task, input.now, {
+    title: command.contract.title,
+    intentContract: command.contract,
+    status: "reorienting",
+    pendingDecision: null,
+    completionAuthority: "none",
+    summary: "Human-confirmed Intent Contract revision recorded; fresh reorientation is required.",
+    workingSet: {
+      ...state.task.workingSet,
+      activeGap: command.contract.objective,
+      currentUnderstanding: "Intent Contract changed through the source Agent Clarify session.",
+      currentHypothesis: "",
+      nextMove: "Freshly orient against the revised Task Anchor and current Workspace reality.",
+      blockers: [],
+      noProgressCount: 0,
+      revision: state.task.workingSet.revision + 1,
+      updatedAt: input.now,
+    },
+  });
+  return mutation(state, task, state.execution, input.now, {
+    decisionRequest: {
+      type: "answer",
+      requestId: pending.id,
+      decisionId: command.decisionRecordId,
+      answeredAt: input.now,
+    },
     effects: [{ type: "schedule_task", taskId: task.id }],
   });
 }
 
-function applyReplan(
-  state: AuthorityState,
-  currentGoalId: string,
-  verdict: ThothLoopReviewVerdictInput,
-): { goals: TaskProjection["goals"]; goalsRevision: number; nextGoalId: string | null } {
-  const proposal = verdict.deferred_goal_replan_proposal;
-  if (!proposal) invalid("Review replan outcome is missing its proposal");
-  if (state.goalsRevision === undefined || state.goalsRevision !== proposal.base_goals_revision) {
-    conflict(
-      `Goals revision changed before replan ${proposal.base_goals_revision} could be applied`,
-    );
+function assertCompleteEvidence(task: TaskProjection, review: ThothLoopReviewDecisionInput): void {
+  const expected = new Set(task.intentContract.acceptanceClaims.map((claim) => claim.id));
+  const actual = new Set(Object.keys(review.acceptanceEvidence));
+  if (expected.size !== actual.size || [...expected].some((claimId) => !actual.has(claimId))) {
+    invalid("Complete Review must map every Acceptance Claim to evidence");
   }
-  const current = state.task.goals.find((goal) => goal.id === currentGoalId);
-  if (!current) invalid(`Current Goal ${currentGoalId} is missing`);
-  const affected = new Set(proposal.affected_goal_ids);
-  for (const goalId of affected) {
-    const goal = state.task.goals.find((candidate) => candidate.id === goalId);
-    if (!goal || goal.order <= current.order || goal.status !== "queued") {
-      invalid(`Replan may only replace unstarted future Goal ${goalId}`);
+  for (const claimId of expected) {
+    const evidence = review.acceptanceEvidence[claimId];
+    if (!evidence || evidence.length === 0) {
+      invalid(`Acceptance Claim ${claimId} has no evidence`);
     }
   }
-  const proposedIds = new Set<string>();
-  const proposedOrders = new Set<number>();
-  for (const goal of proposal.goals) {
-    if (proposedIds.has(goal.id) || proposedOrders.has(goal.order) || goal.order <= current.order) {
-      invalid("Replanned Goals must have unique future ids and order values");
-    }
-    proposedIds.add(goal.id);
-    proposedOrders.add(goal.order);
-  }
-  for (const existing of state.task.goals) {
-    if (!affected.has(existing.id) && proposedOrders.has(existing.order)) {
-      invalid(`Replanned Goal order ${existing.order} collides with an approved Goal`);
-    }
-  }
-  const nextRevision = state.goalsRevision + 1;
-  const replacements = proposal.goals.map((goal) => ({
-    id: deriveDurableGoalId({
-      taskId: state.task.id,
-      sourceGoalId: goal.id,
-      order: goal.order,
-      lineage: `replan-${nextRevision}`,
-    }),
-    order: goal.order,
-    title: goal.title,
-    goal: goal.goal,
-    constraints: [...goal.constraints],
-    acceptance: [...goal.acceptance],
-    status: "queued" as const,
-    revision: 1,
-  }));
-  const goals = [
-    ...state.task.goals
-      .filter((goal) => !affected.has(goal.id))
-      .map((goal) =>
-        goal.id === current.id
-          ? { ...goal, status: "passed" as const, revision: goal.revision + 1 }
-          : goal,
-      ),
-    ...replacements,
-  ].sort((left, right) => left.order - right.order);
-  return {
-    goals,
-    goalsRevision: nextRevision,
-    nextGoalId: replacements.toSorted((a, b) => a.order - b.order)[0]?.id ?? null,
-  };
-}
-
-function mutation(
-  state: AuthorityState,
-  task: TaskProjection,
-  execution: ExecutionProjection | null,
-  options: Partial<Omit<AuthorityMutation, "task" | "execution" | "projectionDelta">> = {},
-): AuthorityMutation {
-  return {
-    task,
-    execution,
-    blackboard: [],
-    cancelPendingApprovals: false,
-    quarantine: false,
-    effects: [],
-    ...options,
-    projectionDelta: {
-      workspaceRevision: state.workspaceRevision + 1,
-      changedTaskIds: [task.id],
-      changedExecutionIds: execution ? [execution.id] : [],
-    },
-  };
 }
 
 function requireSemanticExecution(
   state: AuthorityState,
   generation: string,
-  phase?: "planexec" | "review",
+  phase?: ExecutionProjection["phase"],
 ): ExecutionProjection {
   const execution = requireExecutionGeneration(state, generation);
-  const implementationMaySubmit = phase === "planexec" && execution.status === "implementing";
-  if (
-    (phase && execution.phase !== phase) ||
-    (!implementationMaySubmit &&
-      !["starting", "running", "awaiting_provider"].includes(execution.status))
-  ) {
-    conflict(`Execution ${execution.id} is not the active semantic tool authority`);
-  }
+  if (phase && execution.phase !== phase) invalid(`Expected ${phase}, received ${execution.phase}`);
   if (state.task.currentExecutionId !== execution.id || state.task.status === "stopping") {
-    conflict(`Execution ${execution.id} no longer owns Task ${execution.taskId}`);
+    conflict("Execution no longer owns Task mutation authority");
   }
   if (!execution.attachment || execution.attachment.status !== "attached") {
-    conflict(`Execution ${execution.id} has no valid RuntimeBundle attachment`);
+    invalid("Execution has no durable RuntimeBundle attachment receipt");
   }
-  return execution;
-}
-
-function requireActiveExecution(state: AuthorityState, executionId?: string): ExecutionProjection {
-  const execution = state.execution;
-  if (
-    !execution ||
-    (executionId !== undefined && execution.id !== executionId) ||
-    state.task.currentExecutionId !== execution.id ||
-    state.task.status === "stopping" ||
-    TERMINAL_EXECUTION_STATUSES.has(execution.status)
-  ) {
-    conflict("Execution changed before the authority mutation could be committed.");
-  }
+  if (!ACTIVE_EXECUTION_STATUSES.has(execution.status)) conflict("Execution is not active");
   return execution;
 }
 
@@ -1266,15 +1368,26 @@ function requireExecutionGeneration(
 ): ExecutionProjection {
   const execution = state.execution;
   if (!execution || execution.generation !== generation) {
-    conflict("Execution generation is no longer active");
+    conflict("Execution generation is stale");
+  }
+  return execution;
+}
+
+function requireActiveExecution(state: AuthorityState, executionId: string): ExecutionProjection {
+  const execution = state.execution;
+  if (
+    !execution ||
+    execution.id !== executionId ||
+    !ACTIVE_EXECUTION_STATUSES.has(execution.status)
+  ) {
+    conflict("Execution is no longer active");
   }
   return execution;
 }
 
 function requireRevision(task: TaskProjection, expected: number): void {
-  if (task.revision !== expected) {
-    conflict(`Task ${task.id} revision changed from ${expected} to ${task.revision}`);
-  }
+  if (task.revision !== expected)
+    conflict(`Task revision changed from ${expected} to ${task.revision}`);
 }
 
 function updateTask(
@@ -1293,92 +1406,94 @@ function updateExecution(
   return {
     ...execution,
     ...patch,
-    lastActivityAt: now,
     revision: execution.revision + 1,
+    lastActivityAt: now,
+    latestApproval: execution.latestApproval,
   };
 }
 
-function updateGoal(
-  goals: TaskProjection["goals"],
-  goalId: string,
-  status: TaskProjection["goals"][number]["status"],
-  onlyFrom?: TaskProjection["goals"][number]["status"],
-): TaskProjection["goals"] {
-  return goals.map((goal) =>
-    goal.id === goalId && (!onlyFrom || goal.status === onlyFrom)
-      ? { ...goal, status, revision: goal.revision + 1 }
-      : goal,
-  );
-}
-
-function blackboard(
-  input: DeterministicAuthorityInput,
-  index: number,
-  taskId: string,
-  kind: TaskBlackboardEntry["kind"],
-  producer: TaskBlackboardEntry["producer"],
-  content: unknown,
-): AuthorityBlackboardAppend {
+function mutation(
+  state: AuthorityState,
+  task: TaskProjection,
+  execution: ExecutionProjection | null,
+  _now: string,
+  options: {
+    approval?: ExecutionApprovalProjection | null;
+    decision?: HumanDecisionRecord;
+    decisionRequest?: AuthorityDecisionRequestMutation;
+    evidence?: AuthorityEvidenceAppend[];
+    reviewDecision?: ReviewDecisionProjection;
+    cancelPendingApprovals?: boolean;
+    quarantine?: boolean;
+    effects?: AuthorityEffect[];
+  } = {},
+): AuthorityMutation {
   return {
-    id: requireId(input.ids?.blackboardIds?.[index], `blackboardIds[${index}]`),
-    taskId,
-    kind,
-    producer,
-    content,
-    createdAt: input.now,
+    task,
+    execution,
+    approval: options.approval,
+    decision: options.decision,
+    decisionRequest: options.decisionRequest,
+    evidence: options.evidence ?? [],
+    reviewDecision: options.reviewDecision,
+    cancelPendingApprovals: options.cancelPendingApprovals ?? false,
+    quarantine: options.quarantine ?? false,
+    projectionDelta: {
+      workspaceRevision: state.workspaceRevision + 1,
+      changedTaskIds: [task.id],
+      changedExecutionIds: execution ? [execution.id] : [],
+    },
+    effects: options.effects ?? [],
   };
 }
 
-function humanDecision(input: {
-  state: AuthorityState;
-  input: DeterministicAuthorityInput;
-  command: ActorCommand;
-  kind: string;
-  displayed: unknown;
-  rawAnswer: unknown;
-  normalized: unknown;
-  expectedRevision?: number;
-  resultRevision: number;
-}): HumanDecisionRecord {
-  return {
-    id: requireId(input.input.ids?.decisionId, "decisionId"),
-    workspaceId: input.state.task.workspaceId,
-    taskId: input.state.task.id,
-    turnId: null,
-    cardId: null,
-    kind: input.kind,
-    displayed: input.displayed,
-    rawAnswer: input.rawAnswer,
-    normalized: input.normalized,
-    actorId: input.command.actorId,
-    clientId: input.command.clientId,
-    deviceId: input.command.deviceId ?? null,
-    commandId: input.command.commandId,
-    expectedRevision: input.expectedRevision ?? input.state.task.revision,
-    resultRevision: input.resultRevision,
-    supersedesDecisionId: null,
-    fidelity: "exact",
-    decidedAt: input.input.now,
-  };
+function humanDecision(input: HumanDecisionRecord): HumanDecisionRecord {
+  return input;
 }
 
-function nextTaskStrength(strength: TaskStrength): {
-  strength: TaskStrength;
-  maxFailedReviews: number;
-} | null {
-  switch (strength) {
-    case "single":
-      return { strength: "light", maxFailedReviews: 5 };
-    case "light":
-      return { strength: "balanced", maxFailedReviews: 10 };
-    case "balanced":
-      return { strength: "infinite", maxFailedReviews: 30 };
-    case "infinite":
-      return null;
+function replaceWorkUnit(
+  workUnits: readonly WorkUnitProjection[],
+  replacement: WorkUnitProjection,
+): WorkUnitProjection[] {
+  return workUnits.map((workUnit) => (workUnit.id === replacement.id ? replacement : workUnit));
+}
+
+function reviewNextMove(
+  decision: ThothLoopReviewDecisionInput["decision"],
+  budgetExhausted: boolean,
+): string {
+  if (budgetExhausted) return "Wait for a Human budget decision without claiming completion.";
+  switch (decision) {
+    case "continue":
+      return "Choose the next meaningful Work Unit against the active gap.";
+    case "reorient":
+      return "Reset context and freshly orient against the Task Anchor and Review evidence.";
+    case "complete":
+      return "No next execution; completion evidence is recorded.";
+    case "need_human":
+      return "Resume only after the source Agent Clarify session records the Human-owned decision.";
+    case "blocked":
+      return "Resolve the external blocker before resuming execution.";
   }
 }
 
-export function failedReviewLimit(strength: TaskStrength): number {
+function unique(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function raiseStrength(strength: TaskStrength): TaskStrength {
+  switch (strength) {
+    case "single":
+      return "light";
+    case "light":
+      return "balanced";
+    case "balanced":
+    case "infinite":
+      return "infinite";
+  }
+}
+
+export function nonCompleteReviewLimit(strength: TaskStrength): number | null {
   switch (strength) {
     case "single":
       return 1;
@@ -1387,30 +1502,11 @@ export function failedReviewLimit(strength: TaskStrength): number {
     case "balanced":
       return 10;
     case "infinite":
-      return 30;
+      return null;
   }
 }
 
-export function deriveDurableGoalId(input: {
-  taskId: string;
-  sourceGoalId: string;
-  order: number;
-  lineage: string;
-}): string {
-  const digest = createHash("sha256")
-    .update(input.taskId)
-    .update("\0")
-    .update(input.lineage)
-    .update("\0")
-    .update(input.sourceGoalId)
-    .update("\0")
-    .update(String(input.order))
-    .digest("hex")
-    .slice(0, 32);
-  return `goal-${digest}`;
-}
-
-function requireId(value: string | undefined, name: string): string {
+function requiredId(value: string | undefined, name: string): string {
   if (!value) invalid(`Deterministic authority input is missing ${name}`);
   return value;
 }

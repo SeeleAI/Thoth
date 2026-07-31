@@ -1,10 +1,6 @@
 import type { AgentAttachment } from "./messages.js";
 import type { TaskProjection } from "./task-authority.js";
-import type {
-  ThothApprovalGoalCardModel,
-  ThothClarifyCardModel,
-  ThothTaskCardModel,
-} from "./thoth/rpc-schemas.js";
+import type { ThothClarifyCardModel, ThothIntentContractCardModel } from "./thoth/rpc-schemas.js";
 
 export type AgentProvider = string;
 
@@ -416,8 +412,19 @@ export type AgentTimelineItem =
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | { type: "clarify_card"; card: ThothClarifyCardModel }
-  | { type: "task_card"; card: ThothTaskCardModel }
-  | { type: "goal_card"; card: ThothApprovalGoalCardModel }
+  | { type: "intent_contract_card"; card: ThothIntentContractCardModel }
+  | {
+      type: "legacy_execution_plan";
+      title: string;
+      summary: string;
+      items: Array<{
+        title: string;
+        outcome: string;
+        objective: string;
+        constraints: string[];
+        acceptance: string[];
+      }>;
+    }
   | { type: "registered_task"; task: TaskProjection }
   | ToolCallTimelineItem
   | { type: "todo"; items: { text: string; completed: boolean }[] }

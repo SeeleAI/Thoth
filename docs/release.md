@@ -46,6 +46,15 @@ QuestionFormCard, completed-Plan-only Implement and same-thread continuation. It
 merge/rebase, `main`, Relay deployment, npm/mobile/store/Nix/Docker publication or any operation on independent
 Paseo. A failed mandatory workflow leaves the existing fixed Release intact.
 
+`NTH-CD-102` renews the same narrow authorization on `2026-07-30` for the verified Decision Map Clarify,
+single Intent Contract, target-anchored Loop and schema-v6 migration replacement. It authorizes one exact
+release-source SHA to be normally fast-forwarded to `agent/dev/mvp` and `release/mvp-actions`, followed by the
+existing fixed-Beta workflow and fresh public AppImage verification. The downloaded AppImage must exercise the
+Decision Map, one Intent Contract, Quick on the visible thread, Loop checkpoint/fresh Review/reset, `@Task`, Stop
+and schema-v5-to-v6 migration. It does not authorize force push, merge/rebase, `main`, Relay deployment,
+npm/mobile/store/Nix/Docker publication or any operation on independent Paseo. A failed mandatory workflow leaves
+the existing fixed Release intact.
+
 The exact upstream receipt for that authorization is annotated tag object `5f71b185c3d170dec26ea00b91b52a550d510fcd`
 at commit `43cf858c3760679ec9be805ba8b903cdf20f7103`, selected by
 `v0.2.2...v0.2.3 --right-only` from merge base `36f38245cab51bbe0b43b6ac42fd41aa757064d9`.
@@ -168,12 +177,13 @@ timeout is not success: query the remote SHA before deciding whether retry is ne
 After public verification, the evidence-only closeout commit is pushed normally to `agent/dev/mvp` only;
 `release/mvp-actions` stays at the published release-source SHA so documentation does not trigger a second Release.
 
-For the Provider-interaction candidate, the release-source commit may be created only after Foundation, Provider
-Control, interaction, complete Thoth, shared-`300s` Refactor, real Codex, real built-Web, isolation and rebuilt
-AppImage journeys are green. The AppImage report must preserve Workspace scripts, direct five-chunk file transfer,
-full `Tasks | Schedules` UI/navigation and add Provider Features Plan, native question-id array response,
-completed-Plan-only Implement and same-thread continuation. The workflow must retain the existing hosted Relay and
-internal Server CLI gates even though this correction does not deploy Relay or publish Server CLI.
+For the Decision Map/Loop candidate, the release-source commit may be created only after Foundation, complete
+owner suites, `accept:thoth:fast`, three cognition judges, real Codex, fresh Web, schema-v6 migration, rebuilt
+AppImage and hosted Relay journeys are green. The AppImage report must preserve Provider Features Plan,
+Workspace scripts, direct five-chunk file transfer and full `Tasks | Schedules` UI/navigation while adding the
+Decision Map, one Intent Contract, Quick, Loop checkpoint/fresh Review/reset, `@Task`, Stop and exact schema-v6
+receipts. The workflow retains the hosted Relay and internal Server CLI gates even though this replacement does
+not deploy Relay or publish Server CLI.
 
 After workflow success, download public files into an ignored per-source directory and run the product journey
 against that downloaded executable, not the local or Actions artifact. Keep localhost CDP/daemon traffic outside
@@ -190,7 +200,7 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
 
 The final evidence must cross-check GitHub asset metadata, `BUILD-SOURCE.txt`, `MVP-UPDATE.json`, `SHA256SUMS`,
 local SHA-256 and extracted `resources/build-identity.json` against the exact release-source SHA and workflow ID.
-Only then may `NTH-TD-051` become verified and `NTH-TD-036` return as the sole top next action.
+Only then may `NTH-TD-052` become verified and `NTH-TD-036` return as the sole top next action.
 
 The independent `SeeleAI/Thoth-Relay` deployment and any future production relay/web deployment are
 outside this release authorization.

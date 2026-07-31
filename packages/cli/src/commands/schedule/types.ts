@@ -1,4 +1,4 @@
-export type ScheduleStatus = "active" | "paused" | "completed";
+export type ScheduleStatus = "needs_contract" | "active" | "paused" | "completed";
 
 export type ScheduleCadence =
   | {
@@ -54,6 +54,7 @@ export interface ScheduleRecord {
   id: string;
   name: string | null;
   prompt: string;
+  intentContractId: string | null;
   cadence: ScheduleCadence;
   target: Exclude<ScheduleTarget, { type: "self" }>;
   status: ScheduleStatus;
@@ -70,6 +71,7 @@ export interface ScheduleRecord {
 export interface ScheduleListItem {
   id: string;
   name: string | null;
+  intentContractId: string | null;
   cadence: ScheduleCadence;
   target: Exclude<ScheduleTarget, { type: "self" }>;
   status: ScheduleStatus;
@@ -84,6 +86,7 @@ export interface ScheduleListItem {
 
 export interface CreateScheduleInput {
   prompt: string;
+  intentContractId: string;
   name?: string;
   cadence: ScheduleCadence;
   target: ScheduleTarget;
@@ -153,6 +156,7 @@ export interface UpdateScheduleInput {
   prompt?: string;
   cadence?: ScheduleCadence;
   newAgentConfig?: UpdateScheduleNewAgentConfig;
+  intentContractId?: string;
   maxRuns?: number | null;
   expiresAt?: string | null;
 }

@@ -4,14 +4,18 @@ import type {
   ExecutionApprovalDecision,
   ExecutionApprovalProjection,
   ExecutionProjection,
+  EvidenceRef,
   HumanDecisionRecord,
+  ReviewDecisionProjection,
   TaskCommand,
   TaskContextEnvelope,
   TaskProjection,
   TaskStrength,
 } from "@thoth/protocol/task-authority";
-import type { ThothGoalsCardModel, ThothTaskCardModel } from "@thoth/protocol/thoth/rpc-schemas";
+import type { IntentContractProjection } from "@thoth/protocol/intent-contract";
 import type { ThothRuntimeLoopStrength } from "@thoth/protocol/thoth-runtime-contract";
+import type { RuntimeAttachmentReceipt } from "@thoth/drivers/harness";
+import type { ProviderRunModeReceipt } from "@thoth/protocol/provider-control";
 import { createTaskAuthority } from "@thoth/core/authority";
 import { ExecutionRuntimeRegistry } from "./execution-runtime-registry.js";
 import {
@@ -20,6 +24,8 @@ import {
 } from "./workspace-authority-store.js";
 import type { WorkspaceAuthorityManager } from "./workspace-authority-manager.js";
 import type { ToolGateway } from "./tool-gateway.js";
+
+const QUICK_MUTATION_LEASE_TTL_MS = 30_000;
 
 export interface TaskCommandScheduler {
   scheduleTask(input: { workspaceId: string; taskId: string }): Promise<void>;
@@ -50,6 +56,15 @@ export interface TaskCommandResult {
   error: string | null;
 }
 
+export interface TaskClarifyHandoff {
+  open(input: {
+    sourceWorkspaceId: string;
+    taskWorkspaceId: string;
+    task: TaskProjection;
+    decisionId: string;
+  }): Promise<void>;
+}
+
 export interface TaskDecisionResult {
   task: TaskProjection | null;
   decision: HumanDecisionRecord | null;
@@ -71,6 +86,8 @@ export interface ExecutionApprovalResult {
 export class WorkspaceTaskCoordinator {
   readonly runtimes: ExecutionRuntimeRegistry;
   private gateway: ToolGateway | null = null;
+  private clarifyHandoff: TaskClarifyHandoff | null = null;
+  private readonly quickMutationSubscribers = new Map<string, Set<() => void>>();
 
   constructor(
     private readonly authority: WorkspaceAuthorityManager,
@@ -89,21 +106,104 @@ export class WorkspaceTaskCoordinator {
     this.gateway = gateway;
   }
 
+  setTaskClarifyHandoff(handoff: TaskClarifyHandoff): void {
+    this.clarifyHandoff = handoff;
+  }
+
+  async openTaskClarify(input: {
+    workspaceId: string;
+    taskId: string;
+    decisionId: string;
+  }): Promise<void> {
+    const task = this.store(input.workspaceId).getTask(input.taskId);
+    if (!task || task.pendingDecision?.id !== input.decisionId) {
+      throw new WorkspaceAuthorityConflictError("Task Clarify handoff is no longer current");
+    }
+    if (!this.clarifyHandoff) throw new Error("Task Clarify handoff is not configured");
+    await this.clarifyHandoff.open({
+      sourceWorkspaceId: task.sourceAgentWorkspaceId,
+      taskWorkspaceId: input.workspaceId,
+      task,
+      decisionId: input.decisionId,
+    });
+  }
+
+  commitClarifyContractRevision(input: {
+    taskWorkspaceId: string;
+    taskId: string;
+    sourceAgentWorkspaceId: string;
+    sourceAgentId: string;
+    decisionRequestId: string;
+    contract: IntentContractProjection;
+    decisionRecordIds: string[];
+    commandId: string;
+  }): { task: TaskProjection; duplicate: boolean } {
+    return this.store(input.taskWorkspaceId).applyTaskContractRevisionFromHandoff({
+      taskId: input.taskId,
+      sourceAgentWorkspaceId: input.sourceAgentWorkspaceId,
+      sourceAgentId: input.sourceAgentId,
+      decisionRequestId: input.decisionRequestId,
+      contract: input.contract,
+      decisionRecordIds: input.decisionRecordIds,
+      commandId: input.commandId,
+    });
+  }
+
+  async continueAfterContractRevision(input: {
+    workspaceId: string;
+    taskId: string;
+  }): Promise<void> {
+    const task = this.store(input.workspaceId).getTask(input.taskId);
+    if (!task || task.status !== "reorienting" || task.pendingDecision) {
+      throw new WorkspaceAuthorityConflictError(
+        "Task is not ready for fresh reorientation after its contract revision",
+      );
+    }
+    if (!this.scheduler) throw new Error("Task scheduler is not configured");
+    await this.scheduler.scheduleTask(input);
+  }
+
   get toolGateway(): ToolGateway {
     if (!this.gateway) throw new Error("ToolGateway is not configured");
     return this.gateway;
   }
 
+  subscribeQuickMutationReady(workspaceId: string, subscriber: () => void): () => void {
+    const subscribers = this.quickMutationSubscribers.get(workspaceId) ?? new Set<() => void>();
+    subscribers.add(subscriber);
+    this.quickMutationSubscribers.set(workspaceId, subscribers);
+    return () => {
+      subscribers.delete(subscriber);
+      if (subscribers.size === 0) this.quickMutationSubscribers.delete(workspaceId);
+    };
+  }
+
+  wakeQuickMutation(workspaceId: string): void {
+    for (const subscriber of this.quickMutationSubscribers.get(workspaceId) ?? []) {
+      queueMicrotask(subscriber);
+    }
+  }
+
+  notifyMutationLeaseReleased(workspaceId: string): void {
+    this.wakeQuickMutation(workspaceId);
+    void this.scheduler
+      ?.scheduleTask({ workspaceId, taskId: "workspace-mutation-ready" })
+      .catch((error: unknown) => {
+        this.logger.error({ err: error, workspaceId }, "Failed to resume Workspace mutation queue");
+      });
+  }
+
   register(input: {
     workspaceId: string;
+    sourceAgentWorkspaceId?: string;
     sourceAgentId: string;
     sourceTurnId: string;
-    sourceGoalsCardId: string;
+    sourceContractCardId: string;
     mode: "quick" | "loop";
     loopStrength: ThothRuntimeLoopStrength | null;
-    taskCard: ThothTaskCardModel;
-    goalsCard: ThothGoalsCardModel;
+    intentContract: IntentContractProjection;
     providerProfile: { adapterId: string; config: Record<string, unknown> };
+    origin?: TaskProjection["origin"];
   }): { task: TaskProjection; created: boolean } {
     const now = new Date().toISOString();
     const strength = normalizeStrength(input.loopStrength);
@@ -123,33 +223,27 @@ export class WorkspaceTaskCoordinator {
       updatedAt: now,
     });
     const taskId = `task-${randomUUID()}`;
-    const task = createTaskAuthority({
-      id: taskId,
-      workspaceId: input.workspaceId,
-      sourceAgentId: input.sourceAgentId,
-      mode: input.mode,
-      title: input.taskCard.title,
-      goal: input.taskCard.goal,
-      constraints: input.taskCard.constraints,
-      acceptance: input.taskCard.acceptance,
-      strength,
-      goals: input.goalsCard.goals.map((goal) => ({
-        sourceId: goal.id,
-        order: goal.order,
-        title: goal.title,
-        goal: goal.goal,
-        constraints: goal.constraints,
-        acceptance: goal.acceptance,
-      })),
-      now,
-    });
+    const task = {
+      ...createTaskAuthority({
+        id: taskId,
+        workspaceId: input.workspaceId,
+        sourceAgentWorkspaceId:
+          input.sourceAgentWorkspaceId ??
+          this.authority.catalog.locateAgent(input.sourceAgentId) ??
+          input.workspaceId,
+        sourceAgentId: input.sourceAgentId,
+        mode: input.mode,
+        intentContract: input.intentContract,
+        strength,
+        now,
+      }),
+      origin: input.origin ?? null,
+    };
     const registered = this.store(input.workspaceId).registerTask({
       task,
       sourceTurnId: input.sourceTurnId,
-      sourceGoalsCardId: input.sourceGoalsCardId,
+      sourceContractCardId: input.sourceContractCardId,
       providerProfileId,
-      taskContract: input.taskCard,
-      goalsContract: input.goalsCard,
     });
     if (registered.created && input.mode === "loop") {
       void this.scheduler
@@ -164,6 +258,113 @@ export class WorkspaceTaskCoordinator {
     return registered;
   }
 
+  beginQuickExecution(input: {
+    workspaceId: string;
+    taskId: string;
+    executionId: string;
+    generation: string;
+    attachment: RuntimeAttachmentReceipt;
+    runModeReceipt: ProviderRunModeReceipt | null;
+  }): ExecutionProjection | null {
+    const store = this.store(input.workspaceId);
+    const task = store.getTask(input.taskId);
+    if (!task || task.mode !== "quick" || task.status !== "queued") {
+      throw new WorkspaceAuthorityConflictError("Quick Task is no longer queued for execution");
+    }
+    if (store.getNextMutationTask()?.id !== task.id) return null;
+    if (
+      !store.claimMutationLease({
+        taskId: task.id,
+        executionId: input.executionId,
+        generation: input.generation,
+        ttlMs: QUICK_MUTATION_LEASE_TTL_MS,
+      })
+    ) {
+      return null;
+    }
+    try {
+      const now = new Date().toISOString();
+      const created = store.createExecution({
+        execution: {
+          id: input.executionId,
+          taskId: task.id,
+          workUnitId: null,
+          cycleId: null,
+          phase: "quick_exec",
+          providerThreadId: input.attachment.threadId,
+          status: "starting",
+          generation: input.generation,
+          attachment: null,
+          runModeReceipt: input.runModeReceipt,
+          pendingApproval: null,
+          startedAt: now,
+          lastActivityAt: now,
+          completedAt: null,
+          summary: null,
+          revision: 1,
+        },
+        providerThread: {
+          id: input.attachment.threadId,
+          adapterId: input.attachment.adapterId,
+          nativeHandle: input.attachment.threadId,
+          persistence: null,
+        },
+      });
+      store.recordAttachment({ executionId: created.id, receipt: input.attachment });
+      const running = store.updateExecution({
+        executionId: created.id,
+        generation: created.generation,
+        expectedRevision: created.revision,
+        status: "running",
+        summary: "Quick execution is running in the visible Provider thread.",
+      });
+      if (!running) throw new Error(`Quick execution ${created.id} could not enter running state`);
+      return store.getExecution(created.id) ?? running;
+    } catch (error) {
+      store.releaseMutationLease({
+        taskId: task.id,
+        executionId: input.executionId,
+        generation: input.generation,
+      });
+      throw error;
+    }
+  }
+
+  renewQuickExecution(input: {
+    workspaceId: string;
+    taskId: string;
+    executionId: string;
+    generation: string;
+  }): boolean {
+    return this.store(input.workspaceId).renewMutationLease({
+      taskId: input.taskId,
+      executionId: input.executionId,
+      generation: input.generation,
+      ttlMs: QUICK_MUTATION_LEASE_TTL_MS,
+    });
+  }
+
+  settleQuickExecution(input: {
+    workspaceId: string;
+    taskId: string;
+    executionId: string;
+    generation: string;
+    status: "succeeded" | "failed";
+    summary: string;
+  }): void {
+    const store = this.store(input.workspaceId);
+    try {
+      store.settleQuickExecution(input);
+    } finally {
+      store.releaseMutationLease({
+        taskId: input.taskId,
+        executionId: input.executionId,
+        generation: input.generation,
+      });
+      this.notifyMutationLeaseReleased(input.workspaceId);
+    }
+  }
+
   list(workspaceId: string): TaskProjection[] {
     return this.store(workspaceId).listTasks();
   }
@@ -175,13 +376,18 @@ export class WorkspaceTaskCoordinator {
     task: TaskProjection | null;
     executions: ExecutionProjection[];
     decisions: HumanDecisionRecord[];
+    reviews: ReviewDecisionProjection[];
+    evidence: EvidenceRef[];
   } {
     const store = this.store(workspaceId);
     const task = store.getTask(taskId);
+    const context = task ? this.authority.getTaskContext(workspaceId, taskId) : null;
     return {
       task,
       executions: task ? store.listExecutions(taskId) : [],
-      decisions: task ? store.listDecisions(taskId) : [],
+      decisions: context?.decisions ?? [],
+      reviews: task ? store.listReviewDecisions(taskId) : [],
+      evidence: task ? store.listEvidence(taskId) : [],
     };
   }
 
@@ -190,7 +396,7 @@ export class WorkspaceTaskCoordinator {
   }
 
   context(workspaceId: string, taskId: string, revision?: number): TaskContextEnvelope | null {
-    return this.store(workspaceId).getTaskContext(taskId, revision);
+    return this.authority.getTaskContext(workspaceId, taskId, revision);
   }
 
   timeline(input: {

@@ -562,6 +562,7 @@ function createStoredSchedule(input: CreateScheduleInput): StoredSchedule {
     prompt: input.prompt,
     cadence: input.cadence,
     target: input.target,
+    intentContractId: input.intentContractId,
     status: "active",
     createdAt: now,
     updatedAt: now,
@@ -2749,6 +2750,7 @@ describe("create_schedule MCP tool", () => {
         prompt: "say hello",
         cron: "*/5 * * * *",
         name: "Default schedule",
+        intentContractId: "intent-contract-test",
       }),
     ).rejects.toThrow("provider is required when target is new-agent");
     expect(create).not.toHaveBeenCalled();
@@ -2770,11 +2772,13 @@ describe("create_schedule MCP tool", () => {
       prompt: "say hello",
       cron: "*/5 * * * *",
       provider: "codex",
+      intentContractId: "intent-contract-test",
     });
     await tool.handler({
       prompt: "say hello again",
       cron: "*/10 * * * *",
       provider: "codex/gpt-5.4",
+      intentContractId: "intent-contract-test",
     });
 
     expect(create).toHaveBeenNthCalledWith(
@@ -2832,6 +2836,7 @@ describe("create_schedule MCP tool", () => {
       prompt: "say hello",
       cron: "*/5 * * * *",
       provider: "opencode/openai/gpt-5.5",
+      intentContractId: "intent-contract-test",
     });
 
     expect(response.structuredContent.target).toMatchObject({
@@ -2860,6 +2865,7 @@ describe("create_schedule MCP tool", () => {
       cron: "0 9 * * 1-5",
       timezone: "  America/New_York  ",
       provider: "codex",
+      intentContractId: "intent-contract-test",
     });
 
     expect(create).toHaveBeenCalledWith(
@@ -2889,6 +2895,7 @@ describe("create_schedule MCP tool", () => {
       prompt: "say hello",
       every: "10m",
       provider: "codex",
+      intentContractId: "intent-contract-test",
     });
     expect(parsed.success).toBe(false);
 
@@ -2911,6 +2918,7 @@ describe("create_schedule MCP tool", () => {
       tool.handler({
         prompt: "say hello",
         provider: "codex",
+        intentContractId: "intent-contract-test",
       }),
     ).rejects.toThrow(/cron/);
 
@@ -2935,6 +2943,7 @@ describe("create_schedule MCP tool", () => {
         cron: "0 9 * * 1-5",
         timezone,
         provider: "codex",
+        intentContractId: "intent-contract-test",
       }),
     ).rejects.toThrow();
 
@@ -2973,6 +2982,7 @@ describe("create_heartbeat MCP tool", () => {
       cron: "*/15 * * * *",
       timezone: "America/New_York",
       name: "status heartbeat",
+      intentContractId: "intent-contract-test",
     });
 
     expect(create).toHaveBeenCalledWith(
@@ -3005,6 +3015,7 @@ describe("create_heartbeat MCP tool", () => {
       tool.handler({
         prompt: "check status",
         cron: "*/15 * * * *",
+        intentContractId: "intent-contract-test",
       }),
     ).rejects.toThrow("create_heartbeat requires an agent-scoped session");
 
@@ -3023,6 +3034,7 @@ describe("update_schedule MCP tool", () => {
       prompt: "say hello",
       cadence: { type: "every", everyMs: 300000 },
       target: { type: "new-agent", config: { provider: "claude" } },
+      intentContractId: "intent-contract-test",
       status: "active",
       createdAt: "2026-04-11T00:00:00.000Z",
       updatedAt: "2026-04-11T00:00:00.000Z",
