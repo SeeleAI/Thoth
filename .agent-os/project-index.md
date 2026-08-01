@@ -8,9 +8,9 @@
 4. Active blocker: `NTH-TD-053` is published and server-digest verified, but its required fresh local full-binary
    public-download journey is blocked by the local outbound network. The supplied proxy returns `502` for HTTP and
    terminates TLS even when TLS 1.2 is forced; direct Release CDN Range transfers are valid but severely rate-limited.
-5. Current branch: `agent/dev/mvp` at `44b5dad52cffefc8461af75f1cb67c8cec396c77`, identical to
-   `origin/release/mvp-actions`. Published source `44b5dad52cffefc8461af75f1cb67c8cec396c77` is the exact target of
-   direct tag `v0.0.0-mvp-beta` and public prerelease `363500326`; the Release contains exactly 26 desktop-only
+5. Current branch: `agent/dev/mvp`, carrying only post-release documentation evidence beyond release source
+   `44b5dad52cffefc8461af75f1cb67c8cec396c77`. `origin/release/mvp-actions`, direct tag `v0.0.0-mvp-beta` and
+   public prerelease `363500326` all target that exact release source; the Release contains exactly 26 desktop-only
    assets. Remote `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the provider-neutral substrate, while `NTH-CD-100` through
    `NTH-CD-102` now replace the former Task/Goals cognition with a durable Decision Map, one Intent Contract, one
