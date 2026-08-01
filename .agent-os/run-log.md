@@ -4880,3 +4880,13 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   reports that the repository-local GitHub token is no longer valid. No alternate credential, git push, workflow,
   tag or Release mutation was attempted. Refresh the same repository-local credential, then re-run the fence before
   normal development push and release-branch fast-forward.
+
+## 2026-08-01 [Royalvice credential verified; GitHub proxy path rejected]
+
+- The user confirmed the Royalvice token remains valid. A direct comparison proved the cause: GitHub API through
+  `http://10.0.3.5:7899` aborts TLS with `unexpected eof while reading`, while direct GitHub API returns HTTP `200`.
+- With proxy variables unset, the same `THOTH_GH_CONFIG_DIR=.dev/gh-royalvice` configuration reports a successful
+  GitHub login as `Royalvice`. No token was printed. GitHub branch, workflow and Release operations must use direct
+  HTTPS; the npm/Relay proxy configuration remains limited to the paths that require it.
+- The release transfer is unblocked and remains fenced: re-read the remote refs immediately before each normal
+  fast-forward, then push development and release at the same source SHA without force, merge or rebase.
