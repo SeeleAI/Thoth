@@ -4901,3 +4901,13 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   failure. Do not use Git Data API reconstruction or a force update as a publication workaround.
 - `NTH-TD-053` remains blocked before its first branch push until a working normal Git transport route to
   `github.com:443` is available. Existing local release-source commits and all verification evidence remain intact.
+
+## 2026-08-01 [Process-local GitHub Git transport restored]
+
+- GitHub's authenticated `/meta.git` endpoint listed `20.201.28.151` as an official Git IP. Direct
+  `curl --resolve github.com:443:20.201.28.151` returned GitHub `HTTP/2 200` with a valid `github.com` certificate.
+- Git `2.34.1` accepts the process-local `http.curloptResolve` setting. With
+  `github.com:443:20.201.28.151`, unchanged HTTPS URL, isolated Royalvice credential helper and all proxy variables
+  unset, `git ls-remote https://github.com/SeeleAI/Thoth.git HEAD` succeeded. This changes no system DNS or proxy.
+- The prior Git transport blocker is resolved. Re-fence remotes immediately before normal fast-forward pushes and
+  use the same process-local resolve setting for all GitHub Git commands in this release transaction.
