@@ -5,9 +5,10 @@
 1. Objective: `NTH-OBJ-001`
 2. Top next action: `NTH-TD-053`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. `NTH-TD-053` has completed the approved `NTH-CD-103` Decision Session/tree replacement
-   and all local/packaged/hosted verification; the repository-local Royalvice credential is valid over direct GitHub
-   HTTPS, and exact-SHA CI/public-release verification may now start.
+4. Active blocker: Git smart-HTTP to `github.com:443` is unreachable through both current network paths.
+   `NTH-TD-053` has completed the approved `NTH-CD-103` Decision Session/tree replacement and all local/packaged/
+   hosted verification; the Royalvice credential and GitHub API are valid, but exact-SHA CI/public-release
+   verification cannot start until normal Git transport is restored.
 5. Current branch: `agent/dev/mvp` at `9eb9aebae5a5ea02da381580473f039cc71d34b3`. Published source
    `c32ab051370ae1675b05ee53713ca60ac32f24ad` is the exact target of
    `release/mvp-actions`, direct tag `v0.0.0-mvp-beta`, and public prerelease `362857331`; the Release contains
@@ -52,13 +53,13 @@ receipts, accurate Clarify activity and virtualized tree mind-map product path.
 
 ## Active Blockers
 
-None. The required `10.0.3.5:7899` proxy aborts GitHub TLS, but direct GitHub HTTPS returns `200` and the same
-Royalvice repo-local `gh` configuration authenticates successfully. GitHub branch/API operations must therefore run
-direct, while the separate npm/Relay proxy configuration remains scoped to its proven paths. Failed workflows
-`c03d60cd`, `eacb2b6d`, `a62ff6e1` and `16216432` remain preserved as evidence. The two local npm registry-reset
-failures during `NTH-TD-053` are retained under `NTH-EXP-084`; the corrected packaged Relay journey passes.
-Corrective source `c32ab051` is the verified public fixed Beta. `NTH-TD-053` is the sole top action; `NTH-TD-036`
-remains open by design at Stage 4 with a preserved `15,506`-LOC Cut B gap.
+The required `10.0.3.5:7899` proxy aborts GitHub TLS. Direct GitHub API returns `200` and the same Royalvice
+repo-local `gh` configuration authenticates successfully, but direct Git smart-HTTP to `github.com:443` times out.
+No normal fast-forward can bypass that transport boundary. Failed workflows `c03d60cd`, `eacb2b6d`, `a62ff6e1` and
+`16216432` remain preserved as evidence. The two local npm registry-reset failures during `NTH-TD-053` are retained
+under `NTH-EXP-084`; the corrected packaged Relay journey passes. Corrective source `c32ab051` is the verified
+public fixed Beta. `NTH-TD-053` is the sole top action; `NTH-TD-036` remains open by design at Stage 4 with a
+preserved `15,506`-LOC Cut B gap.
 
 ## Recent Important Changes
 

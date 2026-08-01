@@ -4391,5 +4391,6 @@ never called` after package extraction. `NTH-EXP-084` preserves this failure; th
    succeeds may its 26 desktop assets be replaced and re-downloaded for final verification.
 10. The apparent credential failure was isolated to the supplied proxy: proxied GitHub API TLS terminated with
     `unexpected eof while reading`, while direct GitHub API returned `200` and the same Royalvice repo-local `gh`
-    configuration authenticated as `Royalvice`. GitHub branch/API operations are unblocked only on the direct route;
-    no token or alternate credential was exposed or used.
+    configuration authenticated as `Royalvice`. However, Git smart-HTTP to `github.com:443` fails directly by timeout
+    and through the proxy by TLS termination. No token or alternate credential was exposed or used, and no branch
+    update was attempted through a non-fast-forward/API commit-reconstruction substitute.

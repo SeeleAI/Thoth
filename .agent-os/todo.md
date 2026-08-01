@@ -53,8 +53,9 @@
    - Acceptance: `NTH-AC-030`, including Thoth-off isolation, atomic Card receipt, accurate active spinner, no premature terminal footer, 500-node incremental rendering, multi-session history, v6-to-v7 migration, owner suites, fast/full/packaged/Relay/native release gates and public downloaded-asset verification.
    - Current result: implementation, three cognition judges, `accept:thoth:fast` (`175.209s`), complete owner suites,
      real Codex, local AppImage and hosted Relay have passed. Pending only the authorized exact-SHA workflow,
-     in-place fixed-Beta replacement and fresh public download journey. GitHub must run direct because the supplied
-     proxy aborts GitHub TLS; the repository-local Royalvice credential is valid over that direct route.
+     in-place fixed-Beta replacement and fresh public download journey. Current external blocker: the supplied proxy
+     aborts GitHub TLS and direct Git smart-HTTP to `github.com:443` times out, though the Royalvice credential and
+     GitHub API work directly. A normal Git transport route is required before any authorized branch push.
    - Constraints: No flattened-list compatibility path, full-map polling, provider-name business branch, prompt fallback, second Card projection, force/rebase/main mutation, Relay deployment, npm/mobile/store/Nix/Docker publication or independent Paseo operation.
    - Related: `NTH-REQ-033`, `NTH-AC-030`, `NTH-CD-103`, `NTH-EV-076`, `NTH-TD-036`
 2. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.

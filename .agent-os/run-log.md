@@ -4890,3 +4890,14 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   HTTPS; the npm/Relay proxy configuration remains limited to the paths that require it.
 - The release transfer is unblocked and remains fenced: re-read the remote refs immediately before each normal
   fast-forward, then push development and release at the same source SHA without force, merge or rebase.
+
+## 2026-08-01 [GitHub API reachability does not prove Git transport reachability]
+
+- The direct Royalvice `gh` API route and token remain valid, but two normal direct `git push` attempts did not
+  mutate the remote: one ended with GnuTLS premature termination and one timed out after forcing HTTP/1.1. Remote
+  development SHA remained `9eb9aeba` after both attempts.
+- Direct `https://github.com` itself times out, while `https://api.github.com` returns `200`. The supplied proxy
+  aborts TLS for both hostnames. Therefore this is a Git smart-HTTP network-path failure, not an authentication
+  failure. Do not use Git Data API reconstruction or a force update as a publication workaround.
+- `NTH-TD-053` remains blocked before its first branch push until a working normal Git transport route to
+  `github.com:443` is available. Existing local release-source commits and all verification evidence remain intact.
