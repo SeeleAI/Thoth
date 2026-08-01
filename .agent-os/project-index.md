@@ -5,14 +5,13 @@
 1. Objective: `NTH-OBJ-001`
 2. Top next action: `NTH-TD-053`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blockers: none. `NTH-TD-053` has completed the approved `NTH-CD-103` Decision Session/tree replacement
-   and all local/packaged/hosted verification. Git smart-HTTP now uses a process-local resolve receipt to a reachable
-   GitHub official Git IP; exact-SHA CI/public-release verification may start without system DNS mutation.
-5. Current branch: `agent/dev/mvp` at `9eb9aebae5a5ea02da381580473f039cc71d34b3`. Published source
-   `c32ab051370ae1675b05ee53713ca60ac32f24ad` is the exact target of
-   `release/mvp-actions`, direct tag `v0.0.0-mvp-beta`, and public prerelease `362857331`; the Release contains
-   exactly 26 desktop-only assets. The development branch carries only this evidence closeout above the published
-   source. Remote `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+4. Active blocker: `NTH-TD-053` is published and server-digest verified, but its required fresh local full-binary
+   public-download journey is blocked by the local outbound network. The supplied proxy returns `502` for HTTP and
+   terminates TLS even when TLS 1.2 is forced; direct Release CDN Range transfers are valid but severely rate-limited.
+5. Current branch: `agent/dev/mvp` at `44b5dad52cffefc8461af75f1cb67c8cec396c77`, identical to
+   `origin/release/mvp-actions`. Published source `44b5dad52cffefc8461af75f1cb67c8cec396c77` is the exact target of
+   direct tag `v0.0.0-mvp-beta` and public prerelease `363500326`; the Release contains exactly 26 desktop-only
+   assets. Remote `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the provider-neutral substrate, while `NTH-CD-100` through
    `NTH-CD-102` now replace the former Task/Goals cognition with a durable Decision Map, one Intent Contract, one
    Task Anchor and checkpoint-reviewed Working Sets under `NTH-TD-052`. `NTH-EV-072` verifies that the exact
@@ -25,7 +24,8 @@
    freshly downloaded AppImage real-window journey. Production is
    `320,124` LOC with translated Cut B/final ceilings `304,618` / `282,218`. `NTH-CD-103` now supersedes the
    turn-bound Map presentation with one conversation-to-many Decision Sessions and one tree-to-one Task; this
-   replacement has passed local owner, packaged and hosted Relay gates under `NTH-TD-053`, but is not published.
+   replacement has passed local owner, packaged and hosted Relay gates under `NTH-TD-053` and is published at
+   `44b5dad5`; only the local full-binary public-download journey remains unverified.
    `NTH-TD-036` stays doing at Stage 4 and retains
    its independent `15,506`-LOC gap. `NTH-EV-074` verifies the corrective packaged PID-lock and
    external native-thread catalog paths through exact-SHA CI, the 26-asset fixed Beta and a freshly downloaded
@@ -46,20 +46,21 @@
 
 ## Top Next Action
 
-`NTH-TD-053` `[doing]`: Complete the authorized fixed-Beta publication and public downloaded-artifact verification
+`NTH-TD-053` `[doing]`: Complete the authorized fixed-Beta public downloaded-artifact verification
 for the locally verified schema-v7 Decision Sessions, deterministic incremental Decision Trees, atomic Card
 receipts, accurate Clarify activity and virtualized tree mind-map product path.
 
 ## Active Blockers
 
-None. The required `10.0.3.5:7899` proxy aborts GitHub TLS and the default direct `github.com` DNS target times
-out, but GitHub API `/meta.git` publishes reachable official Git IP `20.87.245.0`. Process-local
-`http.curloptResolve=github.com:443:20.87.245.0` preserves HTTPS, hostname, certificate validation and normal
-fast-forward semantics; `git ls-remote` passes with it. Failed workflows `c03d60cd`, `eacb2b6d`, `a62ff6e1` and
-`16216432` remain preserved as evidence. The two local npm registry-reset failures during `NTH-TD-053` are retained
-under `NTH-EXP-084`; the corrected packaged Relay journey passes. Corrective source `c32ab051` is the verified
-public fixed Beta. `NTH-TD-053` is the sole top action; `NTH-TD-036` remains open by design at Stage 4 with a
-preserved `15,506`-LOC Cut B gap.
+The required `10.0.3.5:7899` proxy is a real external blocker for Release-sized downloads: it returns `502` for
+plain HTTP and aborts HTTPS after CONNECT with `unexpected eof while reading`; `7890` and SOCKS5 `7891` behave the
+same. Git smart-HTTP is independently restored through repo-local `http.https://github.com.proxy=` plus current
+official resolve `http.curloptResolve=github.com:443:20.200.245.247`, preserving normal HTTPS and fast-forward
+semantics. Exact-SHA
+workflow `30695356049` succeeded and GitHub's asset digests match `SHA256SUMS`, but no local incomplete package is
+accepted as proof. A working outbound proxy or reliable direct CDN route is required for the remaining public
+AppImage/DMG download journey. `NTH-TD-053` remains the sole top action; `NTH-TD-036` stays open by design at Stage
+4 with a preserved `15,506`-LOC Cut B gap.
 
 ## Recent Important Changes
 

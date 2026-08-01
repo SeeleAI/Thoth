@@ -2063,3 +2063,20 @@ Observed on `2026-07-31` during schema-v7 Decision Session Tree hosted Relay ver
 Conclusion: a local acceptance network guard may stabilize package acquisition only when it preserves the exact
 artifact, the normal online cache-miss path and all downstream product assertions. It must be explicit and
 contract-checked, never silently substituted for the hosted Relay journey.
+
+## `NTH-EXP-085` HTTPS CONNECT success is not an outbound-network receipt
+
+Observed on `2026-08-01` during `NTH-TD-053` public Release verification:
+
+1. `10.0.3.5:7899` accepted TCP and HTTPS CONNECT but immediately terminated the TLS handshake with
+   `unexpected eof while reading`. It returned `502` even for a plain HTTP request. HTTP `7890` and SOCKS5 `7891`
+   exhibited the same failure, including when the client forced TLS 1.2.
+2. GitHub API authentication and exact-SHA Actions were healthy. Repo-local Git was restored without a system DNS
+   mutation by setting a URL-specific empty GitHub proxy and `http.curloptResolve` to a current official GitHub IP.
+   This proves only Git smart-HTTP; it must not be generalized to API or Release CDN large-object transfer.
+3. Release metadata and GitHub server asset digests can prove uploaded-byte integrity, while a completed local
+   binary hash proves the client path. Truncated downloads are invalid even when their leading bytes identify as a
+   valid ELF or compressed DMG; remove them instead of retaining misleading filenames.
+
+Conclusion: test the complete intended protocol and byte count. A successful CONNECT, a small metadata download, or
+a server-side digest cannot silently replace a required local packaged-product journey.

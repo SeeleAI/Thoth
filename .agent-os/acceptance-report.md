@@ -4352,7 +4352,8 @@ its independent `15,506`-LOC gap unchanged. This evidence-only closeout is pushe
 
 ### `NTH-EV-076` Decision Session Tree And Card Lifecycle Fixed-Beta Replacement
 
-Status: `local_verification_passed`; terminal state is `unverified` pending exact-SHA workflow and public download.
+Status: `release_published_server_digest_verified`; terminal state is `public_full_binary_download_blocked` pending a
+fresh local AppImage/DMG journey through a reliable outbound path.
 
 1. User authority is recorded by `NTH-REQ-033`, `NTH-AC-030` and `NTH-CD-103`. The approved target replaces the
    turn-bound Clarify Map/list projection with durable Decision Sessions, deterministic trees, ordered deltas,
@@ -4399,3 +4400,22 @@ never called` after package extraction. `NTH-EXP-084` preserves this failure; th
     `http.curloptResolve=github.com:443:20.87.245.0` preserves the `github.com` URL, SNI, certificate validation,
     isolated Royalvice credential helper and normal fast-forward behavior. No system DNS, proxy service or
     credential store was modified.
+12. Exact-SHA workflow `30695356049` completed successfully for
+    `44b5dad52cffefc8461af75f1cb67c8cec396c77`: preflight, Linux, Windows, macOS arm64/x64, internal Server CLI,
+    all three CLI smokes, hosted Relay and publish are successful. Public prerelease `363500326` is non-draft,
+    prerelease, targets the same SHA and exposes exactly `26` desktop-only assets. `main` remains
+    `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`; archive Release `thoth-plugin-final-archive` remains unchanged.
+13. Fresh public downloads of `BUILD-SOURCE.txt` and `MVP-UPDATE.json` pass `SHA256SUMS`. They identify tag
+    `v0.0.0-mvp-beta`, commit `44b5dad5` and workflow `30695356049`; update schema `1` has exactly six preferred
+    desktop installers. GitHub Release asset metadata reports the uploaded AppImage digest
+    `sha256:be3ef218...c8cfdd625` and arm64 DMG digest `sha256:2e056fab...b8caf94dc`, exactly matching the public
+    checksum file and their declared sizes `137,839,485` and `125,773,317` bytes.
+14. This host cannot yet complete the required full public binary re-download: `10.0.3.5:7899` returns `502` for
+    HTTP and TLS EOF after HTTPS CONNECT even with TLS 1.2; ports `7890` and SOCKS5 `7891` fail equivalently. Direct
+    CDN Range responses are valid but rate-limited, and no partial AppImage/DMG was retained or accepted. This is an
+    explicit local-network receipt, not a Release or build failure; keep `NTH-TD-053` active until a full local
+    binary hash and real-window journey complete.
+15. When the former `20.87.245.0` Git route later became slow, GitHub `/meta` candidates were re-probed without
+    altering system DNS. `20.200.245.247` returned a valid GitHub HTTPS response and a normal `git ls-remote` fence
+    for development, release and `main`. The repo-local resolver now uses that official address; Git HTTPS remains
+    direct for only `github.com`, while the broken general proxy stays excluded.

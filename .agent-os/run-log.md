@@ -4912,3 +4912,24 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   unset, `git ls-remote https://github.com/SeeleAI/Thoth.git HEAD` succeeded. This changes no system DNS or proxy.
 - The prior Git transport blocker is resolved. Re-fence remotes immediately before normal fast-forward pushes and
   use the same process-local resolve setting for all GitHub Git commands in this release transaction.
+
+## 2026-08-01 [Decision Session tree Beta published; local large-download route isolated]
+
+- Normal fast-forward pushes placed `agent/dev/mvp` and `release/mvp-actions` at
+  `44b5dad52cffefc8461af75f1cb67c8cec396c77`; remote `main` remains `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+  Exact-SHA workflow `30695356049` completed successfully with preflight, Linux, Windows, macOS arm64/x64, internal
+  Server CLI, three CLI smokes, hosted Relay and publish all green.
+- Fixed prerelease `v0.0.0-mvp-beta` now targets `44b5dad5`, is non-draft/prerelease and has exactly 26 desktop-only
+  assets. Fresh public `BUILD-SOURCE.txt` and `MVP-UPDATE.json` downloads pass their checksum entries and identify
+  the same source/workflow. GitHub API asset digests for the AppImage and arm64 DMG exactly match `SHA256SUMS`.
+  Archive Release `thoth-plugin-final-archive` remains unchanged.
+- The supplied proxy cannot be repaired from this checkout: `10.0.3.5:7899` returns `502` for plain HTTP and cuts
+  TLS after CONNECT, with the same result through `7890`, SOCKS5 `7891`, and forced TLS 1.2. Direct CDN Range is
+  valid but too rate-limited to finish a new large binary in this session. All incomplete files and lingering
+  downloader processes were removed; no incomplete file is accepted as a package receipt.
+- GitHub's official IP pool is dynamic at the network layer. When the earlier `.0` route became slow, a bounded
+  HTTPS probe found `20.200.245.247`; it passed a real normal `git ls-remote` fence for development, release and
+  `main`. The repo-local Git resolver was rotated to that address, still with the GitHub URL-specific proxy disabled.
+- `NTH-EV-076` therefore records published/server-digest verification but not the final local full-binary journey.
+  `NTH-TD-053` remains the only top next action until a working outbound path permits checksum-verified AppImage/DMG
+  download and the required new-home real-window acceptance.

@@ -52,9 +52,11 @@
    - Architecture: Protocol owns snapshot/delta/activity contracts; Workspace authority owns schema-v7 Decision Sessions, tree edges, Card/Task binding and migration; RuntimeBundle grows and converges the tree; App owns only the virtualized tidy-tree scene and view preferences.
    - Acceptance: `NTH-AC-030`, including Thoth-off isolation, atomic Card receipt, accurate active spinner, no premature terminal footer, 500-node incremental rendering, multi-session history, v6-to-v7 migration, owner suites, fast/full/packaged/Relay/native release gates and public downloaded-asset verification.
    - Current result: implementation, three cognition judges, `accept:thoth:fast` (`175.209s`), complete owner suites,
-     real Codex, local AppImage and hosted Relay have passed. Pending only the authorized exact-SHA workflow,
-     in-place fixed-Beta replacement and fresh public download journey. GitHub transport uses the temporary official
-     GitHub DNS resolve receipt `github.com:443 -> 20.87.245.0`; the proxy remains excluded from GitHub.
+     real Codex, local AppImage and hosted Relay have passed. Exact-SHA workflow `30695356049` successfully replaced
+     the fixed Beta at `44b5dad5`; its public metadata downloads and GitHub server-side AppImage/DMG digests match
+     `SHA256SUMS`. Pending only the fresh local full-binary public-download journey: the supplied proxy is broken
+     (`502` / TLS EOF) and direct Release CDN transfers are severely rate-limited. Git smart-HTTP uses repo-local
+     official resolve `github.com:443 -> 20.200.245.247` with the proxy disabled only for the GitHub URL.
    - Constraints: No flattened-list compatibility path, full-map polling, provider-name business branch, prompt fallback, second Card projection, force/rebase/main mutation, Relay deployment, npm/mobile/store/Nix/Docker publication or independent Paseo operation.
    - Related: `NTH-REQ-033`, `NTH-AC-030`, `NTH-CD-103`, `NTH-EV-076`, `NTH-TD-036`
 2. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
