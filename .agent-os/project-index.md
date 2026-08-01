@@ -53,8 +53,8 @@ receipts, accurate Clarify activity and virtualized tree mind-map product path.
 ## Active Blockers
 
 None. The required `10.0.3.5:7899` proxy aborts GitHub TLS and the default direct `github.com` DNS target times
-out, but GitHub API `/meta.git` publishes reachable official Git IP `20.201.28.151`. Process-local
-`http.curloptResolve=github.com:443:20.201.28.151` preserves HTTPS, hostname, certificate validation and normal
+out, but GitHub API `/meta.git` publishes reachable official Git IP `20.87.245.0`. Process-local
+`http.curloptResolve=github.com:443:20.87.245.0` preserves HTTPS, hostname, certificate validation and normal
 fast-forward semantics; `git ls-remote` passes with it. Failed workflows `c03d60cd`, `eacb2b6d`, `a62ff6e1` and
 `16216432` remain preserved as evidence. The two local npm registry-reset failures during `NTH-TD-053` are retained
 under `NTH-EXP-084`; the corrected packaged Relay journey passes. Corrective source `c32ab051` is the verified

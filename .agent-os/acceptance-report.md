@@ -4394,7 +4394,8 @@ never called` after package extraction. `NTH-EXP-084` preserves this failure; th
     configuration authenticated as `Royalvice`. However, Git smart-HTTP to `github.com:443` fails directly by timeout
     and through the proxy by TLS termination. No token or alternate credential was exposed or used, and no branch
     update was attempted through a non-fast-forward/API commit-reconstruction substitute.
-11. GitHub `/meta.git` then supplied an official reachable Git IP, `20.201.28.151`. The process-local Git config
-    `http.curloptResolve=github.com:443:20.201.28.151` preserves the `github.com` URL, SNI, certificate validation,
-    isolated Royalvice credential helper and normal fast-forward behavior. A direct `git ls-remote` succeeds with
-    the exact remote `HEAD`; no system DNS, proxy service or credential store was modified.
+11. GitHub `/meta.git` supplied official Git IPs. `20.201.28.151` completed short HTTPS/read probes but timed out
+    during Git receive-pack. `20.87.245.0` passes both direct HTTPS and `git ls-remote`. The process-local Git config
+    `http.curloptResolve=github.com:443:20.87.245.0` preserves the `github.com` URL, SNI, certificate validation,
+    isolated Royalvice credential helper and normal fast-forward behavior. No system DNS, proxy service or
+    credential store was modified.

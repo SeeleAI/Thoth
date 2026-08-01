@@ -54,7 +54,7 @@
    - Current result: implementation, three cognition judges, `accept:thoth:fast` (`175.209s`), complete owner suites,
      real Codex, local AppImage and hosted Relay have passed. Pending only the authorized exact-SHA workflow,
      in-place fixed-Beta replacement and fresh public download journey. GitHub transport uses the temporary official
-     GitHub DNS resolve receipt `github.com:443 -> 20.201.28.151`; the proxy remains excluded from GitHub.
+     GitHub DNS resolve receipt `github.com:443 -> 20.87.245.0`; the proxy remains excluded from GitHub.
    - Constraints: No flattened-list compatibility path, full-map polling, provider-name business branch, prompt fallback, second Card projection, force/rebase/main mutation, Relay deployment, npm/mobile/store/Nix/Docker publication or independent Paseo operation.
    - Related: `NTH-REQ-033`, `NTH-AC-030`, `NTH-CD-103`, `NTH-EV-076`, `NTH-TD-036`
 2. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
