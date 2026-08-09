@@ -4352,8 +4352,7 @@ its independent `15,506`-LOC gap unchanged. This evidence-only closeout is pushe
 
 ### `NTH-EV-076` Decision Session Tree And Card Lifecycle Fixed-Beta Replacement
 
-Status: `release_published_server_digest_verified`; terminal state is `public_full_binary_download_blocked` pending a
-fresh local AppImage/DMG journey through a reliable outbound path.
+Status: `verified`; terminal state is `published_then_superseded_by_NTH-EV-077`.
 
 1. User authority is recorded by `NTH-REQ-033`, `NTH-AC-030` and `NTH-CD-103`. The approved target replaces the
    turn-bound Clarify Map/list projection with durable Decision Sessions, deterministic trees, ordered deltas,
@@ -4419,10 +4418,18 @@ never called` after package extraction. `NTH-EXP-084` preserves this failure; th
     altering system DNS. `20.200.245.247` returned a valid GitHub HTTPS response and a normal `git ls-remote` fence
     for development, release and `main`. The repo-local resolver now uses that official address; Git HTTPS remains
     direct for only `github.com`, while the broken general proxy stays excluded.
+16. The later corrective Release under `NTH-EV-077` supersedes source `44b5dad5` without removing any Decision
+    Session behavior. Its freshly downloaded public AppImage passes the complete schema-v7 Decision Tree, active
+    Card, frozen Task, second Decision Session, Quick, Loop, Review, Plan, Stop and migration journey. This closes
+    the former local full-binary acceptance gap while preserving the original network failure as historical
+    evidence.
+
+Conclusion: `NTH-AC-030` is satisfied and `NTH-TD-053` is verified. Its terminal product state is included in the
+currently published corrective source recorded by `NTH-EV-077`; the old network blocker is resolved.
 
 ### `NTH-EV-077` History-Only Provider Detection And Decision Tree Geometry Correction
 
-Status: `local_source_verified`; exact-SHA native workflow and public asset verification remain pending.
+Status: `verified`; terminal state is `published`.
 
 1. User authority is recorded by `NTH-REQ-034`, `NTH-AC-031` and `NTH-CD-104`. The release-visible regressions are
    a raw `Unknown agent` from capability refresh of a valid history-only Agent, and a Decision Tree scene that uses
@@ -4430,8 +4437,8 @@ Status: `local_source_verified`; exact-SHA native workflow and public asset veri
 2. Opening source is clean `agent/dev/mvp@91e65560fab13a13b6495c64169f0de73eb711e1`; public fixed Beta and
    `origin/release/mvp-actions` remain at `44b5dad52cffefc8461af75f1cb67c8cec396c77`; `main` remains
    `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
-3. Remaining evidence is the packaged Electron geometry screenshot, exact-SHA Actions, unchanged 26-asset desktop
-   manifest and public metadata/package identity verification.
+3. Required evidence includes packaged Electron geometry screenshots, exact-SHA Actions, an unchanged 26-asset
+   desktop manifest and public metadata/package identity verification.
 4. Focused Daemon recovery passes `3/3`, including durable visible history, typed unavailable capability and a later
    successful canonical Provider resume. Decision Tree layout/sidebar tests pass `17/17`; pure geometry proves fixed
    `96px` node containment, stable top-left fit, Task inclusion in scene bounds, collision-free routed segments and
@@ -4465,5 +4472,34 @@ Status: `local_source_verified`; exact-SHA native workflow and public asset veri
 11. The final acceptance state machine no longer races multiple acceptable surfaces. At `900px`, activity waits for
     the launcher and performs one normal click; the pending Card waits only for auto-open fullscreen. At `2200px`,
     frozen evidence waits only for docked. The same rebuilt AppImage passes again with activity=`overlay`,
-    Card=`overlay-open`, frozen=`docked` and all prior geometry/product receipts. A third exact-SHA workflow remains
-    pending.
+    Card=`overlay-open`, frozen=`docked` and all prior geometry/product receipts. A third exact-SHA workflow was
+    pending at this checkpoint and is closed by the next receipt.
+12. Final correction `6afe44cbfc68895ff7f5be03a60524ae7e664d26` was normally fast-forwarded to
+    `agent/dev/mvp` and `release/mvp-actions`. Exact-SHA workflow `31327160131` completed successfully: preflight,
+    Linux, Windows, macOS arm64/x64, internal Server CLI, Ubuntu/Windows/macOS CLI smokes, hosted Relay and publish
+    all report `success`.
+13. Public prerelease `367548410` was published at `2026-08-09T18:08:17Z`. It is non-draft, prerelease, targets the
+    exact final source and exposes exactly `26` desktop-only assets with no APK, iOS package or public Server CLI.
+    Direct tag `v0.0.0-mvp-beta` targets the same commit.
+14. Fresh public downloads are independently hashed as follows: `BUILD-SOURCE.txt` is `89` bytes / SHA-256
+    `cc6b7440aa0facfe4fd19dd4e415b70d8726a33eb6bed822ffc8c72dc9f628c2`; `MVP-UPDATE.json` is `2,455`
+    bytes / `b2e7c0c8d5239f60176d390e53e926ad61b1c0e1c56628b4329a782dab67f67d`; `SHA256SUMS` is `2,418`
+    bytes / `2b75c2e9e907614f5da86a32650791a96f183881499b1f3489a0c1583c21fdf8`; and the AppImage is
+    `137,839,342` bytes / `cb8270d7f4e1466b194aa354632527b088187a596ad423e22b67fd100a44133b`.
+15. GitHub asset digest, `MVP-UPDATE.json`, `SHA256SUMS` and the local AppImage hash agree. `BUILD-SOURCE.txt`
+    records tag `v0.0.0-mvp-beta`, source `6afe44cb...` and workflow `31327160131`; extracted
+    `resources/build-identity.json` records the same source commit.
+16. The freshly downloaded public AppImage completes the real-window journey with `ok=true`. Activity is a `900px`
+    overlay, the Card is a `900px` auto-open overlay, and the frozen tree is docked at `2200px` with a `1000px`
+    conversation, zero node-content overflow, complete Task containment and `50.0089px` top inset. Catalog and
+    Authority schema are `7`, Authority migration is `10`, durable state is `8,663,884` bytes and exactly two
+    RuntimeBundles exist. Quick, Loop, four checkpoints/four Reviews, native Plan, Stop, Browser, Files/Changes,
+    Workspace scripts, Schedules and five-chunk file transfer also pass.
+17. Remote `release/mvp-actions` and the direct tag remain at `6afe44cb...`; the evidence-only closeout advances
+    only `agent/dev/mvp`. Remote `main` remains `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`, and archive Release
+    `thoth-plugin-final-archive` remains published and unchanged. No Relay deployment, npm/mobile/store/Nix/Docker
+    publication or independent Paseo operation occurred.
+
+Conclusion: `NTH-AC-031` is satisfied, `NTH-TD-054` is verified, and the fixed desktop Beta is `published` at
+source `6afe44cbfc68895ff7f5be03a60524ae7e664d26`. `NTH-TD-036` returns as the sole top next action with its
+independent `15,506`-LOC gap unchanged.

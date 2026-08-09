@@ -3,16 +3,16 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-054`
+2. Top next action: `NTH-TD-036`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blocker: none. `NTH-TD-054` is the authorized corrective release transaction for history-only Provider
-   capability detection and Decision Tree geometry. The prior `NTH-TD-053` full-binary local download remained
-   blocked by outbound bandwidth, but it does not block implementing or publishing the superseding exact source.
-5. Current branch and both authorized remote branches are at `48909eb5`, with one uncommitted final packaged-state
-   correction. Workflows `31323481633` and `31325780408` passed every job except their Linux packaged presentation;
-   publish was skipped both times, so direct tag `v0.0.0-mvp-beta` and public prerelease `363500326` remain safely
-   at `44b5dad52cffefc8461af75f1cb67c8cec396c77` with 26 desktop-only assets. Remote `main` remains unchanged at
-   `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+4. Active blocker: none. `NTH-TD-053` and `NTH-TD-054` are verified. The superseding public AppImage completed the
+   previously blocked full-binary Decision Session journey as well as the history-only Provider and bounded-tree
+   correction, so the independent `NTH-TD-036` source-convergence work can resume.
+5. Release source `6afe44cbfc68895ff7f5be03a60524ae7e664d26` is the direct
+   `v0.0.0-mvp-beta` tag target and remains on `release/mvp-actions`. Exact-SHA workflow `31327160131` passed all
+   mandatory jobs and published prerelease `367548410` with exactly 26 desktop-only assets. The public AppImage,
+   metadata, checksums and embedded identity agree on that source; the evidence-only closeout advances only
+   `agent/dev/mvp`. Remote `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the provider-neutral substrate, while `NTH-CD-100` through
    `NTH-CD-102` now replace the former Task/Goals cognition with a durable Decision Map, one Intent Contract, one
    Task Anchor and checkpoint-reviewed Working Sets under `NTH-TD-052`. `NTH-EV-072` verifies that the exact
@@ -25,8 +25,9 @@
    freshly downloaded AppImage real-window journey. Production is
    `320,124` LOC with translated Cut B/final ceilings `304,618` / `282,218`. `NTH-CD-103` now supersedes the
    turn-bound Map presentation with one conversation-to-many Decision Sessions and one tree-to-one Task; this
-   replacement has passed local owner, packaged and hosted Relay gates under `NTH-TD-053` and is published at
-   `44b5dad5`; only the local full-binary public-download journey remains unverified.
+   replacement is verified through local owner, packaged, hosted Relay, exact-SHA native and public downloaded-
+   AppImage journeys under `NTH-EV-076` and `NTH-EV-077`. `NTH-EV-077` additionally verifies provider-neutral
+   history-only capability recovery and one container-aware, fully bounded Decision Tree scene at `6afe44cb`.
    `NTH-TD-036` stays doing at Stage 4 and retains
    its independent `15,506`-LOC gap. `NTH-EV-074` verifies the corrective packaged PID-lock and
    external native-thread catalog paths through exact-SHA CI, the 26-asset fixed Beta and a freshly downloaded
@@ -47,15 +48,14 @@
 
 ## Top Next Action
 
-`NTH-TD-054` `[doing]`: Repair history-only Provider capability detection and make Decision Tree layout use one
-container-aware, fully bounded and collision-free scene; verify the corrected real product path and replace the
-fixed desktop Beta from one exact source SHA.
+`NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition,
+Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path while
+retaining all approved product behavior and the independent `15,506`-LOC Cut B target.
 
 ## Active Blockers
 
-None. Git smart-HTTP remains configured through repository-local direct GitHub resolution because the supplied
-proxy terminates TLS. `NTH-TD-053` retains its honest incomplete local full-binary receipt as historical evidence;
-the superseding `NTH-TD-054` correction must obtain its own exact workflow and public-asset evidence.
+None. GitHub operations currently succeed through the supplied `http://10.0.3.5:7899` proxy with the Royalvice
+repository-local `gh` configuration. No system proxy, DNS or credential state is changed by the repository.
 
 ## Recent Important Changes
 
@@ -187,6 +187,17 @@ the superseding `NTH-TD-054` correction must obtain its own exact workflow and p
      Session owns one stable deterministic tree, one Intent Contract and at most one Task. Schema-v7 authority,
      ordered deltas, atomic Card receipts, active cognition projection and a virtualized tree mind map replace the
      turn-bound full-map/list path without compatibility runtime.
+104. `NTH-EV-076`: Decision Session source, cognition, schema-v7 migration, real Provider, packaged and hosted Relay
+     gates passed, and exact-SHA workflow `30695356049` published source `44b5dad5`. Its local full-binary download
+     was initially blocked by network throughput and is now closed by the superseding public AppImage receipt in
+     `NTH-EV-077`; `NTH-TD-053` is verified.
+105. `NTH-CD-104`: History-only Agents remain canonical readable projections when native Provider resume is
+     unavailable; capability reads return typed unavailability and retry the same load path later. Decision Tree
+     presentation uses measured Agent-body width and one complete, collision-free scene shared by all geometry.
+106. `NTH-EV-077`: Final source `6afe44cb` completed exact-SHA workflow `31327160131`; public prerelease `367548410`
+     contains exactly 26 desktop-only assets. Fresh metadata, checksums, embedded identity and downloaded-AppImage
+     real-window acceptance passed with no node overflow, full Task containment and disjoint conversation/tree
+     layout. `NTH-TD-054` is verified; `NTH-TD-036` is again the sole top action.
 
 ## Read Next
 

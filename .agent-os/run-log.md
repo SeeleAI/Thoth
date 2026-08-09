@@ -4988,3 +4988,23 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - The unchanged rebuilt AppImage journey passes again with `ok=true`: activity=`overlay`, Card=`overlay-open`,
   frozen=`docked`, conversation `1000px`, node overflow zero, Task contained and top inset `50.0089px`. A third
   corrective source commit and exact-SHA workflow are pending.
+
+## 2026-08-09 [History-only Provider and bounded Decision Tree correction published]
+
+- Final deterministic observer source `6afe44cbfc68895ff7f5be03a60524ae7e664d26` was normally fast-forwarded to
+  both authorized branches. Exact-SHA workflow `31327160131` completed all 11 mandatory jobs successfully:
+  preflight, Linux, Windows, macOS arm64/x64, internal Server CLI, three native CLI smokes, hosted Relay and publish.
+- Public prerelease `367548410` is non-draft/prerelease, targets the exact source and exposes exactly 26 desktop-only
+  assets. Direct tag `v0.0.0-mvp-beta` targets the same source. Remote `main` remains `e74c6e0d`, and archive Release
+  `thoth-plugin-final-archive` remains published and unchanged.
+- Fresh `BUILD-SOURCE.txt`, `MVP-UPDATE.json`, `SHA256SUMS` and AppImage downloads agree on source, workflow and
+  SHA-256. The public AppImage is `137,839,342` bytes with digest
+  `cb8270d7f4e1466b194aa354632527b088187a596ad423e22b67fd100a44133b`; its extracted build identity records
+  `6afe44cbfc68895ff7f5be03a60524ae7e664d26`.
+- The downloaded AppImage completed the full real-window journey with `ok=true`: 900px Activity=`overlay`, 900px
+  Card=`overlay-open`, 2200px frozen=`docked`, conversation `1000px`, node overflow zero, Task fully contained and
+  top inset `50.0089px`. Schema v7/migration 10, two RuntimeBundles, Quick, Loop, Review, Plan, Stop, Browser,
+  Files/Changes, Workspace scripts, Schedules and five-chunk transfer all pass.
+- `NTH-EV-077`, `NTH-TD-054` and the previously bandwidth-blocked full-binary boundary of `NTH-TD-053` are verified;
+  terminal state is `published`. `NTH-TD-036` returns as the sole top next action with its independent `15,506`-LOC
+  gap unchanged. This evidence-only closeout advances only `agent/dev/mvp`; it does not trigger another Release.

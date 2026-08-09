@@ -126,27 +126,29 @@ SHA-256, source commit, update manifest, embedded build identity, and the comple
 
 ## Current Published Receipt
 
-The current fixed Beta was published from source `c32ab051370ae1675b05ee53713ca60ac32f24ad` by exact-SHA workflow
-`30604155018`. All 11 mandatory jobs passed. Public prerelease `362857331` and direct
+The current fixed Beta was published from source `6afe44cbfc68895ff7f5be03a60524ae7e664d26` by exact-SHA workflow
+`31327160131`. All 11 mandatory jobs passed. Public prerelease `367548410` and direct
 tag `v0.0.0-mvp-beta` target that exact source, are non-draft/prerelease, and expose exactly 26 desktop-only assets.
 
 Fresh public downloads verify:
 
 - `BUILD-SOURCE.txt`: `89` bytes,
-  `eb8cc39f11d00bb382d97191e143ebafa7321d56ad733dc7c55c2c836c78557e`
+  `cc6b7440aa0facfe4fd19dd4e415b70d8726a33eb6bed822ffc8c72dc9f628c2`
 - `MVP-UPDATE.json`: `2,455` bytes,
-  `216636e2f88fa25740ccfa084e03cc2cbe4b8808f03311fa73db335875e025dd`
+  `b2e7c0c8d5239f60176d390e53e926ad61b1c0e1c56628b4329a782dab67f67d`
 - `SHA256SUMS`: `2,418` bytes,
-  `e83ec4cb566b2a71cae13388debbb2e528452e0e084b75d484711ca59f67404b`
-- `Thoth-x86_64.AppImage`: `137,826,775` bytes,
-  `e78269655d4e9f07f2eb1358cd36d8b1f6f99ec357d57df6b8c6123cf4eef4ab`
+  `2b75c2e9e907614f5da86a32650791a96f183881499b1f3489a0c1583c21fdf8`
+- `Thoth-x86_64.AppImage`: `137,839,342` bytes,
+  `cb8270d7f4e1466b194aa354632527b088187a596ad423e22b67fd100a44133b`
 
-The source metadata, schema-1 update manifest, checksum file and extracted `resources/build-identity.json` agree
-on the source/workflow. The downloaded AppImage completed the real-window Decision Map, single Intent Contract,
-Quick, Loop native Plan/Implement, four semantic checkpoints, four fresh Reviews, reorient/retry, `@Task`, Stop,
-schema-v6 migration, `Tasks | Schedules`, Workspace-script, five-chunk file-transfer, Files/Changes, Browser and
-Desktop bridge journey with `ok=true`. Its durable state is `8,592,628` bytes with exactly two content-addressed
-RuntimeBundles.
+The source metadata, schema-1 update manifest and checksum file agree on the source and workflow; extracted
+`resources/build-identity.json` agrees on the source commit. The downloaded AppImage completed the real-window
+Decision Session Tree, active Card, frozen Task, second Decision Session, Quick, Loop native Plan/Implement, four
+semantic checkpoints, four fresh Reviews, reorient/retry, `@Task`, Stop, schema-v7 migration, `Tasks | Schedules`,
+Workspace-script, five-chunk file-transfer, Files/Changes, Browser and Desktop bridge journey with `ok=true`.
+Its durable state is `8,663,884` bytes with exactly two content-addressed RuntimeBundles. The frozen `2200px` tree
+preserves a `1000px` conversation, zero node overflow, full Task containment and a `50.0089px` top inset; `900px`
+activity and Card states use the overlay rather than overlapping the conversation.
 
 ## Provider Interaction Replacement History
 
@@ -243,7 +245,7 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
 
 The final evidence must cross-check GitHub asset metadata, `BUILD-SOURCE.txt`, `MVP-UPDATE.json`, `SHA256SUMS`,
 local SHA-256 and extracted `resources/build-identity.json` against the exact release-source SHA and workflow ID.
-Only then may `NTH-TD-052` become verified and `NTH-TD-036` return as the sole top next action.
+Only then may the authorized release TODO become verified and `NTH-TD-036` return as the sole top next action.
 
 The independent `SeeleAI/Thoth-Relay` deployment and any future production relay/web deployment are
 outside this release authorization.

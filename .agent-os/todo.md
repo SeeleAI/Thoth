@@ -47,26 +47,7 @@
 
 ## Doing
 
-1. `NTH-TD-054` `[doing]`: Repair history-only Provider capability detection and make the Decision Tree scene container-aware, collision-free and fully bounded, then replace the fixed desktop Beta.
-   - Goal: Old visible Agents remain readable and return typed capability unavailability when their native thread cannot resume; the right-side tree never overlaps the conversation, clips content or routes a frozen Task connector through decision nodes.
-   - Architecture: Daemon capability queries accept the canonical history-only Timeline projection without inventing a Provider session; App uses actual Agent-body measurements and one pure scene geometry model that owns decision nodes, Task leaf, route, fit and minimap bounds.
-   - Acceptance: `NTH-AC-031`, including resume retry, fixed-height node containment, top-left small-tree fit, complete Task bounds, collision-free connectors, constrained/wide real Web screenshots, retained 500-node virtualization, source gates, exact-SHA native workflow and public desktop-asset verification.
-   - Current result: product source `89d07369` passes all source gates. Workflows `31323481633` and `31325780408` passed every non-Linux-packaged job and safely skipped publish; the first retained a whole-window assumption, while the second sampled the launcher immediately before Card auto-open. The final journey assigns unique terminal states to 900px activity, 900px Card and 2200px frozen evidence. Repeated rebuilt-AppImage runs pass `ok=true` with `1000px` conversation, zero node overflow, full Task containment, `50.009px` top inset and preserved wide/constrained screenshots. Final corrective commit, workflow and public verification remain pending.
-   - Constraints: No Provider-name branch, prompt fallback, second Agent authority, force/rebase/main mutation, Relay deployment, npm/mobile/store/Nix/Docker publication or independent Paseo operation.
-   - Related: `NTH-REQ-034`, `NTH-AC-031`, `NTH-CD-104`, `NTH-EV-077`, `NTH-TD-053`, `NTH-TD-036`
-2. `NTH-TD-053` `[doing]`: Replace the turn-bound Clarify Decision Map with durable Decision Sessions, deterministic incremental Decision Trees and one authority-driven Card lifecycle, then publish the verified schema-v7 product through the fixed desktop Beta transaction.
-   - Goal: One visible Agent conversation may own multiple sequential Decision Sessions; each session spans multiple Clarify turns, owns one stable tree and freezes exactly one Task decision record.
-   - Architecture: Protocol owns snapshot/delta/activity contracts; Workspace authority owns schema-v7 Decision Sessions, tree edges, Card/Task binding and migration; RuntimeBundle grows and converges the tree; App owns only the virtualized tidy-tree scene and view preferences.
-   - Acceptance: `NTH-AC-030`, including Thoth-off isolation, atomic Card receipt, accurate active spinner, no premature terminal footer, 500-node incremental rendering, multi-session history, v6-to-v7 migration, owner suites, fast/full/packaged/Relay/native release gates and public downloaded-asset verification.
-   - Current result: implementation, three cognition judges, `accept:thoth:fast` (`175.209s`), complete owner suites,
-     real Codex, local AppImage and hosted Relay have passed. Exact-SHA workflow `30695356049` successfully replaced
-     the fixed Beta at `44b5dad5`; its public metadata downloads and GitHub server-side AppImage/DMG digests match
-     `SHA256SUMS`. Pending only the fresh local full-binary public-download journey: the supplied proxy is broken
-     (`502` / TLS EOF) and direct Release CDN transfers are severely rate-limited. Git smart-HTTP uses repo-local
-     official resolve `github.com:443 -> 20.200.245.247` with the proxy disabled only for the GitHub URL.
-   - Constraints: No flattened-list compatibility path, full-map polling, provider-name business branch, prompt fallback, second Card projection, force/rebase/main mutation, Relay deployment, npm/mobile/store/Nix/Docker publication or independent Paseo operation.
-   - Related: `NTH-REQ-033`, `NTH-AC-030`, `NTH-CD-103`, `NTH-EV-076`, `NTH-TD-036`
-3. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
+1. `NTH-TD-036` `[doing]`: Atomically converge AgentTimeline/tool rendering, Workspace/Sidebar responsive composition, Composer/Overlay, Settings/Panel/Card primitives and proven private UI glue into one final presentation path.
    - Acceptance: no public semantic or UX change; no VCS/Provider/RPC/authority/performance work; App suite remains at least `331 files / 2,582 tests`; after the approved capability translations through `NTH-CD-100` through `NTH-CD-102`, Stage 5 source is at most `304,618` production LOC with tokens/AST/imports below Stage 4 and dependencies no higher; the shared `300s` gate passes.
    - Current result: after the approved cognition replacement, production is `320,124` LOC, `1,361,597` tokens,
      `1,408,770` AST nodes, `5,247` imports and `165` runtime dependency edges. `DeltaP52=3,173` translates the prior
@@ -74,7 +55,7 @@
      refactor regression or progress. The remaining independent gap is exactly `15,506` LOC; Stage stays 4 and
      `NTH-TD-036` remains open.
    - Related: `NTH-MS-018`, `NTH-CD-066`, `NTH-CD-067`, `NTH-REQ-026`, `NTH-AC-021`, `NTH-EV-057`
-4. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
+2. `NTH-TD-016` `[doing]`: Repair reopened Loop-2 Quick+Clarify regression.
    - Goal: Keep restored Paseo surface and Codex dynamicTools path, but make Clarify behave like a pending authority decision lifecycle with intelligent timeline badges and model-submitted frontier ledger.
    - Scope: `thoth_submit_clarify_card` carries `public_badge_summary` and `frontier_ledger`; `thoth_submit_task_card` carries convergence review; `balanced` has a 5-10 card soft range and `dive` has a 10-20 card soft range; cards must not show completed/idle footer before user submission; `decision_it_changes` is legacy optional input only. Under `NTH-CD-052`, raw Provider conversation is an explicit Thoth-off state rather than an ambiguous `Quick + Direct` sub-selection; only Thoth-on exposes structured Clarify and Loop controls. Under `NTH-CD-053`, that off/on choice is strictly per turn: one Workspace Secretary topic reuses one foreground provider session, and a daemon authority fence blocks remembered runtime tools during raw turns instead of using historical `bare` / `structured` sessions.
    - Verification: Reopened under `NTH-EV-029`; unit/build/foundation gates and most real Codex web paths now pass after the frontier-ledger repair, including local/public Balanced sort, local Dive sort, local Balanced PathTracing and local Loop `registered_pending`. Under `NTH-CD-057` / `NTH-EV-038`, ordinary Agent sends now reuse the visible provider session for Thoth Clarify/Quick, remote workspace identity overrides client cwd, and packaged Clarify/Loop skills were confirmed in the public Linux `app.asar`. Do not return this TODO to verified until installed/Relay real-provider behavior is exercised from the replacement build.
@@ -284,6 +265,30 @@ None.
   mandatory jobs in workflow `30604155018`. Public prerelease `362857331` exposes exactly 26 desktop-only assets,
   and the checksum/build-identity-verified downloaded AppImage passed the complete product journey. Terminal state
   is `published`; `NTH-TD-036` is again the sole top action with its `15,506`-LOC gap unchanged.
+
+30. `NTH-TD-053` `[verified]`: Replace the turn-bound Clarify Decision Map with durable Decision Sessions,
+    deterministic incremental Decision Trees and one authority-driven Card lifecycle, then publish schema v7.
+
+- Scope: allow one visible Agent conversation to own multiple sequential Decision Sessions while each session owns
+  one stable tree, one Intent Contract, one authority-driven Card lifecycle and at most one frozen Task binding.
+- Related: `NTH-REQ-033`, `NTH-AC-030`, `NTH-CD-103`, `NTH-EV-076`, `NTH-EV-077`, `NTH-TD-036`
+- Verification: See `NTH-EV-076` and the superseding public-binary receipt in `NTH-EV-077`. Source, cognition,
+  schema-v7 migration, real Provider, local AppImage, hosted Relay and exact-SHA native gates passed. The public
+  AppImage from corrective source `6afe44cb` was freshly downloaded, checksum/build-identity verified and completed
+  the full Decision Session, Card, frozen Task, second-session and existing product journey. Terminal state is
+  `published`; the former local download blocker is resolved.
+
+31. `NTH-TD-054` `[verified]`: Repair history-only Provider capability detection, bound Decision Tree geometry to
+    one container-aware scene and replace the fixed desktop Beta.
+
+- Scope: preserve canonical history when a legacy Provider thread cannot resume, return typed capability
+  unavailability without inventing a session, and share complete scene bounds across nodes, Task leaf, connectors,
+  fit, minimap and measured responsive presentation.
+- Related: `NTH-REQ-034`, `NTH-AC-031`, `NTH-CD-104`, `NTH-EV-077`, `NTH-EXP-086`, `NTH-TD-036`
+- Verification: See `NTH-EV-077`. Source `6afe44cb` completed exact-SHA workflow `31327160131`; every mandatory
+  native, packaged, CLI, Relay and publish job passed. Public prerelease `367548410` exposes exactly 26 desktop-only
+  assets, and the freshly downloaded AppImage passed checksum, embedded identity and real-window geometry/product
+  verification. Terminal state is `published`; `NTH-TD-036` is restored as the sole top action.
 
 ## Abandoned
 
