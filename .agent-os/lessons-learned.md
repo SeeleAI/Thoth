@@ -2080,3 +2080,24 @@ Observed on `2026-08-01` during `NTH-TD-053` public Release verification:
 
 Conclusion: test the complete intended protocol and byte count. A successful CONNECT, a small metadata download, or
 a server-side digest cannot silently replace a required local packaged-product journey.
+
+## `NTH-EXP-086` Responsive product acceptance must await the measured presentation, not window width
+
+Observed on `2026-08-09` in Linux job `93271484720` of exact-SHA workflow `31323481633` and the subsequent local
+AppImage reproduction:
+
+1. Source `89d07369` correctly changed Decision Tree docking from whole-window width to measured Agent-body width.
+   The packaged journey still assumed a `1400px` window must expose `decision-tree-sidebar`; the actual split layout
+   preserved conversation width and exposed the full-screen tree launcher, so the job timed out before testing the
+   product. Every other native, CLI and Relay job passed and publish was skipped.
+2. The first test correction accepted the launcher, but a pending Card had already auto-opened the full-screen tree;
+   clicking the obscured launcher again failed. The second correction then sampled the transient launcher while
+   resizing from `1400px` to `2200px`, just before container `onLayout` settled to the docked presentation.
+3. The final journey treats activity/Card overlay as a semantic state, skips a duplicate click when the overlay is
+   already open, explicitly waits for the docked terminal presentation at `2200px`, and explicitly waits for the
+   overlay terminal presentation at `900px`. It keeps all geometry assertions and preserves both screenshots.
+   A rebuilt AppImage passes with `1000px` conversation width, zero node overflow, a fully contained Task leaf and
+   a `50.009px` small-tree top inset.
+
+Conclusion: responsive acceptance must observe the actual measured-container terminal state. Whole-window width and
+the first transition frame are not authority for a nested pane's presentation mode.

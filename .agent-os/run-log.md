@@ -4960,3 +4960,18 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   gate passes in `41.478s`. App/Daemon typechecks, Foundation, Web export, format and Release contract are green.
   The existing packaged journey now rejects real DOM overlap, node overflow, mid-canvas small trees and clipped Task
   leaves before publish. No local AppImage, real Provider, service restart, branch push or Release mutation ran.
+
+## 2026-08-09 [First corrective workflow failed safely; final packaged geometry passed locally]
+
+- Product source `89d0736916b139dfaf7b539a28010bbabfcb80a8` was normally pushed to development and release
+  branches. Exact workflow `31323481633` passed preflight, Windows, macOS arm64/x64, Server CLI, three CLI smokes and
+  hosted Relay. Linux built its AppImage but timed out because the smoke assumed `1400px` whole-window width implied
+  a docked tree; the measured Agent pane correctly exposed its overlay launcher. Publish was skipped, preserving
+  public Release `363500326` at `44b5dad5`.
+- Local reproduction exposed two test-state details: a Human Card auto-opens the overlay, so the launcher must not be
+  clicked again; and resizing to `2200px` briefly retains the old launcher before Agent-body `onLayout` settles to
+  docked. `NTH-EXP-086` records the failed assumptions and final semantic waits.
+- Rebuilt AppImage `/mnt/cfs/5vr0p6/yzy/thoth/packages/desktop/release/Thoth-x86_64.AppImage` is `137,847,307`
+  bytes / `b6bc204b...b5760aa4`. The final product journey passes `ok=true`: wide conversation is `1000px`, node
+  overflow is zero, Task is fully visible, small-tree top inset is `50.0089px`, and the constrained 900px surface
+  uses the overlay launcher. Screenshots and report are preserved under `.dev/packaged-appimage-thoth-flow/`.

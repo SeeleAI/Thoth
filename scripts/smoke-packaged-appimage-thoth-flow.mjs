@@ -554,11 +554,41 @@ async function runNativePlanQuestionSurfaceAcceptance({
   };
 }
 
-async function openDecisionTreeSurface({ page, serverId, workspaceId, agentId }) {
+async function openDecisionTreeSurface({
+  page,
+  serverId,
+  workspaceId,
+  agentId,
+  viewportWidth = 1400,
+  expectedPresentation = null,
+}) {
   const route = `thoth://app/h/${encodeURIComponent(serverId)}/workspace/${encodeURIComponent(workspaceId)}?open=${encodeURIComponent(`agent:${agentId}`)}`;
   await page.goto(route);
-  await page.setViewportSize({ width: 1400, height: 900 });
-  await visibleTestId(page, "decision-tree-sidebar", 60_000);
+  await page.setViewportSize({ width: viewportWidth, height: 900 });
+  const presentation = await waitFor(
+    async () => {
+      if (
+        await page.getByTestId("decision-tree-fullscreen").filter({ visible: true }).isVisible()
+      ) {
+        return expectedPresentation && expectedPresentation !== "overlay" ? null : "overlay-open";
+      }
+      if (await page.getByTestId("decision-tree-sidebar").filter({ visible: true }).isVisible()) {
+        return expectedPresentation && expectedPresentation !== "docked" ? null : "docked";
+      }
+      if (await page.getByTestId("decision-tree-open").filter({ visible: true }).isVisible()) {
+        return expectedPresentation && expectedPresentation !== "overlay" ? null : "overlay";
+      }
+      return null;
+    },
+    60_000,
+    expectedPresentation
+      ? `packaged Decision Tree ${expectedPresentation} presentation`
+      : "packaged Decision Tree presentation",
+  );
+  if (presentation === "overlay") {
+    await page.getByTestId("decision-tree-open").filter({ visible: true }).click();
+    await visibleTestId(page, "decision-tree-fullscreen", 30_000);
+  }
   await visibleTestId(page, "decision-tree-canvas", 30_000);
   await visibleTestId(page, "decision-tree-node-packaged-scope", 30_000);
   await visibleTestId(page, "decision-tree-node-packaged-evidence", 30_000);
@@ -570,7 +600,13 @@ async function openDecisionTreeSurface({ page, serverId, workspaceId, agentId })
     30_000,
     "packaged Decision Tree hierarchy edges",
   );
-  return { route, edgeCount };
+  return { route, edgeCount, presentation, viewportWidth };
+}
+
+async function closeDecisionTreeOverlay(page, surface) {
+  if (!surface.presentation.startsWith("overlay")) return;
+  await page.getByRole("button", { name: "Close decision tree" }).click();
+  await page.getByTestId("decision-tree-fullscreen").waitFor({ state: "hidden", timeout: 30_000 });
 }
 
 async function inspectDecisionTreeActivitySurface({
@@ -587,6 +623,7 @@ async function inspectDecisionTreeActivitySurface({
     "Packaged Decision Tree opened a Card before the active investigation completed",
   );
   await page.screenshot({ path: screenshotPath, fullPage: true });
+  await closeDecisionTreeOverlay(page, surface);
   return {
     ...surface,
     nodeIds: ["packaged-scope", "packaged-evidence"],
@@ -612,6 +649,7 @@ async function inspectDecisionTreeCardSurface({
     "Packaged Decision Tree retained an active spinner while the Human Card owned the decision",
   );
   await page.screenshot({ path: screenshotPath, fullPage: true });
+  await closeDecisionTreeOverlay(page, surface);
   return {
     ...surface,
     nodeIds: ["packaged-scope", "packaged-evidence"],
@@ -628,7 +666,15 @@ async function inspectFrozenDecisionTreeGeometry({
   screenshotPath,
   narrowScreenshotPath,
 }) {
-  const surface = await openDecisionTreeSurface({ page, serverId, workspaceId, agentId });
+  const surface = await openDecisionTreeSurface({
+    page,
+    serverId,
+    workspaceId,
+    agentId,
+    viewportWidth: 2200,
+    expectedPresentation: "docked",
+  });
+  assert(surface.presentation === "docked", "Wide Agent pane did not dock the Decision Tree");
   const sidebar = await visibleTestId(page, "decision-tree-sidebar", 30_000);
   const canvas = await visibleTestId(page, "decision-tree-canvas", 30_000);
   const chat = await visibleTestId(page, "agent-chat-scroll", 30_000);
@@ -686,7 +732,7 @@ async function inspectFrozenDecisionTreeGeometry({
     "Constrained Agent pane kept the docked Decision Tree over the conversation",
   );
   await page.screenshot({ path: narrowScreenshotPath, fullPage: true });
-  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.setViewportSize({ width: 2200, height: 900 });
   await visibleTestId(page, "decision-tree-sidebar", 30_000);
   return {
     ...surface,
@@ -1705,6 +1751,8 @@ async function main() {
       desktopRendererScreenshotPath,
       decisionTreeActivityScreenshotPath,
       decisionTreeCardScreenshotPath,
+      decisionTreeFrozenScreenshotPath,
+      decisionTreeConstrainedScreenshotPath,
       desktopProductSurfacesPath,
       desktopProductSurfacesScreenshotPath,
       path.join(thothHome, "daemon.log"),

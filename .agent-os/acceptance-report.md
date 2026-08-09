@@ -4444,3 +4444,16 @@ Status: `local_source_verified`; exact-SHA native workflow and public asset veri
    real DOM proves at least `420px` conversation width, no conversation/sidebar intersection, no node scroll
    overflow, a fully visible Task leaf and a small tree within `180px` of the canvas top. This reuses the formal
    App/Daemon/scripted-Harness product path; no test-only UI or local AppImage smoke was added.
+7. Product source `89d0736916b139dfaf7b539a28010bbabfcb80a8` was normally fast-forwarded to both authorized
+   branches. Exact-SHA workflow `31323481633` passed preflight, Windows, macOS arm64/x64, internal Server CLI,
+   three native CLI smokes and hosted Relay. Linux built successfully but its packaged step timed out waiting for a
+   docked sidebar at a window width where the measured Agent pane correctly selected the overlay. Publish was
+   skipped, so public Release `363500326` and all 26 assets remained unchanged at `44b5dad5`.
+8. `NTH-EXP-086` records two acceptance-state corrections: Card activity may auto-open the overlay, and a viewport
+   resize must await the measured-container terminal presentation rather than sampling the old launcher. Neither
+   correction changes product behavior or removes a geometry assertion.
+9. A rebuilt local AppImage is `137,847,307` bytes with SHA-256
+   `b6bc204b256bc9ef3ade4c8a779ca3bfbdd20641cb0fe2bc6d504866b5760aa4`. The final packaged journey passes
+   `ok=true`; its frozen-tree receipt reports `1000px` conversation width, zero node overflow, full Task containment,
+   `50.0089px` top inset and a separate 900px overlay screenshot. The report and screenshots are preserved under
+   `.dev/packaged-appimage-thoth-flow/`.
