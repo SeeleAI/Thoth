@@ -570,7 +570,9 @@ async function openDecisionTreeSurface({
       if (
         await page.getByTestId("decision-tree-fullscreen").filter({ visible: true }).isVisible()
       ) {
-        return expectedPresentation && expectedPresentation !== "overlay" ? null : "overlay-open";
+        return expectedPresentation && !["overlay", "overlay-open"].includes(expectedPresentation)
+          ? null
+          : "overlay-open";
       }
       if (await page.getByTestId("decision-tree-sidebar").filter({ visible: true }).isVisible()) {
         return expectedPresentation && expectedPresentation !== "docked" ? null : "docked";
@@ -616,7 +618,14 @@ async function inspectDecisionTreeActivitySurface({
   agentId,
   screenshotPath,
 }) {
-  const surface = await openDecisionTreeSurface({ page, serverId, workspaceId, agentId });
+  const surface = await openDecisionTreeSurface({
+    page,
+    serverId,
+    workspaceId,
+    agentId,
+    viewportWidth: 900,
+    expectedPresentation: "overlay",
+  });
   await visibleTestId(page, "decision-tree-node-activity-packaged-scope", 30_000);
   assert(
     (await page.getByTestId("decision-tree-active-card").filter({ visible: true }).count()) === 0,
@@ -639,7 +648,14 @@ async function inspectDecisionTreeCardSurface({
   agentId,
   screenshotPath,
 }) {
-  const surface = await openDecisionTreeSurface({ page, serverId, workspaceId, agentId });
+  const surface = await openDecisionTreeSurface({
+    page,
+    serverId,
+    workspaceId,
+    agentId,
+    viewportWidth: 900,
+    expectedPresentation: "overlay-open",
+  });
   await visibleTestId(page, "decision-tree-active-card", 30_000);
   assert(
     (await page

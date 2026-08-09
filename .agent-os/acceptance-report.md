@@ -4457,3 +4457,13 @@ Status: `local_source_verified`; exact-SHA native workflow and public asset veri
    `ok=true`; its frozen-tree receipt reports `1000px` conversation width, zero node overflow, full Task containment,
    `50.0089px` top inset and a separate 900px overlay screenshot. The report and screenshots are preserved under
    `.dev/packaged-appimage-thoth-flow/`.
+10. Corrective source `48909eb562e5ffc9a52ad45ca571c5946feab4d9` reached exact-SHA workflow
+    `31325780408`. Preflight, all four native non-Linux jobs, internal Server CLI, three CLI smokes and hosted Relay
+    passed. Linux rebuilt successfully but the generic presentation observer sampled its launcher immediately before
+    the pending Card auto-opened fullscreen, then attempted a duplicate click. Publish was skipped; the fixed public
+    Release again remained unchanged.
+11. The final acceptance state machine no longer races multiple acceptable surfaces. At `900px`, activity waits for
+    the launcher and performs one normal click; the pending Card waits only for auto-open fullscreen. At `2200px`,
+    frozen evidence waits only for docked. The same rebuilt AppImage passes again with activity=`overlay`,
+    Card=`overlay-open`, frozen=`docked` and all prior geometry/product receipts. A third exact-SHA workflow remains
+    pending.

@@ -2090,14 +2090,18 @@ AppImage reproduction:
    The packaged journey still assumed a `1400px` window must expose `decision-tree-sidebar`; the actual split layout
    preserved conversation width and exposed the full-screen tree launcher, so the job timed out before testing the
    product. Every other native, CLI and Relay job passed and publish was skipped.
-2. The first test correction accepted the launcher, but a pending Card had already auto-opened the full-screen tree;
-   clicking the obscured launcher again failed. The second correction then sampled the transient launcher while
-   resizing from `1400px` to `2200px`, just before container `onLayout` settled to the docked presentation.
-3. The final journey treats activity/Card overlay as a semantic state, skips a duplicate click when the overlay is
-   already open, explicitly waits for the docked terminal presentation at `2200px`, and explicitly waits for the
-   overlay terminal presentation at `900px`. It keeps all geometry assertions and preserves both screenshots.
-   A rebuilt AppImage passes with `1000px` conversation width, zero node overflow, a fully contained Task leaf and
-   a `50.009px` small-tree top inset.
+2. The first local correction accepted the launcher, but a pending Card had already auto-opened the full-screen
+   tree; clicking the obscured launcher again failed. A generic "sidebar, fullscreen, or launcher first" observer
+   then passed locally but remained racy: corrective workflow `31325780408` sampled the launcher immediately before
+   the Card auto-opened its overlay. Every other job again passed and publish was skipped.
+3. The same generic observer could also sample a transient launcher while resizing from `1400px` to `2200px`, just
+   before container `onLayout` settled to docked. Retrying clicks, force-clicking or adding sleeps would preserve the
+   race rather than testing the product contract.
+4. The final journey gives each scenario one terminal state: activity uses `900px` and waits for the launcher before
+   a normal click; a Human Card uses `900px` and waits only for the automatically opened fullscreen tree; frozen
+   evidence uses `2200px` and waits only for docked. It keeps all geometry assertions and screenshots. Repeated
+   local AppImage journeys pass with `1000px` conversation width, zero node overflow, a fully contained Task leaf
+   and a `50.009px` small-tree top inset.
 
 Conclusion: responsive acceptance must observe the actual measured-container terminal state. Whole-window width and
 the first transition frame are not authority for a nested pane's presentation mode.

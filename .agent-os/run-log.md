@@ -4975,3 +4975,16 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
   bytes / `b6bc204b...b5760aa4`. The final product journey passes `ok=true`: wide conversation is `1000px`, node
   overflow is zero, Task is fully visible, small-tree top inset is `50.0089px`, and the constrained 900px surface
   uses the overlay launcher. Screenshots and report are preserved under `.dev/packaged-appimage-thoth-flow/`.
+
+## 2026-08-09 [Second corrective workflow exposed Card auto-open observer race]
+
+- Corrective source `48909eb562e5ffc9a52ad45ca571c5946feab4d9` completed every preflight, native, CLI and
+  Relay job in workflow `31325780408` except Linux packaged presentation. The observer saw the overlay launcher a
+  moment before the pending Card auto-opened fullscreen, then its duplicate click was correctly intercepted. Publish
+  was skipped and public Release `363500326` remained at `44b5dad5`.
+- The final smoke does not accept whichever responsive element appears first. Activity is fixed at `900px` and waits
+  for launcher; Card is fixed at `900px` and waits for auto-open fullscreen; frozen evidence is fixed at `2200px`
+  and waits for docked. No sleeps, retries, force-clicks or product changes were added.
+- The unchanged rebuilt AppImage journey passes again with `ok=true`: activity=`overlay`, Card=`overlay-open`,
+  frozen=`docked`, conversation `1000px`, node overflow zero, Task contained and top inset `50.0089px`. A third
+  corrective source commit and exact-SHA workflow are pending.

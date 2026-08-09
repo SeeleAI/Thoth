@@ -8,10 +8,10 @@
 4. Active blocker: none. `NTH-TD-054` is the authorized corrective release transaction for history-only Provider
    capability detection and Decision Tree geometry. The prior `NTH-TD-053` full-binary local download remained
    blocked by outbound bandwidth, but it does not block implementing or publishing the superseding exact source.
-5. Current branch and both authorized remote branches are at product source `89d07369`, with one uncommitted packaged
-   acceptance correction. Exact-SHA workflow `31323481633` passed every job except Linux packaged presentation;
-   publish was skipped, so direct tag `v0.0.0-mvp-beta` and public prerelease `363500326` remain safely at
-   `44b5dad52cffefc8461af75f1cb67c8cec396c77` with 26 desktop-only assets. Remote `main` remains unchanged at
+5. Current branch and both authorized remote branches are at `48909eb5`, with one uncommitted final packaged-state
+   correction. Workflows `31323481633` and `31325780408` passed every job except their Linux packaged presentation;
+   publish was skipped both times, so direct tag `v0.0.0-mvp-beta` and public prerelease `363500326` remain safely
+   at `44b5dad52cffefc8461af75f1cb67c8cec396c77` with 26 desktop-only assets. Remote `main` remains unchanged at
    `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the provider-neutral substrate, while `NTH-CD-100` through
    `NTH-CD-102` now replace the former Task/Goals cognition with a durable Decision Map, one Intent Contract, one
