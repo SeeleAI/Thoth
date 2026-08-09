@@ -4419,3 +4419,28 @@ never called` after package extraction. `NTH-EXP-084` preserves this failure; th
     altering system DNS. `20.200.245.247` returned a valid GitHub HTTPS response and a normal `git ls-remote` fence
     for development, release and `main`. The repo-local resolver now uses that official address; Git HTTPS remains
     direct for only `github.com`, while the broken general proxy stays excluded.
+
+### `NTH-EV-077` History-Only Provider Detection And Decision Tree Geometry Correction
+
+Status: `local_source_verified`; exact-SHA native workflow and public asset verification remain pending.
+
+1. User authority is recorded by `NTH-REQ-034`, `NTH-AC-031` and `NTH-CD-104`. The release-visible regressions are
+   a raw `Unknown agent` from capability refresh of a valid history-only Agent, and a Decision Tree scene that uses
+   window-relative docking, undersized node geometry and bounds that exclude the frozen Task leaf.
+2. Opening source is clean `agent/dev/mvp@91e65560fab13a13b6495c64169f0de73eb711e1`; public fixed Beta and
+   `origin/release/mvp-actions` remain at `44b5dad52cffefc8461af75f1cb67c8cec396c77`; `main` remains
+   `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+3. Remaining evidence is the packaged Electron geometry screenshot, exact-SHA Actions, unchanged 26-asset desktop
+   manifest and public metadata/package identity verification.
+4. Focused Daemon recovery passes `3/3`, including durable visible history, typed unavailable capability and a later
+   successful canonical Provider resume. Decision Tree layout/sidebar tests pass `17/17`; pure geometry proves fixed
+   `96px` node containment, stable top-left fit, Task inclusion in scene bounds, collision-free routed segments and
+   retained viewport virtualization.
+5. `npm run accept:decision-tree:fast` passes all seven stages in `44.519s`. The final expanded
+   `npm run accept:thoth:fast` passes all 16 stages in `168.584s`; the formal Provider Control gate with the new
+   history-only phase passes in `41.478s`. App and Daemon typechecks, `check:foundation`, `build:web`, formatting and
+   `check:mvp-release-contract` pass.
+6. The existing packaged Electron journey now captures a frozen-tree screenshot and fails before publish unless the
+   real DOM proves at least `420px` conversation width, no conversation/sidebar intersection, no node scroll
+   overflow, a fully visible Task leaf and a small tree within `180px` of the canvas top. This reuses the formal
+   App/Daemon/scripted-Harness product path; no test-only UI or local AppImage smoke was added.

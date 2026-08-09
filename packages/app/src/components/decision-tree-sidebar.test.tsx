@@ -328,7 +328,7 @@ afterEach(() => {
 
 describe("DecisionTreeSidebar", () => {
   it("renders a real hierarchy and prioritizes only through the explicit inspector command", async () => {
-    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" />);
+    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" availableWidth={1200} />);
     fireEvent.click(await screen.findByTestId("decision-tree-node-human"));
     expect(mocks.prioritize).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("decision-tree-prioritize"));
@@ -344,7 +344,7 @@ describe("DecisionTreeSidebar", () => {
   });
 
   it("applies contiguous deltas locally and refetches only after a revision gap", async () => {
-    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" />);
+    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" availableWidth={1200} />);
     await screen.findByTestId("decision-tree-node-human");
     const initialGets = mocks.get.mock.calls.length;
     act(() => mocks.deltaHandler?.(delta()));
@@ -368,7 +368,7 @@ describe("DecisionTreeSidebar", () => {
         error: null,
       }),
     );
-    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" />);
+    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" availableWidth={1200} />);
     fireEvent.click(await screen.findByLabelText("Previous decision"));
     await waitFor(() =>
       expect(mocks.get).toHaveBeenLastCalledWith({
@@ -388,7 +388,7 @@ describe("DecisionTreeSidebar", () => {
   });
 
   it("navigates the visible tree with arrow keys", async () => {
-    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" />);
+    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" availableWidth={1200} />);
     const human = await screen.findByTestId("decision-tree-node-human");
     fireEvent.keyDown(human, { key: "ArrowLeft" });
     await waitFor(() =>
@@ -401,7 +401,7 @@ describe("DecisionTreeSidebar", () => {
   it("keeps the only actionable Card in the tree inspector and replaces it with a receipt", async () => {
     mocks.pendingCard = pendingCard();
     mocks.get.mockResolvedValue({ snapshot: snapshot(), error: null });
-    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" />);
+    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" availableWidth={1200} />);
     fireEvent.click(await screen.findByTestId("mock-clarify-submit"));
     await waitFor(() => expect(mocks.answer).toHaveBeenCalledTimes(1));
     expect(await screen.findByTestId("decision-tree-card-receipt")).toBeTruthy();
@@ -411,8 +411,14 @@ describe("DecisionTreeSidebar", () => {
   it("opens the full-screen tree automatically when a compact client needs a decision", async () => {
     mocks.compact = true;
     mocks.pendingCard = pendingCard();
-    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" />);
+    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" availableWidth={480} />);
     expect(await screen.findByTestId("decision-tree-fullscreen")).toBeTruthy();
     expect(screen.getByText("Decision needed")).toBeTruthy();
+  });
+
+  it("uses the full-screen launcher when the real Agent pane cannot preserve conversation width", async () => {
+    render(<DecisionTreeSidebar agentId="agent-1" serverId="server-1" availableWidth={700} />);
+    expect(await screen.findByTestId("decision-tree-open")).toBeTruthy();
+    expect(screen.queryByTestId("decision-tree-sidebar")).toBeNull();
   });
 });

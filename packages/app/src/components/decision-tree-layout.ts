@@ -35,6 +35,25 @@ export interface DecisionTreeLayout {
   autoCollapsedNodeIds: ReadonlySet<string>;
 }
 
+export interface DecisionTreeScenePoint {
+  x: number;
+  y: number;
+}
+
+export interface DecisionTreeTaskNode {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface DecisionTreeScene {
+  width: number;
+  height: number;
+  taskNode: DecisionTreeTaskNode | null;
+  taskConnector: readonly DecisionTreeScenePoint[];
+}
+
 export interface DecisionTreeViewport {
   width: number;
   height: number;
@@ -50,10 +69,14 @@ export type DecisionTreeDeltaResult =
   | { kind: "gap"; snapshot: DecisionTreeSnapshot };
 
 const NODE_WIDTH = 196;
-const NODE_HEIGHT = 72;
+const NODE_HEIGHT = 96;
 const COLUMN_GAP = 56;
 const ROW_GAP = 18;
 const SCENE_PADDING = 32;
+const TASK_WIDTH = 196;
+const TASK_HEIGHT = 64;
+const TASK_GAP = 48;
+const TASK_APPROACH_GAP = 24;
 const AUTO_COLLAPSE_DESCENDANT_THRESHOLD = 8;
 
 function compareNodes(left: DecisionNodeProjection, right: DecisionNodeProjection): number {
@@ -226,6 +249,55 @@ export function buildDecisionTreeLayout(input: {
   };
 }
 
+export function buildDecisionTreeScene(input: {
+  layout: DecisionTreeLayout;
+  rootNodeId: string;
+  includeTask: boolean;
+}): DecisionTreeScene {
+  if (!input.includeTask) {
+    return {
+      width: input.layout.width,
+      height: input.layout.height,
+      taskNode: null,
+      taskConnector: [],
+    };
+  }
+  const root = input.layout.nodeById.get(input.rootNodeId);
+  if (!root) {
+    return {
+      width: input.layout.width,
+      height: input.layout.height,
+      taskNode: null,
+      taskConnector: [],
+    };
+  }
+
+  const taskNode: DecisionTreeTaskNode = {
+    x: input.layout.width + TASK_GAP,
+    y: Math.max(SCENE_PADDING, root.y + (root.height - TASK_HEIGHT) / 2),
+    width: TASK_WIDTH,
+    height: TASK_HEIGHT,
+  };
+  const start = { x: root.x + root.width, y: root.y + root.height / 2 };
+  const rootExitX = start.x + COLUMN_GAP / 2;
+  const safeLaneY = SCENE_PADDING / 2;
+  const taskApproachX = taskNode.x - TASK_APPROACH_GAP;
+  const taskCenterY = taskNode.y + taskNode.height / 2;
+  return {
+    width: taskNode.x + taskNode.width + SCENE_PADDING,
+    height: Math.max(input.layout.height, taskNode.y + taskNode.height + SCENE_PADDING),
+    taskNode,
+    taskConnector: [
+      start,
+      { x: rootExitX, y: start.y },
+      { x: rootExitX, y: safeLaneY },
+      { x: taskApproachX, y: safeLaneY },
+      { x: taskApproachX, y: taskCenterY },
+      { x: taskNode.x, y: taskCenterY },
+    ],
+  };
+}
+
 export function decisionTreeNavigationTarget(
   layout: DecisionTreeLayout,
   currentNodeId: string,
@@ -294,7 +366,7 @@ export function visibleDecisionTreeNodeIds(
 }
 
 export function fitDecisionTreeViewport(input: {
-  layout: DecisionTreeLayout;
+  layout: Pick<DecisionTreeLayout, "width" | "height">;
   width: number;
   height: number;
   padding?: number;
@@ -311,8 +383,8 @@ export function fitDecisionTreeViewport(input: {
   );
   return {
     scale,
-    panX: (input.width - input.layout.width * scale) / 2,
-    panY: (input.height - input.layout.height * scale) / 2,
+    panX: padding,
+    panY: padding,
   };
 }
 

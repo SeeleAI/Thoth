@@ -77,6 +77,17 @@ const phases = [
     ],
   },
   {
+    name: "history-only Provider recovery",
+    command: npm,
+    args: [
+      "run",
+      "test:unit",
+      "--workspace=@thoth/daemon",
+      "--",
+      "src/server/agent/agent-loading.test.ts",
+    ],
+  },
+  {
     name: "public Plan and Loop API",
     command: npm,
     args: fullThoth

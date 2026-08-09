@@ -537,6 +537,11 @@ interface AgentMetadataPatch {
 }
 
 const SYSTEM_ERROR_PREFIX = "[System Error]";
+const HISTORY_ONLY_PLAN_CAPABILITY: ProviderPlanCapability = {
+  kind: "unavailable",
+  reason:
+    "Provider session could not be resumed. Restore the Provider session to detect native Plan capability.",
+};
 
 function shouldSuppressProviderUserTimelineItem(item: AgentTimelineItem): boolean {
   return item.type === "user_message" && isSystemInjectedEnvelope(item.text);
@@ -2252,6 +2257,7 @@ export class ExecutionService {
       workspaceId: record.workspaceId,
       session: null,
       capabilities: STORED_AGENT_CAPABILITIES,
+      planCapability: HISTORY_ONLY_PLAN_CAPABILITY,
       providerRunMode: record.providerRunMode,
       providerControlRevision: record.providerControlRevision,
       config: buildStoredAgentConfig(record),
@@ -2877,7 +2883,7 @@ export class ExecutionService {
   }
 
   async getAgentPlanCapability(agentId: string): Promise<ProviderPlanCapability> {
-    const agent = this.requireSessionAgent(agentId);
+    const agent = this.requireTimelineAgent(agentId);
     if (agent.planCapability && agent.planCapability.kind !== "unavailable") {
       return agent.planCapability;
     }
@@ -2888,7 +2894,15 @@ export class ExecutionService {
     agentId: string,
     options?: { emit?: boolean; persist?: boolean },
   ): Promise<ProviderPlanCapability> {
-    const agent = this.requireSessionAgent(agentId);
+    const agent = this.requireTimelineAgent(agentId);
+    if (agent.session === null) {
+      const capability = HISTORY_ONLY_PLAN_CAPABILITY;
+      agent.planCapability = capability;
+      if (options?.emit !== false) {
+        this.emitState(agent, { persist: false });
+      }
+      return capability;
+    }
     let capability: ProviderPlanCapability;
     try {
       capability = agent.session.getProviderRunModeCapability
@@ -2915,7 +2929,7 @@ export class ExecutionService {
   }
 
   getAgentProviderControl(agentId: string): AgentProviderControl {
-    const agent = this.requireAgent(agentId);
+    const agent = this.requireTimelineAgent(agentId);
     return {
       runMode: agent.providerRunMode,
       planCapability:

@@ -3,15 +3,15 @@
 ## Current Truth
 
 1. Objective: `NTH-OBJ-001`
-2. Top next action: `NTH-TD-053`
+2. Top next action: `NTH-TD-054`
 3. Active workstreams: `NTH-WS-001`, `NTH-WS-002`, `NTH-WS-003`, `NTH-WS-004`, `NTH-WS-005`, `NTH-WS-006`
-4. Active blocker: `NTH-TD-053` is published and server-digest verified, but its required fresh local full-binary
-   public-download journey is blocked by the local outbound network. The supplied proxy returns `502` for HTTP and
-   terminates TLS even when TLS 1.2 is forced; direct Release CDN Range transfers are valid but severely rate-limited.
-5. Current branch: `agent/dev/mvp`, carrying only post-release documentation evidence beyond release source
-   `44b5dad52cffefc8461af75f1cb67c8cec396c77`. `origin/release/mvp-actions`, direct tag `v0.0.0-mvp-beta` and
-   public prerelease `363500326` all target that exact release source; the Release contains exactly 26 desktop-only
-   assets. Remote `main` remains unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
+4. Active blocker: none. `NTH-TD-054` is the authorized corrective release transaction for history-only Provider
+   capability detection and Decision Tree geometry. The prior `NTH-TD-053` full-binary local download remained
+   blocked by outbound bandwidth, but it does not block implementing or publishing the superseding exact source.
+5. Current branch: `agent/dev/mvp@91e65560`, with the uncommitted `NTH-TD-054` corrective implementation and
+   evidence. `origin/release/mvp-actions`, direct tag `v0.0.0-mvp-beta` and public prerelease `363500326` still
+   target `44b5dad52cffefc8461af75f1cb67c8cec396c77` with exactly 26 desktop-only assets. Remote `main` remains
+   unchanged at `e74c6e0de8a110d5e07249880d0e4e4f0ceab691`.
 6. Current implementation state: `NTH-CD-060` remains the provider-neutral substrate, while `NTH-CD-100` through
    `NTH-CD-102` now replace the former Task/Goals cognition with a durable Decision Map, one Intent Contract, one
    Task Anchor and checkpoint-reviewed Working Sets under `NTH-TD-052`. `NTH-EV-072` verifies that the exact
@@ -46,21 +46,15 @@
 
 ## Top Next Action
 
-`NTH-TD-053` `[doing]`: Complete the authorized fixed-Beta public downloaded-artifact verification
-for the locally verified schema-v7 Decision Sessions, deterministic incremental Decision Trees, atomic Card
-receipts, accurate Clarify activity and virtualized tree mind-map product path.
+`NTH-TD-054` `[doing]`: Repair history-only Provider capability detection and make Decision Tree layout use one
+container-aware, fully bounded and collision-free scene; verify the corrected real product path and replace the
+fixed desktop Beta from one exact source SHA.
 
 ## Active Blockers
 
-The required `10.0.3.5:7899` proxy is a real external blocker for Release-sized downloads: it returns `502` for
-plain HTTP and aborts HTTPS after CONNECT with `unexpected eof while reading`; `7890` and SOCKS5 `7891` behave the
-same. Git smart-HTTP is independently restored through repo-local `http.https://github.com.proxy=` plus current
-official resolve `http.curloptResolve=github.com:443:20.200.245.247`, preserving normal HTTPS and fast-forward
-semantics. Exact-SHA
-workflow `30695356049` succeeded and GitHub's asset digests match `SHA256SUMS`, but no local incomplete package is
-accepted as proof. A working outbound proxy or reliable direct CDN route is required for the remaining public
-AppImage/DMG download journey. `NTH-TD-053` remains the sole top action; `NTH-TD-036` stays open by design at Stage
-4 with a preserved `15,506`-LOC Cut B gap.
+None. Git smart-HTTP remains configured through repository-local direct GitHub resolution because the supplied
+proxy terminates TLS. `NTH-TD-053` retains its honest incomplete local full-binary receipt as historical evidence;
+the superseding `NTH-TD-054` correction must obtain its own exact workflow and public-asset evidence.
 
 ## Recent Important Changes
 

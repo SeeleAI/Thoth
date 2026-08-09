@@ -620,6 +620,86 @@ async function inspectDecisionTreeCardSurface({
   };
 }
 
+async function inspectFrozenDecisionTreeGeometry({
+  page,
+  serverId,
+  workspaceId,
+  agentId,
+  screenshotPath,
+  narrowScreenshotPath,
+}) {
+  const surface = await openDecisionTreeSurface({ page, serverId, workspaceId, agentId });
+  const sidebar = await visibleTestId(page, "decision-tree-sidebar", 30_000);
+  const canvas = await visibleTestId(page, "decision-tree-canvas", 30_000);
+  const chat = await visibleTestId(page, "agent-chat-scroll", 30_000);
+  const taskLeaf = await visibleTestId(page, "decision-tree-task-leaf", 30_000);
+  const scopeNode = await visibleTestId(page, "decision-tree-node-packaged-scope", 30_000);
+  const [sidebarBox, canvasBox, chatBox, taskBox, scopeBox] = await Promise.all([
+    sidebar.boundingBox(),
+    canvas.boundingBox(),
+    chat.boundingBox(),
+    taskLeaf.boundingBox(),
+    scopeNode.boundingBox(),
+  ]);
+  assert(
+    sidebarBox && canvasBox && chatBox && taskBox && scopeBox,
+    "Decision Tree geometry is missing",
+  );
+  assert(
+    chatBox.x + chatBox.width <= sidebarBox.x + 1,
+    "Decision Tree sidebar overlaps the Agent conversation",
+  );
+  assert(chatBox.width >= 420, `Agent conversation is too narrow: ${chatBox.width}`);
+  assert(
+    taskBox.x >= canvasBox.x - 1 &&
+      taskBox.y >= canvasBox.y - 1 &&
+      taskBox.x + taskBox.width <= canvasBox.x + canvasBox.width + 1 &&
+      taskBox.y + taskBox.height <= canvasBox.y + canvasBox.height + 1,
+    "Frozen Task leaf is clipped outside the fitted Decision Tree canvas",
+  );
+  assert(
+    scopeBox.y - canvasBox.y < 180,
+    `Small frozen Decision Tree is vertically centered instead of top-aligned: ${scopeBox.y - canvasBox.y}`,
+  );
+  const overflowingNodes = await page
+    .locator(
+      '[data-testid^="decision-tree-node-"]:not([data-testid^="decision-tree-node-activity-"])',
+    )
+    .evaluateAll((nodes) =>
+      nodes.flatMap((node) => {
+        const card = node.parentElement;
+        if (!card) return [node.getAttribute("data-testid") ?? "unknown"];
+        return card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1
+          ? [node.getAttribute("data-testid") ?? "unknown"]
+          : [];
+      }),
+    );
+  assert(
+    overflowingNodes.length === 0,
+    `Decision Tree node content overflowed: ${overflowingNodes.join(", ")}`,
+  );
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  await page.setViewportSize({ width: 900, height: 900 });
+  await visibleTestId(page, "decision-tree-open", 30_000);
+  assert(
+    (await page.getByTestId("decision-tree-sidebar").filter({ visible: true }).count()) === 0,
+    "Constrained Agent pane kept the docked Decision Tree over the conversation",
+  );
+  await page.screenshot({ path: narrowScreenshotPath, fullPage: true });
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await visibleTestId(page, "decision-tree-sidebar", 30_000);
+  return {
+    ...surface,
+    conversationWidth: chatBox.width,
+    taskLeafInsideCanvas: true,
+    nodeContentOverflowCount: overflowingNodes.length,
+    topInset: scopeBox.y - canvasBox.y,
+    screenshotPath,
+    constrainedUsesOverlay: true,
+    narrowScreenshotPath,
+  };
+}
+
 async function waitFor(read, timeoutMs = 30_000, label = "condition") {
   const deadline = Date.now() + timeoutMs;
   let lastError = null;
@@ -1077,6 +1157,8 @@ async function main() {
   const desktopRendererScreenshotPath = path.join(runRoot, "desktop-renderer.png");
   const decisionTreeActivityScreenshotPath = path.join(runRoot, "decision-tree-activity.png");
   const decisionTreeCardScreenshotPath = path.join(runRoot, "decision-tree-card.png");
+  const decisionTreeFrozenScreenshotPath = path.join(runRoot, "decision-tree-frozen.png");
+  const decisionTreeConstrainedScreenshotPath = path.join(runRoot, "decision-tree-constrained.png");
   const desktopProductSurfacesPath = path.join(runRoot, "desktop-product-surfaces.json");
   const desktopProductSurfacesScreenshotPath = path.join(runRoot, "desktop-product-surfaces.png");
   const quickWorkspace = path.join(runRoot, "quick-workspace");
@@ -1293,6 +1375,22 @@ async function main() {
       path.join(runRoot, "background-task-detail.json"),
       JSON.stringify(core.task, null, 2),
     );
+
+    if (!realCodex) {
+      const frozen = await inspectFrozenDecisionTreeGeometry({
+        page,
+        serverId: desktopDaemon.serverId,
+        workspaceId: quickWorkspaceId,
+        agentId: core.agent.id,
+        screenshotPath: decisionTreeFrozenScreenshotPath,
+        narrowScreenshotPath: decisionTreeConstrainedScreenshotPath,
+      });
+      decisionTreeSurface = {
+        activity: decisionTreeSurface?.activity ?? null,
+        card: decisionTreeSurface?.card ?? null,
+        frozen,
+      };
+    }
 
     productSurfacesReceipt.providerPlan = await runNativePlanQuestionSurfaceAcceptance({
       client,

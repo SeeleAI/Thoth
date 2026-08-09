@@ -63,6 +63,14 @@ second Decision Session in addition to the existing Quick, Loop, `@Task`, Stop a
 authorize force push, merge/rebase, `main`, Relay deployment, npm/mobile/store/Nix/Docker publication or any
 operation on independent Paseo. A failed mandatory job leaves the existing fixed Release intact.
 
+`NTH-CD-104` renews the same narrow authorization on `2026-08-09` for the history-only Provider capability and
+Decision Tree geometry correction. It authorizes one verified source SHA to be normally fast-forwarded to
+`agent/dev/mvp` and `release/mvp-actions`, followed by the existing exact-SHA workflow and public desktop-asset
+verification. The packaged journey must reject raw `Unknown agent`, preserve readable old-session history, keep the
+conversation and docked tree disjoint, contain every node and frozen Task leaf, and top-align a small fitted tree.
+It does not authorize force push, merge/rebase, `main`, Relay deployment, npm/mobile/store/Nix/Docker publication or
+any operation on independent Paseo. A failed mandatory job leaves the existing fixed Release intact.
+
 The exact upstream receipt for that authorization is annotated tag object `5f71b185c3d170dec26ea00b91b52a550d510fcd`
 at commit `43cf858c3760679ec9be805ba8b903cdf20f7103`, selected by
 `v0.2.2...v0.2.3 --right-only` from merge base `36f38245cab51bbe0b43b6ac42fd41aa757064d9`.

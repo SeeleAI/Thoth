@@ -7,6 +7,7 @@ import type {
 import {
   applyDecisionTreeDelta,
   buildDecisionTreeLayout,
+  buildDecisionTreeScene,
   decisionTreeNavigationTarget,
   fitDecisionTreeViewport,
   visibleDecisionTreeNodeIds,
@@ -106,6 +107,68 @@ describe("decision tree layout", () => {
           left.top < right.bottom &&
           left.bottom > right.top;
         expect(overlaps, `${left.id} overlaps ${right.id}`).toBe(false);
+      }
+    }
+    expect(first.nodes.every((entry) => entry.height >= 96)).toBe(true);
+  });
+
+  it("fits small trees from a stable top-left inset", () => {
+    const layout = buildDecisionTreeLayout({
+      snapshot: snapshot([node("root", null), node("active-leaf", "root")]),
+    });
+    const viewport = fitDecisionTreeViewport({ layout, width: 900, height: 700 });
+    expect(viewport).toMatchObject({ panX: 28, panY: 28, scale: 1 });
+  });
+
+  it("includes the frozen Task leaf in scene bounds and routes above decision nodes", () => {
+    const layout = buildDecisionTreeLayout({
+      snapshot: snapshot([
+        node("root", null),
+        node("branch-a", "root", { priority: 2 }),
+        node("branch-b", "root", { priority: 1 }),
+        node("active-leaf", "branch-b"),
+      ]),
+    });
+    const scene = buildDecisionTreeScene({
+      layout,
+      rootNodeId: "root",
+      includeTask: true,
+    });
+    expect(scene.taskNode).not.toBeNull();
+    expect(scene.taskNode!.x + scene.taskNode!.width).toBeLessThan(scene.width);
+    expect(scene.taskNode!.y + scene.taskNode!.height).toBeLessThan(scene.height);
+    const safeLane = scene.taskConnector[2]!.y;
+    expect(safeLane).toBeLessThan(Math.min(...layout.nodes.map((entry) => entry.y)));
+
+    const intersectsInterior = (
+      start: { x: number; y: number },
+      end: { x: number; y: number },
+      entry: (typeof layout.nodes)[number],
+    ) => {
+      const left = entry.x;
+      const right = entry.x + entry.width;
+      const top = entry.y;
+      const bottom = entry.y + entry.height;
+      if (start.y === end.y) {
+        return (
+          start.y > top &&
+          start.y < bottom &&
+          Math.max(Math.min(start.x, end.x), left) < Math.min(Math.max(start.x, end.x), right)
+        );
+      }
+      return (
+        start.x > left &&
+        start.x < right &&
+        Math.max(Math.min(start.y, end.y), top) < Math.min(Math.max(start.y, end.y), bottom)
+      );
+    };
+    for (let index = 1; index < scene.taskConnector.length; index += 1) {
+      const start = scene.taskConnector[index - 1]!;
+      const end = scene.taskConnector[index]!;
+      for (const entry of layout.nodes) {
+        expect(intersectsInterior(start, end, entry), `Task route intersects ${entry.id}`).toBe(
+          false,
+        );
       }
     }
   });

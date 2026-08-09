@@ -40,7 +40,7 @@ import {
 } from "@/hooks/use-agent-screen-state-machine";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { useKeyboardShiftStyle } from "@/hooks/use-keyboard-shift-style";
-import { useContainerWidthBelow } from "@/hooks/use-container-width";
+import { useContainerWidth, useContainerWidthBelow } from "@/hooks/use-container-width";
 import {
   clearHistorySyncErrorAfterSuccessfulSync,
   reconcileMissingAgentStateWithPresentAgent,
@@ -1092,6 +1092,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
   const { t } = useTranslation();
+  const agentBodySize = useContainerWidth();
   const rawAgentInputDraft = useAgentInputDraft({
     draftKey: buildDraftStoreKey({
       serverId,
@@ -1151,9 +1152,13 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   );
   const contentContainer = (
     <View style={styles.contentContainer}>
-      <View style={styles.agentBody}>
+      <View onLayout={agentBodySize.onLayout} style={styles.agentBody}>
         {streamContent}
-        <DecisionTreeSidebar serverId={serverId} agentId={effectiveAgent.id} />
+        <DecisionTreeSidebar
+          serverId={serverId}
+          agentId={effectiveAgent.id}
+          availableWidth={agentBodySize.width}
+        />
       </View>
     </View>
   );
@@ -1594,6 +1599,9 @@ const foregroundColorMapping = (theme: Theme) => ({
 const animatedStaticStyles = RNStyleSheet.create({
   content: {
     flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    overflow: "hidden",
   },
   inputAreaWrapper: {
     width: "100%",
@@ -1616,9 +1624,11 @@ const styles = StyleSheet.create((theme) => ({
   },
   agentBody: {
     flex: 1,
+    minWidth: 0,
     minHeight: 0,
     flexDirection: "row",
     position: "relative",
+    overflow: "hidden",
   },
   historySyncOverlay: {
     position: "absolute",

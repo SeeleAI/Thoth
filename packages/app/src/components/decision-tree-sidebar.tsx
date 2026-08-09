@@ -16,7 +16,6 @@ import {
   Text,
   TextInput,
   View,
-  useWindowDimensions,
   type LayoutChangeEvent,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -69,6 +68,7 @@ import { generateMessageId } from "@/utils/message-id";
 import {
   applyDecisionTreeDelta,
   buildDecisionTreeLayout,
+  buildDecisionTreeScene,
   decisionTreeNavigationTarget,
   fitDecisionTreeViewport,
   visibleDecisionTreeNodeIds,
@@ -76,11 +76,14 @@ import {
   type DecisionTreeLayout,
   type DecisionTreeLayoutNode,
   type DecisionTreeNavigationKey,
+  type DecisionTreeScene,
   type DecisionTreeViewport,
 } from "./decision-tree-layout";
 
 const MIN_PANEL_WIDTH = 360;
 const DEFAULT_PANEL_WIDTH = 480;
+const MIN_CONVERSATION_WIDTH = 420;
+const MIN_DOCKED_WIDTH = MIN_PANEL_WIDTH + MIN_CONVERSATION_WIDTH;
 const MAX_SCALE = 1.65;
 const MIN_SCALE = 0.24;
 const ACTIVE_ACTIVITY = new Set<DecisionTreeActivityState>([
@@ -191,11 +194,23 @@ function crossLinkPath(from: DecisionTreeLayoutNode, to: DecisionTreeLayoutNode)
   return `M ${startX} ${startY} C ${startX} ${middleY}, ${endX} ${middleY}, ${endX} ${endY}`;
 }
 
-export function DecisionTreeSidebar({ serverId, agentId }: { serverId: string; agentId: string }) {
+function polylinePath(points: DecisionTreeScene["taskConnector"]): string {
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+}
+
+export function DecisionTreeSidebar({
+  serverId,
+  agentId,
+  availableWidth,
+}: {
+  serverId: string;
+  agentId: string;
+  availableWidth: number;
+}) {
   const client = useHostRuntimeClient(serverId);
   const projectionRuntime = useProjectionRuntime();
   const compact = useIsCompactFormFactor();
-  const window = useWindowDimensions();
+  const useOverlay = compact || availableWidth < MIN_DOCKED_WIDTH;
   const thothState = useAuthorityProjection(
     serverId,
     (projection) => projection.agentThothStates.get(agentId) ?? null,
@@ -318,8 +333,8 @@ export function DecisionTreeSidebar({ serverId, agentId }: { serverId: string; a
     if (cardSessionId !== selectedSessionIdRef.current) {
       void loadSnapshot(cardSessionId).catch(() => undefined);
     }
-    if (compact) setVisible(true);
-  }, [compact, loadSnapshot, pendingCard]);
+    if (useOverlay) setVisible(true);
+  }, [loadSnapshot, pendingCard, useOverlay]);
 
   const answerCard = useCallback(
     async (answer: ThothCardAnswerPayload) => {
@@ -401,7 +416,7 @@ export function DecisionTreeSidebar({ serverId, agentId }: { serverId: string; a
     />
   );
 
-  if (compact) {
+  if (useOverlay) {
     return (
       <>
         <Pressable
@@ -438,10 +453,12 @@ export function DecisionTreeSidebar({ serverId, agentId }: { serverId: string; a
     );
   }
 
+  const maxPanelWidth = Math.max(
+    MIN_PANEL_WIDTH,
+    Math.min(availableWidth * 0.55, availableWidth - MIN_CONVERSATION_WIDTH),
+  );
   return (
-    <ResizableDecisionTreePanel maxWidth={Math.max(MIN_PANEL_WIDTH, window.width * 0.55)}>
-      {content}
-    </ResizableDecisionTreePanel>
+    <ResizableDecisionTreePanel maxWidth={maxPanelWidth}>{content}</ResizableDecisionTreePanel>
   );
 }
 
@@ -747,13 +764,22 @@ function DecisionTreeCanvas({
   const startPanY = useSharedValue(20);
   const startScale = useSharedValue(1);
   const userBrowsing = useRef(false);
+  const scene = useMemo(
+    () =>
+      buildDecisionTreeScene({
+        layout,
+        rootNodeId: snapshot.session.rootNodeId,
+        includeTask: snapshot.session.taskId !== null,
+      }),
+    [layout, snapshot.session.rootNodeId, snapshot.session.taskId],
+  );
   const minimumScale = useMemo(
     () =>
       Math.min(
         MIN_SCALE,
-        fitDecisionTreeViewport({ layout, width: size.width, height: size.height }).scale,
+        fitDecisionTreeViewport({ layout: scene, width: size.width, height: size.height }).scale,
       ),
-    [layout, size.height, size.width],
+    [scene, size.height, size.width],
   );
 
   const commitViewport = useCallback(
@@ -791,8 +817,8 @@ function DecisionTreeCanvas({
 
   const fit = useCallback(() => {
     userBrowsing.current = false;
-    moveTo(fitDecisionTreeViewport({ layout, width: size.width, height: size.height }));
-  }, [layout, moveTo, size.height, size.width]);
+    moveTo(fitDecisionTreeViewport({ layout: scene, width: size.width, height: size.height }));
+  }, [moveTo, scene, size.height, size.width]);
 
   const focusActive = useCallback(() => {
     const active = snapshot.session.activity.activeNodeId
@@ -824,19 +850,27 @@ function DecisionTreeCanvas({
       const next = event.nativeEvent.layout;
       if (next.width <= 0 || next.height <= 0) return;
       setSize({ width: next.width, height: next.height });
-      const fitted = fitDecisionTreeViewport({ layout, width: next.width, height: next.height });
+      const fitted = fitDecisionTreeViewport({
+        layout: scene,
+        width: next.width,
+        height: next.height,
+      });
       panX.value = fitted.panX;
       panY.value = fitted.panY;
       scale.value = fitted.scale;
       setViewport({ width: next.width, height: next.height, ...fitted });
     },
-    [layout, panX, panY, scale],
+    [panX, panY, scale, scene],
   );
 
   useEffect(() => {
     if (userBrowsing.current || size.width <= 1 || size.height <= 1) return;
+    if (snapshot.session.lifecycle === "frozen") {
+      fit();
+      return;
+    }
     focusActive();
-  }, [focusActive, layout, size.height, size.width, snapshot.session.activity.activeNodeId]);
+  }, [fit, focusActive, layout, size.height, size.width, snapshot.session]);
 
   const panGesture = useMemo(
     () =>
@@ -893,16 +927,8 @@ function DecisionTreeCanvas({
         .map((id) => layout.nodeById.get(id))
         .filter((node): node is DecisionTreeLayoutNode => Boolean(node))
     : [];
-  const sceneWidth = layout.width + (snapshot.session.taskId ? 236 : 0);
-  const taskNode = snapshot.session.taskId
-    ? {
-        x: layout.width + 8,
-        y: (layout.nodeById.get(snapshot.session.rootNodeId)?.y ?? 32) + 4,
-        width: 196,
-        height: 64,
-      }
-    : null;
-  const root = layout.nodeById.get(snapshot.session.rootNodeId);
+  const taskNode = scene.taskNode;
+  const taskConnectorPath = polylinePath(scene.taskConnector);
 
   const zoom = useCallback(
     (factor: number) => {
@@ -960,13 +986,9 @@ function DecisionTreeCanvas({
     <View onLayout={onLayout} style={styles.canvas} testID="decision-tree-canvas">
       <GestureDetector gesture={gesture} touchAction="none">
         <Animated.View
-          style={[
-            animatedStyles.scene,
-            { width: sceneWidth, height: Math.max(layout.height, taskNode ? taskNode.y + 96 : 1) },
-            sceneStyle,
-          ]}
+          style={[animatedStyles.scene, { width: scene.width, height: scene.height }, sceneStyle]}
         >
-          <Svg height={Math.max(layout.height, taskNode ? taskNode.y + 96 : 1)} width={sceneWidth}>
+          <Svg height={scene.height} width={scene.width}>
             {layout.edges.map((edge) => {
               const from = layout.nodeById.get(edge.fromId);
               const to = layout.nodeById.get(edge.toId);
@@ -996,10 +1018,12 @@ function DecisionTreeCanvas({
                   />
                 ))
               : null}
-            {taskNode && root ? (
+            {taskNode && taskConnectorPath ? (
               <Path
-                d={`M ${root.x + root.width} ${root.y + root.height / 2} C ${layout.width - 30} ${root.y + root.height / 2}, ${layout.width - 30} ${taskNode.y + taskNode.height / 2}, ${taskNode.x} ${taskNode.y + taskNode.height / 2}`}
+                d={taskConnectorPath}
                 fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
                 stroke={theme.colors.accentBright}
                 strokeDasharray="4 4"
                 strokeWidth={2}
@@ -1026,6 +1050,18 @@ function DecisionTreeCanvas({
                     />
                   ))
               : null}
+            {compactLevelOfDetail && taskNode ? (
+              <Rect
+                fill={theme.colors.surface2}
+                height={taskNode.height}
+                rx={6}
+                stroke={theme.colors.accentBright}
+                strokeWidth={2}
+                width={taskNode.width}
+                x={taskNode.x}
+                y={taskNode.y}
+              />
+            ) : null}
           </Svg>
 
           {compactLevelOfDetail
@@ -1046,7 +1082,7 @@ function DecisionTreeCanvas({
                     showSummary={viewport.scale >= 0.55}
                   />
                 ))}
-          {taskNode ? (
+          {taskNode && !compactLevelOfDetail ? (
             <View
               style={[
                 styles.taskLeaf,
@@ -1077,7 +1113,7 @@ function DecisionTreeCanvas({
         <IconButton icon={Crosshair} label="Focus current decision" onPress={focusActive} />
         <IconButton icon={Maximize2} label="Fit entire tree" onPress={fit} />
       </View>
-      <DecisionTreeMiniMap layout={layout} viewport={viewport} />
+      <DecisionTreeMiniMap layout={layout} scene={scene} viewport={viewport} />
     </View>
   );
 }
@@ -1180,7 +1216,9 @@ function DecisionTreeNodeView({
             </Text>
           ) : null}
           {entry.collapsed && entry.hiddenDescendantCount > 0 ? (
-            <Text style={styles.nodeCount}>{entry.hiddenDescendantCount} decisions folded</Text>
+            <Text numberOfLines={1} style={styles.nodeCount}>
+              {entry.hiddenDescendantCount} decisions folded
+            </Text>
           ) : null}
         </KeyboardPressable>
         {hasChildren ? (
@@ -1201,15 +1239,17 @@ function DecisionTreeNodeView({
 
 function DecisionTreeMiniMap({
   layout,
+  scene,
   viewport,
 }: {
   layout: DecisionTreeLayout;
+  scene: DecisionTreeScene;
   viewport: DecisionTreeViewport;
 }) {
   const { theme } = useUnistyles();
   const width = 116;
   const height = 72;
-  const scale = Math.min(width / Math.max(1, layout.width), height / Math.max(1, layout.height));
+  const scale = Math.min(width / Math.max(1, scene.width), height / Math.max(1, scene.height));
   const worldLeft = -viewport.panX / viewport.scale;
   const worldTop = -viewport.panY / viewport.scale;
   return (
@@ -1228,6 +1268,15 @@ function DecisionTreeMiniMap({
             r={layout.activePath.has(entry.id) ? 2 : 1.2}
           />
         ))}
+        {scene.taskNode ? (
+          <Rect
+            fill={theme.colors.accentBright}
+            height={Math.max(2, scene.taskNode.height * scale)}
+            width={Math.max(2, scene.taskNode.width * scale)}
+            x={scene.taskNode.x * scale}
+            y={scene.taskNode.y * scale}
+          />
+        ) : null}
         <Rect
           fill="transparent"
           height={(viewport.height / viewport.scale) * scale}
@@ -1523,7 +1572,7 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: 6,
     backgroundColor: theme.colors.surface1,
   },
-  nodeSelectArea: { flex: 1, minWidth: 0 },
+  nodeSelectArea: { flex: 1, minWidth: 0, paddingRight: 24 },
   nodeTone_active: { borderColor: theme.colors.accentBright },
   nodeTone_human: { borderColor: theme.colors.statusWarning },
   nodeTone_resolved: { borderColor: theme.colors.statusSuccess },

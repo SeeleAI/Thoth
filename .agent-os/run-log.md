@@ -4933,3 +4933,30 @@ build:web`, `npm run check:foundation`, `npm run format:check` and `git diff --c
 - `NTH-EV-076` therefore records published/server-digest verification but not the final local full-binary journey.
   `NTH-TD-053` remains the only top next action until a working outbound path permits checksum-verified AppImage/DMG
   download and the required new-home real-window acceptance.
+
+## 2026-08-09 [History-only Provider detection and tree geometry correction opened]
+
+- The user reported a released old-session regression: Provider Features refresh on a visible Agent whose native
+  thread cannot resume surfaces raw `Unknown agent` and leaves Plan capability unloaded. The same build shows tree
+  cards overflowing fixed geometry, a small frozen tree vertically centered in empty space, a clipped Task leaf,
+  a connector crossing decision nodes and a docked tree consuming the real conversation pane.
+- Recorded `NTH-REQ-034`, `NTH-AC-031`, `NTH-CD-104`, `NTH-TD-054` and opening `NTH-EV-077`; `NTH-TD-054` is the
+  sole top next action. Final ownership remains Provider-neutral Daemon Agent loading/control plus App-only scene
+  geometry and measured container presentation.
+- Opening worktree is clean at `agent/dev/mvp@91e65560`; public Release and `release/mvp-actions` remain at
+  `44b5dad5`; `main` remains `e74c6e0d`. No implementation, service operation, push, tag or Release mutation has
+  occurred in this correction yet.
+
+## 2026-08-09 [History-only Provider and bounded tree source correction verified]
+
+- Provider capability reads now accept the canonical history-only Agent projection. A failed native resume publishes
+  one provider-neutral unavailable reason without Provider calls or persistence; a later refresh retries the same
+  loading path and replaces the history-only projection when resume succeeds. Focused tests pass `3/3`.
+- Decision Tree nodes use stable `96px` geometry; one pure scene owns decision nodes, the frozen Task leaf, complete
+  fit/minimap bounds and a top-lane Task route that intersects no node. Frozen small trees fit from a stable top-left
+  inset. Docking uses measured Agent-body width, preserves `420px` for conversation and falls back to the existing
+  full-screen tree below the `780px` combined minimum. Focused App tests pass `17/17`.
+- Decision Tree fast passes in `44.519s`; the final 16-stage Thoth fast passes in `168.584s`; the expanded Provider Control
+  gate passes in `41.478s`. App/Daemon typechecks, Foundation, Web export, format and Release contract are green.
+  The existing packaged journey now rejects real DOM overlap, node overflow, mid-canvas small trees and clipped Task
+  leaves before publish. No local AppImage, real Provider, service restart, branch push or Release mutation ran.
